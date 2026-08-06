@@ -1,0 +1,62 @@
+import { and, eq, inArray } from "drizzle-orm";
+import { db, notificationsTable, usersTable } from "@workspace/db";
+
+/** Faol HR (va ixtiyoriy admin) ga bildirishnoma */
+export async function notifyActiveHrs(opts: {
+  text: string;
+  type: string;
+  linkUrl: string;
+  includeAdmin?: boolean;
+}): Promise<void> {
+  const roles = opts.includeAdmin === false ? (["hr"] as const) : (["hr", "admin"] as const);
+  const hrs = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, [...roles])));
+
+  for (const r of hrs) {
+    await db.insert(notificationsTable).values({
+      userId: r.id,
+      text: opts.text,
+      type: opts.type,
+      linkUrl: opts.linkUrl,
+    });
+  }
+}
+
+export async function notifyByRoles(opts: {
+  roles: string[];
+  text: string;
+  type: string;
+  linkUrl: string;
+}): Promise<void> {
+  if (!opts.roles.length) return;
+  const users = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, opts.roles)));
+
+  for (const r of users) {
+    await db.insert(notificationsTable).values({
+      userId: r.id,
+      text: opts.text,
+      type: opts.type,
+      linkUrl: opts.linkUrl,
+    });
+  }
+}
+
+export async function notifyUser(opts: {
+  userId: number | null | undefined;
+  text: string;
+  type: string;
+  linkUrl: string;
+}): Promise<void> {
+  if (!opts.userId) return;
+  await db.insert(notificationsTable).values({
+    userId: opts.userId,
+    text: opts.text,
+    type: opts.type,
+    linkUrl: opts.linkUrl,
+  });
+}

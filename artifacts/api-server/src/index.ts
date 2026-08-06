@@ -1,25 +1,34 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { startVacancyReminderJob } from "./jobs/vacancy-reminders";
 
-const rawPort = process.env["PORT"];
+/** Vercel sets VERCEL=1 — serverless uses exported app, no listen. */
+const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
 
-if (!rawPort) {
-  throw new Error(
-    "PORT environment variable is required but was not provided.",
-  );
-}
+if (!isVercel) {
+  const rawPort = process.env["PORT"];
 
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
+  if (!rawPort) {
+    throw new Error(
+      "PORT environment variable is required but was not provided.",
+    );
   }
 
-  logger.info({ port }, "Server listening");
-});
+  const port = Number(rawPort);
+
+  if (Number.isNaN(port) || port <= 0) {
+    throw new Error(`Invalid PORT value: "${rawPort}"`);
+  }
+
+  app.listen(port, (err) => {
+    if (err) {
+      logger.error({ err }, "Error listening on port");
+      process.exit(1);
+    }
+
+    logger.info({ port }, "Server listening");
+    startVacancyReminderJob();
+  });
+}
+
+export default app;

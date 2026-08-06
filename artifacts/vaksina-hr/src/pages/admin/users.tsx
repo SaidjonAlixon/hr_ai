@@ -1,0 +1,466 @@
+import React, { useMemo, useState } from 'react';
+import {
+  useGetUsers,
+  useGetDepartments,
+  useCreateUser,
+  useUpdateUser,
+  useDeleteUser,
+  getGetUsersQueryKey,
+  type User,
+} from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus } from 'lucide-react';
+import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
+import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
+import { Badge } from '../../components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../components/ui/dialog';
+import { useToast } from '../../hooks/use-toast';
+import { useAuth } from '../../contexts/AuthContext';
+import { cn } from '../../lib/utils';
+
+const ROLES = [
+  { value: 'admin', label: 'Admin' },
+  { value: 'hr', label: 'HR' },
+  { value: 'recruiter', label: 'Rekruter' },
+  { value: 'trainer', label: 'Trener' },
+  { value: 'mentor', label: 'Mentor' },
+  { value: 'director', label: 'Direktor' },
+  { value: 'department_head', label: "Bo'lim boshlig'i" },
+  { value: 'mudir', label: 'Mudir' },
+  { value: 'koordinator', label: 'Koordinator' },
+] as const;
+
+const ROLE_LABELS: Record<string, string> = Object.fromEntries(ROLES.map((r) => [r.value, r.label]));
+
+type CreatedCredentials = {
+  fullName: string;
+  role: string;
+  login: string;
+  temporaryPassword: string;
+};
+
+export default function AdminUsersPage() {
+  const { user: me } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
+  const [createOpen, setCreateOpen] = useState(false);
+  const [credsOpen, setCredsOpen] = useState(false);
+  const [created, setCreated] = useState<CreatedCredentials | null>(null);
+  const [showPwd, setShowPwd] = useState(true);
+  const [copied, setCopied] = useState<'login' | 'password' | 'both' | null>(null);
+
+  const [fullName, setFullName] = useState('');
+  const [role, setRole] = useState('recruiter');
+  const [phone, setPhone] = useState('');
+  const [departmentId, setDepartmentId] = useState<string>('none');
+
+  const { data: users, isLoading } = useGetUsers({
+    search: search || undefined,
+    role: roleFilter !== 'all' ? roleFilter : undefined,
+  });
+  const { data: departments } = useGetDepartments();
+  const createMutation = useCreateUser();
+  const updateMutation = useUpdateUser();
+  const deleteMutation = useDeleteUser();
+
+  const isAdmin = me?.role === 'admin';
+
+  const sorted = useMemo(() => {
+    return [...(users ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz'));
+  }, [users]);
+
+  const resetForm = () => {
+    setFullName('');
+    setRole('recruiter');
+    setPhone('');
+    setDepartmentId('none');
+  };
+
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: getGetUsersQueryKey() });
+  };
+
+  const onCreate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin) {
+      toast({ title: 'Ruxsat yo‘q', description: 'Faqat admin yaratishi mumkin', variant: 'destructive' });
+      return;
+    }
+    if (!fullName.trim() || fullName.trim().split(/\s+/).length < 2) {
+      toast({ title: 'Xatolik', description: 'Ism va familiyani to‘liq yozing', variant: 'destructive' });
+      return;
+    }
+    if (!role) {
+      toast({ title: 'Xatolik', description: 'Rolni tanlang', variant: 'destructive' });
+      return;
+    }
+
+    createMutation.mutate(
+      {
+        data: {
+          fullName: fullName.trim(),
+          role,
+          phone: phone.trim() || undefined,
+          departmentId: departmentId === 'none' ? null : Number(departmentId),
+        } as any,
+      },
+      {
+        onSuccess: (data: any) => {
+          invalidate();
+          setCreateOpen(false);
+          resetForm();
+          setCreated({
+            fullName: data.fullName,
+            role: data.role,
+            login: data.login,
+            temporaryPassword: data.temporaryPassword || '',
+          });
+          setShowPwd(true);
+          setCopied(null);
+          setCredsOpen(true);
+          toast({ title: 'Yaratildi', description: 'Login va parol tayyor' });
+        },
+        onError: (err: any) => {
+          toast({
+            title: 'Xatolik',
+            description: err?.message || 'Foydalanuvchi yaratilmadi',
+            variant: 'destructive',
+          });
+        },
+      },
+    );
+  };
+
+  const copyText = async (text: string, kind: 'login' | 'password' | 'both') => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(kind);
+      toast({ title: 'Nusxa olindi' });
+      setTimeout(() => setCopied(null), 2000);
+    } catch {
+      toast({ title: 'Nusxa olinmadi', variant: 'destructive' });
+    }
+  };
+
+  const toggleStatus = (u: User) => {
+    if (!isAdmin) return;
+    const next = u.status === 'active' ? 'inactive' : 'active';
+    updateMutation.mutate(
+      { id: u.id, data: { status: next } },
+      {
+        onSuccess: () => {
+          invalidate();
+          toast({ title: next === 'active' ? 'Faollashtirildi' : 'O‘chirib qo‘yildi' });
+        },
+      },
+    );
+  };
+
+  const onDelete = (u: User) => {
+    if (!isAdmin) return;
+    if (u.id === me?.id) {
+      toast({ title: 'O‘zingizni o‘chira olmaysiz', variant: 'destructive' });
+      return;
+    }
+    if (!window.confirm(`${u.fullName} ni o‘chirasizmi?`)) return;
+    deleteMutation.mutate(
+      { id: u.id },
+      {
+        onSuccess: () => {
+          invalidate();
+          toast({ title: 'O‘chirildi' });
+        },
+        onError: (err: any) => {
+          toast({ title: 'Xatolik', description: err?.message || 'O‘chirilmadi', variant: 'destructive' });
+        },
+      },
+    );
+  };
+
+  if (!isAdmin) {
+    return (
+      <div className="mx-auto max-w-lg py-16 text-center">
+        <h1 className="text-2xl font-bold">Foydalanuvchilar</h1>
+        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin uchun.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">Foydalanuvchilar</h1>
+          <p className="mt-1 text-muted-foreground">
+            Rol bo‘yicha login va parol avtomatik yaratiladi
+          </p>
+        </div>
+        <Button className="gap-2" onClick={() => setCreateOpen(true)}>
+          <UserPlus className="h-4 w-4" />
+          Yangi foydalanuvchi
+        </Button>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-sm sm:flex-row">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Ism bo‘yicha qidirish..."
+            className="pl-9"
+          />
+        </div>
+        <Select value={roleFilter} onValueChange={setRoleFilter}>
+          <SelectTrigger className="w-full sm:w-[200px]">
+            <SelectValue placeholder="Rol" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Barcha rollar</SelectItem>
+            {ROLES.map((r) => (
+              <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">
+            Ro‘yxat {sorted.length ? `(${sorted.length})` : ''}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="border-b bg-muted/40 text-left text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 font-medium">Foydalanuvchi</th>
+                  <th className="px-4 py-3 font-medium">Rol</th>
+                  <th className="px-4 py-3 font-medium">Login</th>
+                  <th className="px-4 py-3 font-medium">Bo‘lim</th>
+                  <th className="px-4 py-3 font-medium">Holat</th>
+                  <th className="px-4 py-3 font-medium text-right">Amallar</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {isLoading ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                      Yuklanmoqda...
+                    </td>
+                  </tr>
+                ) : sorted.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
+                      Foydalanuvchi topilmadi
+                    </td>
+                  </tr>
+                ) : (
+                  sorted.map((u) => (
+                    <tr key={u.id} className="hover:bg-muted/20">
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{u.fullName}</div>
+                        {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge variant="secondary">{ROLE_LABELS[u.role] || u.role}</Badge>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-xs">{u.login}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{u.departmentName || '—'}</td>
+                      <td className="px-4 py-3">
+                        <button
+                          type="button"
+                          onClick={() => toggleStatus(u)}
+                          className={cn(
+                            'rounded-full px-2.5 py-0.5 text-xs font-semibold',
+                            u.status === 'active'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600',
+                          )}
+                        >
+                          {u.status === 'active' ? 'Faol' : 'Nofaol'}
+                        </button>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => onDelete(u)}
+                          disabled={u.id === me?.id}
+                          title="O‘chirish"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Create dialog */}
+      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Yangi foydalanuvchi</DialogTitle>
+            <DialogDescription>
+              Ism-familiya va rolni tanlang — login va parol avtomatik beriladi.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={onCreate} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Ism familiya *</Label>
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Masalan: Aziza Karimova"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Rol *</Label>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Rolni tanlang" />
+                </SelectTrigger>
+                <SelectContent className="z-[100]">
+                  {ROLES.map((r) => (
+                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Telefon (ixtiyoriy)</Label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+998 90 123 45 67"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Bo‘lim (ixtiyoriy)</Label>
+              <Select value={departmentId} onValueChange={setDepartmentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Bo‘lim" />
+                </SelectTrigger>
+                <SelectContent className="z-[100]">
+                  <SelectItem value="none">Belgilanmagan</SelectItem>
+                  {(departments ?? []).map((d) => (
+                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
+                Bekor qilish
+              </Button>
+              <Button type="submit" disabled={createMutation.isPending} className="gap-2">
+                <Plus className="h-4 w-4" />
+                {createMutation.isPending ? 'Yaratilmoqda...' : 'Yaratish'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Credentials dialog */}
+      <Dialog open={credsOpen} onOpenChange={setCredsOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Login va parol</DialogTitle>
+            <DialogDescription>
+              {created?.fullName} ({ROLE_LABELS[created?.role || ''] || created?.role}) uchun
+              ma’lumotlar. Parol faqat hozir ko‘rsatiladi — saqlab qo‘ying.
+            </DialogDescription>
+          </DialogHeader>
+          {created && (
+            <div className="space-y-3">
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">Login</div>
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-semibold">{created.login}</code>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-8 gap-1"
+                    onClick={() => copyText(created.login, 'login')}
+                  >
+                    {copied === 'login' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    Nusxa
+                  </Button>
+                </div>
+              </div>
+              <div className="rounded-lg border bg-slate-50 p-3">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">Parol</div>
+                <div className="flex items-center justify-between gap-2">
+                  <code className="text-sm font-semibold tracking-wide">
+                    {showPwd ? created.temporaryPassword : '••••••••'}
+                  </code>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8"
+                      onClick={() => setShowPwd((v) => !v)}
+                    >
+                      {showPwd ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 gap-1"
+                      onClick={() => copyText(created.temporaryPassword, 'password')}
+                    >
+                      {copied === 'password' ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                      Nusxa
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full gap-2"
+                onClick={() =>
+                  copyText(
+                    `Login: ${created.login}\nParol: ${created.temporaryPassword}`,
+                    'both',
+                  )
+                }
+              >
+                {copied === 'both' ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                Ikkalasini nusxalash
+              </Button>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setCredsOpen(false)}>Yopish</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

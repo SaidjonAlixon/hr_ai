@@ -10,7 +10,19 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const connectionString = process.env.DATABASE_URL;
+const isLocal =
+  /localhost|127\.0\.0\.1/i.test(connectionString) ||
+  connectionString.includes("sslmode=disable");
+
+export const pool = new Pool({
+  connectionString,
+  // Hosted Postgres (Neon, Supabase, Vercel Postgres) usually needs TLS
+  ssl: isLocal ? undefined : { rejectUnauthorized: false },
+  // Serverless: keep pool small
+  max: process.env.VERCEL ? 1 : 10,
+});
+
 export const db = drizzle(pool, { schema });
 
 export * from "./schema";

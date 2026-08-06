@@ -1,0 +1,127 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { Toaster } from './components/ui/toaster';
+import { TooltipProvider } from './components/ui/tooltip';
+import { Route, Switch, Router as WouterRouter } from 'wouter';
+import { AuthProvider } from './contexts/AuthContext';
+import { Layout } from './components/layout/Layout';
+
+// Pages
+import Login from './pages/login';
+import Dashboard from './pages/dashboard';
+import RequestsList from './pages/requests/index';
+import NewRequest from './pages/requests/new';
+import RequestDetails from './pages/requests/show';
+import VacanciesList from './pages/vacancies/index';
+import NewVacancy from './pages/vacancies/new';
+import VacancyDetails from './pages/vacancies/show';
+import NazoratPage from './pages/nazorat/index';
+import CandidatesList from './pages/candidates/index';
+import NewCandidate from './pages/candidates/new';
+import CandidateProfile from './pages/candidates/show';
+import OnlineInterviewPage from './pages/candidates/online-interview';
+import PhoneInterviewPage from './pages/candidates/phone-interview';
+import PreboardingPage from './pages/candidates/preboarding';
+import OfflineInterviewPage from './pages/candidates/offline-interview';
+import FinalDecisionPage from './pages/candidates/final-decision';
+import OfferPage from './pages/candidates/offer';
+import DocumentsPage from './pages/candidates/documents';
+import InternshipPage from './pages/candidates/internship';
+import InterviewsList from './pages/interviews/index';
+import PharmacyNetworkPage from './pages/pharmacy-network/index';
+import PipelineBoardPage from './pages/pipeline/index';
+import VazifalarPage from './pages/vazifalar/index';
+import AdminUsersPage from './pages/admin/users';
+import NotificationsPage from './pages/notifications/index';
+import NotFound from './pages/not-found';
+
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
+
+function ProtectedRoute({ component: Component, ...rest }: any) {
+  return (
+    <Route {...rest}>
+      {params => (
+        <Layout>
+          <Component params={params} />
+        </Layout>
+      )}
+    </Route>
+  );
+}
+
+// Simple placeholders for missing pages
+function EmployeesPlaceholder() { return <div className="p-8 text-center text-gray-500">Xodimlar ro'yxati (Ishlanmoqda)</div>; }
+function InternshipsPlaceholder() { return <div className="p-8 text-center text-gray-500">Stajirovkalar ro'yxati (Ishlanmoqda)</div>; }
+function DepartmentsPlaceholder() { return <div className="p-8 text-center text-gray-500">Bo'limlar boshqaruvi (Ishlanmoqda)</div>; }
+
+function Router() {
+  return (
+    <Switch>
+      <Route path="/login" component={Login} />
+      <Route path="/" component={() => {
+        window.location.replace('/dashboard');
+        return null;
+      }} />
+      
+      <ProtectedRoute path="/dashboard" component={Dashboard} />
+      
+      <ProtectedRoute path="/requests" component={RequestsList} />
+      <ProtectedRoute path="/requests/new" component={NewRequest} />
+      <ProtectedRoute path="/requests/:id" component={RequestDetails} />
+
+      <ProtectedRoute path="/nazorat" component={NazoratPage} />
+      
+      <ProtectedRoute path="/vacancies" component={VacanciesList} />
+      <ProtectedRoute path="/vacancies/new" component={NewVacancy} />
+      <ProtectedRoute path="/vacancies/:id" component={VacancyDetails} />
+      
+      <ProtectedRoute path="/candidates" component={CandidatesList} />
+      <ProtectedRoute path="/candidates/new" component={NewCandidate} />
+      <ProtectedRoute path="/candidates/:id/phone-interview" component={PhoneInterviewPage} />
+      <ProtectedRoute path="/candidates/:id/online-interview" component={OnlineInterviewPage} />
+      <ProtectedRoute path="/candidates/:id/preboarding" component={PreboardingPage} />
+      <ProtectedRoute path="/candidates/:id/offline-interview" component={OfflineInterviewPage} />
+      <ProtectedRoute path="/candidates/:id/final-decision" component={FinalDecisionPage} />
+      <ProtectedRoute path="/candidates/:id/offer" component={OfferPage} />
+      <ProtectedRoute path="/candidates/:id/documents" component={DocumentsPage} />
+      <ProtectedRoute path="/candidates/:id/internship" component={InternshipPage} />
+      <ProtectedRoute path="/candidates/:id" component={CandidateProfile} />
+      
+      <ProtectedRoute path="/interviews" component={InterviewsList} />
+      <ProtectedRoute path="/pipeline" component={PipelineBoardPage} />
+      <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
+      
+      <ProtectedRoute path="/employees" component={EmployeesPlaceholder} />
+      <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
+      <ProtectedRoute path="/internships" component={InternshipsPlaceholder} />
+      <ProtectedRoute path="/notifications" component={NotificationsPage} />
+      <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
+      <ProtectedRoute path="/admin/departments" component={DepartmentsPlaceholder} />
+      
+      <Route component={NotFound} />
+    </Switch>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <TooltipProvider>
+          <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
+            <Router />
+          </WouterRouter>
+          <Toaster />
+        </TooltipProvider>
+      </AuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

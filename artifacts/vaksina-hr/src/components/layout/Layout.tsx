@@ -1,0 +1,394 @@
+import React, { useMemo } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
+import { Link, useLocation } from 'wouter';
+import {
+  Users,
+  Briefcase,
+  FileText,
+  LayoutDashboard,
+  Calendar,
+  LogOut,
+  Bell,
+  Settings,
+  Menu,
+  GraduationCap,
+  Store,
+  ClipboardCheck,
+  Kanban,
+  ListTodo,
+} from 'lucide-react';
+import {
+  useLogout,
+  useGetNotifications,
+  useGetRequests,
+  useGetVacancies,
+  useGetDashboardStats,
+} from '@workspace/api-client-react';
+import { useStaffingAlerts } from '@/lib/staffing-api';
+import { cn } from '@/lib/utils';
+
+type NavItem = {
+  name: string;
+  path: string;
+  icon: React.ComponentType<{ className?: string }>;
+};
+
+/** Map notification linkUrl → sidebar path */
+function linkToNavPath(linkUrl?: string | null): string | null {
+  if (!linkUrl) return null;
+  const path = linkUrl.split('?')[0];
+
+  if (path.startsWith('/requests')) return '/requests';
+  if (path.startsWith('/nazorat')) return '/nazorat';
+  if (path.startsWith('/vacancies')) return '/vacancies';
+  if (path.startsWith('/employees')) return '/employees';
+  if (path.startsWith('/internships')) return '/internships';
+  if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
+  if (path.startsWith('/pipeline')) return '/pipeline';
+  if (path.startsWith('/vazifalar')) return '/vazifalar';
+  if (path.startsWith('/interviews')) return '/interviews';
+  if (path.startsWith('/admin/users')) return '/admin/users';
+  if (path.startsWith('/admin/departments')) return '/admin/departments';
+  if (path.startsWith('/dashboard')) return '/dashboard';
+
+  if (
+    path.includes('interview') ||
+    path.includes('preboarding') ||
+    path.includes('final-decision') ||
+    path.includes('/offer')
+  ) {
+    return '/interviews';
+  }
+  if (path.startsWith('/candidates')) return '/candidates';
+
+  return null;
+}
+
+function NavBadge({ count, collapsed }: { count: number; collapsed?: boolean }) {
+  if (count <= 0) return null;
+  const label = count > 99 ? '99+' : String(count);
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center justify-center rounded-full bg-red-500 text-white font-semibold leading-none',
+        collapsed
+          ? 'absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px]'
+          : 'ml-auto min-w-[20px] h-5 px-1.5 text-[11px]',
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+export const Layout = ({ children }: { children: React.ReactNode }) => {
+  const { user, isAuthenticated, isLoading } = useAuth();
+  const [location, setLocation] = useLocation();
+  const logout = useLogout();
+  const [sidebarOpen, setSidebarOpen] = React.useState(true);
+
+  const isHrLike = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'director';
+  const isRecruiter = user?.role === 'recruiter';
+  const isPharmacyStaff = user?.role === 'koordinator' || user?.role === 'mudir';
+
+  const { data: unreadNotifications } = useGetNotifications(
+    { unreadOnly: true },
+    { query: { enabled: !!user, refetchInterval: 30_000 } } as any,
+  );
+
+  const { data: dashboardStats } = useGetDashboardStats({
+    query: { enabled: !!user, refetchInterval: 30_000 },
+  } as any);
+
+  const { data: staffingAlerts } = useStaffingAlerts('open', {
+    enabled: !!user && isPharmacyStaff,
+    refetchInterval: 30_000,
+  });
+
+  const { data: requests } = useGetRequests(undefined, {
+    query: { enabled: !!user && isHrLike, refetchInterval: 30_000 },
+  } as any);
+
+  const { data: draftVacancies } = useGetVacancies(
+    { status: 'draft' },
+    {
+      query: {
+        enabled: !!user && (isRecruiter || user?.role === 'hr' || user?.role === 'admin'),
+        refetchInterval: 30_000,
+      },
+    } as any,
+  );
+
+  const badgeByPath = useMemo(() => {
+    const counts: Record<string, number> = {};
+
+    // Bildirishnomalar — Arizalar/Nazorat/Ish o'rinlaridan tashqari
+    for (const n of unreadNotifications ?? []) {
+      const navPath = linkToNavPath(n.linkUrl);
+      if (
+        !navPath ||
+        navPath === '/requests' ||
+        navPath === '/nazorat' ||
+        navPath === '/vacancies'
+      ) {
+        continue;
+      }
+      // Aptekalar badge — ochiq ogohlantirish/ariza soni (koordinator/mudir)
+      if (navPath === '/pharmacy-network' && isPharmacyStaff) continue;
+      counts[navPath] = (counts[navPath] ?? 0) + 1;
+    }
+
+    // Koordinator/mudir: ochiq ogohlantirishlar + ariza jarayonidagilar yig‘ilib turadi
+    if (isPharmacyStaff) {
+      const openCount = staffingAlerts?.length ?? 0;
+      if (openCount > 0) counts['/pharmacy-network'] = openCount;
+    }
+
+    // Arizalar: faqat Yangi (submitted)
+    // Nazorat: Yangi + Ko'rib chiqilmoqda
+    if (isHrLike && requests) {
+      const yangi = requests.filter((r) => r.status === 'submitted').length;
+      const pendingHr = requests.filter(
+        (r) => r.status === 'submitted' || r.status === 'reviewing',
+      ).length;
+      if (yangi > 0) counts['/requests'] = yangi;
+      if (pendingHr > 0) counts['/nazorat'] = pendingHr;
+    }
+
+    // Ish o'rinlari: qabul qilinmagan (draft) — yangi ish o'rinlari
+    const draftCount = draftVacancies?.length ?? 0;
+    if (draftCount > 0) counts['/vacancies'] = draftCount;
+
+    return counts;
+  }, [unreadNotifications, requests, isHrLike, draftVacancies, isPharmacyStaff, staffingAlerts]);
+
+  const totalUnread =
+    dashboardStats?.unreadNotifications ??
+    unreadNotifications?.length ??
+    0;
+
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center">Yuklanmoqda...</div>;
+  }
+
+  if (!isAuthenticated || !user) {
+    setLocation('/login');
+    return null;
+  }
+
+  const handleLogout = () => {
+    logout.mutate(undefined, {
+      onSuccess: () => {
+        window.location.href = '/login';
+      },
+    });
+  };
+
+  const roleNavigation: Record<string, NavItem[]> = {
+    admin: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Nazorat', path: '/nazorat', icon: ClipboardCheck },
+      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+      { name: 'Nomzodlar', path: '/candidates', icon: Users },
+      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
+      { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
+      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+    ],
+    recruiter: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+      { name: 'Nomzodlar', path: '/candidates', icon: Users },
+      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+    ],
+    director: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Nazorat', path: '/nazorat', icon: ClipboardCheck },
+      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+      { name: 'Nomzodlar', path: '/candidates', icon: Users },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    hr: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Nazorat', path: '/nazorat', icon: ClipboardCheck },
+      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+      { name: 'Nomzodlar', path: '/candidates', icon: Users },
+      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+    ],
+    trainer: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+    ],
+    mentor: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+    ],
+    department_head: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Nomzodlar', path: '/candidates', icon: Users },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    mudir: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    koordinator: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+  };
+
+  const navItems = roleNavigation[user.role] || [];
+
+  return (
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
+      <aside
+        className={cn(
+          'text-sidebar-foreground w-64 flex flex-col transition-all duration-300',
+          !sidebarOpen && 'w-20',
+        )}
+        style={{ backgroundColor: '#081323' }}
+      >
+        <div
+          className={cn(
+            'h-20 flex items-center justify-center border-b border-white/10 px-2 shrink-0',
+            !sidebarOpen && 'px-1.5 h-16',
+          )}
+          style={{ backgroundColor: '#081323' }}
+        >
+          {sidebarOpen ? (
+            <img
+              src={`${import.meta.env.BASE_URL}logo2.png`}
+              alt="VAKSINA HR"
+              className="h-14 w-auto max-w-full object-contain"
+            />
+          ) : (
+            <img
+              src={`${import.meta.env.BASE_URL}logo2.png`}
+              alt="VAKSINA HR"
+              className="h-11 w-11 object-cover object-left rounded-sm"
+            />
+          )}
+        </div>
+
+        <nav className="flex-1 py-6 flex flex-col gap-1 px-3 overflow-y-auto">
+          {navItems.map((item) => {
+            const count = badgeByPath[item.path] ?? 0;
+            const active = location === item.path || location.startsWith(item.path + '/');
+            return (
+              <Link key={item.path} href={item.path}>
+                <div
+                  className={cn(
+                    'relative flex items-center px-3 py-3 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground cursor-pointer transition-colors group',
+                    active && 'bg-sidebar-accent text-sidebar-accent-foreground',
+                  )}
+                >
+                  <span className="relative">
+                    <item.icon className="w-5 h-5 min-w-[20px]" />
+                    {!sidebarOpen && <NavBadge count={count} collapsed />}
+                  </span>
+                  {sidebarOpen && (
+                    <>
+                      <span className="ml-3 font-medium text-sm">{item.name}</span>
+                      <NavBadge count={count} />
+                    </>
+                  )}
+                </div>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="p-4 border-t border-sidebar-border">
+          <div className="flex items-center justify-between">
+            {sidebarOpen && (
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold truncate w-40">{user.fullName}</span>
+                <span className="text-xs text-sidebar-foreground/70 truncate">
+                  {user.role.replace('_', ' ')}
+                </span>
+              </div>
+            )}
+            <button
+              onClick={handleLogout}
+              className="text-sidebar-foreground/70 hover:text-white transition-colors"
+              title="Chiqish"
+            >
+              <LogOut className="w-5 h-5" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        <header className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 z-10">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="p-2 -ml-2 rounded-md text-gray-500 hover:bg-gray-100"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+
+          <div className="flex items-center gap-4">
+            <Link href="/notifications">
+              <div className="relative p-2 rounded-full text-gray-500 hover:bg-gray-100 cursor-pointer">
+                <Bell className="w-5 h-5" />
+                {totalUnread > 0 && (
+                  <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-white text-[10px] font-semibold flex items-center justify-center leading-none">
+                    {totalUnread > 99 ? '99+' : totalUnread}
+                  </span>
+                )}
+              </div>
+            </Link>
+          </div>
+        </header>
+
+        <main
+          className={cn(
+            'flex-1 min-h-0',
+            location === '/vazifalar' || location === '/pipeline'
+              ? 'overflow-hidden p-0'
+              : 'overflow-y-auto p-6',
+          )}
+        >
+          <div
+            className={cn(
+              'mx-auto w-full',
+              location === '/pharmacy-network' ||
+                location === '/pipeline' ||
+                location === '/vazifalar'
+                ? 'max-w-none h-full'
+                : 'max-w-7xl',
+            )}
+          >
+            {children}
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+};

@@ -1,8 +1,44 @@
 import { Router, type IRouter } from "express";
 import healthRouter from "./health";
+import authRouter from "./auth";
+import departmentsRouter from "./departments";
+import usersRouter from "./users";
+import requestsRouter from "./requests";
+import vacanciesRouter from "./vacancies";
+import candidatesRouter from "./candidates";
+import phoneInterviewsRouter from "./phone-interviews";
+import onlineInterviewsRouter from "./online-interviews";
+import preboardingRouter from "./preboarding";
+import offlineInterviewsRouter from "./offline-interviews";
+import offersRouter from "./offers";
+import internshipsRouter from "./internships";
+import employeesRouter from "./employees";
+import notificationsRouter from "./notifications";
+import dashboardRouter from "./dashboard";
+import tasksRouter from "./tasks";
+import staffingRouter from "./staffing";
+import jobsRouter from "./jobs";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(jobsRouter);
+router.use(authRouter);
+router.use(departmentsRouter);
+router.use(usersRouter);
+router.use(staffingRouter);
+router.use(requestsRouter);
+router.use(vacanciesRouter);
+router.use(candidatesRouter);
+router.use(phoneInterviewsRouter);
+router.use(onlineInterviewsRouter);
+router.use(preboardingRouter);
+router.use(offlineInterviewsRouter);
+router.use(offersRouter);
+router.use(internshipsRouter);
+router.use(employeesRouter);
+router.use(notificationsRouter);
+router.use(dashboardRouter);
+router.use(tasksRouter);
 
 export default router;

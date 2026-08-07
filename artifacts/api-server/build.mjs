@@ -25,6 +25,34 @@ const esbuildPluginPino = (await import(pathToFileURL(resolveDep("esbuild-plugin
 // Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
 globalThis.require = requireFromPkg;
 
+/** Map @workspace/* to source files — Vercel often has no package node_modules links */
+const workspacePackages = {
+  "@workspace/db": path.resolve(workspaceRoot, "lib/db"),
+  "@workspace/api-zod": path.resolve(workspaceRoot, "lib/api-zod"),
+};
+
+function workspaceResolvePlugin() {
+  return {
+    name: "workspace-resolve",
+    setup(build) {
+      build.onResolve({ filter: /^@workspace\// }, (args) => {
+        const match = args.path.match(/^(@workspace\/[^/]+)(?:\/(.*))?$/);
+        if (!match) return null;
+        const pkgDir = workspacePackages[match[1]];
+        if (!pkgDir) return null;
+        const sub = match[2];
+        if (!sub || sub === ".") {
+          return { path: path.join(pkgDir, "src/index.ts") };
+        }
+        if (sub === "schema") {
+          return { path: path.join(pkgDir, "src/schema/index.ts") };
+        }
+        return { path: path.join(pkgDir, "src", `${sub}.ts`) };
+      });
+    },
+  };
+}
+
 const sharedExternal = [
   "*.node",
   "sharp",
@@ -129,7 +157,8 @@ async function buildAll() {
     logLevel: "info",
     external: sharedExternal,
     sourcemap: "linked",
-    plugins: [esbuildPluginPino({ transports: ["pino-pretty"] })],
+    absWorkingDir: workspaceRoot,
+    plugins: [workspaceResolvePlugin(), esbuildPluginPino({ transports: ["pino-pretty"] })],
     banner,
   });
 }

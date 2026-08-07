@@ -1,7 +1,7 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "pnpm -w install --no-frozen-lockfile --prod=false",
-  "buildCommand": "pnpm -w run build:vercel",
+  "installCommand": "pnpm install --no-frozen-lockfile --prod=false",
+  "buildCommand": "pnpm run build:vercel",
   "outputDirectory": "artifacts/vaksina-hr/dist/public",
   "framework": null,
   "functions": {

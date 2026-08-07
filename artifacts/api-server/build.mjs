@@ -1,14 +1,29 @@
 import { createRequire } from "node:module";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { build as esbuild } from "esbuild";
-import esbuildPluginPino from "esbuild-plugin-pino";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { rm } from "node:fs/promises";
 
-// Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
-globalThis.require = createRequire(import.meta.url);
-
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
+const workspaceRoot = path.resolve(artifactDir, "../..");
+
+// Resolve build tools from package or hoisted workspace root (Vercel monorepo)
+const requireFromPkg = createRequire(path.join(artifactDir, "package.json"));
+const requireFromRoot = createRequire(path.join(workspaceRoot, "package.json"));
+
+function resolveDep(name) {
+  try {
+    return requireFromPkg.resolve(name);
+  } catch {
+    return requireFromRoot.resolve(name);
+  }
+}
+
+const { build: esbuild } = await import(pathToFileURL(resolveDep("esbuild")).href);
+const esbuildPluginPino = (await import(pathToFileURL(resolveDep("esbuild-plugin-pino")).href))
+  .default;
+
+// Plugins (e.g. 'esbuild-plugin-pino') may use `require` to resolve dependencies
+globalThis.require = requireFromPkg;
 
 const sharedExternal = [
   "*.node",

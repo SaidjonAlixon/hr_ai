@@ -45,6 +45,16 @@ export default defineConfig({
         '..',
         'attached_assets',
       ),
+      // Vercel often lacks workspace package symlinks under artifacts/*/node_modules
+      '@workspace/api-client-react': path.resolve(
+        import.meta.dirname,
+        '..',
+        '..',
+        'lib',
+        'api-client-react',
+        'src',
+        'index.ts',
+      ),
     },
     dedupe: ['react', 'react-dom'],
   },
@@ -59,7 +69,8 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: true,
     fs: {
-      strict: true,
+      strict: false,
+      allow: [path.resolve(import.meta.dirname, '..', '..')],
     },
     proxy: {
       '/api': {

@@ -29,15 +29,17 @@ pnpm install
 pnpm run build:vercel
 ```
 
-Frontend output: `artifacts/vaksina-hr/dist/public` → copied to `www/` for Vercel
+Frontend / API: Vercel Build Output API → `.vercel/output/` (static + `/api` function)
 
 ## Vercel dashboard (required)
 | Setting | Value |
 |---------|--------|
-| Root Directory | **empty** (not `artifacts/api-server`) |
+| Root Directory | **empty** |
 | Build Command | `pnpm -w run build:vercel` |
 | Install Command | `pnpm -w install --no-frozen-lockfile --prod=false` |
-| Output Directory | `www` |
+| Output Directory | **Override OFF** (leave empty — Build Output API) |
+
+If you see a yellow **Production Overrides** banner, remove those overrides, Save, then **Clear cache and Redeploy**.
 
 
 ## 4. How it works

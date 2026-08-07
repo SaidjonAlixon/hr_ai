@@ -48,6 +48,9 @@ Thumbs.db
 .cache/
 .local/
 
+# Vercel local link / build output (CI recreates .vercel/output)
+.vercel
+
 # Env / secrets
 .env
 .env.*
@@ -55,3 +58,5 @@ Thumbs.db
 
 # Vite local/CI output under package (not Vercel Output Directory)
 artifacts/vaksina-hr/dist/
+/public
+/www

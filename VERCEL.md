@@ -29,7 +29,7 @@ pnpm install
 pnpm run build:vercel
 ```
 
-Frontend output: repo-root `public/` (Vercel Output Directory)
+Frontend / API: Vercel Build Output API → `.vercel/output/` (static + `/api` function)
 
 ## Vercel dashboard (required)
 | Setting | Value |
@@ -37,13 +37,15 @@ Frontend output: repo-root `public/` (Vercel Output Directory)
 | Root Directory | **empty** |
 | Build Command | `pnpm -w run build:vercel` |
 | Install Command | `pnpm -w install --no-frozen-lockfile --prod=false` |
-| Output Directory | `public` (Override ON is OK if value is exactly `public`) |
+| Output Directory | **Override OFF** (leave empty — Build Output API) |
 
-Clear cache and Redeploy after saving.
+If you see a yellow **Production Overrides** banner, or Output Directory is set to `public` / `www` / `dist`, turn **Override OFF**, Save, then **Clear cache and Redeploy**.
+
+`outputDirectory: "public"` fails on Vercel even when `/public` exists after the build — that is why this project uses the Build Output API instead.
 
 
 ## 4. How it works
 - Static SPA from Vite
-- `/api/*` → Express on a Vercel Function (`api/index.mjs`)
+- `/api/*` → Express on a Vercel Function (Build Output `api.func` + `api/index.mjs` fallback)
 - Cron every 10 minutes → `/api/jobs/vacancy-reminders`  
   (Vercel Hobby: max 1 cron/day — change `crons.schedule` in `vercel.json` if needed)

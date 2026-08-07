@@ -60,7 +60,8 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(import.meta.dirname, 'dist/public'),
+    // Repo-root `public` — matches Vercel default / vercel.json outputDirectory
+    outDir: path.resolve(import.meta.dirname, '..', '..', 'public'),
     emptyOutDir: true,
   },
   server: {

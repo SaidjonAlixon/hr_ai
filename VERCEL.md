@@ -29,7 +29,8 @@ pnpm install
 pnpm run build:vercel
 ```
 
-Frontend output: `artifacts/vaksina-hr/dist/public`  
+Frontend output: `public` (repo root)
+  
 API bundle: `artifacts/api-server/dist/vercel.mjs` (served via `api/index.mjs`)
 
 ## 4. How it works

@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Link, useLocation } from 'wouter';
 import {
@@ -23,7 +23,10 @@ import {
   useGetRequests,
   useGetVacancies,
   useGetDashboardStats,
+  getGetNotificationsQueryKey,
+  getGetDashboardStatsQueryKey,
 } from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 
@@ -82,10 +85,12 @@ function NavBadge({ count, collapsed }: { count: number; collapsed?: boolean }) 
 }
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, setUser } = useAuth();
   const [location, setLocation] = useLocation();
   const logout = useLogout();
+  const queryClient = useQueryClient();
   const [sidebarOpen, setSidebarOpen] = React.useState(true);
+  const markedPathsRef = useRef<Set<string>>(new Set());
 
   const isHrLike = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'director';
   const isRecruiter = user?.role === 'recruiter';
@@ -118,6 +123,72 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       },
     } as any,
   );
+
+  // Bo'limga kirganda shu bo'limga bog'liq bildirishnomalarni o'qilgan qilish
+  useEffect(() => {
+    if (!user || !unreadNotifications?.length) return;
+
+    // Bildirishnomalar sahifasida hammasini o'qilgan qilish
+    if (location.startsWith('/notifications')) {
+      const ids = unreadNotifications.map((n) => n.id);
+      const markKey = `all:${ids.slice().sort((a, b) => a - b).join(',')}`;
+      if (markedPathsRef.current.has(markKey)) return;
+      markedPathsRef.current.add(markKey);
+      void fetch('/api/notifications/read-all', {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      })
+        .then((res) => {
+          if (!res.ok) {
+            markedPathsRef.current.delete(markKey);
+            return;
+          }
+          queryClient.invalidateQueries({ queryKey: getGetNotificationsQueryKey() });
+          queryClient.invalidateQueries({
+            queryKey: getGetNotificationsQueryKey({ unreadOnly: true }),
+          });
+          queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+        })
+        .catch(() => {
+          markedPathsRef.current.delete(markKey);
+        });
+      return;
+    }
+
+    const currentNav = linkToNavPath(location);
+    if (!currentNav) return;
+
+    const ids = unreadNotifications
+      .filter((n) => linkToNavPath(n.linkUrl) === currentNav)
+      .map((n) => n.id);
+    if (ids.length === 0) return;
+
+    const markKey = `${currentNav}:${ids.slice().sort((a, b) => a - b).join(',')}`;
+    if (markedPathsRef.current.has(markKey)) return;
+    markedPathsRef.current.add(markKey);
+
+    void fetch('/api/notifications/read-many', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+      .then((res) => {
+        if (!res.ok) {
+          markedPathsRef.current.delete(markKey);
+          return;
+        }
+        queryClient.invalidateQueries({ queryKey: getGetNotificationsQueryKey() });
+        queryClient.invalidateQueries({
+          queryKey: getGetNotificationsQueryKey({ unreadOnly: true }),
+        });
+        queryClient.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+      })
+      .catch(() => {
+        markedPathsRef.current.delete(markKey);
+      });
+  }, [location, unreadNotifications, user, queryClient]);
 
   const badgeByPath = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -159,18 +230,29 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     unreadNotifications?.length ??
     0;
 
+  useEffect(() => {
+    if (isLoading) return;
+    if (!isAuthenticated || !user) {
+      setLocation('/login');
+    }
+  }, [isLoading, isAuthenticated, user, setLocation]);
+
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center">Yuklanmoqda...</div>;
   }
 
   if (!isAuthenticated || !user) {
-    setLocation('/login');
-    return null;
+    return <div className="min-h-screen flex items-center justify-center">Yuklanmoqda...</div>;
   }
 
   const handleLogout = () => {
     logout.mutate(undefined, {
       onSuccess: () => {
+        setUser(null);
+        window.location.href = '/login';
+      },
+      onError: () => {
+        setUser(null);
         window.location.href = '/login';
       },
     });

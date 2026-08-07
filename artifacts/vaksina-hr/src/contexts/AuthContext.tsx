@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { useGetMe, User } from '@workspace/api-client-react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { getGetMeQueryKey, useGetMe, type User } from '@workspace/api-client-react';
 
 interface AuthContextType {
   user: User | null;
@@ -16,32 +17,58 @@ const AuthContext = createContext<AuthContextType>({
 });
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<User | null>(null);
-  
-  const { data, isLoading, isError } = useGetMe({
+  const queryClient = useQueryClient();
+  /** Login/logout dan kelgan darhol holat; undefined = server javobiga tayanish */
+  const [overrideUser, setOverrideUser] = useState<User | null | undefined>(undefined);
+
+  const { data, isPending, isFetching, isError, isSuccess, status } = useGetMe({
     query: {
-      retry: false,
-    }
+      retry: 1,
+      retryDelay: 400,
+      staleTime: 30_000,
+      refetchOnWindowFocus: true,
+    },
   });
 
+  // Serverdan kelgan user bilan sync (F5 / yangilash)
   useEffect(() => {
-    if (data && !isError) {
-      setUser(data);
-    } else if (isError) {
-      setUser(null);
+    if (isSuccess && data) {
+      setOverrideUser(undefined);
     }
-  }, [data, isError]);
+  }, [isSuccess, data]);
 
-  return (
-    <AuthContext.Provider value={{
-      user,
-      isLoading,
-      isAuthenticated: !!user,
-      setUser
-    }}>
-      {children}
-    </AuthContext.Provider>
+  const setUser = useCallback(
+    (next: User | null) => {
+      setOverrideUser(next);
+      if (next) {
+        queryClient.setQueryData(getGetMeQueryKey(), next);
+      } else {
+        queryClient.setQueryData(getGetMeQueryKey(), undefined);
+      }
+    },
+    [queryClient],
   );
+
+  const user = useMemo(() => {
+    if (overrideUser !== undefined) return overrideUser;
+    if (isSuccess && data) return data;
+    if (isError) return null;
+    return null;
+  }, [overrideUser, isSuccess, data, isError]);
+
+  // Hali /auth/me kutilmoqda yoki muvaffaqiyatli javob bor, lekin user hali bog'lanmagan
+  const isLoading =
+    overrideUser === undefined &&
+    (isPending || status === 'pending' || (isFetching && !data && !isError));
+
+  const isAuthenticated = !!user;
+
+  const value = useMemo(
+    () => ({ user, isLoading, isAuthenticated, setUser }),
+    [user, isLoading, isAuthenticated, setUser],
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => useContext(AuthContext);

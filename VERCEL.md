@@ -29,7 +29,7 @@ pnpm install
 pnpm run build:vercel
 ```
 
-Frontend output: `artifacts/vaksina-hr/dist/public` (copied to `./public` for Vercel)
+Frontend output: `artifacts/vaksina-hr/dist/public` → copied to `www/` for Vercel
 
 ## Vercel dashboard (required)
 | Setting | Value |
@@ -37,7 +37,7 @@ Frontend output: `artifacts/vaksina-hr/dist/public` (copied to `./public` for Ve
 | Root Directory | **empty** (not `artifacts/api-server`) |
 | Build Command | `pnpm -w run build:vercel` |
 | Install Command | `pnpm -w install --no-frozen-lockfile --prod=false` |
-| Output Directory | `public` |
+| Output Directory | `www` |
 
 
 ## 4. How it works

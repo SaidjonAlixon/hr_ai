@@ -53,5 +53,5 @@ Thumbs.db
 .env.*
 !.env.example
 
-# Vercel / Vite static output (built on CI)
-/public
+# Vite local/CI output under package (not Vercel Output Directory)
+artifacts/vaksina-hr/dist/

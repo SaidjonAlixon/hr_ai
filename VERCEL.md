@@ -29,7 +29,7 @@ pnpm install
 pnpm run build:vercel
 ```
 
-Frontend / API: Vercel Build Output API → `.vercel/output/` (static + `/api` function)
+Frontend output: repo-root `public/` (Vercel Output Directory)
 
 ## Vercel dashboard (required)
 | Setting | Value |
@@ -37,9 +37,9 @@ Frontend / API: Vercel Build Output API → `.vercel/output/` (static + `/api` f
 | Root Directory | **empty** |
 | Build Command | `pnpm -w run build:vercel` |
 | Install Command | `pnpm -w install --no-frozen-lockfile --prod=false` |
-| Output Directory | **Override OFF** (leave empty — Build Output API) |
+| Output Directory | `public` (Override ON is OK if value is exactly `public`) |
 
-If you see a yellow **Production Overrides** banner, remove those overrides, Save, then **Clear cache and Redeploy**.
+Clear cache and Redeploy after saving.
 
 
 ## 4. How it works

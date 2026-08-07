@@ -3,31 +3,24 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Write Vercel Build Output API v3 layout.
- * This skips the flaky dashboard `outputDirectory` check that fails even when
- * `www/` / `public/` exist on disk.
+ * Ensure Vercel Output Directory `public` is populated, and also write
+ * Build Output API layout as a secondary deploy path.
  */
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptDir, "../..");
 
-const viteOut = path.join(workspaceRoot, "artifacts/vaksina-hr/dist/public");
-const apiDist = path.join(workspaceRoot, "artifacts/api-server/dist");
-
-if (!fs.existsSync(path.join(viteOut, "index.html"))) {
-  console.error("Missing Vite output:", viteOut);
+const viteCandidates = [
+  path.join(workspaceRoot, "public"),
+  path.join(workspaceRoot, "artifacts/vaksina-hr/dist/public"),
+];
+const viteOut = viteCandidates.find((p) => fs.existsSync(path.join(p, "index.html")));
+if (!viteOut) {
+  console.error("Missing Vite index.html. Looked in:", viteCandidates.join(", "));
   process.exit(1);
-}
-if (!fs.existsSync(path.join(apiDist, "vercel.mjs"))) {
-  console.error("Missing API bundle:", path.join(apiDist, "vercel.mjs"));
-  process.exit(1);
-}
-
-function rimraf(p) {
-  fs.rmSync(p, { recursive: true, force: true });
 }
 
 function copyDir(src, dest) {
-  rimraf(dest);
+  fs.rmSync(dest, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   fs.cpSync(src, dest, { recursive: true });
 }
@@ -44,13 +37,9 @@ function copyPkgWithDeps(pkgName, destNodeModules, seen = new Set()) {
   if (seen.has(pkgName)) return;
   seen.add(pkgName);
   const src = resolvePkgDir(pkgName);
-  if (!src) {
-    console.warn("skip missing package:", pkgName);
-    return;
-  }
-  const dest = path.join(destNodeModules, pkgName);
-  fs.mkdirSync(path.dirname(dest), { recursive: true });
-  fs.cpSync(src, dest, { recursive: true });
+  if (!src) return;
+  fs.mkdirSync(path.dirname(path.join(destNodeModules, pkgName)), { recursive: true });
+  fs.cpSync(src, path.join(destNodeModules, pkgName), { recursive: true });
   try {
     const pkg = JSON.parse(fs.readFileSync(path.join(src, "package.json"), "utf8"));
     for (const dep of Object.keys(pkg.dependencies || {})) {
@@ -61,51 +50,47 @@ function copyPkgWithDeps(pkgName, destNodeModules, seen = new Set()) {
   }
 }
 
-const outputRoot = path.join(workspaceRoot, ".vercel/output");
-rimraf(outputRoot);
-
-// Static SPA
-const staticDest = path.join(outputRoot, "static");
-copyDir(viteOut, staticDest);
-console.log("Build Output static:", staticDest);
-
-// Also mirror to public/ for zero-config fallback
-for (const dest of new Set([
+// 1) Force public/ at workspace root AND cwd (Root Directory)
+const publicTargets = [...new Set([
   path.join(workspaceRoot, "public"),
   path.join(process.cwd(), "public"),
-])) {
-  copyDir(viteOut, dest);
-  console.log("public fallback:", dest);
+])];
+for (const dest of publicTargets) {
+  if (path.resolve(dest) !== path.resolve(viteOut)) {
+    copyDir(viteOut, dest);
+  }
+  const index = path.join(dest, "index.html");
+  if (!fs.existsSync(index)) {
+    console.error("public/index.html missing at", index);
+    process.exit(1);
+  }
+  console.log("OK public:", dest, "→", fs.readdirSync(dest).join(", "));
 }
 
-// Express API as /api serverless function
-const funcDir = path.join(outputRoot, "functions", "api.func");
-fs.mkdirSync(funcDir, { recursive: true });
-fs.cpSync(apiDist, funcDir, { recursive: true });
+// 2) Build Output API (optional secondary)
+const apiDist = path.join(workspaceRoot, "artifacts/api-server/dist");
+if (fs.existsSync(path.join(apiDist, "vercel.mjs"))) {
+  const outputRoot = path.join(workspaceRoot, ".vercel/output");
+  fs.rmSync(outputRoot, { recursive: true, force: true });
+  copyDir(viteOut, path.join(outputRoot, "static"));
 
-const funcNodeModules = path.join(funcDir, "node_modules");
-copyPkgWithDeps("pg", funcNodeModules);
-
-fs.writeFileSync(
-  path.join(funcDir, ".vc-config.json"),
-  JSON.stringify(
-    {
+  const funcDir = path.join(outputRoot, "functions", "api.func");
+  fs.mkdirSync(funcDir, { recursive: true });
+  fs.cpSync(apiDist, funcDir, { recursive: true });
+  copyPkgWithDeps("pg", path.join(funcDir, "node_modules"));
+  fs.writeFileSync(
+    path.join(funcDir, ".vc-config.json"),
+    JSON.stringify({
       runtime: "nodejs20.x",
       handler: "vercel.mjs",
       launcherType: "Nodejs",
       shouldAddHelpers: true,
       supportsResponseStreaming: true,
-    },
-    null,
-    2,
-  ),
-);
-console.log("Build Output function:", funcDir);
-
-fs.writeFileSync(
-  path.join(outputRoot, "config.json"),
-  JSON.stringify(
-    {
+    }),
+  );
+  fs.writeFileSync(
+    path.join(outputRoot, "config.json"),
+    JSON.stringify({
       version: 3,
       routes: [
         { src: "/api(?:/.*)?$", dest: "/api" },
@@ -113,10 +98,9 @@ fs.writeFileSync(
         { src: "/(.*)", dest: "/index.html" },
       ],
       crons: [{ path: "/api/jobs/vacancy-reminders", schedule: "*/10 * * * *" }],
-    },
-    null,
-    2,
-  ),
-);
+    }),
+  );
+  console.log("OK .vercel/output:", outputRoot);
+}
 
-console.log("OK: .vercel/output ready at", outputRoot);
+console.log("Vercel prepare done. outputDirectory must be: public");

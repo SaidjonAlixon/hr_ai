@@ -34,14 +34,12 @@ Frontend / API: Vercel Build Output API → `.vercel/output/` (static + `/api` f
 ## Vercel dashboard (required)
 | Setting | Value |
 |---------|--------|
-| Root Directory | **empty** |
+| Root Directory | **empty** (not `./`, not `artifacts/api-server`) |
 | Build Command | `pnpm -w run build:vercel` |
 | Install Command | `pnpm -w install --no-frozen-lockfile --prod=false` |
-| Output Directory | **Override OFF** (leave empty — Build Output API) |
+| Output Directory | `artifacts/vaksina-hr/dist/public` (Override ON) |
 
-If you see a yellow **Production Overrides** banner, or Output Directory is set to `public` / `www` / `dist`, turn **Override OFF**, Save, then **Clear cache and Redeploy**.
-
-`outputDirectory: "public"` fails on Vercel even when `/public` exists after the build — that is why this project uses the Build Output API instead.
+Save, then **Clear cache and Redeploy**.
 
 
 ## 4. How it works

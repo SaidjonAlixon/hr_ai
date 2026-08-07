@@ -357,16 +357,26 @@ export default function VazifalarPage() {
   async function onPickFiles(
     files: FileList | null,
     setter: React.Dispatch<React.SetStateAction<TaskAttachment[]>>,
-    current: TaskAttachment[],
   ) {
     if (!files?.length) return;
+    const picked = Array.from(files);
     try {
-      const next = [...current];
-      for (const file of Array.from(files)) {
-        if (next.length >= 8) break;
-        next.push(await fileToAttachment(file));
+      const converted: TaskAttachment[] = [];
+      for (const file of picked) {
+        converted.push(await fileToAttachment(file));
       }
-      setter(next);
+      setter((prev) => {
+        const next = [...prev];
+        for (const att of converted) {
+          if (next.length >= 8) break;
+          next.push(att);
+        }
+        return next;
+      });
+      toast({
+        title: "Fayl biriktirildi",
+        description: `${picked.length} ta fayl qo‘shildi`,
+      });
     } catch (e: any) {
       toast({
         title: "Fayl qo'shilmadi",
@@ -854,31 +864,13 @@ export default function VazifalarPage() {
               )}
             </div>
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label className="flex items-center gap-1.5">
-                  <Paperclip className="h-3.5 w-3.5" />
-                  Rasm / fayl
-                </Label>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  Biriktirish
-                </Button>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  multiple
-                  accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-                  className="hidden"
-                  onChange={(e) => {
-                    void onPickFiles(e.target.files, setAttachments, attachments);
-                    e.target.value = "";
-                  }}
-                />
-              </div>
+              <FileDropzone
+                inputRef={fileRef}
+                label="RASM / FAYL (ixtiyoriy)"
+                title="Rasm yoki fayl biriktiring"
+                hint="PDF, DOCX, rasm — 10 MB gacha. Bosib tanlang yoki shu yerga tortib tashlang"
+                onPick={(files) => void onPickFiles(files, setAttachments)}
+              />
               <AttachmentList
                 items={attachments}
                 onRemove={(id) =>
@@ -999,7 +991,11 @@ export default function VazifalarPage() {
 
       {/* Ijrochi: bajarish */}
       <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent
+          className="max-w-lg"
+          onFocusOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>Vazifani bajarish</DialogTitle>
           </DialogHeader>
@@ -1017,38 +1013,21 @@ export default function VazifalarPage() {
                 placeholder="Nima qilganingizni yozing..."
               />
             </div>
-            <div className="flex items-center justify-between">
-              <Label>Rasm / fayl</Label>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => completeFileRef.current?.click()}
-              >
-                Biriktirish
-              </Button>
-              <input
-                ref={completeFileRef}
-                type="file"
-                multiple
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
-                className="hidden"
-                onChange={(e) => {
-                  void onPickFiles(
-                    e.target.files,
-                    setCompletionFiles,
-                    completionFiles,
-                  );
-                  e.target.value = "";
-                }}
+            <div className="space-y-2">
+              <FileDropzone
+                inputRef={completeFileRef}
+                label="RASM / FAYL"
+                title="Rasm yoki fayl biriktiring"
+                hint="PDF, DOCX, rasm — 10 MB gacha. Bosib tanlang yoki shu yerga tortib tashlang"
+                onPick={(files) => void onPickFiles(files, setCompletionFiles)}
+              />
+              <AttachmentList
+                items={completionFiles}
+                onRemove={(id) =>
+                  setCompletionFiles((prev) => prev.filter((x) => x.id !== id))
+                }
               />
             </div>
-            <AttachmentList
-              items={completionFiles}
-              onRemove={(id) =>
-                setCompletionFiles((prev) => prev.filter((x) => x.id !== id))
-              }
-            />
           </div>
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCompleteOpen(false)}>
@@ -1106,6 +1085,80 @@ export default function VazifalarPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function FileDropzone({
+  inputRef,
+  label,
+  title,
+  hint,
+  onPick,
+}: {
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  label: string;
+  title: string;
+  hint: string;
+  onPick: (files: FileList | null) => void;
+}) {
+  const [dragging, setDragging] = useState(false);
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <label
+        onDragEnter={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragging(true);
+        }}
+        onDragLeave={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          setDragging(false);
+          onPick(e.dataTransfer.files);
+        }}
+        className={cn(
+          "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-4 py-3.5 transition-colors",
+          dragging
+            ? "border-primary bg-primary/5"
+            : "border-slate-300 bg-slate-50/80 hover:border-primary/50 hover:bg-slate-50",
+        )}
+      >
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-white">
+          <FileText className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 text-left">
+          <span className="block text-sm font-semibold text-slate-700">
+            {title}
+          </span>
+          <span className="mt-0.5 block text-xs text-slate-500">{hint}</span>
+        </span>
+        <input
+          ref={inputRef}
+          type="file"
+          multiple
+          accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf"
+          className="sr-only"
+          onChange={(e) => {
+            onPick(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </label>
     </div>
   );
 }

@@ -19,12 +19,14 @@ import tasksRouter from "./tasks";
 import staffingRouter from "./staffing";
 import jobsRouter from "./jobs";
 import branchNeedsRouter from "./branch-needs";
+import branchAuditsRouter from "./branch-audits";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(jobsRouter);
 router.use(branchNeedsRouter);
+router.use(branchAuditsRouter);
 router.use(authRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);

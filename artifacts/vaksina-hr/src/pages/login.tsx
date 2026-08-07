@@ -7,7 +7,6 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
 import { useToast } from '../hooks/use-toast';
-import { HeartPulse } from 'lucide-react';
 
 export default function Login() {
   const [login, setLogin] = useState('');
@@ -51,11 +50,12 @@ export default function Login() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
-          <div className="mx-auto w-16 h-16 bg-primary text-primary-foreground rounded-full flex items-center justify-center mb-4 shadow-lg">
-            <HeartPulse className="w-8 h-8" />
-          </div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">VAKSINA HR</h1>
-          <p className="text-gray-500 mt-2">Kadrlar tanlovi boshqaruv tizimi</p>
+          <img
+            src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png`}
+            alt="VAKSINA HR"
+            className="mx-auto h-24 w-auto max-w-full object-contain"
+          />
+          <p className="text-gray-500 mt-3">Kadrlar tanlovi boshqaruv tizimi</p>
         </div>
 
         <Card className="border-t-4 border-t-primary shadow-xl">

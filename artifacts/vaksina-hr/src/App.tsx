@@ -30,6 +30,7 @@ import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
+import ChecklistPage from './pages/checklist/index';
 import AdminUsersPage from './pages/admin/users';
 import NotificationsPage from './pages/notifications/index';
 import NotFound from './pages/not-found';
@@ -101,6 +102,7 @@ function Router() {
       <ProtectedRoute path="/pipeline" component={PipelineBoardPage} />
       <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
+      <ProtectedRoute path="/checklist" component={ChecklistPage} />
       
       <ProtectedRoute path="/employees" component={EmployeesPlaceholder} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />

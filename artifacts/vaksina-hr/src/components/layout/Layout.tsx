@@ -16,6 +16,7 @@ import {
   Kanban,
   ListTodo,
   ClipboardList,
+  ClipboardCheck,
 } from 'lucide-react';
 import {
   useLogout,
@@ -336,6 +337,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
     ],
     texnik: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -362,25 +364,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       >
         <div
           className={cn(
-            'h-20 flex items-center justify-center border-b border-white/10 px-2 shrink-0',
-            !sidebarOpen && 'px-1.5 h-16',
+            'h-6 shrink-0',
+            !sidebarOpen && 'h-4',
           )}
           style={{ backgroundColor: '#081323' }}
-        >
-          {sidebarOpen ? (
-            <img
-              src={`${import.meta.env.BASE_URL}logo2.png`}
-              alt="VAKSINA HR"
-              className="h-14 w-auto max-w-full object-contain"
-            />
-          ) : (
-            <img
-              src={`${import.meta.env.BASE_URL}logo2.png`}
-              alt="VAKSINA HR"
-              className="h-11 w-11 object-cover object-left rounded-sm"
-            />
-          )}
-        </div>
+        />
 
         <nav className="flex-1 py-6 flex flex-col gap-1 px-3 overflow-y-auto">
           {navItems.map((item) => {
@@ -432,13 +420,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-16 bg-white border-b flex items-center justify-between px-6 shrink-0 z-10">
-          <button
-            onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="p-2 -ml-2 rounded-md text-gray-500 hover:bg-gray-100"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
+        <header className="h-20 bg-white border-b flex items-center justify-between px-6 shrink-0 z-10">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="p-2 -ml-2 rounded-md text-gray-500 hover:bg-gray-100"
+            >
+              <Menu className="w-5 h-5" />
+            </button>
+            <img
+              src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png`}
+              alt="VAKSINA HR"
+              className="h-14 w-auto max-w-[280px] object-contain"
+            />
+          </div>
 
           <div className="flex items-center gap-4">
             <Link href="/notifications">

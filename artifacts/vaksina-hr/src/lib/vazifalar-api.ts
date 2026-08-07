@@ -241,11 +241,11 @@ export function useDeleteTask() {
   });
 }
 
-/** Faylni data URL ga aylantirish (maks ~2.5 MB) */
+/** Faylni data URL ga aylantirish (maks ~10 MB) */
 export function fileToAttachment(file: File): Promise<TaskAttachment> {
   return new Promise((resolve, reject) => {
-    if (file.size > 2.5 * 1024 * 1024) {
-      reject(new Error(`«${file.name}» 2.5 MB dan katta`));
+    if (file.size > 10 * 1024 * 1024) {
+      reject(new Error(`«${file.name}» 10 MB dan katta`));
       return;
     }
     const reader = new FileReader();

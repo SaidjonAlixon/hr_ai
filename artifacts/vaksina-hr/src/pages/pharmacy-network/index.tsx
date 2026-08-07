@@ -147,42 +147,29 @@ function ShiftBadge({
 
 function PipelineStrip({ step }: { step: number }) {
   return (
-    <div
-      className="mt-1.5 flex max-w-[7.5rem] items-center overflow-hidden"
-      title={PIPELINE_STEPS.map((s) => `${s.step === step ? '● ' : ''}${s.label}`).join(' → ')}
-    >
+    <div className="mt-1.5 flex flex-wrap items-center gap-0.5">
       {PIPELINE_STEPS.map((s, i) => {
         const active = step >= s.step;
         const current = step === s.step;
-        const short =
-          s.key === 'normal'
-            ? 'ISH'
-            : s.key === 'pending'
-              ? 'OGO'
-              : s.key === 'confirmed'
-                ? 'ARZ'
-                : s.key === 'assigned'
-                  ? 'REK'
-                  : s.key === 'published'
-                    ? 'ELN'
-                    : 'QID';
         return (
-          <span
-            key={s.key}
-            className={cn(
-              'relative inline-flex h-4 shrink-0 items-center justify-center rounded border text-[7px] font-bold uppercase tracking-wide shadow-sm',
-              i > 0 && '-ml-1',
-              current
-                ? 'z-20 min-w-[1.75rem] border-red-700 bg-red-600 px-1 text-white animate-pulse'
-                : active
-                  ? 'z-10 w-3 border-slate-600 bg-slate-700 text-transparent'
-                  : 'z-0 w-2.5 border-slate-200 bg-slate-100 text-transparent',
+          <React.Fragment key={s.key}>
+            {i > 0 && (
+              <span className={cn('h-px w-2 shrink-0', active ? 'bg-red-400' : 'bg-slate-200')} />
             )}
-            style={{ zIndex: current ? 30 : active ? 10 + i : i }}
-            title={s.label}
-          >
-            {current ? short : ''}
-          </span>
+            <span
+              className={cn(
+                'rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
+                current
+                  ? 'bg-red-600 text-white animate-pulse'
+                  : active
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-slate-100 text-slate-400',
+              )}
+              title={s.label}
+            >
+              {s.label}
+            </span>
+          </React.Fragment>
         );
       })}
     </div>

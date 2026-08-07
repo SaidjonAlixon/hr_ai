@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Link, useLocation } from 'wouter';
-import { Search, Plus, Filter, MapPin, DollarSign, Clock, Users, Share2 } from 'lucide-react';
+import { Search, Plus, Filter, MapPin, DollarSign, Clock, Users, Share2, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { FaTelegram, FaInstagram, FaGlobe, FaFacebook } from 'react-icons/fa';

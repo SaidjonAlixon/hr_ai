@@ -90,7 +90,7 @@ fs.writeFileSync(
   path.join(funcDir, ".vc-config.json"),
   JSON.stringify(
     {
-      runtime: "nodejs20.x",
+      runtime: "nodejs22.x",
       handler: "vercel.mjs",
       launcherType: "Nodejs",
       shouldAddHelpers: true,

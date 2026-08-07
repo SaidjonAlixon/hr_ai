@@ -50,13 +50,17 @@ export default function Dashboard() {
   } as any);
 
   const deadlineVacancies = useMemo(() => {
-    const list = (vacancies ?? []).filter(
-      (v) =>
+    const seen = new Set<number>();
+    const list = (vacancies ?? []).filter((v) => {
+      if (seen.has(v.id)) return false;
+      seen.add(v.id);
+      return (
         (v.status === 'published' || v.status === 'draft') &&
         !!(v as any).deadline &&
-        (user?.role !== 'recruiter' || (v as any).recruiterId === user?.id),
-    );
-    return sortByDeadlineAsc(list as Array<(typeof list)[number] & { deadline?: string | null }>).slice(0, 8);
+        (user?.role !== 'recruiter' || (v as any).recruiterId === user?.id)
+      );
+    });
+    return sortByDeadlineAsc(list as Array<(typeof list)[number] & { deadline?: string | null }>);
   }, [vacancies, user?.id, user?.role]);
 
   const openRequests = useMemo(
@@ -131,42 +135,36 @@ export default function Dashboard() {
         </Link>
       </div>
 
-      {deadlineVacancies.length > 0 && (
-        <Card className="overflow-hidden border-amber-200/80 shadow-sm">
-          <CardHeader className="bg-gradient-to-r from-amber-50 via-orange-50 to-white pb-3">
-            <CardTitle className="flex items-center justify-between gap-3 flex-wrap text-base">
-              <span className="inline-flex items-center gap-2">
+      {(deadlineVacancies.length > 0 || vacanciesLoading) && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-950">
                 <span className="relative flex h-2.5 w-2.5">
                   <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
                   <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
                 </span>
                 E'lon muddati — qancha vaqt qoldi
-              </span>
-              <Badge variant="secondary" className="bg-amber-100 text-amber-900">
-                {deadlineVacancies.length} ta
-              </Badge>
-            </CardTitle>
-            <p className="text-sm text-muted-foreground">
-              Kam qolgan muddat birinchi. Biriktirilgan rekruter uchun yonib turadi.
-            </p>
-          </CardHeader>
-          <CardContent className="pt-3">
-            {vacanciesLoading ? (
-              <Skeleton className="h-24 w-full" />
-            ) : (
-              <div className="grid gap-3 sm:grid-cols-2">
-                {deadlineVacancies.map((v) => (
-                  <Link key={v.id} href={`/vacancies/${v.id}`}>
-                    <div className="flex h-full flex-col gap-2 rounded-xl border border-amber-100 bg-white p-3 transition hover:border-amber-300 hover:shadow-sm">
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="min-w-0">
-                          <p className="truncate font-semibold text-slate-900">{v.title}</p>
-                          {(v as any).recruiterName && (
-                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                              {(v as any).recruiterName}
-                            </p>
-                          )}
-                        </div>
+              </h2>
+              <p className="mt-1 text-xs text-amber-900/70">
+                Barcha ochiq eʼlonlar shu yerda yig‘iladi. Kam qolgan muddat birinchi.
+              </p>
+            </div>
+            <Badge variant="secondary" className="bg-amber-100 text-amber-900">
+              {deadlineVacancies.length} ta
+            </Badge>
+          </div>
+
+          {vacanciesLoading ? (
+            <Skeleton className="h-24 w-full" />
+          ) : (
+            <div className="max-h-[min(55vh,420px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
+              {deadlineVacancies.map((v) => (
+                <Link key={v.id} href={`/vacancies/${v.id}`}>
+                  <div className="flex flex-col gap-2 rounded-lg border border-amber-200/80 bg-white px-3 py-2.5 transition hover:border-amber-400 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-sm font-semibold text-slate-900">{v.title}</p>
                         <Badge
                           variant="secondary"
                           className={
@@ -178,14 +176,26 @@ export default function Dashboard() {
                           {v.status === 'published' ? 'Faol' : 'Yangi'}
                         </Badge>
                       </div>
-                      <DeadlineCountdown deadline={(v as any).deadline} showDate className="w-full" />
+                      {(v as any).recruiterName && (
+                        <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                          {(v as any).recruiterName}
+                        </p>
+                      )}
                     </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    <div className="w-full shrink-0 sm:w-56">
+                      <DeadlineCountdown
+                        deadline={(v as any).deadline}
+                        compact
+                        showDate
+                        className="w-full"
+                      />
+                    </div>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {canWatchRequests && (

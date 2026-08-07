@@ -13,9 +13,9 @@ import {
   Menu,
   GraduationCap,
   Store,
-  ClipboardCheck,
   Kanban,
   ListTodo,
+  ClipboardList,
 } from 'lucide-react';
 import {
   useLogout,
@@ -38,12 +38,12 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (!linkUrl) return null;
   const path = linkUrl.split('?')[0];
 
-  if (path.startsWith('/requests')) return '/requests';
-  if (path.startsWith('/nazorat')) return '/nazorat';
+  if (path.startsWith('/requests') || path.startsWith('/nazorat')) return '/requests';
   if (path.startsWith('/vacancies')) return '/vacancies';
   if (path.startsWith('/employees')) return '/employees';
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
+  if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
   if (path.startsWith('/pipeline')) return '/pipeline';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
   if (path.startsWith('/interviews')) return '/interviews';
@@ -122,15 +122,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const badgeByPath = useMemo(() => {
     const counts: Record<string, number> = {};
 
-    // Bildirishnomalar — Arizalar/Nazorat/Ish o'rinlaridan tashqari
+    // Bildirishnomalar — Arizalar/Ish o'rinlaridan tashqari
     for (const n of unreadNotifications ?? []) {
       const navPath = linkToNavPath(n.linkUrl);
-      if (
-        !navPath ||
-        navPath === '/requests' ||
-        navPath === '/nazorat' ||
-        navPath === '/vacancies'
-      ) {
+      if (!navPath || navPath === '/requests' || navPath === '/vacancies') {
         continue;
       }
       // Aptekalar badge — ochiq ogohlantirish/ariza soni (koordinator/mudir)
@@ -144,15 +139,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       if (openCount > 0) counts['/pharmacy-network'] = openCount;
     }
 
-    // Arizalar: faqat Yangi (submitted)
-    // Nazorat: Yangi + Ko'rib chiqilmoqda
+    // Arizalar (eski Nazorat ham shu yerda): Yangi + Ko'rib chiqilmoqda
     if (isHrLike && requests) {
-      const yangi = requests.filter((r) => r.status === 'submitted').length;
       const pendingHr = requests.filter(
         (r) => r.status === 'submitted' || r.status === 'reviewing',
       ).length;
-      if (yangi > 0) counts['/requests'] = yangi;
-      if (pendingHr > 0) counts['/nazorat'] = pendingHr;
+      if (pendingHr > 0) counts['/requests'] = pendingHr;
     }
 
     // Ish o'rinlari: qabul qilinmagan (draft) — yangi ish o'rinlari
@@ -189,12 +181,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
       { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Nazorat', path: '/nazorat', icon: ClipboardCheck },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
@@ -208,28 +200,29 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Pipeline', path: '/pipeline', icon: Kanban },
     ],
     director: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
       { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Nazorat', path: '/nazorat', icon: ClipboardCheck },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     hr: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
       { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Nazorat', path: '/nazorat', icon: ClipboardCheck },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Pipeline', path: '/pipeline', icon: Kanban },
     ],
     trainer: [
@@ -254,11 +247,23 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     koordinator: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+    ],
+    texnik: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+    ],
+    ombor: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
   };
 

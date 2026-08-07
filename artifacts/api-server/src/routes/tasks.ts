@@ -9,6 +9,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { notifyUser } from "../lib/notify";
+import { syncBranchNeedFromTask } from "../lib/sync-branch-need";
 
 const router: IRouter = Router();
 
@@ -291,6 +292,8 @@ router.post("/tasks/:id/accept", requireAuth, async (req: AuthRequest, res): Pro
     .where(eq(tasksTable.id, id))
     .returning();
 
+  await syncBranchNeedFromTask({ taskId: id, event: "accepted" });
+
   if (existing.createdById !== req.userId) {
     await notifyUser({
       userId: existing.createdById,
@@ -348,6 +351,8 @@ router.post("/tasks/:id/complete", requireAuth, async (req: AuthRequest, res): P
     .where(eq(tasksTable.id, id))
     .returning();
 
+  await syncBranchNeedFromTask({ taskId: id, event: "completed" });
+
   // Belgilagan odamga har doim xabar
   await notifyUser({
     userId: existing.createdById,
@@ -386,6 +391,12 @@ router.post("/tasks/:id/verify", requireAuth, async (req: AuthRequest, res): Pro
       .where(eq(tasksTable.id, id))
       .returning();
 
+    await syncBranchNeedFromTask({
+      taskId: id,
+      event: "verified",
+      verifiedById: req.userId ?? null,
+    });
+
     if (existing.assigneeKind === "user") {
       await notifyUser({
         userId: existing.assigneeId,
@@ -410,6 +421,8 @@ router.post("/tasks/:id/verify", requireAuth, async (req: AuthRequest, res): Pro
       })
       .where(eq(tasksTable.id, id))
       .returning();
+
+    await syncBranchNeedFromTask({ taskId: id, event: "rework" });
 
     if (existing.assigneeKind === "user") {
       await notifyUser({

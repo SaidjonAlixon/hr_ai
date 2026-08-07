@@ -147,29 +147,42 @@ function ShiftBadge({
 
 function PipelineStrip({ step }: { step: number }) {
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-0.5">
+    <div
+      className="mt-1.5 flex max-w-[7.5rem] items-center overflow-hidden"
+      title={PIPELINE_STEPS.map((s) => `${s.step === step ? '● ' : ''}${s.label}`).join(' → ')}
+    >
       {PIPELINE_STEPS.map((s, i) => {
         const active = step >= s.step;
         const current = step === s.step;
+        const short =
+          s.key === 'normal'
+            ? 'ISH'
+            : s.key === 'pending'
+              ? 'OGO'
+              : s.key === 'confirmed'
+                ? 'ARZ'
+                : s.key === 'assigned'
+                  ? 'REK'
+                  : s.key === 'published'
+                    ? 'ELN'
+                    : 'QID';
         return (
-          <React.Fragment key={s.key}>
-            {i > 0 && (
-              <span className={cn('h-px w-2 shrink-0', active ? 'bg-red-400' : 'bg-slate-200')} />
+          <span
+            key={s.key}
+            className={cn(
+              'relative inline-flex h-4 shrink-0 items-center justify-center rounded border text-[7px] font-bold uppercase tracking-wide shadow-sm',
+              i > 0 && '-ml-1',
+              current
+                ? 'z-20 min-w-[1.75rem] border-red-700 bg-red-600 px-1 text-white animate-pulse'
+                : active
+                  ? 'z-10 w-3 border-slate-600 bg-slate-700 text-transparent'
+                  : 'z-0 w-2.5 border-slate-200 bg-slate-100 text-transparent',
             )}
-            <span
-              className={cn(
-                'rounded px-1 py-0.5 text-[8px] font-semibold uppercase tracking-wide',
-                current
-                  ? 'bg-red-600 text-white animate-pulse'
-                  : active
-                    ? 'bg-slate-700 text-white'
-                    : 'bg-slate-100 text-slate-400',
-              )}
-              title={s.label}
-            >
-              {s.label}
-            </span>
-          </React.Fragment>
+            style={{ zIndex: current ? 30 : active ? 10 + i : i }}
+            title={s.label}
+          >
+            {current ? short : ''}
+          </span>
         );
       })}
     </div>
@@ -236,6 +249,7 @@ export default function PharmacyNetworkPage() {
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);
+  const [alertsOpen, setAlertsOpen] = useState(true);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
   const [shiftType, setShiftType] = useState<ShiftType>('one');
   const [shiftLabel, setShiftLabel] = useState('');
@@ -507,10 +521,19 @@ export default function PharmacyNetworkPage() {
         </div>
 
         {canSeeAlerts && (
-          <div className="rounded-xl border border-red-200 bg-red-50/60 p-4">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-600" />
+          <div className="rounded-xl border border-red-200 bg-red-50/60 p-3 sm:p-4">
+            <button
+              type="button"
+              onClick={() => setAlertsOpen((o) => !o)}
+              className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
+            >
+              <div className="flex min-w-0 items-center gap-2">
+                {alertsOpen ? (
+                  <ChevronUp className="h-4 w-4 shrink-0 text-red-600" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 shrink-0 text-red-600" />
+                )}
+                <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
                 <h2 className="text-sm font-semibold text-red-900">
                   {user?.role === 'koordinator'
                     ? 'Ogohlantirishlar va arizalar'
@@ -518,123 +541,140 @@ export default function PharmacyNetworkPage() {
                   {openAlerts.length ? ` (${openAlerts.length})` : ''}
                 </h2>
               </div>
-              {user?.role === 'koordinator' && openAlerts.length > 0 && (
-                <p className="text-[11px] text-red-700/80">
-                  {pendingAlerts.length > 0 && (
-                    <span className="font-medium">Tasdiq: {pendingAlerts.length}</span>
-                  )}
-                  {pendingAlerts.length > 0 && confirmedAlerts.length > 0 && ' · '}
-                  {confirmedAlerts.length > 0 && (
-                    <span>Ariza jarayonida: {confirmedAlerts.length}</span>
-                  )}
-                </p>
-              )}
-            </div>
-            {!openAlerts.length ? (
-              <p className="text-sm text-red-700/70">Hozircha ochiq ogohlantirish yoʻq.</p>
-            ) : (
-              <div className="space-y-2">
-                {user?.role === 'koordinator' && pendingAlerts.length > 0 && (
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">
-                    Tasdiq kutilmoqda
+              <div className="flex items-center gap-2">
+                {user?.role === 'koordinator' && openAlerts.length > 0 && (
+                  <p className="text-[11px] text-red-700/80">
+                    {pendingAlerts.length > 0 && (
+                      <span className="font-medium">Tasdiq: {pendingAlerts.length}</span>
+                    )}
+                    {pendingAlerts.length > 0 && confirmedAlerts.length > 0 && ' · '}
+                    {confirmedAlerts.length > 0 && (
+                      <span>Ariza jarayonida: {confirmedAlerts.length}</span>
+                    )}
                   </p>
                 )}
-                {openAlerts.map((a, idx) => {
-                  const showArizaDivider =
-                    user?.role === 'koordinator' &&
-                    a.workflowStatus === 'confirmed' &&
-                    (idx === 0 || openAlerts[idx - 1]?.workflowStatus === 'pending');
-
-                  return (
-                    <React.Fragment key={a.id}>
-                      {showArizaDivider && (
-                        <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
-                          Ariza jarayonida
-                        </p>
-                      )}
-                  <div
-                    className="rounded-lg border border-red-200 bg-white px-3 py-2.5"
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900">
-                          {a.branchLocation || 'Filial'} — {a.employeeName}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {a.employmentStatusLabel}
-                          {' · '}
-                          {shiftText(a.shiftType, a.shiftLabel)}
-                          {a.managerName ? ` · Mudir: ${a.managerName}` : ''}
-                          {' · '}
-                          {a.pipelineLabel}
-                        </p>
-                        <PipelineStrip step={typeof a.pipelineStep === 'number' && a.pipelineStep > 0 ? a.pipelineStep : 1} />
-                      </div>
-                      <div className="flex shrink-0 flex-col items-stretch gap-2 sm:items-end">
-                        {a.displayDeadline && (
-                          <div className="w-full min-w-[180px] sm:w-52">
-                            <DeadlineCountdown
-                              deadline={a.displayDeadline}
-                              compact
-                              showDate
-                              dateLabel={deadlineLabel(a.deadlineKind)}
-                            />
-                          </div>
-                        )}
-                        {a.workflowStatus === 'pending' && canConfirmAlerts && (
-                          <div className="flex gap-2">
-                            <Button
-                              size="sm"
-                              className="h-8 gap-1"
-                              disabled={confirming}
-                              onClick={() => handleConfirm(a.id)}
-                            >
-                              <Check className="h-3.5 w-3.5" />
-                              Tasdiqlash
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 gap-1"
-                              disabled={cancelling}
-                              onClick={() => handleCancelAlert(a.id)}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Bekor
-                            </Button>
-                          </div>
-                        )}
-                        {a.workflowStatus === 'pending' && !canConfirmAlerts && (
-                          <span className="text-[11px] font-medium text-amber-700">Koordinator tasdiǧi kutilmoqda</span>
-                        )}
-                        {a.workflowStatus === 'confirmed' && a.requestId && (
-                          <Link
-                            href={`/requests/${a.requestId}`}
-                            className="inline-flex h-8 items-center rounded-md border border-primary/30 bg-primary/5 px-2.5 text-[11px] font-semibold text-primary hover:bg-primary/10"
-                          >
-                            Ariza #{a.requestId}
-                          </Link>
-                        )}
-                        {a.workflowStatus === 'confirmed' && !a.requestId && (
-                          <span className="text-[11px] font-medium text-slate-500">Ariza yaratilgan</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                    </React.Fragment>
-                  );
-                })}
+                <span className="text-[11px] font-medium text-red-700/70">
+                  {alertsOpen ? 'Yig‘ish' : 'Ochish'}
+                </span>
               </div>
-            )}
-            {user?.role === 'mudir' && pendingAlerts.length > 0 && (
-              <p className="mt-2 text-[11px] text-red-700/80">
-                Tasdiqlash faqat koordinator tomonidan bajariladi.
-              </p>
-            )}
-            {user?.role === 'koordinator' && (
-              <p className="mt-2 text-[11px] text-red-700/80">
-                «Tasdiqlash» → ariza ochiladi; yopilmaguncha shu yerda qoladi.
-              </p>
+            </button>
+
+            {alertsOpen && (
+              <div className="mt-3">
+                {!openAlerts.length ? (
+                  <p className="text-sm text-red-700/70">Hozircha ochiq ogohlantirish yoʻq.</p>
+                ) : (
+                  <div className="max-h-[min(50vh,380px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
+                    {user?.role === 'koordinator' && pendingAlerts.length > 0 && (
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                        Tasdiq kutilmoqda
+                      </p>
+                    )}
+                    {openAlerts.map((a, idx) => {
+                      const showArizaDivider =
+                        user?.role === 'koordinator' &&
+                        a.workflowStatus === 'confirmed' &&
+                        (idx === 0 || openAlerts[idx - 1]?.workflowStatus === 'pending');
+
+                      return (
+                        <React.Fragment key={a.id}>
+                          {showArizaDivider && (
+                            <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                              Ariza jarayonida
+                            </p>
+                          )}
+                          <div className="rounded-lg border border-red-200 bg-white px-3 py-2">
+                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                              <div className="min-w-0 flex-1">
+                                <p className="truncate text-sm font-semibold text-slate-900">
+                                  {a.branchLocation || 'Filial'} — {a.employeeName}
+                                </p>
+                                <p className="truncate text-xs text-slate-500">
+                                  {a.employmentStatusLabel}
+                                  {' · '}
+                                  {shiftText(a.shiftType, a.shiftLabel)}
+                                  {a.managerName ? ` · Mudir: ${a.managerName}` : ''}
+                                  {' · '}
+                                  {a.pipelineLabel}
+                                </p>
+                                <PipelineStrip
+                                  step={
+                                    typeof a.pipelineStep === 'number' && a.pipelineStep > 0
+                                      ? a.pipelineStep
+                                      : 1
+                                  }
+                                />
+                              </div>
+                              <div className="flex shrink-0 flex-col items-stretch gap-1.5 sm:w-52 sm:items-end">
+                                {a.displayDeadline && (
+                                  <DeadlineCountdown
+                                    deadline={a.displayDeadline}
+                                    compact
+                                    showDate
+                                    dateLabel={deadlineLabel(a.deadlineKind)}
+                                    className="w-full"
+                                  />
+                                )}
+                                {a.workflowStatus === 'pending' && canConfirmAlerts && (
+                                  <div className="flex gap-2">
+                                    <Button
+                                      size="sm"
+                                      className="h-8 gap-1"
+                                      disabled={confirming}
+                                      onClick={() => handleConfirm(a.id)}
+                                    >
+                                      <Check className="h-3.5 w-3.5" />
+                                      Tasdiqlash
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-8 gap-1"
+                                      disabled={cancelling}
+                                      onClick={() => handleCancelAlert(a.id)}
+                                    >
+                                      <X className="h-3.5 w-3.5" />
+                                      Bekor
+                                    </Button>
+                                  </div>
+                                )}
+                                {a.workflowStatus === 'pending' && !canConfirmAlerts && (
+                                  <span className="text-[11px] font-medium text-amber-700">
+                                    Koordinator tasdiǧi kutilmoqda
+                                  </span>
+                                )}
+                                {a.workflowStatus === 'confirmed' && a.requestId && (
+                                  <Link
+                                    href={`/requests/${a.requestId}`}
+                                    className="inline-flex h-8 items-center justify-center rounded-md border border-primary/30 bg-primary/5 px-2.5 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                                  >
+                                    Ariza #{a.requestId}
+                                  </Link>
+                                )}
+                                {a.workflowStatus === 'confirmed' && !a.requestId && (
+                                  <span className="text-[11px] font-medium text-slate-500">
+                                    Ariza yaratilgan
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+                )}
+                {user?.role === 'mudir' && pendingAlerts.length > 0 && (
+                  <p className="mt-2 text-[11px] text-red-700/80">
+                    Tasdiqlash faqat koordinator tomonidan bajariladi.
+                  </p>
+                )}
+                {user?.role === 'koordinator' && openAlerts.length > 0 && (
+                  <p className="mt-2 text-[11px] text-red-700/80">
+                    «Tasdiqlash» → ariza ochiladi; yopilmaguncha shu yerda qoladi.
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}

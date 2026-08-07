@@ -5,7 +5,7 @@ import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Link, useLocation } from 'wouter';
-import { Search, Plus, Filter, Eye, AlertCircle, Trash2 } from 'lucide-react';
+import { Search, Plus, Filter, Eye, AlertCircle, Trash2, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../contexts/AuthContext';
@@ -31,6 +31,7 @@ export default function RequestsList() {
   const { toast } = useToast();
   const isViewerOnly = user?.role === 'director';
   const canDelete = user?.role === 'hr' || user?.role === 'director';
+  const isHrLike = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'director';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('open');
 
@@ -106,8 +107,8 @@ export default function RequestsList() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Arizalar</h1>
           <p className="text-muted-foreground mt-1">
-            {user?.role === 'hr' || user?.role === 'admin' || user?.role === 'director'
-              ? "Barcha rollar va bo'limlar bergan arizalar — to'liq ko'rinish"
+            {isHrLike
+              ? "Arizalar va nazorat — status, muddat va e'lon vaqtlari bilan"
               : "Kadrlar bo'yicha ehtiyojlar ro'yxati"}
           </p>
         </div>
@@ -187,13 +188,20 @@ export default function RequestsList() {
                   <th className="px-6 py-4 font-medium">Prioritet</th>
                   <th className="px-6 py-4 font-medium">Status</th>
                   <th className="px-6 py-4 font-medium">Mas'ul</th>
+                  {isHrLike && (
+                    <>
+                      <th className="px-4 py-4 font-medium">HR yuborgan</th>
+                      <th className="px-4 py-4 font-medium">Rekruter qabul</th>
+                      <th className="px-4 py-4 font-medium">E'lon tasdiqlangan</th>
+                    </>
+                  )}
                   <th className="px-6 py-4 font-medium text-right">Amallar</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-muted-foreground">
+                    <td colSpan={isHrLike ? 11 : 8} className="px-6 py-8 text-center text-muted-foreground">
                       Yuklanmoqda...
                     </td>
                   </tr>
@@ -250,6 +258,25 @@ export default function RequestsList() {
                           <span className="text-xs text-muted-foreground italic">Tayinlanmagan</span>
                         )}
                       </td>
+                      {isHrLike && (
+                        <>
+                          <td className="px-4 py-4 text-xs whitespace-nowrap">
+                            {request.vacancyAssignedAt || request.assignedAt
+                              ? format(new Date(request.vacancyAssignedAt || request.assignedAt!), 'dd.MM.yyyy HH:mm')
+                              : <span className="text-muted-foreground italic">—</span>}
+                          </td>
+                          <td className="px-4 py-4 text-xs whitespace-nowrap">
+                            {request.vacancyAcceptedAt
+                              ? format(new Date(request.vacancyAcceptedAt), 'dd.MM.yyyy HH:mm')
+                              : <span className="text-muted-foreground italic">Kutilmoqda</span>}
+                          </td>
+                          <td className="px-4 py-4 text-xs whitespace-nowrap">
+                            {request.vacancyPublishedAt
+                              ? format(new Date(request.vacancyPublishedAt), 'dd.MM.yyyy HH:mm')
+                              : <span className="text-muted-foreground italic">—</span>}
+                          </td>
+                        </>
+                      )}
                       <td className="px-6 py-4 text-right" onClick={(e) => e.stopPropagation()}>
                         <div className="inline-flex items-center justify-end gap-1">
                           {canDelete && (
@@ -284,6 +311,13 @@ export default function RequestsList() {
                               </AlertDialogContent>
                             </AlertDialog>
                           )}
+                          {isHrLike && request.vacancyId && (
+                            <Link href={`/vacancies/${request.vacancyId}`}>
+                              <Button variant="ghost" size="sm" className="h-8 gap-1">
+                                <Briefcase className="w-4 h-4" />
+                              </Button>
+                            </Link>
+                          )}
                           <Button variant="ghost" size="sm" className="h-8 gap-1 pointer-events-none">
                             <Eye className="w-4 h-4 text-primary" />
                             <span className="hidden sm:inline">Ko'rish</span>
@@ -294,7 +328,7 @@ export default function RequestsList() {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={8} className="px-6 py-8 text-center text-muted-foreground">
+                    <td colSpan={isHrLike ? 11 : 8} className="px-6 py-8 text-center text-muted-foreground">
                       Hech qanday Ariza topilmadi.
                     </td>
                   </tr>

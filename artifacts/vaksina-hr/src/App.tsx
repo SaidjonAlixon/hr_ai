@@ -14,7 +14,6 @@ import RequestDetails from './pages/requests/show';
 import VacanciesList from './pages/vacancies/index';
 import NewVacancy from './pages/vacancies/new';
 import VacancyDetails from './pages/vacancies/show';
-import NazoratPage from './pages/nazorat/index';
 import CandidatesList from './pages/candidates/index';
 import NewCandidate from './pages/candidates/new';
 import CandidateProfile from './pages/candidates/show';
@@ -30,6 +29,7 @@ import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
+import EhtiyojPage from './pages/ehtiyoj/index';
 import AdminUsersPage from './pages/admin/users';
 import NotificationsPage from './pages/notifications/index';
 import NotFound from './pages/not-found';
@@ -75,8 +75,12 @@ function Router() {
       <ProtectedRoute path="/requests/new" component={NewRequest} />
       <ProtectedRoute path="/requests/:id" component={RequestDetails} />
 
-      <ProtectedRoute path="/nazorat" component={NazoratPage} />
-      
+      <Route path="/nazorat">
+        {() => {
+          window.location.replace('/requests');
+          return null;
+        }}
+      </Route>
       <ProtectedRoute path="/vacancies" component={VacanciesList} />
       <ProtectedRoute path="/vacancies/new" component={NewVacancy} />
       <ProtectedRoute path="/vacancies/:id" component={VacancyDetails} />
@@ -96,6 +100,7 @@ function Router() {
       <ProtectedRoute path="/interviews" component={InterviewsList} />
       <ProtectedRoute path="/pipeline" component={PipelineBoardPage} />
       <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
+      <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       
       <ProtectedRoute path="/employees" component={EmployeesPlaceholder} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />

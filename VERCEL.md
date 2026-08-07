@@ -29,9 +29,16 @@ pnpm install
 pnpm run build:vercel
 ```
 
-Frontend output: `public` (repo root)
-  
-API bundle: `artifacts/api-server/dist/vercel.mjs` (served via `api/index.mjs`)
+Frontend output: `artifacts/vaksina-hr/dist/public` (copied to `./public` for Vercel)
+
+## Vercel dashboard (required)
+| Setting | Value |
+|---------|--------|
+| Root Directory | **empty** (not `artifacts/api-server`) |
+| Build Command | `pnpm -w run build:vercel` |
+| Install Command | `pnpm -w install --no-frozen-lockfile --prod=false` |
+| Output Directory | `public` |
+
 
 ## 4. How it works
 - Static SPA from Vite

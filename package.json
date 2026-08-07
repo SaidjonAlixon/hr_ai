@@ -9,7 +9,7 @@
   "scripts": {
     "preinstall": "node -e \"try{require('fs').unlinkSync('package-lock.json')}catch(e){} try{require('fs').unlinkSync('yarn.lock')}catch(e){} if(!process.env.npm_config_user_agent?.includes('pnpm/')){console.error('Use pnpm instead');process.exit(1)}\"",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
-    "build:vercel": "node ./artifacts/api-server/build.mjs && pnpm exec vite build --config ./artifacts/vaksina-hr/vite.config.ts",
+    "build:vercel": "node ./artifacts/api-server/build.mjs && pnpm exec vite build --config ./artifacts/vaksina-hr/vite.config.ts && node ./scripts/src/copy-vercel-public.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck",
     "db:push": "pnpm --filter @workspace/db run push"

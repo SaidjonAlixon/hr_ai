@@ -75,7 +75,8 @@ onlyBuiltDependencies:
   - unrs-resolver
 
 overrides:
-  # Keep non-Windows optional platform packages excluded; allow win32 natives for local Windows.
+  # Local Windows installs: drop unused platform natives.
+  # Keep linux-x64 + win32-x64 so Vercel (Linux) and local Windows builds work.
   "esbuild>@esbuild/darwin-arm64": "-"
   "esbuild>@esbuild/darwin-x64": "-"
   "esbuild>@esbuild/freebsd-arm64": "-"

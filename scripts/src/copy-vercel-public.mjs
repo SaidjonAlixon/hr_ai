@@ -3,9 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 /**
- * Write Vercel Build Output API v3 layout.
- * Skips the flaky dashboard `outputDirectory` check that fails even when
- * `public/` / `www/` exist on disk after a successful Vite build.
+ * 1) Always emit Vercel Build Output API v3 → `.vercel/output`
+ * 2) Also mirror static files to `public/` for dashboard Output Directory
+ *    overrides that still demand a folder named "public".
  */
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptDir, "../..");
@@ -73,15 +73,14 @@ function copyPkgWithDeps(pkgName, destNodeModules, seen = new Set()) {
   }
 }
 
+// --- Build Output API (preferred) ---
 const outputRoot = path.join(workspaceRoot, ".vercel/output");
 rimraf(outputRoot);
 
-// Static SPA
 const staticDest = path.join(outputRoot, "static");
 copyDir(viteOut, staticDest);
 console.log("Build Output static:", staticDest, "←", viteOut);
 
-// Express API as /api serverless function
 const funcDir = path.join(outputRoot, "functions", "api.func");
 fs.mkdirSync(funcDir, { recursive: true });
 fs.cpSync(apiDist, funcDir, { recursive: true });
@@ -129,8 +128,27 @@ if (!fs.existsSync(path.join(staticDest, "index.html"))) {
   console.error("Build Output missing static/index.html");
   process.exit(1);
 }
-
 console.log("OK: .vercel/output ready at", outputRoot);
+
+// --- public/ mirror for Project Settings Output Directory = "public" ---
+const publicTargets = [
+  ...new Set([
+    path.join(workspaceRoot, "public"),
+    path.join(process.cwd(), "public"),
+  ]),
+];
+for (const dest of publicTargets) {
+  if (path.resolve(dest) !== path.resolve(viteOut)) {
+    copyDir(viteOut, dest);
+  }
+  const index = path.join(dest, "index.html");
+  if (!fs.existsSync(index)) {
+    console.error("public/index.html missing at", index);
+    process.exit(1);
+  }
+  console.log("OK public:", dest, "→", fs.readdirSync(dest).join(", "));
+}
+
 console.log(
-  "Vercel prepare done. Do NOT set Output Directory override (use Build Output API).",
+  "Vercel prepare done. Prefer Build Output API; public/ also present for overrides.",
 );

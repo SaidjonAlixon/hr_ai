@@ -48,15 +48,16 @@ Thumbs.db
 .cache/
 .local/
 
-# Vercel local project link (allow CI Build Output API folder)
-.vercel/*
-!.vercel/output/
-!.vercel/output/**
+# Vercel local link only — do NOT ignore `.vercel/output` (Build Output API).
+# Ignoring `.vercel/*` made Vercel skip Build Output API and demand `public`.
+.vercel/project.json
+.vercel/README.txt
 
 # Env / secrets
 .env
 .env.*
 !.env.example
 
-# Vite intermediate output (final deploy layout is .vercel/output via Build Output API)
+# Vite intermediate (copied into .vercel/output / public by build:vercel)
+# Note: bare `dist` above already covers most packages; keep explicit path for clarity.
 artifacts/vaksina-hr/dist/

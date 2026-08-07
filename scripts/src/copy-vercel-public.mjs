@@ -112,12 +112,7 @@ fs.writeFileSync(
         { handle: "filesystem" },
         { src: "/(.*)", dest: "/index.html" },
       ],
-      crons: [
-        {
-          path: "/api/jobs/vacancy-reminders",
-          schedule: "*/10 * * * *",
-        },
-      ],
+      // crons live only in vercel.json — duplicating here fails the deploy
     },
     null,
     2,

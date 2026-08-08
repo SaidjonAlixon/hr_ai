@@ -430,18 +430,18 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <header className="h-20 bg-white border-b flex items-center justify-between px-6 shrink-0 z-10">
-          <div className="flex items-center gap-3">
+        <header className="h-14 bg-white border-b flex items-center justify-between px-3 shrink-0 z-10 sm:h-20 sm:px-6">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button
               onClick={() => setSidebarOpen(!sidebarOpen)}
-              className="p-2 -ml-2 rounded-md text-gray-500 hover:bg-gray-100"
+              className="p-2 -ml-1 rounded-md text-gray-500 hover:bg-gray-100 sm:-ml-2"
             >
               <Menu className="w-5 h-5" />
             </button>
             <img
-              src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png`}
+              src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png?v=8`}
               alt="VAKSINA HR"
-              className="h-14 w-auto max-w-[280px] object-contain"
+              className="h-9 w-auto max-w-[140px] object-contain sm:h-14 sm:max-w-[280px]"
             />
           </div>
 
@@ -464,7 +464,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             'flex-1 min-h-0',
             location === '/vazifalar' || location === '/pipeline'
               ? 'overflow-hidden p-0'
-              : 'overflow-y-auto p-6',
+              : 'overflow-y-auto p-3 sm:p-6',
           )}
         >
           <div

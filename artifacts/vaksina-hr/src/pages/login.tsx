@@ -51,7 +51,7 @@ export default function Login() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img
-            src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png`}
+            src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png?v=8`}
             alt="VAKSINA HR"
             className="mx-auto h-24 w-auto max-w-full object-contain"
           />

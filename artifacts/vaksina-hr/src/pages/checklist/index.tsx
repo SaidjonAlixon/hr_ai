@@ -249,61 +249,59 @@ export default function ChecklistPage() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6 pb-10">
+    <div className="mx-auto max-w-5xl space-y-4 pb-28 sm:space-y-6 sm:pb-10">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-6 py-7 text-white shadow-lg">
+      <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-white shadow-lg sm:px-6 sm:py-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-20 left-10 h-48 w-48 rounded-full bg-amber-400/10 blur-2xl" />
-        <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-cyan-100">
-              <ClipboardCheck className="h-3.5 w-3.5" />
-              Koordinator · Filial nazorati
+        <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+          <div className="min-w-0">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100 sm:px-3 sm:text-xs">
+              <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">Koordinator · Filial nazorati</span>
             </div>
-            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+            <h1 className="text-xl font-bold tracking-tight sm:text-3xl">
               Audit cheklist
             </h1>
-            <p className="mt-2 max-w-xl text-sm leading-relaxed text-slate-300">
+            <p className="mt-1.5 text-xs leading-relaxed text-slate-300 sm:mt-2 sm:max-w-xl sm:text-sm">
               Har bir filialga borib belgilangan talablarni tekshiring:{" "}
               <span className="text-emerald-300">Ha</span> yoki{" "}
               <span className="text-rose-300">Yo‘q</span>. Natija foizda
               hisoblanadi va saqlanadi.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button
-              variant="secondary"
-              className="bg-white/10 text-white hover:bg-white/20"
-              onClick={() => setHistoryOpen(true)}
-            >
-              <History className="mr-1.5 h-4 w-4" />
-              Tarix ({history.length})
-            </Button>
-          </div>
+          <Button
+            variant="secondary"
+            className="w-full shrink-0 bg-white/10 text-white hover:bg-white/20 sm:w-auto"
+            onClick={() => setHistoryOpen(true)}
+          >
+            <History className="mr-1.5 h-4 w-4" />
+            Tarix ({history.length})
+          </Button>
         </div>
       </div>
 
-      {/* Live score strip */}
-      <div className="grid gap-3 sm:grid-cols-4">
+      {/* Live score strip — 2x2 on mobile */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         <ScoreCard
-          icon={<TrendingUp className="h-4 w-4" />}
+          icon={<TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
           label="Umumiy foiz"
           value={`${live.scorePercent}%`}
           valueClass={scoreTone(live.scorePercent)}
         />
         <ScoreCard
-          icon={<Check className="h-4 w-4 text-emerald-600" />}
+          icon={<Check className="h-3.5 w-3.5 text-emerald-600 sm:h-4 sm:w-4" />}
           label="Ha"
           value={String(live.yes)}
         />
         <ScoreCard
-          icon={<X className="h-4 w-4 text-rose-600" />}
+          icon={<X className="h-3.5 w-3.5 text-rose-600 sm:h-4 sm:w-4" />}
           label="Yo‘q"
           value={String(live.no)}
         />
         <ScoreCard
-          icon={<ClipboardCheck className="h-4 w-4" />}
-          label="Javob berilgan"
+          icon={<ClipboardCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
+          label="Javob"
           value={`${live.answered}/${live.total}`}
         />
       </div>
@@ -319,57 +317,30 @@ export default function ChecklistPage() {
         </div>
 
         {/* Meta form */}
-        <div className="border-b px-5 py-5 sm:px-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
+        <div className="border-b px-3 py-4 sm:px-6 sm:py-5">
+          <div className="mb-4 flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white sm:h-9 sm:w-9">
                 <Store className="h-4 w-4" />
               </div>
-              <div>
-                <h2 className="text-base font-semibold">Tashrif ma’lumotlari</h2>
-                <p className="text-xs text-slate-500">
-                  Sizga biriktirilgan filiallar: {branches.length} ta — tanlang, mudir avtomatik chiqadi
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold sm:text-base">Tashrif ma’lumotlari</h2>
+                <p className="text-[11px] text-slate-500 sm:text-xs">
+                  Filial tanlang — mudir avtomatik
                 </p>
               </div>
             </div>
-            <Button type="button" variant="outline" size="sm" onClick={resetForm}>
-              <RotateCcw className="mr-1.5 h-3.5 w-3.5" />
-              Tozalash
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={resetForm}
+            >
+              <RotateCcw className="h-3.5 w-3.5 sm:mr-1.5" />
+              <span className="hidden sm:inline">Tozalash</span>
             </Button>
           </div>
-
-          {!branchesLoading && branches.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                Filiallaringiz ({branches.length})
-              </p>
-              <div className="grid max-h-52 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
-                {branches.map((b) => {
-                  const selected = managerId === String(b.id);
-                  return (
-                    <button
-                      key={b.id}
-                      type="button"
-                      onClick={() => setManagerId(String(b.id))}
-                      className={cn(
-                        "rounded-xl border px-3 py-2.5 text-left transition-all",
-                        selected
-                          ? "border-cyan-600 bg-cyan-50 ring-1 ring-cyan-500/40"
-                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
-                      )}
-                    >
-                      <p className="truncate text-sm font-semibold text-slate-900">
-                        {b.branchLocation}
-                      </p>
-                      <p className="mt-0.5 truncate text-xs text-slate-500">
-                        Mudir: {b.managerName}
-                      </p>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {!branchesLoading && branches.length === 0 && (
             <p className="mb-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800">
@@ -378,7 +349,7 @@ export default function ChecklistPage() {
             </p>
           )}
 
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
             <div className="space-y-1.5">
               <Label className="text-[11px] uppercase tracking-wide text-slate-500">
                 Filialni tanlang
@@ -388,7 +359,7 @@ export default function ChecklistPage() {
                 onValueChange={setManagerId}
                 disabled={branchesLoading || branches.length === 0}
               >
-                <SelectTrigger>
+                <SelectTrigger className="h-11">
                   <SelectValue placeholder="— Filialni tanlang —" />
                 </SelectTrigger>
                 <SelectContent>
@@ -405,9 +376,9 @@ export default function ChecklistPage() {
               <Label className="text-[11px] uppercase tracking-wide text-slate-500">
                 Filial mudiri
               </Label>
-              <div className="flex h-9 items-center gap-2 rounded-md border bg-slate-50 px-3 text-sm">
-                <User className="h-4 w-4 text-slate-400" />
-                <span className={cn(!selectedBranch && "text-slate-400")}>
+              <div className="flex h-11 items-center gap-2 rounded-md border bg-slate-50 px-3 text-sm">
+                <User className="h-4 w-4 shrink-0 text-slate-400" />
+                <span className={cn("truncate", !selectedBranch && "text-slate-400")}>
                   {selectedBranch?.managerName || "Avtomatik to‘ldiriladi…"}
                 </span>
               </div>
@@ -421,7 +392,7 @@ export default function ChecklistPage() {
                 <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                 <Input
                   type="date"
-                  className="pl-9"
+                  className="h-11 pl-9"
                   value={visitDate}
                   onChange={(e) => setVisitDate(e.target.value)}
                 />
@@ -433,7 +404,7 @@ export default function ChecklistPage() {
                 Tashrif nomi
               </Label>
               <Select value={visitName} onValueChange={setVisitName}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -450,8 +421,8 @@ export default function ChecklistPage() {
               <Label className="text-[11px] uppercase tracking-wide text-slate-500">
                 Koordinator F.I.Sh
               </Label>
-              <div className="flex h-9 items-center rounded-md border bg-slate-50 px-3 text-sm font-medium">
-                {user?.fullName || "—"}
+              <div className="flex h-11 items-center rounded-md border bg-slate-50 px-3 text-sm font-medium">
+                <span className="truncate">{user?.fullName || "—"}</span>
               </div>
             </div>
 
@@ -460,7 +431,7 @@ export default function ChecklistPage() {
                 Oy
               </Label>
               <Select value={monthLabel} onValueChange={setMonthLabel}>
-                <SelectTrigger>
+                <SelectTrigger className="h-11">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -482,30 +453,42 @@ export default function ChecklistPage() {
                 value={generalNote}
                 onChange={(e) => setGeneralNote(e.target.value)}
                 placeholder="Masalan: Konditsionerdan suv oqyapti — ustalarga aytilgan"
+                className="min-h-[80px] text-base sm:text-sm"
               />
             </div>
           </div>
         </div>
 
         {/* Checklist */}
-        <div className="px-5 py-5 sm:px-6">
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="px-3 py-4 sm:px-6 sm:py-5">
+          <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2">
-              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-cyan-600 text-white">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-cyan-600 text-white sm:h-9 sm:w-9">
                 <ClipboardCheck className="h-4 w-4" />
               </div>
-              <div>
-                <h2 className="text-base font-semibold">Audit cheklist</h2>
-                <p className="text-xs text-slate-500">
-                  Har bir bandni alohida tanlang — boshida hech narsa tanlanmagan
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold sm:text-base">Audit cheklist</h2>
+                <p className="text-[11px] text-slate-500 sm:text-xs">
+                  Har bir bandni tanlang — boshida tanlanmagan
                 </p>
               </div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={clearAnswers}>
-                Javoblarni tozalash
+            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-10"
+                onClick={clearAnswers}
+              >
+                Tozalash
               </Button>
-              <Button type="button" size="sm" onClick={markAllYes}>
+              <Button
+                type="button"
+                size="sm"
+                className="h-10"
+                onClick={markAllYes}
+              >
                 <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                 Barchasi «Ha»
               </Button>
@@ -515,7 +498,7 @@ export default function ChecklistPage() {
           <Accordion
             type="multiple"
             defaultValue={categories.map((c) => c.id)}
-            className="space-y-3"
+            className="space-y-2.5 sm:space-y-3"
           >
             {categories.map((cat) => {
               const catScore = scoreFromCategories([cat]);
@@ -525,70 +508,68 @@ export default function ChecklistPage() {
                   value={cat.id}
                   className="overflow-hidden rounded-xl border bg-slate-50/50 px-0"
                 >
-                  <AccordionTrigger className="px-4 py-3 hover:no-underline">
-                    <div className="flex w-full items-center gap-3 pr-2 text-left">
+                  <AccordionTrigger className="px-3 py-3 hover:no-underline sm:px-4">
+                    <div className="flex w-full items-center gap-2 pr-1 text-left sm:gap-3 sm:pr-2">
                       <FolderOpen className="h-4 w-4 shrink-0 text-slate-500" />
-                      <span className="flex-1 font-semibold text-slate-800">
+                      <span className="min-w-0 flex-1 text-sm font-semibold leading-snug text-slate-800 sm:text-base">
                         {cat.title}
                       </span>
                       <Badge
                         variant="secondary"
                         className={cn(
-                          "font-semibold",
+                          "shrink-0 font-semibold",
                           catScore.answered === 0
                             ? "bg-slate-200 text-slate-600"
                             : scoreTone(catScore.scorePercent),
                         )}
                       >
                         {catScore.answered === 0
-                          ? `${cat.items.length} ta`
+                          ? `${cat.items.length}`
                           : `${catScore.scorePercent}%`}
                       </Badge>
                     </div>
                   </AccordionTrigger>
-                  <AccordionContent className="px-3 pb-3 pt-0">
+                  <AccordionContent className="px-2 pb-3 pt-0 sm:px-3">
                     <ul className="space-y-2">
                       {cat.items.map((item) => (
                         <li
                           key={item.id}
                           className="rounded-xl border bg-white p-3 shadow-sm"
                         >
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                            <p className="text-sm font-medium text-slate-800">
-                              {item.label}
-                            </p>
-                            <div className="flex shrink-0 gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setAnswer(cat.id, item.id, "yes")}
-                                className={cn(
-                                  "inline-flex min-w-[88px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition-all",
-                                  item.answer === "yes"
-                                    ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
-                                    : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:bg-emerald-50",
-                                )}
-                              >
-                                <Check className="h-4 w-4" />
-                                Ha
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setAnswer(cat.id, item.id, "no")}
-                                className={cn(
-                                  "inline-flex min-w-[120px] items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-sm font-semibold transition-all",
-                                  item.answer === "no"
-                                    ? "border-rose-600 bg-rose-600 text-white shadow-sm"
-                                    : "border-slate-200 bg-white text-slate-600 hover:border-rose-300 hover:bg-rose-50",
-                                )}
-                              >
-                                <X className="h-4 w-4" />
-                                Yo‘q
-                              </button>
-                            </div>
+                          <p className="text-sm font-medium leading-snug text-slate-800">
+                            {item.label}
+                          </p>
+                          <div className="mt-3 grid grid-cols-2 gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setAnswer(cat.id, item.id, "yes")}
+                              className={cn(
+                                "inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition-all active:scale-[0.98]",
+                                item.answer === "yes"
+                                  ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-emerald-300 hover:bg-emerald-50",
+                              )}
+                            >
+                              <Check className="h-4 w-4" />
+                              Ha
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setAnswer(cat.id, item.id, "no")}
+                              className={cn(
+                                "inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition-all active:scale-[0.98]",
+                                item.answer === "no"
+                                  ? "border-rose-600 bg-rose-600 text-white shadow-sm"
+                                  : "border-slate-200 bg-white text-slate-600 hover:border-rose-300 hover:bg-rose-50",
+                              )}
+                            >
+                              <X className="h-4 w-4" />
+                              Yo‘q
+                            </button>
                           </div>
                           {item.answer === "no" && (
                             <Input
-                              className="mt-2"
+                              className="mt-2 h-11 text-base sm:text-sm"
                               placeholder="Kamchilik izohi (ixtiyoriy)…"
                               value={item.note || ""}
                               onChange={(e) =>
@@ -611,7 +592,8 @@ export default function ChecklistPage() {
           </Accordion>
         </div>
 
-        <div className="flex flex-col gap-3 border-t bg-slate-50/80 px-5 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        {/* Desktop footer */}
+        <div className="hidden border-t bg-slate-50/80 px-6 py-4 sm:flex sm:items-center sm:justify-between">
           <div className="text-sm text-slate-600">
             Joriy natija:{" "}
             <span className={cn("text-lg font-bold", scoreTone(live.scorePercent))}>
@@ -633,16 +615,40 @@ export default function ChecklistPage() {
         </div>
       </div>
 
+      {/* Mobile sticky save bar */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:hidden">
+        <div className="mb-2 flex items-center justify-between text-xs text-slate-500">
+          <span>
+            Natija:{" "}
+            <span className={cn("text-base font-bold", scoreTone(live.scorePercent))}>
+              {live.scorePercent}%
+            </span>
+          </span>
+          <span>
+            {live.yes} Ha · {live.no} Yo‘q · {live.total - live.answered} qoldi
+          </span>
+        </div>
+        <Button
+          size="lg"
+          className="h-12 w-full text-base"
+          onClick={() => void handleSave()}
+          disabled={createAudit.isPending || !canWrite}
+        >
+          <Save className="mr-1.5 h-4 w-4" />
+          {createAudit.isPending ? "Saqlanmoqda…" : "Saqlash"}
+        </Button>
+      </div>
+
       {/* History dialog */}
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
-        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] w-[calc(100%-1.5rem)] max-w-2xl overflow-y-auto rounded-2xl p-4 sm:p-6">
           <DialogHeader>
             <DialogTitle>Saqlangan auditlar</DialogTitle>
           </DialogHeader>
           {historyLoading ? (
             <p className="text-sm text-slate-500">Yuklanmoqda…</p>
           ) : history.length === 0 ? (
-            <p className="rounded-xl border border-dashed p-8 text-center text-sm text-slate-500">
+            <p className="rounded-xl border border-dashed p-6 text-center text-sm text-slate-500 sm:p-8">
               Hali saqlangan cheklist yo‘q
             </p>
           ) : (
@@ -652,8 +658,8 @@ export default function ChecklistPage() {
                   key={a.id}
                   className="flex flex-col gap-2 rounded-xl border bg-white p-3 sm:flex-row sm:items-center sm:justify-between"
                 >
-                  <div>
-                    <p className="font-semibold text-slate-800">
+                  <div className="min-w-0">
+                    <p className="truncate font-semibold text-slate-800">
                       {a.branchLocation || "Filial"}
                     </p>
                     <p className="text-xs text-slate-500">
@@ -708,9 +714,9 @@ export default function ChecklistPage() {
 
       {/* View saved */}
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] w-[calc(100%-1.5rem)] max-w-lg overflow-y-auto rounded-2xl p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>
+            <DialogTitle className="pr-6 text-base leading-snug sm:text-lg">
               {viewing?.branchLocation} — {viewing?.scorePercent}%
             </DialogTitle>
           </DialogHeader>
@@ -733,15 +739,15 @@ export default function ChecklistPage() {
                         key={it.id}
                         className="flex items-start justify-between gap-2 rounded-md border px-2 py-1.5"
                       >
-                        <span>{it.label}</span>
+                        <span className="min-w-0 leading-snug">{it.label}</span>
                         <Badge
                           variant="secondary"
                           className={
                             it.answer === "yes"
-                              ? "bg-emerald-100 text-emerald-700"
+                              ? "shrink-0 bg-emerald-100 text-emerald-700"
                               : it.answer === "no"
-                                ? "bg-rose-100 text-rose-700"
-                                : ""
+                                ? "shrink-0 bg-rose-100 text-rose-700"
+                                : "shrink-0"
                           }
                         >
                           {it.answer === "yes"
@@ -775,12 +781,12 @@ function ScoreCard({
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-2xl border bg-white px-4 py-3 shadow-sm">
-      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className="rounded-xl border bg-white px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-4 sm:py-3">
+      <div className="flex items-center gap-1.5 text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:gap-2 sm:text-xs">
         {icon}
-        {label}
+        <span className="truncate">{label}</span>
       </div>
-      <p className={cn("mt-1 text-2xl font-bold tabular-nums text-slate-900", valueClass)}>
+      <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-slate-900 sm:mt-1 sm:text-2xl", valueClass)}>
         {value}
       </p>
     </div>

@@ -160,7 +160,8 @@ function addDays(d: Date, n: number) {
 
 function boardColumnFor(task: Vazifa, now = new Date()): BoardCol {
   if (task.status === "verified") return "completed";
-  const dueAt = task.dueAt;
+  // Muddat yo‘q bo‘lsa — vazifa berilgan kun (ehtiyoj tasdig‘i) bo‘yicha
+  const dueAt = task.dueAt || task.createdAt;
   if (!dueAt) return "week";
   const due = startOfDay(new Date(dueAt));
   const today = startOfDay(now);

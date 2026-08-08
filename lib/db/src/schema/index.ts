@@ -11,3 +11,5 @@ export * from "./staffing";
 export * from "./branch-needs";
 export * from "./branch-audits";
 export * from "./reminders";
+export * from "./goals";
+export * from "./chat";

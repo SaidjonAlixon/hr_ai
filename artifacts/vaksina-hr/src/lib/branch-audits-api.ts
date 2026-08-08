@@ -41,6 +41,8 @@ export type AuditBranchOption = {
   id: number;
   managerName: string;
   branchLocation: string;
+  latitude: number | null;
+  longitude: number | null;
 };
 
 export type BranchAuditInput = {
@@ -50,7 +52,27 @@ export type BranchAuditInput = {
   monthLabel?: string | null;
   generalNote?: string | null;
   categories: AuditCategory[];
+  checkLatitude?: number;
+  checkLongitude?: number;
 };
+
+export const AUDIT_GEOFENCE_METERS = 15;
+
+export function haversineMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {

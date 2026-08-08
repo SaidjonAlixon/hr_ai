@@ -21,6 +21,8 @@ import jobsRouter from "./jobs";
 import branchNeedsRouter from "./branch-needs";
 import branchAuditsRouter from "./branch-audits";
 import remindersRouter from "./reminders";
+import goalsRouter from "./goals";
+import chatRouter from "./chat";
 
 const router: IRouter = Router();
 
@@ -29,6 +31,8 @@ router.use(jobsRouter);
 router.use(branchNeedsRouter);
 router.use(branchAuditsRouter);
 router.use(remindersRouter);
+router.use(goalsRouter);
+router.use(chatRouter);
 router.use(authRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);

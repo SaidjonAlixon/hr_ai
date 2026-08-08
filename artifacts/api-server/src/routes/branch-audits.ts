@@ -16,6 +16,20 @@ const router: IRouter = Router();
 const VIEW_ROLES = new Set(["koordinator", "admin", "hr", "director"]);
 const WRITE_ROLES = new Set(["koordinator", "admin"]);
 
+/** Koordinator filialga 15 m dan yaqin bo‘lishi shart */
+export const AUDIT_GEOFENCE_METERS = 15;
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
 function requireRole(req: AuthRequest, roles: Set<string>): boolean {
   return !!req.userRole && roles.has(req.userRole);
 }
@@ -74,6 +88,8 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
       employmentStatus: employeesTable.employmentStatus,
       reportsToId: employeesTable.reportsToId,
       userId: employeesTable.userId,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
     })
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, "manager"));
@@ -100,6 +116,8 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
       id: m.id,
       managerName: m.fullName,
       branchLocation: m.location || m.fullName,
+      latitude: m.latitude ?? null,
+      longitude: m.longitude ?? null,
     }))
     .sort((a, b) => a.branchLocation.localeCompare(b.branchLocation, "uz"));
 
@@ -168,6 +186,8 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
   const monthLabel = req.body?.monthLabel ? String(req.body.monthLabel).trim() : null;
   const generalNote = req.body?.generalNote ? String(req.body.generalNote).trim() : null;
   const categories = sanitizeCategories(req.body?.categories);
+  const checkLat = req.body?.checkLatitude != null ? Number(req.body.checkLatitude) : NaN;
+  const checkLng = req.body?.checkLongitude != null ? Number(req.body.checkLongitude) : NaN;
 
   if (!managerEmployeeId || Number.isNaN(managerEmployeeId)) {
     res.status(400).json({ error: "Filialni tanlang" });
@@ -194,6 +214,8 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       location: employeesTable.location,
       orgRole: employeesTable.orgRole,
       reportsToId: employeesTable.reportsToId,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
     })
     .from(employeesTable)
     .where(eq(employeesTable.id, managerEmployeeId));
@@ -217,6 +239,44 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     }
   }
 
+  let distanceMeters: number | null = null;
+  let savedCheckLat: number | null = null;
+  let savedCheckLng: number | null = null;
+
+  // Koordinator: filial GPS dan 15 m ichida bo‘lishi shart
+  if (req.userRole === "koordinator") {
+    if (manager.latitude == null || manager.longitude == null) {
+      res.status(400).json({
+        error: "Filial lokatsiyasi bazada yo‘q — admin GPS qo‘shishi kerak",
+      });
+      return;
+    }
+    if (Number.isNaN(checkLat) || Number.isNaN(checkLng)) {
+      res.status(400).json({
+        error: "GPS yoqilmagan — joylashuvingizni ruxsat bering",
+      });
+      return;
+    }
+    distanceMeters = haversineMeters(
+      checkLat,
+      checkLng,
+      manager.latitude,
+      manager.longitude,
+    );
+    savedCheckLat = checkLat;
+    savedCheckLng = checkLng;
+    if (distanceMeters > AUDIT_GEOFENCE_METERS) {
+      const remain = distanceMeters - AUDIT_GEOFENCE_METERS;
+      res.status(403).json({
+        error: `Filialdan uzoqdasiz: ${distanceMeters} m. Yana ${remain} m yaqinlashishingiz kerak (ruxsat: ${AUDIT_GEOFENCE_METERS} m).`,
+        distanceMeters,
+        remainMeters: remain,
+        allowedMeters: AUDIT_GEOFENCE_METERS,
+      });
+      return;
+    }
+  }
+
   const [coordUser] = await db
     .select({ fullName: usersTable.fullName })
     .from(usersTable)
@@ -236,6 +296,9 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       generalNote,
       categories,
       ...score,
+      checkLatitude: savedCheckLat,
+      checkLongitude: savedCheckLng,
+      distanceMeters,
       status: "saved",
     })
     .returning();

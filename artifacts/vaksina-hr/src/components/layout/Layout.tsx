@@ -18,6 +18,8 @@ import {
   ClipboardList,
   ClipboardCheck,
   AlarmClock,
+  Target,
+  MessageCircle,
 } from 'lucide-react';
 import {
   useLogout,
@@ -31,6 +33,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
+import { DailyGoalPrompt } from '@/components/DailyGoalPrompt';
 
 type NavItem = {
   name: string;
@@ -52,6 +55,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/pipeline')) return '/pipeline';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
   if (path.startsWith('/eslatmalar')) return '/eslatmalar';
+  if (path.startsWith('/maqsad')) return '/maqsad';
+  if (path.startsWith('/chat')) return '/chat';
   if (path.startsWith('/interviews')) return '/interviews';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
@@ -270,11 +275,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     });
   };
 
+  const chatNav = { name: 'Chat', path: '/chat', icon: MessageCircle };
+
   const roleNavigation: Record<string, NavItem[]> = {
     admin: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -291,6 +300,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -303,6 +314,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -314,6 +327,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -327,18 +342,23 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     mentor: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      chatNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     department_head: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
@@ -348,6 +368,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
@@ -355,6 +377,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
@@ -363,12 +387,16 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     ombor: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Maqsad', path: '/maqsad', icon: Target },
+      chatNav,
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
   };
@@ -452,9 +480,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               <Menu className="w-5 h-5" />
             </button>
             <img
-              src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png?v=8`}
+              src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png?v=11`}
               alt="VAKSINA HR"
-              className="h-9 w-auto max-w-[140px] object-contain sm:h-14 sm:max-w-[280px]"
+              className="h-12 w-auto max-w-[200px] object-contain sm:h-16 sm:max-w-[340px]"
             />
           </div>
 
@@ -475,7 +503,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <main
           className={cn(
             'flex-1 min-h-0',
-            location === '/vazifalar' || location === '/pipeline'
+            location === '/vazifalar' || location === '/pipeline' || location.startsWith('/chat')
               ? 'overflow-hidden p-0'
               : 'overflow-y-auto p-3 sm:p-6',
           )}
@@ -485,7 +513,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               'mx-auto w-full',
               location === '/pharmacy-network' ||
                 location === '/pipeline' ||
-                location === '/vazifalar'
+                location === '/vazifalar' ||
+                location.startsWith('/chat')
                 ? 'max-w-none h-full'
                 : 'max-w-7xl',
             )}
@@ -494,6 +523,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </main>
       </div>
+      <DailyGoalPrompt />
     </div>
   );
 };

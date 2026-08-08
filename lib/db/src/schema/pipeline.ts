@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, doublePrecision } from "drizzle-orm/pg-core";
 
 export const preboardingsTable = pgTable("preboarding", {
   id: serial("id").primaryKey(),
@@ -49,6 +49,9 @@ export const employeesTable = pgTable("employees", {
   reportsToId: integer("reports_to_id"),
   /** Apteka / filial nomi */
   location: text("location"),
+  /** Filial GPS (audit geofence uchun) */
+  latitude: doublePrecision("latitude"),
+  longitude: doublePrecision("longitude"),
   /** one | two | custom */
   shiftType: text("shift_type").default("one"),
   /** Mudir belgilagan maxsus holat matni */

@@ -30,6 +30,8 @@ import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
 import EslatmalarPage from './pages/eslatmalar/index';
+import MaqsadPage from './pages/maqsad/index';
+import ChatPage from './pages/chat/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
 import AdminUsersPage from './pages/admin/users';
@@ -103,6 +105,8 @@ function Router() {
       <ProtectedRoute path="/pipeline" component={PipelineBoardPage} />
       <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
       <ProtectedRoute path="/eslatmalar" component={EslatmalarPage} />
+      <ProtectedRoute path="/maqsad" component={MaqsadPage} />
+      <ProtectedRoute path="/chat" component={ChatPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       

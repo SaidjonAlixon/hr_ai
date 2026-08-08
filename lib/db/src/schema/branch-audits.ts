@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb, doublePrecision } from "drizzle-orm/pg-core";
 
 /** Bitta talab javobi — boshida tanlanmagan */
 export type AuditAnswer = "yes" | "no" | null;
@@ -40,6 +40,10 @@ export const branchAuditsTable = pgTable("branch_audits", {
   yesCount: integer("yes_count").notNull().default(0),
   noCount: integer("no_count").notNull().default(0),
   totalCount: integer("total_count").notNull().default(0),
+  /** Saqlashdagi GPS tekshiruvi */
+  checkLatitude: doublePrecision("check_latitude"),
+  checkLongitude: doublePrecision("check_longitude"),
+  distanceMeters: integer("distance_meters"),
   status: text("status").notNull().default("saved"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true })

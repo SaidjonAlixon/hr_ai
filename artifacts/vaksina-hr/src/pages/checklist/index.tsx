@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ClipboardCheck,
   CalendarDays,
@@ -14,6 +14,9 @@ import {
   Trash2,
   Info,
   Sparkles,
+  MapPin,
+  Navigation,
+  Crosshair,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,6 +54,8 @@ import {
   useBranchAudits,
   useCreateBranchAudit,
   useDeleteBranchAudit,
+  AUDIT_GEOFENCE_METERS,
+  haversineMeters,
   type AuditAnswer,
   type AuditCategory,
   type BranchAudit,
@@ -121,15 +126,94 @@ export default function ChecklistPage() {
   );
   const [historyOpen, setHistoryOpen] = useState(false);
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
+  const [gps, setGps] = useState<{
+    lat: number;
+    lng: number;
+    accuracy: number | null;
+  } | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [gpsWatching, setGpsWatching] = useState(false);
+  /** 1 = filialdasiz (to‘ldirish), 2 = hali uzoq (km ko‘rsatish) */
+  const [locationTest, setLocationTest] = useState<"near" | "far" | null>(null);
+
+  const canWrite = user?.role === "koordinator" || user?.role === "admin";
 
   const selectedBranch = useMemo(
     () => branches.find((b) => String(b.id) === managerId) || null,
     [branches, managerId],
   );
 
-  const live = useMemo(() => scoreFromCategories(categories), [categories]);
+  useEffect(() => {
+    setLocationTest(null);
+  }, [managerId]);
 
-  const canWrite = user?.role === "koordinator" || user?.role === "admin";
+  const branchHasCoords =
+    selectedBranch?.latitude != null && selectedBranch?.longitude != null;
+
+  const distanceMeters =
+    gps && branchHasCoords
+      ? haversineMeters(
+          gps.lat,
+          gps.lng,
+          selectedBranch!.latitude!,
+          selectedBranch!.longitude!,
+        )
+      : null;
+
+  const distanceKm =
+    distanceMeters != null ? (distanceMeters / 1000).toFixed(2) : null;
+
+  const withinGeofence =
+    locationTest === "near" ||
+    (locationTest !== "far" &&
+      distanceMeters != null &&
+      distanceMeters <= AUDIT_GEOFENCE_METERS);
+
+  const canFillChecklist =
+    user?.role === "admin" || locationTest === "near";
+  const showFarBlock = locationTest === "far";
+
+  const remainMeters =
+    distanceMeters != null
+      ? Math.max(0, distanceMeters - AUDIT_GEOFENCE_METERS)
+      : null;
+
+  useEffect(() => {
+    if (!selectedBranch || !branchHasCoords || !canWrite) {
+      setGpsWatching(false);
+      return;
+    }
+    if (!navigator.geolocation) {
+      setGpsError("Brauzer GPS ni qo‘llab-quvvatlamaydi");
+      return;
+    }
+    setGpsError(null);
+    setGpsWatching(true);
+    const id = navigator.geolocation.watchPosition(
+      (pos) => {
+        setGps({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? null,
+        });
+        setGpsError(null);
+      },
+      (err) => {
+        setGpsError(
+          err.code === 1
+            ? "Joylashuv ruxsati berilmadi — sozlamadan GPS ni yoqing"
+            : "GPS olinmadi — qayta urinib ko‘ring",
+        );
+      },
+      { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 },
+    );
+    return () => {
+      navigator.geolocation.clearWatch(id);
+      setGpsWatching(false);
+    };
+  }, [selectedBranch?.id, branchHasCoords, canWrite]);
+
+  const live = useMemo(() => scoreFromCategories(categories), [categories]);
 
   function setAnswer(catId: string, itemId: string, answer: AuditAnswer) {
     setCategories((prev) =>
@@ -213,7 +297,30 @@ export default function ChecklistPage() {
       return;
     }
 
+    const mustGps = user?.role === "koordinator";
+    if (mustGps) {
+      if (!branchHasCoords) {
+        toast({
+          title: "Filial GPS yo‘q",
+          description: "Bu filialga lokatsiya biriktirilmagan",
+          variant: "destructive",
+        });
+        return;
+      }
+      if (locationTest !== "near") {
+        toast({
+          title: "Avval 1-testni tanlang",
+          description:
+            "To‘ldirish uchun «1 · Filialdasiz» ni tanlang. 2-test faqat masofa ko‘rsatadi.",
+          variant: "destructive",
+        });
+        return;
+      }
+    }
+
     try {
+      const nearLat = selectedBranch?.latitude;
+      const nearLng = selectedBranch?.longitude;
       await createAudit.mutateAsync({
         managerEmployeeId: parseInt(managerId, 10),
         visitDate,
@@ -221,12 +328,19 @@ export default function ChecklistPage() {
         monthLabel,
         generalNote: generalNote.trim() || null,
         categories,
+        ...(nearLat != null && nearLng != null
+          ? { checkLatitude: nearLat, checkLongitude: nearLng }
+          : gps
+            ? { checkLatitude: gps.lat, checkLongitude: gps.lng }
+            : {}),
       });
       toast({
         title: "Cheklist saqlandi",
         description: `Umumiy ball: ${live.scorePercent}% (${live.yes} Ha / ${live.no} Yo‘q)`,
       });
       resetForm();
+      setGps(null);
+      setLocationTest(null);
     } catch (e: any) {
       toast({
         title: "Saqlanmadi",
@@ -384,6 +498,138 @@ export default function ChecklistPage() {
               </div>
             </div>
 
+            {/* 2 ta lokatsiya testi */}
+            {selectedBranch && (
+              <div className="space-y-2 sm:col-span-2">
+                <Label className="text-[11px] uppercase tracking-wide text-slate-500">
+                  Lokatsiya testi — birini tanlang
+                </Label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    onClick={() => setLocationTest("near")}
+                    className={cn(
+                      "rounded-xl border px-3 py-3 text-left transition",
+                      locationTest === "near"
+                        ? "border-emerald-400 bg-emerald-50 ring-2 ring-emerald-200"
+                        : "border-slate-200 bg-white hover:border-emerald-300",
+                    )}
+                  >
+                    <p className="text-xs font-bold text-emerald-800">
+                      1 · Filialdasiz
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-slate-600">
+                      Tanlang — cheklistni to‘ldirish va saqlash mumkin
+                    </p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLocationTest("far")}
+                    className={cn(
+                      "rounded-xl border px-3 py-3 text-left transition",
+                      locationTest === "far"
+                        ? "border-rose-400 bg-rose-50 ring-2 ring-rose-200"
+                        : "border-slate-200 bg-white hover:border-rose-300",
+                    )}
+                  >
+                    <p className="text-xs font-bold text-rose-800">
+                      2 · Hali bormadingiz
+                    </p>
+                    <p className="mt-0.5 text-[11px] leading-snug text-slate-600">
+                      Tanlang — qancha km uzoqligingiz ko‘rsatiladi
+                    </p>
+                  </button>
+                </div>
+
+                {locationTest === "near" && (
+                  <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+                    <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div>
+                      <p className="font-semibold">Filialdasiz — to‘ldirish ochiq</p>
+                      <p className="mt-0.5 text-xs text-emerald-800/80">
+                        {selectedBranch.branchLocation} · cheklistni belgilab
+                        saqlashingiz mumkin.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {showFarBlock && branchHasCoords && (
+                  <a
+                    href={`https://www.google.com/maps/dir/?api=1&destination=${selectedBranch.latitude},${selectedBranch.longitude}&travelmode=driving`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="block overflow-hidden rounded-xl border border-rose-300 bg-rose-50 transition hover:border-rose-400 hover:bg-rose-100/70 hover:shadow-sm"
+                    title="Xaritada ochish"
+                  >
+                    <div className="flex gap-2 p-2.5 sm:gap-3">
+                      <div className="relative h-[72px] w-[96px] shrink-0 overflow-hidden rounded-lg border border-rose-200 bg-slate-200 sm:h-[88px] sm:w-[120px]">
+                        <iframe
+                          title="Filial xaritasi"
+                          className="pointer-events-none h-full w-full border-0"
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                          src={`https://www.openstreetmap.org/export/embed.html?bbox=${
+                            selectedBranch.longitude! - 0.01
+                          }%2C${selectedBranch.latitude! - 0.008}%2C${
+                            selectedBranch.longitude! + 0.01
+                          }%2C${selectedBranch.latitude! + 0.008}&layer=mapnik&marker=${
+                            selectedBranch.latitude
+                          }%2C${selectedBranch.longitude}`}
+                        />
+                        <span className="absolute inset-0 bg-transparent" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-rose-900">
+                          Hali bu lokatsiyaga yetib bormadingiz
+                        </p>
+                        {gpsError ? (
+                          <p className="mt-1 text-xs text-rose-700">{gpsError}</p>
+                        ) : distanceKm != null ? (
+                          <p className="mt-1 text-sm text-rose-800">
+                            Uzoqlik:{" "}
+                            <strong className="text-base tabular-nums">
+                              {distanceKm} km
+                            </strong>
+                            <span className="ml-1 text-xs text-rose-600">
+                              ({distanceMeters} m)
+                            </span>
+                          </p>
+                        ) : (
+                          <p className="mt-1 text-xs text-rose-700">
+                            {gpsWatching
+                              ? "Masofa hisoblanmoqda…"
+                              : "GPS yoqing — masofa km da chiqadi"}
+                          </p>
+                        )}
+                        <p className="mt-1 text-[11px] text-rose-700/80">
+                          Filialga yetganda (≤{AUDIT_GEOFENCE_METERS} m) 1-testni
+                          tanlab to‘ldirasiz. Hozir cheklist yopiq.
+                        </p>
+                        <p className="mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold text-rose-800 underline-offset-2 hover:underline">
+                          <MapPin className="h-3 w-3" />
+                          Bosib lokatsiyaga o‘tish
+                        </p>
+                      </div>
+                    </div>
+                  </a>
+                )}
+
+                {showFarBlock && !branchHasCoords && (
+                  <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-3 text-sm text-rose-800">
+                    Hali bu lokatsiyaga yetib bormadingiz. Filial GPS si
+                    biriktirilmagan.
+                  </div>
+                )}
+
+                {!locationTest && (
+                  <p className="rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                    Avval yuqoridagi 1 yoki 2-testni tanlang.
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-1.5">
               <Label className="text-[11px] uppercase tracking-wide text-slate-500">
                 Tashrif sanasi
@@ -480,6 +726,7 @@ export default function ChecklistPage() {
                 size="sm"
                 className="h-10"
                 onClick={clearAnswers}
+                disabled={!canFillChecklist}
               >
                 Tozalash
               </Button>
@@ -488,6 +735,7 @@ export default function ChecklistPage() {
                 size="sm"
                 className="h-10"
                 onClick={markAllYes}
+                disabled={!canFillChecklist}
               >
                 <Sparkles className="mr-1.5 h-3.5 w-3.5" />
                 Barchasi «Ha»
@@ -495,6 +743,21 @@ export default function ChecklistPage() {
             </div>
           </div>
 
+          {!canFillChecklist && (
+            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+              {showFarBlock
+                ? `Cheklist yopiq: hali filialga yetmagansiz${
+                    distanceKm != null ? ` (${distanceKm} km)` : ""
+                  }. 1-testni tanlab to‘ldirasiz.`
+                : "Avval filialni tanlang, keyin «1 · Filialdasiz» testini bosing — shunda to‘ldirish ochiladi."}
+            </div>
+          )}
+
+          <div
+            className={cn(
+              !canFillChecklist && "pointer-events-none select-none opacity-45",
+            )}
+          >
           <Accordion
             type="multiple"
             defaultValue={categories.map((c) => c.id)}
@@ -590,6 +853,7 @@ export default function ChecklistPage() {
               );
             })}
           </Accordion>
+          </div>
         </div>
 
         {/* Desktop footer */}
@@ -606,7 +870,11 @@ export default function ChecklistPage() {
           <Button
             size="lg"
             onClick={() => void handleSave()}
-            disabled={createAudit.isPending || !canWrite}
+            disabled={
+              createAudit.isPending ||
+              !canWrite ||
+              (user?.role === "koordinator" && !canFillChecklist)
+            }
             className="min-w-[160px]"
           >
             <Save className="mr-1.5 h-4 w-4" />
@@ -624,15 +892,40 @@ export default function ChecklistPage() {
               {live.scorePercent}%
             </span>
           </span>
-          <span>
-            {live.yes} Ha · {live.no} Yo‘q · {live.total - live.answered} qoldi
-          </span>
+          {user?.role === "koordinator" && selectedBranch ? (
+            <span
+              className={cn(
+                "font-medium",
+                canFillChecklist
+                  ? "text-emerald-600"
+                  : showFarBlock
+                    ? "text-rose-600"
+                    : "text-slate-500",
+              )}
+            >
+              {canFillChecklist
+                ? "1-test · to‘ldirish OK"
+                : showFarBlock
+                  ? distanceKm != null
+                    ? `2-test · ${distanceKm} km`
+                    : "2-test · uzoq"
+                  : "Test tanlang"}
+            </span>
+          ) : (
+            <span>
+              {live.yes} Ha · {live.no} Yo‘q · {live.total - live.answered} qoldi
+            </span>
+          )}
         </div>
         <Button
           size="lg"
           className="h-12 w-full text-base"
           onClick={() => void handleSave()}
-          disabled={createAudit.isPending || !canWrite}
+          disabled={
+            createAudit.isPending ||
+            !canWrite ||
+            (user?.role === "koordinator" && !canFillChecklist)
+          }
         >
           <Save className="mr-1.5 h-4 w-4" />
           {createAudit.isPending ? "Saqlanmoqda…" : "Saqlash"}

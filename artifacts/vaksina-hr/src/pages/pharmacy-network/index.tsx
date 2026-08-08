@@ -30,7 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, Store, Search, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X } from 'lucide-react';
 import { Link } from 'wouter';
 
 type ShiftType = 'one' | 'two' | 'custom';
@@ -780,11 +780,6 @@ export default function PharmacyNetworkPage() {
                             <p className="truncate text-xs font-semibold leading-snug text-slate-900">{coordinator.fullName}</p>
                             <p className="mt-0.5 truncate text-[10px] text-slate-500">Koordinator</p>
                             <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                              <ShiftBadge
-                                shiftType={coordinator.shiftType}
-                                shiftLabel={coordinator.shiftLabel}
-                                alert={alert}
-                              />
                               <EmploymentBadge status={empStatus(coordinator)} />
                               {canSeeFullNetwork && (canEditShift || canEditStatus) && (
                                 <button
@@ -929,8 +924,8 @@ export default function PharmacyNetworkPage() {
             <div
               className={cn(
                 isMudirOnly
-                  ? 'mx-auto flex w-full max-w-[220px] justify-center'
-                  : 'grid w-full grid-cols-3 gap-1.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 2xl:grid-cols-10',
+                  ? 'mx-auto flex w-full max-w-sm justify-center'
+                  : 'grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
               )}
             >
               {managers.map((manager, idx) => {
@@ -938,99 +933,78 @@ export default function PharmacyNetworkPage() {
                 const open = expandedId === manager.id;
                 const alert = branchHasAlert(manager.id);
                 const accent = alert
-                  ? 'border-l-red-500'
-                  : BRANCH_ACCENTS[idx % BRANCH_ACCENTS.length].replace('border-t-', 'border-l-');
+                  ? 'border-t-red-500'
+                  : BRANCH_ACCENTS[idx % BRANCH_ACCENTS.length];
 
                 return (
                   <div
                     key={manager.id}
                     className={cn(
-                      'group flex min-w-0 flex-col overflow-hidden border bg-white transition-all',
-                      isMudirOnly
-                        ? 'w-full rounded-lg border-l-[3px] shadow-sm hover:shadow'
-                        : 'rounded-md border-l-[3px] hover:shadow-sm',
+                      'group flex min-w-0 flex-col overflow-hidden rounded-xl border border-t-[3px] bg-white shadow-sm transition-all hover:shadow-md',
                       accent,
-                      alert && 'border-red-300 bg-red-50/40 ring-1 ring-red-200',
+                      alert && 'border-red-300 bg-red-50/30 ring-1 ring-red-200',
                       open
                         ? alert
                           ? 'shadow-md ring-2 ring-red-200'
-                          : 'border-primary/50 shadow-md ring-2 ring-primary/20'
+                          : 'border-primary/40 shadow-md ring-2 ring-primary/20'
                         : !alert && 'border-slate-200 hover:border-slate-300',
                     )}
                   >
-                    <div
-                      className={cn(
-                        'flex flex-1 flex-col',
-                        isMudirOnly ? 'gap-1.5 p-2.5' : 'gap-1 p-1.5',
-                      )}
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span
+                    <div className="flex flex-1 flex-col gap-3 p-3.5 sm:p-4">
+                      <div className="flex items-start justify-between gap-2">
+                        <div
                           className={cn(
-                            'min-w-0 truncate rounded font-bold uppercase tracking-wide',
-                            isMudirOnly
-                              ? 'px-1.5 py-0.5 text-[9px]'
-                              : 'px-1 py-px text-[8px]',
-                            alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-600',
+                            'inline-flex max-w-[calc(100%-3rem)] items-start gap-1.5 rounded-lg px-2 py-1',
+                            alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
                           )}
-                          title={manager.location || 'Filial'}
                         >
-                          {manager.location || 'Filial'}
-                        </span>
-                        <div className="flex shrink-0 items-center gap-0.5">
+                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
+                          <span className="text-[11px] font-semibold leading-snug tracking-wide">
+                            {manager.location || 'Lokatsiya ko‘rsatilmagan'}
+                          </span>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
                           <span
                             className={cn(
-                              'tabular-nums font-medium text-slate-400',
-                              isMudirOnly ? 'text-[10px]' : 'text-[8px]',
+                              'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
+                              alert ? 'bg-red-100 text-red-700' : 'bg-slate-50 text-slate-500',
                             )}
+                            title={`${fullTeam.length} ta farmatsevt`}
                           >
+                            <Users className="h-3 w-3" />
                             {fullTeam.length}
                           </span>
                           {(canEditShift || canEditStatus) && (
                             <button
                               type="button"
                               onClick={(e) => openEditor(manager, e)}
-                              className="rounded p-0.5 text-slate-300 hover:bg-slate-100 hover:text-primary"
+                              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary"
                               title="Holatni o'zgartirish"
                             >
-                              <Pencil className={isMudirOnly ? 'h-3 w-3' : 'h-2.5 w-2.5'} />
+                              <Pencil className="h-3.5 w-3.5" />
                             </button>
                           )}
                         </div>
                       </div>
 
-                      <div className={cn('flex min-w-0 items-center', isMudirOnly ? 'gap-2' : 'gap-1.5')}>
+                      <div className="flex min-w-0 items-start gap-3">
                         <div
                           className={cn(
-                            'flex shrink-0 items-center justify-center rounded-full font-semibold text-white',
-                            isMudirOnly ? 'h-8 w-8 text-[10px]' : 'h-6 w-6 text-[8px]',
-                            alert ? 'bg-red-600' : 'bg-slate-600',
+                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white',
+                            alert ? 'bg-red-600' : 'bg-slate-700',
                           )}
                         >
                           {initials(manager.fullName)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p
-                            className={cn(
-                              'truncate font-semibold leading-tight text-slate-900',
-                              isMudirOnly ? 'text-xs' : 'text-[11px]',
-                            )}
-                            title={manager.fullName}
-                          >
+                          <p className="text-sm font-semibold leading-snug text-slate-900">
                             {manager.fullName}
                           </p>
-                          <div
-                            className={cn(
-                              'flex min-w-0 flex-wrap items-center overflow-hidden',
-                              isMudirOnly ? 'mt-1 gap-1' : 'mt-0.5 gap-0.5',
-                            )}
-                          >
+                          <p className="mt-0.5 text-[11px] text-slate-500">Mudir (zav.aptek)</p>
+                          <div className="mt-2 flex flex-wrap gap-1.5">
                             <span
                               className={cn(
-                                'inline-flex truncate rounded font-medium ring-1 ring-inset',
-                                isMudirOnly
-                                  ? 'max-w-none px-1.5 py-px text-[9px]'
-                                  : 'max-w-[48%] px-1 py-px text-[8px]',
+                                'inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
                                 alert
                                   ? 'bg-red-100 text-red-800 ring-red-300'
                                   : manager.shiftType === 'two'
@@ -1039,16 +1013,12 @@ export default function PharmacyNetworkPage() {
                                       ? 'bg-amber-50 text-amber-800 ring-amber-200'
                                       : 'bg-sky-50 text-sky-700 ring-sky-200',
                               )}
-                              title={shiftText(manager.shiftType, manager.shiftLabel)}
                             >
                               {shiftText(manager.shiftType, manager.shiftLabel)}
                             </span>
                             <span
                               className={cn(
-                                'inline-flex truncate rounded font-semibold ring-1 ring-inset',
-                                isMudirOnly
-                                  ? 'max-w-none px-1.5 py-px text-[9px]'
-                                  : 'max-w-[48%] px-1 py-px text-[8px]',
+                                'inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset',
                                 empStatus(manager) === 'working'
                                   ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
                                   : empStatus(manager) === 'searching'
@@ -1059,7 +1029,6 @@ export default function PharmacyNetworkPage() {
                                         ? 'bg-sky-50 text-sky-700 ring-sky-200'
                                         : 'bg-orange-100 text-orange-800 ring-orange-300',
                               )}
-                              title={EMPLOYMENT_STATUS_LABELS[empStatus(manager)]}
                             >
                               {EMPLOYMENT_STATUS_LABELS[empStatus(manager)]}
                             </span>
@@ -1071,22 +1040,15 @@ export default function PharmacyNetworkPage() {
                         type="button"
                         onClick={() => toggleBranch(manager.id)}
                         className={cn(
-                          'mt-auto flex w-full items-center justify-center font-medium transition-colors',
-                          isMudirOnly
-                            ? 'h-7 gap-1 rounded-md text-[11px]'
-                            : 'h-5 gap-0.5 rounded text-[9px]',
+                          'mt-auto flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-colors',
                           open
                             ? 'bg-primary text-primary-foreground'
                             : alert
                               ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                              : 'bg-slate-50 text-slate-600 hover:bg-slate-100',
+                              : 'bg-slate-50 text-slate-700 hover:bg-slate-100',
                         )}
                       >
-                        {open ? (
-                          <ChevronUp className={isMudirOnly ? 'h-3 w-3' : 'h-2.5 w-2.5'} />
-                        ) : (
-                          <ChevronDown className={isMudirOnly ? 'h-3 w-3' : 'h-2.5 w-2.5'} />
-                        )}
+                        {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         {open ? 'Yopish' : 'Batafsil'}
                       </button>
                     </div>
@@ -1129,7 +1091,7 @@ export default function PharmacyNetworkPage() {
                 )}
               </div>
             )}
-            {canEditShift && (
+            {canEditShift && editTarget?.orgRole !== 'coordinator' && (
               <>
                 <div className="space-y-2">
                   <p className="text-sm font-medium">Smena</p>

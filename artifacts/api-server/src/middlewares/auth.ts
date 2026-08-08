@@ -18,8 +18,20 @@ export async function requireAuth(
     return;
   }
 
+  let decoded: { userId?: number };
   try {
-    const decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString());
+    decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString());
+  } catch {
+    res.status(401).json({ error: "Noto'g'ri sessiya" });
+    return;
+  }
+
+  if (!decoded?.userId) {
+    res.status(401).json({ error: "Noto'g'ri sessiya" });
+    return;
+  }
+
+  try {
     const [user] = await db
       .select({ id: usersTable.id, role: usersTable.role, status: usersTable.status })
       .from(usersTable)
@@ -33,7 +45,8 @@ export async function requireAuth(
     req.userId = user.id;
     req.userRole = user.role;
     next();
-  } catch {
-    res.status(401).json({ error: "Noto'g'ri sessiya" });
+  } catch (err) {
+    console.error("requireAuth db error:", err);
+    res.status(503).json({ error: "Server vaqtincha ishlamayapti, qayta urinib ko‘ring" });
   }
 }

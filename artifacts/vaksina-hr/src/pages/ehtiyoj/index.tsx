@@ -16,6 +16,7 @@ import {
   useVerifyBranchNeed,
   type BranchNeed,
 } from '../../lib/branch-needs-api';
+import { useAuditBranches } from '../../lib/branch-audits-api';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
@@ -130,15 +131,22 @@ export default function EhtiyojPage() {
     user?.role === 'admin';
 
   const isMudir = user?.role === 'mudir';
+  const isKoordinator = user?.role === 'koordinator';
   const isAssigneeOnly = user?.role === 'texnik' || user?.role === 'ombor';
 
   const { data: needs, isLoading, refetch } = useBranchNeeds();
   const { data: history, isLoading: historyLoading, refetch: refetchHistory } =
     useBranchNeedsHistory();
-  const { data: employees } = useGetEmployees(undefined, {
-    query: { enabled: canWrite && !isMudir },
+  const { data: employees, isLoading: employeesLoading } = useGetEmployees(undefined, {
+    query: { enabled: canWrite && !isMudir && !isKoordinator },
   } as any);
-  const { data: assignees } = useBranchNeedAssignees(canConfirm);
+  const { data: auditBranches = [], isLoading: branchesLoading } = useAuditBranches();
+  const {
+    data: assignees,
+    isLoading: assigneesLoading,
+    isError: assigneesError,
+    refetch: refetchAssignees,
+  } = useBranchNeedAssignees(canConfirm);
   const { mutate: createNeed, isPending: creating } = useCreateBranchNeed();
   const { mutate: confirmNeed, isPending: confirming } = useConfirmBranchNeed();
   const { mutate: verifyNeed, isPending: verifying } = useVerifyBranchNeed();
@@ -156,15 +164,23 @@ export default function EhtiyojPage() {
   const [confirmAssigneeId, setConfirmAssigneeId] = useState<string>('none');
   const [assigneeFilter, setAssigneeFilter] = useState<'all' | 'texnik' | 'ombor' | 'other'>('all');
 
-  const managers = useMemo(
-    () =>
-      (employees ?? [])
-        .filter((e: Employee) => e.orgRole === 'manager')
-        .sort((a: Employee, b: Employee) =>
-          (a.location ?? '').localeCompare(b.location ?? '', 'uz'),
-        ),
-    [employees],
-  );
+  const managers = useMemo(() => {
+    // Koordinator: cheklist API dagi filiallar (o‘z tarmog‘i)
+    if (isKoordinator) {
+      return auditBranches.map((b) => ({
+        id: b.id,
+        fullName: b.managerName,
+        location: b.branchLocation,
+      }));
+    }
+    return (employees ?? [])
+      .filter((e: Employee) => e.orgRole === 'manager')
+      .sort((a: Employee, b: Employee) =>
+        (a.location ?? '').localeCompare(b.location ?? '', 'uz'),
+      );
+  }, [auditBranches, employees, isKoordinator]);
+
+  const managersLoading = isKoordinator ? branchesLoading : employeesLoading;
 
   const filteredAssignees = useMemo(() => {
     const list = assignees ?? [];
@@ -214,8 +230,20 @@ export default function EhtiyojPage() {
       toast({ title: 'Ehtiyoj matnini yozing', variant: 'destructive' });
       return;
     }
+    if (isKoordinator && managerId === 'none') {
+      toast({ title: 'Filial / mudirni tanlang', variant: 'destructive' });
+      return;
+    }
+    if (isKoordinator && createAssigneeId === 'none') {
+      toast({
+        title: 'Ijrochini tanlang',
+        description: 'Koordinator ehtiyojni belgilaganda vazifa darhol ochiladi',
+        variant: 'destructive',
+      });
+      return;
+    }
     const mgr = managerId !== 'none' ? Number(managerId) : null;
-    const selected = managers.find((m: Employee) => m.id === mgr);
+    const selected = managers.find((m) => m.id === mgr);
     const assigneeUserId =
       canConfirm && createAssigneeId !== 'none' ? Number(createAssigneeId) : undefined;
 
@@ -230,10 +258,10 @@ export default function EhtiyojPage() {
       {
         onSuccess: (created) => {
           toast({
-            title: created.status === 'assigned' ? 'Topshiriq yuborildi' : 'Ehtiyoj yuborildi',
+            title: created.status === 'assigned' ? 'Ehtiyoj belgilandi' : 'Ehtiyoj yuborildi',
             description:
               created.status === 'assigned'
-                ? 'Ijrochiga vazifa ochildi'
+                ? 'Ijrochiga vazifa ochildi — Vazifalar bo‘limida'
                 : 'Koordinator tasdiǧi kutilmoqda',
           });
           setNeedTitle('');
@@ -311,13 +339,24 @@ export default function EhtiyojPage() {
             ? 'Sizga biriktirilgan ehtiyojlar. Qabul qilish va bajarish — Vazifalar bo‘limida.'
             : isMudir
               ? 'Yuboring → koordinator tasdiqlaydi → xodim bajaradi → siz yoki koordinator yakuniy tasdiqlaydi. Barcha vaqtlar bazada qoladi.'
-              : 'Vaqtlar: yuborilgan → tasdiqlangan → xodimga → qabul → bajarilgan → yakuniy tasdiq. Yozuvlar o‘chirilmaydi.'}
+              : isKoordinator
+                ? 'O‘zingiz ehtiyoj belgilang: filial va ijrochini tanlang — vazifa shu kun Vazifalar bo‘limiga tushadi. Mudirdan kelganlarini ham tasdiqlaysiz.'
+                : 'Vaqtlar: yuborilgan → tasdiqlangan → xodimga → qabul → bajarilgan → yakuniy tasdiq. Yozuvlar o‘chirilmaydi.'}
         </p>
       </div>
 
       {canWrite && (
         <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="mb-3 text-sm font-semibold text-slate-800">Yangi ehtiyoj</p>
+          <p className="mb-1 text-sm font-semibold text-slate-800">
+            {isKoordinator ? 'Ehtiyoj belgilash' : 'Yangi ehtiyoj'}
+          </p>
+          {isKoordinator ? (
+            <p className="mb-3 text-xs text-slate-500">
+              Filial + ijrochi tanlang — darhol topshiriq ochiladi
+            </p>
+          ) : (
+            <div className="mb-3" />
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
               <p className="text-xs font-medium text-slate-500">Ehtiyoj</p>
@@ -330,23 +369,38 @@ export default function EhtiyojPage() {
             </div>
             {!isMudir && (
               <div className="space-y-1.5">
-                <p className="text-xs font-medium text-slate-500">Filial / mudir</p>
-                <Select value={managerId} onValueChange={setManagerId}>
+                <p className="text-xs font-medium text-slate-500">
+                  Filial / mudir{isKoordinator ? ' *' : ''}
+                </p>
+                <Select
+                  value={managerId}
+                  onValueChange={setManagerId}
+                  disabled={managersLoading}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Filialni tanlang" />
+                    <SelectValue
+                      placeholder={
+                        managersLoading ? 'Yuklanmoqda…' : 'Filialni tanlang'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Tanlanmagan</SelectItem>
-                    {managers.map((m: Employee) => (
+                    {managers.map((m) => (
                       <SelectItem key={m.id} value={String(m.id)}>
                         {(m.location || 'Filial') + ' — ' + m.fullName}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {!managersLoading && managers.length === 0 && (
+                  <p className="text-[11px] text-amber-700">
+                    Filial topilmadi. Aptekalar tarmog‘ida mudirlar bog‘langanligini tekshiring.
+                  </p>
+                )}
               </div>
             )}
-            {!isMudir && (
+            {!isMudir && !isKoordinator && (
               <div className="space-y-1.5">
                 <p className="text-xs font-medium text-slate-500">Filial nomi (ixtiyoriy)</p>
                 <Input
@@ -357,16 +411,33 @@ export default function EhtiyojPage() {
               </div>
             )}
             {canConfirm && (
-              <div className="space-y-1.5 sm:col-span-2">
+              <div className={`space-y-1.5 ${isKoordinator ? 'sm:col-span-1' : 'sm:col-span-2'}`}>
                 <p className="text-xs font-medium text-slate-500">
-                  Ijrochi (ixtiyoriy — tanlasangiz darhol topshiriq ketadi)
+                  {isKoordinator
+                    ? 'Ijrochi *'
+                    : 'Ijrochi (ixtiyoriy — tanlasangiz darhol topshiriq ketadi)'}
                 </p>
-                <Select value={createAssigneeId} onValueChange={setCreateAssigneeId}>
+                <Select
+                  value={createAssigneeId}
+                  onValueChange={setCreateAssigneeId}
+                  disabled={assigneesLoading}
+                >
                   <SelectTrigger>
-                    <SelectValue placeholder="Keyinroq tasdiqlayman" />
+                    <SelectValue
+                      placeholder={
+                        assigneesLoading
+                          ? 'Yuklanmoqda…'
+                          : isKoordinator
+                            ? 'Ijrochini tanlang'
+                            : 'Keyinroq tasdiqlayman'
+                      }
+                    />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Keyinroq tasdiqlayman</SelectItem>
+                    {!isKoordinator && (
+                      <SelectItem value="none">Keyinroq tasdiqlayman</SelectItem>
+                    )}
+                    {isKoordinator && <SelectItem value="none">Tanlanmagan</SelectItem>}
                     {(assignees ?? []).map((a) => (
                       <SelectItem key={a.id} value={String(a.id)}>
                         {a.fullName} · {roleLabel(a.role)}
@@ -374,6 +445,20 @@ export default function EhtiyojPage() {
                     ))}
                   </SelectContent>
                 </Select>
+                {assigneesError && (
+                  <button
+                    type="button"
+                    className="text-[11px] text-rose-600 underline"
+                    onClick={() => void refetchAssignees()}
+                  >
+                    Ijrochilar yuklanmadi — qayta urinish
+                  </button>
+                )}
+                {!assigneesLoading && !assigneesError && (assignees?.length ?? 0) === 0 && (
+                  <p className="text-[11px] text-amber-700">
+                    Faol ijrochi topilmadi (texnik / ombor va boshqalar).
+                  </p>
+                )}
               </div>
             )}
             <div className="space-y-1.5 sm:col-span-2">
@@ -387,8 +472,19 @@ export default function EhtiyojPage() {
             </div>
           </div>
           <div className="mt-3 flex justify-end">
-            <Button onClick={submit} disabled={creating || !needTitle.trim()}>
-              {isMudir ? 'Koordinatorga yuborish' : 'Qo‘shish'}
+            <Button
+              onClick={submit}
+              disabled={
+                creating ||
+                !needTitle.trim() ||
+                (isKoordinator && (managerId === 'none' || createAssigneeId === 'none'))
+              }
+            >
+              {isMudir
+                ? 'Koordinatorga yuborish'
+                : isKoordinator
+                  ? 'Belgilash va yuborish'
+                  : 'Qo‘shish'}
             </Button>
           </div>
         </div>

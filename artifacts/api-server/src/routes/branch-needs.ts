@@ -31,54 +31,74 @@ const VERIFY_ROLES = new Set(["mudir", "koordinator", "hr", "admin"]);
 async function enrichNeed(row: typeof branchNeedsTable.$inferSelect) {
   let managerName: string | null = null;
   if (row.managerEmployeeId) {
-    const [m] = await db
-      .select({ fullName: employeesTable.fullName, location: employeesTable.location })
-      .from(employeesTable)
-      .where(eq(employeesTable.id, row.managerEmployeeId));
-    managerName = m?.fullName ?? null;
-    if (!row.branchLocation && m?.location) {
-      row = { ...row, branchLocation: m.location };
+    try {
+      const [m] = await db
+        .select({ fullName: employeesTable.fullName, location: employeesTable.location })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, row.managerEmployeeId));
+      managerName = m?.fullName ?? null;
+      if (!row.branchLocation && m?.location) {
+        row = { ...row, branchLocation: m.location };
+      }
+    } catch {
+      managerName = null;
     }
   }
 
   let createdByName: string | null = null;
   let createdByRole: string | null = null;
   if (row.createdById) {
-    const [u] = await db
-      .select({ fullName: usersTable.fullName, role: usersTable.role })
-      .from(usersTable)
-      .where(eq(usersTable.id, row.createdById));
-    createdByName = u?.fullName ?? null;
-    createdByRole = u?.role ?? null;
+    try {
+      const [u] = await db
+        .select({ fullName: usersTable.fullName, role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, row.createdById));
+      createdByName = u?.fullName ?? null;
+      createdByRole = u?.role ?? null;
+    } catch {
+      /* ignore */
+    }
   }
 
   let assignedUserName: string | null = null;
   let assignedUserRole: string | null = null;
   if (row.assignedUserId) {
-    const [u] = await db
-      .select({ fullName: usersTable.fullName, role: usersTable.role })
-      .from(usersTable)
-      .where(eq(usersTable.id, row.assignedUserId));
-    assignedUserName = u?.fullName ?? null;
-    assignedUserRole = u?.role ?? null;
+    try {
+      const [u] = await db
+        .select({ fullName: usersTable.fullName, role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, row.assignedUserId));
+      assignedUserName = u?.fullName ?? null;
+      assignedUserRole = u?.role ?? null;
+    } catch {
+      /* ignore */
+    }
   }
 
   let confirmedByName: string | null = null;
   if (row.confirmedById) {
-    const [u] = await db
-      .select({ fullName: usersTable.fullName })
-      .from(usersTable)
-      .where(eq(usersTable.id, row.confirmedById));
-    confirmedByName = u?.fullName ?? null;
+    try {
+      const [u] = await db
+        .select({ fullName: usersTable.fullName })
+        .from(usersTable)
+        .where(eq(usersTable.id, row.confirmedById));
+      confirmedByName = u?.fullName ?? null;
+    } catch {
+      /* ignore */
+    }
   }
 
   let verifiedByName: string | null = null;
   if (row.verifiedById) {
-    const [u] = await db
-      .select({ fullName: usersTable.fullName })
-      .from(usersTable)
-      .where(eq(usersTable.id, row.verifiedById));
-    verifiedByName = u?.fullName ?? null;
+    try {
+      const [u] = await db
+        .select({ fullName: usersTable.fullName })
+        .from(usersTable)
+        .where(eq(usersTable.id, row.verifiedById));
+      verifiedByName = u?.fullName ?? null;
+    } catch {
+      /* ignore */
+    }
   }
 
   return {
@@ -218,6 +238,43 @@ router.post("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise
     }
     mgrId = myMgr.id;
     branch = myMgr.location || branch;
+  }
+
+  // Koordinator o‘zi ehtiyoj belgilaydi — filial + ijrochi majburiy, darhol topshiriq
+  if (role === "koordinator") {
+    if (!mgrId) {
+      res.status(400).json({ error: "Filial / mudirni tanlang" });
+      return;
+    }
+    if (assigneeUserId == null || String(assigneeUserId).trim() === "") {
+      res.status(400).json({ error: "Ijrochini tanlang — vazifa darhol ochiladi" });
+      return;
+    }
+
+    const coordRows = await db
+      .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId!));
+    const coord =
+      coordRows.find((r) => r.orgRole === "coordinator") ?? coordRows[0];
+    const [mgr] = await db
+      .select({
+        id: employeesTable.id,
+        location: employeesTable.location,
+        reportsToId: employeesTable.reportsToId,
+        orgRole: employeesTable.orgRole,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, mgrId));
+    if (!mgr || mgr.orgRole !== "manager") {
+      res.status(400).json({ error: "Filial (mudir) topilmadi" });
+      return;
+    }
+    if (coord && mgr.reportsToId !== coord.id) {
+      res.status(403).json({ error: "Bu filial sizga biriktirilmagan" });
+      return;
+    }
+    if (!branch) branch = mgr.location || "";
   }
 
   if (mgrId && !branch) {

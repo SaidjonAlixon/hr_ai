@@ -72,12 +72,30 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
       fullName: employeesTable.fullName,
       location: employeesTable.location,
       employmentStatus: employeesTable.employmentStatus,
+      reportsToId: employeesTable.reportsToId,
+      userId: employeesTable.userId,
     })
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, "manager"));
 
-  const active = managers
-    .filter((m) => m.employmentStatus !== "dismissed")
+  let scoped = managers.filter((m) => m.employmentStatus !== "dismissed");
+
+  // Koordinator — faqat o'ziga bog'langan filiallar (reportsToId)
+  if (req.userRole === "koordinator" && req.userId) {
+    const coordRows = await db
+      .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId));
+    const coord =
+      coordRows.find((r) => r.orgRole === "coordinator") ?? coordRows[0];
+    if (!coord) {
+      res.json([]);
+      return;
+    }
+    scoped = scoped.filter((m) => m.reportsToId === coord.id);
+  }
+
+  const active = scoped
     .map((m) => ({
       id: m.id,
       managerName: m.fullName,
@@ -175,6 +193,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       fullName: employeesTable.fullName,
       location: employeesTable.location,
       orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
     })
     .from(employeesTable)
     .where(eq(employeesTable.id, managerEmployeeId));
@@ -184,7 +203,21 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     return;
   }
 
-  const [coord] = await db
+  // Koordinator faqat o'z filiallariga yozadi
+  if (req.userRole === "koordinator" && req.userId) {
+    const coordRows = await db
+      .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId));
+    const coord =
+      coordRows.find((r) => r.orgRole === "coordinator") ?? coordRows[0];
+    if (!coord || manager.reportsToId !== coord.id) {
+      res.status(403).json({ error: "Bu filial sizga biriktirilmagan" });
+      return;
+    }
+  }
+
+  const [coordUser] = await db
     .select({ fullName: usersTable.fullName })
     .from(usersTable)
     .where(eq(usersTable.id, req.userId!));
@@ -199,7 +232,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       visitName,
       monthLabel,
       coordinatorId: req.userId!,
-      coordinatorName: coord?.fullName || null,
+      coordinatorName: coordUser?.fullName || null,
       generalNote,
       categories,
       ...score,

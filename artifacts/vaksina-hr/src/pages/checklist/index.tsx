@@ -328,7 +328,7 @@ export default function ChecklistPage() {
               <div>
                 <h2 className="text-base font-semibold">Tashrif ma’lumotlari</h2>
                 <p className="text-xs text-slate-500">
-                  Filial tanlang — mudir avtomatik chiqadi
+                  Sizga biriktirilgan filiallar: {branches.length} ta — tanlang, mudir avtomatik chiqadi
                 </p>
               </div>
             </div>
@@ -338,6 +338,46 @@ export default function ChecklistPage() {
             </Button>
           </div>
 
+          {!branchesLoading && branches.length > 0 && (
+            <div className="mb-4">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Filiallaringiz ({branches.length})
+              </p>
+              <div className="grid max-h-52 gap-2 overflow-y-auto sm:grid-cols-2 lg:grid-cols-3">
+                {branches.map((b) => {
+                  const selected = managerId === String(b.id);
+                  return (
+                    <button
+                      key={b.id}
+                      type="button"
+                      onClick={() => setManagerId(String(b.id))}
+                      className={cn(
+                        "rounded-xl border px-3 py-2.5 text-left transition-all",
+                        selected
+                          ? "border-cyan-600 bg-cyan-50 ring-1 ring-cyan-500/40"
+                          : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50",
+                      )}
+                    >
+                      <p className="truncate text-sm font-semibold text-slate-900">
+                        {b.branchLocation}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                        Mudir: {b.managerName}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {!branchesLoading && branches.length === 0 && (
+            <p className="mb-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+              Sizga biriktirilgan filial topilmadi. Aptekalar tarmog‘ida mudirlar sizning
+              koordinatoringizga bog‘langan bo‘lishi kerak.
+            </p>
+          )}
+
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label className="text-[11px] uppercase tracking-wide text-slate-500">
@@ -346,7 +386,7 @@ export default function ChecklistPage() {
               <Select
                 value={managerId || undefined}
                 onValueChange={setManagerId}
-                disabled={branchesLoading}
+                disabled={branchesLoading || branches.length === 0}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="— Filialni tanlang —" />
@@ -354,7 +394,7 @@ export default function ChecklistPage() {
                 <SelectContent>
                   {branches.map((b) => (
                     <SelectItem key={b.id} value={String(b.id)}>
-                      {b.branchLocation}
+                      {b.branchLocation} — {b.managerName}
                     </SelectItem>
                   ))}
                 </SelectContent>

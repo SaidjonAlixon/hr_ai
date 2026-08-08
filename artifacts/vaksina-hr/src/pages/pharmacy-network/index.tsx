@@ -236,7 +236,7 @@ export default function PharmacyNetworkPage() {
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);
-  const [alertsOpen, setAlertsOpen] = useState(true);
+  const [alertsOpen, setAlertsOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
   const [shiftType, setShiftType] = useState<ShiftType>('one');
   const [shiftLabel, setShiftLabel] = useState('');
@@ -508,7 +508,14 @@ export default function PharmacyNetworkPage() {
         </div>
 
         {canSeeAlerts && (
-          <div className="rounded-xl border border-red-200 bg-red-50/60 p-3 sm:p-4">
+          <div
+            className={cn(
+              'rounded-xl border p-3 sm:p-4 transition-colors',
+              openAlerts.length > 0
+                ? 'border-red-300 bg-red-50/70'
+                : 'border-slate-200 bg-slate-50/80',
+            )}
+          >
             <button
               type="button"
               onClick={() => setAlertsOpen((o) => !o)}
@@ -516,17 +523,40 @@ export default function PharmacyNetworkPage() {
             >
               <div className="flex min-w-0 items-center gap-2">
                 {alertsOpen ? (
-                  <ChevronUp className="h-4 w-4 shrink-0 text-red-600" />
+                  <ChevronUp className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-slate-500')} />
                 ) : (
-                  <ChevronDown className="h-4 w-4 shrink-0 text-red-600" />
+                  <ChevronDown className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-slate-500')} />
                 )}
-                <AlertTriangle className="h-4 w-4 shrink-0 text-red-600" />
-                <h2 className="text-sm font-semibold text-red-900">
+                <span className="relative inline-flex">
+                  <AlertTriangle
+                    className={cn(
+                      'h-4 w-4 shrink-0',
+                      openAlerts.length > 0 ? 'text-red-600' : 'text-slate-400',
+                      openAlerts.length > 0 && 'animate-pulse',
+                    )}
+                  />
+                  {openAlerts.length > 0 && (
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white animate-pulse ring-2 ring-red-100">
+                      {openAlerts.length > 99 ? '99+' : openAlerts.length}
+                    </span>
+                  )}
+                </span>
+                <h2
+                  className={cn(
+                    'text-sm font-semibold',
+                    openAlerts.length > 0 ? 'text-red-900' : 'text-slate-700',
+                  )}
+                >
                   {user?.role === 'koordinator'
                     ? 'Ogohlantirishlar va arizalar'
                     : 'Ogohlantirishlar'}
                   {openAlerts.length ? ` (${openAlerts.length})` : ''}
                 </h2>
+                {openAlerts.length > 0 && !alertsOpen && (
+                  <span className="hidden rounded-full bg-red-600/15 px-2 py-0.5 text-[10px] font-semibold text-red-700 animate-pulse sm:inline">
+                    Yangi xabar bor — oching
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 {user?.role === 'koordinator' && openAlerts.length > 0 && (
@@ -540,7 +570,12 @@ export default function PharmacyNetworkPage() {
                     )}
                   </p>
                 )}
-                <span className="text-[11px] font-medium text-red-700/70">
+                <span
+                  className={cn(
+                    'text-[11px] font-medium',
+                    openAlerts.length > 0 ? 'text-red-700/70' : 'text-slate-500',
+                  )}
+                >
                   {alertsOpen ? 'Yig‘ish' : 'Ochish'}
                 </span>
               </div>
@@ -549,7 +584,7 @@ export default function PharmacyNetworkPage() {
             {alertsOpen && (
               <div className="mt-3">
                 {!openAlerts.length ? (
-                  <p className="text-sm text-red-700/70">Hozircha ochiq ogohlantirish yoʻq.</p>
+                  <p className="text-sm text-slate-500">Hozircha ochiq ogohlantirish yoʻq.</p>
                 ) : (
                   <div className="max-h-[min(50vh,380px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
                     {user?.role === 'koordinator' && pendingAlerts.length > 0 && (

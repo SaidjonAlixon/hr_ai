@@ -68,13 +68,22 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   return null;
 }
 
-function NavBadge({ count, collapsed }: { count: number; collapsed?: boolean }) {
+function NavBadge({
+  count,
+  collapsed,
+  pulse,
+}: {
+  count: number;
+  collapsed?: boolean;
+  pulse?: boolean;
+}) {
   if (count <= 0) return null;
   const label = count > 99 ? '99+' : String(count);
   return (
     <span
       className={cn(
         'inline-flex items-center justify-center rounded-full bg-red-500 text-white font-semibold leading-none',
+        pulse && 'animate-pulse ring-2 ring-red-300/80',
         collapsed
           ? 'absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px]'
           : 'ml-auto min-w-[20px] h-5 px-1.5 text-[11px]',
@@ -374,6 +383,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           {navItems.map((item) => {
             const count = badgeByPath[item.path] ?? 0;
             const active = location === item.path || location.startsWith(item.path + '/');
+            const pulse = item.path === '/pharmacy-network' && count > 0;
             return (
               <Link key={item.path} href={item.path}>
                 <div
@@ -384,12 +394,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 >
                   <span className="relative">
                     <item.icon className="w-5 h-5 min-w-[20px]" />
-                    {!sidebarOpen && <NavBadge count={count} collapsed />}
+                    {!sidebarOpen && <NavBadge count={count} collapsed pulse={pulse} />}
                   </span>
                   {sidebarOpen && (
                     <>
                       <span className="ml-3 font-medium text-sm">{item.name}</span>
-                      <NavBadge count={count} />
+                      <NavBadge count={count} pulse={pulse} />
                     </>
                   )}
                 </div>

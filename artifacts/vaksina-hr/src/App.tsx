@@ -29,6 +29,7 @@ import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
+import EslatmalarPage from './pages/eslatmalar/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
 import AdminUsersPage from './pages/admin/users';
@@ -101,6 +102,7 @@ function Router() {
       <ProtectedRoute path="/interviews" component={InterviewsList} />
       <ProtectedRoute path="/pipeline" component={PipelineBoardPage} />
       <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
+      <ProtectedRoute path="/eslatmalar" component={EslatmalarPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       

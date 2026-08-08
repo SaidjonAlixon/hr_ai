@@ -549,7 +549,7 @@ export default function VazifalarPage() {
               Ish boshqaruvi
             </p>
             <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
-              Vazifalar
+              Topshiriqlar
             </h1>
             <p className="text-sm text-slate-500 mt-1 max-w-xl">
               Belgilagan va olgan tomonlar ko‘radi. Ijrochi faqat natija

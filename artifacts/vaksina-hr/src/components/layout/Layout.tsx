@@ -17,6 +17,7 @@ import {
   ListTodo,
   ClipboardList,
   ClipboardCheck,
+  AlarmClock,
 } from 'lucide-react';
 import {
   useLogout,
@@ -50,6 +51,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
   if (path.startsWith('/pipeline')) return '/pipeline';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
+  if (path.startsWith('/eslatmalar')) return '/eslatmalar';
   if (path.startsWith('/interviews')) return '/interviews';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
@@ -271,7 +273,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const roleNavigation: Record<string, NavItem[]> = {
     admin: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -286,7 +289,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     recruiter: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -297,7 +301,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     director: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -307,7 +312,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     hr: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -319,17 +325,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     trainer: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     mentor: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     department_head: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
@@ -337,25 +346,29 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     mudir: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     koordinator: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
     ],
     texnik: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     ombor: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Vazifalar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
   };

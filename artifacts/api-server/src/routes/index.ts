@@ -20,6 +20,7 @@ import staffingRouter from "./staffing";
 import jobsRouter from "./jobs";
 import branchNeedsRouter from "./branch-needs";
 import branchAuditsRouter from "./branch-audits";
+import remindersRouter from "./reminders";
 
 const router: IRouter = Router();
 
@@ -27,6 +28,7 @@ router.use(healthRouter);
 router.use(jobsRouter);
 router.use(branchNeedsRouter);
 router.use(branchAuditsRouter);
+router.use(remindersRouter);
 router.use(authRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);

@@ -261,7 +261,7 @@ export default function EhtiyojPage() {
             title: created.status === 'assigned' ? 'Ehtiyoj belgilandi' : 'Ehtiyoj yuborildi',
             description:
               created.status === 'assigned'
-                ? 'Ijrochiga vazifa ochildi — Vazifalar bo‘limida'
+                ? 'Ijrochiga vazifa ochildi — Topshiriqlar bo‘limida'
                 : 'Koordinator tasdiǧi kutilmoqda',
           });
           setNeedTitle('');
@@ -336,11 +336,11 @@ export default function EhtiyojPage() {
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {isAssigneeOnly
-            ? 'Sizga biriktirilgan ehtiyojlar. Qabul qilish va bajarish — Vazifalar bo‘limida.'
+            ? 'Sizga biriktirilgan ehtiyojlar. Qabul qilish va bajarish — Topshiriqlar bo‘limida.'
             : isMudir
               ? 'Yuboring → koordinator tasdiqlaydi → xodim bajaradi → siz yoki koordinator yakuniy tasdiqlaydi. Barcha vaqtlar bazada qoladi.'
               : isKoordinator
-                ? 'O‘zingiz ehtiyoj belgilang: filial va ijrochini tanlang — vazifa shu kun Vazifalar bo‘limiga tushadi. Mudirdan kelganlarini ham tasdiqlaysiz.'
+                ? 'O‘zingiz ehtiyoj belgilang: filial va ijrochini tanlang — vazifa shu kun Topshiriqlar bo‘limiga tushadi. Mudirdan kelganlarini ham tasdiqlaysiz.'
                 : 'Vaqtlar: yuborilgan → tasdiqlangan → xodimga → qabul → bajarilgan → yakuniy tasdiq. Yozuvlar o‘chirilmaydi.'}
         </p>
       </div>
@@ -697,7 +697,7 @@ export default function EhtiyojPage() {
               {confirmTarget?.branchLocation ? ` — ${confirmTarget.branchLocation}` : ''}
             </p>
             <p className="text-xs text-muted-foreground">
-              Ijrochini tanlang (texnik, ombor yoki boshqa). Topshiriq Vazifalar ga tushadi.
+              Ijrochini tanlang (texnik, ombor yoki boshqa). Topshiriqlar bo‘limiga tushadi.
             </p>
             <div className="flex flex-wrap gap-1.5">
               {(

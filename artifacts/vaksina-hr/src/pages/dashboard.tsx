@@ -160,19 +160,19 @@ function StatsCard({
   href?: string;
 }) {
   const inner = (
-    <Card className={clickable ? 'hover:border-primary/40 transition-colors cursor-pointer h-full' : ''}>
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-muted-foreground">{title}</p>
+    <Card className={clickable ? 'hover:border-primary/40 transition-colors cursor-pointer h-full' : 'h-full'}>
+      <CardContent className="p-4 sm:p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-muted-foreground break-words">{title}</p>
             {loading ? (
               <Skeleton className="h-8 w-16 mt-2" />
             ) : (
-              <p className="text-3xl font-bold mt-1">{value ?? 0}</p>
+              <p className="text-2xl sm:text-3xl font-bold mt-1 tabular-nums">{value ?? 0}</p>
             )}
           </div>
-          <div className={`p-3 rounded-xl bg-muted ${color}`}>
-            <Icon className="w-6 h-6" />
+          <div className={`p-2.5 sm:p-3 rounded-xl bg-muted shrink-0 ${color}`}>
+            <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
         </div>
       </CardContent>
@@ -319,13 +319,13 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Boshqaruv paneli</h1>
-          <p className="text-muted-foreground mt-1">
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="min-w-0 flex-1">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight break-words">Boshqaruv paneli</h1>
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base break-words">
             Xush kelibsiz, {user?.fullName}
             {subtitle ? (
-              <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700">
+              <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 align-middle">
                 {subtitle}
               </span>
             ) : null}

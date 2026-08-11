@@ -149,6 +149,11 @@
   * {
     @apply border-border;
   }
+  html,
+  body,
+  #root {
+    @apply h-full max-w-full overflow-x-hidden;
+  }
   body {
     @apply font-sans antialiased bg-background text-foreground;
   }

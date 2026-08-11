@@ -1,4 +1,4 @@
-import express, { type Express } from "express";
+import express, { type Express, type NextFunction, type Request, type Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
@@ -8,19 +8,21 @@ import { ensurePersistentSchema } from "./lib/ensure-schema";
 
 const app: Express = express();
 
-/** Bir marta schema ta’minlash (restart/reinstall da ma’lumot o‘chmaydi) */
-const schemaReady = ensurePersistentSchema().catch((err) => {
-  logger.error({ err }, "Schema ensure failed");
-  throw err;
-});
+/**
+ * Schema ensure — eng yaxshi urinish.
+ * Vercel/Railway timeout bo‘lsa ham login va API ishlashi kerak (bloklamaymiz).
+ * Vercel’da cold start tezligi uchun DDL o‘tkazib yuboriladi (jadvallar allaqachon bor).
+ */
+const schemaReady =
+  process.env.VERCEL === "1" || process.env.VERCEL === "true"
+    ? Promise.resolve()
+    : ensurePersistentSchema().catch((err) => {
+        logger.error({ err }, "Schema ensure failed (non-blocking)");
+      });
 
 app.use(async (_req, _res, next) => {
-  try {
-    await schemaReady;
-    next();
-  } catch (err) {
-    next(err);
-  }
+  await schemaReady;
+  next();
 });
 
 app.use(
@@ -48,5 +50,15 @@ app.use(express.json({ limit: "15mb" }));
 app.use(express.urlencoded({ extended: true, limit: "15mb" }));
 
 app.use("/api", router);
+
+app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  logger.error({ err }, "Unhandled API error");
+  if (res.headersSent) return;
+  const message =
+    err && typeof err === "object" && "code" in err && (err as { code?: string }).code === "ETIMEDOUT"
+      ? "Baza bilan aloqa yo‘q — birozdan keyin qayta urinib ko‘ring"
+      : "Server xatosi";
+  res.status(503).json({ error: message });
+});
 
 export default app;

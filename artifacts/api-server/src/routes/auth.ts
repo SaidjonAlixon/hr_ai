@@ -1,7 +1,6 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, usersTable, departmentsTable } from "@workspace/db";
-import { logger } from "../lib/logger";
 
 const router: IRouter = Router();
 
@@ -24,6 +23,18 @@ async function getUserWithDept(userId: number) {
   return user ?? null;
 }
 
+function isDbDown(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const e = err as { code?: string; message?: string };
+  return (
+    e.code === "ETIMEDOUT" ||
+    e.code === "ECONNREFUSED" ||
+    e.code === "ENOTFOUND" ||
+    e.code === "57P01" ||
+    /timeout|ECONNRESET|Connection terminated/i.test(String(e.message || ""))
+  );
+}
+
 router.post("/auth/login", async (req, res): Promise<void> => {
   const { login, password } = req.body ?? {};
   if (!login || !password) {
@@ -31,39 +42,54 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const [user] = await db
-    .select()
-    .from(usersTable)
-    .where(eq(usersTable.login, login as string));
+  try {
+    const [user] = await db
+      .select()
+      .from(usersTable)
+      .where(eq(usersTable.login, login as string));
 
-  if (!user || user.password !== password) {
-    res.status(401).json({ error: "Login yoki parol noto'g'ri" });
-    return;
+    if (!user || user.password !== password) {
+      res.status(401).json({ error: "Login yoki parol noto'g'ri" });
+      return;
+    }
+
+    if (user.status !== "active") {
+      res.status(403).json({ error: "Foydalanuvchi faol emas" });
+      return;
+    }
+
+    const token = Buffer.from(JSON.stringify({ userId: user.id })).toString("base64");
+    const isProd =
+      process.env.NODE_ENV === "production" ||
+      process.env.VERCEL === "1" ||
+      process.env.VERCEL === "true";
+
+    res.cookie("session", token, {
+      httpOnly: true,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      signed: false,
+      sameSite: "lax",
+      secure: isProd,
+      path: "/",
+    });
+
+    const fullUser = await getUserWithDept(user.id);
+    req.log?.info?.({ userId: user.id, role: user.role }, "User logged in");
+    res.json({ user: fullUser });
+  } catch (err) {
+    console.error("auth/login error:", err);
+    if (!process.env.DATABASE_URL) {
+      res.status(503).json({
+        error: "DATABASE_URL sozlanmagan — Vercel Environment Variables tekshiring",
+      });
+      return;
+    }
+    res.status(503).json({
+      error: isDbDown(err)
+        ? "Baza bilan aloqa yo‘q — birozdan keyin qayta urinib ko‘ring"
+        : "Server xatosi — qayta urinib ko‘ring",
+    });
   }
-
-  if (user.status !== "active") {
-    res.status(403).json({ error: "Foydalanuvchi faol emas" });
-    return;
-  }
-
-  const token = Buffer.from(JSON.stringify({ userId: user.id })).toString("base64");
-  const isProd =
-    process.env.NODE_ENV === "production" ||
-    process.env.VERCEL === "1" ||
-    process.env.VERCEL === "true";
-
-  res.cookie("session", token, {
-    httpOnly: true,
-    maxAge: 7 * 24 * 60 * 60 * 1000,
-    signed: false,
-    sameSite: "lax",
-    secure: isProd,
-    path: "/",
-  });
-
-  const fullUser = await getUserWithDept(user.id);
-  req.log.info({ userId: user.id, role: user.role }, "User logged in");
-  res.json({ user: fullUser });
 });
 
 router.get("/auth/me", async (req, res): Promise<void> => {
@@ -81,8 +107,17 @@ router.get("/auth/me", async (req, res): Promise<void> => {
       return;
     }
     res.json(user);
-  } catch {
-    res.status(401).json({ error: "Noto'g'ri sessiya" });
+  } catch (err) {
+    if (err instanceof SyntaxError) {
+      res.status(401).json({ error: "Noto'g'ri sessiya" });
+      return;
+    }
+    console.error("auth/me error:", err);
+    res.status(503).json({
+      error: isDbDown(err)
+        ? "Baza bilan aloqa yo‘q — birozdan keyin qayta urinib ko‘ring"
+        : "Server xatosi — qayta urinib ko‘ring",
+    });
   }
 });
 

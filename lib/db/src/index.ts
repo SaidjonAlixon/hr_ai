@@ -21,6 +21,8 @@ export const pool = new Pool({
   ssl: isLocal ? undefined : { rejectUnauthorized: false },
   // Serverless: keep pool small
   max: process.env.VERCEL ? 1 : 10,
+  connectionTimeoutMillis: process.env.VERCEL ? 8_000 : 15_000,
+  idleTimeoutMillis: process.env.VERCEL ? 5_000 : 30_000,
 });
 
 export const db = drizzle(pool, { schema });

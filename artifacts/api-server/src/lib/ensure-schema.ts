@@ -217,9 +217,21 @@ END $$;
 `;
 
 export async function ensurePersistentSchema(): Promise<void> {
-  const client = await pool.connect();
+  // Vercel cold start — uzoq DDL loginni bloklamasin
+  const timeoutMs = process.env.VERCEL ? 8_000 : 30_000;
+  const client = await Promise.race([
+    pool.connect(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`schema ensure connect timeout ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
   try {
-    await client.query(ENSURE_SQL);
+    await Promise.race([
+      client.query(ENSURE_SQL),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`schema ensure query timeout ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]);
     logger.info("Persistent DB schema ensured (CREATE IF NOT EXISTS only — no wipe)");
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");

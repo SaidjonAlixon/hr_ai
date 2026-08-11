@@ -32,6 +32,7 @@ import VazifalarPage from './pages/vazifalar/index';
 import EslatmalarPage from './pages/eslatmalar/index';
 import MaqsadPage from './pages/maqsad/index';
 import ChatPage from './pages/chat/index';
+import KirishPage from './pages/kirish/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
 import AdminUsersPage from './pages/admin/users';
@@ -107,6 +108,7 @@ function Router() {
       <ProtectedRoute path="/eslatmalar" component={EslatmalarPage} />
       <ProtectedRoute path="/maqsad" component={MaqsadPage} />
       <ProtectedRoute path="/chat" component={ChatPage} />
+      <ProtectedRoute path="/kirish" component={KirishPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       

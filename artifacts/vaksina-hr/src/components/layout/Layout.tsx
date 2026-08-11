@@ -57,6 +57,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/eslatmalar')) return '/eslatmalar';
   if (path.startsWith('/maqsad')) return '/maqsad';
   if (path.startsWith('/chat')) return '/chat';
+  if (path.startsWith('/kirish')) return '/kirish';
   if (path.startsWith('/interviews')) return '/interviews';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
@@ -251,8 +252,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (isLoading) return;
     if (!isAuthenticated || !user) {
       setLocation('/login');
+      return;
     }
-  }, [isLoading, isAuthenticated, user, setLocation]);
+    if (user.role === 'farmasevt' && !location.startsWith('/kirish') && location !== '/notifications') {
+      setLocation('/kirish');
+    }
+  }, [isLoading, isAuthenticated, user, setLocation, location]);
 
   if (isLoading) {
     return <div className="min-h-screen flex items-center justify-center">Yuklanmoqda...</div>;
@@ -399,6 +404,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       chatNav,
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
+    farmasevt: [
+      { name: 'Kirish', path: '/kirish', icon: GraduationCap },
+    ],
   };
 
   const navItems = roleNavigation[user.role] || [];
@@ -503,7 +511,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <main
           className={cn(
             'flex-1 min-h-0',
-            location === '/vazifalar' || location === '/pipeline' || location.startsWith('/chat')
+            location === '/vazifalar' || location === '/pipeline' || location.startsWith('/chat') || location.startsWith('/kirish')
               ? 'overflow-hidden p-0'
               : 'overflow-y-auto p-3 sm:p-6',
           )}
@@ -514,7 +522,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               location === '/pharmacy-network' ||
                 location === '/pipeline' ||
                 location === '/vazifalar' ||
-                location.startsWith('/chat')
+                location.startsWith('/chat') ||
+                location.startsWith('/kirish')
                 ? 'max-w-none h-full'
                 : 'max-w-7xl',
             )}

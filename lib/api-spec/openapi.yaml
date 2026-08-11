@@ -1249,7 +1249,7 @@ components:
         fullName: { type: string }
         role:
           type: string
-          enum: [admin, recruiter, hr, trainer, mentor, director, department_head, mudir, koordinator]
+          enum: [admin, recruiter, hr, trainer, mentor, director, department_head, mudir, koordinator, texnik, ombor, farmasevt]
         departmentId: { type: ["integer", "null"] }
         departmentName: { type: ["string", "null"] }
         login: { type: string }

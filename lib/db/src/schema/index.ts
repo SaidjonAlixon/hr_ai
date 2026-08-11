@@ -13,3 +13,4 @@ export * from "./branch-audits";
 export * from "./reminders";
 export * from "./goals";
 export * from "./chat";
+export * from "./kirish";

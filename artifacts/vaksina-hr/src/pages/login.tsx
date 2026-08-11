@@ -23,7 +23,7 @@ export default function Login() {
     mutate({ data: { login, password } }, {
       onSuccess: (data) => {
         setUser(data.user);
-        setLocation('/dashboard');
+        setLocation(data.user.role === 'farmasevt' ? '/kirish' : '/dashboard');
       },
       onError: () => {
         toast({
@@ -44,6 +44,7 @@ export default function Login() {
     { label: "Bo'lim boshlig'i", login: "dept_head1", pass: "pass123" },
     { label: "Mudir", login: "mudir1", pass: "pass123" },
     { label: "Koordinator", login: "koordinator1", pass: "pass123" },
+    { label: "Farmasevt", login: "farmasevt1", pass: "pass123" },
   ];
 
   return (

@@ -301,7 +301,7 @@ router.get("/dashboard/recruiter-tasks", requireAuth, async (req: AuthRequest, r
     };
   });
 
-  // Biriktirilgan vakansiyalar muddati — kam qolganlari birinchi
+  // Biriktirilgan vakansiyalar muddati — admin/director hammasi; recruiter o'ziniki; boshqalar — ariza bergan
   const vacConditions = [
     isNotNull(vacanciesTable.recruiterId),
     isNotNull(vacanciesTable.deadline),
@@ -309,6 +309,12 @@ router.get("/dashboard/recruiter-tasks", requireAuth, async (req: AuthRequest, r
   ];
   if (role === "recruiter" && userId) {
     vacConditions.push(eq(vacanciesTable.recruiterId, userId));
+  } else if (role !== "admin" && role !== "director" && userId) {
+    vacConditions.push(
+      sql`${vacanciesTable.requestId} IN (
+        SELECT id FROM requests WHERE created_by_id = ${userId}
+      )`,
+    );
   }
 
   const openVacancies = await db

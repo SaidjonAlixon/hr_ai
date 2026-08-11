@@ -106,11 +106,12 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
-export function useBranchNeeds() {
+export function useBranchNeeds(options?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["branch-needs", "active"],
     queryFn: () => apiFetch<BranchNeed[]>(`/branch-needs?status=active`),
     refetchInterval: 30_000,
+    enabled: options?.enabled ?? true,
   });
 }
 

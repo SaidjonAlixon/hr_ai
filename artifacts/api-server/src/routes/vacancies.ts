@@ -37,6 +37,7 @@ async function enrichVacancy(v: typeof vacanciesTable.$inferSelect) {
   let requestRequirements: string | null = null;
   let requestDescription: string | null = null;
   let requestPriority: string | null = null;
+  let requestCreatedById: number | null = null;
 
   const [req] = await db
     .select({
@@ -45,6 +46,7 @@ async function enrichVacancy(v: typeof vacanciesTable.$inferSelect) {
       requirements: requestsTable.requirements,
       description: requestsTable.description,
       priority: requestsTable.priority,
+      createdById: requestsTable.createdById,
       departmentName: departmentsTable.name,
     })
     .from(requestsTable)
@@ -58,6 +60,7 @@ async function enrichVacancy(v: typeof vacanciesTable.$inferSelect) {
     requestRequirements = req.requirements;
     requestDescription = req.description;
     requestPriority = req.priority;
+    requestCreatedById = req.createdById ?? null;
   }
 
   return {
@@ -77,6 +80,7 @@ async function enrichVacancy(v: typeof vacanciesTable.$inferSelect) {
     requestRequirements,
     requestDescription,
     requestPriority,
+    requestCreatedById,
   };
 }
 

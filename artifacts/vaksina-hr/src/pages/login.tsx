@@ -94,35 +94,42 @@ export default function Login() {
             </form>
           </CardContent>
           
-          <CardFooter className="flex flex-col items-stretch pt-0 border-t mt-6 bg-gray-50/50">
-            <div className="text-sm font-medium text-center text-gray-500 py-4">
-              Demo akkauntlar (tanlang):
-            </div>
-            <div className="grid grid-cols-2 gap-2 pb-4">
-              {demoAccounts.map((acc) => (
-                <Button 
-                  key={acc.login} 
-                  variant="outline" 
-                  size="sm"
-                  className="justify-start text-xs h-8"
-                  onClick={() => {
-                    setLogin(acc.login);
-                    setPassword(acc.pass);
-                    setTimeout(() => {
-                      mutate({ data: { login: acc.login, password: acc.pass } }, {
-                        onSuccess: (data) => {
-                          setUser(data.user);
-                          setLocation('/dashboard');
-                        }
-                      });
-                    }, 100);
-                  }}
-                >
-                  {acc.label}
-                </Button>
-              ))}
-            </div>
-          </CardFooter>
+          {import.meta.env.DEV && (
+            <CardFooter className="flex flex-col items-stretch pt-0 border-t mt-6 bg-gray-50/50">
+              <div className="text-sm font-medium text-center text-gray-500 py-4">
+                Demo akkauntlar (tanlang):
+              </div>
+              <div className="grid grid-cols-2 gap-2 pb-4">
+                {demoAccounts.map((acc) => (
+                  <Button
+                    key={acc.login}
+                    variant="outline"
+                    size="sm"
+                    className="justify-start text-xs h-8"
+                    onClick={() => {
+                      setLogin(acc.login);
+                      setPassword(acc.pass);
+                      setTimeout(() => {
+                        mutate(
+                          { data: { login: acc.login, password: acc.pass } },
+                          {
+                            onSuccess: (data) => {
+                              setUser(data.user);
+                              setLocation(
+                                data.user.role === 'farmasevt' ? '/kirish' : '/dashboard',
+                              );
+                            },
+                          },
+                        );
+                      }, 100);
+                    }}
+                  >
+                    {acc.label}
+                  </Button>
+                ))}
+              </div>
+            </CardFooter>
+          )}
         </Card>
       </div>
     </div>

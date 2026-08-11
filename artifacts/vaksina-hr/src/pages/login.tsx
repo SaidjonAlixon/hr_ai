@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useLogin } from '@workspace/api-client-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'wouter';
+import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -11,6 +12,7 @@ import { useToast } from '../hooks/use-toast';
 export default function Login() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const { mutate, isPending } = useLogin();
   const { setUser } = useAuth();
   const [, setLocation] = useLocation();
@@ -79,14 +81,29 @@ export default function Login() {
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Parol</Label>
-                <Input 
-                  id="password" 
-                  type="password" 
-                  value={password} 
-                  onChange={(e) => setPassword(e.target.value)} 
-                  placeholder="Parolni kiriting"
-                  required 
-                />
+                <div className="relative">
+                  <Input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="Parolni kiriting"
+                    className="pr-10"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                    onClick={() => setShowPassword((v) => !v)}
+                    aria-label={showPassword ? 'Parolni yashirish' : "Parolni ko'rsatish"}
+                  >
+                    {showPassword ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
               </div>
               <Button type="submit" className="w-full" disabled={isPending}>
                 {isPending ? 'Kirilmoqda...' : 'Kirish'}

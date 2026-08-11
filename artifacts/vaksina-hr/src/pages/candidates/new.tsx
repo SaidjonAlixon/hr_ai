@@ -14,10 +14,14 @@ import { ArrowLeft } from 'lucide-react';
 import { Link } from 'wouter';
 import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { PhoneInput } from '../../components/ui/phone-input';
+import { isCompleteUzPhone, normalizeUzPhone, UZ_PHONE_HINT } from '../../lib/phone';
 
 const formSchema = z.object({
   fullName: z.string().min(5, "To'liq ismni kiriting"),
-  phone: z.string().min(9, "Telefon raqamni kiriting"),
+  phone: z
+    .string()
+    .refine(isCompleteUzPhone, { message: UZ_PHONE_HINT }),
   vacancyId: z.coerce.number({ required_error: "Ish o'rnini tanlang" }).min(1, "Ish o'rnini tanlang"),
   recruiterId: z.coerce.number().optional(),
   birthDate: z.string().optional(),
@@ -60,7 +64,14 @@ export default function NewCandidate() {
   });
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    mutate({ data: values as any }, {
+    mutate(
+      {
+        data: {
+          ...values,
+          phone: normalizeUzPhone(values.phone),
+        } as any,
+      },
+      {
       onSuccess: (data) => {
         toast({ title: 'Muvaffaqiyatli', description: 'Yangi nomzod qo\'shildi' });
         setLocation(`/candidates/${data.id}`);
@@ -127,8 +138,15 @@ export default function NewCandidate() {
                       <FormItem>
                         <FormLabel>Telefon raqam *</FormLabel>
                         <FormControl>
-                          <Input placeholder="+998 90 123 45 67" {...field} />
+                          <PhoneInput
+                            value={field.value}
+                            onChange={field.onChange}
+                            onBlur={field.onBlur}
+                            name={field.name}
+                            ref={field.ref}
+                          />
                         </FormControl>
+                        <p className="text-xs text-muted-foreground">{UZ_PHONE_HINT}</p>
                         <FormMessage />
                       </FormItem>
                     )}

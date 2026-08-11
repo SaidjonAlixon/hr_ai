@@ -27,6 +27,12 @@ import {
 import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { cn } from '../../lib/utils';
+import { PhoneInput } from '../../components/ui/phone-input';
+import {
+  isOptionalUzPhoneValid,
+  normalizeUzPhone,
+  UZ_PHONE_HINT,
+} from '../../lib/phone';
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -110,13 +116,21 @@ export default function AdminUsersPage() {
       toast({ title: 'Xatolik', description: 'Rolni tanlang', variant: 'destructive' });
       return;
     }
+    if (!isOptionalUzPhoneValid(phone)) {
+      toast({
+        title: 'Telefon noto‘g‘ri',
+        description: UZ_PHONE_HINT,
+        variant: 'destructive',
+      });
+      return;
+    }
 
     createMutation.mutate(
       {
         data: {
           fullName: fullName.trim(),
           role,
-          phone: phone.trim() || undefined,
+          phone: normalizeUzPhone(phone) || undefined,
           departmentId: departmentId === 'none' ? null : Number(departmentId),
         } as any,
       },
@@ -353,11 +367,8 @@ export default function AdminUsersPage() {
             </div>
             <div className="space-y-2">
               <Label>Telefon (ixtiyoriy)</Label>
-              <Input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+998 90 123 45 67"
-              />
+              <PhoneInput value={phone} onChange={setPhone} />
+              <p className="text-xs text-muted-foreground">{UZ_PHONE_HINT}</p>
             </div>
             <div className="space-y-2">
               <Label>Bo‘lim (ixtiyoriy)</Label>

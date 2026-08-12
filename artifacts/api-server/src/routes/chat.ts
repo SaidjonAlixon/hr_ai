@@ -474,6 +474,9 @@ router.get(
         chatId: chatMessagesTable.chatId,
         senderId: chatMessagesTable.senderId,
         content: chatMessagesTable.content,
+        replyToId: chatMessagesTable.replyToId,
+        editedAt: chatMessagesTable.editedAt,
+        deletedAt: chatMessagesTable.deletedAt,
         createdAt: chatMessagesTable.createdAt,
         senderName: usersTable.fullName,
       })
@@ -487,15 +490,79 @@ router.get(
       rows = rows.reverse();
     }
 
+    const others = await db
+      .select({
+        userId: chatMembersTable.userId,
+        lastReadAt: chatMembersTable.lastReadAt,
+      })
+      .from(chatMembersTable)
+      .where(
+        and(eq(chatMembersTable.chatId, chatId), ne(chatMembersTable.userId, me)),
+      );
+
+    const replyIds = [
+      ...new Set(
+        rows
+          .map((m) => m.replyToId)
+          .filter((id): id is number => typeof id === "number" && id > 0),
+      ),
+    ];
+    const replyMap = new Map<
+      number,
+      { id: number; content: string; senderName: string; deleted: boolean }
+    >();
+    if (replyIds.length) {
+      const replyRows = await db
+        .select({
+          id: chatMessagesTable.id,
+          content: chatMessagesTable.content,
+          deletedAt: chatMessagesTable.deletedAt,
+          senderName: usersTable.fullName,
+        })
+        .from(chatMessagesTable)
+        .innerJoin(usersTable, eq(usersTable.id, chatMessagesTable.senderId))
+        .where(inArray(chatMessagesTable.id, replyIds));
+      for (const r of replyRows) {
+        replyMap.set(r.id, {
+          id: r.id,
+          content: r.deletedAt ? "" : r.content,
+          senderName: r.senderName,
+          deleted: !!r.deletedAt,
+        });
+      }
+    }
+
     res.json({
-      messages: rows.map((m) => ({
-        id: m.id,
-        chatId: m.chatId,
-        senderId: m.senderId,
-        senderName: m.senderName,
-        content: m.content,
-        createdAt: m.createdAt.toISOString(),
-      })),
+      messages: rows.map((m) => {
+        const deleted = !!m.deletedAt;
+        const read =
+          m.senderId === me &&
+          others.length > 0 &&
+          others.every(
+            (o) => o.lastReadAt && o.lastReadAt.getTime() >= m.createdAt.getTime(),
+          );
+        const reply = m.replyToId ? replyMap.get(m.replyToId) ?? null : null;
+        return {
+          id: m.id,
+          chatId: m.chatId,
+          senderId: m.senderId,
+          senderName: m.senderName,
+          content: deleted ? "" : m.content,
+          deleted,
+          editedAt: m.editedAt?.toISOString() ?? null,
+          replyToId: m.replyToId ?? null,
+          replyTo: reply
+            ? {
+                id: reply.id,
+                content: reply.deleted ? "" : reply.content.slice(0, 120),
+                senderName: reply.senderName,
+                deleted: reply.deleted,
+              }
+            : null,
+          read,
+          createdAt: m.createdAt.toISOString(),
+        };
+      }),
     });
   },
 );
@@ -527,6 +594,28 @@ router.post(
       return;
     }
 
+    let replyToId: number | null = null;
+    const rawReply = req.body?.replyToId;
+    if (rawReply != null && rawReply !== "") {
+      const rid = Number(rawReply);
+      if (!Number.isFinite(rid) || rid <= 0) {
+        res.status(400).json({ error: "Javob xabar id noto‘g‘ri" });
+        return;
+      }
+      const [parent] = await db
+        .select()
+        .from(chatMessagesTable)
+        .where(
+          and(eq(chatMessagesTable.id, rid), eq(chatMessagesTable.chatId, chatId)),
+        )
+        .limit(1);
+      if (!parent || parent.deletedAt) {
+        res.status(400).json({ error: "Javob beriladigan xabar topilmadi" });
+        return;
+      }
+      replyToId = rid;
+    }
+
     const now = new Date();
     const [msg] = await db
       .insert(chatMessagesTable)
@@ -534,21 +623,10 @@ router.post(
         chatId,
         senderId: me,
         content,
+        replyToId,
         createdAt: now,
       })
       .returning();
-
-    await db
-      .update(chatsTable)
-      .set({ lastMessageAt: now, updatedAt: now })
-      .where(eq(chatsTable.id, chatId));
-
-    await db
-      .update(chatMembersTable)
-      .set({ lastReadAt: now })
-      .where(
-        and(eq(chatMembersTable.chatId, chatId), eq(chatMembersTable.userId, me)),
-      );
 
     const [sender] = await db
       .select({ fullName: usersTable.fullName })
@@ -556,19 +634,45 @@ router.post(
       .where(eq(usersTable.id, me))
       .limit(1);
 
-    const [chat] = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId));
-    const members = await getChatMembers(chatId);
-    const preview =
-      content.length > 80 ? `${content.slice(0, 80)}…` : content;
+    void Promise.all([
+      db
+        .update(chatsTable)
+        .set({ lastMessageAt: now, updatedAt: now })
+        .where(eq(chatsTable.id, chatId)),
+      db
+        .update(chatMembersTable)
+        .set({ lastReadAt: now })
+        .where(
+          and(eq(chatMembersTable.chatId, chatId), eq(chatMembersTable.userId, me)),
+        ),
+    ]).catch(() => {});
 
-    for (const m of members) {
-      if (m.id === me) continue;
-      await notifyUser({
-        userId: m.id,
-        text: `${sender?.fullName || "Xodim"}: ${preview}`,
-        type: "chat_message",
-        linkUrl: `/chat?id=${chatId}`,
-      });
+    let replyTo: {
+      id: number;
+      content: string;
+      senderName: string;
+      deleted: boolean;
+    } | null = null;
+    if (replyToId) {
+      const [parent] = await db
+        .select({
+          id: chatMessagesTable.id,
+          content: chatMessagesTable.content,
+          deletedAt: chatMessagesTable.deletedAt,
+          senderName: usersTable.fullName,
+        })
+        .from(chatMessagesTable)
+        .innerJoin(usersTable, eq(usersTable.id, chatMessagesTable.senderId))
+        .where(eq(chatMessagesTable.id, replyToId))
+        .limit(1);
+      if (parent) {
+        replyTo = {
+          id: parent.id,
+          content: parent.deletedAt ? "" : parent.content.slice(0, 120),
+          senderName: parent.senderName,
+          deleted: !!parent.deletedAt,
+        };
+      }
     }
 
     res.status(201).json({
@@ -578,12 +682,292 @@ router.post(
         senderId: msg.senderId,
         senderName: sender?.fullName || "",
         content: msg.content,
+        deleted: false,
+        editedAt: null,
+        replyToId,
+        replyTo,
+        read: false,
         createdAt: msg.createdAt.toISOString(),
       },
-      chatTitle: chat ? chatTitle(chat, members, me) : null,
+    });
+
+    void (async () => {
+      try {
+        const members = await getChatMembers(chatId);
+        const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
+        await Promise.allSettled(
+          members
+            .filter((m) => m.id !== me)
+            .map((m) =>
+              notifyUser({
+                userId: m.id,
+                text: `${sender?.fullName || "Xodim"}: ${preview}`,
+                type: "chat_message",
+                linkUrl: `/chat?id=${chatId}`,
+              }),
+            ),
+        );
+      } catch {
+        /* ignore */
+      }
+    })();
+  },
+);
+
+/** Xabarni tahrirlash — faqat o‘zingizniki */
+router.patch(
+  "/chats/:chatId/messages/:messageId",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    const me = req.userId!;
+    const chatId = Number(req.params.chatId);
+    const messageId = Number(req.params.messageId);
+    if (!Number.isFinite(chatId) || !Number.isFinite(messageId)) {
+      res.status(400).json({ error: "Noto‘g‘ri id" });
+      return;
+    }
+    const mem = await assertMember(chatId, me);
+    if (!mem) {
+      res.status(404).json({ error: "Chat topilmadi" });
+      return;
+    }
+
+    const content = String(req.body?.content || "").trim();
+    if (!content) {
+      res.status(400).json({ error: "Xabar bo‘sh bo‘lmasin" });
+      return;
+    }
+    if (content.length > 4000) {
+      res.status(400).json({ error: "Xabar juda uzun (max 4000)" });
+      return;
+    }
+
+    const [existing] = await db
+      .select()
+      .from(chatMessagesTable)
+      .where(
+        and(
+          eq(chatMessagesTable.id, messageId),
+          eq(chatMessagesTable.chatId, chatId),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Xabar topilmadi" });
+      return;
+    }
+    if (existing.senderId !== me) {
+      res.status(403).json({ error: "Faqat o‘z xabaringizni tahrirlaysiz" });
+      return;
+    }
+    if (existing.deletedAt) {
+      res.status(400).json({ error: "O‘chirilgan xabarni tahrirlab bo‘lmaydi" });
+      return;
+    }
+
+    const now = new Date();
+    const [updated] = await db
+      .update(chatMessagesTable)
+      .set({ content, editedAt: now })
+      .where(eq(chatMessagesTable.id, messageId))
+      .returning();
+
+    const [sender] = await db
+      .select({ fullName: usersTable.fullName })
+      .from(usersTable)
+      .where(eq(usersTable.id, me))
+      .limit(1);
+
+    res.json({
+      message: {
+        id: updated.id,
+        chatId: updated.chatId,
+        senderId: updated.senderId,
+        senderName: sender?.fullName || "",
+        content: updated.content,
+        deleted: false,
+        editedAt: updated.editedAt?.toISOString() ?? null,
+        replyToId: updated.replyToId ?? null,
+        createdAt: updated.createdAt.toISOString(),
+      },
     });
   },
 );
+
+/** Xabarni o‘chirish — faqat o‘zingizniki (soft delete) */
+router.delete(
+  "/chats/:chatId/messages/:messageId",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    const me = req.userId!;
+    const chatId = Number(req.params.chatId);
+    const messageId = Number(req.params.messageId);
+    if (!Number.isFinite(chatId) || !Number.isFinite(messageId)) {
+      res.status(400).json({ error: "Noto‘g‘ri id" });
+      return;
+    }
+    const mem = await assertMember(chatId, me);
+    if (!mem) {
+      res.status(404).json({ error: "Chat topilmadi" });
+      return;
+    }
+
+    const [existing] = await db
+      .select()
+      .from(chatMessagesTable)
+      .where(
+        and(
+          eq(chatMessagesTable.id, messageId),
+          eq(chatMessagesTable.chatId, chatId),
+        ),
+      )
+      .limit(1);
+    if (!existing) {
+      res.status(404).json({ error: "Xabar topilmadi" });
+      return;
+    }
+    if (existing.senderId !== me) {
+      res.status(403).json({ error: "Faqat o‘z xabaringizni o‘chirasiz" });
+      return;
+    }
+
+    await db
+      .update(chatMessagesTable)
+      .set({ deletedAt: new Date(), content: "" })
+      .where(eq(chatMessagesTable.id, messageId));
+
+    res.json({ ok: true, id: messageId });
+  },
+);
+
+/** Guruhdan a’zo chiqarish — har qanday a’zo istalgan odamni chiqara oladi */
+router.delete(
+  "/chats/:id/members/:userId",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    const me = req.userId!;
+    const chatId = Number(req.params.id);
+    const targetId = Number(req.params.userId);
+    if (!Number.isFinite(chatId) || !Number.isFinite(targetId)) {
+      res.status(400).json({ error: "Noto‘g‘ri id" });
+      return;
+    }
+
+    const mem = await assertMember(chatId, me);
+    if (!mem) {
+      res.status(404).json({ error: "Chat topilmadi" });
+      return;
+    }
+
+    const [chat] = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId));
+    if (!chat || chat.type !== "group") {
+      res.status(400).json({ error: "Faqat guruhdan chiqarish mumkin" });
+      return;
+    }
+
+    const targetMem = await assertMember(chatId, targetId);
+    if (!targetMem) {
+      res.status(404).json({ error: "A’zo topilmadi" });
+      return;
+    }
+
+    await db
+      .delete(chatMembersTable)
+      .where(
+        and(eq(chatMembersTable.chatId, chatId), eq(chatMembersTable.userId, targetId)),
+      );
+
+    const remaining = await getChatMembers(chatId);
+    if (remaining.length === 0) {
+      await db.delete(chatMessagesTable).where(eq(chatMessagesTable.chatId, chatId));
+      await db.delete(chatsTable).where(eq(chatsTable.id, chatId));
+      res.json({ ok: true, deletedChat: true, members: [] });
+      return;
+    }
+
+    if (targetId !== me) {
+      const meUser = (
+        await db
+          .select({ fullName: usersTable.fullName })
+          .from(usersTable)
+          .where(eq(usersTable.id, me))
+          .limit(1)
+      )[0];
+      void notifyUser({
+        userId: targetId,
+        text: `${meUser?.fullName || "Xodim"} sizni «${chat.title || "Guruh"}» guruhidan chiqardi`,
+        type: "chat_group",
+        linkUrl: `/chat`,
+      }).catch(() => {});
+    }
+
+    res.json({
+      ok: true,
+      deletedChat: false,
+      chat: {
+        id: chat.id,
+        type: chat.type,
+        title: chatTitle(chat, remaining, me),
+        members: remaining,
+        createdAt: chat.createdAt.toISOString(),
+      },
+    });
+  },
+);
+
+/** Guruhni to‘liq o‘chirish — har qanday a’zo */
+router.delete("/chats/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const me = req.userId!;
+  const chatId = Number(req.params.id);
+  if (!Number.isFinite(chatId)) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+
+  const mem = await assertMember(chatId, me);
+  if (!mem) {
+    res.status(404).json({ error: "Chat topilmadi" });
+    return;
+  }
+
+  const [chat] = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId));
+  if (!chat) {
+    res.status(404).json({ error: "Chat topilmadi" });
+    return;
+  }
+  if (chat.type !== "group") {
+    res.status(400).json({ error: "Faqat guruhni o‘chirish mumkin" });
+    return;
+  }
+
+  const members = await getChatMembers(chatId);
+  await db.delete(chatMessagesTable).where(eq(chatMessagesTable.chatId, chatId));
+  await db.delete(chatMembersTable).where(eq(chatMembersTable.chatId, chatId));
+  await db.delete(chatsTable).where(eq(chatsTable.id, chatId));
+
+  const meUser = (
+    await db
+      .select({ fullName: usersTable.fullName })
+      .from(usersTable)
+      .where(eq(usersTable.id, me))
+      .limit(1)
+  )[0];
+  const title = chat.title?.trim() || "Guruh";
+  void Promise.allSettled(
+    members
+      .filter((m) => m.id !== me)
+      .map((m) =>
+        notifyUser({
+          userId: m.id,
+          text: `${meUser?.fullName || "Xodim"} «${title}» guruhini o‘chirdi`,
+          type: "chat_group",
+          linkUrl: `/chat`,
+        }),
+      ),
+  );
+
+  res.status(204).send();
+});
 
 /** Guruhga a’zo qo‘shish — faqat a’zolar, faqat guruh */
 router.post(

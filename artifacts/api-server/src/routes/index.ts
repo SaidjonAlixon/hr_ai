@@ -24,6 +24,7 @@ import remindersRouter from "./reminders";
 import goalsRouter from "./goals";
 import chatRouter from "./chat";
 import kirishRouter from "./kirish";
+import realtimeRouter from "./realtime";
 
 const router: IRouter = Router();
 
@@ -35,6 +36,7 @@ router.use(remindersRouter);
 router.use(goalsRouter);
 router.use(chatRouter);
 router.use(kirishRouter);
+router.use(realtimeRouter);
 router.use(authRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);

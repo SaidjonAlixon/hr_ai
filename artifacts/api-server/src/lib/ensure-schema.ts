@@ -46,10 +46,16 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   chat_id INTEGER NOT NULL,
   sender_id INTEGER NOT NULL,
   content TEXT NOT NULL,
+  reply_to_id INTEGER,
+  edited_at TIMESTAMPTZ,
+  deleted_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS chat_messages_chat_id_idx ON chat_messages (chat_id);
 CREATE INDEX IF NOT EXISTS chat_messages_chat_created_idx ON chat_messages (chat_id, created_at);
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reply_to_id INTEGER;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
 
 -- Maqsad
 CREATE TABLE IF NOT EXISTS user_goals (

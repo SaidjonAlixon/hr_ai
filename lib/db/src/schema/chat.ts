@@ -48,6 +48,10 @@ export const chatMessagesTable = pgTable(
     chatId: integer("chat_id").notNull(),
     senderId: integer("sender_id").notNull(),
     content: text("content").notNull(),
+    /** Javob berilayotgan xabar id */
+    replyToId: integer("reply_to_id"),
+    editedAt: timestamp("edited_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

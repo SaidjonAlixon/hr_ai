@@ -6,9 +6,14 @@ import {
   useChatMessages,
   useChatUsers,
   useCreateChat,
+  useDeleteChat,
+  useDeleteMessage,
+  useEditMessage,
   useMarkChatRead,
+  useRemoveChatMember,
   useSendMessage,
   type ChatListItem,
+  type ChatMessage,
   type ChatUser,
 } from "@/lib/chat-api";
 import { Button } from "@/components/ui/button";
@@ -20,18 +25,35 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
   Check,
+  CheckCheck,
   MessageCircle,
+  Pencil,
   Plus,
+  Reply,
   Search,
   Send,
+  Trash2,
   User,
+  UserMinus,
   UserPlus,
   Users,
+  X,
 } from "lucide-react";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -177,14 +199,24 @@ export default function ChatPage() {
   const [addQuery, setAddQuery] = useState("");
   const [addPicked, setAddPicked] = useState<ChatUser[]>([]);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [replyTo, setReplyTo] = useState<ChatMessage | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editDraft, setEditDraft] = useState("");
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const list = useChatList();
   const messages = useChatMessages(selectedId);
   const createChat = useCreateChat();
-  const sendMessage = useSendMessage(selectedId);
+  const sendMessage = useSendMessage(
+    selectedId,
+    user ? { id: user.id, fullName: user.fullName } : null,
+  );
+  const editMessage = useEditMessage(selectedId);
+  const deleteMessage = useDeleteMessage(selectedId);
   const markRead = useMarkChatRead();
   const addMembers = useAddChatMembers(selectedId);
+  const removeMember = useRemoveChatMember(selectedId);
+  const deleteChat = useDeleteChat();
   const chatUsers = useChatUsers(userQuery, newOpen);
   const addUsers = useChatUsers(addQuery, addOpen);
 
@@ -251,6 +283,8 @@ export default function ChatPage() {
   const openChat = (id: number) => {
     setSelectedId(id);
     setMobileShowChat(true);
+    setReplyTo(null);
+    setEditingId(null);
     const url = new URL(window.location.href);
     url.searchParams.set("id", String(id));
     window.history.replaceState({}, "", url.pathname + "?" + url.searchParams.toString());
@@ -338,23 +372,131 @@ export default function ChatPage() {
     }
   };
 
-  const onSend = async () => {
+  const meId = user?.id;
+
+  const onSend = () => {
     const text = draft.trim();
-    if (!text || !selectedId || sendMessage.isPending) return;
-    setDraft("");
-    try {
-      await sendMessage.mutateAsync(text);
-    } catch (e) {
-      setDraft(text);
-      toast({
-        title: "Yuborilmadi",
-        description: e instanceof Error ? e.message : "Xato",
-        variant: "destructive",
-      });
+    if (!text || !selectedId) return;
+    if (editingId) {
+      editMessage.mutate(
+        { messageId: editingId, content: text },
+        {
+          onSuccess: () => {
+            setEditingId(null);
+            setEditDraft("");
+            setDraft("");
+            setReplyTo(null);
+          },
+          onError: (e) => {
+            toast({
+              title: "Tahrirlanmadi",
+              description: e instanceof Error ? e.message : "Xato",
+              variant: "destructive",
+            });
+          },
+        },
+      );
+      return;
     }
+    setDraft("");
+    const replyId = replyTo?.id ?? null;
+    setReplyTo(null);
+    sendMessage.mutate(
+      { content: text, replyToId: replyId },
+      {
+        onError: (e) => {
+          setDraft((prev) => prev || text);
+          if (replyId) {
+            const parent = messages.data?.messages.find((m) => m.id === replyId);
+            if (parent) setReplyTo(parent);
+          }
+          toast({
+            title: "Yuborilmadi",
+            description: e instanceof Error ? e.message : "Xato",
+            variant: "destructive",
+          });
+        },
+      },
+    );
   };
 
-  const meId = user?.id;
+  const startEdit = (m: ChatMessage) => {
+    if (m.deleted || m.id < 0) return;
+    setEditingId(m.id);
+    setEditDraft(m.content);
+    setDraft(m.content);
+    setReplyTo(null);
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditDraft("");
+    setDraft("");
+  };
+
+  const handleDeleteMsg = (messageId: number) => {
+    deleteMessage.mutate(messageId, {
+      onError: (e) => {
+        toast({
+          title: "O‘chirilmadi",
+          description: e instanceof Error ? e.message : "Xato",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
+  const handleRemoveMember = (userId: number, name: string) => {
+    if (!selectedId) return;
+    removeMember.mutate(userId, {
+      onSuccess: (res) => {
+        toast({
+          title: userId === meId ? "Guruhdan chiqdingiz" : "A’zo chiqarildi",
+          description: name,
+        });
+        if (res.deletedChat || userId === meId) {
+          setMembersOpen(false);
+          setSelectedId(null);
+          setMobileShowChat(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete("id");
+          window.history.replaceState({}, "", url.pathname + (url.search || ""));
+        }
+        void list.refetch();
+      },
+      onError: (e) => {
+        toast({
+          title: "Xatolik",
+          description: e instanceof Error ? e.message : "Chiqarib bo‘lmadi",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
+  const handleDeleteGroup = () => {
+    if (!selectedId) return;
+    deleteChat.mutate(selectedId, {
+      onSuccess: () => {
+        toast({ title: "Guruh o‘chirildi" });
+        setMembersOpen(false);
+        setSelectedId(null);
+        setMobileShowChat(false);
+        const url = new URL(window.location.href);
+        url.searchParams.delete("id");
+        window.history.replaceState({}, "", url.pathname + (url.search || ""));
+        void list.refetch();
+      },
+      onError: (e) => {
+        toast({
+          title: "Xatolik",
+          description: e instanceof Error ? e.message : "O‘chirib bo‘lmadi",
+          variant: "destructive",
+        });
+      },
+    });
+  };
+
   const directCount = chats.filter((c) => c.type === "direct").length;
   const groupCount = chats.filter((c) => c.type === "group").length;
 
@@ -545,20 +687,53 @@ export default function ChatPage() {
                 </button>
               </div>
               {activeChat.type === "group" && (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="shrink-0 gap-1 border-[#6C5CE7]/50 bg-transparent text-[#C4B5FD] hover:bg-[#6C5CE7]/20"
-                  onClick={() => {
-                    setAddPicked([]);
-                    setAddQuery("");
-                    setAddOpen(true);
-                  }}
-                >
-                  <UserPlus className="h-4 w-4" />
-                  <span className="hidden sm:inline">A’zo</span>
-                </Button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="gap-1 border-[#6C5CE7]/50 bg-transparent text-[#C4B5FD] hover:bg-[#6C5CE7]/20"
+                    onClick={() => {
+                      setAddPicked([]);
+                      setAddQuery("");
+                      setAddOpen(true);
+                    }}
+                  >
+                    <UserPlus className="h-4 w-4" />
+                    <span className="hidden sm:inline">A’zo</span>
+                  </Button>
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="gap-1 border-rose-500/40 bg-transparent text-rose-300 hover:bg-rose-500/20"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent className="bg-[#17212b] text-white border-[#1c2733]">
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Guruhni o‘chirish?</AlertDialogTitle>
+                        <AlertDialogDescription className="text-[#8b9aab]">
+                          «{activeChat.title}» to‘liq o‘chadi — barcha xabarlar va a’zolar.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]">
+                          Bekor
+                        </AlertDialogCancel>
+                        <AlertDialogAction
+                          className="bg-rose-600 hover:bg-rose-700"
+                          onClick={handleDeleteGroup}
+                        >
+                          O‘chirish
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               )}
             </header>
 
@@ -570,20 +745,26 @@ export default function ChatPage() {
                   activeChat.type === "group" &&
                   !mine &&
                   (!prev || prev.senderId !== m.senderId);
+                const deleted = !!m.deleted;
                 return (
                   <div
                     key={m.id}
-                    className={cn("flex", mine ? "justify-end" : "justify-start")}
+                    className={cn(
+                      "group/msg flex",
+                      mine ? "justify-end" : "justify-start",
+                    )}
                   >
                     <div
                       className={cn(
-                        "max-w-[85%] sm:max-w-[70%] rounded-2xl px-3 py-2 shadow-sm",
+                        "relative max-w-[85%] sm:max-w-[70%] rounded-2xl px-3 py-2 shadow-sm",
                         mine
                           ? "bg-[#2b5278] rounded-br-md"
                           : "bg-[#182533] rounded-bl-md",
+                        m.pending && "opacity-70",
+                        deleted && "opacity-80",
                       )}
                     >
-                      {showName && (
+                      {showName && !deleted && (
                         <p
                           className="text-[11px] font-semibold mb-0.5"
                           style={{ color: tintForId(m.senderId) }}
@@ -591,15 +772,84 @@ export default function ChatPage() {
                           {m.senderName}
                         </p>
                       )}
-                      <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
-                        {m.content}
-                      </p>
+                      {m.replyTo && !deleted && (
+                        <div className="mb-1.5 rounded-lg border-l-2 border-[#2AABEE] bg-black/20 px-2 py-1">
+                          <p className="text-[10px] font-semibold text-[#2AABEE] truncate">
+                            {m.replyTo.senderName}
+                          </p>
+                          <p className="text-[11px] text-[#8b9aab] truncate">
+                            {m.replyTo.deleted
+                              ? "Xabar o‘chirilgan"
+                              : m.replyTo.content || "…"}
+                          </p>
+                        </div>
+                      )}
+                      {deleted ? (
+                        <p className="text-[14px] italic text-[#8b9aab]">
+                          Xabar o‘chirildi
+                        </p>
+                      ) : (
+                        <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
+                          {m.content}
+                        </p>
+                      )}
                       <div className="flex items-center justify-end gap-1 mt-1">
+                        {m.editedAt && !deleted && (
+                          <span className="text-[10px] text-[#6c7a89]">tahrirlangan</span>
+                        )}
                         <span className="text-[10px] text-[#8b9aab]">
                           {formatMsgTime(m.createdAt)}
                         </span>
-                        {mine && <Check className="h-3 w-3 text-[#8b9aab]" />}
+                        {mine && !deleted && (
+                          m.read ? (
+                            <CheckCheck className="h-3.5 w-3.5 text-[#53bdeb]" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5 text-[#8b9aab]" />
+                          )
+                        )}
                       </div>
+
+                      {!deleted && m.id > 0 && (
+                        <div
+                          className={cn(
+                            "absolute -top-3 flex gap-0.5 opacity-0 group-hover/msg:opacity-100 transition-opacity",
+                            mine ? "right-1" : "left-1",
+                          )}
+                        >
+                          <button
+                            type="button"
+                            className="h-6 w-6 rounded-full bg-[#242f3d] border border-[#1c2733] flex items-center justify-center text-[#8b9aab] hover:text-white"
+                            title="Javob"
+                            onClick={() => {
+                              setReplyTo(m);
+                              setEditingId(null);
+                              setDraft("");
+                            }}
+                          >
+                            <Reply className="h-3 w-3" />
+                          </button>
+                          {mine && (
+                            <>
+                              <button
+                                type="button"
+                                className="h-6 w-6 rounded-full bg-[#242f3d] border border-[#1c2733] flex items-center justify-center text-[#8b9aab] hover:text-white"
+                                title="Tahrirlash"
+                                onClick={() => startEdit(m)}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                type="button"
+                                className="h-6 w-6 rounded-full bg-[#242f3d] border border-[#1c2733] flex items-center justify-center text-[#8b9aab] hover:text-rose-300"
+                                title="O‘chirish"
+                                onClick={() => handleDeleteMsg(m.id)}
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -607,32 +857,66 @@ export default function ChatPage() {
               <div ref={bottomRef} />
             </div>
 
-            <footer className="shrink-0 p-3 sm:p-4 border-t border-[#1c2733] bg-[#17212b]">
+            <footer className="shrink-0 border-t border-[#1c2733] bg-[#17212b]">
+              {(replyTo || editingId) && (
+                <div className="flex items-center gap-2 px-3 pt-2 sm:px-4">
+                  <div className="flex-1 min-w-0 rounded-lg border-l-2 border-[#2AABEE] bg-[#242f3d] px-2.5 py-1.5">
+                    <p className="text-[10px] font-semibold text-[#2AABEE]">
+                      {editingId
+                        ? "Tahrirlash"
+                        : `Javob: ${replyTo?.senderName || ""}`}
+                    </p>
+                    <p className="text-xs text-[#8b9aab] truncate">
+                      {editingId ? editDraft : replyTo?.content}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="p-1.5 rounded-md text-[#8b9aab] hover:text-white hover:bg-[#242f3d]"
+                    onClick={() => {
+                      if (editingId) cancelEdit();
+                      else setReplyTo(null);
+                    }}
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               <form
-                className="flex items-end gap-2"
+                className="flex items-end gap-2 p-3 sm:p-4 pt-2"
                 onSubmit={(e) => {
                   e.preventDefault();
-                  void onSend();
+                  onSend();
                 }}
               >
                 <Input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Xabar yozing..."
+                  placeholder={
+                    editingId
+                      ? "Tahrirlangan matn..."
+                      : replyTo
+                        ? "Javob yozing..."
+                        : "Xabar yozing..."
+                  }
                   className="min-h-11 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      void onSend();
+                      onSend();
+                    }
+                    if (e.key === "Escape") {
+                      if (editingId) cancelEdit();
+                      else if (replyTo) setReplyTo(null);
                     }
                   }}
                 />
                 <Button
                   type="submit"
-                  disabled={!draft.trim() || sendMessage.isPending}
+                  disabled={!draft.trim() || editMessage.isPending}
                   className="h-11 w-11 rounded-full bg-[#2AABEE] hover:bg-[#229ED9] p-0 shrink-0"
                 >
-                  <Send className="h-5 w-5" />
+                  {editingId ? <Check className="h-5 w-5" /> : <Send className="h-5 w-5" />}
                 </Button>
               </form>
             </footer>
@@ -877,11 +1161,14 @@ export default function ChatPage() {
           <DialogHeader>
             <DialogTitle>Guruh a’zolari</DialogTitle>
           </DialogHeader>
+          <p className="text-xs text-[#8b9aab] -mt-1 mb-2">
+            Istalgan a’zoni chiqarishingiz mumkin
+          </p>
           <div className="max-h-80 overflow-y-auto divide-y divide-[#1c2733]">
             {(activeChat?.members ?? []).map((m) => (
               <div key={m.id} className="flex items-center gap-3 py-2.5">
                 <AvatarBubble name={m.fullName} size="sm" tint={tintForId(m.id)} />
-                <div className="min-w-0">
+                <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">
                     {m.fullName}
                     {m.id === meId ? " (siz)" : ""}
@@ -890,9 +1177,54 @@ export default function ChatPage() {
                     {ROLE_LABELS[m.role] || m.role}
                   </p>
                 </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="shrink-0 h-8 gap-1 text-rose-300 hover:text-rose-200 hover:bg-rose-500/15"
+                  disabled={removeMember.isPending}
+                  onClick={() => handleRemoveMember(m.id, m.fullName)}
+                  title={m.id === meId ? "Chiqish" : "Chiqarish"}
+                >
+                  <UserMinus className="h-4 w-4" />
+                  <span className="text-xs">{m.id === meId ? "Chiqish" : "Chiqarish"}</span>
+                </Button>
               </div>
             ))}
           </div>
+          {activeChat?.type === "group" && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full mt-3 gap-2 border-rose-500/40 text-rose-300 hover:bg-rose-500/20"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Guruhni to‘liq o‘chirish
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent className="bg-[#17212b] text-white border-[#1c2733]">
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Guruhni o‘chirish?</AlertDialogTitle>
+                  <AlertDialogDescription className="text-[#8b9aab]">
+                    Barcha xabarlar o‘chadi. Bu amalni qaytarib bo‘lmaydi.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]">
+                    Bekor
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    className="bg-rose-600 hover:bg-rose-700"
+                    onClick={handleDeleteGroup}
+                  >
+                    O‘chirish
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </DialogContent>
       </Dialog>
     </div>

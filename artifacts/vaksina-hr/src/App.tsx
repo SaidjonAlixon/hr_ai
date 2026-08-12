@@ -4,6 +4,7 @@ import { TooltipProvider } from './components/ui/tooltip';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
 import { AuthProvider } from './contexts/AuthContext';
 import { Layout } from './components/layout/Layout';
+import { RealtimeSync } from './lib/realtime-sync';
 
 // Pages
 import Login from './pages/login';
@@ -43,7 +44,8 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: true,
+      refetchOnReconnect: true,
     },
   },
 });
@@ -128,6 +130,7 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AuthProvider>
+        <RealtimeSync />
         <TooltipProvider>
           <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
             <Router />

@@ -77,6 +77,17 @@ export default defineConfig({
       '/api': {
         target: process.env.API_PROXY_TARGET || 'http://127.0.0.1:8080',
         changeOrigin: true,
+        // SSE / long-poll uchun
+        timeout: 0,
+        proxyTimeout: 0,
+        configure: (proxy) => {
+          proxy.on('proxyRes', (proxyRes, req) => {
+            if (req.url?.includes('/realtime/stream')) {
+              proxyRes.headers['cache-control'] = 'no-cache, no-transform';
+              proxyRes.headers['x-accel-buffering'] = 'no';
+            }
+          });
+        },
       },
     },
   },

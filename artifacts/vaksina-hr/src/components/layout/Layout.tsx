@@ -134,20 +134,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const { data: unreadNotifications } = useGetNotifications(
     { unreadOnly: true },
-    { query: { enabled: !!user, refetchInterval: 30_000 } } as any,
+    { query: { enabled: !!user, refetchInterval: 10_000 } } as any,
   );
 
   const { data: dashboardStats } = useGetDashboardStats({
-    query: { enabled: !!user, refetchInterval: 30_000 },
+    query: { enabled: !!user, refetchInterval: 10_000 },
   } as any);
 
   const { data: staffingAlerts } = useStaffingAlerts('open', {
     enabled: !!user && isPharmacyStaff,
-    refetchInterval: 30_000,
+    refetchInterval: 15_000,
   });
 
   const { data: requests } = useGetRequests(undefined, {
-    query: { enabled: !!user && isHrLike, refetchInterval: 30_000 },
+    query: { enabled: !!user && isHrLike, refetchInterval: 15_000 },
   } as any);
 
   const { data: draftVacancies } = useGetVacancies(

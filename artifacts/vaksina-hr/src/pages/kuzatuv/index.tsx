@@ -442,6 +442,17 @@ function PersonDossier({
                   </span>
                 </p>
               ) : null}
+              {p.person.role === "mudir" && (p.coordinator || p.reportsTo) ? (
+                <p className="mt-1.5 text-sm font-medium text-[#0b3a5c]">
+                  Koordinator:{" "}
+                  <span className="font-semibold">
+                    {(p.coordinator || p.reportsTo)!.fullName}
+                  </span>
+                  {(p.coordinator || p.reportsTo)!.location
+                    ? ` · ${(p.coordinator || p.reportsTo)!.location}`
+                    : ""}
+                </p>
+              ) : null}
             </div>
           </div>
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
@@ -726,14 +737,19 @@ function PersonDossier({
                     </div>
                   </>
                 ) : null}
-                {p.reportsTo ? (
+                {p.reportsTo || p.coordinator ? (
                   <div className="sm:col-span-2">
-                    <p className="text-xs uppercase tracking-wide text-slate-400">Kimga bo‘ysunadi</p>
+                    <p className="text-xs uppercase tracking-wide text-slate-400">
+                      {p.person.role === "mudir" ? "Koordinator" : "Kimga bo‘ysunadi"}
+                    </p>
                     <p className="font-medium text-slate-900">
-                      {p.reportsTo.fullName}
+                      {(p.coordinator || p.reportsTo)!.fullName}
                       <span className="ml-2 text-xs font-normal text-slate-500">
-                        ({p.reportsTo.orgRoleLabel}
-                        {p.reportsTo.location ? ` · ${p.reportsTo.location}` : ""})
+                        ({(p.coordinator || p.reportsTo)!.orgRoleLabel}
+                        {(p.coordinator || p.reportsTo)!.location
+                          ? ` · ${(p.coordinator || p.reportsTo)!.location}`
+                          : ""}
+                        )
                       </span>
                     </p>
                   </div>

@@ -108,6 +108,8 @@ export type PersonDetail = {
   };
   employee?: OrgEmployeeView | null;
   reportsTo?: OrgEmployeeView | null;
+  /** Mudir uchun — uning koordinatori */
+  coordinator?: (OrgEmployeeView & { label?: string }) | null;
   managedManagers?: OrgEmployeeView[];
   managedStaff?: OrgEmployeeView[];
   branches?: Array<{

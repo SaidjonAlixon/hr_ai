@@ -200,6 +200,61 @@ async function loadOrgTree(
       if (boss) reportsTo = mapOrgEmployee(boss);
     }
 
+    // Mudir: reportsTo yo‘q bo‘lsa — checklist orqali koordinatorni topish
+    if (
+      !reportsTo &&
+      myEmployee &&
+      (person.role === "mudir" || myEmployee.orgRole === "manager")
+    ) {
+      const [auditLink] = await db
+        .select({
+          coordinatorId: branchAuditsTable.coordinatorId,
+          coordinatorName: branchAuditsTable.coordinatorName,
+        })
+        .from(branchAuditsTable)
+        .where(eq(branchAuditsTable.managerEmployeeId, myEmployee.id))
+        .orderBy(desc(branchAuditsTable.id))
+        .limit(1);
+      if (auditLink?.coordinatorId) {
+        const [coordEmp] = await db
+          .select()
+          .from(employeesTable)
+          .where(eq(employeesTable.userId, auditLink.coordinatorId))
+          .limit(1);
+        if (coordEmp) {
+          reportsTo = mapOrgEmployee(coordEmp);
+        } else {
+          const [coordUser] = await db
+            .select({
+              id: usersTable.id,
+              fullName: usersTable.fullName,
+            })
+            .from(usersTable)
+            .where(eq(usersTable.id, auditLink.coordinatorId))
+            .limit(1);
+          if (coordUser) {
+            reportsTo = {
+              id: 0,
+              fullName: coordUser.fullName || auditLink.coordinatorName || "Koordinator",
+              position: "Koordinator",
+              orgRole: "coordinator",
+              orgRoleLabel: "Koordinator",
+              location: null,
+              employmentStatus: "working",
+              employmentStatusLabel: "—",
+              shiftType: null,
+              shiftLabel: null,
+              shiftDisplay: "—",
+              userId: coordUser.id,
+              hiredAt: null,
+              reportsToId: null,
+              createdAt: new Date(0).toISOString(),
+            };
+          }
+        }
+      }
+    }
+
     const isCoordinator =
       myEmployee.orgRole === "coordinator" || person.role === "koordinator";
     const isManager = myEmployee.orgRole === "manager" || person.role === "mudir";
@@ -1417,6 +1472,15 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
         }
       : null,
     reportsTo,
+    coordinator:
+      person.role === "mudir" || myEmployee?.orgRole === "manager"
+        ? reportsTo
+          ? {
+              ...reportsTo,
+              label: "Koordinator",
+            }
+          : null
+        : undefined,
     managedManagers: managersForUi,
     managedStaff,
     branches: coordinatorOps.branches,

@@ -17,14 +17,14 @@ type SyncPayload = {
 
 function activeChatIdFromUrl(): number | null {
   try {
+    const path = window.location.pathname;
+    const onChat = path.includes("/chat");
+    if (!onChat) return null;
     const id = Number(new URLSearchParams(window.location.search).get("id"));
-    if (window.location.pathname.includes("/chat") && Number.isFinite(id) && id > 0) {
-      return id;
-    }
+    return Number.isFinite(id) && id > 0 ? id : null;
   } catch {
-    /* ignore */
+    return null;
   }
-  return null;
 }
 
 function lastPositiveMsgId(messages: ChatMessage[] | undefined): number {
@@ -36,11 +36,37 @@ function lastPositiveMsgId(messages: ChatMessage[] | undefined): number {
   return max;
 }
 
+function sortMessages(list: ChatMessage[]): ChatMessage[] {
+  return [...list].sort((a, b) => {
+    const aPend = a.pending || a.id < 0 ? 1 : 0;
+    const bPend = b.pending || b.id < 0 ? 1 : 0;
+    // Pending (optimistic) — oxirida, darhol ko‘rinsin
+    if (aPend !== bPend) return aPend - bPend;
+    if (a.id > 0 && b.id > 0) return a.id - b.id;
+    return String(a.createdAt).localeCompare(String(b.createdAt));
+  });
+}
+
+function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] {
+  const byId = new Map<number, ChatMessage>();
+  for (const m of prev) {
+    if (m.id > 0) byId.set(m.id, m);
+  }
+  for (const m of incoming) {
+    if (m.id > 0) byId.set(m.id, { ...byId.get(m.id), ...m, pending: false });
+  }
+  const confirmed = [...byId.values()];
+  const pending = prev.filter((m) => m.pending || m.id < 0).filter((p) => {
+    return !confirmed.some(
+      (n) => n.senderId === p.senderId && n.content === p.content,
+    );
+  });
+  return sortMessages([...confirmed, ...pending]);
+}
+
 /**
- * Platforma real-time sync:
- * - Tab ko‘rinadi: har ~1s poll
- * - SSE mavjud bo‘lsa — stream (tezroq push)
- * - Chat/xabar/bildirishnoma cache yangilanadi
+ * Real-time sync — chat xabarlarini darhol ko‘rsatish uchun
+ * optimistic xabarlarni buzmaydi.
  */
 export function RealtimeSync() {
   const { user, isAuthenticated } = useAuth();
@@ -54,12 +80,9 @@ export function RealtimeSync() {
 
     let stopped = false;
     let pollTimer: ReturnType<typeof setInterval> | null = null;
-    let es: EventSource | null = null;
-    let useSse = true;
 
     const applyPayload = (payload: SyncPayload) => {
       if (stopped) return;
-
       const chatId = activeChatIdFromUrl();
 
       if (payload.unreadNotifications !== unreadRef.current) {
@@ -73,41 +96,50 @@ export function RealtimeSync() {
 
       if (payload.chatsVersion !== chatsVersionRef.current) {
         chatsVersionRef.current = payload.chatsVersion;
-        void qc.invalidateQueries({ queryKey: ["chats"] });
+        // Ro‘yxatni yumshoq yangilash — xabarlar cache’ini tozalama
+        void qc.invalidateQueries({ queryKey: ["chats"], exact: true });
       }
 
-      if (chatId && payload.messagesVersion !== messagesVersionRef.current) {
-        messagesVersionRef.current = payload.messagesVersion;
+      if (!chatId) return;
 
-        if (payload.newMessages?.length) {
-          qc.setQueryData<{ messages: ChatMessage[] }>(
-            ["chats", chatId, "messages"],
-            (old) => {
-              const prev = old?.messages ?? [];
-              const ids = new Set(prev.map((m) => m.id));
-              const pending = prev.filter((m) => m.pending || m.id < 0);
-              const incoming = payload.newMessages.filter((m) => !ids.has(m.id));
-              if (!incoming.length && !pending.length) return old;
-              // pending ni saqlab, server xabarlarini qo‘shamiz
-              const withoutDupPending = pending.filter(
-                (p) =>
-                  !incoming.some(
-                    (n) => n.senderId === p.senderId && n.content === p.content,
-                  ),
-              );
-              return {
-                messages: [
-                  ...prev.filter((m) => !(m.pending || m.id < 0)),
-                  ...incoming,
-                  ...withoutDupPending,
-                ].sort((a, b) => a.id - b.id || a.createdAt.localeCompare(b.createdAt)),
-              };
-            },
-          );
-        } else {
-          // edit/delete uchun to‘liq refetch
-          void qc.invalidateQueries({ queryKey: ["chats", chatId, "messages"] });
-        }
+      if (payload.newMessages?.length) {
+        messagesVersionRef.current = payload.messagesVersion;
+        qc.setQueryData<{ messages: ChatMessage[] }>(
+          ["chats", chatId, "messages"],
+          (old) => ({
+            messages: mergeMessages(old?.messages ?? [], payload.newMessages),
+          }),
+        );
+        return;
+      }
+
+      // edit/delete: versiya o‘zgagan, lekin yangi id yo‘q —
+      // to‘liq invalidate QILMAYMIZ (pending xabar yo‘qoladi).
+      // Faqat fonda refetch + merge.
+      if (
+        payload.messagesVersion &&
+        payload.messagesVersion !== messagesVersionRef.current &&
+        payload.messagesVersion !== "0"
+      ) {
+        messagesVersionRef.current = payload.messagesVersion;
+        void (async () => {
+          try {
+            const res = await fetch(`/api/chats/${chatId}/messages?limit=80`, {
+              credentials: "include",
+              headers: { Accept: "application/json" },
+            });
+            if (!res.ok) return;
+            const data = (await res.json()) as { messages: ChatMessage[] };
+            qc.setQueryData<{ messages: ChatMessage[] }>(
+              ["chats", chatId, "messages"],
+              (old) => ({
+                messages: mergeMessages(old?.messages ?? [], data.messages ?? []),
+              }),
+            );
+          } catch {
+            /* ignore */
+          }
+        })();
       }
     };
 
@@ -129,19 +161,19 @@ export function RealtimeSync() {
           headers: { Accept: "application/json" },
         });
         if (!res.ok) return;
-        const payload = (await res.json()) as SyncPayload;
-        applyPayload(payload);
+        applyPayload((await res.json()) as SyncPayload);
       } catch {
-        /* ignore transient */
+        /* ignore */
       }
     };
 
     const startPoll = () => {
       if (pollTimer) return;
       void pollOnce();
+      // Chat ochiq bo‘lsa juda tez, aks holda 1s
       pollTimer = setInterval(() => {
         void pollOnce();
-      }, 1000);
+      }, activeChatIdFromUrl() ? 400 : 1000);
     };
 
     const stopPoll = () => {
@@ -151,94 +183,25 @@ export function RealtimeSync() {
       }
     };
 
-    const startSse = () => {
-      if (!useSse || es) return;
-      const chatId = activeChatIdFromUrl();
-      const cached = chatId
-        ? qc.getQueryData<{ messages: ChatMessage[] }>(["chats", chatId, "messages"])
-        : undefined;
-      const afterMsgId = lastPositiveMsgId(cached?.messages);
-      const params = new URLSearchParams();
-      if (chatId) params.set("chatId", String(chatId));
-      if (afterMsgId > 0) params.set("afterMsgId", String(afterMsgId));
-
-      try {
-        es = new EventSource(`/api/realtime/stream?${params.toString()}`);
-      } catch {
-        useSse = false;
-        startPoll();
-        return;
-      }
-
-      const onPayload = (ev: MessageEvent) => {
-        try {
-          applyPayload(JSON.parse(ev.data) as SyncPayload);
-        } catch {
-          /* ignore */
-        }
-      };
-
-      es.addEventListener("update", onPayload);
-      es.addEventListener("ping", onPayload);
-      es.addEventListener("hello", () => {
-        // SSE ishlayapti — poll kerak emas
-        stopPoll();
-      });
-      es.onerror = () => {
-        es?.close();
-        es = null;
-        useSse = false;
-        startPoll();
-      };
-    };
-
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
+        stopPoll();
+        startPoll();
         void pollOnce();
-        if (useSse && !es) startSse();
-        else if (!useSse) startPoll();
       } else {
         stopPoll();
-        es?.close();
-        es = null;
       }
     };
 
-    // Boshlash: avval poll (ishonchli), parallel SSE urinish
     startPoll();
-    startSse();
-
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("focus", pollOnce);
-
-    // URL o‘zgaganda (chat id) sync parametrlarini yangilash
-    const onPop = () => {
-      es?.close();
-      es = null;
-      if (useSse) startSse();
-      void pollOnce();
-    };
-    window.addEventListener("popstate", onPop);
-
-    // history.replaceState chat ichida ishlatiladi — pollda URL o‘qiladi, SSE ni qayta ochamiz
-    const origReplace = window.history.replaceState.bind(window.history);
-    window.history.replaceState = (...args) => {
-      origReplace(...args);
-      if (String(args[2] || "").includes("/chat")) {
-        es?.close();
-        es = null;
-        if (useSse) startSse();
-      }
-    };
 
     return () => {
       stopped = true;
       stopPoll();
-      es?.close();
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("focus", pollOnce);
-      window.removeEventListener("popstate", onPop);
-      window.history.replaceState = origReplace;
     };
   }, [isAuthenticated, user, qc]);
 

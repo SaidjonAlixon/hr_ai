@@ -378,16 +378,18 @@ export default function ChatPage() {
     const text = draft.trim();
     if (!text || !selectedId) return;
     if (editingId) {
+      const id = editingId;
+      setEditingId(null);
+      setEditDraft("");
+      setDraft("");
+      setReplyTo(null);
       editMessage.mutate(
-        { messageId: editingId, content: text },
+        { messageId: id, content: text },
         {
-          onSuccess: () => {
-            setEditingId(null);
-            setEditDraft("");
-            setDraft("");
-            setReplyTo(null);
-          },
           onError: (e) => {
+            setEditingId(id);
+            setDraft(text);
+            setEditDraft(text);
             toast({
               title: "Tahrirlanmadi",
               description: e instanceof Error ? e.message : "Xato",
@@ -913,7 +915,7 @@ export default function ChatPage() {
                 />
                 <Button
                   type="submit"
-                  disabled={!draft.trim() || editMessage.isPending}
+                  disabled={!draft.trim()}
                   className="h-11 w-11 rounded-full bg-[#2AABEE] hover:bg-[#229ED9] p-0 shrink-0"
                 >
                   {editingId ? <Check className="h-5 w-5" /> : <Send className="h-5 w-5" />}

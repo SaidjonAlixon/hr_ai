@@ -115,20 +115,33 @@ export function useChatMessages(chatId: number | null) {
     queryFn: () =>
       apiFetch<{ messages: ChatMessage[] }>(`/chats/${chatId}/messages?limit=80`),
     enabled: !!chatId,
-    refetchInterval: chatId ? 3_000 : false,
+    // Realtime sync yangilaydi — bu yerda sekin poll yetarli
+    refetchInterval: false,
+    staleTime: 5_000,
     structuralSharing: (oldData, newData) => {
       const old = oldData as { messages: ChatMessage[] } | undefined;
       const next = newData as { messages: ChatMessage[] } | undefined;
       if (!old?.messages?.length || !next?.messages) return newData;
       const pending = old.messages.filter((m) => m.pending || m.id < 0);
       if (!pending.length) return newData;
-      const ids = new Set(next.messages.map((m) => m.id));
-      const contents = new Set(next.messages.map((m) => `${m.senderId}:${m.content}`));
       const keep = pending.filter(
-        (p) => !ids.has(p.id) && !contents.has(`${p.senderId}:${p.content}`),
+        (p) =>
+          !next.messages.some(
+            (n) =>
+              n.id === p.id ||
+              (n.senderId === p.senderId && n.content === p.content),
+          ),
       );
       if (!keep.length) return newData;
-      return { messages: [...next.messages, ...keep] };
+      return {
+        messages: [...next.messages, ...keep].sort((a, b) => {
+          const ap = a.pending || a.id < 0 ? 1 : 0;
+          const bp = b.pending || b.id < 0 ? 1 : 0;
+          if (ap !== bp) return ap - bp;
+          if (a.id > 0 && b.id > 0) return a.id - b.id;
+          return String(a.createdAt).localeCompare(String(b.createdAt));
+        }),
+      };
     },
   });
 }
@@ -177,7 +190,8 @@ export function useSendMessage(
         read: false,
         replyToId: body.replyToId ?? null,
       };
-      await qc.cancelQueries({ queryKey: ["chats", chatId, "messages"] });
+      // Kutmasdan — darhol UI
+      void qc.cancelQueries({ queryKey: ["chats", chatId, "messages"] });
       const prev = qc.getQueryData<{ messages: ChatMessage[] }>([
         "chats",
         chatId,
@@ -196,7 +210,9 @@ export function useSendMessage(
       }
       qc.setQueryData<{ messages: ChatMessage[] }>(
         ["chats", chatId, "messages"],
-        (old) => ({ messages: [...(old?.messages ?? []), optimistic] }),
+        (old) => ({
+          messages: [...(old?.messages ?? []).filter((m) => m.id !== tempId), optimistic],
+        }),
       );
       qc.setQueryData<{ chats: ChatListItem[] }>(["chats"], (old) => {
         if (!old?.chats) return old;
@@ -278,6 +294,31 @@ export function useEditMessage(chatId: number | null) {
           body: JSON.stringify({ content: body.content }),
         },
       ),
+    onMutate: async (body) => {
+      if (!chatId) return {};
+      void qc.cancelQueries({ queryKey: ["chats", chatId, "messages"] });
+      const prev = qc.getQueryData<{ messages: ChatMessage[] }>([
+        "chats",
+        chatId,
+        "messages",
+      ]);
+      const editedAt = new Date().toISOString();
+      qc.setQueryData<{ messages: ChatMessage[] }>(
+        ["chats", chatId, "messages"],
+        (old) => ({
+          messages: (old?.messages ?? []).map((m) =>
+            m.id === body.messageId
+              ? { ...m, content: body.content, editedAt, pending: false }
+              : m,
+          ),
+        }),
+      );
+      return { prev };
+    },
+    onError: (_e, _b, ctx) => {
+      if (!chatId || !ctx?.prev) return;
+      qc.setQueryData(["chats", chatId, "messages"], ctx.prev);
+    },
     onSuccess: (data) => {
       if (!chatId) return;
       qc.setQueryData<{ messages: ChatMessage[] }>(
@@ -306,6 +347,30 @@ export function useDeleteMessage(chatId: number | null) {
         `/chats/${chatId}/messages/${messageId}`,
         { method: "DELETE" },
       ),
+    onMutate: async (messageId) => {
+      if (!chatId) return {};
+      void qc.cancelQueries({ queryKey: ["chats", chatId, "messages"] });
+      const prev = qc.getQueryData<{ messages: ChatMessage[] }>([
+        "chats",
+        chatId,
+        "messages",
+      ]);
+      qc.setQueryData<{ messages: ChatMessage[] }>(
+        ["chats", chatId, "messages"],
+        (old) => ({
+          messages: (old?.messages ?? []).map((m) =>
+            m.id === messageId
+              ? { ...m, deleted: true, content: "", editedAt: null }
+              : m,
+          ),
+        }),
+      );
+      return { prev };
+    },
+    onError: (_e, _id, ctx) => {
+      if (!chatId || !ctx?.prev) return;
+      qc.setQueryData(["chats", chatId, "messages"], ctx.prev);
+    },
     onSuccess: (data) => {
       if (!chatId) return;
       qc.setQueryData<{ messages: ChatMessage[] }>(
@@ -318,7 +383,6 @@ export function useDeleteMessage(chatId: number | null) {
           ),
         }),
       );
-      qc.invalidateQueries({ queryKey: ["chats"] });
     },
   });
 }

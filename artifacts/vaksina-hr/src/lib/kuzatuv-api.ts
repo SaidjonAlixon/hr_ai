@@ -110,6 +110,76 @@ export type PersonDetail = {
   reportsTo?: OrgEmployeeView | null;
   managedManagers?: OrgEmployeeView[];
   managedStaff?: OrgEmployeeView[];
+  branches?: Array<{
+    managerEmployeeId: number;
+    managerName: string;
+    location: string | null;
+    orgRoleLabel: string;
+    employmentStatus: string;
+    employmentStatusLabel: string;
+    shiftDisplay: string;
+    userId: number | null;
+    staffCount: number;
+    auditsCount: number;
+    needsOpen: number;
+    needsTotal: number;
+    tasksOpen: number;
+    tasksDone: number;
+    latestAudit: {
+      id: number;
+      visitDate: string;
+      visitName: string;
+      scorePercent: number;
+      yesCount: number;
+      noCount: number;
+      totalCount: number;
+      status: string;
+    } | null;
+  }>;
+  audits?: Array<{
+    id: number;
+    managerEmployeeId: number;
+    branchLocation: string | null;
+    managerName: string | null;
+    visitDate: string;
+    visitName: string;
+    scorePercent: number;
+    yesCount: number;
+    noCount: number;
+    answeredCount: number;
+    totalCount: number;
+    status: string;
+    createdAt: string | null;
+  }>;
+  needs?: Array<{
+    id: number;
+    needType: string;
+    branchLocation: string | null;
+    managerEmployeeId: number | null;
+    managerName: string | null;
+    note: string | null;
+    status: string;
+    statusLabel: string;
+    taskId: number | null;
+    createdAt: string | null;
+    confirmedAt: string | null;
+    completedAt: string | null;
+    verifiedAt: string | null;
+  }>;
+  networkTasks?: Array<{
+    id: number;
+    title: string;
+    status: string;
+    statusLabel: string;
+    priority: string;
+    dueAt: string | null;
+    assigneeId: number;
+    assigneeName: string;
+    createdByName: string;
+    completionNote?: string | null;
+    completedAt: string | null;
+    createdAt: string | null;
+  }>;
   summary: {
     vacanciesTotal: number;
     vacanciesPublished: number;
@@ -129,6 +199,13 @@ export type PersonDetail = {
     staffCount?: number;
     staffWorking?: number;
     staffNeedHire?: number;
+    branchesCount?: number;
+    auditsCount?: number;
+    auditsAvgScore?: number | null;
+    needsOpen?: number;
+    needsTotal?: number;
+    networkTasksOpen?: number;
+    networkTasksDone?: number;
   };
   vacancies: Array<{
     id: number;

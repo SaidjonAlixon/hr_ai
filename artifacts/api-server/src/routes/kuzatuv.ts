@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   db,
   tasksTable,
@@ -12,6 +12,8 @@ import {
   onlineInterviewsTable,
   requestsTable,
   departmentsTable,
+  branchAuditsTable,
+  branchNeedsTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { isHrDirektor, isHrOversight } from "../lib/roles";
@@ -134,6 +136,55 @@ async function loadOrgTree(
           .limit(1);
         if (byName) myEmployee = byName;
       }
+      // Familiya/ism qisman mosligi
+      if (!myEmployee && orgGuess) {
+        const parts = person.fullName.trim().split(/\s+/).filter((p) => p.length >= 4);
+        if (parts.length) {
+          const [fuzzy] = await db
+            .select()
+            .from(employeesTable)
+            .where(
+              and(
+                eq(employeesTable.orgRole, orgGuess),
+                or(...parts.map((p) => ilike(employeesTable.fullName, `%${p}%`))),
+              ),
+            )
+            .limit(1);
+          if (fuzzy) myEmployee = fuzzy;
+        }
+      }
+    }
+
+    // Koordinator employee yo‘q — checklist tarixidan mudirlarni tiklash
+    if (!myEmployee && person.role === "koordinator") {
+      const auditMgrIds = await db
+        .select({ id: branchAuditsTable.managerEmployeeId })
+        .from(branchAuditsTable)
+        .where(eq(branchAuditsTable.coordinatorId, personId))
+        .groupBy(branchAuditsTable.managerEmployeeId);
+      const ids = auditMgrIds.map((r) => r.id).filter(Boolean);
+      if (ids.length) {
+        const managers = await db
+          .select()
+          .from(employeesTable)
+          .where(inArray(employeesTable.id, ids))
+          .orderBy(asc(employeesTable.fullName));
+        managedManagers = managers.map(mapOrgEmployee);
+        const managerIds = managers.map((m) => m.id);
+        if (managerIds.length) {
+          const staff = await db
+            .select()
+            .from(employeesTable)
+            .where(inArray(employeesTable.reportsToId, managerIds))
+            .orderBy(asc(employeesTable.fullName));
+          const mgrName = new Map(managers.map((m) => [m.id, m.fullName]));
+          managedStaff = staff.map((s) => ({
+            ...mapOrgEmployee(s),
+            managerName: s.reportsToId ? mgrName.get(s.reportsToId) ?? null : null,
+          }));
+        }
+        return { myEmployee: null, managedManagers, managedStaff, reportsTo };
+      }
     }
 
     if (!myEmployee) {
@@ -201,6 +252,371 @@ async function loadOrgTree(
   }
 
   return { myEmployee, managedManagers, managedStaff, reportsTo };
+}
+
+const NEED_STATUS_UZ: Record<string, string> = {
+  pending: "Kutilmoqda",
+  assigned: "Topshirilgan",
+  in_progress: "Jarayonda",
+  done: "Bajarildi",
+  verified: "Tasdiqlangan",
+  closed: "Yopilgan",
+};
+
+const TASK_STATUS_UZ: Record<string, string> = {
+  todo: "Yangi",
+  in_progress: "Jarayonda",
+  done: "Bajarildi",
+  verified: "Tasdiqlangan",
+  cancelled: "Bekor",
+};
+
+const TASK_SELECT = {
+  id: tasksTable.id,
+  title: tasksTable.title,
+  description: tasksTable.description,
+  status: tasksTable.status,
+  priority: tasksTable.priority,
+  dueAt: tasksTable.dueAt,
+  assigneeKind: tasksTable.assigneeKind,
+  assigneeId: tasksTable.assigneeId,
+  createdById: tasksTable.createdById,
+  completionNote: tasksTable.completionNote,
+  completedAt: tasksTable.completedAt,
+  acceptedAt: tasksTable.acceptedAt,
+  createdAt: tasksTable.createdAt,
+  updatedAt: tasksTable.updatedAt,
+};
+
+/** Koordinatorga bog‘liq filiallar: checklist, ehtiyoj, mudir topshiriqlari */
+async function loadCoordinatorOps(
+  personId: number,
+  personRole: string,
+  managedManagers: ReturnType<typeof mapOrgEmployee>[],
+  managedStaff: Array<ReturnType<typeof mapOrgEmployee> & { managerName?: string | null }>,
+) {
+  const empty = {
+    branches: [] as Array<Record<string, unknown>>,
+    audits: [] as Array<Record<string, unknown>>,
+    needs: [] as Array<Record<string, unknown>>,
+    networkTasks: [] as Array<Record<string, unknown>>,
+    summary: {
+      branchesCount: 0,
+      auditsCount: 0,
+      auditsAvgScore: null as number | null,
+      needsOpen: 0,
+      needsTotal: 0,
+      networkTasksOpen: 0,
+      networkTasksDone: 0,
+    },
+  };
+
+  if (personRole !== "koordinator" && personRole !== "mudir") {
+    return empty;
+  }
+
+  try {
+    let managers = managedManagers;
+    // Mudir o‘zi — bitta filial
+    if (personRole === "mudir" && managers.length === 0) {
+      // managedManagers bo‘sh; employee o‘zi filial — caller da employee bor emas shu yerda
+    }
+
+    const managerIds = managers.map((m) => m.id);
+
+    // Checklist — bu koordinatorning tashriflari
+    const auditRows =
+      personRole === "koordinator"
+        ? await db
+            .select({
+              id: branchAuditsTable.id,
+              managerEmployeeId: branchAuditsTable.managerEmployeeId,
+              branchLocation: branchAuditsTable.branchLocation,
+              managerName: branchAuditsTable.managerName,
+              visitDate: branchAuditsTable.visitDate,
+              visitName: branchAuditsTable.visitName,
+              scorePercent: branchAuditsTable.scorePercent,
+              yesCount: branchAuditsTable.yesCount,
+              noCount: branchAuditsTable.noCount,
+              answeredCount: branchAuditsTable.answeredCount,
+              totalCount: branchAuditsTable.totalCount,
+              status: branchAuditsTable.status,
+              createdAt: branchAuditsTable.createdAt,
+            })
+            .from(branchAuditsTable)
+            .where(eq(branchAuditsTable.coordinatorId, personId))
+            .orderBy(desc(branchAuditsTable.visitDate), desc(branchAuditsTable.id))
+            .limit(80)
+        : managerIds.length
+          ? await db
+              .select({
+                id: branchAuditsTable.id,
+                managerEmployeeId: branchAuditsTable.managerEmployeeId,
+                branchLocation: branchAuditsTable.branchLocation,
+                managerName: branchAuditsTable.managerName,
+                visitDate: branchAuditsTable.visitDate,
+                visitName: branchAuditsTable.visitName,
+                scorePercent: branchAuditsTable.scorePercent,
+                yesCount: branchAuditsTable.yesCount,
+                noCount: branchAuditsTable.noCount,
+                answeredCount: branchAuditsTable.answeredCount,
+                totalCount: branchAuditsTable.totalCount,
+                status: branchAuditsTable.status,
+                createdAt: branchAuditsTable.createdAt,
+              })
+              .from(branchAuditsTable)
+              .where(inArray(branchAuditsTable.managerEmployeeId, managerIds))
+              .orderBy(desc(branchAuditsTable.visitDate), desc(branchAuditsTable.id))
+              .limit(40)
+          : [];
+
+    // Agar mudirlar employee daraxtidan kelmagan bo‘lsa — auditlardan to‘ldirish
+    if (managers.length === 0 && auditRows.length) {
+      const ids = [...new Set(auditRows.map((a) => a.managerEmployeeId))];
+      const rows = await db
+        .select()
+        .from(employeesTable)
+        .where(inArray(employeesTable.id, ids))
+        .orderBy(asc(employeesTable.fullName));
+      managers = rows.map(mapOrgEmployee);
+    }
+
+    const mgrIds = managers.map((m) => m.id);
+
+    const needRows =
+      mgrIds.length > 0
+        ? await db
+            .select({
+              id: branchNeedsTable.id,
+              needType: branchNeedsTable.needType,
+              branchLocation: branchNeedsTable.branchLocation,
+              managerEmployeeId: branchNeedsTable.managerEmployeeId,
+              note: branchNeedsTable.note,
+              status: branchNeedsTable.status,
+              taskId: branchNeedsTable.taskId,
+              createdAt: branchNeedsTable.createdAt,
+              confirmedAt: branchNeedsTable.confirmedAt,
+              completedAt: branchNeedsTable.completedAt,
+              verifiedAt: branchNeedsTable.verifiedAt,
+            })
+            .from(branchNeedsTable)
+            .where(inArray(branchNeedsTable.managerEmployeeId, mgrIds))
+            .orderBy(desc(branchNeedsTable.updatedAt))
+            .limit(100)
+        : [];
+
+    const mudirUserIds = managers.map((m) => m.userId).filter((id): id is number => id != null);
+    const networkTaskRows =
+      mudirUserIds.length > 0
+        ? await db
+            .select(TASK_SELECT)
+            .from(tasksTable)
+            .where(
+              and(eq(tasksTable.assigneeKind, "user"), inArray(tasksTable.assigneeId, mudirUserIds)),
+            )
+            .orderBy(desc(tasksTable.updatedAt))
+            .limit(80)
+        : [];
+
+    const nameByUser = new Map<number, string>();
+    for (const m of managers) {
+      if (m.userId) nameByUser.set(m.userId, m.fullName);
+    }
+    if (mudirUserIds.length) {
+      const creators = [
+        ...new Set(networkTaskRows.map((t) => t.createdById).filter((id) => !nameByUser.has(id))),
+      ];
+      if (creators.length) {
+        const users = await db
+          .select({ id: usersTable.id, fullName: usersTable.fullName })
+          .from(usersTable)
+          .where(inArray(usersTable.id, creators));
+        for (const u of users) nameByUser.set(u.id, u.fullName);
+      }
+    }
+
+    const staffByMgr = new Map<number, number>();
+    for (const s of managedStaff) {
+      if (s.reportsToId != null) {
+        staffByMgr.set(s.reportsToId, (staffByMgr.get(s.reportsToId) ?? 0) + 1);
+      }
+    }
+
+    const latestAuditByMgr = new Map<number, (typeof auditRows)[number]>();
+    const auditsCountByMgr = new Map<number, number>();
+    for (const a of auditRows) {
+      auditsCountByMgr.set(a.managerEmployeeId, (auditsCountByMgr.get(a.managerEmployeeId) ?? 0) + 1);
+      if (!latestAuditByMgr.has(a.managerEmployeeId)) {
+        latestAuditByMgr.set(a.managerEmployeeId, a);
+      }
+    }
+
+    const needsOpenByMgr = new Map<number, number>();
+    const needsTotalByMgr = new Map<number, number>();
+    for (const n of needRows) {
+      if (n.managerEmployeeId == null) continue;
+      needsTotalByMgr.set(
+        n.managerEmployeeId,
+        (needsTotalByMgr.get(n.managerEmployeeId) ?? 0) + 1,
+      );
+      if (!["verified", "closed"].includes(n.status)) {
+        needsOpenByMgr.set(
+          n.managerEmployeeId,
+          (needsOpenByMgr.get(n.managerEmployeeId) ?? 0) + 1,
+        );
+      }
+    }
+
+    const tasksOpenByUser = new Map<number, number>();
+    const tasksDoneByUser = new Map<number, number>();
+    for (const t of networkTaskRows) {
+      if (["done", "verified"].includes(t.status)) {
+        tasksDoneByUser.set(t.assigneeId, (tasksDoneByUser.get(t.assigneeId) ?? 0) + 1);
+      } else if (t.status !== "cancelled") {
+        tasksOpenByUser.set(t.assigneeId, (tasksOpenByUser.get(t.assigneeId) ?? 0) + 1);
+      }
+    }
+
+    const branches = managers.map((m) => {
+      const latest = latestAuditByMgr.get(m.id) ?? null;
+      return {
+        managerEmployeeId: m.id,
+        managerName: m.fullName,
+        location: m.location,
+        orgRoleLabel: m.orgRoleLabel,
+        employmentStatus: m.employmentStatus,
+        employmentStatusLabel: m.employmentStatusLabel,
+        shiftDisplay: m.shiftDisplay,
+        userId: m.userId,
+        staffCount: staffByMgr.get(m.id) ?? 0,
+        auditsCount: auditsCountByMgr.get(m.id) ?? 0,
+        needsOpen: needsOpenByMgr.get(m.id) ?? 0,
+        needsTotal: needsTotalByMgr.get(m.id) ?? 0,
+        tasksOpen: m.userId ? tasksOpenByUser.get(m.userId) ?? 0 : 0,
+        tasksDone: m.userId ? tasksDoneByUser.get(m.userId) ?? 0 : 0,
+        latestAudit: latest
+          ? {
+              id: latest.id,
+              visitDate: latest.visitDate,
+              visitName: latest.visitName,
+              scorePercent: latest.scorePercent,
+              yesCount: latest.yesCount,
+              noCount: latest.noCount,
+              totalCount: latest.totalCount,
+              status: latest.status,
+            }
+          : null,
+      };
+    });
+
+    // Auditda bor, lekin managers ro‘yxatida yo‘q filiallar
+    for (const a of auditRows) {
+      if (branches.some((b) => b.managerEmployeeId === a.managerEmployeeId)) continue;
+      branches.push({
+        managerEmployeeId: a.managerEmployeeId,
+        managerName: a.managerName || "Mudir",
+        location: a.branchLocation,
+        orgRoleLabel: "Filial mudiri",
+        employmentStatus: "working",
+        employmentStatusLabel: "—",
+        shiftDisplay: "—",
+        userId: null,
+        staffCount: 0,
+        auditsCount: auditsCountByMgr.get(a.managerEmployeeId) ?? 0,
+        needsOpen: needsOpenByMgr.get(a.managerEmployeeId) ?? 0,
+        needsTotal: needsTotalByMgr.get(a.managerEmployeeId) ?? 0,
+        tasksOpen: 0,
+        tasksDone: 0,
+        latestAudit: {
+          id: a.id,
+          visitDate: a.visitDate,
+          visitName: a.visitName,
+          scorePercent: a.scorePercent,
+          yesCount: a.yesCount,
+          noCount: a.noCount,
+          totalCount: a.totalCount,
+          status: a.status,
+        },
+      });
+    }
+
+    const audits = auditRows.map((a) => ({
+      id: a.id,
+      managerEmployeeId: a.managerEmployeeId,
+      branchLocation: a.branchLocation,
+      managerName: a.managerName,
+      visitDate: a.visitDate,
+      visitName: a.visitName,
+      scorePercent: a.scorePercent,
+      yesCount: a.yesCount,
+      noCount: a.noCount,
+      answeredCount: a.answeredCount,
+      totalCount: a.totalCount,
+      status: a.status,
+      createdAt: safeIso(a.createdAt),
+    }));
+
+    const mgrNameById = new Map(managers.map((m) => [m.id, m.fullName]));
+    const needs = needRows.map((n) => ({
+      id: n.id,
+      needType: n.needType,
+      branchLocation: n.branchLocation,
+      managerEmployeeId: n.managerEmployeeId,
+      managerName: n.managerEmployeeId ? mgrNameById.get(n.managerEmployeeId) ?? null : null,
+      note: n.note,
+      status: n.status,
+      statusLabel: NEED_STATUS_UZ[n.status] || n.status,
+      taskId: n.taskId,
+      createdAt: safeIso(n.createdAt),
+      confirmedAt: safeIso(n.confirmedAt),
+      completedAt: safeIso(n.completedAt),
+      verifiedAt: safeIso(n.verifiedAt),
+    }));
+
+    const networkTasks = networkTaskRows.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      statusLabel: TASK_STATUS_UZ[t.status] || t.status,
+      priority: t.priority,
+      dueAt: safeIso(t.dueAt),
+      assigneeId: t.assigneeId,
+      assigneeName: nameByUser.get(t.assigneeId) ?? "—",
+      createdByName: nameByUser.get(t.createdById) ?? "—",
+      completionNote: t.completionNote,
+      completedAt: safeIso(t.completedAt),
+      createdAt: safeIso(t.createdAt),
+    }));
+
+    const scored = audits.filter((a) => a.totalCount > 0);
+    const auditsAvgScore =
+      scored.length > 0
+        ? Math.round(scored.reduce((s, a) => s + a.scorePercent, 0) / scored.length)
+        : null;
+
+    return {
+      branches,
+      audits,
+      needs,
+      networkTasks,
+      summary: {
+        branchesCount: branches.length,
+        auditsCount: audits.length,
+        auditsAvgScore,
+        needsOpen: needs.filter((n) => !["verified", "closed"].includes(n.status)).length,
+        needsTotal: needs.length,
+        networkTasksOpen: networkTasks.filter(
+          (t) => !["done", "verified", "cancelled"].includes(t.status),
+        ).length,
+        networkTasksDone: networkTasks.filter((t) =>
+          ["done", "verified"].includes(t.status),
+        ).length,
+      },
+    };
+  } catch (err) {
+    console.error("kuzatuv coordinator ops error:", err);
+    return empty;
+  }
 }
 
 /** Barcha faol foydalanuvchilar — ism + lavozim bo‘yicha tanlash */
@@ -704,6 +1120,42 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
     person,
   );
 
+  const managersInput =
+    managedManagers.length > 0
+      ? managedManagers
+      : myEmployee && (myEmployee.orgRole === "manager" || person.role === "mudir")
+        ? [mapOrgEmployee(myEmployee)]
+        : [];
+
+  const coordinatorOps = await loadCoordinatorOps(
+    personId,
+    person.role,
+    managersInput,
+    managedStaff,
+  );
+
+  // Agar daraxt bo‘sh, lekin ops mudirlarni topgan bo‘lsa — UI uchun to‘ldirish
+  const managersForUi =
+    managersInput.length > 0
+      ? managersInput
+      : coordinatorOps.branches.map((b) => ({
+          id: b.managerEmployeeId as number,
+          fullName: String(b.managerName),
+          position: "Mudir",
+          orgRole: "manager",
+          orgRoleLabel: String(b.orgRoleLabel || "Filial mudiri"),
+          location: (b.location as string | null) ?? null,
+          employmentStatus: String(b.employmentStatus || "working"),
+          employmentStatusLabel: String(b.employmentStatusLabel || "—"),
+          shiftType: null,
+          shiftLabel: null,
+          shiftDisplay: String(b.shiftDisplay || "—"),
+          userId: (b.userId as number | null) ?? null,
+          hiredAt: null as string | null,
+          reportsToId: null as number | null,
+          createdAt: new Date(0).toISOString(),
+        }));
+
   const vacancies = await db
     .select({
       id: vacanciesTable.id,
@@ -930,12 +1382,19 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       ["done", "verified"].includes(t.status),
     ).length,
     tasksCreated: createdTasks.length,
-    mudirsCount: managedManagers.length,
+    mudirsCount: managersForUi.length,
     staffCount: managedStaff.length,
     staffWorking: managedStaff.filter((s) => s.employmentStatus === "working").length,
     staffNeedHire: managedStaff.filter(
       (s) => s.employmentStatus === "need_hire" || s.employmentStatus === "searching",
     ).length,
+    branchesCount: coordinatorOps.summary.branchesCount,
+    auditsCount: coordinatorOps.summary.auditsCount,
+    auditsAvgScore: coordinatorOps.summary.auditsAvgScore,
+    needsOpen: coordinatorOps.summary.needsOpen,
+    needsTotal: coordinatorOps.summary.needsTotal,
+    networkTasksOpen: coordinatorOps.summary.networkTasksOpen,
+    networkTasksDone: coordinatorOps.summary.networkTasksDone,
   };
 
   res.json({
@@ -958,8 +1417,12 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
         }
       : null,
     reportsTo,
-    managedManagers,
+    managedManagers: managersForUi,
     managedStaff,
+    branches: coordinatorOps.branches,
+    audits: coordinatorOps.audits,
+    needs: coordinatorOps.needs,
+    networkTasks: coordinatorOps.networkTasks,
     summary,
     vacancies: vacancies.map((v) => ({
       id: v.id,

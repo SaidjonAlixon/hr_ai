@@ -304,7 +304,7 @@ function PersonDossier({
 }) {
   const { data, isLoading, error } = useKuzatuvPerson(personId, true);
   const [tab, setTab] = useState<
-    "all" | "org" | "tasks" | "vacancies" | "candidates" | "interviews"
+    "all" | "org" | "branches" | "audits" | "needs" | "tasks" | "vacancies" | "candidates" | "interviews"
   >("all");
 
   if (isLoading) {
@@ -336,11 +336,19 @@ function PersonDossier({
   const p = data as PersonDetail;
   const managers = p.managedManagers ?? [];
   const staff = p.managedStaff ?? [];
-  const hasOrg =
+  const branches = p.branches ?? [];
+  const audits = p.audits ?? [];
+  const needs = p.needs ?? [];
+  const networkTasks = p.networkTasks ?? [];
+  const isCoordOrMudir = p.person.role === "koordinator" || p.person.role === "mudir";
+  const hasNetwork =
+    isCoordOrMudir ||
     Boolean(p.employee) ||
-    Boolean(p.reportsTo) ||
     managers.length > 0 ||
     staff.length > 0 ||
+    branches.length > 0 ||
+    audits.length > 0 ||
+    needs.length > 0 ||
     Boolean(p.person.departmentName);
 
   const staffByManager = new Map<number | "other", OrgEmployeeView[]>();
@@ -354,18 +362,46 @@ function PersonDossier({
 
   const tabs = [
     { id: "all" as const, label: "Hammasi" },
-    ...(hasOrg
+    ...(hasNetwork
       ? [
           {
+            id: "branches" as const,
+            label: `Filiallar / mudirlar (${p.summary.branchesCount ?? branches.length})`,
+          },
+          {
+            id: "audits" as const,
+            label: `Checklist (${p.summary.auditsCount ?? audits.length})`,
+          },
+          {
+            id: "needs" as const,
+            label: `Ehtiyoj (${p.summary.needsOpen ?? 0}/${p.summary.needsTotal ?? needs.length})`,
+          },
+          {
             id: "org" as const,
-            label: `Apteka / bo‘lim (${managers.length + staff.length})`,
+            label: `Xodimlar (${staff.length})`,
           },
         ]
       : []),
-    { id: "tasks" as const, label: `Vazifalar (${p.summary.tasksAssignedOpen + p.summary.tasksAssignedDone})` },
-    { id: "vacancies" as const, label: `Vakansiyalar (${p.summary.vacanciesTotal})` },
-    { id: "candidates" as const, label: `Nomzodlar (${p.summary.candidatesTotal})` },
-    { id: "interviews" as const, label: `Suhbatlar (${p.summary.phoneInterviews + p.summary.onlineInterviews + p.summary.offlineInterviews})` },
+    {
+      id: "tasks" as const,
+      label: `Topshiriqlar (${
+        isCoordOrMudir
+          ? (p.summary.networkTasksOpen ?? 0) + (p.summary.networkTasksDone ?? 0) +
+            p.summary.tasksAssignedOpen +
+            p.summary.tasksAssignedDone
+          : p.summary.tasksAssignedOpen + p.summary.tasksAssignedDone
+      })`,
+    },
+    ...(!isCoordOrMudir
+      ? [
+          { id: "vacancies" as const, label: `Vakansiyalar (${p.summary.vacanciesTotal})` },
+          { id: "candidates" as const, label: `Nomzodlar (${p.summary.candidatesTotal})` },
+          {
+            id: "interviews" as const,
+            label: `Suhbatlar (${p.summary.phoneInterviews + p.summary.onlineInterviews + p.summary.offlineInterviews})`,
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -409,40 +445,65 @@ function PersonDossier({
             </div>
           </div>
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Bo‘lim, apteka tarmog‘idagi bog‘liqliklar (mudirlar, farmasevtlar, stajyorlar va
-            holatlari), vazifalar, vakansiyalar, nomzodlar va suhbatlar — to‘liq ko‘rinish.
+            {isCoordOrMudir
+              ? "Shu koordinator/mudirga bog‘liq filiallar, mudirlar, checklist holati, ehtiyojlar va topshiriqlar — to‘liq kuzatuv."
+              : "Bo‘lim, vazifalar, vakansiyalar, nomzodlar va suhbatlar — to‘liq ko‘rinish."}
           </p>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {p.person.departmentName ? (
-          <StatCard label="Bo‘lim" value={p.person.departmentName} icon={Building2} />
-        ) : null}
-        {(p.summary.mudirsCount ?? 0) > 0 || managers.length > 0 ? (
-          <StatCard label="Mudirlar" value={p.summary.mudirsCount ?? managers.length} icon={UserCog} />
-        ) : null}
-        {(p.summary.staffCount ?? 0) > 0 || staff.length > 0 ? (
-          <StatCard label="Xodimlar (apteka)" value={p.summary.staffCount ?? staff.length} icon={Network} />
-        ) : null}
-        {(p.summary.staffWorking ?? 0) > 0 ? (
-          <StatCard label="Ishlayotgan" value={p.summary.staffWorking!} icon={CheckCircle2} />
-        ) : null}
-        {(p.summary.staffNeedHire ?? 0) > 0 ? (
-          <StatCard label="Xodim kerak / qidiruv" value={p.summary.staffNeedHire!} icon={Users} />
-        ) : null}
-        <StatCard label="Vakansiyalar" value={p.summary.vacanciesTotal} icon={Briefcase} />
-        <StatCard label="Faol vakansiya" value={p.summary.vacanciesPublished} icon={Briefcase} />
-        <StatCard label="Nomzodlar" value={p.summary.candidatesTotal} icon={Users} />
-        <StatCard label="Ishga olingan" value={p.summary.candidatesHired} icon={CheckCircle2} />
-        <StatCard label="Telefon suhbat" value={p.summary.phoneInterviews} icon={Phone} />
-        <StatCard label="Onlayn suhbat" value={p.summary.onlineInterviews} icon={Phone} />
-        <StatCard label="Offline suhbat" value={p.summary.offlineInterviews} icon={GraduationCap} />
-        <StatCard
-          label="Vazifa (ochiq / bajarilgan)"
-          value={`${p.summary.tasksAssignedOpen} / ${p.summary.tasksAssignedDone}`}
-          icon={ListTodo}
-        />
+        {isCoordOrMudir ? (
+          <>
+            <StatCard
+              label="Filiallar / mudirlar"
+              value={p.summary.branchesCount ?? branches.length}
+              icon={Building2}
+            />
+            <StatCard
+              label="Checklist tashriflari"
+              value={p.summary.auditsCount ?? audits.length}
+              icon={FileText}
+            />
+            <StatCard
+              label="O‘rtacha checklist %"
+              value={p.summary.auditsAvgScore != null ? `${p.summary.auditsAvgScore}%` : "—"}
+              icon={CheckCircle2}
+            />
+            <StatCard
+              label="Ehtiyoj (ochiq / jami)"
+              value={`${p.summary.needsOpen ?? 0} / ${p.summary.needsTotal ?? 0}`}
+              icon={Briefcase}
+            />
+            <StatCard
+              label="Mudir topshiriqlari"
+              value={`${p.summary.networkTasksOpen ?? 0} / ${p.summary.networkTasksDone ?? 0}`}
+              icon={ListTodo}
+            />
+            <StatCard label="Xodimlar" value={p.summary.staffCount ?? staff.length} icon={Users} />
+            {(p.summary.staffNeedHire ?? 0) > 0 ? (
+              <StatCard label="Xodim kerak" value={p.summary.staffNeedHire!} icon={UserCog} />
+            ) : null}
+          </>
+        ) : (
+          <>
+            {p.person.departmentName ? (
+              <StatCard label="Bo‘lim" value={p.person.departmentName} icon={Building2} />
+            ) : null}
+            <StatCard label="Vakansiyalar" value={p.summary.vacanciesTotal} icon={Briefcase} />
+            <StatCard label="Faol vakansiya" value={p.summary.vacanciesPublished} icon={Briefcase} />
+            <StatCard label="Nomzodlar" value={p.summary.candidatesTotal} icon={Users} />
+            <StatCard label="Ishga olingan" value={p.summary.candidatesHired} icon={CheckCircle2} />
+            <StatCard label="Telefon suhbat" value={p.summary.phoneInterviews} icon={Phone} />
+            <StatCard label="Onlayn suhbat" value={p.summary.onlineInterviews} icon={Phone} />
+            <StatCard label="Offline suhbat" value={p.summary.offlineInterviews} icon={GraduationCap} />
+            <StatCard
+              label="Vazifa (ochiq / bajarilgan)"
+              value={`${p.summary.tasksAssignedOpen} / ${p.summary.tasksAssignedDone}`}
+              icon={ListTodo}
+            />
+          </>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
@@ -463,7 +524,159 @@ function PersonDossier({
         ))}
       </div>
 
-      {(tab === "all" || tab === "org") && hasOrg ? (
+      {(tab === "all" || tab === "branches") && hasNetwork ? (
+        <Section
+          title="Filiallar va mudirlar"
+          count={branches.length || managers.length}
+          empty="Bu koordinatorga bog‘liq filial/mudir topilmadi"
+        >
+          {(branches.length ? branches : managers.map((m) => ({
+            managerEmployeeId: m.id,
+            managerName: m.fullName,
+            location: m.location,
+            employmentStatusLabel: m.employmentStatusLabel,
+            employmentStatus: m.employmentStatus,
+            shiftDisplay: m.shiftDisplay,
+            staffCount: staffByManager.get(m.id)?.length ?? 0,
+            auditsCount: 0,
+            needsOpen: 0,
+            needsTotal: 0,
+            tasksOpen: 0,
+            tasksDone: 0,
+            latestAudit: null as null,
+          }))).map((b) => (
+            <div
+              key={b.managerEmployeeId}
+              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-semibold text-slate-900">{b.managerName}</p>
+                  <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                    {b.location ? (
+                      <span className="inline-flex items-center gap-1">
+                        <MapPin className="h-3 w-3" /> {b.location}
+                      </span>
+                    ) : (
+                      <span>Filial ko‘rsatilmagan</span>
+                    )}
+                    <span>Xodimlar: {b.staffCount}</span>
+                    <span>Smena: {b.shiftDisplay}</span>
+                  </p>
+                </div>
+                {"employmentStatus" in b && b.employmentStatus ? (
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                      empStatusClass(String(b.employmentStatus)),
+                    )}
+                  >
+                    {b.employmentStatusLabel}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                <div className="rounded-xl bg-slate-50 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Checklist</p>
+                  <p className="mt-0.5 text-sm font-semibold text-slate-900">
+                    {b.latestAudit
+                      ? `${b.latestAudit.scorePercent}% · ${b.latestAudit.visitDate}`
+                      : "Tashrif yo‘q"}
+                  </p>
+                  <p className="text-[11px] text-slate-500">{b.auditsCount} ta tashrif</p>
+                </div>
+                <div className="rounded-xl bg-amber-50/70 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wide text-amber-700/70">Ehtiyoj</p>
+                  <p className="mt-0.5 text-sm font-semibold text-amber-950">
+                    {b.needsOpen} ochiq / {b.needsTotal} jami
+                  </p>
+                </div>
+                <div className="rounded-xl bg-sky-50/70 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wide text-sky-700/70">Topshiriqlar</p>
+                  <p className="mt-0.5 text-sm font-semibold text-sky-950">
+                    {b.tasksOpen} ochiq / {b.tasksDone} bajarilgan
+                  </p>
+                </div>
+              </div>
+              {b.latestAudit ? (
+                <p className="mt-2 text-xs text-slate-500">
+                  Oxirgi checklist: {b.latestAudit.visitName} · Ha {b.latestAudit.yesCount} / Yo‘q{" "}
+                  {b.latestAudit.noCount} (jami {b.latestAudit.totalCount})
+                </p>
+              ) : null}
+            </div>
+          ))}
+        </Section>
+      ) : null}
+
+      {(tab === "all" || tab === "audits") && hasNetwork ? (
+        <Section
+          title="Checklist tashriflari"
+          count={audits.length}
+          empty="Checklist tashrifi yo‘q"
+        >
+          {audits.map((a) => (
+            <div
+              key={a.id}
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+            >
+              <div>
+                <p className="font-medium text-slate-900">
+                  {a.branchLocation || "Filial"} · {a.managerName || "Mudir"}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {a.visitDate} · {a.visitName}
+                  {a.createdAt ? ` · ${formatDt(a.createdAt)}` : ""}
+                </p>
+                <p className="mt-1 text-xs text-slate-500">
+                  Ha: {a.yesCount} · Yo‘q: {a.noCount} · Javob: {a.answeredCount}/{a.totalCount}
+                </p>
+              </div>
+              <span
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                  a.scorePercent >= 80
+                    ? "bg-emerald-50 text-emerald-800"
+                    : a.scorePercent >= 50
+                      ? "bg-amber-50 text-amber-900"
+                      : "bg-red-50 text-red-700",
+                )}
+              >
+                {a.scorePercent}%
+              </span>
+            </div>
+          ))}
+        </Section>
+      ) : null}
+
+      {(tab === "all" || tab === "needs") && hasNetwork ? (
+        <Section title="Ehtiyojlar" count={needs.length} empty="Ehtiyoj yo‘q">
+          {needs.map((n) => (
+            <div
+              key={n.id}
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+            >
+              <div>
+                <p className="font-medium text-slate-900">{n.needType}</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {n.branchLocation || "—"}
+                  {n.managerName ? ` · ${n.managerName}` : ""}
+                </p>
+                {n.note ? <p className="mt-1 text-sm text-slate-600">{n.note}</p> : null}
+                <p className="mt-1 text-[11px] text-slate-400">
+                  Yaratilgan: {formatDt(n.createdAt)}
+                  {n.verifiedAt ? ` · Tasdiq: ${formatDt(n.verifiedAt)}` : ""}
+                </p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+                {n.statusLabel}
+              </span>
+            </div>
+          ))}
+        </Section>
+      ) : null}
+
+      {(tab === "all" || tab === "org") && hasNetwork ? (
         <>
           {p.person.departmentName || p.employee ? (
             <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -588,6 +801,39 @@ function PersonDossier({
 
       {(tab === "all" || tab === "tasks") && (
         <>
+          {networkTasks.length > 0 || isCoordOrMudir ? (
+            <Section
+              title="Mudirlarning topshiriqlari (shu tarmoq)"
+              count={networkTasks.length}
+              empty="Mudirlarga topshiriq biriktirilmagan"
+            >
+              {networkTasks.map((t) => (
+                <div key={t.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="font-medium text-slate-900">{t.title}</p>
+                      <p className="mt-0.5 text-xs text-slate-500">
+                        Mudir: <span className="font-medium text-slate-700">{t.assigneeName}</span>
+                        {" · "}
+                        Kimdan: {t.createdByName}
+                      </p>
+                      {t.completionNote ? (
+                        <p className="mt-1 text-xs text-emerald-700">Natija: {t.completionNote}</p>
+                      ) : null}
+                    </div>
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium">
+                      {t.statusLabel}
+                    </span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-400">
+                    Muddat: {formatDue(t.dueAt)}
+                    {t.completedAt ? ` · Bajarilgan: ${formatDt(t.completedAt)}` : ""}
+                  </p>
+                </div>
+              ))}
+            </Section>
+          ) : null}
+
           <Section
             title="Biriktirilgan vazifalar (unga qo‘yilgan)"
             count={p.tasksAssigned.length}
@@ -662,7 +908,7 @@ function PersonDossier({
         </>
       )}
 
-      {(tab === "all" || tab === "vacancies") && (
+      {!isCoordOrMudir && (tab === "all" || tab === "vacancies") && (
         <Section
           title="Vakansiyalar"
           count={p.vacancies.length}
@@ -704,7 +950,7 @@ function PersonDossier({
         </Section>
       )}
 
-      {(tab === "all" || tab === "candidates") && (
+      {!isCoordOrMudir && (tab === "all" || tab === "candidates") && (
         <Section title="Nomzodlar" count={p.candidates.length} empty="Nomzod yo‘q">
           {p.candidates.map((c) => (
             <div
@@ -748,7 +994,7 @@ function PersonDossier({
         </Section>
       )}
 
-      {(tab === "all" || tab === "interviews") && (
+      {!isCoordOrMudir && (tab === "all" || tab === "interviews") && (
         <>
           <Section
             title="Telefon suhbatlar"

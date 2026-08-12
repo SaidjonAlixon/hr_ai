@@ -3,6 +3,7 @@ import { useGetCandidate, useCreatePreboarding } from '@workspace/api-client-rea
 import { Link, useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
+import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Label } from '../../components/ui/label';
 import { Checkbox } from '../../components/ui/checkbox';
@@ -36,6 +37,10 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
 
   const [checklist, setChecklist] = useState(DEFAULT_CHECKLIST);
   const [notes, setNotes] = useState('');
+  const [scheduledDate, setScheduledDate] = useState(() =>
+    new Date().toISOString().slice(0, 10),
+  );
+  const [scheduledTime, setScheduledTime] = useState('10:00');
 
   const toggleItem = (index: number) => {
     setChecklist((prev) =>
@@ -58,6 +63,14 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
       });
       return;
     }
+    if (!scheduledDate) {
+      toast({
+        title: 'Xatolik',
+        description: 'Offline suhbat sanasini belgilang — bu HR topshirig‘i muddati bo‘ladi',
+        variant: 'destructive',
+      });
+      return;
+    }
 
     mutate(
       {
@@ -65,18 +78,24 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
           candidateId,
           checklist,
           notes: notes || undefined,
-        },
+          scheduledDate,
+          scheduledTime: scheduledTime || '10:00',
+        } as any,
       },
       {
         onSuccess: () => {
           toast({
             title: 'Saqlandi',
-            description: 'Pre-boarding yakunlandi — offline suhbat bosqichiga o\'tdi',
+            description: `Pre-boarding yakunlandi. HR ga offline suhbat topshirig‘i ketdi (${scheduledDate} ${scheduledTime || ''})`,
           });
           setLocation(nextStageFormHref(candidateId, 'preboarding')!);
         },
-        onError: () => {
-          toast({ title: 'Xatolik', description: 'Saqlashda xatolik', variant: 'destructive' });
+        onError: (err: any) => {
+          toast({
+            title: 'Xatolik',
+            description: err?.message || 'Saqlashda xatolik',
+            variant: 'destructive',
+          });
         },
       },
     );
@@ -120,6 +139,35 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
                 </span>
               </label>
             ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Offline suhbat vaqti (HR uchun)</CardTitle>
+          </CardHeader>
+          <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label>Sana *</Label>
+              <Input
+                type="date"
+                value={scheduledDate}
+                onChange={(e) => setScheduledDate(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Vaqt *</Label>
+              <Input
+                type="time"
+                value={scheduledTime}
+                onChange={(e) => setScheduledTime(e.target.value)}
+                required
+              />
+            </div>
+            <p className="md:col-span-2 text-sm text-muted-foreground">
+              Bu vaqt HR (direktor, auditor, menejer) topshirig‘ining muddati bo‘ladi — «Vazifalar» sahifasida chiqadi.
+            </p>
           </CardContent>
         </Card>
 

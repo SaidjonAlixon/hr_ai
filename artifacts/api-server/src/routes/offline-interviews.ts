@@ -5,6 +5,11 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { ensureCanManageCandidate, isRecruiterScoped } from "../lib/candidate-access";
 import { notifyActiveHrs, notifyUser } from "../lib/notify";
+import {
+  assignFinalDecisionToHrs,
+  cancelOpenPipelineTasks,
+  completePipelineStageTasks,
+} from "../lib/pipeline-tasks";
 
 const router: IRouter = Router();
 
@@ -190,6 +195,11 @@ router.patch("/offline-interviews/:id", requireAuth, async (req: AuthRequest, re
       type: "stage_change",
       linkUrl,
     });
+    await assignFinalDecisionToHrs({
+      candidateId: existing.candidateId,
+      candidateName: candidate?.fullName ?? "Nomzod",
+      createdById: req.userId!,
+    });
   } else if (updates.result === "failed") {
     await db.update(candidatesTable).set({ status: "rejected", stage: "final_decision" }).where(eq(candidatesTable.id, existing.candidateId));
     const linkUrl = `/candidates/${existing.candidateId}`;
@@ -201,6 +211,12 @@ router.patch("/offline-interviews/:id", requireAuth, async (req: AuthRequest, re
       type: "stage_change",
       linkUrl,
     });
+    await completePipelineStageTasks({
+      candidateId: existing.candidateId,
+      stage: "offline_interview",
+      status: "cancelled",
+    });
+    await cancelOpenPipelineTasks(existing.candidateId);
   }
 
   const full = await getOfflineInterviewFull(id);

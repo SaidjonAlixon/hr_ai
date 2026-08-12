@@ -34,6 +34,8 @@ export type Vazifa = {
   extensionRequestedDueAt: string | null;
   extensionNote: string | null;
   extensionStatus: "pending" | "approved" | "rejected" | null;
+  candidateId?: number | null;
+  pipelineStage?: string | null;
   createdAt: string;
   updatedAt: string;
 };

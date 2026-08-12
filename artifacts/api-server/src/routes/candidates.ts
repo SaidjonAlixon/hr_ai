@@ -216,6 +216,51 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
     await resolveStaffingHireByCandidateId(id);
   }
 
+  // Pipeline topshiriqlari — bosqich o‘tganda
+  try {
+    const {
+      assignOfferToRecruiter,
+      assignInternshipToTrainers,
+      assignHireToHrs,
+      cancelOpenPipelineTasks,
+      completePipelineStageTasks,
+    } = await import("../lib/pipeline-tasks");
+
+    if (updates.status === "rejected") {
+      await cancelOpenPipelineTasks(id);
+    } else if (updates.stage === "offer" && existing.stage !== "offer") {
+      await assignOfferToRecruiter({
+        candidateId: id,
+        candidateName: existing.fullName,
+        recruiterId: (updates.recruiterId as number | undefined) ?? existing.recruiterId,
+        createdById: req.userId!,
+      });
+    } else if (updates.stage === "internship" && existing.stage !== "internship") {
+      await assignInternshipToTrainers({
+        candidateId: id,
+        candidateName: existing.fullName,
+        createdById: req.userId!,
+      });
+    } else if (updates.stage === "hired" || updates.status === "hired") {
+      await assignHireToHrs({
+        candidateId: id,
+        candidateName: existing.fullName,
+        createdById: req.userId!,
+      });
+    } else if (updates.stage === "documents" && existing.stage !== "documents") {
+      await completePipelineStageTasks({ candidateId: id, stage: "offer" });
+      const { assignDocumentsToRecruiter } = await import("../lib/pipeline-tasks");
+      await assignDocumentsToRecruiter({
+        candidateId: id,
+        candidateName: existing.fullName,
+        recruiterId: existing.recruiterId,
+        createdById: req.userId!,
+      });
+    }
+  } catch (err) {
+    console.error("pipeline-tasks candidate patch", err);
+  }
+
   const full = await getCandidateFull(id);
   if (!full) { res.status(404).json({ error: "Topilmadi" }); return; }
   res.json(full);

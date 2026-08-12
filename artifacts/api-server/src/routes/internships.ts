@@ -82,6 +82,16 @@ router.patch("/internships/:id", async (req, res): Promise<void> => {
         .where(eq(candidatesTable.id, emp.candidateId));
       const { resolveStaffingHireByCandidateId } = await import("../lib/staffing-alert");
       await resolveStaffingHireByCandidateId(emp.candidateId);
+      const [cand] = await db
+        .select({ fullName: candidatesTable.fullName })
+        .from(candidatesTable)
+        .where(eq(candidatesTable.id, emp.candidateId));
+      const { assignHireToHrs } = await import("../lib/pipeline-tasks");
+      await assignHireToHrs({
+        candidateId: emp.candidateId,
+        candidateName: cand?.fullName ?? emp.fullName ?? "Nomzod",
+        createdById: (req as any).userId ?? existing.trainerId ?? 1,
+      });
     }
   }
 

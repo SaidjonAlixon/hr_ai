@@ -29,6 +29,10 @@ export const tasksTable = pgTable("tasks", {
   assigneeKind: text("assignee_kind").notNull().default("user"),
   assigneeId: integer("assignee_id").notNull(),
   createdById: integer("created_by_id").notNull(),
+  /** Pipeline vazifasi — qaysi nomzod */
+  candidateId: integer("candidate_id"),
+  /** Pipeline vazifasi — qaysi bosqich (offline_interview, offer, …) */
+  pipelineStage: text("pipeline_stage"),
   /** Beruvchi qo'shgan fayllar */
   attachments: jsonb("attachments").notNull().default([]),
   /** Ijrochi bajarish natijasi */

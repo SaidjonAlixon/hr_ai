@@ -1387,6 +1387,26 @@ function TaskCard({
         {task.title}
       </h3>
 
+      {task.candidateId && task.pipelineStage && (
+        <a
+          href={
+            task.pipelineStage === "hired"
+              ? `/candidates/${task.candidateId}`
+              : `/candidates/${task.candidateId}/${
+                  task.pipelineStage === "offline_interview"
+                    ? "offline-interview"
+                    : task.pipelineStage === "final_decision"
+                      ? "final-decision"
+                      : task.pipelineStage
+                }`
+          }
+          className="inline-flex text-[10px] font-medium text-sky-700 hover:underline mb-1"
+          onClick={(e) => e.stopPropagation()}
+        >
+          Nomzod formasini ochish →
+        </a>
+      )}
+
       {task.description && (
         <p className="text-[11px] text-slate-500 line-clamp-2 mb-1.5">
           {task.description}

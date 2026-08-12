@@ -4,6 +4,7 @@ import { db, offersTable, candidatesTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { ensureCanManageCandidate, isRecruiterScoped } from "../lib/candidate-access";
+import { assignDocumentsToRecruiter, cancelOpenPipelineTasks } from "../lib/pipeline-tasks";
 
 const router: IRouter = Router();
 
@@ -130,10 +131,24 @@ router.patch("/offers/:id", async (req, res): Promise<void> => {
     await db.update(candidatesTable)
       .set({ stage: "documents" })
       .where(eq(candidatesTable.id, existing.candidateId));
+    const [cand] = await db
+      .select({
+        fullName: candidatesTable.fullName,
+        recruiterId: candidatesTable.recruiterId,
+      })
+      .from(candidatesTable)
+      .where(eq(candidatesTable.id, existing.candidateId));
+    await assignDocumentsToRecruiter({
+      candidateId: existing.candidateId,
+      candidateName: cand?.fullName ?? "Nomzod",
+      recruiterId: cand?.recruiterId,
+      createdById: (req as AuthRequest).userId || cand?.recruiterId || existing.candidateId,
+    });
   } else if (updates.status === "rejected") {
     await db.update(candidatesTable)
       .set({ status: "rejected", stage: "offer" })
       .where(eq(candidatesTable.id, existing.candidateId));
+    await cancelOpenPipelineTasks(existing.candidateId);
   }
 
   const [full] = await db

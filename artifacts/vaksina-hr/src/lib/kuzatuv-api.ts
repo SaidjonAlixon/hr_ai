@@ -1,5 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 
+export type KuzatuvPersonListItem = {
+  id: number;
+  fullName: string;
+  login: string;
+  role: string;
+  roleLabel: string;
+  phone?: string | null;
+  tasksOpen: number;
+  tasksDone: number;
+};
+
+export type KuzatuvPeopleResponse = {
+  people: KuzatuvPersonListItem[];
+  roles: Array<{ value: string; label: string }>;
+};
+
 export type KuzatuvRecruiter = {
   id: number;
   fullName: string;
@@ -191,6 +207,33 @@ async function fetchPerson(id: number): Promise<PersonDetail> {
     throw new Error((body as { error?: string })?.error || "Ma'lumot yuklanmadi");
   }
   return res.json();
+}
+
+async function fetchPeople(params?: { q?: string; role?: string }): Promise<KuzatuvPeopleResponse> {
+  const sp = new URLSearchParams();
+  if (params?.q) sp.set("q", params.q);
+  if (params?.role && params.role !== "all") sp.set("role", params.role);
+  const qs = sp.toString();
+  const res = await fetch(`/api/kuzatuv/people${qs ? `?${qs}` : ""}`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string })?.error || "Xodimlar yuklanmadi");
+  }
+  return res.json();
+}
+
+export function useKuzatuvPeople(
+  params: { q?: string; role?: string } = {},
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["kuzatuv-people", params.q ?? "", params.role ?? "all"],
+    queryFn: () => fetchPeople(params),
+    enabled,
+    refetchInterval: 20_000,
+  });
 }
 
 export function useKuzatuv(enabled = true) {

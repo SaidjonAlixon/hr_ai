@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm";
 import {
   db,
   tasksTable,
@@ -16,6 +16,103 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { isHrDirektor, isHrOversight } from "../lib/roles";
 
 const router: IRouter = Router();
+
+const ROLE_LABEL_UZ: Record<string, string> = {
+  admin: "Admin",
+  hr: "HR",
+  hr_direktor: "HR Direktor",
+  hr_auditor: "HR Auditor",
+  hr_menejer: "HR Menejer",
+  recruiter: "Rekruter",
+  trainer: "Trener",
+  mentor: "Mentor",
+  director: "Direktor",
+  department_head: "Bo‘lim boshlig‘i",
+  mudir: "Mudir",
+  koordinator: "Koordinator",
+  texnik: "Texnik",
+  ombor: "Ombor",
+  farmasevt: "Farmasevt",
+};
+
+/** Barcha faol foydalanuvchilar — ism + lavozim bo‘yicha tanlash */
+router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrOversight(req.userRole) && req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat HR Direktor yoki HR Auditor ko‘ra oladi" });
+    return;
+  }
+
+  const q = String(req.query.q ?? "").trim().toLowerCase();
+  const roleFilter = String(req.query.role ?? "").trim();
+
+  let people = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      login: usersTable.login,
+      role: usersTable.role,
+      status: usersTable.status,
+      phone: usersTable.phone,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.status, "active"))
+    .orderBy(asc(usersTable.fullName));
+
+  if (roleFilter && roleFilter !== "all") {
+    people = people.filter((p) => p.role === roleFilter);
+  }
+  if (q) {
+    people = people.filter((p) => {
+      const label = ROLE_LABEL_UZ[p.role] || p.role;
+      return (
+        p.fullName.toLowerCase().includes(q) ||
+        (p.login || "").toLowerCase().includes(q) ||
+        p.role.toLowerCase().includes(q) ||
+        label.toLowerCase().includes(q)
+      );
+    });
+  }
+
+  const ids = people.map((p) => p.id);
+
+  const taskCounts =
+    ids.length > 0
+      ? await db
+          .select({
+            assigneeId: tasksTable.assigneeId,
+            status: tasksTable.status,
+            count: sql<number>`count(*)::int`,
+          })
+          .from(tasksTable)
+          .where(and(eq(tasksTable.assigneeKind, "user"), inArray(tasksTable.assigneeId, ids)))
+          .groupBy(tasksTable.assigneeId, tasksTable.status)
+      : [];
+
+  const taskMap = new Map<number, { open: number; done: number }>();
+  for (const row of taskCounts) {
+    const cur = taskMap.get(row.assigneeId) ?? { open: 0, done: 0 };
+    if (row.status === "done" || row.status === "verified") cur.done += row.count;
+    else if (row.status !== "cancelled") cur.open += row.count;
+    taskMap.set(row.assigneeId, cur);
+  }
+
+  res.json({
+    people: people.map((p) => {
+      const t = taskMap.get(p.id) ?? { open: 0, done: 0 };
+      return {
+        id: p.id,
+        fullName: p.fullName,
+        login: p.login,
+        role: p.role,
+        roleLabel: ROLE_LABEL_UZ[p.role] || p.role,
+        phone: p.phone,
+        tasksOpen: t.open,
+        tasksDone: t.done,
+      };
+    }),
+    roles: Object.entries(ROLE_LABEL_UZ).map(([value, label]) => ({ value, label })),
+  });
+});
 
 router.get("/kuzatuv", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!isHrOversight(req.userRole) && req.userRole !== "admin") {

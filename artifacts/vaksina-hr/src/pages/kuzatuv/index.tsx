@@ -6,12 +6,22 @@ import { isHrDirektor, isHrOversight, HR_ROLE_LABELS } from "@/lib/roles";
 import {
   useKuzatuv,
   useKuzatuvPerson,
+  useKuzatuvPeople,
   type KuzatuvTask,
   type PersonDetail,
+  type KuzatuvPersonListItem,
 } from "@/lib/kuzatuv-api";
 import { cn } from "@/lib/utils";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Eye,
   Briefcase,
@@ -27,6 +37,7 @@ import {
   Calendar,
   FileText,
   GraduationCap,
+  Search,
 } from "lucide-react";
 
 const STAGE_LABELS: Record<string, string> = {
@@ -624,6 +635,19 @@ export default function KuzatuvPage() {
   const full = isHrDirektor(user?.role) || user?.role === "admin";
   const { data, isLoading, error } = useKuzatuv(allowed);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  const [peopleQ, setPeopleQ] = useState("");
+  const [peopleRole, setPeopleRole] = useState("all");
+  const [debouncedQ, setDebouncedQ] = useState("");
+
+  React.useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(peopleQ.trim()), 250);
+    return () => clearTimeout(t);
+  }, [peopleQ]);
+
+  const { data: peopleData, isLoading: peopleLoading } = useKuzatuvPeople(
+    { q: debouncedQ || undefined, role: peopleRole },
+    allowed,
+  );
 
   React.useEffect(() => {
     if (user && !allowed) setLocation("/dashboard");
@@ -645,6 +669,9 @@ export default function KuzatuvPage() {
     );
   }
 
+  const people = peopleData?.people ?? [];
+  const roleOptions = peopleData?.roles ?? [];
+
   return (
     <div className="space-y-6">
       <div>
@@ -656,10 +683,94 @@ export default function KuzatuvPage() {
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Kuzatuv</h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-500">
-          Rekruter yoki istalgan ishtirokchini bosing — vazifalar, ish hajmi, suhbatlar va natijalar
-          to‘liq ochiladi.
+          Istalgan xodimni ismi yoki lavozimi bo‘yicha toping va tanlang — uning akkauntidagi
+          vazifalar, vakansiyalar, nomzodlar va suhbatlar to‘liq ochiladi.
         </p>
       </div>
+
+      {/* Xodim tanlash */}
+      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-base font-semibold text-slate-900">Xodimni tanlash</h2>
+          <span className="text-xs text-slate-400">
+            {peopleLoading ? "Yuklanmoqda…" : `${people.length} ta xodim`}
+          </span>
+        </div>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input
+              value={peopleQ}
+              onChange={(e) => setPeopleQ(e.target.value)}
+              placeholder="Ism yoki lavozim bo‘yicha qidirish…"
+              className="h-11 pl-9"
+            />
+          </div>
+          <Select value={peopleRole} onValueChange={setPeopleRole}>
+            <SelectTrigger className="h-11 w-full sm:w-[220px]">
+              <SelectValue placeholder="Lavozim" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Barcha lavozimlar</SelectItem>
+              {roleOptions.map((r) => (
+                <SelectItem key={r.value} value={r.value}>
+                  {r.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="mt-4 max-h-[360px] space-y-1 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/60 p-1.5">
+          {peopleLoading ? (
+            <div className="space-y-2 p-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <Skeleton key={i} className="h-14 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : people.length === 0 ? (
+            <p className="px-4 py-8 text-center text-sm text-slate-400">
+              Mos xodim topilmadi
+            </p>
+          ) : (
+            people.map((p: KuzatuvPersonListItem) => (
+              <button
+                key={p.id}
+                type="button"
+                onClick={() => setSelectedPersonId(p.id)}
+                className="flex w-full items-center gap-3 rounded-xl bg-white px-3 py-3 text-left shadow-sm ring-1 ring-slate-200/70 transition hover:ring-[#0b3a5c]/40 hover:shadow-md"
+              >
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0b3a5c] text-sm font-bold text-white">
+                  {p.fullName
+                    .split(/\s+/)
+                    .slice(0, 2)
+                    .map((w) => w[0])
+                    .join("")
+                    .toUpperCase()}
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-semibold text-slate-900">{p.fullName}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                      {p.roleLabel}
+                    </span>
+                    {full && p.login ? <span>@{p.login}</span> : null}
+                    <span>
+                      Vazifa:{" "}
+                      <span className="text-amber-700">{p.tasksOpen}</span>
+                      {" / "}
+                      <span className="text-emerald-700">{p.tasksDone}</span>
+                    </span>
+                  </span>
+                </span>
+                <span className="hidden shrink-0 text-xs font-medium text-[#0b3a5c] sm:inline">
+                  To‘liq ochish →
+                </span>
+              </button>
+            ))
+          )}
+        </div>
+      </section>
 
       {isLoading ? (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -750,13 +861,8 @@ export default function KuzatuvPage() {
                       >
                         <td className="px-4 py-3 font-medium text-[#0b3a5c]">
                           {r.fullName}
-                          {full && r.login ? (
-                            <span className="mt-0.5 block text-xs font-normal text-slate-400">
-                              @{r.login}
-                            </span>
-                          ) : null}
                           <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
-                            Batafsil ochish →
+                            Rekruter · Batafsil →
                           </span>
                         </td>
                         <td className="px-4 py-3">

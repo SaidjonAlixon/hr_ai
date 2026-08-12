@@ -1,44 +1,129 @@
 import React, { useMemo, useState } from 'react';
-import { useGetVacancies, VacancyStatus } from '@workspace/api-client-react';
+import {
+  useGetVacancies,
+  useUpdateVacancy,
+  getGetVacanciesQueryKey,
+  VacancyStatus,
+} from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { Link, useLocation } from 'wouter';
-import { Search, Plus, Filter, MapPin, DollarSign, Clock, Users, Share2, Briefcase } from 'lucide-react';
+import {
+  Search,
+  Plus,
+  Filter,
+  MapPin,
+  DollarSign,
+  Clock,
+  Users,
+  Share2,
+  Briefcase,
+  CheckCircle2,
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { FaTelegram, FaInstagram, FaGlobe, FaFacebook } from 'react-icons/fa';
 import { useAuth } from '../../contexts/AuthContext';
 import { DeadlineCountdown } from '../../components/DeadlineCountdown';
 import { sortByDeadlineAsc } from '../../lib/deadline-countdown';
+import { useToast } from '../../hooks/use-toast';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '../../components/ui/alert-dialog';
 
 export default function VacanciesList() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const canCreate = user?.role === 'hr' || user?.role === 'admin';
   const canPublish = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'recruiter';
+  const canCloseRole =
+    user?.role === 'hr' ||
+    user?.role === 'admin' ||
+    user?.role === 'director' ||
+    user?.role === 'recruiter';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [closingId, setClosingId] = useState<number | null>(null);
 
   const { data: vacancies, isLoading } = useGetVacancies({
     search: search || undefined,
     status: statusFilter !== 'all' ? statusFilter : undefined,
   });
+  const closeMutation = useUpdateVacancy();
 
   const sortedVacancies = useMemo(() => {
     const list = vacancies ?? [];
-    // Muddat kam qolganlari birinchi; muddatsizlar oxirida
-    return sortByDeadlineAsc(list as Array<typeof list[number] & { deadline?: string | null }>);
+    return sortByDeadlineAsc(list as Array<(typeof list)[number] & { deadline?: string | null }>);
   }, [vacancies]);
 
   const getStatusBadge = (status: VacancyStatus) => {
     switch (status) {
-      case 'draft': return <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200">Yangi</Badge>;
-      case 'published': return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 border-emerald-200">Faol</Badge>;
-      case 'closed': return <Badge variant="secondary" className="bg-gray-800 text-white">Yopilgan</Badge>;
-      default: return <Badge>{status}</Badge>;
+      case 'draft':
+        return (
+          <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200">
+            Yangi
+          </Badge>
+        );
+      case 'published':
+        return (
+          <Badge variant="secondary" className="bg-emerald-100 text-emerald-800 border-emerald-200">
+            Faol
+          </Badge>
+        );
+      case 'closed':
+        return (
+          <Badge variant="secondary" className="bg-slate-800 text-white gap-1">
+            <CheckCircle2 className="w-3 h-3" /> Bajarildi
+          </Badge>
+        );
+      default:
+        return <Badge>{status}</Badge>;
     }
+  };
+
+  const canCloseVacancy = (vacancy: { status: string; recruiterId?: number | null }) => {
+    if (!canCloseRole) return false;
+    if (vacancy.status === 'closed' || vacancy.status === 'draft') return false;
+    if (user?.role === 'recruiter') return vacancy.recruiterId === user.id;
+    return true;
+  };
+
+  const handleClose = (id: number) => {
+    setClosingId(id);
+    closeMutation.mutate(
+      { id, data: { status: 'closed' } },
+      {
+        onSuccess: () => {
+          queryClient.invalidateQueries({ queryKey: getGetVacanciesQueryKey() });
+          toast({
+            title: 'Bajarildi',
+            description: "Ish o'rni yopildi — odam olindi",
+          });
+          setClosingId(null);
+        },
+        onError: (err: any) => {
+          toast({
+            title: 'Xatolik',
+            description: err?.message || "Ish o'rinini yopib bo'lmadi",
+            variant: 'destructive',
+          });
+          setClosingId(null);
+        },
+      },
+    );
   };
 
   const getChannelIcon = (name: string) => {
@@ -90,7 +175,7 @@ export default function VacanciesList() {
               <SelectItem value="all">Barcha statuslar</SelectItem>
               <SelectItem value="draft">Yangi</SelectItem>
               <SelectItem value="published">Faol</SelectItem>
-              <SelectItem value="closed">Yopilgan</SelectItem>
+              <SelectItem value="closed">Bajarildi</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -116,12 +201,18 @@ export default function VacanciesList() {
                   openVacancy(vacancy.id, vacancy.status === 'draft' && canPublish);
                 }
               }}
-              className="group hover:shadow-md transition-all flex flex-col border-t-4 border-t-transparent hover:border-t-primary cursor-pointer"
+              className={`group hover:shadow-md transition-all flex flex-col border-t-4 cursor-pointer ${
+                vacancy.status === 'closed'
+                  ? 'border-t-slate-400 opacity-90'
+                  : 'border-t-transparent hover:border-t-primary'
+              }`}
             >
               <CardContent className="p-5 flex-1 flex flex-col">
                 <div className="flex justify-between items-start mb-4 gap-2">
                   {getStatusBadge(vacancy.status)}
-                  <span className="text-xs text-muted-foreground">{format(new Date(vacancy.createdAt), 'dd.MM.yyyy')}</span>
+                  <span className="text-xs text-muted-foreground">
+                    {format(new Date(vacancy.createdAt), 'dd.MM.yyyy')}
+                  </span>
                 </div>
 
                 <h3 className="text-xl font-bold text-foreground mb-2 group-hover:text-primary transition-colors line-clamp-2">
@@ -129,10 +220,11 @@ export default function VacanciesList() {
                 </h3>
                 {(vacancy as any).recruiterName && (
                   <p className="text-sm text-muted-foreground mb-2">
-                    Rekruter: <span className="font-medium text-foreground">{(vacancy as any).recruiterName}</span>
+                    Rekruter:{' '}
+                    <span className="font-medium text-foreground">{(vacancy as any).recruiterName}</span>
                   </p>
                 )}
-                {(vacancy as any).deadline && (
+                {(vacancy as any).deadline && vacancy.status !== 'closed' && (
                   <div className="mb-3" onClick={(e) => e.stopPropagation()}>
                     <DeadlineCountdown
                       deadline={(vacancy as any).deadline}
@@ -142,20 +234,23 @@ export default function VacanciesList() {
                   </div>
                 )}
 
-                <div className="space-y-2 mt-auto mb-6">
+                <div className="space-y-2 mt-auto mb-4">
                   {vacancy.location && (
                     <div className="flex items-center text-sm text-muted-foreground">
-                      <MapPin className="w-4 h-4 mr-2 shrink-0" /> <span className="truncate">{vacancy.location}</span>
+                      <MapPin className="w-4 h-4 mr-2 shrink-0" />
+                      <span className="truncate">{vacancy.location}</span>
                     </div>
                   )}
                   {vacancy.salaryRange && (
                     <div className="flex items-center text-sm text-muted-foreground">
-                      <DollarSign className="w-4 h-4 mr-2 shrink-0" /> <span className="truncate">{vacancy.salaryRange}</span>
+                      <DollarSign className="w-4 h-4 mr-2 shrink-0" />
+                      <span className="truncate">{vacancy.salaryRange}</span>
                     </div>
                   )}
                   {vacancy.schedule && (
                     <div className="flex items-center text-sm text-muted-foreground">
-                      <Clock className="w-4 h-4 mr-2 shrink-0" /> <span className="truncate">{vacancy.schedule}</span>
+                      <Clock className="w-4 h-4 mr-2 shrink-0" />
+                      <span className="truncate">{vacancy.schedule}</span>
                     </div>
                   )}
                 </div>
@@ -165,7 +260,11 @@ export default function VacanciesList() {
                     {vacancy.channels && vacancy.channels.length > 0 ? (
                       <div className="flex -space-x-2">
                         {vacancy.channels.map((ch, i) => (
-                          <div key={i} className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm" title={ch.channelName}>
+                          <div
+                            key={i}
+                            className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm"
+                            title={ch.channelName}
+                          >
                             {getChannelIcon(ch.channelName)}
                           </div>
                         ))}
@@ -184,6 +283,46 @@ export default function VacanciesList() {
                     <span>{vacancy.candidatesCount || 0}</span>
                   </div>
                 </div>
+
+                {canCloseVacancy(vacancy) && (
+                  <div
+                    className="mt-3"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="w-full gap-2 border-slate-300 text-slate-800 hover:bg-slate-900 hover:text-white"
+                          disabled={closingId === vacancy.id && closeMutation.isPending}
+                        >
+                          <CheckCircle2 className="w-4 h-4" />
+                          {closingId === vacancy.id && closeMutation.isPending
+                            ? 'Yopilmoqda...'
+                            : "Ish o'rinini yopish"}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Ish o‘rinini yopish?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            «{vacancy.title}» — odam olindi deb belgilansin. Status{' '}
+                            <strong>Bajarildi</strong> bo‘ladi.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Bekor</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => handleClose(vacancy.id)}>
+                            Ha, yopish
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                )}
               </CardContent>
             </Card>
           ))}
@@ -194,7 +333,9 @@ export default function VacanciesList() {
             <Briefcase className="w-8 h-8 text-gray-400" />
           </div>
           <h3 className="text-lg font-medium text-gray-900">Ish o'rinlari topilmadi</h3>
-          <p className="text-gray-500 mt-1">Hozircha tizimda ish o'rinlari mavjud emas yoki qidiruvga mos kelmadi.</p>
+          <p className="text-gray-500 mt-1">
+            Hozircha tizimda ish o'rinlari mavjud emas yoki qidiruvga mos kelmadi.
+          </p>
           {canCreate && (
             <Link href="/vacancies/new">
               <Button className="mt-4">Yangi qo'shish</Button>

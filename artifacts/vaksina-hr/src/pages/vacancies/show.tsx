@@ -1,10 +1,10 @@
 import React from 'react';
-import { useGetVacancy, usePublishVacancy, useDeleteVacancy } from '@workspace/api-client-react';
+import { useGetVacancy, usePublishVacancy, useDeleteVacancy, useUpdateVacancy } from '@workspace/api-client-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
-import { ArrowLeft, MapPin, Clock, DollarSign, Gift, Share2, Users, Trash2, CheckCircle } from 'lucide-react';
+import { ArrowLeft, MapPin, Clock, DollarSign, Gift, Share2, Users, Trash2, CheckCircle, CheckCircle2 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
@@ -38,6 +38,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   const { data: vacancy, isLoading, refetch } = useGetVacancy(id, { query: { enabled: !!id } });
   const { mutate: publish, isPending: isPublishing } = usePublishVacancy();
   const { mutate: removeVacancy, isPending: isDeleting } = useDeleteVacancy();
+  const { mutate: updateVacancy, isPending: isClosing } = useUpdateVacancy();
   const { toast } = useToast();
   const [selectedChannels, setSelectedChannels] = React.useState<number[]>([]);
   const autoPublish = new URLSearchParams(window.location.search).get('publish') === '1';
@@ -46,6 +47,13 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   const canDelete = user?.role === 'hr' || user?.role === 'director';
   const isAssignedRecruiter =
     user?.role === 'recruiter' && vacancy?.recruiterId === user.id;
+  const canClose =
+    !!vacancy &&
+    vacancy.status === 'published' &&
+    (user?.role === 'admin' ||
+      user?.role === 'hr' ||
+      user?.role === 'director' ||
+      isAssignedRecruiter);
 
   React.useEffect(() => {
     if (autoPublish && vacancy?.status === 'draft' && canPublish) {
@@ -103,6 +111,25 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
     );
   };
 
+  const handleClose = () => {
+    updateVacancy(
+      { id, data: { status: 'closed' } },
+      {
+        onSuccess: () => {
+          toast({ title: 'Bajarildi', description: "Ish o'rni yopildi — odam olindi" });
+          refetch();
+        },
+        onError: (err: any) => {
+          toast({
+            title: 'Xatolik',
+            description: err?.message || "Ish o'rinini yopib bo'lmadi",
+            variant: 'destructive',
+          });
+        },
+      },
+    );
+  };
+
   const publishChannels = [
     { id: 1, name: 'HeadHunter (hh.uz)' },
     { id: 2, name: 'OLX.uz' },
@@ -121,8 +148,25 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-3xl font-bold tracking-tight">{vacancy.title}</h1>
-              <Badge variant={vacancy.status === 'published' ? 'default' : 'secondary'} className={vacancy.status === 'published' ? 'bg-emerald-100 text-emerald-800' : vacancy.status === 'draft' ? 'bg-amber-100 text-amber-800' : ''}>
-                {vacancy.status === 'published' ? 'Faol' : vacancy.status === 'draft' ? 'Yangi' : 'Yopilgan'}
+              <Badge
+                variant="secondary"
+                className={
+                  vacancy.status === 'published'
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : vacancy.status === 'draft'
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-800 text-white gap-1'
+                }
+              >
+                {vacancy.status === 'published' ? (
+                  'Faol'
+                ) : vacancy.status === 'draft' ? (
+                  'Yangi'
+                ) : (
+                  <>
+                    <CheckCircle2 className="w-3 h-3" /> Bajarildi
+                  </>
+                )}
               </Badge>
             </div>
             <p className="text-muted-foreground mt-1">
@@ -135,12 +179,36 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
         </div>
         
         <div className="flex gap-2 flex-wrap">
-          {(user?.role === 'recruiter' || user?.role === 'hr' || user?.role === 'director' || user?.role === 'admin') && (
+          {(user?.role === 'recruiter' || user?.role === 'hr' || user?.role === 'director' || user?.role === 'admin') &&
+            vacancy.status !== 'closed' && (
             <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
               <Button variant="outline" className="gap-2">
                 <Users className="w-4 h-4" /> Nomzod qo'shish
               </Button>
             </Link>
+          )}
+
+          {canClose && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="outline" className="gap-2" disabled={isClosing}>
+                  <CheckCircle2 className="w-4 h-4" />
+                  {isClosing ? 'Yopilmoqda...' : "Ish o'rinini yopish"}
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Ish o‘rinini yopish?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    Odam olindi deb belgilansin. Status <strong>Bajarildi</strong> bo‘ladi.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Bekor</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClose}>Ha, yopish</AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
           
           {vacancy.status === 'draft' && canPublish && (

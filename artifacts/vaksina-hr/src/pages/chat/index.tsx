@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
+  useAddChatMembers,
   useChatList,
   useChatMessages,
   useChatUsers,
@@ -19,6 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -27,6 +29,8 @@ import {
   Plus,
   Search,
   Send,
+  User,
+  UserPlus,
   Users,
 } from "lucide-react";
 
@@ -42,7 +46,10 @@ const ROLE_LABELS: Record<string, string> = {
   koordinator: "Koordinator",
   texnik: "Texnik",
   ombor: "Ombor",
+  farmasevt: "Farmasevt",
 };
+
+type ListFilter = "all" | "direct" | "group";
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/).filter(Boolean);
@@ -95,22 +102,62 @@ function AvatarBubble({
   );
 }
 
+function GroupAvatar({ size = "md" }: { size?: "sm" | "md" }) {
+  const dim = size === "sm" ? "h-9 w-9" : "h-11 w-11";
+  return (
+    <div
+      className={cn(
+        "shrink-0 rounded-full flex items-center justify-center text-white shadow-sm",
+        "bg-gradient-to-br from-[#6C5CE7] to-[#A29BFE]",
+        dim,
+      )}
+    >
+      <Users className={size === "sm" ? "h-4 w-4" : "h-5 w-5"} />
+    </div>
+  );
+}
+
 function tintForId(id: number) {
   const colors = [
     "#2AABEE",
-    "#6C5CE7",
     "#00B894",
     "#E17055",
     "#0984E3",
     "#D63031",
     "#00CEC9",
     "#FD79A8",
+    "#FDCB6E",
   ];
   return colors[id % colors.length]!;
 }
 
+function TypeBadge({ type }: { type: string }) {
+  const isGroup = type === "group";
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide shrink-0",
+        isGroup
+          ? "bg-[#6C5CE7]/25 text-[#C4B5FD]"
+          : "bg-[#2AABEE]/20 text-[#7DD3FC]",
+      )}
+    >
+      {isGroup ? (
+        <>
+          <Users className="h-2.5 w-2.5" /> Guruh
+        </>
+      ) : (
+        <>
+          <User className="h-2.5 w-2.5" /> Shaxsiy
+        </>
+      )}
+    </span>
+  );
+}
+
 export default function ChatPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [urlChatId, setUrlChatId] = useState<number | null>(() => {
     const id = Number(new URLSearchParams(window.location.search).get("id"));
     return Number.isFinite(id) && id > 0 ? id : null;
@@ -118,6 +165,7 @@ export default function ChatPage() {
 
   const [selectedId, setSelectedId] = useState<number | null>(urlChatId);
   const [listQuery, setListQuery] = useState("");
+  const [listFilter, setListFilter] = useState<ListFilter>("all");
   const [mobileShowChat, setMobileShowChat] = useState(!!urlChatId);
   const [newOpen, setNewOpen] = useState(false);
   const [newMode, setNewMode] = useState<"direct" | "group">("direct");
@@ -125,6 +173,10 @@ export default function ChatPage() {
   const [picked, setPicked] = useState<ChatUser[]>([]);
   const [groupTitle, setGroupTitle] = useState("");
   const [draft, setDraft] = useState("");
+  const [addOpen, setAddOpen] = useState(false);
+  const [addQuery, setAddQuery] = useState("");
+  const [addPicked, setAddPicked] = useState<ChatUser[]>([]);
+  const [membersOpen, setMembersOpen] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const list = useChatList();
@@ -132,7 +184,9 @@ export default function ChatPage() {
   const createChat = useCreateChat();
   const sendMessage = useSendMessage(selectedId);
   const markRead = useMarkChatRead();
+  const addMembers = useAddChatMembers(selectedId);
   const chatUsers = useChatUsers(userQuery, newOpen);
+  const addUsers = useChatUsers(addQuery, addOpen);
 
   useEffect(() => {
     if (urlChatId) {
@@ -159,18 +213,40 @@ export default function ChatPage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.data?.messages?.length, selectedId]);
 
+  // URL dagi chat sizga tegishli emas bo‘lsa — tozalash
+  useEffect(() => {
+    if (!list.data || !selectedId) return;
+    const found = list.data.chats.some((c) => c.id === selectedId);
+    if (!found && !list.isLoading) {
+      setSelectedId(null);
+      setMobileShowChat(false);
+      const url = new URL(window.location.href);
+      url.searchParams.delete("id");
+      window.history.replaceState({}, "", url.pathname + (url.search || ""));
+    }
+  }, [list.data, list.isLoading, selectedId]);
+
   const chats = list.data?.chats ?? [];
   const filteredChats = useMemo(() => {
     const q = listQuery.trim().toLowerCase();
-    if (!q) return chats;
-    return chats.filter(
-      (c) =>
+    return chats.filter((c) => {
+      if (listFilter === "direct" && c.type !== "direct") return false;
+      if (listFilter === "group" && c.type !== "group") return false;
+      if (!q) return true;
+      return (
         c.title.toLowerCase().includes(q) ||
-        c.lastMessage?.content.toLowerCase().includes(q),
-    );
-  }, [chats, listQuery]);
+        (c.lastMessage?.content || "").toLowerCase().includes(q) ||
+        c.members.some((m) => m.fullName.toLowerCase().includes(q))
+      );
+    });
+  }, [chats, listQuery, listFilter]);
 
   const activeChat: ChatListItem | undefined = chats.find((c) => c.id === selectedId);
+
+  const addableUsers = useMemo(() => {
+    const memberIds = new Set(activeChat?.members.map((m) => m.id) ?? []);
+    return (addUsers.data?.users ?? []).filter((u) => !memberIds.has(u.id));
+  }, [addUsers.data?.users, activeChat?.members]);
 
   const openChat = (id: number) => {
     setSelectedId(id);
@@ -192,6 +268,13 @@ export default function ChatPage() {
     });
   };
 
+  const toggleAddPick = (u: ChatUser) => {
+    setAddPicked((prev) => {
+      if (prev.some((p) => p.id === u.id)) return prev.filter((p) => p.id !== u.id);
+      return [...prev, u];
+    });
+  };
+
   const submitNewChat = async () => {
     if (!picked.length) return;
     try {
@@ -204,6 +287,10 @@ export default function ChatPage() {
         setPicked([]);
         setUserQuery("");
         openChat(res.chat.id);
+        toast({
+          title: res.chat.existing ? "Shaxsiy chat" : "Yangi shaxsiy chat",
+          description: "Faqat ikkingiz ko‘rasiz",
+        });
       } else {
         if (!groupTitle.trim()) return;
         const res = await createChat.mutateAsync({
@@ -216,9 +303,38 @@ export default function ChatPage() {
         setGroupTitle("");
         setUserQuery("");
         openChat(res.chat.id);
+        toast({
+          title: "Guruh ochildi",
+          description: "Faqat qo‘shilgan a’zolar ko‘radi",
+        });
       }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Xato");
+      toast({
+        title: "Xatolik",
+        description: e instanceof Error ? e.message : "Chat ochilmadi",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const submitAddMembers = async () => {
+    if (!addPicked.length || !selectedId) return;
+    try {
+      await addMembers.mutateAsync(addPicked.map((p) => p.id));
+      setAddOpen(false);
+      setAddPicked([]);
+      setAddQuery("");
+      toast({
+        title: "A’zolar qo‘shildi",
+        description: `${addPicked.length} kishi guruhga qo‘shildi`,
+      });
+      void list.refetch();
+    } catch (e) {
+      toast({
+        title: "Xatolik",
+        description: e instanceof Error ? e.message : "Qo‘shib bo‘lmadi",
+        variant: "destructive",
+      });
     }
   };
 
@@ -230,11 +346,17 @@ export default function ChatPage() {
       await sendMessage.mutateAsync(text);
     } catch (e) {
       setDraft(text);
-      alert(e instanceof Error ? e.message : "Yuborilmadi");
+      toast({
+        title: "Yuborilmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
     }
   };
 
   const meId = user?.id;
+  const directCount = chats.filter((c) => c.type === "direct").length;
+  const groupCount = chats.filter((c) => c.type === "group").length;
 
   return (
     <div className="h-full min-h-0 flex bg-[#0e1621] text-white overflow-hidden rounded-none sm:rounded-xl border border-[#1c2733]">
@@ -265,6 +387,34 @@ export default function ChatPage() {
               Yangi
             </Button>
           </div>
+
+          <div className="flex gap-1.5 mb-3">
+            {(
+              [
+                { id: "all", label: "Barchasi", count: chats.length },
+                { id: "direct", label: "Shaxsiy", count: directCount },
+                { id: "group", label: "Guruh", count: groupCount },
+              ] as const
+            ).map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setListFilter(tab.id)}
+                className={cn(
+                  "flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors",
+                  listFilter === tab.id
+                    ? tab.id === "group"
+                      ? "bg-[#6C5CE7] text-white"
+                      : "bg-[#2AABEE] text-white"
+                    : "bg-[#242f3d] text-[#8b9aab] hover:text-white",
+                )}
+              >
+                {tab.label}
+                <span className="ml-1 opacity-80">{tab.count}</span>
+              </button>
+            ))}
+          </div>
+
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#6c7a89]" />
             <Input
@@ -284,11 +434,14 @@ export default function ChatPage() {
             <div className="p-6 text-center text-[#6c7a89]">
               <MessageCircle className="h-10 w-10 mx-auto mb-2 opacity-40" />
               <p className="text-sm">Hali chat yo‘q</p>
-              <p className="text-xs mt-1">«Yangi» orqali xodim bilan suhbat boshlang</p>
+              <p className="text-xs mt-1">
+                Shaxsiy suhbat yoki guruh oching — faqat a’zolar ko‘radi
+              </p>
             </div>
           )}
           {filteredChats.map((c) => {
             const active = c.id === selectedId;
+            const isGroup = c.type === "group";
             return (
               <button
                 key={c.id}
@@ -297,28 +450,31 @@ export default function ChatPage() {
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-3 text-left transition-colors border-b border-[#1c2733]/60",
                   active ? "bg-[#2b5278]/50" : "hover:bg-[#202b36]",
+                  isGroup && "border-l-2 border-l-[#6C5CE7]",
+                  !isGroup && "border-l-2 border-l-transparent",
                 )}
               >
-                {c.type === "group" ? (
-                  <div className="h-11 w-11 rounded-full bg-[#6C5CE7] flex items-center justify-center shrink-0">
-                    <Users className="h-5 w-5" />
-                  </div>
+                {isGroup ? (
+                  <GroupAvatar />
                 ) : (
-                  <AvatarBubble
-                    name={c.title}
-                    tint={tintForId(c.peer?.id || c.id)}
-                  />
+                  <AvatarBubble name={c.title} tint={tintForId(c.peer?.id || c.id)} />
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium truncate">{c.title}</span>
+                    <div className="flex items-center gap-1.5 min-w-0">
+                      <span className="font-medium truncate">{c.title}</span>
+                      <TypeBadge type={c.type} />
+                    </div>
                     <span className="text-[11px] text-[#6c7a89] shrink-0">
                       {formatTime(c.lastMessageAt)}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-2 mt-0.5">
                     <p className="text-xs text-[#8b9aab] truncate">
-                      {c.lastMessage?.content || "Suhbat boshlandi"}
+                      {isGroup
+                        ? c.lastMessage?.content ||
+                          `${c.memberCount ?? c.members.length} a’zo · faqat guruh`
+                        : c.lastMessage?.content || "Shaxsiy suhbat · faqat ikkingiz"}
                     </p>
                     {c.unreadCount > 0 && (
                       <span className="shrink-0 min-w-[18px] h-[18px] px-1 rounded-full bg-[#2AABEE] text-[10px] font-semibold flex items-center justify-center">
@@ -348,6 +504,9 @@ export default function ChatPage() {
           <div className="flex-1 flex flex-col items-center justify-center text-[#6c7a89] p-6">
             <MessageCircle className="h-16 w-16 mb-3 opacity-30" />
             <p className="text-base">Chatni tanlang yoki yangi suhbat boshlang</p>
+            <p className="text-xs mt-2 max-w-sm text-center">
+              Shaxsiy chat — faqat 2 kishi. Guruh — faqat qo‘shilgan a’zolar.
+            </p>
           </div>
         ) : (
           <>
@@ -360,9 +519,7 @@ export default function ChatPage() {
                 <ArrowLeft className="h-5 w-5" />
               </button>
               {activeChat.type === "group" ? (
-                <div className="h-10 w-10 rounded-full bg-[#6C5CE7] flex items-center justify-center">
-                  <Users className="h-5 w-5" />
-                </div>
+                <GroupAvatar size="sm" />
               ) : (
                 <AvatarBubble
                   name={activeChat.title}
@@ -370,16 +527,39 @@ export default function ChatPage() {
                   tint={tintForId(activeChat.peer?.id || activeChat.id)}
                 />
               )}
-              <div className="min-w-0">
-                <p className="font-medium truncate leading-tight">{activeChat.title}</p>
-                <p className="text-[11px] text-[#8b9aab] truncate">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <p className="font-medium truncate leading-tight">{activeChat.title}</p>
+                  <TypeBadge type={activeChat.type} />
+                </div>
+                <button
+                  type="button"
+                  className="text-[11px] text-[#8b9aab] truncate hover:text-[#2AABEE]"
+                  onClick={() => {
+                    if (activeChat.type === "group") setMembersOpen(true);
+                  }}
+                >
                   {activeChat.type === "group"
-                    ? `${activeChat.members.length} a’zo`
-                    : ROLE_LABELS[activeChat.peer?.role || ""] ||
-                      activeChat.peer?.role ||
-                      ""}
-                </p>
+                    ? `${activeChat.members.length} a’zo · faqat guruh a’zolari`
+                    : `${ROLE_LABELS[activeChat.peer?.role || ""] || activeChat.peer?.role || ""} · faqat ikkingiz`}
+                </button>
               </div>
+              {activeChat.type === "group" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 gap-1 border-[#6C5CE7]/50 bg-transparent text-[#C4B5FD] hover:bg-[#6C5CE7]/20"
+                  onClick={() => {
+                    setAddPicked([]);
+                    setAddQuery("");
+                    setAddOpen(true);
+                  }}
+                >
+                  <UserPlus className="h-4 w-4" />
+                  <span className="hidden sm:inline">A’zo</span>
+                </Button>
+              )}
             </header>
 
             <div className="flex-1 overflow-y-auto px-3 sm:px-6 py-4 space-y-2">
@@ -467,43 +647,49 @@ export default function ChatPage() {
             <DialogTitle>Yangi chat</DialogTitle>
           </DialogHeader>
 
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2 mb-2">
             <Button
               type="button"
-              variant={newMode === "direct" ? "default" : "outline"}
               className={cn(
-                "flex-1",
+                "flex-1 gap-1.5",
                 newMode === "direct"
                   ? "bg-[#2AABEE] hover:bg-[#229ED9]"
-                  : "border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]",
+                  : "border border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]",
               )}
               onClick={() => {
                 setNewMode("direct");
                 setPicked((p) => (p[0] ? [p[0]] : []));
               }}
             >
+              <User className="h-4 w-4" />
               Shaxsiy
             </Button>
             <Button
               type="button"
-              variant={newMode === "group" ? "default" : "outline"}
               className={cn(
-                "flex-1",
+                "flex-1 gap-1.5",
                 newMode === "group"
-                  ? "bg-[#2AABEE] hover:bg-[#229ED9]"
-                  : "border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]",
+                  ? "bg-[#6C5CE7] hover:bg-[#5A4BD1]"
+                  : "border border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]",
               )}
               onClick={() => setNewMode("group")}
             >
+              <Users className="h-4 w-4" />
               Guruh
             </Button>
           </div>
+
+          <p className="text-xs text-[#8b9aab] mb-3">
+            {newMode === "direct"
+              ? "Faqat siz va tanlangan xodim ko‘radi. Boshqalar bu suhbatni ko‘rmaydi."
+              : "Faqat guruhga qo‘shilgan a’zolar ko‘radi. Keyin ham a’zo qo‘shish mumkin."}
+          </p>
 
           {newMode === "group" && (
             <Input
               value={groupTitle}
               onChange={(e) => setGroupTitle(e.target.value)}
-              placeholder="Guruh nomi"
+              placeholder="Guruh nomi *"
               className="mb-3 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89]"
             />
           )}
@@ -513,7 +699,9 @@ export default function ChatPage() {
             <Input
               value={userQuery}
               onChange={(e) => setUserQuery(e.target.value)}
-              placeholder="Xodim qidirish..."
+              placeholder={
+                newMode === "direct" ? "Xodim tanlang..." : "A’zolarni tanlang..."
+              }
               className="pl-9 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89]"
             />
           </div>
@@ -525,7 +713,12 @@ export default function ChatPage() {
                   key={p.id}
                   type="button"
                   onClick={() => togglePick(p)}
-                  className="text-xs px-2 py-1 rounded-full bg-[#2AABEE]/20 text-[#2AABEE] border border-[#2AABEE]/40"
+                  className={cn(
+                    "text-xs px-2 py-1 rounded-full border",
+                    newMode === "group"
+                      ? "bg-[#6C5CE7]/20 text-[#C4B5FD] border-[#6C5CE7]/40"
+                      : "bg-[#2AABEE]/20 text-[#2AABEE] border-[#2AABEE]/40",
+                  )}
                 >
                   {p.fullName} ×
                 </button>
@@ -573,7 +766,11 @@ export default function ChatPage() {
             </Button>
             <Button
               type="button"
-              className="bg-[#2AABEE] hover:bg-[#229ED9]"
+              className={
+                newMode === "group"
+                  ? "bg-[#6C5CE7] hover:bg-[#5A4BD1]"
+                  : "bg-[#2AABEE] hover:bg-[#229ED9]"
+              }
               disabled={
                 createChat.isPending ||
                 !picked.length ||
@@ -581,9 +778,121 @@ export default function ChatPage() {
               }
               onClick={() => void submitNewChat()}
             >
-              {createChat.isPending ? "..." : "Boshlash"}
+              {createChat.isPending
+                ? "..."
+                : newMode === "group"
+                  ? "Guruh ochish"
+                  : "Suhbat boshlash"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add members to group */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-md bg-[#17212b] text-white border-[#1c2733]">
+          <DialogHeader>
+            <DialogTitle>Guruhga a’zo qo‘shish</DialogTitle>
+          </DialogHeader>
+          <p className="text-xs text-[#8b9aab] mb-3">
+            Yangi a’zolar faqat shu guruhni ko‘radi. Shaxsiy chatlarga ta’sir qilmaydi.
+          </p>
+          <div className="relative mb-2">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#6c7a89]" />
+            <Input
+              value={addQuery}
+              onChange={(e) => setAddQuery(e.target.value)}
+              placeholder="Xodim qidirish..."
+              className="pl-9 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89]"
+            />
+          </div>
+          {addPicked.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {addPicked.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => toggleAddPick(p)}
+                  className="text-xs px-2 py-1 rounded-full bg-[#6C5CE7]/20 text-[#C4B5FD] border border-[#6C5CE7]/40"
+                >
+                  {p.fullName} ×
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="max-h-64 overflow-y-auto rounded-lg border border-[#1c2733] divide-y divide-[#1c2733]">
+            {addableUsers.map((u) => {
+              const selected = addPicked.some((p) => p.id === u.id);
+              return (
+                <button
+                  key={u.id}
+                  type="button"
+                  onClick={() => toggleAddPick(u)}
+                  className={cn(
+                    "w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-[#242f3d]",
+                    selected && "bg-[#2b5278]/40",
+                  )}
+                >
+                  <AvatarBubble name={u.fullName} size="sm" tint={tintForId(u.id)} />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{u.fullName}</p>
+                    <p className="text-[11px] text-[#8b9aab]">
+                      {ROLE_LABELS[u.role] || u.role}
+                    </p>
+                  </div>
+                  {selected && <Check className="h-4 w-4 text-[#6C5CE7]" />}
+                </button>
+              );
+            })}
+            {!addUsers.isLoading && addableUsers.length === 0 && (
+              <p className="p-4 text-sm text-[#6c7a89] text-center">
+                Qo‘shish uchun xodim qolmadi
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]"
+              onClick={() => setAddOpen(false)}
+            >
+              Bekor
+            </Button>
+            <Button
+              type="button"
+              className="bg-[#6C5CE7] hover:bg-[#5A4BD1]"
+              disabled={!addPicked.length || addMembers.isPending}
+              onClick={() => void submitAddMembers()}
+            >
+              {addMembers.isPending ? "..." : "Qo‘shish"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Members list */}
+      <Dialog open={membersOpen} onOpenChange={setMembersOpen}>
+        <DialogContent className="sm:max-w-sm bg-[#17212b] text-white border-[#1c2733]">
+          <DialogHeader>
+            <DialogTitle>Guruh a’zolari</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-80 overflow-y-auto divide-y divide-[#1c2733]">
+            {(activeChat?.members ?? []).map((m) => (
+              <div key={m.id} className="flex items-center gap-3 py-2.5">
+                <AvatarBubble name={m.fullName} size="sm" tint={tintForId(m.id)} />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">
+                    {m.fullName}
+                    {m.id === meId ? " (siz)" : ""}
+                  </p>
+                  <p className="text-[11px] text-[#8b9aab]">
+                    {ROLE_LABELS[m.role] || m.role}
+                  </p>
+                </div>
+              </div>
+            ))}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

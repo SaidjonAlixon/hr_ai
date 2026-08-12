@@ -222,6 +222,34 @@ router.get("/vacancies/:id", requireAuth, async (req: AuthRequest, res): Promise
 
 router.patch("/vacancies/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [existing] = await db.select().from(vacanciesTable).where(eq(vacanciesTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
+  const role = req.userRole ?? "";
+  const closing = req.body?.status === "closed";
+
+  if (closing) {
+    const canClose =
+      role === "admin" ||
+      role === "hr" ||
+      role === "director" ||
+      (role === "recruiter" && existing.recruiterId === req.userId);
+    if (!canClose) {
+      res.status(403).json({ error: "Ish o'rinini yopishga ruxsat yo'q" });
+      return;
+    }
+    if (existing.status === "closed") {
+      res.status(400).json({ error: "Ish o'rni allaqachon bajarilgan" });
+      return;
+    }
+  } else if (role === "recruiter" && existing.recruiterId !== req.userId) {
+    res.status(403).json({ error: "Bu ish o'rni sizga biriktirilmagan" });
+    return;
+  }
+
   const allowed = ["title", "description", "salaryRange", "location", "schedule", "benefits", "status", "recruiterId", "deadline"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
@@ -233,6 +261,58 @@ router.patch("/vacancies/:id", requireAuth, async (req: AuthRequest, res): Promi
   }
   const [updated] = await db.update(vacanciesTable).set(updates).where(eq(vacanciesTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Topilmadi" }); return; }
+
+  // Odam olinganda bog‘liq ariza ham yopiladi
+  if (closing && existing.requestId) {
+    await db
+      .update(requestsTable)
+      .set({ status: "closed" })
+      .where(eq(requestsTable.id, existing.requestId));
+  }
+
+  res.json(await enrichVacancy(updated));
+});
+
+router.post("/vacancies/:id/close", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [existing] = await db.select().from(vacanciesTable).where(eq(vacanciesTable.id, id));
+  if (!existing) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
+  const role = req.userRole ?? "";
+  const canClose =
+    role === "admin" ||
+    role === "hr" ||
+    role === "director" ||
+    (role === "recruiter" && existing.recruiterId === req.userId);
+  if (!canClose) {
+    res.status(403).json({ error: "Ish o'rinini yopishga ruxsat yo'q" });
+    return;
+  }
+  if (existing.status === "closed") {
+    res.status(400).json({ error: "Ish o'rni allaqachon bajarilgan" });
+    return;
+  }
+
+  const [updated] = await db
+    .update(vacanciesTable)
+    .set({ status: "closed" })
+    .where(eq(vacanciesTable.id, id))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
+  if (existing.requestId) {
+    await db
+      .update(requestsTable)
+      .set({ status: "closed" })
+      .where(eq(requestsTable.id, existing.requestId));
+  }
+
   res.json(await enrichVacancy(updated));
 });
 

@@ -24,9 +24,10 @@ export type ChatMessage = {
 
 export type ChatListItem = {
   id: number;
-  type: string;
+  type: "direct" | "group" | string;
   title: string;
   members: ChatUser[];
+  memberCount?: number;
   peer: ChatUser | null;
   lastMessage: {
     id: number;
@@ -41,13 +42,12 @@ export type ChatListItem = {
 
 export type ChatDetail = {
   id: number;
-  type: string;
+  type: "direct" | "group" | string;
   title: string;
   members: ChatUser[];
   peer: ChatUser | null;
   createdAt: string;
 };
-
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: "include",
@@ -154,6 +154,20 @@ export function useMarkChatRead() {
   return useMutation({
     mutationFn: (chatId: number) =>
       apiFetch<{ ok: boolean }>(`/chats/${chatId}/read`, { method: "POST" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["chats"] });
+    },
+  });
+}
+
+export function useAddChatMembers(chatId: number | null) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (memberIds: number[]) =>
+      apiFetch<{ chat: ChatDetail; added: number[] }>(`/chats/${chatId}/members`, {
+        method: "POST",
+        body: JSON.stringify({ memberIds }),
+      }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["chats"] });
     },

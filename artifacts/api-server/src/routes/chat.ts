@@ -230,6 +230,7 @@ router.get("/chats", requireAuth, async (req: AuthRequest, res): Promise<void> =
         type: chat.type,
         title: chatTitle(chat, members, me),
         members,
+        memberCount: members.length,
         peer: chat.type === "direct" ? other : null,
         lastMessage: last
           ? {
@@ -580,6 +581,113 @@ router.post(
         createdAt: msg.createdAt.toISOString(),
       },
       chatTitle: chat ? chatTitle(chat, members, me) : null,
+    });
+  },
+);
+
+/** Guruhga a’zo qo‘shish — faqat a’zolar, faqat guruh */
+router.post(
+  "/chats/:id/members",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    const me = req.userId!;
+    const chatId = Number(req.params.id);
+    if (!Number.isFinite(chatId)) {
+      res.status(400).json({ error: "Noto‘g‘ri id" });
+      return;
+    }
+
+    const mem = await assertMember(chatId, me);
+    if (!mem) {
+      res.status(404).json({ error: "Chat topilmadi" });
+      return;
+    }
+
+    const [chat] = await db.select().from(chatsTable).where(eq(chatsTable.id, chatId));
+    if (!chat || chat.type !== "group") {
+      res.status(400).json({ error: "Faqat guruhga a’zo qo‘shiladi" });
+      return;
+    }
+
+    const rawIds: unknown[] = Array.isArray(req.body?.memberIds) ? req.body.memberIds : [];
+    const memberIds = [
+      ...new Set(
+        rawIds
+          .map((x) => Number(x))
+          .filter((n) => Number.isFinite(n) && n > 0 && n !== me),
+      ),
+    ];
+    if (!memberIds.length) {
+      res.status(400).json({ error: "Kamida bitta xodim tanlang" });
+      return;
+    }
+
+    const existing = await db
+      .select({ userId: chatMembersTable.userId })
+      .from(chatMembersTable)
+      .where(eq(chatMembersTable.chatId, chatId));
+    const existingSet = new Set(existing.map((e) => e.userId));
+    const toAdd = memberIds.filter((id) => !existingSet.has(id));
+    if (!toAdd.length) {
+      const members = await getChatMembers(chatId);
+      res.json({
+        chat: {
+          id: chat.id,
+          type: chat.type,
+          title: chatTitle(chat, members, me),
+          members,
+          createdAt: chat.createdAt.toISOString(),
+        },
+        added: [],
+      });
+      return;
+    }
+
+    const active = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(and(eq(usersTable.status, "active"), inArray(usersTable.id, toAdd)));
+    if (active.length !== toAdd.length) {
+      res.status(400).json({ error: "Ba'zi xodimlar topilmadi yoki faol emas" });
+      return;
+    }
+
+    await db.insert(chatMembersTable).values(
+      toAdd.map((userId) => ({
+        chatId,
+        userId,
+        lastReadAt: null as Date | null,
+      })),
+    );
+
+    const meUser = (
+      await db
+        .select({ fullName: usersTable.fullName })
+        .from(usersTable)
+        .where(eq(usersTable.id, me))
+        .limit(1)
+    )[0];
+    const title = chat.title?.trim() || "Guruh";
+
+    for (const uid of toAdd) {
+      await notifyUser({
+        userId: uid,
+        text: `${meUser?.fullName || "Xodim"} sizni «${title}» guruhiga qo‘shdi`,
+        type: "chat_group",
+        linkUrl: `/chat?id=${chatId}`,
+      });
+    }
+
+    const members = await getChatMembers(chatId);
+    res.json({
+      chat: {
+        id: chat.id,
+        type: chat.type,
+        title: chatTitle(chat, members, me),
+        members,
+        createdAt: chat.createdAt.toISOString(),
+      },
+      added: toAdd,
     });
   },
 );

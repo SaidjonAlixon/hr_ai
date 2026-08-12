@@ -50,16 +50,33 @@ function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?
   return isCreator(row, userId) || isAssignee(row, userId);
 }
 
+function isAllowedAttachmentUrl(url: string) {
+  if (!url) return false;
+  if (url.startsWith("https://") || url.startsWith("http://")) return true;
+  if (url.startsWith("/api/uploads/")) return true;
+  // Eski vazifalar (data URL) — o‘qish uchun qoldiriladi
+  if (url.startsWith("data:")) return true;
+  return false;
+}
+
 function sanitizeAttachments(raw: unknown, max = 10): TaskAttachment[] {
   if (!Array.isArray(raw)) return [];
-  return raw.slice(0, max).map((a: TaskAttachment, i: number) => ({
-    id: a.id || `att-${Date.now()}-${i}`,
-    name: String(a.name || "fayl").slice(0, 200),
-    mimeType: String(a.mimeType || "application/octet-stream"),
-    kind: a.kind === "image" ? "image" : "file",
-    url: String(a.url || "").slice(0, 5_000_000),
-    size: typeof a.size === "number" ? a.size : undefined,
-  }));
+  return raw
+    .slice(0, max)
+    .map((a: TaskAttachment, i: number) => {
+      const url = String(a.url || "");
+      if (!isAllowedAttachmentUrl(url)) return null;
+      const maxUrl = url.startsWith("data:") ? 5_000_000 : 2_000;
+      return {
+        id: a.id || `att-${Date.now()}-${i}`,
+        name: String(a.name || "fayl").slice(0, 200),
+        mimeType: String(a.mimeType || "application/octet-stream"),
+        kind: (a.kind === "image" ? "image" : "file") as "image" | "file",
+        url: url.slice(0, maxUrl),
+        size: typeof a.size === "number" ? a.size : undefined,
+      };
+    })
+    .filter(Boolean) as TaskAttachment[];
 }
 
 async function resolveAssigneeName(

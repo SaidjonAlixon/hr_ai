@@ -11,6 +11,7 @@ import {
   type Reminder,
   type ReminderAttachment,
 } from "../../lib/eslatmalar-api";
+import { fileToAttachment } from "../../lib/vazifalar-api";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
@@ -178,27 +179,16 @@ function defaultDueForColumn(col: BoardCol) {
   return setH(new Date());
 }
 
-function readFileAsDataUrl(file: File): Promise<ReminderAttachment> {
-  return new Promise((resolve, reject) => {
-    if (file.size > 10 * 1024 * 1024) {
-      reject(new Error("Fayl 10 MB dan katta"));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = String(reader.result || "");
-      resolve({
-        id: crypto.randomUUID(),
-        name: file.name,
-        mimeType: file.type || "application/octet-stream",
-        kind: file.type.startsWith("image/") ? "image" : "file",
-        url,
-        size: file.size,
-      });
-    };
-    reader.onerror = () => reject(new Error("Fayl o‘qilmadi"));
-    reader.readAsDataURL(file);
-  });
+async function readFileAsAttachment(file: File): Promise<ReminderAttachment> {
+  const att = await fileToAttachment(file);
+  return {
+    id: att.id || crypto.randomUUID(),
+    name: att.name,
+    mimeType: att.mimeType,
+    kind: att.kind,
+    url: att.url,
+    size: att.size,
+  };
 }
 
 const EVENT_LABELS: Record<string, string> = {
@@ -267,7 +257,7 @@ export default function EslatmalarPage() {
     try {
       const next: ReminderAttachment[] = [];
       for (const f of Array.from(files)) {
-        next.push(await readFileAsDataUrl(f));
+        next.push(await readFileAsAttachment(f));
       }
       setAttachments((prev) => [...prev, ...next]);
     } catch (e: any) {

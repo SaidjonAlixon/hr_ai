@@ -241,27 +241,33 @@ export function useDeleteTask() {
   });
 }
 
-/** Faylni data URL ga aylantirish (maks ~10 MB) */
-export function fileToAttachment(file: File): Promise<TaskAttachment> {
-  return new Promise((resolve, reject) => {
-    if (file.size > 10 * 1024 * 1024) {
-      reject(new Error(`«${file.name}» 10 MB dan katta`));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = String(reader.result || "");
-      const kind = file.type.startsWith("image/") ? "image" : "file";
-      resolve({
-        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name: file.name,
-        mimeType: file.type || "application/octet-stream",
-        kind,
-        url,
-        size: file.size,
-      });
-    };
-    reader.onerror = () => reject(new Error("Fayl o'qilmadi"));
-    reader.readAsDataURL(file);
+/** Faylni blob / server uploads ga yuklash (maks 10 MB) */
+export async function fileToAttachment(file: File): Promise<TaskAttachment> {
+  if (file.size > 10 * 1024 * 1024) {
+    throw new Error(`«${file.name}» 10 MB dan katta`);
+  }
+
+  const res = await fetch("/api/uploads", {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": file.type || "application/octet-stream",
+      "X-File-Name": encodeURIComponent(file.name),
+    },
+    body: file,
   });
+
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || `Yuklash xatosi ${res.status}`);
+  }
+
+  return res.json() as Promise<TaskAttachment>;
 }

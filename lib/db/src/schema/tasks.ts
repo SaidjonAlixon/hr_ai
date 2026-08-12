@@ -6,7 +6,7 @@ export type TaskAttachment = {
   name: string;
   mimeType: string;
   kind: "image" | "file";
-  /** data URL yoki /api/uploads/... yo'li */
+  /** Blob URL yoki /api/uploads/... yo'li (eski: data URL) */
   url: string;
   size?: number;
 };

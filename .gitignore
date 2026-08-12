@@ -53,6 +53,10 @@ Thumbs.db
 .vercel/project.json
 .vercel/README.txt
 
+# Local file uploads (when BLOB_READ_WRITE_TOKEN is not set)
+uploads/
+artifacts/api-server/uploads/
+
 # Env / secrets
 .env
 .env.*

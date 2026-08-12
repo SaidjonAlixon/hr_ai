@@ -1176,6 +1176,14 @@ function AttachmentList({
   readOnly?: boolean;
 }) {
   if (!items.length) return null;
+
+  const downloadHref = (url: string) => {
+    if (url.startsWith("/api/uploads/")) {
+      return url.includes("?") ? `${url}&download=1` : `${url}?download=1`;
+    }
+    return url;
+  };
+
   return (
     <ul className="space-y-1.5">
       {items.map((a) => (
@@ -1184,7 +1192,7 @@ function AttachmentList({
           className="flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-1.5 text-sm"
         >
           {a.kind === "image" ? (
-            <a href={a.url} target="_blank" rel="noreferrer">
+            <a href={a.url} target="_blank" rel="noreferrer" className="shrink-0">
               <img
                 src={a.url}
                 alt=""
@@ -1192,17 +1200,20 @@ function AttachmentList({
               />
             </a>
           ) : (
-            <a
-              href={a.url}
-              download={a.name}
-              className="text-slate-500"
-              target="_blank"
-              rel="noreferrer"
-            >
-              <FileText className="h-4 w-4 shrink-0" />
-            </a>
+            <FileText className="h-4 w-4 shrink-0 text-slate-500" />
           )}
-          <span className="truncate flex-1">{a.name}</span>
+          <span className="truncate flex-1" title={a.name}>
+            {a.name}
+          </span>
+          <a
+            href={downloadHref(a.url)}
+            download={a.name}
+            target="_blank"
+            rel="noreferrer"
+            className="shrink-0 rounded-md border bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Yuklab olish
+          </a>
           {!readOnly && onRemove && (
             <button
               type="button"

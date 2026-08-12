@@ -26,10 +26,12 @@ import chatRouter from "./chat";
 import kirishRouter from "./kirish";
 import realtimeRouter from "./realtime";
 import kuzatuvRouter from "./kuzatuv";
+import uploadsRouter from "./uploads";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(uploadsRouter);
 router.use(jobsRouter);
 router.use(branchNeedsRouter);
 router.use(branchAuditsRouter);

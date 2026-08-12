@@ -4,18 +4,20 @@ import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { ensurePersistentSchema } from "./lib/ensure-schema";
+import { ensurePersistentSchema, ensureEmployeesOrgColumns } from "./lib/ensure-schema";
 
 const app: Express = express();
 
 /**
  * Schema ensure — eng yaxshi urinish.
  * Vercel/Railway timeout bo‘lsa ham login va API ishlashi kerak (bloklamaymiz).
- * Vercel’da cold start tezligi uchun DDL o‘tkazib yuboriladi (jadvallar allaqachon bor).
+ * Vercel’da to‘liq DDL o‘tkazilmaydi; faqat employees org ustunlari (kuzatuv uchun) tekshiriladi.
  */
 const schemaReady =
   process.env.VERCEL === "1" || process.env.VERCEL === "true"
-    ? Promise.resolve()
+    ? ensureEmployeesOrgColumns().catch((err) => {
+        logger.error({ err }, "Employees org columns ensure failed (non-blocking)");
+      })
     : ensurePersistentSchema().catch((err) => {
         logger.error({ err }, "Schema ensure failed (non-blocking)");
       });

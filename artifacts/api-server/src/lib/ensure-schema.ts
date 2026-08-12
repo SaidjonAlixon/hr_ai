@@ -211,7 +211,7 @@ ALTER TABLE branch_audits ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISI
 ALTER TABLE branch_audits ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
 ALTER TABLE branch_audits ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
 
--- Employees GPS (checklist geofence) + employment
+-- Employees GPS (checklist geofence) + employment + org
 DO $$
 BEGIN
   IF EXISTS (
@@ -221,9 +221,54 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS employment_status TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS user_id INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS org_role TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS reports_to_id INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS location TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_type TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_label TEXT;
   END IF;
 END $$;
 `;
+
+/** Vercel cold start uchun — faqat employees org ustunlari (tez) */
+const EMP_ORG_COLUMNS_SQL = `
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'employees'
+  ) THEN
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS employment_status TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS user_id INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS org_role TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS reports_to_id INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS location TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_type TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_label TEXT;
+  END IF;
+END $$;
+`;
+
+export async function ensureEmployeesOrgColumns(): Promise<void> {
+  const timeoutMs = 5_000;
+  const client = await Promise.race([
+    pool.connect(),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`emp columns connect timeout ${timeoutMs}ms`)), timeoutMs),
+    ),
+  ]);
+  try {
+    await Promise.race([
+      client.query(EMP_ORG_COLUMNS_SQL),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`emp columns query timeout ${timeoutMs}ms`)), timeoutMs),
+      ),
+    ]);
+  } finally {
+    client.release();
+  }
+}
 
 export async function ensurePersistentSchema(): Promise<void> {
   // Vercel cold start — uzoq DDL loginni bloklamasin

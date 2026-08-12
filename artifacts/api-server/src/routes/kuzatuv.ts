@@ -58,7 +58,17 @@ const SHIFT_UZ: Record<string, string> = {
   custom: "Maxsus",
 };
 
+function safeIso(value: Date | string | null | undefined): string | null {
+  if (value == null) return null;
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toISOString();
+}
+
 function mapOrgEmployee(e: typeof employeesTable.$inferSelect) {
+  const status = e.employmentStatus || "working";
   return {
     id: e.id,
     fullName: e.fullName,
@@ -66,19 +76,131 @@ function mapOrgEmployee(e: typeof employeesTable.$inferSelect) {
     orgRole: e.orgRole,
     orgRoleLabel: e.orgRole ? ORG_ROLE_UZ[e.orgRole] || e.orgRole : "—",
     location: e.location,
-    employmentStatus: e.employmentStatus,
-    employmentStatusLabel: EMP_STATUS_UZ[e.employmentStatus] || e.employmentStatus,
+    employmentStatus: status,
+    employmentStatusLabel: EMP_STATUS_UZ[status] || status,
     shiftType: e.shiftType,
     shiftLabel: e.shiftLabel,
     shiftDisplay:
       e.shiftType === "custom" && e.shiftLabel
         ? e.shiftLabel
         : SHIFT_UZ[e.shiftType || ""] || e.shiftType || "—",
-    userId: e.userId,
+    userId: e.userId ?? null,
     hiredAt: e.hiredAt,
     reportsToId: e.reportsToId,
-    createdAt: e.createdAt.toISOString(),
+    createdAt: safeIso(e.createdAt) ?? new Date(0).toISOString(),
   };
+}
+
+async function loadOrgTree(
+  personId: number,
+  person: { fullName: string; role: string },
+): Promise<{
+  myEmployee: typeof employeesTable.$inferSelect | null;
+  managedManagers: ReturnType<typeof mapOrgEmployee>[];
+  managedStaff: Array<ReturnType<typeof mapOrgEmployee> & { managerName?: string | null }>;
+  reportsTo: ReturnType<typeof mapOrgEmployee> | null;
+}> {
+  let myEmployee: typeof employeesTable.$inferSelect | null = null;
+  let managedManagers: ReturnType<typeof mapOrgEmployee>[] = [];
+  let managedStaff: Array<
+    ReturnType<typeof mapOrgEmployee> & { managerName?: string | null }
+  > = [];
+  let reportsTo: ReturnType<typeof mapOrgEmployee> | null = null;
+
+  try {
+    const [byUser] = await db
+      .select()
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, personId))
+      .limit(1);
+    myEmployee = byUser ?? null;
+
+    if (!myEmployee) {
+      const orgGuess =
+        person.role === "koordinator"
+          ? "coordinator"
+          : person.role === "mudir"
+            ? "manager"
+            : person.role === "farmasevt"
+              ? "pharmacist"
+              : null;
+      if (orgGuess) {
+        const [byName] = await db
+          .select()
+          .from(employeesTable)
+          .where(
+            and(eq(employeesTable.fullName, person.fullName), eq(employeesTable.orgRole, orgGuess)),
+          )
+          .limit(1);
+        if (byName) myEmployee = byName;
+      }
+    }
+
+    if (!myEmployee) {
+      return { myEmployee: null, managedManagers, managedStaff, reportsTo };
+    }
+
+    if (myEmployee.reportsToId) {
+      const [boss] = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.id, myEmployee.reportsToId))
+        .limit(1);
+      if (boss) reportsTo = mapOrgEmployee(boss);
+    }
+
+    const isCoordinator =
+      myEmployee.orgRole === "coordinator" || person.role === "koordinator";
+    const isManager = myEmployee.orgRole === "manager" || person.role === "mudir";
+
+    if (isCoordinator) {
+      const managers = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.reportsToId, myEmployee.id))
+        .orderBy(asc(employeesTable.fullName));
+      managedManagers = managers
+        .filter((m) => m.orgRole === "manager" || !m.orgRole)
+        .map(mapOrgEmployee);
+
+      const managerIds = managers.map((m) => m.id);
+      if (managerIds.length) {
+        const staff = await db
+          .select()
+          .from(employeesTable)
+          .where(inArray(employeesTable.reportsToId, managerIds))
+          .orderBy(asc(employeesTable.fullName));
+        const mgrName = new Map(managers.map((m) => [m.id, m.fullName]));
+        managedStaff = staff.map((s) => ({
+          ...mapOrgEmployee(s),
+          managerName: s.reportsToId ? mgrName.get(s.reportsToId) ?? null : null,
+        }));
+        for (const s of managers.filter(
+          (m) => m.orgRole === "pharmacist" || m.orgRole === "intern",
+        )) {
+          managedStaff.push({
+            ...mapOrgEmployee(s),
+            managerName: "To‘g‘ridan-to‘g‘ri",
+          });
+        }
+      }
+    } else if (isManager) {
+      const staff = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.reportsToId, myEmployee.id))
+        .orderBy(asc(employeesTable.fullName));
+      managedStaff = staff.map((s) => ({
+        ...mapOrgEmployee(s),
+        managerName: myEmployee!.fullName,
+      }));
+    }
+  } catch (err) {
+    console.error("kuzatuv org tree error:", err);
+    return { myEmployee: null, managedManagers: [], managedStaff: [], reportsTo: null };
+  }
+
+  return { myEmployee, managedManagers, managedStaff, reportsTo };
 }
 
 /** Barcha faol foydalanuvchilar — ism + lavozim bo‘yicha tanlash */
@@ -498,6 +620,7 @@ const PHONE_STATUS: Record<string, string> = {
 };
 
 router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
   if (!isHrOversight(req.userRole) && req.userRole !== "admin") {
     res.status(403).json({ error: "Faqat HR Direktor yoki HR Auditor ko‘ra oladi" });
     return;
@@ -510,121 +633,61 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
     return;
   }
 
-  const [person] = await db
-    .select({
-      id: usersTable.id,
-      fullName: usersTable.fullName,
-      login: usersTable.login,
-      role: usersTable.role,
-      status: usersTable.status,
-      phone: usersTable.phone,
-      departmentId: usersTable.departmentId,
-      departmentName: departmentsTable.name,
-    })
-    .from(usersTable)
-    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
-    .where(eq(usersTable.id, personId));
+  let person: {
+    id: number;
+    fullName: string;
+    login: string;
+    role: string;
+    status: string;
+    phone: string | null;
+    departmentId: number | null;
+    departmentName: string | null;
+  } | undefined;
+
+  try {
+    const rows = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        login: usersTable.login,
+        role: usersTable.role,
+        status: usersTable.status,
+        phone: usersTable.phone,
+        departmentId: usersTable.departmentId,
+        departmentName: departmentsTable.name,
+      })
+      .from(usersTable)
+      .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
+      .where(eq(usersTable.id, personId));
+    person = rows[0];
+  } catch (err) {
+    console.error("kuzatuv person+dept join error, fallback:", err);
+    const rows = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        login: usersTable.login,
+        role: usersTable.role,
+        status: usersTable.status,
+        phone: usersTable.phone,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, personId));
+    const p0 = rows[0];
+    if (p0) {
+      person = { ...p0, departmentId: null, departmentName: null };
+    }
+  }
 
   if (!person) {
     res.status(404).json({ error: "Foydalanuvchi topilmadi" });
     return;
   }
 
-  // Apteka tarmog‘i — xodim profili va bo‘ysinuvchilar
-  let [myEmployee] = await db
-    .select()
-    .from(employeesTable)
-    .where(eq(employeesTable.userId, personId))
-    .limit(1);
-
-  // Agar userId bog‘lanmagan bo‘lsa — ism + org rol bo‘yicha qidirish
-  if (!myEmployee) {
-    const orgGuess =
-      person.role === "koordinator"
-        ? "coordinator"
-        : person.role === "mudir"
-          ? "manager"
-          : person.role === "farmasevt"
-            ? "pharmacist"
-            : null;
-    if (orgGuess) {
-      const [byName] = await db
-        .select()
-        .from(employeesTable)
-        .where(
-          and(eq(employeesTable.fullName, person.fullName), eq(employeesTable.orgRole, orgGuess)),
-        )
-        .limit(1);
-      if (byName) myEmployee = byName;
-    }
-  }
-
-  let managedManagers: ReturnType<typeof mapOrgEmployee>[] = [];
-  let managedStaff: Array<
-    ReturnType<typeof mapOrgEmployee> & { managerName?: string | null }
-  > = [];
-  let reportsTo: ReturnType<typeof mapOrgEmployee> | null = null;
-
-  if (myEmployee) {
-    if (myEmployee.reportsToId) {
-      const [boss] = await db
-        .select()
-        .from(employeesTable)
-        .where(eq(employeesTable.id, myEmployee.reportsToId))
-        .limit(1);
-      if (boss) reportsTo = mapOrgEmployee(boss);
-    }
-
-    const isCoordinator =
-      myEmployee.orgRole === "coordinator" || person.role === "koordinator";
-    const isManager = myEmployee.orgRole === "manager" || person.role === "mudir";
-
-    if (isCoordinator) {
-      const managers = await db
-        .select()
-        .from(employeesTable)
-        .where(eq(employeesTable.reportsToId, myEmployee.id))
-        .orderBy(asc(employeesTable.fullName));
-      // Mudirlar + to‘g‘ridan-to‘g‘ri bog‘langanlar
-      managedManagers = managers
-        .filter((m) => m.orgRole === "manager" || !m.orgRole)
-        .map(mapOrgEmployee);
-
-      const managerIds = managers.map((m) => m.id);
-      if (managerIds.length) {
-        const staff = await db
-          .select()
-          .from(employeesTable)
-          .where(inArray(employeesTable.reportsToId, managerIds))
-          .orderBy(asc(employeesTable.fullName));
-        const mgrName = new Map(managers.map((m) => [m.id, m.fullName]));
-        managedStaff = staff.map((s) => ({
-          ...mapOrgEmployee(s),
-          managerName: s.reportsToId ? mgrName.get(s.reportsToId) ?? null : null,
-        }));
-        // Koordinatorda to‘g‘ridan-to‘g‘ri farmasevt/stajyor bo‘lsa — ham qo‘shamiz
-        const directStaff = managers.filter(
-          (m) => m.orgRole === "pharmacist" || m.orgRole === "intern",
-        );
-        for (const s of directStaff) {
-          managedStaff.push({
-            ...mapOrgEmployee(s),
-            managerName: "To‘g‘ridan-to‘g‘ri",
-          });
-        }
-      }
-    } else if (isManager) {
-      const staff = await db
-        .select()
-        .from(employeesTable)
-        .where(eq(employeesTable.reportsToId, myEmployee.id))
-        .orderBy(asc(employeesTable.fullName));
-      managedStaff = staff.map((s) => ({
-        ...mapOrgEmployee(s),
-        managerName: myEmployee.fullName,
-      }));
-    }
-  }
+  const { myEmployee, managedManagers, managedStaff, reportsTo } = await loadOrgTree(
+    personId,
+    person,
+  );
 
   const vacancies = await db
     .select({
@@ -788,14 +851,14 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
     status: t.status,
     statusLabel: TASK_STATUS[t.status] || t.status,
     priority: t.priority,
-    dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    dueAt: safeIso(t.dueAt),
     assigneeName: taskNameById.get(t.assigneeId) ?? "—",
     createdByName: taskNameById.get(t.createdById) ?? "—",
     completionNote: full ? t.completionNote : undefined,
-    completedAt: t.completedAt ? t.completedAt.toISOString() : null,
-    acceptedAt: t.acceptedAt ? t.acceptedAt.toISOString() : null,
-    createdAt: t.createdAt.toISOString(),
-    updatedAt: t.updatedAt.toISOString(),
+    completedAt: safeIso(t.completedAt),
+    acceptedAt: safeIso(t.acceptedAt),
+    createdAt: safeIso(t.createdAt) ?? new Date(0).toISOString(),
+    updatedAt: safeIso(t.updatedAt) ?? new Date(0).toISOString(),
   });
 
   const tasksAssigned = assignedTasks.map(mapTask);
@@ -859,11 +922,11 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       status: v.status,
       statusLabel: VAC_STATUS[v.status] || v.status,
       location: v.location,
-      deadline: v.deadline ? v.deadline.toISOString() : null,
-      publishedAt: v.publishedAt ? v.publishedAt.toISOString() : null,
-      assignedAt: v.assignedAt ? v.assignedAt.toISOString() : null,
-      acceptedAt: v.acceptedAt ? v.acceptedAt.toISOString() : null,
-      createdAt: v.createdAt.toISOString(),
+      deadline: safeIso(v.deadline),
+      publishedAt: safeIso(v.publishedAt),
+      assignedAt: safeIso(v.assignedAt),
+      acceptedAt: safeIso(v.acceptedAt),
+      createdAt: safeIso(v.createdAt) ?? new Date(0).toISOString(),
     })),
     candidates: candidates.map((c) => ({
       id: c.id,
@@ -875,8 +938,8 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       statusLabel: CAND_STATUS[c.status] || c.status,
       vacancyTitle: vacTitleById.get(c.vacancyId) ?? `Vakansiya #${c.vacancyId}`,
       vacancyId: c.vacancyId,
-      createdAt: c.createdAt.toISOString(),
-      updatedAt: c.updatedAt.toISOString(),
+      createdAt: safeIso(c.createdAt) ?? new Date(0).toISOString(),
+      updatedAt: safeIso(c.updatedAt) ?? new Date(0).toISOString(),
     })),
     phoneInterviews: phoneInterviews.map((p) => ({
       id: p.id,
@@ -887,7 +950,7 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       statusLabel: PHONE_STATUS[p.status] || p.status,
       notes: full ? p.notes : undefined,
       rejectReason: full ? p.rejectReason : undefined,
-      createdAt: p.createdAt.toISOString(),
+      createdAt: safeIso(p.createdAt) ?? new Date(0).toISOString(),
     })),
     onlineInterviews: onlineInterviews.map((o) => ({
       id: o.id,
@@ -897,7 +960,7 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       score: o.score,
       experienceLevel: o.experienceLevel,
       notes: full ? o.notes : undefined,
-      createdAt: o.createdAt.toISOString(),
+      createdAt: safeIso(o.createdAt) ?? new Date(0).toISOString(),
     })),
     offlineInterviews: [
       ...offlineAsHr.map((o) => ({
@@ -912,7 +975,7 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
         hrScore: o.hrScore,
         trainerScore: full ? o.trainerScore : undefined,
         resultNotes: full ? o.resultNotes : undefined,
-        createdAt: o.createdAt.toISOString(),
+        createdAt: safeIso(o.createdAt) ?? new Date(0).toISOString(),
       })),
       ...offlineAsTrainer.map((o) => ({
         id: o.id,
@@ -926,12 +989,18 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
         hrScore: full ? o.hrScore : undefined,
         trainerScore: o.trainerScore,
         resultNotes: full ? o.resultNotes : undefined,
-        createdAt: o.createdAt.toISOString(),
+        createdAt: safeIso(o.createdAt) ?? new Date(0).toISOString(),
       })),
     ],
     tasksAssigned,
     tasksCreated,
   });
+  } catch (err) {
+    console.error("kuzatuv/person error:", err);
+    if (!res.headersSent) {
+      res.status(503).json({ error: "Server xatosi — shu odam ma'lumoti yuklanmadi" });
+    }
+  }
 });
 
 export default router;

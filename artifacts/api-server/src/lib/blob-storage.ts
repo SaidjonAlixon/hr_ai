@@ -5,7 +5,25 @@ import { get, put } from "@vercel/blob";
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
+function isServerless() {
+  return (
+    process.env.VERCEL === "1" ||
+    process.env.VERCEL === "true" ||
+    Boolean(process.env.AWS_LAMBDA_FUNCTION_NAME) ||
+    process.cwd().replace(/\\/g, "/").startsWith("/var/task")
+  );
+}
+
+function blobToken() {
+  const t = process.env.BLOB_READ_WRITE_TOKEN?.trim();
+  return t || undefined;
+}
+
 function uploadsDir() {
+  // Vercel / Lambda da faqat /tmp yoziladi
+  if (isServerless()) {
+    return path.join("/tmp", "uploads");
+  }
   return path.resolve(process.cwd(), "uploads");
 }
 
@@ -22,7 +40,7 @@ export function makeUploadId(originalName: string) {
 }
 
 export function hasBlobToken() {
-  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+  return Boolean(blobToken());
 }
 
 /** Private store: API orqali beriladi. Public/local: to‘g‘ridan URL. */
@@ -40,21 +58,32 @@ export async function storeUploadBuffer(opts: {
   }
 
   const key = makeUploadId(fileName);
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const token = blobToken();
 
   if (token) {
-    const blob = await put(`tasks/${key}`, buffer, {
-      access: "private",
-      contentType: mimeType || "application/octet-stream",
-      token,
-      addRandomSuffix: false,
-    });
-    // Private blob — brauzer to‘g‘ridan ocholmaydi; API proxy orqali
-    return {
-      url: `/api/uploads/remote?path=${encodeURIComponent(blob.pathname)}`,
-      key: blob.pathname,
-      size: buffer.length,
-    };
+    try {
+      const blob = await put(`tasks/${key}`, buffer, {
+        access: "private",
+        contentType: mimeType || "application/octet-stream",
+        token,
+        addRandomSuffix: false,
+      });
+      return {
+        url: `/api/uploads/remote?path=${encodeURIComponent(blob.pathname)}`,
+        key: blob.pathname,
+        size: buffer.length,
+      };
+    } catch (err: any) {
+      const detail = err?.message || String(err);
+      throw new Error(`Blob yuklash xatosi: ${detail}`);
+    }
+  }
+
+  // Vercel serverless — hech qachon diskka yozilmasin
+  if (isServerless()) {
+    throw new Error(
+      "BLOB_READ_WRITE_TOKEN sozlanmagan — Vercel → Settings → Environment Variables",
+    );
   }
 
   const dir = uploadsDir();
@@ -72,7 +101,7 @@ export async function readBlobUpload(pathname: string): Promise<{
   contentType: string;
   downloadName: string;
 } | null> {
-  const token = process.env.BLOB_READ_WRITE_TOKEN;
+  const token = blobToken();
   if (!token) return null;
   if (!pathname || pathname.includes("..") || !pathname.startsWith("tasks/")) {
     return null;

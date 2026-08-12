@@ -232,10 +232,12 @@ export default function VazifalarPage() {
   const [assigneeKey, setAssigneeKey] = useState("");
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+  const [attachUploading, setAttachUploading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [completionNote, setCompletionNote] = useState("");
   const [completionFiles, setCompletionFiles] = useState<TaskAttachment[]>([]);
+  const [completeUploading, setCompleteUploading] = useState(false);
   const completeFileRef = useRef<HTMLInputElement>(null);
 
   const [extendDue, setExtendDue] = useState("");
@@ -360,9 +362,11 @@ export default function VazifalarPage() {
   async function onPickFiles(
     files: FileList | null,
     setter: React.Dispatch<React.SetStateAction<TaskAttachment[]>>,
+    setUploading: React.Dispatch<React.SetStateAction<boolean>>,
   ) {
     if (!files?.length) return;
     const picked = Array.from(files);
+    setUploading(true);
     try {
       const converted: TaskAttachment[] = [];
       for (const file of picked) {
@@ -377,7 +381,7 @@ export default function VazifalarPage() {
         return next;
       });
       toast({
-        title: "Fayl biriktirildi",
+        title: "Fayl yuklandi",
         description: `${picked.length} ta fayl qo‘shildi`,
       });
     } catch (e: any) {
@@ -386,6 +390,8 @@ export default function VazifalarPage() {
         description: e?.message || "Xato",
         variant: "destructive",
       });
+    } finally {
+      setUploading(false);
     }
   }
 
@@ -872,7 +878,11 @@ export default function VazifalarPage() {
                 label="RASM / FAYL (ixtiyoriy)"
                 title="Rasm yoki fayl biriktiring"
                 hint="PDF, DOCX, rasm — 10 MB gacha. Bosib tanlang yoki shu yerga tortib tashlang"
-                onPick={(files) => void onPickFiles(files, setAttachments)}
+                uploading={attachUploading}
+                uploadedCount={attachments.length}
+                onPick={(files) =>
+                  void onPickFiles(files, setAttachments, setAttachUploading)
+                }
               />
               <AttachmentList
                 items={attachments}
@@ -1022,7 +1032,11 @@ export default function VazifalarPage() {
                 label="RASM / FAYL"
                 title="Rasm yoki fayl biriktiring"
                 hint="PDF, DOCX, rasm — 10 MB gacha. Bosib tanlang yoki shu yerga tortib tashlang"
-                onPick={(files) => void onPickFiles(files, setCompletionFiles)}
+                uploading={completeUploading}
+                uploadedCount={completionFiles.length}
+                onPick={(files) =>
+                  void onPickFiles(files, setCompletionFiles, setCompleteUploading)
+                }
               />
               <AttachmentList
                 items={completionFiles}
@@ -1098,14 +1112,19 @@ function FileDropzone({
   title,
   hint,
   onPick,
+  uploading,
+  uploadedCount = 0,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   label: string;
   title: string;
   hint: string;
   onPick: (files: FileList | null) => void;
+  uploading?: boolean;
+  uploadedCount?: number;
 }) {
   const [dragging, setDragging] = useState(false);
+  const success = !uploading && uploadedCount > 0;
 
   return (
     <div className="space-y-1.5">
@@ -1132,23 +1151,60 @@ function FileDropzone({
           e.preventDefault();
           e.stopPropagation();
           setDragging(false);
-          onPick(e.dataTransfer.files);
+          if (!uploading) onPick(e.dataTransfer.files);
         }}
         className={cn(
           "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-4 py-3.5 transition-colors",
-          dragging
-            ? "border-primary bg-primary/5"
-            : "border-slate-300 bg-slate-50/80 hover:border-primary/50 hover:bg-slate-50",
+          uploading && "pointer-events-none opacity-80 border-sky-400 bg-sky-50",
+          !uploading &&
+            dragging &&
+            "border-primary bg-primary/5",
+          !uploading &&
+            success &&
+            "border-emerald-500 bg-emerald-50 hover:border-emerald-600 hover:bg-emerald-50/90",
+          !uploading &&
+            !success &&
+            !dragging &&
+            "border-slate-300 bg-slate-50/80 hover:border-primary/50 hover:bg-slate-50",
         )}
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-slate-800 text-white">
-          <FileText className="h-5 w-5" />
+        <span
+          className={cn(
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white",
+            success ? "bg-emerald-600" : uploading ? "bg-sky-600" : "bg-slate-800",
+          )}
+        >
+          {success ? (
+            <CheckCircle2 className="h-5 w-5" />
+          ) : (
+            <FileText className="h-5 w-5" />
+          )}
         </span>
         <span className="min-w-0 text-left">
-          <span className="block text-sm font-semibold text-slate-700">
-            {title}
+          <span
+            className={cn(
+              "block text-sm font-semibold",
+              success ? "text-emerald-800" : "text-slate-700",
+            )}
+          >
+            {uploading
+              ? "Yuklanmoqda..."
+              : success
+                ? `${uploadedCount} ta fayl yuklandi`
+                : title}
           </span>
-          <span className="mt-0.5 block text-xs text-slate-500">{hint}</span>
+          <span
+            className={cn(
+              "mt-0.5 block text-xs",
+              success ? "text-emerald-700" : "text-slate-500",
+            )}
+          >
+            {uploading
+              ? "Kuting, fayl serverga yuborilmoqda"
+              : success
+                ? "Yana qo‘shish uchun bosing yoki tortib tashlang"
+                : hint}
+          </span>
         </span>
         <input
           ref={inputRef}
@@ -1156,6 +1212,7 @@ function FileDropzone({
           multiple
           accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,application/pdf"
           className="sr-only"
+          disabled={uploading}
           onChange={(e) => {
             onPick(e.target.files);
             e.target.value = "";
@@ -1189,7 +1246,7 @@ function AttachmentList({
       {items.map((a) => (
         <li
           key={a.id}
-          className="flex items-center gap-2 rounded-lg border bg-slate-50 px-2.5 py-1.5 text-sm"
+          className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50/70 px-2.5 py-1.5 text-sm"
         >
           {a.kind === "image" ? (
             <a href={a.url} target="_blank" rel="noreferrer" className="shrink-0">

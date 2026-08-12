@@ -2,7 +2,6 @@ import { useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  getGetDashboardStatsQueryKey,
   getGetNotificationsQueryKey,
 } from "@workspace/api-client-react";
 import type { ChatMessage } from "@/lib/chat-api";
@@ -14,6 +13,10 @@ type SyncPayload = {
   messagesVersion: string;
   newMessages: ChatMessage[];
 };
+
+const POLL_CHAT_MS = 2_500;
+const POLL_IDLE_MS = 8_000;
+const BACKOFF_MAX_MS = 30_000;
 
 function activeChatIdFromUrl(): number | null {
   try {
@@ -40,7 +43,6 @@ function sortMessages(list: ChatMessage[]): ChatMessage[] {
   return [...list].sort((a, b) => {
     const aPend = a.pending || a.id < 0 ? 1 : 0;
     const bPend = b.pending || b.id < 0 ? 1 : 0;
-    // Pending (optimistic) — oxirida, darhol ko‘rinsin
     if (aPend !== bPend) return aPend - bPend;
     if (a.id > 0 && b.id > 0) return a.id - b.id;
     return String(a.createdAt).localeCompare(String(b.createdAt));
@@ -59,7 +61,6 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
         ...prevMsg,
         ...m,
         pending: false,
-        // Sync ba'zan attachments bermasa — eski media yo‘qolmasin
         attachments:
           m.attachments && m.attachments.length > 0
             ? m.attachments
@@ -83,8 +84,8 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
 }
 
 /**
- * Real-time sync — chat xabarlarini darhol ko‘rsatish uchun
- * optimistic xabarlarni buzmaydi.
+ * Real-time sync — Vercel serverless uchun sekin poll + 503 backoff.
+ * 400ms poll serverni 503 ga olib kelardi.
  */
 export function RealtimeSync() {
   const { user, isAuthenticated } = useAuth();
@@ -97,7 +98,30 @@ export function RealtimeSync() {
     if (!isAuthenticated || !user) return;
 
     let stopped = false;
-    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    let inFlight = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let backoffMs = 0;
+    let abort: AbortController | null = null;
+
+    const clearTimer = () => {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+    };
+
+    const nextDelay = () => {
+      if (backoffMs > 0) return backoffMs;
+      return activeChatIdFromUrl() ? POLL_CHAT_MS : POLL_IDLE_MS;
+    };
+
+    const schedule = () => {
+      clearTimer();
+      if (stopped || document.visibilityState === "hidden") return;
+      timer = setTimeout(() => {
+        void pollOnce();
+      }, nextDelay());
+    };
 
     const applyPayload = (payload: SyncPayload) => {
       if (stopped) return;
@@ -109,12 +133,11 @@ export function RealtimeSync() {
         void qc.invalidateQueries({
           queryKey: getGetNotificationsQueryKey({ unreadOnly: true }),
         });
-        void qc.invalidateQueries({ queryKey: getGetDashboardStatsQueryKey() });
+        // dashboard/stats og‘ir — har unread o‘zgarishida chaqirmaymiz
       }
 
       if (payload.chatsVersion !== chatsVersionRef.current) {
         chatsVersionRef.current = payload.chatsVersion;
-        // Ro‘yxatni yumshoq yangilash — xabarlar cache’ini tozalama
         void qc.invalidateQueries({ queryKey: ["chats"], exact: true });
       }
 
@@ -131,9 +154,6 @@ export function RealtimeSync() {
         return;
       }
 
-      // edit/delete: versiya o‘zgagan, lekin yangi id yo‘q —
-      // to‘liq invalidate QILMAYMIZ (pending xabar yo‘qoladi).
-      // Faqat fonda refetch + merge.
       if (
         payload.messagesVersion &&
         payload.messagesVersion !== messagesVersionRef.current &&
@@ -163,6 +183,14 @@ export function RealtimeSync() {
 
     const pollOnce = async () => {
       if (stopped || document.visibilityState === "hidden") return;
+      if (inFlight) {
+        schedule();
+        return;
+      }
+      inFlight = true;
+      abort?.abort();
+      abort = new AbortController();
+
       const chatId = activeChatIdFromUrl();
       const cached = chatId
         ? qc.getQueryData<{ messages: ChatMessage[] }>(["chats", chatId, "messages"])
@@ -177,49 +205,60 @@ export function RealtimeSync() {
         const res = await fetch(`/api/realtime/sync?${params.toString()}`, {
           credentials: "include",
           headers: { Accept: "application/json" },
+          signal: abort.signal,
         });
-        if (!res.ok) return;
-        applyPayload((await res.json()) as SyncPayload);
-      } catch {
-        /* ignore */
-      }
-    };
-
-    const startPoll = () => {
-      if (pollTimer) return;
-      void pollOnce();
-      // Chat ochiq bo‘lsa juda tez, aks holda 1s
-      pollTimer = setInterval(() => {
-        void pollOnce();
-      }, activeChatIdFromUrl() ? 400 : 1000);
-    };
-
-    const stopPoll = () => {
-      if (pollTimer) {
-        clearInterval(pollTimer);
-        pollTimer = null;
+        if (res.status === 429 || res.status === 503) {
+          backoffMs = Math.min(
+            BACKOFF_MAX_MS,
+            Math.max(POLL_CHAT_MS * 2, (backoffMs || POLL_CHAT_MS) * 2),
+          );
+        } else if (!res.ok) {
+          backoffMs = Math.min(BACKOFF_MAX_MS, Math.max(5_000, backoffMs || 5_000));
+        } else {
+          backoffMs = 0;
+          applyPayload((await res.json()) as SyncPayload);
+        }
+      } catch (err) {
+        if ((err as { name?: string })?.name !== "AbortError") {
+          backoffMs = Math.min(
+            BACKOFF_MAX_MS,
+            Math.max(POLL_CHAT_MS * 2, (backoffMs || POLL_CHAT_MS) * 2),
+          );
+        }
+      } finally {
+        inFlight = false;
+        schedule();
       }
     };
 
     const onVisibility = () => {
       if (document.visibilityState === "visible") {
-        stopPoll();
-        startPoll();
+        backoffMs = 0;
         void pollOnce();
       } else {
-        stopPoll();
+        clearTimer();
+        abort?.abort();
       }
     };
 
-    startPoll();
+    const onNav = () => {
+      backoffMs = 0;
+      clearTimer();
+      void pollOnce();
+    };
+
+    void pollOnce();
     document.addEventListener("visibilitychange", onVisibility);
-    window.addEventListener("focus", pollOnce);
+    window.addEventListener("focus", onNav);
+    window.addEventListener("popstate", onNav);
 
     return () => {
       stopped = true;
-      stopPoll();
+      clearTimer();
+      abort?.abort();
       document.removeEventListener("visibilitychange", onVisibility);
-      window.removeEventListener("focus", pollOnce);
+      window.removeEventListener("focus", onNav);
+      window.removeEventListener("popstate", onNav);
     };
   }, [isAuthenticated, user, qc]);
 

@@ -30,21 +30,16 @@ async function buildSyncPayload(me: number, chatId: number | null, afterMsgId: n
   let chatsVersion = "0";
 
   if (chatIds.length) {
+    // Faqat lastMessageAt — har sync da barcha xabarlar max(id) juda og‘ir edi (503 sababi)
     const [ver] = await db
       .select({
         maxAt: sql<string>`coalesce(max(${chatsTable.lastMessageAt})::text, '0')`,
+        cnt: sql<number>`count(*)::int`,
       })
       .from(chatsTable)
       .where(inArray(chatsTable.id, chatIds));
 
-    const [maxMsg] = await db
-      .select({
-        maxId: sql<number>`coalesce(max(${chatMessagesTable.id}), 0)::int`,
-      })
-      .from(chatMessagesTable)
-      .where(inArray(chatMessagesTable.chatId, chatIds));
-
-    chatsVersion = `${ver?.maxAt ?? "0"}:${maxMsg?.maxId ?? 0}`;
+    chatsVersion = `${ver?.maxAt ?? "0"}:${ver?.cnt ?? 0}`;
   }
 
   let newMessages: Array<{
@@ -97,7 +92,13 @@ async function buildSyncPayload(me: number, chatId: number | null, afterMsgId: n
         .where(eq(chatMessagesTable.chatId, chatId));
       messagesVersion = `${mv?.maxId ?? 0}:${mv?.maxEdited ?? "0"}:${mv?.maxDeleted ?? "0"}`;
 
-      if (afterMsgId && Number.isFinite(afterMsgId) && afterMsgId > 0) {
+      const maxId = mv?.maxId ?? 0;
+      if (
+        afterMsgId &&
+        Number.isFinite(afterMsgId) &&
+        afterMsgId > 0 &&
+        maxId > afterMsgId
+      ) {
         const rows = await db
           .select({
             id: chatMessagesTable.id,

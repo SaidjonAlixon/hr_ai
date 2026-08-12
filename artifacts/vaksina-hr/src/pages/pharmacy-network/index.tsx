@@ -3,6 +3,7 @@ import { useGetEmployees, useUpdateEmployee, type Employee } from '@workspace/ap
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
+import { isHrManager, isHrRole } from '../../lib/roles';
 import {
   EMPLOYMENT_STATUS_LABELS,
   PIPELINE_STEPS,
@@ -201,7 +202,7 @@ export default function PharmacyNetworkPage() {
   const { mutate: cancelAlert, isPending: cancelling } = useCancelStaffingAlert();
 
   const canSeeFullNetwork =
-    user?.role === 'hr' ||
+    isHrRole(user?.role) ||
     user?.role === 'director' ||
     user?.role === 'admin' ||
     user?.role === 'recruiter' ||
@@ -211,7 +212,7 @@ export default function PharmacyNetworkPage() {
   const isMudirOnly = user?.role === 'mudir';
 
   const canEditShift =
-    user?.role === 'hr' ||
+    isHrRole(user?.role) ||
     user?.role === 'director' ||
     user?.role === 'admin' ||
     user?.role === 'department_head' ||
@@ -220,7 +221,7 @@ export default function PharmacyNetworkPage() {
 
   const canEditStatus =
     user?.role === 'mudir' ||
-    user?.role === 'hr' ||
+    isHrRole(user?.role) ||
     user?.role === 'admin' ||
     user?.role === 'director' ||
     user?.role === 'koordinator';
@@ -229,10 +230,10 @@ export default function PharmacyNetworkPage() {
     user?.role === 'koordinator' ||
     user?.role === 'mudir' ||
     user?.role === 'admin' ||
-    user?.role === 'hr' ||
+    isHrRole(user?.role) ||
     user?.role === 'director';
 
-  const canConfirmAlerts = user?.role === 'koordinator' || user?.role === 'admin' || user?.role === 'hr';
+  const canConfirmAlerts = user?.role === 'koordinator' || isHrManager(user?.role);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);

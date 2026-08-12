@@ -74,5 +74,5 @@ export async function deleteRequestCascade(requestId: number): Promise<boolean> 
 }
 
 export function canDeleteHrRecords(role?: string): boolean {
-  return role === "hr" || role === "director";
+  return role === "hr" || role === "hr_direktor" || role === "hr_auditor" || role === "hr_menejer" || role === "director";
 }

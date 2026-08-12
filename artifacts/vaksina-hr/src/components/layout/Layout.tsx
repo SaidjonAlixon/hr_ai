@@ -21,6 +21,8 @@ import {
   AlarmClock,
   Target,
   MessageCircle,
+  Network,
+  Eye,
 } from 'lucide-react';
 import {
   useLogout,
@@ -35,6 +37,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 import { DailyGoalPrompt } from '@/components/DailyGoalPrompt';
+import { isHrManager, isHrRole } from '@/lib/roles';
 
 type NavItem = {
   name: string;
@@ -52,6 +55,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/employees')) return '/employees';
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
+  if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
+  if (path.startsWith('/kuzatuv')) return '/kuzatuv';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
   if (path.startsWith('/pipeline')) return '/pipeline';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
@@ -128,7 +133,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     };
   }, [mobileOpen]);
 
-  const isHrLike = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'director';
+  const isHrLike = isHrRole(user?.role) || user?.role === 'admin' || user?.role === 'director';
   const isRecruiter = user?.role === 'recruiter';
   const isPharmacyStaff = user?.role === 'koordinator' || user?.role === 'mudir';
 
@@ -154,7 +159,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { status: 'draft' },
     {
       query: {
-        enabled: !!user && (isRecruiter || user?.role === 'hr' || user?.role === 'admin'),
+        enabled: !!user && (isRecruiter || isHrManager(user?.role)),
         refetchInterval: 30_000,
       },
     } as any,
@@ -272,7 +277,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       setLocation('/login');
       return;
     }
-    if (user.role === 'farmasevt' && !location.startsWith('/kirish') && location !== '/notifications') {
+    if (
+      user.role === 'farmasevt' &&
+      !location.startsWith('/kirish') &&
+      !location.startsWith('/tashkiliy-tuzilma') &&
+      location !== '/notifications'
+    ) {
       setLocation('/kirish');
     }
   }, [isLoading, isAuthenticated, user, setLocation, location]);
@@ -299,10 +309,61 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   };
 
   const chatNav = { name: 'Chat', path: '/chat', icon: MessageCircle };
+  const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
+  const kuzatuvNav = { name: 'Kuzatuv', path: '/kuzatuv', icon: Eye };
+
+  const hrMenejerNav: NavItem[] = [
+    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+    { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+    { name: 'Maqsad', path: '/maqsad', icon: Target },
+    chatNav,
+    orgNav,
+    { name: 'Arizalar', path: '/requests', icon: FileText },
+    { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+    { name: 'Nomzodlar', path: '/candidates', icon: Users },
+    { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+    { name: 'Xodimlar', path: '/employees', icon: Users },
+    { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+    { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+  ];
+
+  const hrDirektorNav: NavItem[] = [
+    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+    kuzatuvNav,
+    { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+    { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+    { name: 'Maqsad', path: '/maqsad', icon: Target },
+    chatNav,
+    orgNav,
+    { name: 'Arizalar', path: '/requests', icon: FileText },
+    { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+    { name: 'Nomzodlar', path: '/candidates', icon: Users },
+    { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+    { name: 'Xodimlar', path: '/employees', icon: Users },
+    { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+    { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+  ];
+
+  const hrAuditorNav: NavItem[] = [
+    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+    kuzatuvNav,
+    { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+    { name: 'Maqsad', path: '/maqsad', icon: Target },
+    chatNav,
+    orgNav,
+    { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+    { name: 'Nomzodlar', path: '/candidates', icon: Users },
+    { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+    { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+  ];
 
   const roleNavigation: Record<string, NavItem[]> = {
     admin: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      kuzatuvNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Maqsad', path: '/maqsad', icon: Target },
@@ -325,6 +386,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Maqsad', path: '/maqsad', icon: Target },
       chatNav,
+      orgNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
@@ -346,21 +408,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
-    hr: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
-      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      { name: 'Maqsad', path: '/maqsad', icon: Target },
-      chatNav,
-      { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
-      { name: 'Nomzodlar', path: '/candidates', icon: Users },
-      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
-      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
-      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
-    ],
+    hr: hrMenejerNav,
+    hr_menejer: hrMenejerNav,
+    hr_direktor: hrDirektorNav,
+    hr_auditor: hrAuditorNav,
     trainer: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -393,6 +444,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Maqsad', path: '/maqsad', icon: Target },
       chatNav,
+      orgNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
@@ -402,6 +454,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Maqsad', path: '/maqsad', icon: Target },
       chatNav,
+      orgNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
@@ -424,6 +477,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     farmasevt: [
       { name: 'Kirish', path: '/kirish', icon: GraduationCap },
+      orgNav,
     ],
   };
 
@@ -574,7 +628,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             location === '/vazifalar' ||
               location === '/pipeline' ||
               location.startsWith('/chat') ||
-              location.startsWith('/kirish')
+              location.startsWith('/kirish') ||
+              location.startsWith('/tashkiliy-tuzilma')
               ? 'overflow-hidden p-0'
               : 'overflow-y-auto overflow-x-hidden p-3 sm:p-6',
           )}
@@ -586,7 +641,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location === '/pipeline' ||
                 location === '/vazifalar' ||
                 location.startsWith('/chat') ||
-                location.startsWith('/kirish')
+                location.startsWith('/kirish') ||
+                location.startsWith('/tashkiliy-tuzilma')
                 ? 'max-w-none h-full'
                 : 'max-w-7xl',
             )}

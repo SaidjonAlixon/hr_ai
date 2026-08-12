@@ -1,7 +1,9 @@
+import { HR_ROLES, HR_ROLE_LABELS, isHrManager as isHrManagerRole } from './roles';
+
 /** HR suhbatni shu rollarga o'tkaza oladi */
 export const ASSIGNABLE_ROLES = [
   'admin',
-  'hr',
+  ...HR_ROLES,
   'recruiter',
   'trainer',
   'director',
@@ -12,7 +14,7 @@ export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
-  hr: 'HR',
+  ...HR_ROLE_LABELS,
   recruiter: 'Rekruter',
   trainer: 'Trener',
   director: 'Direktor',
@@ -28,7 +30,7 @@ export function roleLabel(role?: string | null): string {
 }
 
 export function isHrManager(role?: string | null): boolean {
-  return role === 'hr' || role === 'admin';
+  return isHrManagerRole(role);
 }
 
 /** Rekruter faqat o'ziga biriktirilgan ishlarni ko'radi */

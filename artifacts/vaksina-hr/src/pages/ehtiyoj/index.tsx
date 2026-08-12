@@ -3,6 +3,7 @@ import { Link } from 'wouter';
 import { useGetEmployees, type Employee } from '@workspace/api-client-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
+import { isHrManager } from '../../lib/roles';
 import {
   formatNeedDt,
   needLabel,
@@ -118,17 +119,15 @@ export default function EhtiyojPage() {
   const canWrite =
     user?.role === 'mudir' ||
     user?.role === 'koordinator' ||
-    user?.role === 'hr' ||
-    user?.role === 'admin';
+    isHrManager(user?.role);
 
   const canConfirm =
-    user?.role === 'koordinator' || user?.role === 'hr' || user?.role === 'admin';
+    user?.role === 'koordinator' || isHrManager(user?.role);
 
   const canVerify =
     user?.role === 'mudir' ||
     user?.role === 'koordinator' ||
-    user?.role === 'hr' ||
-    user?.role === 'admin';
+    isHrManager(user?.role);
 
   const isMudir = user?.role === 'mudir';
   const isKoordinator = user?.role === 'koordinator';

@@ -46,12 +46,13 @@ import { useGetReminders } from '../lib/eslatmalar-api';
 import { useChatList } from '../lib/chat-api';
 import { useGoalsMe, GOAL_ROLES } from '../lib/maqsad-api';
 import { cn } from '../lib/utils';
+import { HR_ROLE_LABELS, isHrRole } from '../lib/roles';
 
 const OPEN_STATUSES = new Set(['submitted', 'reviewing', 'accepted', 'announced']);
 
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Admin',
-  hr: 'HR',
+  ...HR_ROLE_LABELS,
   recruiter: 'Rekruter',
   director: 'Direktor',
   department_head: "Bo'lim boshlig'i",
@@ -74,9 +75,9 @@ type DashKind =
   | 'intern'; // farmasevt
 
 function dashKindFor(role?: string | null): DashKind {
+  if (isHrRole(role)) return 'recruitment';
   switch (role) {
     case 'admin':
-    case 'hr':
     case 'director':
     case 'recruiter':
       return 'recruitment';
@@ -193,14 +194,14 @@ export default function Dashboard() {
 
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';
-  const canWatchRequests = role === 'director' || role === 'hr' || role === 'admin';
-  const canSeePipeline = role === 'admin' || role === 'hr' || role === 'recruiter' || role === 'director';
-  const canSeeRecruiterTasks = role === 'admin' || role === 'hr' || role === 'recruiter';
+  const canWatchRequests = role === 'director' || isHrRole(role) || role === 'admin';
+  const canSeePipeline = role === 'admin' || isHrRole(role) || role === 'recruiter' || role === 'director';
+  const canSeeRecruiterTasks = role === 'admin' || isHrRole(role) || role === 'recruiter';
   const canFetchVacancies =
     role === 'admin' ||
     role === 'director' ||
     role === 'recruiter' ||
-    role === 'hr' ||
+    isHrRole(role) ||
     role === 'department_head';
 
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats({
@@ -337,7 +338,7 @@ export default function Dashboard() {
       {isRecruitment && (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {(role === 'admin' || role === 'hr' || role === 'director') && (
+            {(role === 'admin' || isHrRole(role) || role === 'director') && (
               <StatsCard
                 title="Ochiq Arizalar"
                 value={stats?.openRequests}

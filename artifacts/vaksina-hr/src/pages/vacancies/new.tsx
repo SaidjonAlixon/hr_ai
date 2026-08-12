@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { isHrManager } from '../../lib/roles';
 
 const formSchema = z.object({
   requestId: z.coerce.number({ required_error: "Arizani tanlang" }).min(1, "Arizani tanlang"),
@@ -33,7 +34,7 @@ export default function NewVacancy() {
   const searchParams = new URLSearchParams(window.location.search);
   const initialReqId = searchParams.get('requestId');
 
-  const canCreate = user?.role === 'hr' || user?.role === 'admin';
+  const canCreate = isHrManager(user?.role);
 
   const { mutate, isPending } = useCreateVacancy();
   const { data: requests, isLoading: reqsLoading } = useGetRequests({ status: 'accepted' });

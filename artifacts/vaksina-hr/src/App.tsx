@@ -28,6 +28,8 @@ import DocumentsPage from './pages/candidates/documents';
 import InternshipPage from './pages/candidates/internship';
 import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
+import TashkiliyTuzilmaPage from './pages/tashkiliy-tuzilma/index';
+import KuzatuvPage from './pages/kuzatuv/index';
 import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
 import EslatmalarPage from './pages/eslatmalar/index';
@@ -116,6 +118,8 @@ function Router() {
       
       <ProtectedRoute path="/employees" component={EmployeesPlaceholder} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
+      <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
+      <ProtectedRoute path="/kuzatuv" component={KuzatuvPage} />
       <ProtectedRoute path="/internships" component={InternshipsPlaceholder} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />

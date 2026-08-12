@@ -56,7 +56,9 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
   const [prefilled, setPrefilled] = useState(false);
 
   useEffect(() => {
-    if (!hrId && user?.role === 'hr') setHrId(String(user.id));
+    if (!hrId && (user?.role === 'hr' || user?.role === 'hr_menejer' || user?.role === 'hr_direktor' || user?.role === 'hr_auditor')) {
+      setHrId(String(user.id));
+    }
     if (!trainerId && user?.role === 'trainer') setTrainerId(String(user.id));
   }, [user, hrId, trainerId]);
 

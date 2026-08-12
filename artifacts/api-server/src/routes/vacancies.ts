@@ -13,6 +13,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canDeleteHrRecords, deleteVacancyCascade } from "../lib/delete-candidate";
+import { isHrManager, isHrRole } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -112,7 +113,7 @@ router.get("/vacancies", requireAuth, async (req: AuthRequest, res): Promise<voi
 
 router.post("/vacancies", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (role !== "hr" && role !== "admin") {
+  if (!isHrManager(role)) {
     res.status(403).json({ error: "Ish o'rnini faqat HR yoki admin yaratishi mumkin" });
     return;
   }
@@ -234,7 +235,7 @@ router.patch("/vacancies/:id", requireAuth, async (req: AuthRequest, res): Promi
   if (closing) {
     const canClose =
       role === "admin" ||
-      role === "hr" ||
+      isHrRole(role) ||
       role === "director" ||
       (role === "recruiter" && existing.recruiterId === req.userId);
     if (!canClose) {
@@ -284,7 +285,7 @@ router.post("/vacancies/:id/close", requireAuth, async (req: AuthRequest, res): 
   const role = req.userRole ?? "";
   const canClose =
     role === "admin" ||
-    role === "hr" ||
+    isHrRole(role) ||
     role === "director" ||
     (role === "recruiter" && existing.recruiterId === req.userId);
   if (!canClose) {
@@ -347,7 +348,7 @@ router.post("/vacancies/:id/publish", requireAuth, async (req: AuthRequest, res)
     res.status(403).json({ error: "Bu ish o'rni sizga biriktirilmagan" });
     return;
   }
-  if (role !== "recruiter" && role !== "hr" && role !== "admin") {
+  if (role !== "recruiter" && !isHrManager(role)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }

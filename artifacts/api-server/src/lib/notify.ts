@@ -1,6 +1,8 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db, notificationsTable, usersTable } from "@workspace/db";
 
+import { HR_ROLES } from "../lib/roles";
+
 /** Faol HR (va ixtiyoriy admin) ga bildirishnoma */
 export async function notifyActiveHrs(opts: {
   text: string;
@@ -8,11 +10,11 @@ export async function notifyActiveHrs(opts: {
   linkUrl: string;
   includeAdmin?: boolean;
 }): Promise<void> {
-  const roles = opts.includeAdmin === false ? (["hr"] as const) : (["hr", "admin"] as const);
+  const roles = opts.includeAdmin === false ? [...HR_ROLES] : [...HR_ROLES, "admin"];
   const hrs = await db
     .select({ id: usersTable.id })
     .from(usersTable)
-    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, [...roles])));
+    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, roles)));
 
   for (const r of hrs) {
     await db.insert(notificationsTable).values({

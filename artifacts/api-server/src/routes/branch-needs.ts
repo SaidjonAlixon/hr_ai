@@ -10,23 +10,24 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyByRoles, notifyUser } from "../lib/notify";
+import { HR_ROLES } from "../lib/roles";
 
 const router: IRouter = Router();
 
 const VIEW_ROLES = new Set([
   "mudir",
   "koordinator",
-  "hr",
+  ...HR_ROLES,
   "admin",
   "director",
   "recruiter",
   "texnik",
   "ombor",
 ]);
-const WRITE_ROLES = new Set(["mudir", "koordinator", "hr", "admin"]);
-const CONFIRM_ROLES = new Set(["koordinator", "hr", "admin"]);
+const WRITE_ROLES = new Set(["mudir", "koordinator", ...HR_ROLES, "admin"]);
+const CONFIRM_ROLES = new Set(["koordinator", ...HR_ROLES, "admin"]);
 
-const VERIFY_ROLES = new Set(["mudir", "koordinator", "hr", "admin"]);
+const VERIFY_ROLES = new Set(["mudir", "koordinator", ...HR_ROLES, "admin"]);
 
 async function enrichNeed(row: typeof branchNeedsTable.$inferSelect) {
   let managerName: string | null = null;

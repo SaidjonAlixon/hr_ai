@@ -30,6 +30,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { DeadlineCountdown } from '../../components/DeadlineCountdown';
 import { sortByDeadlineAsc } from '../../lib/deadline-countdown';
 import { useToast } from '../../hooks/use-toast';
+import { isHrManager, isHrRole } from '../../lib/roles';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -47,10 +48,10 @@ export default function VacanciesList() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const canCreate = user?.role === 'hr' || user?.role === 'admin';
-  const canPublish = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'recruiter';
+  const canCreate = isHrManager(user?.role);
+  const canPublish = isHrManager(user?.role) || user?.role === 'recruiter';
   const canCloseRole =
-    user?.role === 'hr' ||
+    isHrRole(user?.role) ||
     user?.role === 'admin' ||
     user?.role === 'director' ||
     user?.role === 'recruiter';

@@ -45,6 +45,9 @@ export type GoalPromptStatus = {
 export const GOAL_ROLES = new Set([
   "admin",
   "hr",
+  "hr_direktor",
+  "hr_auditor",
+  "hr_menejer",
   "director",
   "department_head",
   "recruiter",

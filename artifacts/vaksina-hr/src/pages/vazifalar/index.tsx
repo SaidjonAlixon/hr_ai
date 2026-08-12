@@ -72,11 +72,13 @@ import {
   type TaskAttachment,
 } from "@/lib/vazifalar-api";
 
+import { HR_ROLES } from "@/lib/roles";
+
 type BoardCol = "past" | "today" | "tomorrow" | "week" | "completed";
 
 const ASSIGNER_ROLES = new Set([
   "admin",
-  "hr",
+  ...HR_ROLES,
   "director",
   "department_head",
   "recruiter",

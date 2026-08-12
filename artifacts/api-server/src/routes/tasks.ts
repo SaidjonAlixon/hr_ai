@@ -13,10 +13,12 @@ import { syncBranchNeedFromTask } from "../lib/sync-branch-need";
 
 const router: IRouter = Router();
 
+import { HR_ROLES, isHrManager } from "../lib/roles";
+
 /** Rahbar / boshqaruv rollari — vazifa belgilash huquqi */
 const MANAGER_ROLES = new Set([
   "admin",
-  "hr",
+  ...HR_ROLES,
   "director",
   "department_head",
   "recruiter",
@@ -44,7 +46,7 @@ function isCreator(row: typeof tasksTable.$inferSelect, userId?: number) {
 }
 
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
-  if (role === "admin") return true;
+  if (role === "admin" || isHrManager(role)) return true;
   return isCreator(row, userId) || isAssignee(row, userId);
 }
 

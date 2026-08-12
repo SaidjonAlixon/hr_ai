@@ -25,6 +25,7 @@ import {
   isAssignableRole,
   roleLabel,
 } from '../../lib/candidate-access';
+import { isHrRole } from '../../lib/roles';
 import { stageFormHref } from '../../lib/stage-routes';
 import {
   AlertDialog,
@@ -60,7 +61,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
     query: { enabled: canReassignCandidate(user) },
   } as any);
   const [selectedStage, setSelectedStage] = useState<string | null>(null);
-  const canDelete = user?.role === 'hr' || user?.role === 'director';
+  const canDelete = isHrRole(user?.role) || user?.role === 'director';
   const canReassign = canReassignCandidate(user);
   const canEdit = canManageCandidate(user, candidate?.recruiterId);
 

@@ -13,6 +13,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canDeleteHrRecords, deleteRequestCascade } from "../lib/delete-candidate";
+import { HR_ROLES, isHrManager } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -119,7 +120,7 @@ router.post("/requests", requireAuth, async (req: AuthRequest, res): Promise<voi
   const hrs = await db
     .select({ id: usersTable.id })
     .from(usersTable)
-    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, ["hr", "admin"])));
+    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, [...HR_ROLES, "admin"])));
   for (const r of hrs) {
     await db.insert(notificationsTable).values({
       userId: r.id,
@@ -179,7 +180,7 @@ router.post("/requests/:id/assign", async (req, res): Promise<void> => {
 
 router.post("/requests/:id/approve", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (role !== "hr" && role !== "admin") {
+  if (!isHrManager(role)) {
     res.status(403).json({ error: "Faqat HR tasdiqlashi mumkin" });
     return;
   }

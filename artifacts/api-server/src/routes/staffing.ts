@@ -13,6 +13,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyByRoles } from "../lib/notify";
+import { HR_ROLES, isHrManager } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -207,7 +208,7 @@ router.get("/staffing-alerts", requireAuth, async (req: AuthRequest, res): Promi
 
 router.post("/staffing-alerts/:id/confirm", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (role !== "koordinator" && role !== "admin" && role !== "hr") {
+  if (role !== "koordinator" && !isHrManager(role)) {
     res.status(403).json({ error: "Faqat koordinator tasdiqlashi mumkin" });
     return;
   }
@@ -278,7 +279,7 @@ router.post("/staffing-alerts/:id/confirm", requireAuth, async (req: AuthRequest
     .returning();
 
   await notifyByRoles({
-    roles: ["hr", "admin", "director", "recruiter"],
+    roles: [...HR_ROLES, "admin", "director", "recruiter"],
     text: `Filial ehtiyoji tasdiqlandi: ${branch} — ${position} (${statusLabel})`,
     type: "new_request",
     linkUrl: `/requests/${createdReq.id}`,
@@ -292,7 +293,7 @@ router.post("/staffing-alerts/:id/confirm", requireAuth, async (req: AuthRequest
 
 router.post("/staffing-alerts/:id/cancel", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (!["koordinator", "mudir", "admin", "hr"].includes(role)) {
+  if (!["koordinator", "mudir", "admin", ...HR_ROLES].includes(role)) {
     res.status(403).json({ error: "Ruxsat yoʻq" });
     return;
   }
@@ -384,7 +385,7 @@ router.post("/requests/:id/claims", requireAuth, async (req: AuthRequest, res): 
     .returning();
 
   await notifyByRoles({
-    roles: ["hr", "admin"],
+    roles: [...HR_ROLES, "admin"],
     text: `Rekruter arizaga soʻrov qoldirdi: "${request.position}" (#${requestId})`,
     type: "new_request",
     linkUrl: `/requests/${requestId}`,

@@ -3,13 +3,14 @@ import { and, desc, eq } from "drizzle-orm";
 import { db, userGoalsTable, goalDailyLogsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
+import { HR_ROLES } from "../lib/roles";
 
 const router: IRouter = Router();
 
 /** Topshiriq egalari + bo‘lim boshlig‘i */
 export const GOAL_ROLES = new Set([
   "admin",
-  "hr",
+  ...HR_ROLES,
   "director",
   "department_head",
   "recruiter",

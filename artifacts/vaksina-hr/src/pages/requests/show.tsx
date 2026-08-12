@@ -33,6 +33,7 @@ import { Link, useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
+import { isHrManager } from '../../lib/roles';
 
 export default function RequestDetails({ params }: { params: { id: string } }) {
   const id = parseInt(params.id, 10);
@@ -54,7 +55,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
   if (!request) return <div>Ariza topilmadi</div>;
 
-  const canApprove = user?.role === 'hr' || user?.role === 'admin';
+  const canApprove = isHrManager(user?.role);
   const isHrLike = canApprove || user?.role === 'director';
   const isRecruiter = user?.role === 'recruiter' || user?.role === 'admin';
   const needsDeadline = !request.deadline;

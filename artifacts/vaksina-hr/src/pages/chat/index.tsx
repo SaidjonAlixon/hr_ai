@@ -59,6 +59,9 @@ import {
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
   hr: "HR",
+  hr_direktor: "HR Direktor",
+  hr_auditor: "HR Auditor",
+  hr_menejer: "HR Menejer",
   recruiter: "Rekruter",
   trainer: "Trener",
   mentor: "Mentor",

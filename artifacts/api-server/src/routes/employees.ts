@@ -4,6 +4,7 @@ import { db, employeesTable, departmentsTable, usersTable, candidatesTable } fro
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
+import { HR_ROLES, isHrManager, isHrRole } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -11,7 +12,7 @@ const VALID_EMP_STATUS = new Set(["working", "new", "dismissed", "need_hire", "s
 
 const FULL_NETWORK_ROLES = new Set([
   "admin",
-  "hr",
+  ...HR_ROLES,
   "director",
   "recruiter",
   "koordinator",
@@ -142,8 +143,15 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
   }
 
   const role = req.userRole ?? "";
-  const canEditShift = ["hr", "director", "admin", "department_head", "mudir", "koordinator"].includes(role);
-  const canEditStatus = ["mudir", "hr", "admin", "director", "koordinator"].includes(role);
+  const canEditShift = [
+    ...HR_ROLES,
+    "director",
+    "admin",
+    "department_head",
+    "mudir",
+    "koordinator",
+  ].includes(role);
+  const canEditStatus = ["mudir", ...HR_ROLES, "admin", "director", "koordinator"].includes(role);
 
   // Mudir faqat o‘z filiali xodimlarini o‘zgartira oladi
   if (role === "mudir" && req.userId) {
@@ -187,7 +195,7 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
         return;
       }
     }
-    if (key === "userId" && role !== "admin" && role !== "hr") continue;
+    if (key === "userId" && !isHrManager(role)) continue;
     updates[key] = req.body[key];
   }
 

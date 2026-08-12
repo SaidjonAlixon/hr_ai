@@ -9,6 +9,7 @@ import { Link, useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
+import { isHrManager, isHrRole } from '../../lib/roles';
 import {
   Dialog,
   DialogContent,
@@ -43,15 +44,15 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   const [selectedChannels, setSelectedChannels] = React.useState<number[]>([]);
   const autoPublish = new URLSearchParams(window.location.search).get('publish') === '1';
   const [publishOpen, setPublishOpen] = React.useState(autoPublish);
-  const canPublish = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'recruiter';
-  const canDelete = user?.role === 'hr' || user?.role === 'director';
+  const canPublish = isHrManager(user?.role) || user?.role === 'recruiter';
+  const canDelete = isHrRole(user?.role) || user?.role === 'director';
   const isAssignedRecruiter =
     user?.role === 'recruiter' && vacancy?.recruiterId === user.id;
   const canClose =
     !!vacancy &&
     vacancy.status === 'published' &&
     (user?.role === 'admin' ||
-      user?.role === 'hr' ||
+      isHrRole(user?.role) ||
       user?.role === 'director' ||
       isAssignedRecruiter);
 
@@ -179,7 +180,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
         </div>
         
         <div className="flex gap-2 flex-wrap">
-          {(user?.role === 'recruiter' || user?.role === 'hr' || user?.role === 'director' || user?.role === 'admin') &&
+          {(user?.role === 'recruiter' || isHrRole(user?.role) || user?.role === 'director' || user?.role === 'admin') &&
             vacancy.status !== 'closed' && (
             <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
               <Button variant="outline" className="gap-2">

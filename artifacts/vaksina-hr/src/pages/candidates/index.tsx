@@ -8,6 +8,7 @@ import { Link, useLocation } from 'wouter';
 import { Search, Plus, Filter, User, Briefcase, Phone } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../contexts/AuthContext';
+import { isHrManager } from '../../lib/roles';
 
 function getFiltersFromUrl() {
   if (typeof window === 'undefined') return { stage: 'all', status: 'all' };
@@ -42,9 +43,8 @@ export default function CandidatesList() {
 
   const canAddCandidate =
     user?.role === 'recruiter' ||
-    user?.role === 'hr' ||
-    user?.role === 'director' ||
-    user?.role === 'admin';
+    isHrManager(user?.role) ||
+    user?.role === 'director';
 
   const { data: candidates, isLoading } = useGetCandidates({
     search: search || undefined,

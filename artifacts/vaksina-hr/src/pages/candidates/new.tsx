@@ -16,6 +16,7 @@ import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { PhoneInput } from '../../components/ui/phone-input';
 import { isCompleteUzPhone, normalizeUzPhone, UZ_PHONE_HINT } from '../../lib/phone';
+import { isHrManager } from '../../lib/roles';
 
 const formSchema = z.object({
   fullName: z.string().min(5, "To'liq ismni kiriting"),
@@ -40,9 +41,8 @@ export default function NewCandidate() {
 
   const canAdd =
     user?.role === 'recruiter' ||
-    user?.role === 'hr' ||
-    user?.role === 'director' ||
-    user?.role === 'admin';
+    isHrManager(user?.role) ||
+    user?.role === 'director';
 
   const { data: vacancies, isLoading: vacsLoading } = useGetVacancies({ status: 'published' });
   const { data: recruiters, isLoading: recsLoading } = useGetUsers({ role: 'recruiter' });

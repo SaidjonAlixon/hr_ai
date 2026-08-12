@@ -36,7 +36,10 @@ import {
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
-  { value: 'hr', label: 'HR' },
+  { value: 'hr_direktor', label: 'HR Direktor' },
+  { value: 'hr_auditor', label: 'HR Auditor' },
+  { value: 'hr_menejer', label: 'HR Menejer' },
+  { value: 'hr', label: 'HR (eski)' },
   { value: 'recruiter', label: 'Rekruter' },
   { value: 'trainer', label: 'Trener' },
   { value: 'mentor', label: 'Mentor' },

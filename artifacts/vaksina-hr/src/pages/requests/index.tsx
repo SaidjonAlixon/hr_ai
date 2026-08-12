@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
+import { isHrManager, isHrRole } from '../../lib/roles';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,8 +31,8 @@ export default function RequestsList() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const isViewerOnly = user?.role === 'director';
-  const canDelete = user?.role === 'hr' || user?.role === 'director';
-  const isHrLike = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'director';
+  const canDelete = isHrRole(user?.role) || user?.role === 'director';
+  const isHrLike = isHrManager(user?.role) || user?.role === 'director';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('open');
 

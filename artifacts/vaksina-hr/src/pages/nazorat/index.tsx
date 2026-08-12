@@ -9,6 +9,7 @@ import { Search, Filter, Eye, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../contexts/AuthContext';
+import { isHrManager } from '../../lib/roles';
 
 export default function NazoratPage() {
   const { user } = useAuth();
@@ -17,7 +18,7 @@ export default function NazoratPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
 
-  const allowed = user?.role === 'hr' || user?.role === 'admin' || user?.role === 'director';
+  const allowed = isHrManager(user?.role) || user?.role === 'director';
 
   const { data: requests, isLoading } = useGetRequests({
     search: search || undefined,

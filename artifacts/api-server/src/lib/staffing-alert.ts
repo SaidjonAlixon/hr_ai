@@ -7,6 +7,7 @@ import {
   candidatesTable,
 } from "@workspace/db";
 import { notifyByRoles } from "./notify";
+import { HR_ROLES } from "./roles";
 
 const EMP_STATUS_LABEL: Record<string, string> = {
   new: "Yangi",
@@ -120,7 +121,7 @@ export async function markStaffingSearchingByRequestId(requestId: number): Promi
   if (alerts.length) {
     const first = alerts[0];
     await notifyByRoles({
-      roles: ["koordinator", "mudir", "hr", "admin", "director"],
+      roles: ["koordinator", "mudir", ...HR_ROLES, "admin", "director"],
       text: `Qidirilmoqda: ${first.branchLocation || "Filial"} — eʼlon faol`,
       type: "stage_change",
       linkUrl: "/pharmacy-network",

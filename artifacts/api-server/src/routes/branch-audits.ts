@@ -10,10 +10,11 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
+import { HR_ROLES } from "../lib/roles";
 
 const router: IRouter = Router();
 
-const VIEW_ROLES = new Set(["koordinator", "admin", "hr", "director"]);
+const VIEW_ROLES = new Set(["koordinator", "admin", ...HR_ROLES, "director"]);
 const WRITE_ROLES = new Set(["koordinator", "admin"]);
 
 /** Koordinator filialga 15 m dan yaqin bo‘lishi shart */

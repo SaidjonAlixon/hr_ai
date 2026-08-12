@@ -11,6 +11,7 @@ import {
   offlineInterviewsTable,
   onlineInterviewsTable,
   requestsTable,
+  departmentsTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { isHrDirektor, isHrOversight } from "../lib/roles";
@@ -35,6 +36,51 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   farmasevt: "Farmasevt",
 };
 
+const EMP_STATUS_UZ: Record<string, string> = {
+  working: "Ishlamoqda",
+  new: "Yangi",
+  dismissed: "Bo‘shatilgan",
+  need_hire: "Xodim kerak",
+  searching: "Qidirilmoqda",
+};
+
+const ORG_ROLE_UZ: Record<string, string> = {
+  coordinator: "Koordinator",
+  manager: "Filial mudiri",
+  pharmacist: "Farmasevt",
+  intern: "Stajyor",
+  supervisor: "Boshqaruvchi",
+};
+
+const SHIFT_UZ: Record<string, string> = {
+  one: "1-smena",
+  two: "2-smena",
+  custom: "Maxsus",
+};
+
+function mapOrgEmployee(e: typeof employeesTable.$inferSelect) {
+  return {
+    id: e.id,
+    fullName: e.fullName,
+    position: e.position,
+    orgRole: e.orgRole,
+    orgRoleLabel: e.orgRole ? ORG_ROLE_UZ[e.orgRole] || e.orgRole : "—",
+    location: e.location,
+    employmentStatus: e.employmentStatus,
+    employmentStatusLabel: EMP_STATUS_UZ[e.employmentStatus] || e.employmentStatus,
+    shiftType: e.shiftType,
+    shiftLabel: e.shiftLabel,
+    shiftDisplay:
+      e.shiftType === "custom" && e.shiftLabel
+        ? e.shiftLabel
+        : SHIFT_UZ[e.shiftType || ""] || e.shiftType || "—",
+    userId: e.userId,
+    hiredAt: e.hiredAt,
+    reportsToId: e.reportsToId,
+    createdAt: e.createdAt.toISOString(),
+  };
+}
+
 /** Barcha faol foydalanuvchilar — ism + lavozim bo‘yicha tanlash */
 router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!isHrOversight(req.userRole) && req.userRole !== "admin") {
@@ -53,8 +99,11 @@ router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promis
       role: usersTable.role,
       status: usersTable.status,
       phone: usersTable.phone,
+      departmentId: usersTable.departmentId,
+      departmentName: departmentsTable.name,
     })
     .from(usersTable)
+    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
     .where(eq(usersTable.status, "active"))
     .orderBy(asc(usersTable.fullName));
 
@@ -68,7 +117,8 @@ router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promis
         p.fullName.toLowerCase().includes(q) ||
         (p.login || "").toLowerCase().includes(q) ||
         p.role.toLowerCase().includes(q) ||
-        label.toLowerCase().includes(q)
+        label.toLowerCase().includes(q) ||
+        (p.departmentName || "").toLowerCase().includes(q)
       );
     });
   }
@@ -106,6 +156,8 @@ router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promis
         role: p.role,
         roleLabel: ROLE_LABEL_UZ[p.role] || p.role,
         phone: p.phone,
+        departmentId: p.departmentId,
+        departmentName: p.departmentName,
         tasksOpen: t.open,
         tasksDone: t.done,
       };
@@ -466,13 +518,112 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       role: usersTable.role,
       status: usersTable.status,
       phone: usersTable.phone,
+      departmentId: usersTable.departmentId,
+      departmentName: departmentsTable.name,
     })
     .from(usersTable)
+    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
     .where(eq(usersTable.id, personId));
 
   if (!person) {
     res.status(404).json({ error: "Foydalanuvchi topilmadi" });
     return;
+  }
+
+  // Apteka tarmog‘i — xodim profili va bo‘ysinuvchilar
+  let [myEmployee] = await db
+    .select()
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, personId))
+    .limit(1);
+
+  // Agar userId bog‘lanmagan bo‘lsa — ism + org rol bo‘yicha qidirish
+  if (!myEmployee) {
+    const orgGuess =
+      person.role === "koordinator"
+        ? "coordinator"
+        : person.role === "mudir"
+          ? "manager"
+          : person.role === "farmasevt"
+            ? "pharmacist"
+            : null;
+    if (orgGuess) {
+      const [byName] = await db
+        .select()
+        .from(employeesTable)
+        .where(
+          and(eq(employeesTable.fullName, person.fullName), eq(employeesTable.orgRole, orgGuess)),
+        )
+        .limit(1);
+      if (byName) myEmployee = byName;
+    }
+  }
+
+  let managedManagers: ReturnType<typeof mapOrgEmployee>[] = [];
+  let managedStaff: Array<
+    ReturnType<typeof mapOrgEmployee> & { managerName?: string | null }
+  > = [];
+  let reportsTo: ReturnType<typeof mapOrgEmployee> | null = null;
+
+  if (myEmployee) {
+    if (myEmployee.reportsToId) {
+      const [boss] = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.id, myEmployee.reportsToId))
+        .limit(1);
+      if (boss) reportsTo = mapOrgEmployee(boss);
+    }
+
+    const isCoordinator =
+      myEmployee.orgRole === "coordinator" || person.role === "koordinator";
+    const isManager = myEmployee.orgRole === "manager" || person.role === "mudir";
+
+    if (isCoordinator) {
+      const managers = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.reportsToId, myEmployee.id))
+        .orderBy(asc(employeesTable.fullName));
+      // Mudirlar + to‘g‘ridan-to‘g‘ri bog‘langanlar
+      managedManagers = managers
+        .filter((m) => m.orgRole === "manager" || !m.orgRole)
+        .map(mapOrgEmployee);
+
+      const managerIds = managers.map((m) => m.id);
+      if (managerIds.length) {
+        const staff = await db
+          .select()
+          .from(employeesTable)
+          .where(inArray(employeesTable.reportsToId, managerIds))
+          .orderBy(asc(employeesTable.fullName));
+        const mgrName = new Map(managers.map((m) => [m.id, m.fullName]));
+        managedStaff = staff.map((s) => ({
+          ...mapOrgEmployee(s),
+          managerName: s.reportsToId ? mgrName.get(s.reportsToId) ?? null : null,
+        }));
+        // Koordinatorda to‘g‘ridan-to‘g‘ri farmasevt/stajyor bo‘lsa — ham qo‘shamiz
+        const directStaff = managers.filter(
+          (m) => m.orgRole === "pharmacist" || m.orgRole === "intern",
+        );
+        for (const s of directStaff) {
+          managedStaff.push({
+            ...mapOrgEmployee(s),
+            managerName: "To‘g‘ridan-to‘g‘ri",
+          });
+        }
+      }
+    } else if (isManager) {
+      const staff = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.reportsToId, myEmployee.id))
+        .orderBy(asc(employeesTable.fullName));
+      managedStaff = staff.map((s) => ({
+        ...mapOrgEmployee(s),
+        managerName: myEmployee.fullName,
+      }));
+    }
   }
 
   const vacancies = await db
@@ -671,6 +822,12 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       ["done", "verified"].includes(t.status),
     ).length,
     tasksCreated: createdTasks.length,
+    mudirsCount: managedManagers.length,
+    staffCount: managedStaff.length,
+    staffWorking: managedStaff.filter((s) => s.employmentStatus === "working").length,
+    staffNeedHire: managedStaff.filter(
+      (s) => s.employmentStatus === "need_hire" || s.employmentStatus === "searching",
+    ).length,
   };
 
   res.json({
@@ -680,9 +837,21 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       fullName: person.fullName,
       login: full ? person.login : undefined,
       role: person.role,
+      roleLabel: ROLE_LABEL_UZ[person.role] || person.role,
       status: person.status,
       phone: full ? person.phone : undefined,
+      departmentId: person.departmentId,
+      departmentName: person.departmentName,
     },
+    employee: myEmployee
+      ? {
+          ...mapOrgEmployee(myEmployee),
+          departmentId: myEmployee.departmentId,
+        }
+      : null,
+    reportsTo,
+    managedManagers,
+    managedStaff,
     summary,
     vacancies: vacancies.map((v) => ({
       id: v.id,

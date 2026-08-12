@@ -38,7 +38,11 @@ import {
   FileText,
   GraduationCap,
   Search,
+  Building2,
+  Network,
+  UserCog,
 } from "lucide-react";
+import type { OrgEmployeeView } from "@/lib/kuzatuv-api";
 
 const STAGE_LABELS: Record<string, string> = {
   phone_interview: "Tanishuv",
@@ -94,9 +98,9 @@ function StatCard({
   return (
     <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-          <p className="mt-1 text-2xl font-semibold text-slate-900">{value}</p>
+          <p className="mt-1 truncate text-2xl font-semibold text-slate-900">{value}</p>
         </div>
         <span className="rounded-xl bg-slate-50 p-2 text-slate-600">
           <Icon className="h-5 w-5" />
@@ -129,6 +133,59 @@ function formatDue(iso: string | null) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function empStatusClass(status: string) {
+  switch (status) {
+    case "working":
+      return "bg-emerald-50 text-emerald-800";
+    case "new":
+      return "bg-sky-50 text-sky-800";
+    case "dismissed":
+      return "bg-slate-200 text-slate-700";
+    case "need_hire":
+      return "bg-amber-50 text-amber-900";
+    case "searching":
+      return "bg-orange-50 text-orange-900";
+    default:
+      return "bg-slate-100 text-slate-700";
+  }
+}
+
+function OrgPersonCard({ e }: { e: OrgEmployeeView }) {
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium text-slate-900">{e.fullName}</p>
+          <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+              {e.orgRoleLabel}
+            </span>
+            {e.position ? <span>{e.position}</span> : null}
+            {e.location ? (
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-3 w-3" /> {e.location}
+              </span>
+            ) : null}
+            {e.managerName ? <span>Mudir: {e.managerName}</span> : null}
+          </p>
+          <p className="mt-1 text-[11px] text-slate-400">
+            Smena: {e.shiftDisplay}
+            {e.hiredAt ? ` · Ishga kirgan: ${e.hiredAt}` : ""}
+          </p>
+        </div>
+        <span
+          className={cn(
+            "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+            empStatusClass(e.employmentStatus),
+          )}
+        >
+          {e.employmentStatusLabel}
+        </span>
+      </div>
+    </div>
+  );
 }
 
 function Section({
@@ -246,9 +303,9 @@ function PersonDossier({
   full: boolean;
 }) {
   const { data, isLoading, error } = useKuzatuvPerson(personId, true);
-  const [tab, setTab] = useState<"all" | "tasks" | "vacancies" | "candidates" | "interviews">(
-    "all",
-  );
+  const [tab, setTab] = useState<
+    "all" | "org" | "tasks" | "vacancies" | "candidates" | "interviews"
+  >("all");
 
   if (isLoading) {
     return (
@@ -277,8 +334,34 @@ function PersonDossier({
   }
 
   const p = data as PersonDetail;
+  const managers = p.managedManagers ?? [];
+  const staff = p.managedStaff ?? [];
+  const hasOrg =
+    Boolean(p.employee) ||
+    Boolean(p.reportsTo) ||
+    managers.length > 0 ||
+    staff.length > 0 ||
+    Boolean(p.person.departmentName);
+
+  const staffByManager = new Map<number | "other", OrgEmployeeView[]>();
+  for (const m of managers) staffByManager.set(m.id, []);
+  for (const s of staff) {
+    const mid = s.reportsToId && staffByManager.has(s.reportsToId) ? s.reportsToId : "other";
+    const list = staffByManager.get(mid) ?? [];
+    list.push(s);
+    staffByManager.set(mid, list);
+  }
+
   const tabs = [
     { id: "all" as const, label: "Hammasi" },
+    ...(hasOrg
+      ? [
+          {
+            id: "org" as const,
+            label: `Apteka / bo‘lim (${managers.length + staff.length})`,
+          },
+        ]
+      : []),
     { id: "tasks" as const, label: `Vazifalar (${p.summary.tasksAssignedOpen + p.summary.tasksAssignedDone})` },
     { id: "vacancies" as const, label: `Vakansiyalar (${p.summary.vacanciesTotal})` },
     { id: "candidates" as const, label: `Nomzodlar (${p.summary.candidatesTotal})` },
@@ -306,22 +389,48 @@ function PersonDossier({
                 {p.person.fullName}
               </h1>
               <p className="text-sm text-slate-500">
-                {ROLE_LABELS[p.person.role] || p.person.role}
+                {p.person.roleLabel || ROLE_LABELS[p.person.role] || p.person.role}
+                {p.person.departmentName ? ` · ${p.person.departmentName}` : ""}
                 {full && p.person.login ? ` · @${p.person.login}` : ""}
                 {full && p.person.phone ? ` · ${p.person.phone}` : ""}
                 {" · "}
                 {p.person.status === "active" ? "Faol" : p.person.status}
               </p>
+              {p.employee ? (
+                <p className="mt-1 text-xs text-slate-500">
+                  {p.employee.orgRoleLabel}
+                  {p.employee.location ? ` · ${p.employee.location}` : ""}
+                  {" · "}
+                  <span className={cn("rounded-full px-2 py-0.5 font-medium", empStatusClass(p.employee.employmentStatus))}>
+                    {p.employee.employmentStatusLabel}
+                  </span>
+                </p>
+              ) : null}
             </div>
           </div>
           <p className="mt-2 max-w-2xl text-sm text-slate-500">
-            Ushbu odamga biriktirilgan vazifalar, vakansiyalar, nomzodlar, suhbatlar va natijalar —
-            to‘liq ko‘rinish.
+            Bo‘lim, apteka tarmog‘idagi bog‘liqliklar (mudirlar, farmasevtlar, stajyorlar va
+            holatlari), vazifalar, vakansiyalar, nomzodlar va suhbatlar — to‘liq ko‘rinish.
           </p>
         </div>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {p.person.departmentName ? (
+          <StatCard label="Bo‘lim" value={p.person.departmentName} icon={Building2} />
+        ) : null}
+        {(p.summary.mudirsCount ?? 0) > 0 || managers.length > 0 ? (
+          <StatCard label="Mudirlar" value={p.summary.mudirsCount ?? managers.length} icon={UserCog} />
+        ) : null}
+        {(p.summary.staffCount ?? 0) > 0 || staff.length > 0 ? (
+          <StatCard label="Xodimlar (apteka)" value={p.summary.staffCount ?? staff.length} icon={Network} />
+        ) : null}
+        {(p.summary.staffWorking ?? 0) > 0 ? (
+          <StatCard label="Ishlayotgan" value={p.summary.staffWorking!} icon={CheckCircle2} />
+        ) : null}
+        {(p.summary.staffNeedHire ?? 0) > 0 ? (
+          <StatCard label="Xodim kerak / qidiruv" value={p.summary.staffNeedHire!} icon={Users} />
+        ) : null}
         <StatCard label="Vakansiyalar" value={p.summary.vacanciesTotal} icon={Briefcase} />
         <StatCard label="Faol vakansiya" value={p.summary.vacanciesPublished} icon={Briefcase} />
         <StatCard label="Nomzodlar" value={p.summary.candidatesTotal} icon={Users} />
@@ -353,6 +462,129 @@ function PersonDossier({
           </button>
         ))}
       </div>
+
+      {(tab === "all" || tab === "org") && hasOrg ? (
+        <>
+          {p.person.departmentName || p.employee ? (
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+                <Building2 className="h-4 w-4 text-[#0b3a5c]" />
+                Bo‘lim va apteka profili
+              </h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Bo‘lim</p>
+                  <p className="font-medium text-slate-900">{p.person.departmentName || "—"}</p>
+                </div>
+                {p.employee ? (
+                  <>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Org rol</p>
+                      <p className="font-medium text-slate-900">{p.employee.orgRoleLabel}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Lavozim</p>
+                      <p className="font-medium text-slate-900">{p.employee.position || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Filial / joy</p>
+                      <p className="font-medium text-slate-900">{p.employee.location || "—"}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Holat</p>
+                      <p>
+                        <span
+                          className={cn(
+                            "rounded-full px-2.5 py-1 text-[11px] font-semibold",
+                            empStatusClass(p.employee.employmentStatus),
+                          )}
+                        >
+                          {p.employee.employmentStatusLabel}
+                        </span>
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Smena</p>
+                      <p className="font-medium text-slate-900">{p.employee.shiftDisplay}</p>
+                    </div>
+                    <div>
+                      <p className="text-xs uppercase tracking-wide text-slate-400">Ishga kirgan</p>
+                      <p className="font-medium text-slate-900">{p.employee.hiredAt || "—"}</p>
+                    </div>
+                  </>
+                ) : null}
+                {p.reportsTo ? (
+                  <div className="sm:col-span-2">
+                    <p className="text-xs uppercase tracking-wide text-slate-400">Kimga bo‘ysunadi</p>
+                    <p className="font-medium text-slate-900">
+                      {p.reportsTo.fullName}
+                      <span className="ml-2 text-xs font-normal text-slate-500">
+                        ({p.reportsTo.orgRoleLabel}
+                        {p.reportsTo.location ? ` · ${p.reportsTo.location}` : ""})
+                      </span>
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </section>
+          ) : null}
+
+          {managers.length > 0 ? (
+            <Section
+              title="Qo‘shgan / boshqaradigan mudirlar"
+              count={managers.length}
+              empty="Mudir biriktirilmagan"
+            >
+              {managers.map((m) => {
+                const under = staffByManager.get(m.id) ?? [];
+                return (
+                  <div key={m.id} className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                    <OrgPersonCard e={m} />
+                    {under.length > 0 ? (
+                      <div className="ml-2 space-y-2 border-l-2 border-[#0b3a5c]/20 pl-3">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                          Shu mudirning xodimlari ({under.length})
+                        </p>
+                        {under.map((s) => (
+                          <OrgPersonCard key={s.id} e={s} />
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="px-2 text-xs text-slate-400">
+                        Bu mudir ostida hali farmasevt/stajyor yo‘q
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </Section>
+          ) : null}
+
+          {managers.length === 0 && staff.length > 0 ? (
+            <Section
+              title="Boshqaradigan xodimlar (farmasevt / stajyor)"
+              count={staff.length}
+              empty="Xodim yo‘q"
+            >
+              {staff.map((s) => (
+                <OrgPersonCard key={s.id} e={s} />
+              ))}
+            </Section>
+          ) : null}
+
+          {managers.length > 0 && (staffByManager.get("other")?.length ?? 0) > 0 ? (
+            <Section
+              title="Boshqa bog‘langan xodimlar"
+              count={staffByManager.get("other")!.length}
+              empty=""
+            >
+              {staffByManager.get("other")!.map((s) => (
+                <OrgPersonCard key={s.id} e={s} />
+              ))}
+            </Section>
+          ) : null}
+        </>
+      ) : null}
 
       {(tab === "all" || tab === "tasks") && (
         <>
@@ -683,8 +915,9 @@ export default function KuzatuvPage() {
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Kuzatuv</h1>
         <p className="mt-1 max-w-2xl text-sm text-slate-500">
-          Istalgan xodimni ismi yoki lavozimi bo‘yicha toping va tanlang — uning akkauntidagi
-          vazifalar, vakansiyalar, nomzodlar va suhbatlar to‘liq ochiladi.
+          Istalgan xodimni ismi, lavozimi yoki bo‘limi bo‘yicha toping — tanlanganda bo‘limi,
+          apteka tarmog‘idagi mudir/farmasevt/stajyorlari va holatlari, vazifalar, vakansiyalar
+          va suhbatlar to‘liq ochiladi.
         </p>
       </div>
 
@@ -754,6 +987,12 @@ export default function KuzatuvPage() {
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
                       {p.roleLabel}
                     </span>
+                    {p.departmentName ? (
+                      <span className="inline-flex items-center gap-1 text-slate-600">
+                        <Building2 className="h-3 w-3" />
+                        {p.departmentName}
+                      </span>
+                    ) : null}
                     {full && p.login ? <span>@{p.login}</span> : null}
                     <span>
                       Vazifa:{" "}

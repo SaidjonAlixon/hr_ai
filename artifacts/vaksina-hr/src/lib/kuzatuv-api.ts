@@ -7,8 +7,30 @@ export type KuzatuvPersonListItem = {
   role: string;
   roleLabel: string;
   phone?: string | null;
+  departmentId?: number | null;
+  departmentName?: string | null;
   tasksOpen: number;
   tasksDone: number;
+};
+
+export type OrgEmployeeView = {
+  id: number;
+  fullName: string;
+  position: string | null;
+  orgRole: string | null;
+  orgRoleLabel: string;
+  location: string | null;
+  employmentStatus: string;
+  employmentStatusLabel: string;
+  shiftType: string | null;
+  shiftLabel: string | null;
+  shiftDisplay: string;
+  userId: number | null;
+  hiredAt: string | null;
+  reportsToId: number | null;
+  createdAt: string;
+  managerName?: string | null;
+  departmentId?: number | null;
 };
 
 export type KuzatuvPeopleResponse = {
@@ -78,9 +100,16 @@ export type PersonDetail = {
     fullName: string;
     login?: string;
     role: string;
+    roleLabel?: string;
     status: string;
     phone?: string | null;
+    departmentId?: number | null;
+    departmentName?: string | null;
   };
+  employee?: OrgEmployeeView | null;
+  reportsTo?: OrgEmployeeView | null;
+  managedManagers?: OrgEmployeeView[];
+  managedStaff?: OrgEmployeeView[];
   summary: {
     vacanciesTotal: number;
     vacanciesPublished: number;
@@ -96,6 +125,10 @@ export type PersonDetail = {
     tasksAssignedOpen: number;
     tasksAssignedDone: number;
     tasksCreated: number;
+    mudirsCount?: number;
+    staffCount?: number;
+    staffWorking?: number;
+    staffNeedHire?: number;
   };
   vacancies: Array<{
     id: number;

@@ -261,8 +261,10 @@ router.get("/kuzatuv", requireAuth, async (req: AuthRequest, res): Promise<void>
       status: t.status,
       priority: t.priority,
       dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+      assigneeId: t.assigneeKind === "user" ? t.assigneeId : null,
       assigneeName,
       assigneeKind: t.assigneeKind,
+      createdById: t.createdById,
       createdByName: nameById.get(t.createdById) ?? "—",
       updatedAt: t.updatedAt.toISOString(),
     };
@@ -309,6 +311,360 @@ router.get("/kuzatuv", requireAuth, async (req: AuthRequest, res): Promise<void>
     pipeline: full
       ? pipeline.map((p) => ({ stage: p.stage || "noma'lum", count: p.count }))
       : undefined,
+  });
+});
+
+const VAC_STATUS: Record<string, string> = {
+  draft: "Qoralama",
+  published: "Faol",
+  closed: "Yopilgan / Bajarildi",
+};
+const CAND_STATUS: Record<string, string> = {
+  active: "Faol",
+  hired: "Ishga olingan",
+  rejected: "Rad etilgan",
+};
+const STAGE_UZ: Record<string, string> = {
+  phone_interview: "Tanishuv",
+  online_interview: "Onlayn suhbat",
+  preboarding: "Pre-boarding",
+  offline_interview: "Offline suhbat",
+  final_decision: "Yakuniy qaror",
+  offer: "Job offer",
+  documents: "Hujjatlar",
+  internship: "Stajirovka",
+  hired: "Ishga qabul",
+};
+const TASK_STATUS: Record<string, string> = {
+  todo: "Yangi",
+  in_progress: "Jarayonda",
+  done: "Bajarildi",
+  verified: "Tasdiqlangan",
+  cancelled: "Bekor",
+};
+const PHONE_STATUS: Record<string, string> = {
+  pending: "Kutilmoqda",
+  suitable: "Mos",
+  not_suitable: "Mos emas",
+};
+
+router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrOversight(req.userRole) && req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat HR Direktor yoki HR Auditor ko‘ra oladi" });
+    return;
+  }
+
+  const full = isHrDirektor(req.userRole) || req.userRole === "admin";
+  const personId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (!personId || Number.isNaN(personId)) {
+    res.status(400).json({ error: "Noto‘g‘ri ID" });
+    return;
+  }
+
+  const [person] = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      login: usersTable.login,
+      role: usersTable.role,
+      status: usersTable.status,
+      phone: usersTable.phone,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, personId));
+
+  if (!person) {
+    res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+    return;
+  }
+
+  const vacancies = await db
+    .select({
+      id: vacanciesTable.id,
+      title: vacanciesTable.title,
+      status: vacanciesTable.status,
+      location: vacanciesTable.location,
+      deadline: vacanciesTable.deadline,
+      publishedAt: vacanciesTable.publishedAt,
+      assignedAt: vacanciesTable.assignedAt,
+      acceptedAt: vacanciesTable.acceptedAt,
+      createdAt: vacanciesTable.createdAt,
+    })
+    .from(vacanciesTable)
+    .where(eq(vacanciesTable.recruiterId, personId))
+    .orderBy(desc(vacanciesTable.updatedAt));
+
+  const candidates = await db
+    .select({
+      id: candidatesTable.id,
+      fullName: candidatesTable.fullName,
+      phone: candidatesTable.phone,
+      stage: candidatesTable.stage,
+      status: candidatesTable.status,
+      vacancyId: candidatesTable.vacancyId,
+      createdAt: candidatesTable.createdAt,
+      updatedAt: candidatesTable.updatedAt,
+    })
+    .from(candidatesTable)
+    .where(eq(candidatesTable.recruiterId, personId))
+    .orderBy(desc(candidatesTable.updatedAt));
+
+  const candIds = candidates.map((c) => c.id);
+  const vacTitleById = new Map(vacancies.map((v) => [v.id, v.title]));
+  // titles for candidates whose vacancy not in list
+  const missingVacIds = [
+    ...new Set(candidates.map((c) => c.vacancyId).filter((id) => !vacTitleById.has(id))),
+  ];
+  if (missingVacIds.length) {
+    const extraVacs = await db
+      .select({ id: vacanciesTable.id, title: vacanciesTable.title })
+      .from(vacanciesTable)
+      .where(inArray(vacanciesTable.id, missingVacIds));
+    for (const v of extraVacs) vacTitleById.set(v.id, v.title);
+  }
+
+  const phoneInterviews = await db
+    .select({
+      id: phoneInterviewsTable.id,
+      candidateId: phoneInterviewsTable.candidateId,
+      interviewDate: phoneInterviewsTable.interviewDate,
+      status: phoneInterviewsTable.status,
+      notes: phoneInterviewsTable.notes,
+      rejectReason: phoneInterviewsTable.rejectReason,
+      createdAt: phoneInterviewsTable.createdAt,
+    })
+    .from(phoneInterviewsTable)
+    .where(eq(phoneInterviewsTable.recruiterId, personId))
+    .orderBy(desc(phoneInterviewsTable.updatedAt));
+
+  const onlineInterviews =
+    candIds.length > 0
+      ? await db
+          .select({
+            id: onlineInterviewsTable.id,
+            candidateId: onlineInterviewsTable.candidateId,
+            interviewDate: onlineInterviewsTable.interviewDate,
+            score: onlineInterviewsTable.score,
+            experienceLevel: onlineInterviewsTable.experienceLevel,
+            notes: onlineInterviewsTable.notes,
+            createdAt: onlineInterviewsTable.createdAt,
+          })
+          .from(onlineInterviewsTable)
+          .where(inArray(onlineInterviewsTable.candidateId, candIds))
+          .orderBy(desc(onlineInterviewsTable.updatedAt))
+      : [];
+
+  const offlineAsHr = await db
+    .select({
+      id: offlineInterviewsTable.id,
+      candidateId: offlineInterviewsTable.candidateId,
+      scheduledDate: offlineInterviewsTable.scheduledDate,
+      scheduledTime: offlineInterviewsTable.scheduledTime,
+      attendanceStatus: offlineInterviewsTable.attendanceStatus,
+      result: offlineInterviewsTable.result,
+      hrScore: offlineInterviewsTable.hrScore,
+      trainerScore: offlineInterviewsTable.trainerScore,
+      resultNotes: offlineInterviewsTable.resultNotes,
+      createdAt: offlineInterviewsTable.createdAt,
+    })
+    .from(offlineInterviewsTable)
+    .where(eq(offlineInterviewsTable.hrId, personId))
+    .orderBy(desc(offlineInterviewsTable.updatedAt));
+
+  const offlineAsTrainer = await db
+    .select({
+      id: offlineInterviewsTable.id,
+      candidateId: offlineInterviewsTable.candidateId,
+      scheduledDate: offlineInterviewsTable.scheduledDate,
+      scheduledTime: offlineInterviewsTable.scheduledTime,
+      attendanceStatus: offlineInterviewsTable.attendanceStatus,
+      result: offlineInterviewsTable.result,
+      hrScore: offlineInterviewsTable.hrScore,
+      trainerScore: offlineInterviewsTable.trainerScore,
+      resultNotes: offlineInterviewsTable.resultNotes,
+      createdAt: offlineInterviewsTable.createdAt,
+    })
+    .from(offlineInterviewsTable)
+    .where(eq(offlineInterviewsTable.trainerId, personId))
+    .orderBy(desc(offlineInterviewsTable.updatedAt));
+
+  const nameByCand = new Map(candidates.map((c) => [c.id, c.fullName]));
+  const extraCandIds = [
+    ...new Set(
+      [
+        ...phoneInterviews.map((p) => p.candidateId),
+        ...onlineInterviews.map((o) => o.candidateId),
+        ...offlineAsHr.map((o) => o.candidateId),
+        ...offlineAsTrainer.map((o) => o.candidateId),
+      ].filter((id) => !nameByCand.has(id)),
+    ),
+  ];
+  if (extraCandIds.length) {
+    const extra = await db
+      .select({ id: candidatesTable.id, fullName: candidatesTable.fullName })
+      .from(candidatesTable)
+      .where(inArray(candidatesTable.id, extraCandIds));
+    for (const c of extra) nameByCand.set(c.id, c.fullName);
+  }
+
+  const assignedTasks = await db
+    .select()
+    .from(tasksTable)
+    .where(and(eq(tasksTable.assigneeKind, "user"), eq(tasksTable.assigneeId, personId)))
+    .orderBy(desc(tasksTable.updatedAt));
+
+  const createdTasks = await db
+    .select()
+    .from(tasksTable)
+    .where(eq(tasksTable.createdById, personId))
+    .orderBy(desc(tasksTable.updatedAt));
+
+  const taskUserIds = new Set<number>();
+  for (const t of [...assignedTasks, ...createdTasks]) {
+    taskUserIds.add(t.createdById);
+    if (t.assigneeKind === "user") taskUserIds.add(t.assigneeId);
+  }
+  const taskUsers =
+    taskUserIds.size > 0
+      ? await db
+          .select({ id: usersTable.id, fullName: usersTable.fullName })
+          .from(usersTable)
+          .where(inArray(usersTable.id, [...taskUserIds]))
+      : [];
+  const taskNameById = new Map(taskUsers.map((u) => [u.id, u.fullName]));
+
+  const mapTask = (t: typeof tasksTable.$inferSelect) => ({
+    id: t.id,
+    title: t.title,
+    description: full ? t.description : undefined,
+    status: t.status,
+    statusLabel: TASK_STATUS[t.status] || t.status,
+    priority: t.priority,
+    dueAt: t.dueAt ? t.dueAt.toISOString() : null,
+    assigneeName: taskNameById.get(t.assigneeId) ?? "—",
+    createdByName: taskNameById.get(t.createdById) ?? "—",
+    completionNote: full ? t.completionNote : undefined,
+    completedAt: t.completedAt ? t.completedAt.toISOString() : null,
+    acceptedAt: t.acceptedAt ? t.acceptedAt.toISOString() : null,
+    createdAt: t.createdAt.toISOString(),
+    updatedAt: t.updatedAt.toISOString(),
+  });
+
+  const tasksAssigned = assignedTasks.map(mapTask);
+  const tasksCreated = createdTasks
+    .filter((t) => !(t.assigneeKind === "user" && t.assigneeId === personId))
+    .map(mapTask);
+
+  const summary = {
+    vacanciesTotal: vacancies.length,
+    vacanciesPublished: vacancies.filter((v) => v.status === "published").length,
+    vacanciesClosed: vacancies.filter((v) => v.status === "closed").length,
+    vacanciesDraft: vacancies.filter((v) => v.status === "draft").length,
+    candidatesTotal: candidates.length,
+    candidatesActive: candidates.filter((c) => c.status === "active").length,
+    candidatesHired: candidates.filter((c) => c.status === "hired").length,
+    candidatesRejected: candidates.filter((c) => c.status === "rejected").length,
+    phoneInterviews: phoneInterviews.length,
+    onlineInterviews: onlineInterviews.length,
+    offlineInterviews: offlineAsHr.length + offlineAsTrainer.length,
+    tasksAssignedOpen: assignedTasks.filter(
+      (t) => !["done", "verified", "cancelled"].includes(t.status),
+    ).length,
+    tasksAssignedDone: assignedTasks.filter((t) =>
+      ["done", "verified"].includes(t.status),
+    ).length,
+    tasksCreated: createdTasks.length,
+  };
+
+  res.json({
+    level: full ? "full" : "summary",
+    person: {
+      id: person.id,
+      fullName: person.fullName,
+      login: full ? person.login : undefined,
+      role: person.role,
+      status: person.status,
+      phone: full ? person.phone : undefined,
+    },
+    summary,
+    vacancies: vacancies.map((v) => ({
+      id: v.id,
+      title: v.title,
+      status: v.status,
+      statusLabel: VAC_STATUS[v.status] || v.status,
+      location: v.location,
+      deadline: v.deadline ? v.deadline.toISOString() : null,
+      publishedAt: v.publishedAt ? v.publishedAt.toISOString() : null,
+      assignedAt: v.assignedAt ? v.assignedAt.toISOString() : null,
+      acceptedAt: v.acceptedAt ? v.acceptedAt.toISOString() : null,
+      createdAt: v.createdAt.toISOString(),
+    })),
+    candidates: candidates.map((c) => ({
+      id: c.id,
+      fullName: c.fullName,
+      phone: full ? c.phone : undefined,
+      stage: c.stage,
+      stageLabel: STAGE_UZ[c.stage] || c.stage,
+      status: c.status,
+      statusLabel: CAND_STATUS[c.status] || c.status,
+      vacancyTitle: vacTitleById.get(c.vacancyId) ?? `Vakansiya #${c.vacancyId}`,
+      vacancyId: c.vacancyId,
+      createdAt: c.createdAt.toISOString(),
+      updatedAt: c.updatedAt.toISOString(),
+    })),
+    phoneInterviews: phoneInterviews.map((p) => ({
+      id: p.id,
+      candidateName: nameByCand.get(p.candidateId) ?? `Nomzod #${p.candidateId}`,
+      candidateId: p.candidateId,
+      interviewDate: p.interviewDate,
+      status: p.status,
+      statusLabel: PHONE_STATUS[p.status] || p.status,
+      notes: full ? p.notes : undefined,
+      rejectReason: full ? p.rejectReason : undefined,
+      createdAt: p.createdAt.toISOString(),
+    })),
+    onlineInterviews: onlineInterviews.map((o) => ({
+      id: o.id,
+      candidateName: nameByCand.get(o.candidateId) ?? `Nomzod #${o.candidateId}`,
+      candidateId: o.candidateId,
+      interviewDate: o.interviewDate,
+      score: o.score,
+      experienceLevel: o.experienceLevel,
+      notes: full ? o.notes : undefined,
+      createdAt: o.createdAt.toISOString(),
+    })),
+    offlineInterviews: [
+      ...offlineAsHr.map((o) => ({
+        id: o.id,
+        roleInInterview: "hr" as const,
+        candidateName: nameByCand.get(o.candidateId) ?? `Nomzod #${o.candidateId}`,
+        candidateId: o.candidateId,
+        scheduledDate: o.scheduledDate,
+        scheduledTime: o.scheduledTime,
+        attendanceStatus: o.attendanceStatus,
+        result: o.result,
+        hrScore: o.hrScore,
+        trainerScore: full ? o.trainerScore : undefined,
+        resultNotes: full ? o.resultNotes : undefined,
+        createdAt: o.createdAt.toISOString(),
+      })),
+      ...offlineAsTrainer.map((o) => ({
+        id: o.id,
+        roleInInterview: "trainer" as const,
+        candidateName: nameByCand.get(o.candidateId) ?? `Nomzod #${o.candidateId}`,
+        candidateId: o.candidateId,
+        scheduledDate: o.scheduledDate,
+        scheduledTime: o.scheduledTime,
+        attendanceStatus: o.attendanceStatus,
+        result: o.result,
+        hrScore: full ? o.hrScore : undefined,
+        trainerScore: o.trainerScore,
+        resultNotes: full ? o.resultNotes : undefined,
+        createdAt: o.createdAt.toISOString(),
+      })),
+    ],
+    tasksAssigned,
+    tasksCreated,
   });
 });
 

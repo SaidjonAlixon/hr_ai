@@ -1,15 +1,38 @@
 import React from 'react';
-import { useGetVacancy, usePublishVacancy, useDeleteVacancy, useUpdateVacancy } from '@workspace/api-client-react';
+import {
+  useGetVacancy,
+  usePublishVacancy,
+  useDeleteVacancy,
+  useUpdateVacancy,
+  useGetCandidates,
+  type Candidate,
+} from '@workspace/api-client-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
 import { Skeleton } from '../../components/ui/skeleton';
-import { ArrowLeft, MapPin, Clock, DollarSign, Gift, Share2, Users, Trash2, CheckCircle, CheckCircle2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  MapPin,
+  Clock,
+  DollarSign,
+  Gift,
+  Users,
+  Trash2,
+  CheckCircle,
+  CheckCircle2,
+  FileDown,
+  Phone,
+  GraduationCap,
+  Briefcase,
+  ExternalLink,
+} from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { isHrManager, isHrRole } from '../../lib/roles';
+import { openCandidatePdf, openVacancyCandidatesPdf } from '../../lib/candidate-pdf';
 import {
   Dialog,
   DialogContent,
@@ -32,11 +55,62 @@ import {
 } from '../../components/ui/alert-dialog';
 import { Checkbox } from '../../components/ui/checkbox';
 
+const STAGE_LABELS: Record<string, string> = {
+  phone_interview: 'Tanishuv',
+  online_interview: 'Onlayn suhbat',
+  preboarding: 'Pre-boarding',
+  offline_interview: 'Offline suhbat',
+  final_decision: 'Yakuniy qaror',
+  offer: 'Job offer',
+  documents: 'Hujjatlar',
+  internship: 'Stajirovka',
+  hired: 'Ishga qabul',
+  rejected: 'Rad etilgan',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  active: 'Faol',
+  hired: 'Ishga olingan',
+  rejected: 'Rad etilgan',
+};
+
+function formatMaybeDate(iso?: string | null) {
+  if (!iso) return '—';
+  try {
+    return format(new Date(iso), 'dd.MM.yyyy HH:mm');
+  } catch {
+    return iso;
+  }
+}
+
+function toPdfData(c: Candidate) {
+  return {
+    fullName: c.fullName,
+    phone: c.phone,
+    birthDate: c.birthDate,
+    address: c.address,
+    education: c.education,
+    experience: c.experience,
+    expectedSalary: c.expectedSalary,
+    notes: c.notes,
+    stage: c.stage,
+    stageLabel: STAGE_LABELS[c.stage] || c.stage,
+    status: c.status,
+    statusLabel: STATUS_LABELS[c.status || ''] || c.status || '—',
+    recruiterName: c.recruiterName,
+    createdAt: formatMaybeDate(c.createdAt),
+  };
+}
+
 export default function VacancyDetails({ params }: { params: { id: string } }) {
   const id = parseInt(params.id, 10);
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { data: vacancy, isLoading, refetch } = useGetVacancy(id, { query: { enabled: !!id } });
+  const { data: candidates, isLoading: candidatesLoading } = useGetCandidates(
+    { vacancyId: id },
+    { query: { enabled: !!id } } as any,
+  );
   const { mutate: publish, isPending: isPublishing } = usePublishVacancy();
   const { mutate: removeVacancy, isPending: isDeleting } = useDeleteVacancy();
   const { mutate: updateVacancy, isPending: isClosing } = useUpdateVacancy();
@@ -65,6 +139,38 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
   if (!vacancy) return <div>Ish o'rni topilmadi</div>;
 
+  const vacancyPdfMeta = {
+    title: vacancy.title,
+    location: vacancy.location,
+    salaryRange: vacancy.salaryRange,
+    recruiterName: vacancy.recruiterName,
+    departmentName: vacancy.departmentName,
+  };
+
+  const list = candidates ?? [];
+
+  const handleExportAllPdf = () => {
+    const ok = openVacancyCandidatesPdf(list.map(toPdfData), vacancyPdfMeta);
+    if (!ok) {
+      toast({
+        title: 'Popup bloklangan',
+        description: 'Brauzerda popup-ni ruxsat qiling',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleExportOnePdf = (c: Candidate) => {
+    const ok = openCandidatePdf(toPdfData(c), vacancyPdfMeta);
+    if (!ok) {
+      toast({
+        title: 'Popup bloklangan',
+        description: 'Brauzerda popup-ni ruxsat qiling',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handlePublish = () => {
     if (selectedChannels.length === 0) {
       toast({ title: 'Xatolik', description: "Kamida bitta kanalni tanlang", variant: 'destructive' });
@@ -78,7 +184,6 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
           toast({ title: 'Qabul qilindi', description: "Ish o'rni faol holatga o'tkazildi" });
           setPublishOpen(false);
           setSelectedChannels([]);
-          // URL dan ?publish=1 ni tozalash
           window.history.replaceState({}, '', `/vacancies/${id}`);
           refetch();
         },
@@ -98,7 +203,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
       { id },
       {
         onSuccess: () => {
-          toast({ title: 'O\'chirildi', description: "Ish o'rni o'chirildi" });
+          toast({ title: "O'chirildi", description: "Ish o'rni o'chirildi" });
           setLocation('/vacancies');
         },
         onError: (err: any) => {
@@ -141,13 +246,13 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <div className="flex items-center gap-4 min-w-0">
           <Link href="/vacancies">
             <Button variant="ghost" size="icon"><ArrowLeft className="w-5 h-5" /></Button>
           </Link>
-          <div>
-            <div className="flex items-center gap-3">
+          <div className="min-w-0">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-3xl font-bold tracking-tight">{vacancy.title}</h1>
               <Badge
                 variant="secondary"
@@ -175,11 +280,18 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
               {vacancy.departmentName ? ` · ${vacancy.departmentName}` : ''}
               {' · '}
               {format(new Date(vacancy.createdAt), 'dd.MM.yyyy')}
+              {' · '}
+              {list.length} ta nomzod
             </p>
           </div>
         </div>
-        
+
         <div className="flex gap-2 flex-wrap">
+          {list.length > 0 && (
+            <Button type="button" variant="outline" className="gap-2" onClick={handleExportAllPdf}>
+              <FileDown className="w-4 h-4" /> Barcha nomzodlar PDF
+            </Button>
+          )}
           {(user?.role === 'recruiter' || isHrRole(user?.role) || user?.role === 'director' || user?.role === 'admin') &&
             vacancy.status !== 'closed' && (
             <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
@@ -211,7 +323,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
               </AlertDialogContent>
             </AlertDialog>
           )}
-          
+
           {vacancy.status === 'draft' && canPublish && (
             <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
               <DialogTrigger asChild>
@@ -231,16 +343,16 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                   <div className="space-y-3">
                     {publishChannels.map(channel => (
                       <div key={channel.id} className="flex items-center space-x-2 border p-3 rounded-md hover:bg-muted/50 cursor-pointer" onClick={() => {
-                        setSelectedChannels(prev => 
-                          prev.includes(channel.id) ? prev.filter(id => id !== channel.id) : [...prev, channel.id]
+                        setSelectedChannels(prev =>
+                          prev.includes(channel.id) ? prev.filter(cid => cid !== channel.id) : [...prev, channel.id]
                         );
                       }}>
-                        <Checkbox 
-                          id={`channel-${channel.id}`} 
+                        <Checkbox
+                          id={`channel-${channel.id}`}
                           checked={selectedChannels.includes(channel.id)}
                           onCheckedChange={(checked) => {
-                            setSelectedChannels(prev => 
-                              checked ? [...prev, channel.id] : prev.filter(id => id !== channel.id)
+                            setSelectedChannels(prev =>
+                              checked ? [...prev, channel.id] : prev.filter(cid => cid !== channel.id)
                             );
                           }}
                         />
@@ -289,6 +401,133 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
           )}
         </div>
       </div>
+
+      <Card className="border-[#0b3a5c]/20 shadow-sm">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 space-y-0">
+          <div>
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5 text-[#0b3a5c]" />
+              Nomzodlar
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              Faqat «{vacancy.title}» ish o‘rni uchun — {list.length} ta
+            </p>
+          </div>
+          {list.length > 0 && (
+            <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={handleExportAllPdf}>
+              <FileDown className="w-4 h-4" /> PDF yuklab olish
+            </Button>
+          )}
+        </CardHeader>
+        <CardContent>
+          {candidatesLoading ? (
+            <div className="space-y-3">
+              {[1, 2, 3].map((i) => (
+                <Skeleton key={i} className="h-28 w-full rounded-xl" />
+              ))}
+            </div>
+          ) : list.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center">
+              <p className="text-sm text-slate-500">Bu ish o‘rni uchun hali nomzod yo‘q</p>
+              {vacancy.status !== 'closed' && (
+                <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
+                  <Button className="mt-3" size="sm">Nomzod qo‘shish</Button>
+                </Link>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {list.map((c) => (
+                <div
+                  key={c.id}
+                  className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto]"
+                >
+                  <div className="min-w-0 space-y-3">
+                    <div className="flex min-h-[28px] flex-wrap items-center gap-2">
+                      <Link
+                        href={`/candidates/${c.id}`}
+                        className="truncate text-lg font-semibold text-[#0b3a5c] hover:underline"
+                      >
+                        {c.fullName}
+                      </Link>
+                      <Badge variant="secondary" className="shrink-0 bg-sky-50 text-sky-800">
+                        {STAGE_LABELS[c.stage] || c.stage}
+                      </Badge>
+                      <Badge
+                        variant="secondary"
+                        className={
+                          c.status === 'hired'
+                            ? 'shrink-0 bg-emerald-50 text-emerald-800'
+                            : c.status === 'rejected'
+                              ? 'shrink-0 bg-red-50 text-red-700'
+                              : 'shrink-0 bg-slate-100 text-slate-700'
+                        }
+                      >
+                        {STATUS_LABELS[c.status || ''] || c.status || 'Faol'}
+                      </Badge>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm text-slate-600 sm:grid-cols-2">
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate">
+                        <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="truncate">{c.phone || '—'}</span>
+                      </p>
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate">
+                        <GraduationCap className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="truncate">{c.education || 'Taʼlim kiritilmagan'}</span>
+                      </p>
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate">
+                        <Briefcase className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="truncate">{c.experience || 'Tajriba kiritilmagan'}</span>
+                      </p>
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate">
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="truncate">{c.address || 'Manzil kiritilmagan'}</span>
+                      </p>
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate">
+                        <DollarSign className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <span className="truncate">{c.expectedSalary || 'Maosh kiritilmagan'}</span>
+                      </p>
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-slate-400">
+                        Tug‘ilgan: {c.birthDate || '—'}
+                      </p>
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-slate-400">
+                        Qo‘shilgan: {formatMaybeDate(c.createdAt)}
+                      </p>
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-slate-400">
+                        Rekruter: {c.recruiterName || vacancy.recruiterName || '—'}
+                      </p>
+                    </div>
+
+                    <div className="min-h-[52px] rounded-lg bg-slate-50 px-3 py-2">
+                      <p className="line-clamp-2 text-sm text-slate-600">
+                        {c.notes?.trim() || 'Izoh yo‘q'}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 flex-row gap-2 sm:w-[112px] sm:flex-col">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 gap-2 sm:flex-none"
+                      onClick={() => handleExportOnePdf(c)}
+                    >
+                      <FileDown className="w-4 h-4" /> PDF
+                    </Button>
+                    <Link href={`/candidates/${c.id}`} className="flex-1 sm:flex-none">
+                      <Button type="button" size="sm" variant="secondary" className="w-full gap-2">
+                        <ExternalLink className="w-4 h-4" /> Profil
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="md:col-span-2 space-y-6">
@@ -378,7 +617,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                   {vacancy.description || 'Matn kiritilmagan'}
                 </div>
               </div>
-              
+
               {vacancy.benefits && (
                 <div className="pt-4 border-t">
                   <h4 className="flex items-center gap-2 font-semibold text-lg mb-3">

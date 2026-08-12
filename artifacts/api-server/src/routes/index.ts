@@ -27,11 +27,13 @@ import kirishRouter from "./kirish";
 import realtimeRouter from "./realtime";
 import kuzatuvRouter from "./kuzatuv";
 import uploadsRouter from "./uploads";
+import pharmacyNetworkRouter from "./pharmacy-network";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(uploadsRouter);
+router.use(pharmacyNetworkRouter);
 router.use(jobsRouter);
 router.use(branchNeedsRouter);
 router.use(branchAuditsRouter);

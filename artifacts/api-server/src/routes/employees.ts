@@ -57,8 +57,11 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
     filtered = filtered.filter(
       (e) =>
         e.id === myBranch.id ||
-        (e.orgRole === "pharmacist" && e.reportsToId === myBranch.id) ||
-        (e.orgRole === "coordinator" && myBranch.reportsToId != null && e.id === myBranch.reportsToId),
+        ((e.orgRole === "pharmacist" || e.orgRole === "supervisor") &&
+          e.reportsToId === myBranch.id) ||
+        (e.orgRole === "coordinator" &&
+          myBranch.reportsToId != null &&
+          e.id === myBranch.reportsToId),
     );
   } else if (!FULL_NETWORK_ROLES.has(role)) {
     // Boshqa rollar tarmoqni to‘liq ko‘rmaydi

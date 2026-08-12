@@ -31,8 +31,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff } from 'lucide-react';
 import { Link } from 'wouter';
+import {
+  useCreatePharmacyStaff,
+  type PharmacyStaffRole,
+  type PharmacyStaffResult,
+} from '../../lib/pharmacy-staff-api';
+import { Label } from '../../components/ui/label';
 
 type ShiftType = 'one' | 'two' | 'custom';
 
@@ -200,6 +206,11 @@ export default function PharmacyNetworkPage() {
   });
   const { mutate: confirmAlert, isPending: confirming } = useConfirmStaffingAlert();
   const { mutate: cancelAlert, isPending: cancelling } = useCancelStaffingAlert();
+  const createStaff = useCreatePharmacyStaff();
+
+  const canAddMudir = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
+  const canAddTeam = user?.role === 'mudir';
+  const canAddStaff = canAddMudir || canAddTeam;
 
   const canSeeFullNetwork =
     isHrRole(user?.role) ||
@@ -246,6 +257,15 @@ export default function PharmacyNetworkPage() {
   const [coordinatorFilter, setCoordinatorFilter] = useState<string>('all');
   const [shiftFilter, setShiftFilter] = useState<string>('all');
 
+  const [addOpen, setAddOpen] = useState(false);
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [staffRole, setStaffRole] = useState<PharmacyStaffRole>('mudir');
+  const [branchLocation, setBranchLocation] = useState('');
+  const [createdCreds, setCreatedCreds] = useState<PharmacyStaffResult | null>(null);
+  const [showPwd, setShowPwd] = useState(false);
+
   const orgPeople = useMemo(
     () => (employees ?? []).filter((e) => !!e.orgRole),
     [employees],
@@ -267,11 +287,21 @@ export default function PharmacyNetworkPage() {
 
   const pharmacistsByManager = useMemo(() => {
     const map = new Map<number, Employee[]>();
-    for (const p of orgPeople.filter((e) => e.orgRole === 'pharmacist')) {
+    for (const p of orgPeople.filter(
+      (e) => e.orgRole === 'pharmacist' || e.orgRole === 'supervisor',
+    )) {
       if (!p.reportsToId) continue;
       const list = map.get(p.reportsToId) ?? [];
       list.push(p);
       map.set(p.reportsToId, list);
+    }
+    for (const [, list] of map) {
+      list.sort((a, b) => {
+        if (a.orgRole === b.orgRole) return a.fullName.localeCompare(b.fullName, 'uz');
+        if (a.orgRole === 'supervisor') return -1;
+        if (b.orgRole === 'supervisor') return 1;
+        return 0;
+      });
     }
     return map;
   }, [orgPeople]);
@@ -391,6 +421,60 @@ export default function PharmacyNetworkPage() {
     setEmploymentStatus(empStatus(person));
   };
 
+  const openAddStaff = () => {
+    setFirstName('');
+    setLastName('');
+    setPhone('');
+    setBranchLocation('');
+    setStaffRole(canAddMudir ? 'mudir' : 'farmasevt');
+    setShowPwd(false);
+    setAddOpen(true);
+  };
+
+  const handleCreateStaff = () => {
+    if (!firstName.trim() || !lastName.trim()) {
+      toast({ title: 'Ism va familiya kiriting', variant: 'destructive' });
+      return;
+    }
+    if (!phone.trim()) {
+      toast({ title: 'Telefon raqam kiriting', variant: 'destructive' });
+      return;
+    }
+    createStaff.mutate(
+      {
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        phone: phone.trim(),
+        role: staffRole,
+        location: staffRole === 'mudir' ? branchLocation.trim() || undefined : undefined,
+      },
+      {
+        onSuccess: (data) => {
+          setAddOpen(false);
+          setCreatedCreds(data);
+          void refetch();
+          toast({ title: 'Yaratildi', description: `${data.fullName} qo‘shildi` });
+        },
+        onError: (e: any) => {
+          toast({
+            title: 'Yaratilmadi',
+            description: e?.message || 'Xato',
+            variant: 'destructive',
+          });
+        },
+      },
+    );
+  };
+
+  const copyText = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: `${label} nusxalandi` });
+    } catch {
+      toast({ title: 'Nusxalanmadi', variant: 'destructive' });
+    }
+  };
+
   const saveEditor = () => {
     if (!editTarget) return;
     updateEmployee(
@@ -481,32 +565,50 @@ export default function PharmacyNetworkPage() {
           <Store className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
           <h2 className="text-lg font-semibold">Filial bog‘lanmagan</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Sizning akkauntingiz hali filial mudiriga ulanmagan. HR/admin bilan bog‘laning.
+            Sizning akkauntingiz hali filial mudiriga ulanmagan. Koordinator/HR bilan bog‘laning.
           </p>
         </div>
       );
     }
-  } else if (!coordinators.length || allManagers.length === 0) {
-    return (
-      <div className="mx-auto max-w-md rounded-2xl border border-dashed bg-white p-8 text-center">
-        <Store className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
-        <h2 className="text-lg font-semibold">Tarmoq maʼlumoti yo‘q</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Koordinator va mudirlar hali qo‘shilmagan.</p>
-      </div>
-    );
   }
+
+  const networkEmpty = !isMudirOnly && coordinators.length === 0 && allManagers.length === 0;
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Aptekalar tarmog‘i</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isMudirOnly
-              ? 'Yuqorida koordinatoringiz, pastda o‘z filialingiz va farmatsevtlari. Batafsil orqali oching.'
-              : 'Mudir holat belgilaydi → ogohlantirish → koordinator tasdiǧi → ariza → rekruter → eʼlon. Muddatlar miltillab koʻrinadi.'}
+              ? 'Yuqorida koordinatoringiz, pastda o‘z filialingiz. Farmasevt va boshqaruvchi qo‘shishingiz mumkin.'
+              : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va boshqaruvchi qo‘shadi.'}
           </p>
         </div>
+        {canAddStaff && (
+          <Button className="gap-2 shrink-0" onClick={openAddStaff}>
+            <Plus className="h-4 w-4" />
+            {canAddMudir ? 'Mudir qo‘shish' : 'Xodim qo‘shish'}
+          </Button>
+        )}
+      </div>
+
+      {networkEmpty ? (
+        <div className="rounded-2xl border border-dashed bg-white p-8 text-center">
+          <Store className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
+          <h2 className="text-lg font-semibold">Tarmoq maʼlumoti yo‘q</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {canAddMudir
+              ? 'Birinchi mudirni qo‘shing — ism, familiya, raqam. Tizim login va parol yaratadi.'
+              : 'Koordinator va mudirlar hali qo‘shilmagan.'}
+          </p>
+          {canAddMudir && (
+            <Button className="mt-4 gap-2" onClick={openAddStaff}>
+              <Plus className="h-4 w-4" /> Mudir qo‘shish
+            </Button>
+          )}
+        </div>
+      ) : null}
 
         {canSeeAlerts && (
           <div
@@ -869,6 +971,15 @@ export default function PharmacyNetworkPage() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-2">
                                   <p className="truncate text-sm font-medium text-slate-900">{ph.fullName}</p>
+                                  {ph.orgRole === 'supervisor' ? (
+                                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                                      Boshqaruvchi
+                                    </span>
+                                  ) : (
+                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                                      Farmasevt
+                                    </span>
+                                  )}
                                   {(canEditShift || canEditStatus) && (
                                     <button
                                       type="button"
@@ -970,7 +1081,7 @@ export default function PharmacyNetworkPage() {
                               'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
                               alert ? 'bg-red-100 text-red-700' : 'bg-slate-50 text-slate-500',
                             )}
-                            title={`${fullTeam.length} ta farmatsevt`}
+                            title={`${fullTeam.length} ta xodim`}
                           >
                             <Users className="h-3 w-3" />
                             {fullTeam.length}
@@ -1123,6 +1234,175 @@ export default function PharmacyNetworkPage() {
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditTarget(null)}>Bekor qilish</Button>
             <Button onClick={saveEditor} disabled={isPending}>Saqlash</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>
+              {canAddMudir ? 'Yangi mudir' : 'Yangi xodim'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Ism</Label>
+                <Input
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  placeholder="Dilnoza"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Familiya</Label>
+                <Input
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  placeholder="Xushboqova"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Telefon raqam</Label>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+998 90 123 45 67"
+              />
+            </div>
+            {canAddMudir ? (
+              <>
+                <div className="space-y-1.5">
+                  <Label>Rol</Label>
+                  <Select value="mudir" disabled>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mudir">Mudir</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Filial / lokatsiya</Label>
+                  <Input
+                    value={branchLocation}
+                    onChange={(e) => setBranchLocation(e.target.value)}
+                    placeholder="Masalan: Sergeli"
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="space-y-1.5">
+                <Label>Rol</Label>
+                <Select
+                  value={staffRole}
+                  onValueChange={(v) => setStaffRole(v as PharmacyStaffRole)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="farmasevt">Farmasevt</SelectItem>
+                    <SelectItem value="boshqaruvchi">Boshqaruvchi</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Yaratilgach tizim avtomatik login va parol beradi.
+            </p>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button variant="outline" onClick={() => setAddOpen(false)}>
+              Bekor
+            </Button>
+            <Button onClick={handleCreateStaff} disabled={createStaff.isPending}>
+              {createStaff.isPending ? 'Yaratilmoqda...' : 'Yaratish'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!createdCreds} onOpenChange={(o) => !o && setCreatedCreds(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Login va parol</DialogTitle>
+          </DialogHeader>
+          {createdCreds && (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{createdCreds.fullName}</span>
+                {' · '}
+                {createdCreds.role}
+              </p>
+              <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] uppercase text-slate-500">Login</p>
+                    <p className="font-mono text-sm font-semibold">{createdCreds.login}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={() => void copyText(createdCreds.login, 'Login')}
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] uppercase text-slate-500">Parol</p>
+                    <p className="font-mono text-sm font-semibold">
+                      {showPwd ? createdCreds.temporaryPassword : '••••••••'}
+                    </p>
+                  </div>
+                  <div className="flex gap-1">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setShowPwd((v) => !v)}
+                    >
+                      {showPwd ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      onClick={() =>
+                        void copyText(createdCreds.temporaryPassword, 'Parol')
+                      }
+                    >
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full"
+                onClick={() =>
+                  void copyText(
+                    `Login: ${createdCreds.login}\nParol: ${createdCreds.temporaryPassword}`,
+                    'Login/parol',
+                  )
+                }
+              >
+                Hammasini nusxalash
+              </Button>
+              <p className="text-xs text-amber-700">
+                Parolni hozir saqlang — keyin ko‘rinmaydi.
+              </p>
+            </div>
+          )}
+          <DialogFooter>
+            <Button onClick={() => setCreatedCreds(null)}>Yopish</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

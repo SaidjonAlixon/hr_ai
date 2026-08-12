@@ -487,7 +487,22 @@ router.get("/kuzatuv", requireAuth, async (req: AuthRequest, res): Promise<void>
     .where(sql`status IN ('done', 'verified')`);
 
   const taskRows = await db
-    .select()
+    .select({
+      id: tasksTable.id,
+      title: tasksTable.title,
+      description: tasksTable.description,
+      status: tasksTable.status,
+      priority: tasksTable.priority,
+      dueAt: tasksTable.dueAt,
+      assigneeKind: tasksTable.assigneeKind,
+      assigneeId: tasksTable.assigneeId,
+      createdById: tasksTable.createdById,
+      completionNote: tasksTable.completionNote,
+      completedAt: tasksTable.completedAt,
+      acceptedAt: tasksTable.acceptedAt,
+      createdAt: tasksTable.createdAt,
+      updatedAt: tasksTable.updatedAt,
+    })
     .from(tasksTable)
     .orderBy(desc(tasksTable.updatedAt))
     .limit(full ? 80 : 25);
@@ -819,13 +834,43 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
   }
 
   const assignedTasks = await db
-    .select()
+    .select({
+      id: tasksTable.id,
+      title: tasksTable.title,
+      description: tasksTable.description,
+      status: tasksTable.status,
+      priority: tasksTable.priority,
+      dueAt: tasksTable.dueAt,
+      assigneeKind: tasksTable.assigneeKind,
+      assigneeId: tasksTable.assigneeId,
+      createdById: tasksTable.createdById,
+      completionNote: tasksTable.completionNote,
+      completedAt: tasksTable.completedAt,
+      acceptedAt: tasksTable.acceptedAt,
+      createdAt: tasksTable.createdAt,
+      updatedAt: tasksTable.updatedAt,
+    })
     .from(tasksTable)
     .where(and(eq(tasksTable.assigneeKind, "user"), eq(tasksTable.assigneeId, personId)))
     .orderBy(desc(tasksTable.updatedAt));
 
   const createdTasks = await db
-    .select()
+    .select({
+      id: tasksTable.id,
+      title: tasksTable.title,
+      description: tasksTable.description,
+      status: tasksTable.status,
+      priority: tasksTable.priority,
+      dueAt: tasksTable.dueAt,
+      assigneeKind: tasksTable.assigneeKind,
+      assigneeId: tasksTable.assigneeId,
+      createdById: tasksTable.createdById,
+      completionNote: tasksTable.completionNote,
+      completedAt: tasksTable.completedAt,
+      acceptedAt: tasksTable.acceptedAt,
+      createdAt: tasksTable.createdAt,
+      updatedAt: tasksTable.updatedAt,
+    })
     .from(tasksTable)
     .where(eq(tasksTable.createdById, personId))
     .orderBy(desc(tasksTable.updatedAt));
@@ -844,7 +889,7 @@ router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Pr
       : [];
   const taskNameById = new Map(taskUsers.map((u) => [u.id, u.fullName]));
 
-  const mapTask = (t: typeof tasksTable.$inferSelect) => ({
+  const mapTask = (t: (typeof assignedTasks)[number]) => ({
     id: t.id,
     title: t.title,
     description: full ? t.description : undefined,

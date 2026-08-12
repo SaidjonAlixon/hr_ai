@@ -231,8 +231,8 @@ BEGIN
 END $$;
 `;
 
-/** Vercel cold start uchun — faqat employees org ustunlari (tez) */
-const EMP_ORG_COLUMNS_SQL = `
+/** Vercel cold start uchun — yetishmayotgan kritik ustunlar (tez) */
+const CRITICAL_COLUMNS_SQL = `
 DO $$
 BEGIN
   IF EXISTS (
@@ -247,6 +247,14 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_type TEXT;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_label TEXT;
   END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'tasks'
+  ) THEN
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS candidate_id INTEGER;
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pipeline_stage TEXT;
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
+  END IF;
 END $$;
 `;
 
@@ -255,14 +263,14 @@ export async function ensureEmployeesOrgColumns(): Promise<void> {
   const client = await Promise.race([
     pool.connect(),
     new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`emp columns connect timeout ${timeoutMs}ms`)), timeoutMs),
+      setTimeout(() => reject(new Error(`critical columns connect timeout ${timeoutMs}ms`)), timeoutMs),
     ),
   ]);
   try {
     await Promise.race([
-      client.query(EMP_ORG_COLUMNS_SQL),
+      client.query(CRITICAL_COLUMNS_SQL),
       new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`emp columns query timeout ${timeoutMs}ms`)), timeoutMs),
+        setTimeout(() => reject(new Error(`critical columns query timeout ${timeoutMs}ms`)), timeoutMs),
       ),
     ]);
   } finally {

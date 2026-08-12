@@ -10,13 +10,13 @@ const app: Express = express();
 
 /**
  * Schema ensure — eng yaxshi urinish.
- * Vercel/Railway timeout bo‘lsa ham login va API ishlashi kerak (bloklamaymiz).
- * Vercel’da to‘liq DDL o‘tkazilmaydi; faqat employees org ustunlari (kuzatuv uchun) tekshiriladi.
+ * Vercel’da faqat kritik ustunlar (tez ALTER IF NOT EXISTS).
+ * Ustunlar yo‘q bo‘lsa kuzatuv/tasks 503 beradi — shuning uchun birinchi so‘rov kutadi.
  */
 const schemaReady =
   process.env.VERCEL === "1" || process.env.VERCEL === "true"
     ? ensureEmployeesOrgColumns().catch((err) => {
-        logger.error({ err }, "Employees org columns ensure failed (non-blocking)");
+        logger.error({ err }, "Critical columns ensure failed (non-blocking)");
       })
     : ensurePersistentSchema().catch((err) => {
         logger.error({ err }, "Schema ensure failed (non-blocking)");

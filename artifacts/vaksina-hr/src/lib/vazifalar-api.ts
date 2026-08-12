@@ -9,7 +9,7 @@ export type TaskAttachment = {
   id: string;
   name: string;
   mimeType: string;
-  kind: "image" | "file";
+  kind: "image" | "file" | "audio" | "video";
   url: string;
   size?: number;
 };

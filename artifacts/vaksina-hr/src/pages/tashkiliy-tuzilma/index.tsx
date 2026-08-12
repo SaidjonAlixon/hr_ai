@@ -14,7 +14,6 @@ import {
   GraduationCap,
   Waypoints,
   Store,
-  Users,
   Pill,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -68,6 +67,12 @@ const TONES = {
     soft: "bg-emerald-600/10 text-emerald-900",
     line: "#94A3B8",
   },
+  intern: {
+    card: "from-[#4338CA] to-[#6366F1]",
+    ring: "ring-indigo-500/25",
+    soft: "bg-indigo-500/10 text-indigo-900",
+    line: "#94A3B8",
+  },
   staff: {
     card: "from-[#B4535A] to-[#D4737A]",
     ring: "ring-rose-500/20",
@@ -85,6 +90,7 @@ const ALLOWED_ROLES = new Set([
   "koordinator",
   "mudir",
   "farmasevt",
+  "stajyor",
 ]);
 
 function makeBranchChain(prefix: string): OrgNode {
@@ -103,27 +109,18 @@ function makeBranchChain(prefix: string): OrgNode {
         icon: Store,
         children: [
           {
-            id: `${prefix}-boshqaruvchi`,
-            label: "Boshqaruvchi",
-            hint: "Smena / jamoa",
-            tone: "lead",
-            icon: Users,
-            children: [
-              {
-                id: `${prefix}-farmasevt-1`,
-                label: "Farmasevt",
-                hint: "1-smena",
-                tone: "staff",
-                icon: Pill,
-              },
-              {
-                id: `${prefix}-farmasevt-2`,
-                label: "Farmasevt",
-                hint: "2-smena",
-                tone: "staff",
-                icon: Pill,
-              },
-            ],
+            id: `${prefix}-stajyor`,
+            label: "Stajyor",
+            hint: "O‘quv / amaliyot",
+            tone: "intern",
+            icon: GraduationCap,
+          },
+          {
+            id: `${prefix}-farmasevt`,
+            label: "Farmasevt",
+            hint: "Smena / savdo",
+            tone: "staff",
+            icon: Pill,
           },
         ],
       },
@@ -372,7 +369,7 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
   { label: "Rekruter / Trener", tone: "specialist" },
   { label: "Koordinator", tone: "coord" },
   { label: "Filial mudiri", tone: "branch" },
-  { label: "Boshqaruvchi", tone: "lead" },
+  { label: "Stajyor", tone: "intern" },
   { label: "Farmasevt", tone: "staff" },
 ];
 
@@ -410,7 +407,7 @@ export default function TashkiliyTuzilmaPage() {
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-slate-500 sm:text-[15px]">
               Yuqoridan pastga: rahbariyat → menejerlar → rekruter/trener → koordinator → filial →
-              boshqaruvchi → farmasevtlar. Kartani bosing — tanlangan lavozim ajralib ko‘rinadi.
+              stajyor va farmasevt. Kartani bosing — tanlangan lavozim ajralib ko‘rinadi.
             </p>
           </div>
 

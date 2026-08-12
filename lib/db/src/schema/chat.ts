@@ -4,6 +4,7 @@ import {
   serial,
   timestamp,
   integer,
+  jsonb,
   uniqueIndex,
   index,
 } from "drizzle-orm/pg-core";
@@ -48,6 +49,8 @@ export const chatMessagesTable = pgTable(
     chatId: integer("chat_id").notNull(),
     senderId: integer("sender_id").notNull(),
     content: text("content").notNull(),
+    /** [{ id, name, mimeType, kind: image|file|audio|video|video_note, url, size, durationSec? }] */
+    attachments: jsonb("attachments").notNull().default([]),
     /** Javob berilayotgan xabar id */
     replyToId: integer("reply_to_id"),
     editedAt: timestamp("edited_at", { withTimezone: true }),

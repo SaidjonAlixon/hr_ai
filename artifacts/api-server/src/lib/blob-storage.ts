@@ -146,8 +146,14 @@ export async function readLocalUpload(key: string): Promise<Buffer | null> {
   }
 }
 
-export function attachmentKind(mimeType: string): "image" | "file" {
-  return mimeType.startsWith("image/") ? "image" : "file";
+export type AttachmentKind = "image" | "file" | "audio" | "video";
+
+export function attachmentKind(mimeType: string): AttachmentKind {
+  const m = (mimeType || "").toLowerCase();
+  if (m.startsWith("image/")) return "image";
+  if (m.startsWith("audio/")) return "audio";
+  if (m.startsWith("video/")) return "video";
+  return "file";
 }
 
 export function contentHash(buffer: Buffer) {

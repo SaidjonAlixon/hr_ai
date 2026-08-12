@@ -6,7 +6,7 @@ import { requireAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-const STAFF_ROLES = ["mudir", "farmasevt", "boshqaruvchi"] as const;
+const STAFF_ROLES = ["mudir", "farmasevt", "stajyor"] as const;
 type StaffRole = (typeof STAFF_ROLES)[number];
 
 function latinSlug(input: string): string {
@@ -94,7 +94,7 @@ async function ensureCoordinatorEmployee(userId: number, fullName: string) {
 
 /**
  * POST /api/pharmacy-network/staff
- * Koordinator → mudir; Mudir → farmasevt | boshqaruvchi
+ * Koordinator → mudir; Mudir → farmasevt | stajyor
  * Avtomatik login/parol yaratadi.
  */
 router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -120,7 +120,7 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
     return;
   }
   if (!STAFF_ROLES.includes(staffRole)) {
-    res.status(400).json({ error: "Rol: mudir, farmasevt yoki boshqaruvchi" });
+    res.status(400).json({ error: "Rol: mudir, farmasevt yoki stajyor" });
     return;
   }
 
@@ -130,8 +130,8 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
       return;
     }
   } else if (actorRole === "mudir") {
-    if (staffRole !== "farmasevt" && staffRole !== "boshqaruvchi") {
-      res.status(403).json({ error: "Mudir faqat farmasevt yoki boshqaruvchi qo‘sha oladi" });
+    if (staffRole !== "farmasevt" && staffRole !== "stajyor") {
+      res.status(403).json({ error: "Mudir faqat farmasevt yoki stajyor qo‘sha oladi" });
       return;
     }
   } else if (
@@ -194,9 +194,9 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
     }
     reportsToId = myBranch.id;
     branchLocation = myBranch.location;
-    if (staffRole === "boshqaruvchi") {
-      orgRole = "supervisor";
-      position = "Boshqaruvchi";
+    if (staffRole === "stajyor") {
+      orgRole = "intern";
+      position = "Stajyor";
     } else {
       orgRole = "pharmacist";
       position = "Farmasevt";

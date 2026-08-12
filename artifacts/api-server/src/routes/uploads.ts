@@ -37,8 +37,23 @@ function guessMime(fileName: string): string {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".txt": "text/plain",
     ".zip": "application/zip",
+    ".webm": "video/webm",
+    ".ogg": "audio/ogg",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".wav": "audio/wav",
+    ".mp4": "video/mp4",
+    ".mov": "video/quicktime",
   };
   return map[ext] || "application/octet-stream";
+}
+
+function shouldInline(mime: string) {
+  return (
+    mime.startsWith("image/") ||
+    mime.startsWith("audio/") ||
+    mime.startsWith("video/")
+  );
 }
 
 /**
@@ -104,7 +119,7 @@ router.get("/uploads/remote", requireAuth, async (req: AuthRequest, res): Promis
   res.setHeader("Content-Type", mime);
   res.setHeader(
     "Content-Disposition",
-    `${forceDownload || !mime.startsWith("image/") ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(data.downloadName)}`,
+    `${forceDownload || !shouldInline(mime) ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(data.downloadName)}`,
   );
   res.setHeader("Cache-Control", "private, max-age=3600");
   res.send(data.buffer);
@@ -135,7 +150,7 @@ router.get("/uploads/:key", requireAuth, async (req: AuthRequest, res): Promise<
   res.setHeader("Content-Type", mime);
   res.setHeader(
     "Content-Disposition",
-    `${forceDownload || !mime.startsWith("image/") ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
+    `${forceDownload || !shouldInline(mime) ? "attachment" : "inline"}; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
   );
   res.setHeader("Cache-Control", "private, max-age=3600");
   res.send(data);

@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-export type PharmacyStaffRole = "mudir" | "farmasevt" | "boshqaruvchi";
+export type PharmacyStaffRole = "mudir" | "farmasevt" | "stajyor";
 
 export type PharmacyStaffInput = {
   firstName: string;

@@ -25,6 +25,79 @@ import { notifyUser } from "../lib/notify";
 
 const router: IRouter = Router();
 
+type ChatAttachmentKind = "image" | "file" | "audio" | "video" | "video_note";
+
+type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  kind: ChatAttachmentKind;
+  url: string;
+  size?: number;
+  durationSec?: number;
+};
+
+const ATTACHMENT_KINDS = new Set<ChatAttachmentKind>([
+  "image",
+  "file",
+  "audio",
+  "video",
+  "video_note",
+]);
+
+function isAllowedAttachmentUrl(url: string) {
+  if (!url) return false;
+  if (url.startsWith("https://") || url.startsWith("http://")) return true;
+  if (url.startsWith("/api/uploads/")) return true;
+  return false;
+}
+
+function inferAttachmentKind(mimeType: string, rawKind?: string): ChatAttachmentKind {
+  if (rawKind && ATTACHMENT_KINDS.has(rawKind as ChatAttachmentKind)) {
+    return rawKind as ChatAttachmentKind;
+  }
+  const m = (mimeType || "").toLowerCase();
+  if (m.startsWith("image/")) return "image";
+  if (m.startsWith("audio/")) return "audio";
+  if (m.startsWith("video/")) return "video";
+  return "file";
+}
+
+function attachmentPreviewLabel(attachments: ChatAttachment[]): string {
+  if (!attachments.length) return "📎 Fayl";
+  if (attachments.length > 1) return `📎 ${attachments.length} ta fayl`;
+  const a = attachments[0]!;
+  if (a.kind === "audio") return "🎤 Ovozli xabar";
+  if (a.kind === "video_note") return "🔵 Video xabar";
+  if (a.kind === "video") return "🎬 Video";
+  if (a.kind === "image") return "🖼 Rasm";
+  return `📎 ${a.name || "Fayl"}`;
+}
+
+function sanitizeChatAttachments(raw: unknown, max = 5): ChatAttachment[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(0, max)
+    .map((a: any, i: number) => {
+      const url = String(a?.url || "");
+      if (!isAllowedAttachmentUrl(url)) return null;
+      const mimeType = String(a?.mimeType || "application/octet-stream");
+      return {
+        id: String(a?.id || `att-${Date.now()}-${i}`),
+        name: String(a?.name || "fayl").slice(0, 200),
+        mimeType,
+        kind: inferAttachmentKind(mimeType, a?.kind),
+        url: url.slice(0, 2000),
+        size: typeof a?.size === "number" ? a.size : undefined,
+        durationSec:
+          typeof a?.durationSec === "number" && a.durationSec > 0
+            ? Math.min(Math.round(a.durationSec), 600)
+            : undefined,
+      };
+    })
+    .filter(Boolean) as ChatAttachment[];
+}
+
 type MemberUser = {
   id: number;
   fullName: string;
@@ -478,6 +551,7 @@ router.get(
         editedAt: chatMessagesTable.editedAt,
         deletedAt: chatMessagesTable.deletedAt,
         createdAt: chatMessagesTable.createdAt,
+        attachments: chatMessagesTable.attachments,
         senderName: usersTable.fullName,
       })
       .from(chatMessagesTable)
@@ -559,6 +633,9 @@ router.get(
                 deleted: reply.deleted,
               }
             : null,
+          attachments: deleted
+            ? []
+            : ((m.attachments as ChatAttachment[]) ?? []),
           read,
           createdAt: m.createdAt.toISOString(),
         };
@@ -585,8 +662,9 @@ router.post(
     }
 
     const content = String(req.body?.content || "").trim();
-    if (!content) {
-      res.status(400).json({ error: "Xabar bo‘sh bo‘lmasin" });
+    const attachments = sanitizeChatAttachments(req.body?.attachments);
+    if (!content && attachments.length === 0) {
+      res.status(400).json({ error: "Xabar yoki fayl kerak" });
       return;
     }
     if (content.length > 4000) {
@@ -617,12 +695,14 @@ router.post(
     }
 
     const now = new Date();
+    const placeholder = content || attachmentPreviewLabel(attachments);
     const [msg] = await db
       .insert(chatMessagesTable)
       .values({
         chatId,
         senderId: me,
-        content,
+        content: placeholder,
+        attachments,
         replyToId,
         createdAt: now,
       })
@@ -686,6 +766,7 @@ router.post(
         editedAt: null,
         replyToId,
         replyTo,
+        attachments: (msg.attachments as ChatAttachment[]) ?? [],
         read: false,
         createdAt: msg.createdAt.toISOString(),
       },
@@ -694,7 +775,9 @@ router.post(
     void (async () => {
       try {
         const members = await getChatMembers(chatId);
-        const preview = content.length > 80 ? `${content.slice(0, 80)}…` : content;
+        const previewBase = content || attachmentPreviewLabel(attachments) || "Xabar";
+        const preview =
+          previewBase.length > 80 ? `${previewBase.slice(0, 80)}…` : previewBase;
         await Promise.allSettled(
           members
             .filter((m) => m.id !== me)

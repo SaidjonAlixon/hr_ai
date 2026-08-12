@@ -13,6 +13,27 @@ export type ChatUser = {
   login?: string;
 };
 
+export type ChatAttachment = {
+  id: string;
+  name: string;
+  mimeType: string;
+  kind: "image" | "file" | "audio" | "video" | "video_note";
+  url: string;
+  size?: number;
+  durationSec?: number;
+};
+
+export function chatAttachmentLabel(attachments?: ChatAttachment[]): string {
+  if (!attachments?.length) return "📎 Fayl";
+  if (attachments.length > 1) return `📎 ${attachments.length} ta fayl`;
+  const a = attachments[0]!;
+  if (a.kind === "audio") return "🎤 Ovozli xabar";
+  if (a.kind === "video_note") return "🔵 Video xabar";
+  if (a.kind === "video") return "🎬 Video";
+  if (a.kind === "image") return "🖼 Rasm";
+  return `📎 ${a.name || "Fayl"}`;
+}
+
 export type ChatReplyPreview = {
   id: number;
   content: string;
@@ -31,6 +52,7 @@ export type ChatMessage = {
   editedAt?: string | null;
   replyToId?: number | null;
   replyTo?: ChatReplyPreview | null;
+  attachments?: ChatAttachment[];
   read?: boolean;
   pending?: boolean;
 };
@@ -171,11 +193,21 @@ export function useSendMessage(
 ) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (body: { content: string; replyToId?: number | null }) =>
-      apiFetch<{ message: ChatMessage }>(`/chats/${chatId}/messages`, {
+    mutationFn: (body: {
+      content: string;
+      replyToId?: number | null;
+      attachments?: ChatAttachment[];
+    }) => {
+      const content =
+        String(body.content || "").trim() ||
+        (body.attachments?.length
+          ? chatAttachmentLabel(body.attachments)
+          : "");
+      return apiFetch<{ message: ChatMessage }>(`/chats/${chatId}/messages`, {
         method: "POST",
-        body: JSON.stringify(body),
-      }),
+        body: JSON.stringify({ ...body, content }),
+      });
+    },
     onMutate: async (body) => {
       if (!chatId || !me) return { tempId: 0 };
       const tempId = -Date.now();
@@ -184,11 +216,12 @@ export function useSendMessage(
         chatId,
         senderId: me.id,
         senderName: me.fullName,
-        content: body.content,
+        content: body.content || (body.attachments?.length ? chatAttachmentLabel(body.attachments) : ""),
         createdAt: new Date().toISOString(),
         pending: true,
         read: false,
         replyToId: body.replyToId ?? null,
+        attachments: body.attachments ?? [],
       };
       // Kutmasdan — darhol UI
       void qc.cancelQueries({ queryKey: ["chats", chatId, "messages"] });
@@ -224,7 +257,11 @@ export function useSendMessage(
                     ...c,
                     lastMessage: {
                       id: tempId,
-                      content: body.content,
+                      content:
+                        body.content ||
+                        (body.attachments?.length
+                          ? chatAttachmentLabel(body.attachments)
+                          : ""),
                       senderId: me.id,
                       createdAt: optimistic.createdAt,
                     },

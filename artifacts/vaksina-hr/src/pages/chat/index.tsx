@@ -12,10 +12,20 @@ import {
   useMarkChatRead,
   useRemoveChatMember,
   useSendMessage,
+  chatAttachmentLabel,
+  type ChatAttachment,
   type ChatListItem,
   type ChatMessage,
   type ChatUser,
 } from "@/lib/chat-api";
+import { fileToAttachment } from "@/lib/vazifalar-api";
+import {
+  VoiceBubble,
+  VideoNoteBubble,
+  formatRecSec,
+  isMediaPlaceholder,
+  pickRecorderMime,
+} from "@/components/chat-media";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -42,17 +52,22 @@ import {
   ArrowLeft,
   Check,
   CheckCheck,
+  FileText,
   MessageCircle,
+  Mic,
+  Paperclip,
   Pencil,
   Plus,
   Reply,
   Search,
   Send,
+  Square,
   Trash2,
   User,
   UserMinus,
   UserPlus,
   Users,
+  Video,
   X,
 } from "lucide-react";
 
@@ -198,6 +213,18 @@ export default function ChatPage() {
   const [picked, setPicked] = useState<ChatUser[]>([]);
   const [groupTitle, setGroupTitle] = useState("");
   const [draft, setDraft] = useState("");
+  const [pendingFiles, setPendingFiles] = useState<ChatAttachment[]>([]);
+  const [uploadingFile, setUploadingFile] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [recMode, setRecMode] = useState<"voice" | "video_note" | null>(null);
+  const [recSec, setRecSec] = useState(0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const recChunksRef = useRef<Blob[]>([]);
+  const recStartedAtRef = useRef(0);
+  const recTimerRef = useRef<number | null>(null);
+  const videoPreviewRef = useRef<HTMLVideoElement>(null);
+  const recCancelRef = useRef(false);
   const [addOpen, setAddOpen] = useState(false);
   const [addQuery, setAddQuery] = useState("");
   const [addPicked, setAddPicked] = useState<ChatUser[]>([]);
@@ -284,10 +311,13 @@ export default function ChatPage() {
   }, [addUsers.data?.users, activeChat?.members]);
 
   const openChat = (id: number) => {
+    if (recMode) stopRecording(true);
     setSelectedId(id);
     setMobileShowChat(true);
     setReplyTo(null);
     setEditingId(null);
+    setPendingFiles([]);
+    setDraft("");
     const url = new URL(window.location.href);
     url.searchParams.set("id", String(id));
     window.history.replaceState({}, "", url.pathname + "?" + url.searchParams.toString());
@@ -377,10 +407,263 @@ export default function ChatPage() {
 
   const meId = user?.id;
 
+  const stopMediaTracks = () => {
+    mediaStreamRef.current?.getTracks().forEach((t) => t.stop());
+    mediaStreamRef.current = null;
+    if (recTimerRef.current != null) {
+      window.clearInterval(recTimerRef.current);
+      recTimerRef.current = null;
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      recCancelRef.current = true;
+      try {
+        mediaRecorderRef.current?.stop();
+      } catch {
+        /* ignore */
+      }
+      stopMediaTracks();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (recMode !== "video_note") return;
+    const el = videoPreviewRef.current;
+    const stream = mediaStreamRef.current;
+    if (!el || !stream) return;
+    el.srcObject = stream;
+    void el.play().catch(() => undefined);
+  }, [recMode]);
+
+  const sendAttachmentsNow = (
+    files: ChatAttachment[],
+    text = "",
+    replyId: number | null = replyTo?.id ?? null,
+  ) => {
+    if (!selectedId || (!text.trim() && files.length === 0)) return;
+    const content =
+      text.trim() || (files.length ? chatAttachmentLabel(files) : "");
+    setDraft("");
+    setPendingFiles([]);
+    setReplyTo(null);
+    sendMessage.mutate(
+      { content, replyToId: replyId, attachments: files },
+      {
+        onError: (e) => {
+          setDraft((prev) => prev || text);
+          setPendingFiles(files);
+          if (replyId) {
+            const parent = messages.data?.messages.find((m) => m.id === replyId);
+            if (parent) setReplyTo(parent);
+          }
+          toast({
+            title: "Yuborilmadi",
+            description: e instanceof Error ? e.message : "Xato",
+            variant: "destructive",
+          });
+        },
+      },
+    );
+  };
+
+  const onPickChatFiles = async (files: FileList | null) => {
+    if (!files?.length) return;
+    setUploadingFile(true);
+    try {
+      const next: ChatAttachment[] = [];
+      for (const file of Array.from(files)) {
+        if (pendingFiles.length + next.length >= 5) break;
+        const att = await fileToAttachment(file);
+        const mime = att.mimeType || file.type || "";
+        let kind: ChatAttachment["kind"] = att.kind;
+        if (mime.startsWith("audio/")) kind = "audio";
+        else if (mime.startsWith("video/")) kind = "video";
+        else if (mime.startsWith("image/")) kind = "image";
+        next.push({
+          id: att.id,
+          name: att.name,
+          mimeType: mime || att.mimeType,
+          kind,
+          url: att.url,
+          size: att.size,
+        });
+      }
+      setPendingFiles((prev) => [...prev, ...next].slice(0, 5));
+      toast({
+        title: "Fayl qo‘shildi",
+        description: `${next.length} ta — matn shart emas, yuborishingiz mumkin (max 10 MB)`,
+      });
+    } catch (e) {
+      toast({
+        title: "Fayl yuklanmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const finishRecording = async (blob: Blob, mode: "voice" | "video_note") => {
+    const durationSec = Math.max(
+      1,
+      Math.round((Date.now() - recStartedAtRef.current) / 1000),
+    );
+    if (recCancelRef.current) return;
+    if (durationSec < 1 || blob.size < 200) {
+      toast({
+        title: "Juda qisqa",
+        description: "Kamida 1 soniya yozing",
+        variant: "destructive",
+      });
+      return;
+    }
+    setUploadingFile(true);
+    try {
+      const ext = blob.type.includes("mp4")
+        ? "mp4"
+        : blob.type.includes("ogg")
+          ? "ogg"
+          : "webm";
+      const file = new File(
+        [blob],
+        mode === "voice" ? `voice-${Date.now()}.${ext}` : `video-note-${Date.now()}.${ext}`,
+        { type: blob.type || (mode === "voice" ? "audio/webm" : "video/webm") },
+      );
+      const att = await fileToAttachment(file);
+      const chatAtt: ChatAttachment = {
+        id: att.id,
+        name: att.name,
+        mimeType: att.mimeType || file.type,
+        kind: mode === "voice" ? "audio" : "video_note",
+        url: att.url,
+        size: att.size,
+        durationSec,
+      };
+      sendAttachmentsNow([chatAtt], "");
+    } catch (e) {
+      toast({
+        title: "Yuborilmadi",
+        description: e instanceof Error ? e.message : "Xato",
+        variant: "destructive",
+      });
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  const startRecording = async (mode: "voice" | "video_note") => {
+    if (!selectedId || uploadingFile || editingId) return;
+    if (typeof MediaRecorder === "undefined") {
+      toast({
+        title: "Qo‘llab-quvvatlanmaydi",
+        description: "Brauzeringiz yozishni qo‘llab-quvvatlamaydi",
+        variant: "destructive",
+      });
+      return;
+    }
+    try {
+      recCancelRef.current = false;
+      const stream =
+        mode === "voice"
+          ? await navigator.mediaDevices.getUserMedia({ audio: true })
+          : await navigator.mediaDevices.getUserMedia({
+              audio: true,
+              video: {
+                facingMode: "user",
+                width: { ideal: 480 },
+                height: { ideal: 480 },
+              },
+            });
+      mediaStreamRef.current = stream;
+      const mime =
+        mode === "voice"
+          ? pickRecorderMime([
+              "audio/webm;codecs=opus",
+              "audio/webm",
+              "audio/ogg;codecs=opus",
+              "audio/mp4",
+            ])
+          : pickRecorderMime([
+              "video/webm;codecs=vp9,opus",
+              "video/webm;codecs=vp8,opus",
+              "video/webm",
+              "video/mp4",
+            ]);
+      const recorder = mime
+        ? new MediaRecorder(stream, { mimeType: mime })
+        : new MediaRecorder(stream);
+      recChunksRef.current = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        const chunks = recChunksRef.current;
+        const type = recorder.mimeType || mime || (mode === "voice" ? "audio/webm" : "video/webm");
+        const blob = new Blob(chunks, { type });
+        stopMediaTracks();
+        setRecMode(null);
+        setRecSec(0);
+        if (videoPreviewRef.current) {
+          videoPreviewRef.current.srcObject = null;
+        }
+        void finishRecording(blob, mode);
+      };
+      mediaRecorderRef.current = recorder;
+      recStartedAtRef.current = Date.now();
+      setRecSec(0);
+      setRecMode(mode);
+      recorder.start(250);
+      recTimerRef.current = window.setInterval(() => {
+        const sec = Math.round((Date.now() - recStartedAtRef.current) / 1000);
+        setRecSec(sec);
+        const max = mode === "voice" ? 120 : 60;
+        if (sec >= max) {
+          try {
+            mediaRecorderRef.current?.stop();
+          } catch {
+            /* ignore */
+          }
+        }
+      }, 250);
+    } catch {
+      stopMediaTracks();
+      setRecMode(null);
+      toast({
+        title: "Ruxsat kerak",
+        description:
+          mode === "voice"
+            ? "Mikrofon ruxsatini bering"
+            : "Kamera va mikrofon ruxsatini bering",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const stopRecording = (cancel = false) => {
+    recCancelRef.current = cancel;
+    const rec = mediaRecorderRef.current;
+    if (!rec || rec.state === "inactive") {
+      stopMediaTracks();
+      setRecMode(null);
+      setRecSec(0);
+      return;
+    }
+    try {
+      rec.stop();
+    } catch {
+      stopMediaTracks();
+      setRecMode(null);
+    }
+  };
+
   const onSend = () => {
     const text = draft.trim();
-    if (!text || !selectedId) return;
+    if ((!text && pendingFiles.length === 0) || !selectedId) return;
     if (editingId) {
+      if (!text) return;
       const id = editingId;
       setEditingId(null);
       setEditDraft("");
@@ -403,26 +686,7 @@ export default function ChatPage() {
       );
       return;
     }
-    setDraft("");
-    const replyId = replyTo?.id ?? null;
-    setReplyTo(null);
-    sendMessage.mutate(
-      { content: text, replyToId: replyId },
-      {
-        onError: (e) => {
-          setDraft((prev) => prev || text);
-          if (replyId) {
-            const parent = messages.data?.messages.find((m) => m.id === replyId);
-            if (parent) setReplyTo(parent);
-          }
-          toast({
-            title: "Yuborilmadi",
-            description: e instanceof Error ? e.message : "Xato",
-            variant: "destructive",
-          });
-        },
-      },
-    );
+    sendAttachmentsNow(pendingFiles, text);
   };
 
   const startEdit = (m: ChatMessage) => {
@@ -794,9 +1058,86 @@ export default function ChatPage() {
                           Xabar o‘chirildi
                         </p>
                       ) : (
-                        <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
-                          {m.content}
-                        </p>
+                        <>
+                          {(m.attachments?.length ?? 0) > 0 && (
+                            <div className="mb-1.5 space-y-1.5">
+                              {m.attachments!.map((a) => {
+                                if (a.kind === "audio") {
+                                  return (
+                                    <VoiceBubble
+                                      key={a.id}
+                                      attachment={a}
+                                      mine={mine}
+                                    />
+                                  );
+                                }
+                                if (a.kind === "video_note") {
+                                  return (
+                                    <VideoNoteBubble key={a.id} attachment={a} />
+                                  );
+                                }
+                                if (a.kind === "video") {
+                                  return (
+                                    <video
+                                      key={a.id}
+                                      src={a.url}
+                                      controls
+                                      playsInline
+                                      className="max-h-56 max-w-full rounded-lg"
+                                    />
+                                  );
+                                }
+                                if (a.kind === "image") {
+                                  return (
+                                    <a
+                                      key={a.id}
+                                      href={a.url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block"
+                                    >
+                                      <img
+                                        src={a.url}
+                                        alt={a.name}
+                                        className="max-h-48 max-w-full rounded-lg object-cover"
+                                      />
+                                    </a>
+                                  );
+                                }
+                                return (
+                                  <a
+                                    key={a.id}
+                                    href={
+                                      a.url.startsWith("/api/uploads/")
+                                        ? `${a.url}${a.url.includes("?") ? "&" : "?"}download=1`
+                                        : a.url
+                                    }
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    download={a.name}
+                                    className="flex items-center gap-2 rounded-lg bg-black/20 px-2.5 py-1.5 text-xs hover:bg-black/30"
+                                  >
+                                    <FileText className="h-4 w-4 shrink-0 text-[#8b9aab]" />
+                                    <span className="truncate">{a.name}</span>
+                                  </a>
+                                );
+                              })}
+                            </div>
+                          )}
+                          {m.content &&
+                            !isMediaPlaceholder(m.content, m.attachments) && (
+                              <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
+                                {m.content}
+                              </p>
+                            )}
+                          {(!m.content ||
+                            isMediaPlaceholder(m.content, m.attachments)) &&
+                            !(m.attachments?.length) && (
+                              <p className="text-[15px] leading-snug whitespace-pre-wrap break-words">
+                                {m.content}
+                              </p>
+                            )}
+                        </>
                       )}
                       <div className="flex items-center justify-end gap-1 mt-1">
                         {m.editedAt && !deleted && (
@@ -887,13 +1228,129 @@ export default function ChatPage() {
                   </button>
                 </div>
               )}
+              {pendingFiles.length > 0 && !editingId && !recMode && (
+                <div className="flex flex-wrap gap-2 px-3 pt-2 sm:px-4">
+                  {pendingFiles.map((a) => (
+                    <div
+                      key={a.id}
+                      className="relative flex items-center gap-1.5 rounded-lg border border-[#2b3a4a] bg-[#242f3d] px-2 py-1 text-xs text-[#c5d0db]"
+                    >
+                      {a.kind === "image" ? (
+                        <img src={a.url} alt="" className="h-8 w-8 rounded object-cover" />
+                      ) : a.kind === "audio" ? (
+                        <Mic className="h-4 w-4 text-[#2AABEE]" />
+                      ) : a.kind === "video_note" || a.kind === "video" ? (
+                        <Video className="h-4 w-4 text-[#2AABEE]" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-[#8b9aab]" />
+                      )}
+                      <span className="max-w-[120px] truncate">
+                        {a.kind === "audio"
+                          ? chatAttachmentLabel([a])
+                          : a.kind === "video_note"
+                            ? chatAttachmentLabel([a])
+                            : a.name}
+                      </span>
+                      <button
+                        type="button"
+                        className="text-[#8b9aab] hover:text-rose-300"
+                        onClick={() =>
+                          setPendingFiles((prev) => prev.filter((x) => x.id !== a.id))
+                        }
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {recMode && (
+                <div className="flex flex-col items-center gap-3 px-3 pt-3 sm:px-4">
+                  {recMode === "video_note" && (
+                    <div className="relative h-44 w-44 overflow-hidden rounded-full ring-4 ring-rose-500/80 shadow-xl">
+                      <video
+                        ref={videoPreviewRef}
+                        className="h-full w-full object-cover scale-x-[-1]"
+                        muted
+                        playsInline
+                        autoPlay
+                      />
+                      <span className="absolute inset-0 rounded-full ring-2 ring-white/30 pointer-events-none" />
+                    </div>
+                  )}
+                  <div className="flex w-full items-center gap-3">
+                    <button
+                      type="button"
+                      className="text-sm text-[#8b9aab] hover:text-rose-300 px-2"
+                      onClick={() => stopRecording(true)}
+                    >
+                      Bekor
+                    </button>
+                    <div className="flex-1 flex items-center justify-center gap-2 text-rose-400">
+                      <span className="h-2.5 w-2.5 rounded-full bg-rose-500 animate-pulse" />
+                      <span className="tabular-nums font-medium">
+                        {formatRecSec(recSec)}
+                      </span>
+                      <span className="text-xs text-[#8b9aab]">
+                        {recMode === "voice" ? "Ovoz yozilmoqda" : "Video yozilmoqda"}
+                      </span>
+                    </div>
+                    <Button
+                      type="button"
+                      className="h-11 w-11 rounded-full bg-rose-500 hover:bg-rose-600 p-0 shrink-0"
+                      title="To‘xtatib yuborish"
+                      onClick={() => stopRecording(false)}
+                    >
+                      <Square className="h-4 w-4 fill-current" />
+                    </Button>
+                  </div>
+                </div>
+              )}
               <form
-                className="flex items-end gap-2 p-3 sm:p-4 pt-2"
+                className={cn(
+                  "flex items-end gap-1.5 p-3 sm:p-4 pt-2",
+                  recMode && "hidden",
+                )}
                 onSubmit={(e) => {
                   e.preventDefault();
                   onSend();
                 }}
               >
+                {!editingId && (
+                  <>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      multiple
+                      accept="image/*,audio/*,video/*,.pdf,.doc,.docx,.xls,.xlsx,.txt,.webm,.ogg,.mp3,.m4a,.mp4,application/pdf"
+                      className="sr-only"
+                      onChange={(e) => {
+                        void onPickChatFiles(e.target.files);
+                        e.target.value = "";
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={uploadingFile || pendingFiles.length >= 5}
+                      className="h-11 w-11 shrink-0 rounded-full text-[#8b9aab] hover:bg-[#242f3d] hover:text-white p-0"
+                      title="Rasm yoki fayl (matnsiz ham, 10 MB)"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <Paperclip className="h-5 w-5" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={uploadingFile}
+                      className="h-11 w-11 shrink-0 rounded-full text-[#8b9aab] hover:bg-[#242f3d] hover:text-white p-0"
+                      title="Dumaloq video (Telegram uslubida)"
+                      onClick={() => void startRecording("video_note")}
+                    >
+                      <Video className="h-5 w-5" />
+                    </Button>
+                  </>
+                )}
                 <Input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
@@ -902,7 +1359,9 @@ export default function ChatPage() {
                       ? "Tahrirlangan matn..."
                       : replyTo
                         ? "Javob yozing..."
-                        : "Xabar yozing..."
+                        : uploadingFile
+                          ? "Fayl yuklanmoqda..."
+                          : "Xabar yoki fayl..."
                   }
                   className="min-h-11 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
                   onKeyDown={(e) => {
@@ -916,13 +1375,34 @@ export default function ChatPage() {
                     }
                   }}
                 />
-                <Button
-                  type="submit"
-                  disabled={!draft.trim()}
-                  className="h-11 w-11 rounded-full bg-[#2AABEE] hover:bg-[#229ED9] p-0 shrink-0"
-                >
-                  {editingId ? <Check className="h-5 w-5" /> : <Send className="h-5 w-5" />}
-                </Button>
+                {!editingId &&
+                !draft.trim() &&
+                pendingFiles.length === 0 &&
+                !uploadingFile ? (
+                  <Button
+                    type="button"
+                    className="h-11 w-11 rounded-full bg-[#2AABEE] hover:bg-[#229ED9] p-0 shrink-0"
+                    title="Ovozli xabar"
+                    onClick={() => void startRecording("voice")}
+                  >
+                    <Mic className="h-5 w-5" />
+                  </Button>
+                ) : (
+                  <Button
+                    type="submit"
+                    disabled={
+                      uploadingFile ||
+                      (!draft.trim() && pendingFiles.length === 0)
+                    }
+                    className="h-11 w-11 rounded-full bg-[#2AABEE] hover:bg-[#229ED9] p-0 shrink-0"
+                  >
+                    {editingId ? (
+                      <Check className="h-5 w-5" />
+                    ) : (
+                      <Send className="h-5 w-5" />
+                    )}
+                  </Button>
+                )}
               </form>
             </footer>
           </>

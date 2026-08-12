@@ -22,7 +22,7 @@ const ALLOWED_ROLES = [
   "texnik",
   "ombor",
   "farmasevt",
-  "boshqaruvchi",
+  "stajyor",
 ] as const;
 
 function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {

@@ -56,6 +56,21 @@ async function buildSyncPayload(me: number, chatId: number | null, afterMsgId: n
     deleted: boolean;
     editedAt: string | null;
     replyToId: number | null;
+    replyTo: {
+      id: number;
+      content: string;
+      senderName: string;
+      deleted: boolean;
+    } | null;
+    attachments: Array<{
+      id: string;
+      name: string;
+      mimeType: string;
+      kind: string;
+      url: string;
+      size?: number;
+      durationSec?: number;
+    }>;
     read: boolean;
     createdAt: string;
   }> = [];
@@ -89,6 +104,7 @@ async function buildSyncPayload(me: number, chatId: number | null, afterMsgId: n
             chatId: chatMessagesTable.chatId,
             senderId: chatMessagesTable.senderId,
             content: chatMessagesTable.content,
+            attachments: chatMessagesTable.attachments,
             replyToId: chatMessagesTable.replyToId,
             editedAt: chatMessagesTable.editedAt,
             deletedAt: chatMessagesTable.deletedAt,
@@ -116,14 +132,48 @@ async function buildSyncPayload(me: number, chatId: number | null, afterMsgId: n
             and(eq(chatMembersTable.chatId, chatId), ne(chatMembersTable.userId, me)),
           );
 
+        const replyIds = [
+          ...new Set(
+            rows
+              .map((r) => r.replyToId)
+              .filter((id): id is number => id != null && id > 0),
+          ),
+        ];
+        const replyMap = new Map<
+          number,
+          { id: number; content: string; senderName: string; deleted: boolean }
+        >();
+        if (replyIds.length) {
+          const parents = await db
+            .select({
+              id: chatMessagesTable.id,
+              content: chatMessagesTable.content,
+              deletedAt: chatMessagesTable.deletedAt,
+              senderName: usersTable.fullName,
+            })
+            .from(chatMessagesTable)
+            .innerJoin(usersTable, eq(usersTable.id, chatMessagesTable.senderId))
+            .where(inArray(chatMessagesTable.id, replyIds));
+          for (const p of parents) {
+            replyMap.set(p.id, {
+              id: p.id,
+              content: p.deletedAt ? "" : String(p.content || "").slice(0, 120),
+              senderName: p.senderName,
+              deleted: !!p.deletedAt,
+            });
+          }
+        }
+
         newMessages = rows.map((m) => {
           const deleted = !!m.deletedAt;
           const read =
             m.senderId === me &&
             others.length > 0 &&
             others.every(
-              (o) => o.lastReadAt && o.lastReadAt.getTime() >= m.createdAt.getTime(),
+              (o) =>
+                o.lastReadAt && o.lastReadAt.getTime() >= m.createdAt.getTime(),
             );
+          const reply = m.replyToId ? replyMap.get(m.replyToId) ?? null : null;
           return {
             id: m.id,
             chatId: m.chatId,
@@ -133,6 +183,11 @@ async function buildSyncPayload(me: number, chatId: number | null, afterMsgId: n
             deleted,
             editedAt: m.editedAt?.toISOString() ?? null,
             replyToId: m.replyToId ?? null,
+            replyTo: reply,
+            attachments: deleted
+              ? []
+              : ((m.attachments as (typeof newMessages)[number]["attachments"]) ??
+                []),
             read,
             createdAt: m.createdAt.toISOString(),
           };

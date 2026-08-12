@@ -57,7 +57,7 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
     filtered = filtered.filter(
       (e) =>
         e.id === myBranch.id ||
-        ((e.orgRole === "pharmacist" || e.orgRole === "supervisor") &&
+        ((e.orgRole === "pharmacist" || e.orgRole === "intern" || e.orgRole === "supervisor") &&
           e.reportsToId === myBranch.id) ||
         (e.orgRole === "coordinator" &&
           myBranch.reportsToId != null &&

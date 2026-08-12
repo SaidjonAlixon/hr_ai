@@ -53,12 +53,30 @@ function mergeMessages(prev: ChatMessage[], incoming: ChatMessage[]): ChatMessag
     if (m.id > 0) byId.set(m.id, m);
   }
   for (const m of incoming) {
-    if (m.id > 0) byId.set(m.id, { ...byId.get(m.id), ...m, pending: false });
+    if (m.id > 0) {
+      const prevMsg = byId.get(m.id);
+      byId.set(m.id, {
+        ...prevMsg,
+        ...m,
+        pending: false,
+        // Sync ba'zan attachments bermasa — eski media yo‘qolmasin
+        attachments:
+          m.attachments && m.attachments.length > 0
+            ? m.attachments
+            : prevMsg?.attachments ?? m.attachments ?? [],
+        replyTo: m.replyTo ?? prevMsg?.replyTo ?? null,
+      });
+    }
   }
   const confirmed = [...byId.values()];
   const pending = prev.filter((m) => m.pending || m.id < 0).filter((p) => {
     return !confirmed.some(
-      (n) => n.senderId === p.senderId && n.content === p.content,
+      (n) =>
+        n.senderId === p.senderId &&
+        (n.content === p.content ||
+          (Boolean(p.attachments?.length) &&
+            Boolean(n.attachments?.length) &&
+            p.attachments![0]?.url === n.attachments![0]?.url)),
     );
   });
   return sortMessages([...confirmed, ...pending]);

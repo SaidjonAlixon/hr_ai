@@ -56,6 +56,7 @@ CREATE INDEX IF NOT EXISTS chat_messages_chat_created_idx ON chat_messages (chat
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS reply_to_id INTEGER;
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS edited_at TIMESTAMPTZ;
 ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- Maqsad
 CREATE TABLE IF NOT EXISTS user_goals (

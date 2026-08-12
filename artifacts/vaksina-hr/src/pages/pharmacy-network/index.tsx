@@ -288,7 +288,7 @@ export default function PharmacyNetworkPage() {
   const pharmacistsByManager = useMemo(() => {
     const map = new Map<number, Employee[]>();
     for (const p of orgPeople.filter(
-      (e) => e.orgRole === 'pharmacist' || e.orgRole === 'supervisor',
+      (e) => e.orgRole === 'pharmacist' || e.orgRole === 'intern' || e.orgRole === 'supervisor',
     )) {
       if (!p.reportsToId) continue;
       const list = map.get(p.reportsToId) ?? [];
@@ -297,10 +297,11 @@ export default function PharmacyNetworkPage() {
     }
     for (const [, list] of map) {
       list.sort((a, b) => {
-        if (a.orgRole === b.orgRole) return a.fullName.localeCompare(b.fullName, 'uz');
-        if (a.orgRole === 'supervisor') return -1;
-        if (b.orgRole === 'supervisor') return 1;
-        return 0;
+        const rank = (r?: string | null) =>
+          r === 'intern' ? 0 : r === 'supervisor' ? 1 : 2;
+        const d = rank(a.orgRole) - rank(b.orgRole);
+        if (d !== 0) return d;
+        return a.fullName.localeCompare(b.fullName, 'uz');
       });
     }
     return map;
@@ -581,8 +582,8 @@ export default function PharmacyNetworkPage() {
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Aptekalar tarmog‘i</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isMudirOnly
-              ? 'Yuqorida koordinatoringiz, pastda o‘z filialingiz. Farmasevt va boshqaruvchi qo‘shishingiz mumkin.'
-              : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va boshqaruvchi qo‘shadi.'}
+              ? 'Yuqorida koordinatoringiz, pastda o‘z filialingiz. Farmasevt va stajyor qo‘shishingiz mumkin.'
+              : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va stajyor qo‘shadi.'}
           </p>
         </div>
         {canAddStaff && (
@@ -839,7 +840,6 @@ export default function PharmacyNetworkPage() {
           </Select>
         </div>
         )}
-      </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-b from-[#f4f7fa] to-white">
         {(canSeeFullNetwork || isMudirOnly) && (
@@ -971,7 +971,11 @@ export default function PharmacyNetworkPage() {
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-2">
                                   <p className="truncate text-sm font-medium text-slate-900">{ph.fullName}</p>
-                                  {ph.orgRole === 'supervisor' ? (
+                                  {ph.orgRole === 'intern' ? (
+                                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                                      Stajyor
+                                    </span>
+                                  ) : ph.orgRole === 'supervisor' ? (
                                     <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
                                       Boshqaruvchi
                                     </span>
@@ -1306,7 +1310,7 @@ export default function PharmacyNetworkPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="farmasevt">Farmasevt</SelectItem>
-                    <SelectItem value="boshqaruvchi">Boshqaruvchi</SelectItem>
+                    <SelectItem value="stajyor">Stajyor</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

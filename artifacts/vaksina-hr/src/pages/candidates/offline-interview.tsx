@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   useGetCandidate,
   useGetUsers,
@@ -20,6 +20,7 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateReadOnlyBanner';
 import { canManageCandidate } from '../../lib/candidate-access';
 import { nextStageFormHref } from '../../lib/stage-routes';
+import { HR_ROLE_LABELS, isHrRole } from '../../lib/roles';
 
 export default function OfflineInterviewPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
@@ -36,8 +37,15 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
   );
   const existing = offlines?.[0];
 
-  const { data: hrs, isLoading: hrsLoading } = useGetUsers({ role: 'hr' });
+  const { data: allUsers, isLoading: hrsLoading } = useGetUsers();
   const { data: trainers, isLoading: trainersLoading } = useGetUsers({ role: 'trainer' });
+  const hrs = useMemo(
+    () =>
+      (allUsers ?? [])
+        .filter((u) => isHrRole(u.role) && u.status === 'active')
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz')),
+    [allUsers],
+  );
   const createMutation = useCreateOfflineInterview();
   const updateMutation = useUpdateOfflineInterview();
   const canEdit = canManageCandidate(user, candidate?.recruiterId) && !existing?.result;
@@ -56,8 +64,8 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
   const [prefilled, setPrefilled] = useState(false);
 
   useEffect(() => {
-    if (!hrId && (user?.role === 'hr' || user?.role === 'hr_menejer' || user?.role === 'hr_direktor' || user?.role === 'hr_auditor')) {
-      setHrId(String(user.id));
+    if (!hrId && isHrRole(user?.role)) {
+      setHrId(String(user!.id));
     }
     if (!trainerId && user?.role === 'trainer') setTrainerId(String(user.id));
   }, [user, hrId, trainerId]);
@@ -214,8 +222,13 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
                   <SelectValue placeholder="HR tanlang" />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
-                  {(hrs ?? []).filter((u) => u.status === 'active').map((u) => (
-                    <SelectItem key={u.id} value={String(u.id)}>{u.fullName}</SelectItem>
+                  {hrs.map((u) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.fullName}
+                      {u.role && u.role !== 'hr'
+                        ? ` (${HR_ROLE_LABELS[u.role] || u.role})`
+                        : ''}
+                    </SelectItem>
                   ))}
                 </SelectContent>
               </Select>

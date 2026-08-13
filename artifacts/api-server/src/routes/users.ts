@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, ilike } from "drizzle-orm";
+import { eq, and, ilike, asc } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import { db, usersTable, departmentsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
@@ -24,6 +25,31 @@ const ALLOWED_ROLES = [
   "farmasevt",
   "stajyor",
 ] as const;
+
+const ROLE_LABEL_UZ: Record<string, string> = {
+  admin: "Admin",
+  recruiter: "Rekruter",
+  hr: "HR",
+  hr_direktor: "HR Direktor",
+  hr_auditor: "HR Auditor",
+  hr_menejer: "HR Menejer",
+  trainer: "Trener",
+  mentor: "Mentor",
+  director: "Direktor",
+  department_head: "Bo‘lim boshlig‘i",
+  mudir: "Mudir",
+  koordinator: "Koordinator",
+  texnik: "Texnik",
+  ombor: "Ombor",
+  farmasevt: "Farmasevt",
+  stajyor: "Stajyor",
+};
+
+const STATUS_UZ: Record<string, string> = {
+  active: "Faol",
+  inactive: "Nofaol",
+  blocked: "Bloklangan",
+};
 
 function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
   if (req.userRole !== "admin") {
@@ -126,6 +152,174 @@ router.get("/users", async (req, res): Promise<void> => {
     : await base;
 
   res.json(rows);
+});
+
+/** Admin — barcha foydalanuvchilar + login/parol Excel */
+router.get("/users/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat admin Excel yuklab olishi mumkin" });
+    return;
+  }
+
+  const rows = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+      departmentName: departmentsTable.name,
+      login: usersTable.login,
+      password: usersTable.password,
+      phone: usersTable.phone,
+      status: usersTable.status,
+      createdAt: usersTable.createdAt,
+    })
+    .from(usersTable)
+    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
+    .orderBy(asc(usersTable.fullName));
+
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "VAKSINA MED HR";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Foydalanuvchilar", {
+    views: [{ state: "frozen", ySplit: 2, xSplit: 0 }],
+    properties: { defaultRowHeight: 22 },
+  });
+
+  sheet.mergeCells("A1:I1");
+  const title = sheet.getCell("A1");
+  title.value = "VAKSINA MED — Foydalanuvchilar ro‘yxati (login va parollar)";
+  title.font = { name: "Calibri", size: 16, bold: true, color: { argb: "FFFFFFFF" } };
+  title.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: "FF0B3A5C" },
+  };
+  title.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  sheet.getRow(1).height = 36;
+
+  const headers = [
+    "№",
+    "F.I.Sh.",
+    "Rol",
+    "Login",
+    "Parol",
+    "Telefon",
+    "Bo‘lim",
+    "Holat",
+    "Yaratilgan",
+  ];
+  const headerRow = sheet.getRow(2);
+  headers.forEach((h, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = h;
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF1A5F8A" },
+    };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF0B3A5C" } },
+      left: { style: "thin", color: { argb: "FF0B3A5C" } },
+      bottom: { style: "thin", color: { argb: "FF0B3A5C" } },
+      right: { style: "thin", color: { argb: "FF0B3A5C" } },
+    };
+  });
+  headerRow.height = 28;
+
+  sheet.columns = [
+    { key: "n", width: 6 },
+    { key: "fullName", width: 32 },
+    { key: "role", width: 18 },
+    { key: "login", width: 26 },
+    { key: "password", width: 16 },
+    { key: "phone", width: 18 },
+    { key: "department", width: 22 },
+    { key: "status", width: 12 },
+    { key: "createdAt", width: 18 },
+  ];
+
+  rows.forEach((u, idx) => {
+    const row = sheet.addRow({
+      n: idx + 1,
+      fullName: u.fullName,
+      role: ROLE_LABEL_UZ[u.role] || u.role,
+      login: u.login,
+      password: u.password,
+      phone: u.phone || "—",
+      department: u.departmentName || "—",
+      status: STATUS_UZ[u.status] || u.status,
+      createdAt: u.createdAt
+        ? new Date(u.createdAt).toLocaleString("uz-UZ", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "—",
+    });
+
+    const zebra = idx % 2 === 0 ? "FFF7FAFC" : "FFFFFFFF";
+    row.eachCell((cell, colNumber) => {
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: colNumber === 4 || colNumber === 5,
+      };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: zebra },
+      };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: colNumber === 1 || colNumber === 8 ? "center" : "left",
+        wrapText: true,
+      };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+    });
+    // Login / parol ustunlarini ajratib ko‘rsatish
+    row.getCell(4).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFE8F4FC" },
+    };
+    row.getCell(5).fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFF4E5" },
+    };
+    row.height = 24;
+  });
+
+  const footerRow = sheet.addRow([]);
+  sheet.mergeCells(`A${footerRow.number}:I${footerRow.number}`);
+  const footer = sheet.getCell(`A${footerRow.number}`);
+  footer.value = `Jami: ${rows.length} ta foydalanuvchi · Yuklab olingan: ${new Date().toLocaleString("uz-UZ")} · Maxfiy — faqat admin uchun`;
+  footer.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF64748B" } };
+  footer.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  sheet.getRow(footerRow.number).height = 22;
+
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader(
+    "Content-Disposition",
+    `attachment; filename="foydalanuvchilar_${stamp}.xlsx"`,
+  );
+  res.setHeader("Cache-Control", "no-store");
+  res.send(buffer);
 });
 
 router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> => {

@@ -9,7 +9,7 @@ import {
   type User,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus } from 'lucide-react';
+import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -73,6 +73,7 @@ export default function AdminUsersPage() {
   const [created, setCreated] = useState<CreatedCredentials | null>(null);
   const [showPwd, setShowPwd] = useState(true);
   const [copied, setCopied] = useState<'login' | 'password' | 'both' | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('recruiter');
@@ -93,6 +94,37 @@ export default function AdminUsersPage() {
   const sorted = useMemo(() => {
     return [...(users ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz'));
   }, [users]);
+
+  const onExportExcel = async () => {
+    if (!isAdmin || exporting) return;
+    setExporting(true);
+    try {
+      const res = await fetch('/api/users/export', { credentials: 'include' });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error || 'Excel yuklanmadi');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `foydalanuvchilar_${stamp}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast({ title: 'Excel yuklandi', description: 'Login va parollar bilan to‘liq ro‘yxat' });
+    } catch (err: any) {
+      toast({
+        title: 'Xatolik',
+        description: err?.message || 'Export amalga oshmadi',
+        variant: 'destructive',
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   const resetForm = () => {
     setFullName('');
@@ -228,10 +260,26 @@ export default function AdminUsersPage() {
             Rol bo‘yicha login va parol avtomatik yaratiladi
           </p>
         </div>
-        <Button className="gap-2" onClick={() => setCreateOpen(true)}>
-          <UserPlus className="h-4 w-4" />
-          Yangi foydalanuvchi
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            disabled={exporting || !sorted.length}
+            onClick={() => void onExportExcel()}
+          >
+            {exporting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4 text-emerald-700" />
+            )}
+            Excel export
+          </Button>
+          <Button className="gap-2" onClick={() => setCreateOpen(true)}>
+            <UserPlus className="h-4 w-4" />
+            Yangi foydalanuvchi
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-sm sm:flex-row">

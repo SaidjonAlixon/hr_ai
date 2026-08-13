@@ -221,6 +221,7 @@ export default function PharmacyNetworkPage() {
     user?.role === 'department_head';
 
   const isMudirOnly = user?.role === 'mudir';
+  const isKoordinatorOnly = user?.role === 'koordinator';
 
   const canEditShift =
     isHrRole(user?.role) ||
@@ -271,10 +272,14 @@ export default function PharmacyNetworkPage() {
     [employees],
   );
 
-  const coordinators = useMemo(
-    () => orgPeople.filter((e) => e.orgRole === 'coordinator'),
-    [orgPeople],
-  );
+  const coordinators = useMemo(() => {
+    let list = orgPeople.filter((e) => e.orgRole === 'coordinator');
+    // Koordinator faqat o‘z kartasini ko‘radi — boshqa koordinatorlarning mudirlari aralashmasin
+    if (isKoordinatorOnly && user?.id) {
+      list = list.filter((e) => e.userId === user.id);
+    }
+    return list;
+  }, [orgPeople, isKoordinatorOnly, user?.id]);
 
   const allManagers = useMemo(() => {
     let list = orgPeople.filter((e) => e.orgRole === 'manager');
@@ -282,8 +287,13 @@ export default function PharmacyNetworkPage() {
     if (isMudirOnly && user?.id) {
       list = list.filter((e) => e.userId === user.id);
     }
+    // Koordinator — faqat o‘zi qo‘shgan (reportsToId = o‘z coordinator employee id)
+    if (isKoordinatorOnly && user?.id) {
+      const myCoord = orgPeople.find((e) => e.orgRole === 'coordinator' && e.userId === user.id);
+      list = myCoord ? list.filter((m) => m.reportsToId === myCoord.id) : [];
+    }
     return list.sort((a, b) => (a.location ?? '').localeCompare(b.location ?? '', 'uz'));
-  }, [orgPeople, isMudirOnly, user?.id]);
+  }, [orgPeople, isMudirOnly, isKoordinatorOnly, user?.id]);
 
   const pharmacistsByManager = useMemo(() => {
     const map = new Map<number, Employee[]>();
@@ -816,17 +826,19 @@ export default function PharmacyNetworkPage() {
               className="pl-9"
             />
           </div>
-          <Select value={coordinatorFilter} onValueChange={setCoordinatorFilter}>
-            <SelectTrigger className="w-full sm:w-[200px]">
-              <SelectValue placeholder="Koordinatorlar" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Barcha koordinatorlar</SelectItem>
-              {coordinators.map((c) => (
-                <SelectItem key={c.id} value={String(c.id)}>{c.fullName}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {!isKoordinatorOnly ? (
+            <Select value={coordinatorFilter} onValueChange={setCoordinatorFilter}>
+              <SelectTrigger className="w-full sm:w-[200px]">
+                <SelectValue placeholder="Koordinatorlar" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha koordinatorlar</SelectItem>
+                {coordinators.map((c) => (
+                  <SelectItem key={c.id} value={String(c.id)}>{c.fullName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Select value={shiftFilter} onValueChange={setShiftFilter}>
             <SelectTrigger className="w-full sm:w-[170px]">
               <SelectValue placeholder="Smena" />

@@ -15,7 +15,6 @@ const FULL_NETWORK_ROLES = new Set([
   ...HR_ROLES,
   "director",
   "recruiter",
-  "koordinator",
   "department_head",
 ]);
 
@@ -62,6 +61,24 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
         (e.orgRole === "coordinator" &&
           myBranch.reportsToId != null &&
           e.id === myBranch.reportsToId),
+    );
+  } else if (role === "koordinator" && userId) {
+    // Koordinator: faqat o‘zi + o‘zi qo‘shgan mudirlar + ularning xodimlari
+    const myCoord = filtered.find((e) => e.orgRole === "coordinator" && e.userId === userId);
+    if (!myCoord) {
+      res.json([]);
+      return;
+    }
+    const myManagerIds = new Set(
+      filtered.filter((e) => e.orgRole === "manager" && e.reportsToId === myCoord.id).map((e) => e.id),
+    );
+    filtered = filtered.filter(
+      (e) =>
+        e.id === myCoord.id ||
+        myManagerIds.has(e.id) ||
+        ((e.orgRole === "pharmacist" || e.orgRole === "intern" || e.orgRole === "supervisor") &&
+          e.reportsToId != null &&
+          myManagerIds.has(e.reportsToId)),
     );
   } else if (!FULL_NETWORK_ROLES.has(role)) {
     // Boshqa rollar tarmoqni to‘liq ko‘rmaydi

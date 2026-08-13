@@ -28,6 +28,8 @@ import realtimeRouter from "./realtime";
 import kuzatuvRouter from "./kuzatuv";
 import uploadsRouter from "./uploads";
 import pharmacyNetworkRouter from "./pharmacy-network";
+import webauthnRouter from "./webauthn";
+import faceRouter from "./face";
 
 const router: IRouter = Router();
 
@@ -44,6 +46,8 @@ router.use(kirishRouter);
 router.use(realtimeRouter);
 router.use(kuzatuvRouter);
 router.use(authRouter);
+router.use(webauthnRouter);
+router.use(faceRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

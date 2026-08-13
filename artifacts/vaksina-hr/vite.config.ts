@@ -81,6 +81,14 @@ export default defineConfig({
         timeout: 0,
         proxyTimeout: 0,
         configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq, req) => {
+            const host = req.headers.host;
+            if (host) proxyReq.setHeader('x-forwarded-host', host);
+            proxyReq.setHeader('x-forwarded-proto', 'http');
+            if (req.headers.origin) {
+              proxyReq.setHeader('origin', String(req.headers.origin));
+            }
+          });
           proxy.on('proxyRes', (proxyRes, req) => {
             if (req.url?.includes('/realtime/stream')) {
               proxyRes.headers['cache-control'] = 'no-cache, no-transform';

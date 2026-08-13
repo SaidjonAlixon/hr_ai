@@ -229,6 +229,42 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_label TEXT;
   END IF;
 END $$;
+
+-- Face ID / WebAuthn
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  credential_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  counter BIGINT NOT NULL DEFAULT 0,
+  device_type TEXT,
+  backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+  transports TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS webauthn_credentials_cred_uidx ON webauthn_credentials (credential_id);
+CREATE INDEX IF NOT EXISTS webauthn_credentials_user_idx ON webauthn_credentials (user_id);
+
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER,
+  challenge TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS webauthn_challenges_challenge_idx ON webauthn_challenges (challenge);
+
+CREATE TABLE IF NOT EXISTS face_profiles (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  descriptor TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS face_profiles_user_uidx ON face_profiles (user_id);
 `;
 
 /** Vercel cold start uchun — yetishmayotgan kritik ustunlar (tez) */
@@ -256,6 +292,41 @@ BEGIN
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
   END IF;
 END $$;
+
+CREATE TABLE IF NOT EXISTS webauthn_credentials (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  credential_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  counter BIGINT NOT NULL DEFAULT 0,
+  device_type TEXT,
+  backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+  transports TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS webauthn_credentials_cred_uidx ON webauthn_credentials (credential_id);
+CREATE INDEX IF NOT EXISTS webauthn_credentials_user_idx ON webauthn_credentials (user_id);
+
+CREATE TABLE IF NOT EXISTS webauthn_challenges (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER,
+  challenge TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  expires_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS webauthn_challenges_challenge_idx ON webauthn_challenges (challenge);
+
+CREATE TABLE IF NOT EXISTS face_profiles (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  descriptor TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS face_profiles_user_uidx ON face_profiles (user_id);
 `;
 
 export async function ensureEmployeesOrgColumns(): Promise<void> {

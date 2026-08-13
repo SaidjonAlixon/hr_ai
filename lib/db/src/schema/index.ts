@@ -14,3 +14,5 @@ export * from "./reminders";
 export * from "./goals";
 export * from "./chat";
 export * from "./kirish";
+export * from "./webauthn";
+export * from "./face-profiles";

@@ -2,21 +2,30 @@ import React, { useState } from 'react';
 import { useLogin } from '@workspace/api-client-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'wouter';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ScanFace } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
 import { useToast } from '../hooks/use-toast';
+import { isFaceIdSupported, loginWithFace } from '../lib/face-id';
+import { FaceScanDialog } from '../components/FaceScanDialog';
+import type { User } from '@workspace/api-client-react';
 
 export default function Login() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [faceOpen, setFaceOpen] = useState(false);
   const { mutate, isPending } = useLogin();
   const { setUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+
+  const goAfterLogin = (user: User) => {
+    setUser(user);
+    setLocation(user.role === 'farmasevt' ? '/kirish' : '/dashboard');
+  };
 
   const handleLogin = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -24,8 +33,7 @@ export default function Login() {
 
     mutate({ data: { login, password } }, {
       onSuccess: (data) => {
-        setUser(data.user);
-        setLocation(data.user.role === 'farmasevt' ? '/kirish' : '/dashboard');
+        goAfterLogin(data.user);
       },
       onError: () => {
         toast({
@@ -105,10 +113,44 @@ export default function Login() {
                   </button>
                 </div>
               </div>
-              <Button type="submit" className="w-full" disabled={isPending}>
+              <Button type="submit" className="w-full" disabled={isPending || faceOpen}>
                 {isPending ? 'Kirilmoqda...' : 'Kirish'}
               </Button>
             </form>
+            {isFaceIdSupported() ? (
+              <div className="mt-4">
+                <div className="relative mb-4">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-muted-foreground">yoki</span>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="w-full gap-2"
+                  disabled={isPending || faceOpen}
+                  onClick={() => setFaceOpen(true)}
+                >
+                  <ScanFace className="h-4 w-4" />
+                  Face ID bilan kirish
+                </Button>
+                <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                  Birinchi marta login/parol bilan kiring va Face ID ni ulang. Keyin faqat yuz.
+                </p>
+                <FaceScanDialog
+                  open={faceOpen}
+                  onOpenChange={setFaceOpen}
+                  mode="login"
+                  onCaptured={async (descriptor) => {
+                    const data = await loginWithFace<User>(descriptor);
+                    goAfterLogin(data.user);
+                  }}
+                />
+              </div>
+            ) : null}
           </CardContent>
           
           {import.meta.env.DEV && (

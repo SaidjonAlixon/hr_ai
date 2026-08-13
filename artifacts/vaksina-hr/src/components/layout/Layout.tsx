@@ -37,6 +37,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 import { DailyGoalPrompt } from '@/components/DailyGoalPrompt';
+import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { isHrManager, isHrRole } from '@/lib/roles';
 
 type NavItem = {
@@ -577,6 +578,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               <span className="text-xs text-sidebar-foreground/70 truncate">
                 {user.role.replace('_', ' ')}
               </span>
+              <FaceIdEnroll compact />
             </div>
             <button
               onClick={handleLogout}

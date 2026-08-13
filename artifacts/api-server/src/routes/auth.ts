@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, usersTable, departmentsTable } from "@workspace/db";
+import { setSessionCookie, clearSessionCookie } from "../lib/session";
 
 const router: IRouter = Router();
 
@@ -58,20 +59,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       return;
     }
 
-    const token = Buffer.from(JSON.stringify({ userId: user.id })).toString("base64");
-    const isProd =
-      process.env.NODE_ENV === "production" ||
-      process.env.VERCEL === "1" ||
-      process.env.VERCEL === "true";
-
-    res.cookie("session", token, {
-      httpOnly: true,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      signed: false,
-      sameSite: "lax",
-      secure: isProd,
-      path: "/",
-    });
+    setSessionCookie(res, user.id);
 
     const fullUser = await getUserWithDept(user.id);
     req.log?.info?.({ userId: user.id, role: user.role }, "User logged in");
@@ -122,11 +110,7 @@ router.get("/auth/me", async (req, res): Promise<void> => {
 });
 
 router.post("/auth/logout", async (req, res): Promise<void> => {
-  const isProd =
-    process.env.NODE_ENV === "production" ||
-    process.env.VERCEL === "1" ||
-    process.env.VERCEL === "true";
-  res.clearCookie("session", { path: "/", sameSite: "lax", secure: isProd });
+  clearSessionCookie(res);
   res.json({ ok: true });
 });
 

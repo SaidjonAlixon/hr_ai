@@ -43,6 +43,7 @@ import { useStaffingAlerts } from '../lib/staffing-api';
 import { useBranchNeeds } from '../lib/branch-needs-api';
 import { useGetTasks } from '../lib/vazifalar-api';
 import { useGetReminders } from '../lib/eslatmalar-api';
+import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { useChatList } from '../lib/chat-api';
 import { useGoalsMe, GOAL_ROLES } from '../lib/maqsad-api';
 import { cn } from '../lib/utils';
@@ -333,6 +334,8 @@ export default function Dashboard() {
           </p>
         </div>
       </div>
+
+      <FaceIdEnroll />
 
       {/* ===== RECRUITMENT (admin / hr / director / recruiter) ===== */}
       {isRecruitment && (

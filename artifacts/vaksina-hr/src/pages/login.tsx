@@ -62,9 +62,9 @@ export default function Login() {
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img
-            src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png?v=11`}
-            alt="VAKSINA HR — Kadrlarni boshqaruv dasturi"
-            className="mx-auto h-36 w-auto max-w-full object-contain sm:h-44"
+            src={`${import.meta.env.BASE_URL}logo3d.png`}
+            alt="VAKSINA MED HR"
+            className="mx-auto h-28 w-auto max-w-full object-contain sm:h-36"
           />
         </div>
 

@@ -604,9 +604,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               <Menu className="w-6 h-6" />
             </button>
             <img
-              src={`${import.meta.env.BASE_URL}vaksinahr_logo1.png?v=11`}
-              alt="VAKSINA HR"
-              className="h-10 w-auto max-w-[min(52vw,220px)] object-contain object-left sm:h-14 sm:max-w-[300px]"
+              src={`${import.meta.env.BASE_URL}logo3d.png`}
+              alt="VAKSINA MED HR"
+              className="h-8 w-auto max-w-[min(48vw,168px)] object-contain object-left sm:h-10 sm:max-w-[200px]"
             />
           </div>
 

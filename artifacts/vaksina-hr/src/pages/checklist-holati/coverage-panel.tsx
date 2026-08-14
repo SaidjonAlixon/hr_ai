@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Check, Download, Search, Store, X } from "lucide-react";
+import { useGetEmployees } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,17 +15,149 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
   downloadCoverageExcel,
-  useAuditCoverage,
+  useBranchAuditsList,
   type CoverageBranch,
   type CoordinatorCoverage,
+  type CoverageResponse,
 } from "@/lib/branch-audits-api";
 
 function formatDate(ymd: string | null) {
   if (!ymd) return "—";
   const [y, m, d] = ymd.split("-");
   return y && m && d ? `${d}.${m}.${y}` : ymd;
+}
+
+type OrgPerson = {
+  id: number;
+  fullName: string;
+  orgRole?: string | null;
+  reportsToId?: number | null;
+  location?: string | null;
+  employmentStatus?: string | null;
+  userId?: number | null;
+};
+
+function branchLabel(fullName: string, location?: string | null) {
+  const loc = displayBranchName(location);
+  const generic =
+    !loc ||
+    loc === "Filial" ||
+    loc === fullName ||
+    /\d+\s*°/.test(loc) ||
+    /^-?\d+[.,]\d+\s*[,;]\s*-?\d+/.test(loc);
+  return generic ? fullName : loc;
+}
+
+function isCoordinatorRole(role?: string | null) {
+  return role === "coordinator" || role === "koordinator";
+}
+
+function buildCoverage(
+  people: OrgPerson[],
+  audits: { managerEmployeeId: number; visitDate: string; scorePercent: number; coordinatorName?: string | null }[],
+  from?: string,
+  to?: string,
+): CoverageResponse {
+  const visits = new Map<
+    number,
+    { visitCount: number; lastVisitDate: string | null; lastScore: number | null; lastCoordinatorName: string | null }
+  >();
+  for (const a of audits) {
+    if (from && a.visitDate < from) continue;
+    if (to && a.visitDate > to) continue;
+    const cur = visits.get(a.managerEmployeeId);
+    if (!cur) {
+      visits.set(a.managerEmployeeId, {
+        visitCount: 1,
+        lastVisitDate: a.visitDate,
+        lastScore: a.scorePercent,
+        lastCoordinatorName: a.coordinatorName ?? null,
+      });
+      continue;
+    }
+    cur.visitCount += 1;
+    if (!cur.lastVisitDate || a.visitDate >= cur.lastVisitDate) {
+      cur.lastVisitDate = a.visitDate;
+      cur.lastScore = a.scorePercent;
+      cur.lastCoordinatorName = a.coordinatorName ?? null;
+    }
+  }
+
+  const toBranch = (m: OrgPerson): CoverageBranch => {
+    const v = visits.get(m.id);
+    const visitCount = v?.visitCount ?? 0;
+    return {
+      managerEmployeeId: m.id,
+      managerName: m.fullName,
+      branchLocation: branchLabel(m.fullName, m.location),
+      filled: visitCount > 0,
+      visitCount,
+      lastVisitDate: v?.lastVisitDate ?? null,
+      lastScore: v?.lastScore ?? null,
+      lastCoordinatorName: v?.lastCoordinatorName ?? null,
+    };
+  };
+
+  const coordinators = people.filter((p) => isCoordinatorRole(p.orgRole));
+  const coordById = new Map(coordinators.map((c) => [c.id, c]));
+  const branchesByCoord = new Map<number, CoverageBranch[]>();
+  const unassigned: CoverageBranch[] = [];
+
+  for (const m of people) {
+    if (m.orgRole !== "manager" || m.employmentStatus === "dismissed") continue;
+    const branch = toBranch(m);
+    const coord = m.reportsToId != null ? coordById.get(m.reportsToId) : undefined;
+    if (!coord) {
+      unassigned.push(branch);
+      continue;
+    }
+    const list = branchesByCoord.get(coord.id) ?? [];
+    list.push(branch);
+    branchesByCoord.set(coord.id, list);
+  }
+
+  const coordinatorRows: CoordinatorCoverage[] = coordinators
+    .filter((c) => c.employmentStatus !== "dismissed" || (branchesByCoord.get(c.id)?.length ?? 0) > 0)
+    .map((c) => {
+      const branches = (branchesByCoord.get(c.id) ?? []).sort((a, b) =>
+        a.branchLocation.localeCompare(b.branchLocation, "uz"),
+      );
+      const filled = branches.filter((b) => b.filled).length;
+      const total = branches.length;
+      const dismissed = c.employmentStatus === "dismissed";
+      return {
+        employeeId: c.id,
+        userId: c.userId ?? null,
+        name: dismissed ? `${c.fullName} (ishdan ketgan)` : c.fullName,
+        dismissed,
+        total,
+        filled,
+        missing: total - filled,
+        percent: total === 0 ? 0 : Math.round((filled / total) * 100),
+        branches,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "uz"));
+
+  unassigned.sort((a, b) => a.branchLocation.localeCompare(b.branchLocation, "uz"));
+  const assigned = coordinatorRows.reduce((s, c) => s + c.total, 0);
+  const filled = coordinatorRows.reduce((s, c) => s + c.filled, 0) + unassigned.filter((b) => b.filled).length;
+  const allBranches = assigned + unassigned.length;
+
+  return {
+    totals: {
+      coordinators: coordinatorRows.filter((c) => !c.dismissed).length,
+      branches: allBranches,
+      filled,
+      missing: allBranches - filled,
+      unassigned: unassigned.length,
+    },
+    coordinators: coordinatorRows,
+    unassigned,
+  };
 }
 
 export function CoveragePanel({ enabled }: { enabled: boolean }) {
@@ -35,10 +168,16 @@ export function CoveragePanel({ enabled }: { enabled: boolean }) {
   const [to, setTo] = useState("");
   const [exporting, setExporting] = useState(false);
 
-  const { data, isLoading } = useAuditCoverage(
-    { from: from || undefined, to: to || undefined },
-    enabled,
-  );
+  const { data: employees, isLoading: empLoading } = useGetEmployees(undefined, {
+    query: { enabled },
+  });
+  const { data: audits = [], isLoading: auditLoading } = useBranchAuditsList({}, enabled);
+  const isLoading = empLoading || auditLoading;
+
+  const data = useMemo(() => {
+    if (!employees) return undefined;
+    return buildCoverage(employees as OrgPerson[], audits, from || undefined, to || undefined);
+  }, [employees, audits, from, to]);
 
   const selected = useMemo(() => {
     if (!data) return null;

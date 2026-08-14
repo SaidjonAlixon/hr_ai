@@ -135,26 +135,25 @@ async function loadCoverage(req: AuthRequest) {
   const from = String(req.query.from || "").trim();
   const to = String(req.query.to || "").trim();
 
-  const [coordinators, managers, auditRows] = await Promise.all([
+  const [people, coordUsers, auditRows] = await Promise.all([
     db
       .select({
         id: employeesTable.id,
         fullName: employeesTable.fullName,
         userId: employeesTable.userId,
+        orgRole: employeesTable.orgRole,
+        reportsToId: employeesTable.reportsToId,
+        location: employeesTable.location,
         employmentStatus: employeesTable.employmentStatus,
       })
-      .from(employeesTable)
-      .where(eq(employeesTable.orgRole, "coordinator")),
+      .from(employeesTable),
     db
       .select({
-        id: employeesTable.id,
-        fullName: employeesTable.fullName,
-        location: employeesTable.location,
-        reportsToId: employeesTable.reportsToId,
-        employmentStatus: employeesTable.employmentStatus,
+        id: usersTable.id,
+        fullName: usersTable.fullName,
       })
-      .from(employeesTable)
-      .where(eq(employeesTable.orgRole, "manager")),
+      .from(usersTable)
+      .where(eq(usersTable.role, "koordinator")),
     db
       .select({
         managerEmployeeId: branchAuditsTable.managerEmployeeId,
@@ -164,6 +163,120 @@ async function loadCoverage(req: AuthRequest) {
       })
       .from(branchAuditsTable),
   ]);
+
+  const isCoord = (role: string | null | undefined) =>
+    role === "coordinator" || role === "koordinator";
+
+  const coordinators = people.filter((p) => isCoord(p.orgRole));
+  const seenUser = new Set(coordinators.map((c) => c.userId).filter((id): id is number => id != null));
+  for (const u of coordUsers) {
+    if (seenUser.has(u.id)) continue;
+    const emp = people.find((p) => p.userId === u.id);
+    if (emp) {
+      coordinators.push({ ...emp, fullName: emp.fullName || u.fullName });
+    } else {
+      coordinators.push({
+        id: -u.id,
+        fullName: u.fullName,
+        userId: u.id,
+        orgRole: "coordinator",
+        reportsToId: null,
+        location: null,
+        employmentStatus: "working",
+      });
+    }
+    seenUser.add(u.id);
+  }
+
+  const visits = new Map<number, CoverageVisit>();
+  for (const a of auditRows) {
+    if (from && a.visitDate < from) continue;
+    if (to && a.visitDate > to) continue;
+    const cur = visits.get(a.managerEmployeeId);
+    if (!cur) {
+      visits.set(a.managerEmployeeId, {
+        visitCount: 1,
+        lastVisitDate: a.visitDate,
+        lastScore: a.scorePercent,
+        lastCoordinatorName: a.coordinatorName,
+      });
+      continue;
+    }
+    cur.visitCount += 1;
+    if (!cur.lastVisitDate || a.visitDate >= cur.lastVisitDate) {
+      cur.lastVisitDate = a.visitDate;
+      cur.lastScore = a.scorePercent;
+      cur.lastCoordinatorName = a.coordinatorName;
+    }
+  }
+
+  const activeManagers = people.filter(
+    (m) => m.orgRole === "manager" && m.employmentStatus !== "dismissed",
+  );
+  const coordById = new Map(coordinators.map((c) => [c.id, c]));
+
+  const branchesByCoord = new Map<number, CoverageBranch[]>();
+  const unassigned: CoverageBranch[] = [];
+
+  for (const m of activeManagers) {
+    const branch = toCoverageBranch(
+      m.id,
+      m.fullName,
+      branchLabelFromEmployee(m.fullName, m.location),
+      visits.get(m.id),
+    );
+    const coord = m.reportsToId != null ? coordById.get(m.reportsToId) : undefined;
+    if (!coord) {
+      unassigned.push(branch);
+      continue;
+    }
+    const list = branchesByCoord.get(coord.id) ?? [];
+    list.push(branch);
+    branchesByCoord.set(coord.id, list);
+  }
+
+  const coordinatorRows = coordinators
+    .filter((c) => c.employmentStatus !== "dismissed" || (branchesByCoord.get(c.id)?.length ?? 0) > 0)
+    .map((c) => {
+      const branches = (branchesByCoord.get(c.id) ?? []).sort((a, b) =>
+        a.branchLocation.localeCompare(b.branchLocation, "uz"),
+      );
+      const filled = branches.filter((b) => b.filled).length;
+      const total = branches.length;
+      const missing = total - filled;
+      const dismissed = c.employmentStatus === "dismissed";
+      return {
+        employeeId: c.id,
+        userId: c.userId,
+        name: dismissed ? `${c.fullName} (ishdan ketgan)` : c.fullName,
+        dismissed,
+        total,
+        filled,
+        missing,
+        percent: total === 0 ? 0 : Math.round((filled / total) * 100),
+        branches,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "uz"));
+
+  unassigned.sort((a, b) => a.branchLocation.localeCompare(b.branchLocation, "uz"));
+
+  const assigned = coordinatorRows.reduce((s, c) => s + c.total, 0);
+  const filled = coordinatorRows.reduce((s, c) => s + c.filled, 0) + unassigned.filter((b) => b.filled).length;
+  const allBranches = assigned + unassigned.length;
+
+  return {
+    totals: {
+      coordinators: coordinatorRows.filter((c) => !c.dismissed).length,
+      branches: allBranches,
+      filled,
+      missing: allBranches - filled,
+      unassigned: unassigned.length,
+    },
+    coordinators: coordinatorRows,
+    unassigned,
+  };
+}
 
   const visits = new Map<number, CoverageVisit>();
   for (const a of auditRows) {
@@ -297,6 +410,19 @@ async function loadFilteredAudits(req: AuthRequest) {
 
   return rows;
 }
+
+router.get("/checklist-coverage", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewChecklistStatus(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    res.json(await loadCoverage(req));
+  } catch (err) {
+    console.error("checklist-coverage", err);
+    res.status(500).json({ error: "Qamrov yuklanmadi" });
+  }
+});
 
 /** Filiallar (mudirlar) ro'yxati — tanlash uchun */
 router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -617,7 +743,12 @@ router.get("/branch-audits/coverage", requireAuth, async (req: AuthRequest, res)
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }
-  res.json(await loadCoverage(req));
+  try {
+    res.json(await loadCoverage(req));
+  } catch (err) {
+    console.error("branch-audits/coverage", err);
+    res.status(500).json({ error: "Qamrov yuklanmadi" });
+  }
 });
 
 router.get("/branch-audits/coverage/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -754,6 +885,10 @@ router.get("/branch-audits/:id", requireAuth, async (req: AuthRequest, res): Pro
     return;
   }
   const id = parseInt(String(req.params.id), 10);
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
   const [row] = await db.select().from(branchAuditsTable).where(eq(branchAuditsTable.id, id));
   if (!row) {
     res.status(404).json({ error: "Topilmadi" });

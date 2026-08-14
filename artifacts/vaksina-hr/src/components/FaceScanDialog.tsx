@@ -137,7 +137,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
                 }
                 if (!busy) setHint(faceAlignHint(alignStatus));
               } else {
-                const liveStatus = liveness.update(result.ear, result.noseX);
+                const liveStatus = liveness.update(result.ear);
                 const isLive = liveness.isLive;
                 setLiveOk(isLive);
 
@@ -237,7 +237,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
             {mode === "enroll" ? "Face ID ni ulash" : "Face ID bilan kirish"}
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            Faqat jonli odam. Ko‘zingizni yumib oching yoki boshni chap-o‘ngga biroz buring.
+            Rasm bilan ochilmaydi. Avval ko‘zni ochiq tuting, keyin buyruq bo‘yicha 2 marta yumib oching.
           </DialogDescription>
         </DialogHeader>
 
@@ -266,7 +266,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
             {ready ? (
               <span className="rounded-full bg-emerald-500/90 px-3 py-1">Jonli yuz ✓</span>
             ) : aligned ? (
-              <span className="rounded-full bg-amber-500/90 px-3 py-1">Yuming yoki boshni buring</span>
+              <span className="rounded-full bg-amber-500/90 px-3 py-1">Buyruqni bajaring</span>
             ) : null}
           </div>
         </div>

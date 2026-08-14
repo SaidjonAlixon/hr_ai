@@ -1,4 +1,4 @@
-/** Kameradan Face ID — jonli odam (rasm/spoofingdan himoya) */
+/** Kameradan Face ID — faqat jonli odam (rasm bilan ochilmaydi) */
 
 const FACE_API_SRC = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js";
 const MODEL_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights";
@@ -83,7 +83,10 @@ export type FaceAlignStatus =
   | "too_close"
   | "outside"
   | "ok"
-  | "blink"
+  | "hold_open"
+  | "blink_now"
+  | "blink_again"
+  | "blink_timeout"
   | "photo";
 
 export type FaceDetectResult = {
@@ -91,7 +94,6 @@ export type FaceDetectResult = {
   status: FaceAlignStatus;
   ear?: number;
   noseX?: number;
-  motion?: number;
 };
 
 export type FaceOvalFrame = {
@@ -107,16 +109,13 @@ function dist(a: Point, b: Point): number {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-/** Eye Aspect Ratio — ko‘z yumilganda past */
 function eyeAspectRatio(pts: Point[]): number {
   if (pts.length < 6) return 0.3;
   return (dist(pts[1]!, pts[5]!) + dist(pts[2]!, pts[4]!)) / (2 * dist(pts[0]!, pts[3]!));
 }
 
 function averageEar(positions: Point[]): number {
-  const left = positions.slice(36, 42);
-  const right = positions.slice(42, 48);
-  return (eyeAspectRatio(left) + eyeAspectRatio(right)) / 2;
+  return (eyeAspectRatio(positions.slice(36, 42)) + eyeAspectRatio(positions.slice(42, 48))) / 2;
 }
 
 function earFromLandmarks(landmarks: {
@@ -135,11 +134,7 @@ function earFromLandmarks(landmarks: {
   }
   const positions = landmarks.positions ?? [];
   if (positions.length >= 48) {
-    const nose = positions[30];
-    return {
-      ear: averageEar(positions),
-      noseX: nose?.x ?? 0.5,
-    };
+    return { ear: averageEar(positions), noseX: positions[30]?.x ?? 0.5 };
   }
   return { ear: 0.28, noseX: 0.5 };
 }
@@ -186,7 +181,6 @@ export async function detectFaceDescriptor(
   if (!result || result.detection.score < 0.62) {
     return { descriptor: null, status: "no_face" };
   }
-
   if (!frame || frame.rx < 8 || frame.ry < 8) {
     return { descriptor: null, status: "outside" };
   }
@@ -194,24 +188,17 @@ export async function detectFaceDescriptor(
   const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored);
   if (!mapped) return { descriptor: null, status: "no_face" };
 
-  const centerN = ellipseNorm(mapped.cx, mapped.cy, frame);
-  if (centerN > 0.55) {
+  if (ellipseNorm(mapped.cx, mapped.cy, frame) > 0.55) {
     return { descriptor: null, status: "outside" };
   }
 
   const fillW = mapped.width / (frame.rx * 2);
   const fillH = mapped.height / (frame.ry * 2);
-  if (fillW < 0.42 || fillH < 0.4) {
-    return { descriptor: null, status: "too_far" };
-  }
-  if (fillW > 1.2 || fillH > 1.25) {
-    return { descriptor: null, status: "too_close" };
-  }
+  if (fillW < 0.42 || fillH < 0.4) return { descriptor: null, status: "too_far" };
+  if (fillW > 1.2 || fillH > 1.25) return { descriptor: null, status: "too_close" };
 
   const { ear, noseX: noseRaw } = earFromLandmarks(result.landmarks);
-  // landmarks pikselda — 0..1 ga normallashtirish
-  const noseX =
-    noseRaw > 1 ? noseRaw / Math.max(1, video.videoWidth) : noseRaw;
+  const noseX = noseRaw > 1 ? noseRaw / Math.max(1, video.videoWidth) : noseRaw;
 
   return {
     descriptor: Array.from(result.descriptor),
@@ -221,86 +208,108 @@ export async function detectFaceDescriptor(
   };
 }
 
-/** Jonli odam: ko‘z yumish yoki boshni biroz burish (rasmdan himoya) */
+/**
+ * Aktiv liveness: rasm egilishi bilan ochilmaydi.
+ * 1) Ko‘z ochiq holda kutish
+ * 2) Buyruq: HOZIR yuming
+ * 3) Yumish + ochish (2 marta)
+ */
 export class LivenessTracker {
+  private phase: "warmup" | "challenge" | "done" = "warmup";
   private earHistory: number[] = [];
-  private noseHistory: number[] = [];
   private baselineEar = 0;
-  private sawDip = false;
-  private blinkDone = false;
-  private headTurnDone = false;
-  private noseMin = 1;
-  private noseMax = 0;
+  private openFrames = 0;
+  private sawClosedAfterChallenge = false;
+  private closedFrames = 0;
+  private challengeAt = 0;
+  private blinkCount = 0;
 
   reset() {
+    this.phase = "warmup";
     this.earHistory = [];
-    this.noseHistory = [];
     this.baselineEar = 0;
-    this.sawDip = false;
-    this.blinkDone = false;
-    this.headTurnDone = false;
-    this.noseMin = 1;
-    this.noseMax = 0;
+    this.openFrames = 0;
+    this.sawClosedAfterChallenge = false;
+    this.closedFrames = 0;
+    this.challengeAt = 0;
+    this.blinkCount = 0;
   }
 
   get isLive() {
-    return this.blinkDone || this.headTurnDone;
+    return this.phase === "done";
   }
 
-  get needsBlink() {
-    return !this.isLive;
+  get phaseName() {
+    return this.phase;
   }
 
-  update(ear: number | undefined, noseX: number | undefined): FaceAlignStatus {
-    if (typeof ear !== "number" || typeof noseX !== "number" || !Number.isFinite(ear)) {
-      return "blink";
-    }
+  update(ear: number | undefined): FaceAlignStatus {
+    if (typeof ear !== "number" || !Number.isFinite(ear)) return "hold_open";
 
     this.earHistory.push(ear);
-    this.noseHistory.push(noseX);
-    if (this.earHistory.length > 30) this.earHistory.shift();
-    if (this.noseHistory.length > 30) this.noseHistory.shift();
+    if (this.earHistory.length > 40) this.earHistory.shift();
 
-    // Ochilgan ko‘z uchun bazaviy EAR (yumshoq o‘rtacha)
-    if (this.earHistory.length >= 3 && this.baselineEar === 0) {
+    if (this.earHistory.length >= 4 && this.baselineEar === 0) {
       const sorted = [...this.earHistory].sort((a, b) => a - b);
-      this.baselineEar = sorted[Math.floor(sorted.length / 2)]!;
-    } else if (ear > this.baselineEar && !this.sawDip) {
-      this.baselineEar = this.baselineEar * 0.85 + ear * 0.15;
+      this.baselineEar = sorted[Math.floor(sorted.length * 0.6)]!;
+    } else if (this.phase === "warmup" && ear > this.baselineEar) {
+      this.baselineEar = this.baselineEar * 0.9 + ear * 0.1;
     }
 
-    const base = Math.max(this.baselineEar, 0.18);
-    // Nisbiy: ochiqdan ~22% pastga tushsa — yumilgan
-    const closedThresh = Math.max(0.12, base * 0.78);
-    const openThresh = Math.max(closedThresh + 0.02, base * 0.9);
-    // Absolyut zaxira: ochiq max dan 0.05 pastga
-    const recentMax = Math.max(...this.earHistory.slice(-8));
-    const absoluteDip = ear <= recentMax - 0.05;
+    const base = Math.max(this.baselineEar || ear, 0.2);
+    const closedThresh = Math.max(0.11, base * 0.72);
+    const openThresh = Math.max(closedThresh + 0.035, base * 0.88);
+    const isClosed = ear <= closedThresh;
+    const isOpen = ear >= openThresh;
 
-    if (!this.blinkDone) {
-      if (ear <= closedThresh || absoluteDip) this.sawDip = true;
-      if (this.sawDip && ear >= openThresh) {
-        this.blinkDone = true;
+    if (this.phase === "warmup") {
+      if (isOpen) this.openFrames += 1;
+      else this.openFrames = Math.max(0, this.openFrames - 1);
+
+      if (this.openFrames >= 8) {
+        this.phase = "challenge";
+        this.challengeAt = Date.now();
+        this.sawClosedAfterChallenge = false;
+        this.closedFrames = 0;
+        return "blink_now";
       }
+      return "hold_open";
     }
 
-    // Boshni chap-o‘ngga biroz burish (rasm odatda bir xil)
-    this.noseMin = Math.min(this.noseMin, noseX);
-    this.noseMax = Math.max(this.noseMax, noseX);
-    if (this.noseMax - this.noseMin >= 0.035) {
-      this.headTurnDone = true;
+    if (this.phase === "challenge") {
+      if (Date.now() - this.challengeAt > 8000) {
+        this.phase = "warmup";
+        this.openFrames = 0;
+        this.sawClosedAfterChallenge = false;
+        this.closedFrames = 0;
+        return "blink_timeout";
+      }
+
+      if (!this.sawClosedAfterChallenge) {
+        if (isClosed) {
+          this.closedFrames += 1;
+          if (this.closedFrames >= 2) this.sawClosedAfterChallenge = true;
+        } else {
+          this.closedFrames = 0;
+        }
+        return this.blinkCount > 0 ? "blink_again" : "blink_now";
+      }
+
+      if (isOpen) {
+        this.blinkCount += 1;
+        if (this.blinkCount >= 2) {
+          this.phase = "done";
+          return "ok";
+        }
+        this.challengeAt = Date.now();
+        this.sawClosedAfterChallenge = false;
+        this.closedFrames = 0;
+        return "blink_again";
+      }
+      return this.blinkCount > 0 ? "blink_again" : "blink_now";
     }
 
-    if (this.isLive) return "ok";
-
-    // EAR deyarli o‘zgarmasa — rasm ehtimoli
-    if (this.earHistory.length >= 18 && this.noseMax - this.noseMin < 0.01) {
-      const min = Math.min(...this.earHistory.slice(-18));
-      const max = Math.max(...this.earHistory.slice(-18));
-      if (max - min < 0.02) return "photo";
-    }
-
-    return "blink";
+    return "ok";
   }
 }
 
@@ -308,10 +317,16 @@ export function faceAlignHint(status: FaceAlignStatus): string {
   switch (status) {
     case "ok":
       return "Jonli yuz tasdiqlandi…";
-    case "blink":
-      return "Ko‘zingizni yumib oching yoki boshni chap-o‘ngga biroz buring";
+    case "hold_open":
+      return "Ko‘zingizni ochiq tuting…";
+    case "blink_now":
+      return "HOZIR ko‘zingizni yumib oching!";
+    case "blink_again":
+      return "Yana bir marta yumib oching!";
+    case "blink_timeout":
+      return "Vaqt tugadi — qayta: ochiq tuting, keyin yuming";
     case "photo":
-      return "Rasm emas — jonli yuz: ko‘zingizni yumib oching yoki boshni buring";
+      return "Rasm bilan ochilmaydi — jonli yuz kerak";
     case "too_far":
       return "Yuzingizni ramkaga yaqinroq tuting";
     case "too_close":

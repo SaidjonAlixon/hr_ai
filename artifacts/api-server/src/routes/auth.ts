@@ -83,7 +83,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
 router.get("/auth/me", async (req, res): Promise<void> => {
   const sessionCookie = req.cookies?.session;
   if (!sessionCookie) {
-    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    res.status(204).end();
     return;
   }
 

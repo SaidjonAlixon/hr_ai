@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { ScanFace, AlertTriangle, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 
 type Status = {
   nextAction: "in" | "out" | "done" | "unlinked";
@@ -20,9 +21,14 @@ const HOLAT: Record<Status["nextAction"], string> = {
 };
 
 export function DavomatAttendanceBanner() {
+  const { isAuthenticated } = useAuth();
   const [status, setStatus] = useState<Status | null>(null);
 
   const load = useCallback(async () => {
+    if (!isAuthenticated) {
+      setStatus(null);
+      return;
+    }
     try {
       const res = await fetch("/api/davomat/me/status", { credentials: "include" });
       if (!res.ok) return;
@@ -30,7 +36,7 @@ export function DavomatAttendanceBanner() {
     } catch {
       /* ignore */
     }
-  }, []);
+  }, [isAuthenticated]);
 
   useEffect(() => {
     void load();

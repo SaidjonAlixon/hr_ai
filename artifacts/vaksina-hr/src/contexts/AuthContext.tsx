@@ -23,7 +23,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const { data, isPending, isFetching, isError, isSuccess, status } = useGetMe({
     query: {
-      retry: 1,
+      retry: (count, err) => {
+        const statusCode = (err as { status?: number } | undefined)?.status;
+        if (statusCode === 401 || statusCode === 403 || statusCode === 204) return false;
+        return count < 1;
+      },
       retryDelay: 400,
       staleTime: 30_000,
       refetchOnWindowFocus: true,

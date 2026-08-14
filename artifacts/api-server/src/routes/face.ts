@@ -8,11 +8,14 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { setSessionCookie } from "../lib/session";
+import {
+  findClosestFace,
+  matchFaceForAuth,
+  ownerNameOfUser,
+  parseFaceDescriptor,
+} from "../lib/face-match";
 
 const router: IRouter = Router();
-
-const DESCRIPTOR_LEN = 128;
-const MATCH_MAX_DISTANCE = 0.48;
 
 async function getUserWithDept(userId: number) {
   const [user] = await db
@@ -34,22 +37,7 @@ async function getUserWithDept(userId: number) {
 }
 
 function parseDescriptor(raw: unknown): number[] | null {
-  if (!Array.isArray(raw) || raw.length !== DESCRIPTOR_LEN) return null;
-  const out: number[] = [];
-  for (const n of raw) {
-    if (typeof n !== "number" || !Number.isFinite(n)) return null;
-    out.push(n);
-  }
-  return out;
-}
-
-function euclidean(a: number[], b: number[]): number {
-  let s = 0;
-  for (let i = 0; i < a.length; i++) {
-    const d = a[i]! - b[i]!;
-    s += d * d;
-  }
-  return Math.sqrt(s);
+  return parseFaceDescriptor(raw);
 }
 
 router.get("/auth/face/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -67,6 +55,19 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
   const descriptor = parseDescriptor(req.body?.descriptor);
   if (!descriptor) {
     res.status(400).json({ error: "Yuz aniq olinmadi — qayta urinib ko‘ring" });
+    return;
+  }
+
+  const taken = await findClosestFace(descriptor, { excludeUserId: userId });
+  if (taken) {
+    const owner = await ownerNameOfUser(taken.userId);
+    res.status(409).json({
+      error: owner
+        ? `Bu yuz allaqachon ${owner} ga biriktirilgan. Bitta yuzni faqat bitta xodim ishlatadi.`
+        : "Bu yuz allaqachon boshqa xodimga biriktirilgan. Bitta yuzni faqat bitta xodim ishlatadi.",
+      code: "face_already_taken",
+      fullName: owner ?? undefined,
+    });
     return;
   }
 
@@ -98,49 +99,13 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const rows = await db
-    .select({
-      id: faceProfilesTable.id,
-      userId: faceProfilesTable.userId,
-      descriptor: faceProfilesTable.descriptor,
-    })
-    .from(faceProfilesTable);
-
-  let best: { id: number; userId: number; dist: number } | null = null;
-  let second = Number.POSITIVE_INFINITY;
-  for (const row of rows) {
-    let stored: number[];
-    try {
-      stored = JSON.parse(row.descriptor) as number[];
-    } catch {
-      continue;
-    }
-    if (!Array.isArray(stored) || stored.length !== DESCRIPTOR_LEN) continue;
-    const dist = euclidean(descriptor, stored);
-    if (!best || dist < best.dist) {
-      second = best?.dist ?? Number.POSITIVE_INFINITY;
-      best = { id: row.id, userId: row.userId, dist };
-    } else if (dist < second) {
-      second = dist;
-    }
-  }
-
-  if (!best || best.dist > MATCH_MAX_DISTANCE) {
-    res.status(401).json({
-      error: "Bu yuz aniqlanmadi. Ro‘yxatdan o‘ting — login/parol bilan kirib Face ID ni ulang.",
-      code: "face_not_registered",
-    });
-    return;
-  }
-  if (second - best.dist < 0.06 && second <= MATCH_MAX_DISTANCE) {
-    res.status(401).json({
-      error: "Yuz aniq ajratilmadi — yorug‘likni tekshiring va qayta urinib ko‘ring",
-      code: "face_ambiguous",
-    });
+  const matched = await matchFaceForAuth(descriptor);
+  if (!matched.ok) {
+    res.status(401).json({ error: matched.error, code: matched.code });
     return;
   }
 
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, best.userId));
+  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, matched.userId));
   if (!user || user.status !== "active") {
     res.status(403).json({
       error: user?.fullName
@@ -155,7 +120,7 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
   await db
     .update(faceProfilesTable)
     .set({ lastUsedAt: new Date() })
-    .where(eq(faceProfilesTable.id, best.id));
+    .where(eq(faceProfilesTable.id, matched.id));
 
   setSessionCookie(res, user.id);
   const fullUser = await getUserWithDept(user.id);

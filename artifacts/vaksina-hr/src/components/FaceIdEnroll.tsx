@@ -97,8 +97,8 @@ export function FaceIdEnroll({ compact = false }: { compact?: boolean }) {
                 Face ID
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Kameraga qarang — yuzingiz bazaga saqlanadi. Keyin faqat yuz bilan kirasiz,
-                parol so‘ralmaydi.
+                Kameraga qarang — yuzingiz faqat shu profilingizga birikadi. Boshqa xodim o‘sha yuzni
+                ishlata olmaydi.
               </p>
             </div>
             {registered ? (

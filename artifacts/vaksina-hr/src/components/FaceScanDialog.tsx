@@ -27,10 +27,29 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "enroll" | "login";
-  onCaptured: (descriptor: number[]) => Promise<CaptureResult>;
+  onCaptured: (descriptor: number[], snapshot?: string) => Promise<CaptureResult>;
   title?: string;
   description?: string;
 };
+
+function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
+  if (!video || video.videoWidth < 8) return undefined;
+  try {
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return undefined;
+    ctx.translate(w, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(video, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", 0.84);
+  } catch {
+    return undefined;
+  }
+}
 
 const ENROLL_SAMPLES = 5;
 const LOGIN_STREAK = 2;
@@ -173,7 +192,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                       setBusy(true);
                       setHint("Yuz saqlanmoqda…");
                       try {
-                        await onCapturedRef.current(averageDescriptors(samples.slice(0, ENROLL_SAMPLES)));
+                        await onCapturedRef.current(
+                          averageDescriptors(samples.slice(0, ENROLL_SAMPLES)),
+                          grabFaceSnapshot(videoEl),
+                        );
                         stopCamera();
                         onOpenChange(false);
                       } catch (err) {
@@ -197,7 +219,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                       setBusy(true);
                       setHint("Yuz tekshirilmoqda…");
                       try {
-                        const captured = await onCapturedRef.current(desc);
+                        const captured = await onCapturedRef.current(desc, grabFaceSnapshot(videoEl));
                         const name =
                           captured && typeof captured === "object" && captured.fullName
                             ? captured.fullName.trim()

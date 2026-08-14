@@ -12,6 +12,7 @@ import {
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
 import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
+import { matchFaceForAuth } from "../lib/face-match";
 
 const router: IRouter = Router();
 
@@ -25,7 +26,6 @@ export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600; // 41.21925
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600; // ≈ 69.273028
 export const DAVOMAT_SITE_LABEL = "41°13'09.3\"N 69°16'22.9\"E";
 const FACE_DESCRIPTOR_LEN = 128;
-const FACE_MATCH_MAX = 0.48;
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -46,15 +46,6 @@ function parseFaceDescriptor(raw: unknown): number[] | null {
     out.push(n);
   }
   return out;
-}
-
-function euclidean(a: number[], b: number[]): number {
-  let s = 0;
-  for (let i = 0; i < a.length; i++) {
-    const d = a[i]! - b[i]!;
-    s += d * d;
-  }
-  return Math.sqrt(s);
 }
 
 function isPgUniqueViolation(err: unknown): boolean {
@@ -780,55 +771,16 @@ async function ensureAllActiveUsersLinked(): Promise<number> {
 async function matchFaceUserId(
   descriptor: number[],
 ): Promise<{ ok: true; userId: number; faceId: number } | { ok: false; error: string; code: string }> {
-  const rows = await db
-    .select({
-      id: faceProfilesTable.id,
-      userId: faceProfilesTable.userId,
-      descriptor: faceProfilesTable.descriptor,
-    })
-    .from(faceProfilesTable);
-
-  let best: { id: number; userId: number; dist: number } | null = null;
-  let second = Number.POSITIVE_INFINITY;
-  for (const row of rows) {
-    let stored: number[];
-    try {
-      stored = JSON.parse(row.descriptor) as number[];
-    } catch {
-      continue;
-    }
-    if (!Array.isArray(stored) || stored.length !== FACE_DESCRIPTOR_LEN) continue;
-    const dist = euclidean(descriptor, stored);
-    if (!best || dist < best.dist) {
-      second = best?.dist ?? Number.POSITIVE_INFINITY;
-      best = { id: row.id, userId: row.userId, dist };
-    } else if (dist < second) {
-      second = dist;
-    }
-  }
-
-  if (!best || best.dist > FACE_MATCH_MAX) {
-    return {
-      ok: false,
-      error: "Bu yuz aniqlanmadi. Avval tizimga kirib Face ID ni ro‘yxatdan o‘tkazing.",
-      code: "face_not_registered",
-    };
-  }
-  if (second - best.dist < 0.06 && second <= FACE_MATCH_MAX) {
-    return {
-      ok: false,
-      error: "Yuz aniq ajratilmadi — yorug‘likni tekshiring",
-      code: "face_ambiguous",
-    };
-  }
-  return { ok: true, userId: best.userId, faceId: best.id };
+  const matched = await matchFaceForAuth(descriptor);
+  if (!matched.ok) return matched;
+  return { ok: true, userId: matched.userId, faceId: matched.id };
 }
 
 function geoGate(
   emp: WorkplaceEmp,
   latitude: number,
   longitude: number,
-  accuracyMeters?: number,
+  _accuracyMeters?: number,
 ):
   | { ok: true; distanceMeters: number; effectiveRadius: number }
   | {
@@ -842,12 +794,7 @@ function geoGate(
     DAVOMAT_SITE_LAT,
     DAVOMAT_SITE_LNG,
   );
-  // Telefon GPS xatosi (±) bo‘lsa, ruxsat radiusini biroz kengaytiramiz (max +50 m)
-  const gpsSlop =
-    typeof accuracyMeters === "number" && Number.isFinite(accuracyMeters)
-      ? Math.min(Math.max(0, accuracyMeters), 50)
-      : 0;
-  const effectiveRadius = DAVOMAT_GEOFENCE_METERS + gpsSlop;
+  const effectiveRadius = DAVOMAT_GEOFENCE_METERS;
 
   if (distanceMeters > effectiveRadius) {
     const remainMeters = distanceMeters - effectiveRadius;
@@ -855,7 +802,7 @@ function geoGate(
       ok: false,
       status: 403,
       body: {
-        error: `Belgilangan hududdan uzoqdasiz: ${distanceMeters} m. Yana ${remainMeters} m yaqinlashgach Face ID ochiladi (ruxsat: ${effectiveRadius} m). Hududdan tashqarida davomat qabul qilinmaydi.`,
+        error: `Hududdan tashqaridasiz: ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
         code: "outside_geofence",
         distanceMeters,
         remainMeters,

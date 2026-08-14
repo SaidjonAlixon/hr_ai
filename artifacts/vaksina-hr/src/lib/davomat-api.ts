@@ -279,7 +279,8 @@ export type DavomatSite = {
 
 export async function fetchDavomatSite(): Promise<DavomatSite> {
   try {
-    return await apiJson<DavomatSite>("/davomat/site");
+    const site = await apiJson<DavomatSite>("/davomat/site");
+    return { ...site, allowedMeters: DAVOMAT_GEOFENCE_METERS };
   } catch {
     return {
       allowedMeters: DAVOMAT_GEOFENCE_METERS,

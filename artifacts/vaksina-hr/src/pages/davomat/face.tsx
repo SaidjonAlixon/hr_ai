@@ -422,7 +422,7 @@ export default function DavomatFacePage() {
     return haversineMeters(gps.lat, gps.lng, site.latitude, site.longitude);
   }, [gps, site.latitude, site.longitude]);
 
-  const allowedMeters = site.allowedMeters || DAVOMAT_GEOFENCE_METERS;
+  const allowedMeters = DAVOMAT_GEOFENCE_METERS;
   const remain = distance != null ? Math.max(0, distance - allowedMeters) : null;
   const inside = distance != null ? distance <= allowedMeters : false;
 

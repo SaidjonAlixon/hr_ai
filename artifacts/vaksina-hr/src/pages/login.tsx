@@ -9,6 +9,7 @@ import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
 import { useToast } from '../hooks/use-toast';
 import { isFaceIdSupported, loginWithFace } from '../lib/face-id';
+import { DAVOMAT_GEOFENCE_METERS } from '../lib/davomat-api';
 import { FaceScanDialog } from '../components/FaceScanDialog';
 import type { User } from '@workspace/api-client-react';
 
@@ -147,7 +148,7 @@ export default function Login() {
                   Davomat
                 </Button>
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  Davomat faqat ish joyi GPS dan 15 m ichida. Uzoq bo‘lsangiz qancha metr yurish kerakligi chiqadi.
+                  Davomat faqat ish joyi GPS dan {DAVOMAT_GEOFENCE_METERS} m ichida. Uzoq bo‘lsangiz qancha metr yurish kerakligi chiqadi.
                 </p>
                 <FaceScanDialog
                   open={faceOpen}

@@ -11,6 +11,7 @@ import {
 import {
   averageDescriptors,
   detectFaceDescriptor,
+  detectFaceLiveness,
   ensureFaceModels,
   faceAlignHint,
   isFaceIdSupported,
@@ -119,9 +120,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
           const videoEl = videoRef.current;
           if (videoEl && videoEl.readyState >= 2) {
             try {
-              const result = await detectFaceDescriptor(videoEl, readFrame(), true);
+              // Liveness gacha tez landmark; keyin to‘liq descriptor
+              const needDesc = liveness.isLive;
+              const result = needDesc
+                ? await detectFaceDescriptor(videoEl, readFrame(), true)
+                : await detectFaceLiveness(videoEl, readFrame(), true);
               const alignStatus: FaceAlignStatus = result.status;
-              const inFrame = alignStatus === "ok" && Boolean(result.descriptor);
+              const inFrame = alignStatus === "ok";
               setAligned(inFrame);
 
               if (!inFrame) {
@@ -130,12 +135,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
                   samples.length = 0;
                   setProgress(0);
                 }
-                // Faqat yuz umuman yo‘qolganda qayta boshlash (kichik siljishda saqlash)
                 if (alignStatus === "no_face") {
                   liveness.reset();
                   setLiveOk(false);
                 }
-                if (!busy) setHint(faceAlignHint(alignStatus));
+                setHint(faceAlignHint(alignStatus));
               } else {
                 const liveStatus = liveness.update(result.ear);
                 const isLive = liveness.isLive;
@@ -143,11 +147,21 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
 
                 if (!isLive) {
                   loginStreak = 0;
-                  if (!busy) setHint(faceAlignHint(liveStatus));
-                } else if (result.descriptor && running && !cancelled) {
-                  // Faqat jonli + ramkada
+                  setHint(faceAlignHint(liveStatus));
+                } else {
+                  // Jonli tasdiqlandi — descriptor olish (agar hali yo‘q bo‘lsa)
+                  let desc = result.descriptor;
+                  if (!desc) {
+                    const full = await detectFaceDescriptor(videoEl, readFrame(), true);
+                    if (full.status !== "ok" || !full.descriptor) {
+                      setHint(faceAlignHint(full.status === "ok" ? "no_face" : full.status));
+                      if (running && !cancelled) window.setTimeout(() => void loop(), 80);
+                      return;
+                    }
+                    desc = full.descriptor;
+                  }
                   if (mode === "enroll") {
-                    samples.push(result.descriptor);
+                    samples.push(desc);
                     setProgress(Math.min(samples.length, ENROLL_SAMPLES));
                     setHint(`Jonli yuz ${Math.min(samples.length, ENROLL_SAMPLES)}/${ENROLL_SAMPLES}`);
                     if (samples.length >= ENROLL_SAMPLES) {
@@ -179,7 +193,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
                       setBusy(true);
                       setHint("Yuz tekshirilmoqda…");
                       try {
-                        await onCapturedRef.current(result.descriptor);
+                        await onCapturedRef.current(desc);
                         stopCamera();
                         onOpenChange(false);
                         return;
@@ -201,8 +215,12 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
               return;
             }
           }
-          if (running && !cancelled) window.setTimeout(() => void loop(), 120);
+          if (running && !cancelled) window.setTimeout(() => void loop(), needDescDelay(liveness.isLive));
         };
+
+        function needDescDelay(isLive: boolean) {
+          return isLive ? 100 : 55;
+        }
         void loop();
       } catch (err) {
         if (cancelled) return;
@@ -237,7 +255,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
             {mode === "enroll" ? "Face ID ni ulash" : "Face ID bilan kirish"}
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            Rasm bilan ochilmaydi. Avval ko‘zni ochiq tuting, keyin buyruq bo‘yicha 2 marta yumib oching.
+            Rasm bilan ochilmaydi. Ko‘zni ochiq tuting, keyin buyruqda SEKIN 2 marta yumib oching (tez miltillash o‘tmaydi).
           </DialogDescription>
         </DialogHeader>
 

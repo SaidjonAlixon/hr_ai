@@ -434,11 +434,11 @@ export default function DavomatFacePage() {
 
   const guideStep = useMemo((): "permission" | "face" | "keldim" | null => {
     if (guideDone || done) return null;
-    if (!gps) return "permission";
+    if (!gps || !inside) return "permission";
     if (!verified) return "face";
     if (!hasIn) return "keldim";
     return null;
-  }, [guideDone, done, gps, verified, hasIn]);
+  }, [guideDone, done, gps, inside, verified, hasIn]);
 
   const showGuide = isMobile && guideStep != null;
 
@@ -631,6 +631,10 @@ export default function DavomatFacePage() {
       ? "ring-4 ring-rose-400/80"
       : "ring-4 ring-white/40";
 
+  const locationReady = Boolean(gps) && inside && !gpsError;
+  const showFaceStep = locationReady || Boolean(verified);
+  const showPunchStep = Boolean(verified) && !done && !dayComplete;
+
   return (
     <div className="min-h-[100dvh] bg-[linear-gradient(180deg,#e8f1f7_0%,#f8fafc_42%,#ffffff_100%)]">
       <div className="mx-auto max-w-lg px-3 pb-10 pt-4 sm:px-4">
@@ -716,11 +720,15 @@ export default function DavomatFacePage() {
         </section>
 
         <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
-              <MapPin className="h-4 w-4" />
-              Joylashuv
-            </div>
+          <div className="mb-3 flex items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
+              1
+            </span>
+            <div className="flex flex-1 items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
+                <MapPin className="h-4 w-4" />
+                Joylashuv
+              </div>
             <div className="relative shrink-0">
               {showGuide && guideStep === "permission" ? (
                 <MobileStepHint step={1} label="Ruxsat berish ni bosing" align="right" />
@@ -739,6 +747,7 @@ export default function DavomatFacePage() {
                 {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
                 Ruxsat berish
               </Button>
+            </div>
             </div>
           </div>
 
@@ -808,7 +817,109 @@ export default function DavomatFacePage() {
             </div>
           ) : null}
           {gpsError ? <p className="mt-2 text-sm text-rose-600">{gpsError}</p> : null}
+          {locationReady ? (
+            <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Joylashuv tasdiqlandi — keyingi qadam: Face ID
+            </p>
+          ) : null}
         </section>
+
+        {showFaceStep ? (
+          <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
+                2
+              </span>
+              <h2 className="text-sm font-semibold text-[#0b3a5c]">Face ID</h2>
+            </div>
+            {verified ? (
+              <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <CheckCircle2 className="h-5 w-5 shrink-0" />
+                <div>
+                  <p className="font-semibold">Yuz tasdiqlandi</p>
+                  <p className="text-xs text-emerald-700">{verified.fullName}</p>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {showGuide && guideStep === "face" ? (
+                  <MobileStepHint step={2} label="Face ID ni bosing" />
+                ) : null}
+                <Button
+                  type="button"
+                  size="lg"
+                  className={cn(
+                    "h-14 w-full gap-2 rounded-2xl bg-[#0b3a5c] text-base hover:bg-[#0a314d]",
+                    showGuide && guideStep === "face" && "ring-2 ring-amber-400 ring-offset-2",
+                  )}
+                  disabled={!canOpenFace}
+                  onClick={() => setScanOpen(true)}
+                >
+                  {canOpenFace ? <ScanFace className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
+                  {canOpenFace ? "Face ID" : "Face ID yopiq"}
+                </Button>
+                {!canOpenFace && faceLockedReason ? (
+                  <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm text-rose-800">
+                    {faceLockedReason}
+                  </p>
+                ) : (
+                  <p className="text-center text-xs text-slate-500">
+                    Yuz tasdiqlangach Keldim / Ketdim ochiladi
+                  </p>
+                )}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {showPunchStep ? (
+          <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
+                3
+              </span>
+              <h2 className="text-sm font-semibold text-[#0b3a5c]">Keldim / Ketdim</h2>
+            </div>
+            {hasIn ? (
+              <Button
+                type="button"
+                size="lg"
+                className="h-14 w-full gap-2 rounded-2xl bg-red-600 text-base text-white hover:bg-red-700"
+                disabled={busy}
+                onClick={() => setConfirmOut(true)}
+              >
+                <LogOut className="h-5 w-5" />
+                Ketdim
+              </Button>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  {showGuide && guideStep === "keldim" ? (
+                    <MobileStepHint step={3} label="Keldim ni bosing" align="left" />
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="lg"
+                    className={cn(
+                      "h-14 w-full gap-2 rounded-2xl bg-emerald-600 text-base text-white hover:bg-emerald-700",
+                      showGuide && guideStep === "keldim" && "ring-2 ring-amber-400 ring-offset-2",
+                    )}
+                    disabled={busy}
+                    onClick={() => void punch("in")}
+                  >
+                    <LogIn className="h-5 w-5" />
+                    Keldim
+                  </Button>
+                </div>
+                <Button type="button" size="lg" className="h-14 w-full gap-2 rounded-2xl bg-red-600 text-base text-white" disabled>
+                  <LogOut className="h-5 w-5" />
+                  Ketdim
+                </Button>
+              </div>
+            )}
+          </section>
+        ) : null}
 
         {working ? (
           <section className="mt-4 rounded-[24px] border border-emerald-200 bg-emerald-50/80 px-4 py-4 text-center">
@@ -879,74 +990,6 @@ export default function DavomatFacePage() {
               Kuniga faqat 1 marta Keldim va 1 marta Ketdim
             </p>
           ) : null}
-        </section>
-
-        <section className="mt-4 space-y-3">
-          {dayComplete || done ? null : !verified ? (
-            <>
-              {showGuide && guideStep === "face" ? (
-                <MobileStepHint step={2} label="Face ID ni bosing" />
-              ) : null}
-              <Button
-                type="button"
-                size="lg"
-                className={cn(
-                  "h-14 w-full gap-2 rounded-2xl bg-[#0b3a5c] text-base hover:bg-[#0a314d]",
-                  showGuide && guideStep === "face" && "ring-2 ring-amber-400 ring-offset-2",
-                )}
-                disabled={!canOpenFace}
-                onClick={() => setScanOpen(true)}
-              >
-                {canOpenFace ? <ScanFace className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
-                {canOpenFace ? "Face ID" : "Face ID yopiq"}
-              </Button>
-              {!canOpenFace && faceLockedReason ? (
-                <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm text-rose-800">
-                  {faceLockedReason}
-                </p>
-              ) : (
-                <p className="text-center text-xs text-slate-500">
-                  Yuz tasdiqlangach yashil Keldim va qizil Ketdim chiqadi
-                </p>
-              )}
-            </>
-          ) : hasIn ? (
-            <Button
-              type="button"
-              size="lg"
-              className="h-14 w-full gap-2 rounded-2xl bg-red-600 text-base text-white hover:bg-red-700"
-              disabled={busy}
-              onClick={() => setConfirmOut(true)}
-            >
-              <LogOut className="h-5 w-5" />
-              Ketdim
-            </Button>
-          ) : (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                {showGuide && guideStep === "keldim" ? (
-                  <MobileStepHint step={3} label="Keldim ni bosing" align="left" />
-                ) : null}
-                <Button
-                  type="button"
-                  size="lg"
-                  className={cn(
-                    "h-14 w-full gap-2 rounded-2xl bg-emerald-600 text-base text-white hover:bg-emerald-700",
-                    showGuide && guideStep === "keldim" && "ring-2 ring-amber-400 ring-offset-2",
-                  )}
-                  disabled={busy}
-                  onClick={() => void punch("in")}
-                >
-                  <LogIn className="h-5 w-5" />
-                  Keldim
-                </Button>
-              </div>
-              <Button type="button" size="lg" className="h-14 gap-2 rounded-2xl bg-red-600 text-base text-white" disabled>
-                <LogOut className="h-5 w-5" />
-                Ketdim
-              </Button>
-            </div>
-          )}
         </section>
 
         <section className="mt-4 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm">

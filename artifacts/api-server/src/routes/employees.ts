@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { db, employeesTable, departmentsTable, usersTable, candidatesTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
@@ -41,21 +41,122 @@ const SHIFT_UZ: Record<string, string> = {
   custom: "Maxsus",
 };
 
-type EmpRow = typeof employeesTable.$inferSelect;
+type EmpRow = {
+  id: number;
+  fullName: string;
+  position: string;
+  departmentId: number;
+  mentorId: number | null;
+  hiredAt: string;
+  candidateId: number | null;
+  orgRole: string | null;
+  reportsToId: number | null;
+  location: string | null;
+  shiftType: string | null;
+  shiftLabel: string | null;
+  employmentStatus: string | null;
+  userId: number | null;
+  photoUrl: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+};
 
-async function enrichEmployee(r: EmpRow) {
-  const [dept] = await db
-    .select({ name: departmentsTable.name })
-    .from(departmentsTable)
-    .where(eq(departmentsTable.id, r.departmentId));
-  const [mentor] = r.mentorId
-    ? await db.select({ fullName: usersTable.fullName }).from(usersTable).where(eq(usersTable.id, r.mentorId))
-    : [null];
-  return {
+type EmpEnriched = EmpRow & {
+  departmentName: string | null;
+  mentorName: string | null;
+};
+
+const EMP_LIST_SELECT = {
+  id: employeesTable.id,
+  fullName: employeesTable.fullName,
+  position: employeesTable.position,
+  departmentId: employeesTable.departmentId,
+  mentorId: employeesTable.mentorId,
+  hiredAt: employeesTable.hiredAt,
+  candidateId: employeesTable.candidateId,
+  orgRole: employeesTable.orgRole,
+  reportsToId: employeesTable.reportsToId,
+  location: employeesTable.location,
+  shiftType: employeesTable.shiftType,
+  shiftLabel: employeesTable.shiftLabel,
+  employmentStatus: employeesTable.employmentStatus,
+  userId: employeesTable.userId,
+  photoUrl: employeesTable.photoUrl,
+  createdAt: employeesTable.createdAt,
+  updatedAt: employeesTable.updatedAt,
+};
+
+const EMP_CORE_SELECT = {
+  id: employeesTable.id,
+  fullName: employeesTable.fullName,
+  position: employeesTable.position,
+  departmentId: employeesTable.departmentId,
+  mentorId: employeesTable.mentorId,
+  hiredAt: employeesTable.hiredAt,
+  candidateId: employeesTable.candidateId,
+  createdAt: employeesTable.createdAt,
+  updatedAt: employeesTable.updatedAt,
+};
+
+async function loadEmployees(): Promise<EmpRow[]> {
+  try {
+    return (await db
+      .select(EMP_LIST_SELECT)
+      .from(employeesTable)
+      .orderBy(asc(employeesTable.fullName))) as EmpRow[];
+  } catch (err) {
+    console.error("employees list select fallback (missing columns?):", err);
+    const core = await db
+      .select(EMP_CORE_SELECT)
+      .from(employeesTable)
+      .orderBy(asc(employeesTable.fullName));
+    return core.map((r) => ({
+      ...r,
+      orgRole: null,
+      reportsToId: null,
+      location: null,
+      shiftType: "one",
+      shiftLabel: null,
+      employmentStatus: "working",
+      userId: null,
+      photoUrl: null,
+    }));
+  }
+}
+
+async function enrichMany(rows: EmpRow[]): Promise<EmpEnriched[]> {
+  if (!rows.length) return [];
+  const deptIds = [...new Set(rows.map((r) => r.departmentId))];
+  const mentorIds = [...new Set(rows.map((r) => r.mentorId).filter((id): id is number => id != null))];
+
+  const [depts, mentors] = await Promise.all([
+    deptIds.length
+      ? db
+          .select({ id: departmentsTable.id, name: departmentsTable.name })
+          .from(departmentsTable)
+          .where(inArray(departmentsTable.id, deptIds))
+      : Promise.resolve([] as { id: number; name: string }[]),
+    mentorIds.length
+      ? db
+          .select({ id: usersTable.id, fullName: usersTable.fullName })
+          .from(usersTable)
+          .where(inArray(usersTable.id, mentorIds))
+      : Promise.resolve([] as { id: number; fullName: string }[]),
+  ]);
+
+  const deptMap = new Map(depts.map((d) => [d.id, d.name]));
+  const mentorMap = new Map(mentors.map((m) => [m.id, m.fullName]));
+
+  return rows.map((r) => ({
     ...r,
-    departmentName: dept?.name ?? null,
-    mentorName: mentor?.fullName ?? null,
-  };
+    departmentName: deptMap.get(r.departmentId) ?? null,
+    mentorName: r.mentorId != null ? mentorMap.get(r.mentorId) ?? null : null,
+  }));
+}
+
+async function enrichEmployee(r: EmpRow | typeof employeesTable.$inferSelect) {
+  const [enriched] = await enrichMany([r as EmpRow]);
+  return enriched;
 }
 
 function scopeEmployees(
@@ -63,7 +164,7 @@ function scopeEmployees(
   role: string,
   userId: number | undefined,
   filters: { departmentId?: string; mentorId?: string; search?: string },
-): EmpRow[] | null {
+): EmpRow[] {
   let filtered = rows.filter((r) => {
     if (filters.departmentId && r.departmentId !== parseInt(filters.departmentId, 10)) return false;
     if (filters.mentorId && r.mentorId !== parseInt(filters.mentorId, 10)) return false;
@@ -105,38 +206,40 @@ function scopeEmployees(
 }
 
 router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const { departmentId, mentorId, search } = req.query as Record<string, string>;
-  const role = req.userRole ?? "";
-  const userId = req.userId;
+  try {
+    const { departmentId, mentorId, search } = req.query as Record<string, string>;
+    const role = req.userRole ?? "";
+    const userId = req.userId;
 
-  const rows = await db.select().from(employeesTable).orderBy(asc(employeesTable.fullName));
-  const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
-  if (!filtered) {
-    res.json([]);
-    return;
+    const rows = await loadEmployees();
+    const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
+    res.json(await enrichMany(filtered));
+  } catch (err) {
+    console.error("GET /employees error:", err);
+    res.status(503).json({ error: "Xodimlar ro‘yxati yuklanmadi — birozdan keyin qayta urinib ko‘ring" });
   }
-
-  res.json(await Promise.all(filtered.map(enrichEmployee)));
 });
 
 /** Xodimlar to‘liq ro‘yxati — Excel */
 router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
   const role = req.userRole ?? "";
   const userId = req.userId;
   const { departmentId, mentorId, search } = req.query as Record<string, string>;
 
-  const rows = await db.select().from(employeesTable).orderBy(asc(employeesTable.fullName));
-  const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search }) ?? [];
-  const enriched = await Promise.all(filtered.map(enrichEmployee));
+  const rows = await loadEmployees();
+  const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
+  const enriched = await enrichMany(filtered);
 
   const userIds = [...new Set(enriched.map((e) => e.userId).filter((id): id is number => id != null))];
   const userMap = new Map<number, { phone: string | null; login: string }>();
   if (userIds.length) {
     const users = await db
       .select({ id: usersTable.id, phone: usersTable.phone, login: usersTable.login })
-      .from(usersTable);
+      .from(usersTable)
+      .where(inArray(usersTable.id, userIds));
     for (const u of users) {
-      if (userIds.includes(u.id)) userMap.set(u.id, { phone: u.phone, login: u.login });
+      userMap.set(u.id, { phone: u.phone, login: u.login });
     }
   }
 
@@ -255,6 +358,10 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
   res.setHeader("Content-Disposition", `attachment; filename="xodimlar_${stamp}.xlsx"`);
   res.setHeader("Cache-Control", "no-store");
   res.send(buffer);
+  } catch (err) {
+    console.error("GET /employees/export error:", err);
+    res.status(503).json({ error: "Excel yuklanmadi — birozdan keyin qayta urinib ko‘ring" });
+  }
 });
 
 router.post("/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {

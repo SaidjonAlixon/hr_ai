@@ -61,7 +61,7 @@ export default function EmployeesPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
 
-  const { data: employees, isLoading } = useGetEmployees();
+  const { data: employees, isLoading, isError, error, refetch, isFetching } = useGetEmployees();
   const { data: departments } = useGetDepartments();
 
   const list = useMemo(() => {
@@ -198,6 +198,16 @@ export default function EmployeesPage() {
               {Array.from({ length: 6 }).map((_, i) => (
                 <Skeleton key={i} className="h-10 w-full" />
               ))}
+            </div>
+          ) : isError ? (
+            <div className="px-4 py-10 text-center space-y-3">
+              <p className="text-sm text-red-600">
+                {(error as Error)?.message || "Xodimlar yuklanmadi"}
+              </p>
+              <Button type="button" size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>
+                {isFetching ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
+                Qayta urinish
+              </Button>
             </div>
           ) : list.length === 0 ? (
             <div className="px-4 py-12 text-center text-sm text-muted-foreground">

@@ -121,6 +121,9 @@ function fmtHours(mins: number): string {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
+/** Tushlik (abet) — kun yopilganda ish vaqtidan 1 soat ayiriladi */
+const LUNCH_BREAK_MIN = 60;
+
 function fmtSignedMin(mins: number): string {
   if (!mins) return "0 daq";
   const abs = Math.abs(mins);
@@ -170,7 +173,8 @@ function computeMetrics(
   }
 
   if (checkInAt && checkOutAt) {
-    workedMinutes = Math.max(0, minutesBetween(checkInAt, checkOutAt));
+    const grossMinutes = Math.max(0, minutesBetween(checkInAt, checkOutAt));
+    workedMinutes = Math.max(0, grossMinutes - LUNCH_BREAK_MIN);
     const outDiff = minutesBetween(end, checkOutAt);
     if (outDiff < 0) earlyLeaveMin = -outDiff;
     else if (outDiff > 0) overtimeMin = outDiff;
@@ -471,7 +475,7 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
 
 async function ownEmployeeReport(empId: number) {
   const to = todayTashkent();
-  const from = addDays(to, -13);
+  const from = addDays(to, -89);
   const employees = await loadActiveEmployees({ employeeId: String(empId) });
   const records = await loadRecords(from, to, [empId]);
   const report = buildReport(employees, records, from, to);
@@ -954,7 +958,7 @@ async function applyFacePunch(opts: {
           message:
             action === "in"
               ? `${emp.fullName}: Keldim (${metrics.checkIn})`
-              : `${emp.fullName}: Ketdi (${metrics.checkOut})`,
+              : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours} (tushlik 1 soat ayirildi)`,
           ...metrics,
         },
       };
@@ -1441,55 +1445,43 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       row.height = 20;
     };
 
-    // —— Sheet 1: Kunlik xulosa ——
+    // —— Sheet 1: Kunlik xulosa (faqat raqamlar) ——
     const s1 = workbook.addWorksheet("Kunlik xulosa", {
       views: [{ state: "frozen", ySplit: 2 }],
     });
-    s1.mergeCells("A1:H1");
+    s1.mergeCells("A1:F1");
     const t1 = s1.getCell("A1");
-    t1.value = `VAKSINA MED — Kunlik davomat (${from} — ${to}) · Norma: ${WORK_START}–${WORK_END}`;
+    t1.value = `VAKSINA MED — Kunlik xulosa (${from} — ${to}) · Norma: ${WORK_START}–${WORK_END} · Ism ro‘yxati oxirgi 2 varaqda`;
     t1.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     t1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
     t1.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     s1.getRow(1).height = 30;
 
-    const h1 = [
-      "Sana",
-      "Kelgan",
-      "Kech",
-      "Ketish yo‘q",
-      "Ta’til",
-      "Kelmagan",
-      "Kelganlar",
-      "Kelmaganlar",
-    ];
-    h1.forEach((h, i) => headerStyle(s1.getRow(2).getCell(i + 1), "FF1A5F8A"));
+    const h1 = ["Sana", "Kelgan", "Kech keldi", "Ketish yo‘q", "Ta’til", "Kelmagan"];
     h1.forEach((h, i) => {
-      s1.getRow(2).getCell(i + 1).value = h;
+      const cell = s1.getRow(2).getCell(i + 1);
+      cell.value = h;
+      headerStyle(cell, "FF1A5F8A");
     });
     s1.columns = [
+      { width: 14 },
       { width: 12 },
-      { width: 10 },
-      { width: 8 },
+      { width: 14 },
+      { width: 14 },
       { width: 12 },
-      { width: 8 },
-      { width: 10 },
-      { width: 42 },
-      { width: 42 },
+      { width: 12 },
     ];
     report.days.forEach((d, idx) => {
-      const row = s1.addRow([
-        d.date,
-        d.present,
-        d.late,
-        d.incomplete,
-        d.leave,
-        d.absent,
-        d.presentList.join(", ") || "—",
-        d.absentList.join(", ") || "—",
-      ]);
+      const row = s1.addRow([d.date, d.present, d.late, d.incomplete, d.leave, d.absent]);
       paintRow(row, idx % 2 === 0, [1, 2, 3, 4, 5, 6]);
+      if (d.absent > 0) {
+        row.getCell(6).font = { name: "Calibri", size: 10, color: { argb: "FFB91C1C" } };
+      }
+      if (d.present > 0) {
+        row.getCell(2).font = { name: "Calibri", size: 10, color: { argb: "FF047857" } };
+      }
     });
+    s1.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 6 } };
 
     // —— Sheet 2: Batafsil (har kun / har xodim) ——
     const s2 = workbook.addWorksheet("Batafsil davomat", {
@@ -1504,7 +1496,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     s2.getRow(1).height = 30;
 
     const h2 = [
-      "в„–",
+      "No",
       "F.I.Sh.",
       "Lavozim",
       "Bo‘lim",
@@ -1513,11 +1505,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       "Holat",
       "Kelish",
       "Ketish",
-      "Ishlagan soat",
+      "Ishlagan soat (−1 soat tushlik)",
       "Erta keldi",
-      "Kech qoldi",
+      "Kech keldi",
       "Erta ketdi",
-      "Kech qoldi (ketish)",
+      "Kech ketdi",
     ];
     h2.forEach((h, i) => {
       const cell = s2.getRow(2).getCell(i + 1);
@@ -1579,12 +1571,13 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         }
       });
     });
+    s2.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 14 } };
 
     // —— Sheet 3: Xodimlar jami ——
     const s3 = workbook.addWorksheet("Xodimlar jami", {
       views: [{ state: "frozen", ySplit: 2 }],
     });
-    s3.mergeCells("A1:L1");
+    s3.mergeCells("A1:M1");
     const t3 = s3.getCell("A1");
     t3.value = `Xodimlar bo‘yicha jami (${from} — ${to}) · Norma ${WORK_START}–${WORK_END}`;
     t3.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
@@ -1593,7 +1586,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     s3.getRow(1).height = 30;
 
     const h3 = [
-      "в„–",
+      "No",
       "F.I.Sh.",
       "Lavozim",
       "Bo‘lim",
@@ -1601,10 +1594,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       "Kelgan kun",
       "Kelmagan kun",
       "Kech kun",
-      "Jami ishlagan",
-      "Jami kech qolish",
-      "Jami erta kelish",
-      "Jami erta ketish",
+      "Jami ishlagan (−1 soat tushlik/kun)",
+      "Kech keldi (09:00 dan keyin)",
+      "Erta keldi (09:00 dan oldin)",
+      "Erta ketdi (18:00 dan oldin)",
+      "Kech ketdi (18:00 dan keyin)",
     ];
     h3.forEach((h, i) => {
       const cell = s3.getRow(2).getCell(i + 1);
@@ -1624,6 +1618,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 14 },
       { width: 14 },
       { width: 14 },
+      { width: 18 },
     ];
     report.employees.forEach((e, idx) => {
       const row = s3.addRow([
@@ -1639,9 +1634,117 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         e.totals.lateArrivalLabel,
         e.totals.earlyArrivalLabel,
         e.totals.earlyLeaveLabel,
+        e.totals.overtimeLabel,
       ]);
       paintRow(row, idx % 2 === 0, [1, 6, 7, 8, 9]);
     });
+    s3.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 13 } };
+
+    const paintBanner = (row: ExcelJS.Row, fill: string, lastCol: number) => {
+      for (let c = 1; c <= lastCol; c++) {
+        const cell = row.getCell(c);
+        cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+        cell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+      }
+      row.height = 22;
+    };
+
+    // —— Sheet 4: Kelganlar (oxiridan oldin, har qator = 1 xodim) ——
+    const s4 = workbook.addWorksheet("Kelganlar", {
+      views: [{ state: "frozen", ySplit: 2 }],
+    });
+    s4.mergeCells("A1:G1");
+    const t4 = s4.getCell("A1");
+    t4.value = `Kelganlar — har qator = 1 xodim (${from} — ${to})`;
+    t4.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+    t4.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF047857" } };
+    t4.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    s4.getRow(1).height = 30;
+    ["Sana", "No", "F.I.Sh.", "Lavozim", "Holat", "Keldim", "Ketdim"].forEach((h, i) => {
+      const cell = s4.getRow(2).getCell(i + 1);
+      cell.value = h;
+      headerStyle(cell, "FF059669");
+    });
+    s4.columns = [
+      { width: 14 },
+      { width: 6 },
+      { width: 28 },
+      { width: 18 },
+      { width: 12 },
+      { width: 12 },
+      { width: 12 },
+    ];
+    let presentCount = 0;
+    report.days.forEach((day) => {
+      const arrived = report.employees
+        .map((e) => ({ e, d: e.days.find((x) => x.date === day.date) }))
+        .filter(({ d }) => d && d.status !== "absent" && d.status !== "leave");
+      if (arrived.length === 0) return;
+      const banner = s4.addRow([`${day.date}  ·  ${arrived.length} kishi kelgan`, "", "", "", "", "", ""]);
+      s4.mergeCells(banner.number, 1, banner.number, 7);
+      paintBanner(banner, "FF047857", 7);
+      arrived.forEach(({ e, d }, i) => {
+        presentCount += 1;
+        const row = s4.addRow([
+          day.date,
+          i + 1,
+          e.fullName,
+          e.position,
+          statusUz[d!.status] || d!.status,
+          d!.checkIn,
+          d!.checkOut,
+        ]);
+        paintRow(row, i % 2 === 1, [1, 2, 5, 6, 7]);
+      });
+    });
+    if (presentCount === 0) {
+      const row = s4.addRow(["—", "", "Bu davrda kelgan xodim yo‘q", "", "", "", ""]);
+      paintRow(row, false);
+    }
+
+    // —— Sheet 5: Kelmaganlar (oxirgi varaq, har qator = 1 xodim) ——
+    const s5 = workbook.addWorksheet("Kelmaganlar", {
+      views: [{ state: "frozen", ySplit: 2 }],
+    });
+    s5.mergeCells("A1:E1");
+    const t5 = s5.getCell("A1");
+    t5.value = `Kelmaganlar — har qator = 1 xodim (${from} — ${to})`;
+    t5.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+    t5.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB91C1C" } };
+    t5.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    s5.getRow(1).height = 30;
+    ["Sana", "No", "F.I.Sh.", "Lavozim", "Bo‘lim"].forEach((h, i) => {
+      const cell = s5.getRow(2).getCell(i + 1);
+      cell.value = h;
+      headerStyle(cell, "FFBE123C");
+    });
+    s5.columns = [
+      { width: 14 },
+      { width: 6 },
+      { width: 28 },
+      { width: 18 },
+      { width: 18 },
+    ];
+    let absentCount = 0;
+    report.days.forEach((day) => {
+      const missing = report.employees
+        .map((e) => ({ e, d: e.days.find((x) => x.date === day.date) }))
+        .filter(({ d }) => d?.status === "absent");
+      if (missing.length === 0) return;
+      const banner = s5.addRow([`${day.date}  ·  ${missing.length} kishi kelmagan`, "", "", "", ""]);
+      s5.mergeCells(banner.number, 1, banner.number, 5);
+      paintBanner(banner, "FFB91C1C", 5);
+      missing.forEach(({ e }, i) => {
+        absentCount += 1;
+        const row = s5.addRow([day.date, i + 1, e.fullName, e.position, e.departmentName || "—"]);
+        paintRow(row, i % 2 === 1, [1, 2]);
+      });
+    });
+    if (absentCount === 0) {
+      const row = s5.addRow(["—", "", "Bu davrda kelmagan xodim yo‘q", "", ""]);
+      paintRow(row, false);
+    }
 
     const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
     const stamp = `${from}_${to}`;

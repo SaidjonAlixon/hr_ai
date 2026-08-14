@@ -173,6 +173,16 @@ export default function DavomatPage() {
       .sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "uz"));
   }, [report, selectedDay, dayInfo]);
 
+  const dayTiming = useMemo(() => {
+    const rows = employeesForDay;
+    return {
+      lateArrival: rows.filter((x) => (x.day?.lateArrivalMin ?? 0) > 0).length,
+      earlyArrival: rows.filter((x) => (x.day?.earlyArrivalMin ?? 0) > 0).length,
+      earlyLeave: rows.filter((x) => (x.day?.earlyLeaveMin ?? 0) > 0).length,
+      overtime: rows.filter((x) => (x.day?.overtimeMin ?? 0) > 0).length,
+    };
+  }, [employeesForDay]);
+
   const weekDates = useMemo(
     () => Array.from({ length: 7 }, (_, i) => addDaysYmd(weekStart, i)),
     [weekStart],
@@ -195,7 +205,7 @@ export default function DavomatPage() {
       });
       toast({
         title: "Excel yuklandi",
-        description: "3 varaq: kunlik xulosa, batafsil, xodimlar jami",
+        description: "5 varaq: xulosa, batafsil, jami, kelganlar, kelmaganlar",
       });
     } catch (err) {
       toast({
@@ -393,7 +403,7 @@ export default function DavomatPage() {
   );
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-4 pb-10">
+    <div className="w-full space-y-4 pb-10">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight text-[#0b3a5c]">Davomat hisobot</h1>
@@ -487,19 +497,42 @@ export default function DavomatPage() {
                     <p className="text-xs text-slate-500">
                       Kelgan: {dayInfo.present} · Kech: {dayInfo.late} · Kelmagan: {dayInfo.absent} ·
                       Ketish yo‘q: {dayInfo.incomplete}
+                      <span className="mt-0.5 block">
+                        Kech keldi: {dayTiming.lateArrival} · Erta keldi: {dayTiming.earlyArrival} · Erta
+                        ketdi: {dayTiming.earlyLeave} · Kech ketdi: {dayTiming.overtime}
+                      </span>
                     </p>
                   ) : null}
                 </CardHeader>
                 <CardContent className="overflow-x-auto">
-                  <table className="w-full border-collapse text-sm">
+                  <table className="w-full min-w-[1100px] border-collapse text-sm">
                     <thead>
-                      <tr className="border-b bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <tr className="border-b bg-slate-50 text-left text-xs text-slate-500">
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
                         <th className="px-3 py-2">Holat</th>
                         <th className="px-3 py-2">Kelish</th>
                         <th className="px-3 py-2">Ketish</th>
-                        <th className="px-3 py-2">Soat</th>
+                        <th className="px-3 py-2">
+                          Ishlagan
+                          <span className="block font-normal text-[10px] text-slate-400">tushlik −1 soat</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Kech keldi
+                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan keyin</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Erta keldi
+                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan oldin</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Erta ketdi
+                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan oldin</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Kech ketdi
+                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan keyin</span>
+                        </th>
                         <th className="px-3 py-2 w-10" />
                       </tr>
                     </thead>
@@ -521,6 +554,18 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 tabular-nums">{day!.checkIn}</td>
                           <td className="px-3 py-2 tabular-nums">{day!.checkOut}</td>
                           <td className="px-3 py-2 tabular-nums font-medium">{day!.workedHours}</td>
+                          <td className="px-3 py-2 text-amber-700">
+                            <TimeMetric value={day!.lateArrivalLabel} />
+                          </td>
+                          <td className="px-3 py-2 text-emerald-700">
+                            <TimeMetric value={day!.earlyArrivalLabel} />
+                          </td>
+                          <td className="px-3 py-2 text-rose-700">
+                            <TimeMetric value={day!.earlyLeaveLabel} />
+                          </td>
+                          <td className="px-3 py-2 text-sky-700">
+                            <TimeMetric value={day!.overtimeLabel} />
+                          </td>
                           <td className="px-3 py-2">
                             <Button
                               type="button"
@@ -626,17 +671,36 @@ export default function DavomatPage() {
                 <CardContent className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
                     <thead>
-                      <tr className="border-b bg-slate-50 text-left text-xs uppercase text-slate-500">
+                      <tr className="border-b bg-slate-50 text-left text-xs text-slate-500">
                         <th className="px-3 py-2">№</th>
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
                         <th className="px-3 py-2">Kelgan</th>
                         <th className="px-3 py-2">Kelmagan</th>
-                        <th className="px-3 py-2">Kech</th>
-                        <th className="px-3 py-2">Ishlagan</th>
-                        <th className="px-3 py-2">Kech qolish</th>
-                        <th className="px-3 py-2">Erta kelish</th>
-                        <th className="px-3 py-2">Erta ketish</th>
+                        <th className="px-3 py-2">
+                          Kech
+                          <span className="block font-normal text-[10px] text-slate-400">kunlar</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Ishlagan
+                          <span className="block font-normal text-[10px] text-slate-400">tushlik −1 soat</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Kech keldi
+                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan keyin</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Erta keldi
+                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan oldin</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Erta ketdi
+                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan oldin</span>
+                        </th>
+                        <th className="px-3 py-2">
+                          Kech ketdi
+                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan keyin</span>
+                        </th>
                       </tr>
                     </thead>
                     <tbody>
@@ -656,9 +720,10 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 text-rose-700">{e.totals.absent}</td>
                           <td className="px-3 py-2 text-amber-700">{e.totals.late}</td>
                           <td className="px-3 py-2 font-medium">{e.totals.workedHours}</td>
-                          <td className="px-3 py-2">{e.totals.lateArrivalLabel}</td>
-                          <td className="px-3 py-2">{e.totals.earlyArrivalLabel}</td>
-                          <td className="px-3 py-2">{e.totals.earlyLeaveLabel}</td>
+                          <td className="px-3 py-2 text-amber-700">{e.totals.lateArrivalLabel}</td>
+                          <td className="px-3 py-2 text-emerald-700">{e.totals.earlyArrivalLabel}</td>
+                          <td className="px-3 py-2 text-rose-700">{e.totals.earlyLeaveLabel}</td>
+                          <td className="px-3 py-2 text-sky-700">{e.totals.overtimeLabel}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -674,12 +739,31 @@ export default function DavomatPage() {
                   <CardContent className="overflow-x-auto">
                     <table className="w-full border-collapse text-sm">
                       <thead>
-                        <tr className="border-b bg-slate-50 text-left text-xs uppercase text-slate-500">
+                        <tr className="border-b bg-slate-50 text-left text-xs text-slate-500">
                           <th className="px-3 py-2">Sana</th>
                           <th className="px-3 py-2">Holat</th>
                           <th className="px-3 py-2">Kelish</th>
                           <th className="px-3 py-2">Ketish</th>
-                          <th className="px-3 py-2">Soat</th>
+                          <th className="px-3 py-2">
+                          Ishlagan
+                          <span className="block font-normal text-[10px] text-slate-400">tushlik −1 soat</span>
+                        </th>
+                          <th className="px-3 py-2">
+                            Kech keldi
+                            <span className="block font-normal text-[10px] text-slate-400">09:00 dan keyin</span>
+                          </th>
+                          <th className="px-3 py-2">
+                            Erta keldi
+                            <span className="block font-normal text-[10px] text-slate-400">09:00 dan oldin</span>
+                          </th>
+                          <th className="px-3 py-2">
+                            Erta ketdi
+                            <span className="block font-normal text-[10px] text-slate-400">18:00 dan oldin</span>
+                          </th>
+                          <th className="px-3 py-2">
+                            Kech ketdi
+                            <span className="block font-normal text-[10px] text-slate-400">18:00 dan keyin</span>
+                          </th>
                           <th className="px-3 py-2 w-10" />
                         </tr>
                       </thead>
@@ -695,6 +779,18 @@ export default function DavomatPage() {
                             <td className="px-3 py-2 tabular-nums">{d.checkIn}</td>
                             <td className="px-3 py-2 tabular-nums">{d.checkOut}</td>
                             <td className="px-3 py-2 font-medium tabular-nums">{d.workedHours}</td>
+                            <td className="px-3 py-2 text-amber-700">
+                              <TimeMetric value={d.lateArrivalLabel} />
+                            </td>
+                            <td className="px-3 py-2 text-emerald-700">
+                              <TimeMetric value={d.earlyArrivalLabel} />
+                            </td>
+                            <td className="px-3 py-2 text-rose-700">
+                              <TimeMetric value={d.earlyLeaveLabel} />
+                            </td>
+                            <td className="px-3 py-2 text-sky-700">
+                              <TimeMetric value={d.overtimeLabel} />
+                            </td>
                             <td className="px-3 py-2">
                               <Button
                                 type="button"
@@ -785,6 +881,11 @@ export default function DavomatPage() {
       </Dialog>
     </div>
   );
+}
+
+function TimeMetric({ value }: { value: string }) {
+  if (!value || value === "—") return <span className="text-slate-300">—</span>;
+  return <span className="tabular-nums font-medium">{value}</span>;
 }
 
 function WeekCell({

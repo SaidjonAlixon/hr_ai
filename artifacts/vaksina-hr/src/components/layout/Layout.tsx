@@ -672,6 +672,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               location === '/pharmacy-network' ||
                 location === '/pipeline' ||
                 location === '/vazifalar' ||
+                location === '/davomat' ||
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
                 location.startsWith('/tashkiliy-tuzilma')

@@ -8,13 +8,13 @@ import {
   Lock,
   LogIn,
   LogOut,
-  Share2,
+  ShieldCheck,
   Clock3,
   CalendarDays,
   XCircle,
+  History,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +40,7 @@ import {
   fetchMyDavomat,
   fetchMyWorkplace,
   haversineMeters,
+  type DavomatDayMetrics,
   type DavomatEmployee,
   type DavomatSite,
   type WorkplaceInfo,
@@ -59,6 +60,7 @@ type Verified = {
   checkIn: string;
   checkOut: string;
   checkInAt: string | null;
+  checkOutAt?: string | null;
   faceImage?: string;
 };
 
@@ -69,6 +71,47 @@ function formatElapsed(ms: number): string {
   const m = totalMin % 60;
   const s = Math.floor((ms % 60000) / 1000);
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+const LUNCH_MINUTES = 60;
+
+function formatHoursUz(mins: number): string {
+  const n = Math.max(0, Math.round(mins));
+  const h = Math.floor(n / 60);
+  const m = n % 60;
+  if (h === 0) return `${m} daq`;
+  if (m === 0) return `${h} soat`;
+  return `${h} soat ${m} daq`;
+}
+
+function hmToMinutes(hm: string): number | null {
+  if (!hm || hm === "—") return null;
+  const match = /^(\d{1,2}):(\d{2})$/.exec(hm.trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function lunchAdjustedWork(params: {
+  checkIn: string;
+  checkOut: string;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+}): { gross: number; net: number } | null {
+  let gross = 0;
+  if (params.checkInAt && params.checkOutAt) {
+    gross = Math.max(
+      0,
+      Math.round(
+        (new Date(params.checkOutAt).getTime() - new Date(params.checkInAt).getTime()) / 60000,
+      ),
+    );
+  } else {
+    const a = hmToMinutes(params.checkIn);
+    const b = hmToMinutes(params.checkOut);
+    if (a == null || b == null) return null;
+    gross = Math.max(0, b - a);
+  }
+  return { gross, net: Math.max(0, gross - LUNCH_MINUTES) };
 }
 
 function initials(name: string): string {
@@ -89,12 +132,65 @@ const STATUS_UZ: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  present: "bg-emerald-50 text-emerald-800 border-emerald-200",
-  late: "bg-amber-50 text-amber-900 border-amber-200",
-  incomplete: "bg-sky-50 text-sky-800 border-sky-200",
-  absent: "bg-rose-50 text-rose-800 border-rose-200",
-  leave: "bg-violet-50 text-violet-800 border-violet-200",
+  present: "bg-emerald-50 text-emerald-800",
+  late: "bg-amber-50 text-amber-900",
+  incomplete: "bg-sky-50 text-sky-800",
+  absent: "bg-rose-50 text-rose-800",
+  leave: "bg-violet-50 text-violet-800",
 };
+
+const WEEKDAY_UZ = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
+const MONTH_UZ = [
+  "yanvar",
+  "fevral",
+  "mart",
+  "aprel",
+  "may",
+  "iyun",
+  "iyul",
+  "avgust",
+  "sentabr",
+  "oktabr",
+  "noyabr",
+  "dekabr",
+];
+
+function parseYmd(ymd: string): { y: number; m: number; d: number } | null {
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return null;
+  return { y, m, d };
+}
+
+function weekdayIndex(y: number, m: number, d: number): number {
+  return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
+}
+
+function splitDayUz(ymd: string): { date: string; weekday: string } {
+  const p = parseYmd(ymd);
+  if (!p) return { date: ymd, weekday: "" };
+  const week = WEEKDAY_UZ[weekdayIndex(p.y, p.m, p.d)]!;
+  return {
+    date: `${p.d}-${MONTH_UZ[p.m - 1]}`,
+    weekday: `${week[0]!.toUpperCase()}${week.slice(1)}`,
+  };
+}
+
+function formatLongDateUz(ms: number): string {
+  const ymd = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+  const p = parseYmd(ymd);
+  if (!p) return ymd;
+  const week = WEEKDAY_UZ[weekdayIndex(p.y, p.m, p.d)];
+  return `${week[0]!.toUpperCase()}${week.slice(1)}, ${p.d}-${MONTH_UZ[p.m - 1]} ${p.y}`;
+}
+
+function sortDaysDesc(days: DavomatDayMetrics[]): DavomatDayMetrics[] {
+  return [...days].sort((a, b) => b.date.localeCompare(a.date));
+}
 
 export default function DavomatFacePage() {
   const { user, isAuthenticated } = useAuth();
@@ -110,7 +206,7 @@ export default function DavomatFacePage() {
     longitude: DAVOMAT_SITE_LNG,
   });
   const [workplace, setWorkplace] = useState<WorkplaceInfo | null>(null);
-  const [mine, setMine] = useState<DavomatEmployee | null>(null);
+  const [historyDays, setHistoryDays] = useState<DavomatDayMetrics[]>([]);
   const [scanOpen, setScanOpen] = useState(false);
   const [verified, setVerified] = useState<Verified | null>(null);
   const [busy, setBusy] = useState(false);
@@ -126,6 +222,11 @@ export default function DavomatFacePage() {
   const watchRef = useRef<number | null>(null);
   const punchLockRef = useRef(false);
 
+  const applyHistory = useCallback((emp?: DavomatEmployee | null) => {
+    if (!emp?.days?.length) return;
+    setHistoryDays(sortDaysDesc(emp.days));
+  }, []);
+
   const loadWorkplace = useCallback(async () => {
     if (!isAuthenticated) {
       setWorkplace(null);
@@ -139,18 +240,15 @@ export default function DavomatFacePage() {
     }
   }, [isAuthenticated]);
 
-  const loadMine = useCallback(async () => {
-    if (!isAuthenticated) {
-      setMine(null);
-      return;
-    }
+  const loadHistory = useCallback(async () => {
+    if (!isAuthenticated) return;
     try {
-      const data = await fetchMyDavomat();
-      setMine(data.employee);
+      const mine = await fetchMyDavomat();
+      applyHistory(mine.employee);
     } catch {
-      setMine(null);
+      /* Face ID dan keyin ham keladi */
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, applyHistory]);
 
   useEffect(() => {
     void fetchDavomatSite().then(setSite);
@@ -158,8 +256,11 @@ export default function DavomatFacePage() {
 
   useEffect(() => {
     void loadWorkplace();
-    void loadMine();
-  }, [loadWorkplace, loadMine]);
+  }, [loadWorkplace]);
+
+  useEffect(() => {
+    void loadHistory();
+  }, [loadHistory]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -175,50 +276,71 @@ export default function DavomatFacePage() {
     setGpsError(null);
   };
 
-  useEffect(() => {
-    if (!navigator.geolocation) {
-      setGpsError("Brauzer GPS ni qo‘llab-quvvatlamaydi");
-      return;
-    }
+  const startWatch = useCallback(() => {
+    if (!navigator.geolocation) return;
+    if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
     watchRef.current = navigator.geolocation.watchPosition(
       applyGps,
       (err) => {
         setGpsError(
           err.code === 1
-            ? "Lokatsiyaga ruxsat bering — aks holda davomat ishlamaydi"
+            ? "Lokatsiyaga ruxsat berilmadi — tugmani bosing va Ruxsatni tanlang"
             : "GPS olinmadi — ochiq joyda qayta urinib ko‘ring",
         );
       },
       { enableHighAccuracy: true, maximumAge: 3_000, timeout: 20_000 },
     );
+  }, []);
+
+  useEffect(() => {
+    if (!navigator.geolocation) {
+      setGpsError("Brauzer GPS ni qo‘llab-quvvatlamaydi");
+    }
     return () => {
       if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
     };
   }, []);
 
-  const shareLocation = () => {
+  const requestLocationPermission = async () => {
     if (!navigator.geolocation) {
       toast({ title: "GPS yo‘q", description: "Brauzer lokatsiyani qo‘llab-quvvatlamaydi", variant: "destructive" });
       return;
     }
     setGpsSharing(true);
+    try {
+      const permissions = navigator.permissions;
+      if (permissions?.query) {
+        const status = await permissions.query({ name: "geolocation" });
+        if (status.state === "denied") {
+          const msg =
+            "Brauzer lokatsiyani bloklagan. Manzil qatoridagi qulfni bosing va «Joylashuv»ga ruxsat bering.";
+          setGpsError(msg);
+          toast({ title: "Ruxsat yo‘q", description: msg, variant: "destructive" });
+          setGpsSharing(false);
+          return;
+        }
+      }
+    } catch {
+      /* Permissions API yo‘q — getCurrentPosition o‘zi so‘raydi */
+    }
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         applyGps(pos);
+        startWatch();
         setGpsSharing(false);
         toast({
-          title: "Joylashuv ulashildi",
-          description: `Aniqlik ±${Math.round(pos.coords.accuracy || 0)} m`,
+          title: "Ruxsat berildi",
+          description: `Lokatsiya ochiq · ±${Math.round(pos.coords.accuracy || 0)} m`,
         });
       },
       (err) => {
         setGpsSharing(false);
         const msg =
           err.code === 1
-            ? "Brauzerda lokatsiyaga ruxsat bering"
+            ? "Lokatsiyaga ruxsat so‘raldi — brauzer oynasida «Ruxsat» ni bosing"
             : "GPS olinmadi — ochiq joyda qayta urinib ko‘ring";
         setGpsError(msg);
-        toast({ title: "Joylashuv olinmadi", description: msg, variant: "destructive" });
+        toast({ title: "Ruxsat olinmadi", description: msg, variant: "destructive" });
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
     );
@@ -244,17 +366,7 @@ export default function DavomatFacePage() {
     [nowTick],
   );
 
-  const dateLabel = useMemo(
-    () =>
-      new Intl.DateTimeFormat("uz-UZ", {
-        timeZone: "Asia/Tashkent",
-        weekday: "long",
-        day: "numeric",
-        month: "long",
-        year: "numeric",
-      }).format(nowTick),
-    [nowTick],
-  );
+  const dateLabel = useMemo(() => formatLongDateUz(nowTick), [nowTick]);
 
   const distance = useMemo(() => {
     if (!gps) return null;
@@ -298,7 +410,7 @@ export default function DavomatFacePage() {
 
   const faceLockedReason = useMemo(() => {
     if (gpsError) return gpsError;
-    if (!gps) return "Avval joylashuvni ulashing";
+    if (!gps) return "Avval «Ruxsat berish» ni bosing — brauzer lokatsiya so‘raydi";
     if (!isFaceIdSupported()) return "Face ID bu brauzerda ishlamaydi (HTTPS/localhost kerak)";
     if (remain != null && remain > 0) {
       return `Siz ${distance} m uzoqdasiz. Ruxsat 15 m. Yana ${remain} m yaqinlashishingiz kerak.`;
@@ -339,9 +451,10 @@ export default function DavomatFacePage() {
         checkIn: result.checkIn,
         checkOut: result.checkOut,
         checkInAt: result.checkInAt,
+        checkOutAt: result.checkOutAt,
         faceImage: snapshot,
       });
-      if (result.employee) setMine(result.employee);
+      applyHistory(result.employee);
       toast({
         title: result.fullName,
         description:
@@ -379,14 +492,15 @@ export default function DavomatFacePage() {
         checkIn: result.checkIn,
         checkOut: result.checkOut,
         checkInAt: result.checkInAt ?? verified.checkInAt,
+        checkOutAt: result.checkOutAt ?? verified.checkOutAt,
       });
-      if (result.employee) setMine(result.employee);
       toast({
         title: action === "in" ? "Keldim" : "Ketdi",
         description: result.message,
       });
+      applyHistory(result.employee);
       await loadWorkplace();
-      await loadMine();
+      await loadHistory();
     } catch (err) {
       if (
         err instanceof DavomatApiError &&
@@ -398,10 +512,11 @@ export default function DavomatFacePage() {
           checkIn: err.checkIn || verified.checkIn,
           checkOut: err.checkOut || verified.checkOut,
           checkInAt: err.checkInAt || verified.checkInAt,
+          checkOutAt: err.checkOutAt || verified.checkOutAt,
         });
         toast({ title: "Allaqachon belgilangan", description: err.message });
         await loadWorkplace();
-        await loadMine();
+        await loadHistory();
         return;
       }
       toast({
@@ -418,11 +533,29 @@ export default function DavomatFacePage() {
 
   const displayName =
     verified?.fullName || workplace?.employee.fullName || user?.fullName || "Xodim";
-  const position = mine?.position || roleLabel(user?.role) || "Xodim";
-  const department = mine?.departmentName || user?.departmentName;
+  const position = roleLabel(user?.role) || "Xodim";
+  const department = user?.departmentName;
   const phone = user?.phone;
   const shownFace = verified?.faceImage || faceImage;
   const dayComplete = !verified && Boolean(workplace?.today.complete);
+  const checkInLabel = verified?.checkIn || workplace?.today.checkIn || "—";
+  const checkOutLabel = verified?.checkOut || workplace?.today.checkOut || "—";
+  const closedWork = done
+    ? lunchAdjustedWork({
+        checkIn: checkInLabel,
+        checkOut: checkOutLabel,
+        checkInAt: verified?.checkInAt || workplace?.today.checkInAt,
+        checkOutAt: verified?.checkOutAt || workplace?.today.checkOutAt,
+      })
+    : null;
+  const todayStamp =
+    workplace?.workDate ||
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tashkent",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(nowTick);
 
   const ringClass = inside
     ? "ring-4 ring-emerald-400/80"
@@ -443,7 +576,7 @@ export default function DavomatFacePage() {
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-200/90">Davomat</p>
                 <div className="mt-1 flex items-center gap-2 text-sky-100/90">
                   <CalendarDays className="h-3.5 w-3.5" />
-                  <span className="text-xs capitalize">{dateLabel}</span>
+                  <span className="text-xs">{dateLabel}</span>
                 </div>
               </div>
               <div className="rounded-2xl bg-white/10 px-3 py-2 text-right backdrop-blur-sm">
@@ -494,16 +627,16 @@ export default function DavomatFacePage() {
               </div>
             </div>
 
-            <div className="relative mt-4 grid grid-cols-2 gap-2 text-[11px] text-sky-100/90">
-              <div className="rounded-2xl bg-white/10 px-3 py-2">
-                <div className="text-sky-200/70">Kelish</div>
-                <div className="mt-0.5 text-sm font-semibold tabular-nums text-white">
+            <div className="relative mt-4 grid grid-cols-2 gap-2 text-[11px]">
+              <div className="rounded-2xl bg-emerald-500/20 px-3 py-2">
+                <div className="text-emerald-200">Keldim</div>
+                <div className="mt-0.5 text-sm font-semibold tabular-nums text-emerald-50">
                   {verified?.checkIn || workplace?.today.checkIn || "—"}
                 </div>
               </div>
-              <div className="rounded-2xl bg-white/10 px-3 py-2">
-                <div className="text-sky-200/70">Ketish</div>
-                <div className="mt-0.5 text-sm font-semibold tabular-nums text-white">
+              <div className="rounded-2xl bg-rose-500/20 px-3 py-2">
+                <div className="text-rose-200">Ketdim</div>
+                <div className="mt-0.5 text-sm font-semibold tabular-nums text-rose-50">
                   {verified?.checkOut || workplace?.today.checkOut || "—"}
                 </div>
               </div>
@@ -526,10 +659,10 @@ export default function DavomatFacePage() {
               variant="outline"
               className="h-9 gap-1.5 rounded-full border-[#0b3a5c]/20 text-[#0b3a5c]"
               disabled={gpsSharing}
-              onClick={shareLocation}
+              onClick={() => void requestLocationPermission()}
             >
-              {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Share2 className="h-3.5 w-3.5" />}
-              Joylashuv ulashish
+              {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+              Ruxsat berish
             </Button>
           </div>
 
@@ -561,7 +694,7 @@ export default function DavomatFacePage() {
                   Hududdan tashqarida
                 </p>
               ) : (
-                <p className="text-slate-500">Joylashuv kutilmoqda…</p>
+                <p className="text-slate-500">«Ruxsat berish» ni bosing — lokatsiya so‘raladi</p>
               )}
               <p className="mt-0.5 text-xs text-slate-500">Ruxsat faqat {allowedMeters} m</p>
               {gps ? (
@@ -605,20 +738,75 @@ export default function DavomatFacePage() {
           <section className="mt-4 rounded-[24px] border border-emerald-200 bg-emerald-50/80 px-4 py-4 text-center">
             <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-700">Ishlayotgan vaqt</p>
             <p className="mt-1 font-mono text-4xl font-semibold tabular-nums text-emerald-950">{elapsedLabel}</p>
-            <p className="mt-1 text-xs text-emerald-700">Kelish: {verified?.checkIn || workplace?.today.checkIn}</p>
+            <p className="mt-1 text-xs text-emerald-700">Keldim: {verified?.checkIn || workplace?.today.checkIn}</p>
           </section>
         ) : null}
 
-        <section className="mt-4 space-y-3">
-          {dayComplete ? (
-            <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-5 text-center shadow-sm">
-              <p className="font-medium text-slate-800">Bugungi davomat yopilgan</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Kelish {workplace?.today.checkIn} · Ketish {workplace?.today.checkOut}
+        <section className="mt-4 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm">
+          <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-semibold text-[#0b3a5c]">Bugungi davomatim</h2>
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
+                <CalendarDays className="h-3.5 w-3.5" />
+                {dateLabel}
               </p>
-              <p className="mt-2 text-xs text-slate-400">Kuniga faqat 1 marta Keldim va 1 marta Ketdim</p>
             </div>
-          ) : !verified ? (
+            <span
+              className={cn(
+                "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium",
+                done
+                  ? "bg-slate-100 text-slate-600"
+                  : hasIn
+                    ? "bg-emerald-50 text-emerald-800"
+                    : "bg-slate-50 text-slate-500",
+              )}
+            >
+              {holatLabel}
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 p-4">
+            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+                <LogIn className="h-3.5 w-3.5" />
+                Keldim
+              </div>
+              <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-emerald-950">
+                {checkInLabel}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3">
+              <div className="flex items-center gap-1.5 text-xs font-medium text-rose-700">
+                <LogOut className="h-3.5 w-3.5" />
+                Ketdim
+              </div>
+              <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-rose-950">
+                {checkOutLabel}
+              </div>
+            </div>
+          </div>
+          {done && closedWork ? (
+            <div className="mx-4 mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-center">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Ishlangan vaqt</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-[#0b3a5c]">
+                {formatHoursUz(closedWork.net)}
+              </p>
+              <p className="mt-1 text-xs text-slate-600">
+                Jami {formatHoursUz(closedWork.gross)} dan tushlik (abet) uchun{" "}
+                <span className="font-semibold">1 soat ayirildi</span>
+              </p>
+              <p className="mt-2 text-[11px] text-slate-400">
+                Kuniga faqat 1 marta Keldim va 1 marta Ketdim
+              </p>
+            </div>
+          ) : done ? (
+            <p className="px-4 pb-3 text-center text-xs text-slate-400">
+              Kuniga faqat 1 marta Keldim va 1 marta Ketdim
+            </p>
+          ) : null}
+        </section>
+
+        <section className="mt-4 space-y-3">
+          {dayComplete || done ? null : !verified ? (
             <>
               <Button
                 type="button"
@@ -640,13 +828,6 @@ export default function DavomatFacePage() {
                 </p>
               )}
             </>
-          ) : done ? (
-            <div className="rounded-[24px] border border-slate-200 bg-white px-4 py-5 text-center shadow-sm">
-              <p className="font-medium text-slate-800">Bugun yopilgan</p>
-              <p className="mt-1 text-sm text-slate-500">
-                Kelish {verified.checkIn} · Ketish {verified.checkOut}
-              </p>
-            </div>
           ) : hasIn ? (
             <Button
               type="button"
@@ -678,56 +859,88 @@ export default function DavomatFacePage() {
           )}
         </section>
 
-        {mine ? (
-          <section className="mt-5 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm">
-            <div className="border-b border-slate-100 px-4 py-3">
-              <h2 className="text-sm font-semibold text-[#0b3a5c]">Mening davomatim</h2>
-              <p className="text-xs text-slate-500">Faqat o‘zingizning yozuvlaringiz</p>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                <Badge variant="outline" className="bg-emerald-50 text-emerald-800">
-                  Kelgan: {mine.totals.present}
-                </Badge>
-                <Badge variant="outline" className="bg-rose-50 text-rose-800">
-                  Kelmagan: {mine.totals.absent}
-                </Badge>
-                <Badge variant="outline">Ishlangan: {mine.totals.workedHours}</Badge>
-              </div>
-            </div>
-            <div className="max-h-60 overflow-y-auto px-2 py-1 text-sm">
-              <table className="w-full">
+        <section className="mt-4 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
+              <History className="h-4 w-4" />
+              Tarix
+            </h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Bugundan orqaga · Keldim/Ketdim saqlanadi (tushlik −1 soat)
+            </p>
+          </div>
+          {historyDays.length === 0 ? (
+            <p className="px-4 py-6 text-center text-sm text-slate-400">
+              Hali yozuv yo‘q. Face ID bilan belgilang — tarix shu yerda chiqadi.
+            </p>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[420px] border-collapse text-sm">
                 <thead>
-                  <tr className="text-left text-[10px] uppercase tracking-wide text-slate-400">
-                    <th className="px-2 py-2">Sana</th>
-                    <th>Holat</th>
-                    <th>Kelish</th>
-                    <th>Ketish</th>
-                    <th>Soat</th>
+                  <tr className="border-b bg-slate-50 text-left text-[11px] text-slate-500">
+                    <th className="px-3 py-2 font-medium">Sana</th>
+                    <th className="px-3 py-2 font-medium">Keldim</th>
+                    <th className="px-3 py-2 font-medium">Ketdim</th>
+                    <th className="px-3 py-2 font-medium">Holat</th>
+                    <th className="px-3 py-2 font-medium">Ishlagan</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {mine.days.map((d) => (
-                    <tr key={d.date} className="border-t border-slate-50">
-                      <td className="px-2 py-2 tabular-nums text-slate-700">{d.date.slice(5)}</td>
-                      <td>
-                        <span
-                          className={cn(
-                            "inline-flex rounded-full border px-2 py-0.5 text-[11px]",
-                            STATUS_STYLE[d.status] || "bg-slate-50",
-                          )}
-                        >
-                          {STATUS_UZ[d.status] || d.status}
-                        </span>
-                      </td>
-                      <td className="tabular-nums">{d.checkIn}</td>
-                      <td className="tabular-nums">{d.checkOut}</td>
-                      <td className="tabular-nums">{d.workedHours}</td>
-                    </tr>
-                  ))}
+                  {historyDays.map((d) => {
+                    const isToday = d.date === todayStamp;
+                    const dayParts = splitDayUz(d.date);
+                    const net =
+                      d.checkIn !== "—" && d.checkOut !== "—"
+                        ? lunchAdjustedWork({
+                            checkIn: d.checkIn,
+                            checkOut: d.checkOut,
+                          })
+                        : null;
+                    return (
+                      <tr
+                        key={d.date}
+                        className={cn(
+                          "border-b border-slate-100",
+                          isToday ? "bg-sky-50/70" : "bg-white",
+                        )}
+                      >
+                        <td className="whitespace-nowrap px-3 py-2.5 align-middle">
+                          <div className="flex items-baseline gap-2">
+                            <span className="font-semibold text-slate-800">{dayParts.date}</span>
+                            <span className="font-medium text-sky-600">{dayParts.weekday}</span>
+                            {isToday ? (
+                              <span className="text-[11px] font-medium text-emerald-700">bugun</span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 font-mono tabular-nums text-emerald-800">{d.checkIn}</td>
+                        <td className="px-3 py-2.5 font-mono tabular-nums text-rose-800">{d.checkOut}</td>
+                        <td className="px-3 py-2.5">
+                          <span
+                            className={cn(
+                              "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
+                              STATUS_STYLE[d.status] || "bg-slate-100 text-slate-600",
+                            )}
+                          >
+                            {STATUS_UZ[d.status] || d.status}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="font-medium tabular-nums text-slate-800">
+                            {net ? formatHoursUz(net.net) : d.workedHours}
+                          </div>
+                          {net ? (
+                            <div className="text-[10px] text-slate-400">tushlik −1 soat</div>
+                          ) : null}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
-          </section>
-        ) : null}
+          )}
+        </section>
 
         <div className="mt-5 flex justify-center gap-4 text-sm">
           <Link href="/login" className="text-[#0b3a5c] underline-offset-2 hover:underline">

@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { db, usersTable, employeesTable, departmentsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
+import { parseGpsText } from "../lib/geo-location";
+import { saveManagerBranchLocation } from "../lib/branch-gps";
 
 const router: IRouter = Router();
 
@@ -105,7 +107,7 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
     return;
   }
 
-  const { firstName, lastName, phone, role, location } = req.body ?? {};
+  const { firstName, lastName, phone, role, location, coordinates } = req.body ?? {};
   const fn = String(firstName || "").trim();
   const ln = String(lastName || "").trim();
   const phoneVal = String(phone || "").trim();
@@ -156,6 +158,8 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
   let orgRole: string;
   let position: string;
   let branchLocation: string | null = location?.trim() || null;
+  let branchLat: number | null = null;
+  let branchLng: number | null = null;
 
   if (staffRole === "mudir") {
     orgRole = "manager";
@@ -179,6 +183,14 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
         return;
       }
       reportsToId = coord.id;
+    }
+    const gps = parseGpsText(String(coordinates || location || ""));
+    if (gps) {
+      branchLat = gps.lat;
+      branchLng = gps.lng;
+      if (!branchLocation || parseGpsText(branchLocation)) {
+        branchLocation = "Filial";
+      }
     }
     if (!branchLocation) branchLocation = "Filial";
   } else {
@@ -233,6 +245,8 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
         orgRole,
         reportsToId,
         location: branchLocation,
+        latitude: branchLat,
+        longitude: branchLng,
         userId: user.id,
         employmentStatus: "working",
         shiftType: "one",
@@ -258,5 +272,59 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
     throw err;
   }
 });
+
+async function handleSaveManagerLocation(
+  req: AuthRequest,
+  res: import("express").Response,
+  employeeId: number,
+) {
+  const actorId = req.userId;
+  if (!actorId) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    return;
+  }
+  const result = await saveManagerBranchLocation({
+    actorRole: req.userRole ?? "",
+    actorUserId: actorId,
+    employeeId,
+    coordinates: String(req.body?.coordinates || "").trim(),
+  });
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json({
+    id: result.id,
+    location: result.location,
+    latitude: result.latitude,
+    longitude: result.longitude,
+  });
+}
+
+/**
+ * Koordinator: o‘z mudirining filial GPS ni saqlaydi.
+ * Koordinata matnidan nom avtomatik olinadi.
+ */
+router.post("/pharmacy-network/location", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const employeeId = parseInt(String(req.body?.employeeId ?? req.body?.id ?? ""), 10);
+  if (!Number.isFinite(employeeId)) {
+    res.status(400).json({ error: "Noto‘g‘ri mudir" });
+    return;
+  }
+  await handleSaveManagerLocation(req, res, employeeId);
+});
+
+router.post(
+  "/pharmacy-network/managers/:id/location",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+    if (!Number.isFinite(id)) {
+      res.status(400).json({ error: "Noto‘g‘ri mudir" });
+      return;
+    }
+    await handleSaveManagerLocation(req, res, id);
+  },
+);
 
 export default router;

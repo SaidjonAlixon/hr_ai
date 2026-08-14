@@ -6,6 +6,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
 import { HR_ROLES, isHrManager } from "../lib/roles";
+import { saveManagerBranchLocation } from "../lib/branch-gps";
 
 const router: IRouter = Router();
 
@@ -52,6 +53,8 @@ type EmpRow = {
   orgRole: string | null;
   reportsToId: number | null;
   location: string | null;
+  latitude: number | null;
+  longitude: number | null;
   shiftType: string | null;
   shiftLabel: string | null;
   employmentStatus: string | null;
@@ -77,6 +80,8 @@ const EMP_LIST_SELECT = {
   orgRole: employeesTable.orgRole,
   reportsToId: employeesTable.reportsToId,
   location: employeesTable.location,
+  latitude: employeesTable.latitude,
+  longitude: employeesTable.longitude,
   shiftType: employeesTable.shiftType,
   shiftLabel: employeesTable.shiftLabel,
   employmentStatus: employeesTable.employmentStatus,
@@ -115,6 +120,8 @@ async function loadEmployees(): Promise<EmpRow[]> {
       orgRole: null,
       reportsToId: null,
       location: null,
+      latitude: null,
+      longitude: null,
       shiftType: "one",
       shiftLabel: null,
       employmentStatus: "working",
@@ -438,6 +445,23 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     return;
   }
 
+  const coordinates = String(req.body?.coordinates || "").trim();
+  if (coordinates && req.userId) {
+    const gps = await saveManagerBranchLocation({
+      actorRole: req.userRole ?? "",
+      actorUserId: req.userId,
+      employeeId: id,
+      coordinates,
+    });
+    if (!gps.ok) {
+      res.status(gps.status).json({ error: gps.error });
+      return;
+    }
+    const [row] = await db.select().from(employeesTable).where(eq(employeesTable.id, id));
+    res.json(await enrichEmployee(row ?? before));
+    return;
+  }
+
   const role = req.userRole ?? "";
   const canEditShift = [
     ...HR_ROLES,
@@ -474,6 +498,8 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     "orgRole",
     "reportsToId",
     "location",
+    "latitude",
+    "longitude",
     "shiftType",
     "shiftLabel",
     "photoUrl",

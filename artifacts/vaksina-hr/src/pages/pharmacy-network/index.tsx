@@ -35,12 +35,20 @@ import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, St
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
+  useSaveManagerLocation,
+  stripGpsSuffix,
+  gpsFromLocationField,
+  gpsInputError,
   type PharmacyStaffRole,
   type PharmacyStaffResult,
 } from '../../lib/pharmacy-staff-api';
 import { Label } from '../../components/ui/label';
 
 type ShiftType = 'one' | 'two' | 'custom';
+type BranchEmployee = Employee & {
+  latitude?: number | null;
+  longitude?: number | null;
+};
 
 const BRANCH_ACCENTS = [
   'border-t-sky-500',
@@ -68,6 +76,10 @@ function shiftText(shiftType?: string | null, shiftLabel?: string | null) {
 
 function empStatus(person: Employee): EmploymentStatus {
   return (person.employmentStatus as EmploymentStatus) || 'working';
+}
+
+function googleMapsUrl(lat: number, lng: number) {
+  return `https://www.google.com/maps?q=${lat},${lng}`;
 }
 
 function isAlertStatus(status?: string | null) {
@@ -207,6 +219,7 @@ export default function PharmacyNetworkPage() {
   const { mutate: confirmAlert, isPending: confirming } = useConfirmStaffingAlert();
   const { mutate: cancelAlert, isPending: cancelling } = useCancelStaffingAlert();
   const createStaff = useCreatePharmacyStaff();
+  const saveBranchGps = useSaveManagerLocation();
 
   const canAddMudir = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
   const canAddTeam = user?.role === 'mudir';
@@ -246,6 +259,7 @@ export default function PharmacyNetworkPage() {
     user?.role === 'director';
 
   const canConfirmAlerts = user?.role === 'koordinator' || isHrManager(user?.role);
+  const canSetBranchGps = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);
@@ -266,6 +280,9 @@ export default function PharmacyNetworkPage() {
   const [branchLocation, setBranchLocation] = useState('');
   const [createdCreds, setCreatedCreds] = useState<PharmacyStaffResult | null>(null);
   const [showPwd, setShowPwd] = useState(false);
+  const [gpsDraft, setGpsDraft] = useState<Record<number, string>>({});
+  const [gpsEditingId, setGpsEditingId] = useState<number | null>(null);
+  const [savedGps, setSavedGps] = useState<Record<number, { lat: number; lng: number }>>({});
 
   const orgPeople = useMemo(
     () => (employees ?? []).filter((e) => !!e.orgRole),
@@ -516,6 +533,50 @@ export default function PharmacyNetworkPage() {
             description: err?.message || 'Saqlashda xatolik',
             variant: 'destructive',
           });
+        },
+      },
+    );
+  };
+
+  const saveBranchLocation = (manager: BranchEmployee) => {
+    const coordinates = (gpsDraft[manager.id] || '').trim();
+    const bad = gpsInputError(coordinates);
+    if (bad) {
+      toast({
+        title: 'Koordinata to‘liq emas',
+        description: bad,
+        variant: 'destructive',
+      });
+      return;
+    }
+    saveBranchGps.mutate(
+      {
+        employeeId: manager.id,
+        coordinates,
+        keepLocation: stripGpsSuffix(manager.location),
+      },
+      {
+        onSuccess: (data) => {
+          if (typeof data.latitude === 'number' && typeof data.longitude === 'number') {
+            setSavedGps((prev) => ({
+              ...prev,
+              [manager.id]: { lat: data.latitude!, lng: data.longitude! },
+            }));
+          }
+          toast({
+            title: 'Lokatsiya saqlandi',
+            description: 'Pinni bosing — xarita ochiladi',
+          });
+          setGpsEditingId(null);
+          setGpsDraft((prev) => {
+            const next = { ...prev };
+            delete next[manager.id];
+            return next;
+          });
+          void refetch();
+        },
+        onError: (err: Error) => {
+          toast({ title: 'Saqlanmadi', description: err.message, variant: 'destructive' });
         },
       },
     );
@@ -1080,17 +1141,106 @@ export default function PharmacyNetworkPage() {
                   >
                     <div className="flex flex-1 flex-col gap-3 p-3.5 sm:p-4">
                       <div className="flex items-start justify-between gap-2">
-                        <div
-                          className={cn(
-                            'inline-flex max-w-[calc(100%-3rem)] items-start gap-1.5 rounded-lg px-2 py-1',
-                            alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
-                          )}
-                        >
-                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
-                          <span className="text-[11px] font-semibold leading-snug tracking-wide">
-                            {manager.location || 'Lokatsiya ko‘rsatilmagan'}
-                          </span>
-                        </div>
+                        {(() => {
+                          const branch = manager as BranchEmployee;
+                          const fromField = gpsFromLocationField(manager.location);
+                          const gps = savedGps[manager.id];
+                          const lat =
+                            typeof branch.latitude === 'number'
+                              ? branch.latitude
+                              : gps?.lat ?? fromField?.lat;
+                          const lng =
+                            typeof branch.longitude === 'number'
+                              ? branch.longitude
+                              : gps?.lng ?? fromField?.lng;
+                          const hasGps = typeof lat === 'number' && typeof lng === 'number';
+                          const displayName = stripGpsSuffix(manager.location);
+                          const hasName = Boolean(displayName && displayName !== 'Filial');
+                          const editing =
+                            gpsEditingId === manager.id || (canSetBranchGps && !hasGps && !hasName);
+                          if (canSetBranchGps && editing) {
+                            return (
+                              <div className="min-w-0 flex-1 space-y-1.5">
+                                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                  Filial koordinatasi
+                                </label>
+                                <textarea
+                                  value={gpsDraft[manager.id] ?? ''}
+                                  onChange={(e) =>
+                                    setGpsDraft((prev) => ({ ...prev, [manager.id]: e.target.value }))
+                                  }
+                                  placeholder={`41°18'23.3"N 69°18'28.0"E`}
+                                  rows={2}
+                                  className="w-full resize-none rounded-md border border-input bg-background px-2.5 py-1.5 font-mono text-xs leading-snug"
+                                />
+                                <p className="text-[10px] leading-snug text-slate-500">
+                                  Google Maps dan to‘liq nusxa: kenglik (N) va uzunlik (E)
+                                </p>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  className="h-8 w-full sm:w-auto"
+                                  disabled={saveBranchGps.isPending}
+                                  onClick={() => saveBranchLocation(branch)}
+                                >
+                                  {saveBranchGps.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
+                                </Button>
+                              </div>
+                            );
+                          }
+                          const label = hasName ? displayName : hasGps ? 'Lokatsiya' : 'Lokatsiya ko‘rsatilmagan';
+                          return (
+                            <div className="flex min-w-0 max-w-[calc(100%-3rem)] items-start gap-1">
+                              {hasGps ? (
+                                <a
+                                  href={googleMapsUrl(lat, lng)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  title="Xaritada ochish"
+                                  onClick={(e) => e.stopPropagation()}
+                                  className={cn(
+                                    'inline-flex min-w-0 items-start gap-1.5 rounded-lg px-2 py-1 transition-colors hover:bg-sky-50 hover:text-sky-800',
+                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
+                                  )}
+                                >
+                                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
+                                  <span className="text-[11px] font-semibold leading-snug tracking-wide underline decoration-slate-300 underline-offset-2">
+                                    {label}
+                                  </span>
+                                </a>
+                              ) : (
+                                <div
+                                  className={cn(
+                                    'inline-flex min-w-0 items-start gap-1.5 rounded-lg px-2 py-1',
+                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
+                                  )}
+                                >
+                                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
+                                  <span className="text-[11px] font-semibold leading-snug tracking-wide">
+                                    {label}
+                                  </span>
+                                </div>
+                              )}
+                              {canSetBranchGps ? (
+                                <button
+                                  type="button"
+                                  className="mt-1 shrink-0 text-slate-400 hover:text-primary"
+                                  title="Koordinatani o‘zgartirish"
+                                  onClick={() => {
+                                    setGpsEditingId(manager.id);
+                                    setGpsDraft((prev) => ({
+                                      ...prev,
+                                      [manager.id]:
+                                        prev[manager.id] || (hasGps ? `${lat}, ${lng}` : ''),
+                                    }));
+                                  }}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              ) : null}
+                            </div>
+                          );
+                        })()}
                         <div className="flex shrink-0 items-center gap-1">
                           <span
                             className={cn(
@@ -1302,12 +1452,15 @@ export default function PharmacyNetworkPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Filial / lokatsiya</Label>
+                  <Label>Filial koordinatasi</Label>
                   <Input
                     value={branchLocation}
                     onChange={(e) => setBranchLocation(e.target.value)}
-                    placeholder="Masalan: Sergeli"
+                    placeholder={`41°18'23.3"N 69°18'28.0"E`}
                   />
+                  <p className="text-[11px] text-muted-foreground">
+                    Google Maps dan nusxa — tizim lokatsiya nomini o‘zi topadi.
+                  </p>
                 </div>
               </>
             ) : (

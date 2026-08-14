@@ -11,14 +11,15 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { HR_ROLES } from "../lib/roles";
+import { gpsFromLocationField, stripGpsSuffix } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
 const VIEW_ROLES = new Set(["koordinator", "admin", ...HR_ROLES, "director"]);
 const WRITE_ROLES = new Set(["koordinator", "admin"]);
 
-/** Koordinator filialga 15 m dan yaqin bo‘lishi shart */
-export const AUDIT_GEOFENCE_METERS = 15;
+/** Koordinator filialga 50 m dan yaqin bo‘lishi shart */
+export const AUDIT_GEOFENCE_METERS = 50;
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -97,14 +98,13 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
 
   let scoped = managers.filter((m) => m.employmentStatus !== "dismissed");
 
-  // Koordinator — faqat o'ziga bog'langan filiallar (reportsToId)
+  // Koordinator — faqat o‘z mudirlari (reportsToId = coordinator employee id)
   if (req.userRole === "koordinator" && req.userId) {
     const coordRows = await db
       .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
       .from(employeesTable)
       .where(eq(employeesTable.userId, req.userId));
-    const coord =
-      coordRows.find((r) => r.orgRole === "coordinator") ?? coordRows[0];
+    const coord = coordRows.find((r) => r.orgRole === "coordinator");
     if (!coord) {
       res.json([]);
       return;
@@ -112,14 +112,30 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
     scoped = scoped.filter((m) => m.reportsToId === coord.id);
   }
 
+  const seen = new Set<number>();
   const active = scoped
-    .map((m) => ({
-      id: m.id,
-      managerName: m.fullName,
-      branchLocation: m.location || m.fullName,
-      latitude: m.latitude ?? null,
-      longitude: m.longitude ?? null,
-    }))
+    .filter((m) => {
+      if (seen.has(m.id)) return false;
+      seen.add(m.id);
+      return true;
+    })
+    .map((m) => {
+      const fromLoc = gpsFromLocationField(m.location);
+      const loc = stripGpsSuffix(m.location);
+      const generic =
+        !loc ||
+        loc === "Filial" ||
+        loc === m.fullName ||
+        /\d+\s*°/.test(loc) ||
+        /^-?\d+[.,]\d+\s*[,;]\s*-?\d+/.test(loc);
+      return {
+        id: m.id,
+        managerName: m.fullName,
+        branchLocation: generic ? m.fullName : loc,
+        latitude: m.latitude ?? fromLoc?.lat ?? null,
+        longitude: m.longitude ?? fromLoc?.lng ?? null,
+      };
+    })
     .sort((a, b) => a.branchLocation.localeCompare(b.branchLocation, "uz"));
 
   res.json(active);
@@ -232,9 +248,8 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
       .from(employeesTable)
       .where(eq(employeesTable.userId, req.userId));
-    const coord =
-      coordRows.find((r) => r.orgRole === "coordinator") ?? coordRows[0];
-    if (!coord || manager.reportsToId !== coord.id) {
+    const owns = coordRows.some((r) => r.id === manager.reportsToId);
+    if (!owns) {
       res.status(403).json({ error: "Bu filial sizga biriktirilmagan" });
       return;
     }
@@ -244,11 +259,15 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
   let savedCheckLat: number | null = null;
   let savedCheckLng: number | null = null;
 
-  // Koordinator: filial GPS dan 15 m ichida bo‘lishi shart
+  const fromLoc = gpsFromLocationField(manager.location);
+  const branchLat = manager.latitude ?? fromLoc?.lat ?? null;
+  const branchLng = manager.longitude ?? fromLoc?.lng ?? null;
+
+  // Koordinator: filial GPS dan 50 m ichida bo‘lishi shart
   if (req.userRole === "koordinator") {
-    if (manager.latitude == null || manager.longitude == null) {
+    if (branchLat == null || branchLng == null) {
       res.status(400).json({
-        error: "Filial lokatsiyasi bazada yo‘q — admin GPS qo‘shishi kerak",
+        error: "Filial lokatsiyasi bazada yo‘q — Aptekalar tarmog‘ida koordinata saqlang",
       });
       return;
     }
@@ -261,8 +280,8 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     distanceMeters = haversineMeters(
       checkLat,
       checkLng,
-      manager.latitude,
-      manager.longitude,
+      branchLat,
+      branchLng,
     );
     savedCheckLat = checkLat;
     savedCheckLng = checkLng;
@@ -287,7 +306,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     .insert(branchAuditsTable)
     .values({
       managerEmployeeId,
-      branchLocation: manager.location || manager.fullName,
+      branchLocation: stripGpsSuffix(manager.location) || manager.fullName,
       managerName: manager.fullName,
       visitDate,
       visitName,

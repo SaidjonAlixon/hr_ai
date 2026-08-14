@@ -22,6 +22,109 @@ export type PharmacyStaffResult = {
   location: string | null;
 };
 
+export type BranchGpsResult = {
+  id: number;
+  location: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+function toNum(v: string): number {
+  return Number(String(v).replace(",", "."));
+}
+
+function dmsToDecimal(deg: number, min: number, sec: number, hemi?: string): number {
+  let v = Math.abs(deg) + min / 60 + sec / 3600;
+  const h = (hemi || "").toUpperCase();
+  if (h === "S" || h === "W" || h === "Ю" || h === "З") v = -v;
+  if (deg < 0) v = -Math.abs(v);
+  return v;
+}
+
+/** Namuna: 41°18'23.3"N 69°18'28.0"E */
+export function parseGpsText(raw: string): { lat: number; lng: number } | null {
+  const s = String(raw || "")
+    .trim()
+    .replace(/\u00a0/g, " ")
+    .replace(/[′’ʻ`]/g, "'")
+    .replace(/[″“”«»]/g, '"')
+    .replace(/[˚º]/g, "°");
+  if (!s) return null;
+
+  const dms =
+    /(\d{1,3})\s*°\s*(\d{1,2})\s*'?\s*(\d{1,2}(?:[.,]\d+)?)?\s*"?\s*([NSnsСсЮю])?[,;\s]+(\d{1,3})\s*°\s*(\d{1,2})\s*'?\s*(\d{1,2}(?:[.,]\d+)?)?\s*"?\s*([EWewВвЗз])?/;
+  const m = s.match(dms);
+  if (m) {
+    const lat = dmsToDecimal(toNum(m[1]!), toNum(m[2]!), toNum(m[3] || "0"), m[4]);
+    const lng = dmsToDecimal(toNum(m[5]!), toNum(m[6]!), toNum(m[7] || "0"), m[8]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return { lat, lng };
+    }
+  }
+
+  const dec = /(-?\d{1,3}(?:[.,]\d+))\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+))/;
+  const d = s.match(dec);
+  if (d) {
+    const lat = toNum(d[1]!);
+    const lng = toNum(d[2]!);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return { lat, lng };
+    }
+  }
+  return null;
+}
+
+const GPS_SUFFIX = /\s*\|gps:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\s*$/i;
+
+export function stripGpsSuffix(location: string | null | undefined): string {
+  return String(location || "").replace(GPS_SUFFIX, "").trim();
+}
+
+export function gpsFromLocationField(
+  location: string | null | undefined,
+): { lat: number; lng: number } | null {
+  const m = String(location || "").match(GPS_SUFFIX);
+  if (m) {
+    const lat = Number(m[1]);
+    const lng = Number(m[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) return { lat, lng };
+  }
+  return parseGpsText(stripGpsSuffix(location));
+}
+
+export function withGpsSuffix(
+  name: string | null | undefined,
+  lat: number,
+  lng: number,
+): string {
+  const base = stripGpsSuffix(name);
+  const label = !base || base === "Filial" ? "Filial" : base;
+  return `${label} |gps:${lat.toFixed(6)},${lng.toFixed(6)}`;
+}
+
+export function gpsInputError(raw: string): string | null {
+  const s = String(raw || "").trim();
+  if (!s) return `Koordinatani yozing: 41°18'23.3"N 69°18'28.0"E`;
+  if (parseGpsText(s)) return null;
+  const hasN = /[NnСс]/.test(s) || s.includes("°");
+  const hasE = /[EeВв]/.test(s);
+  if (hasN && !hasE) {
+    return `Uzunlik ham kerak. To‘liq yozing: 41°18'23.3"N 69°18'28.0"E`;
+  }
+  return `Ikkala tomonni ham yozing: 41°18'23.3"N 69°18'28.0"E`;
+}
+
+async function readError(res: Response): Promise<string> {
+  try {
+    const body = await res.json();
+    if (body?.error) return String(body.error);
+  } catch {
+    /* ignore */
+  }
+  if (res.status === 404) return "Not Found";
+  return res.statusText || `Xato ${res.status}`;
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: "include",
@@ -33,16 +136,98 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
   });
   if (!res.ok) {
-    let message = res.statusText;
-    try {
-      const body = await res.json();
-      if (body?.error) message = body.error;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(message || `Xato ${res.status}`);
+    throw new Error(await readError(res));
   }
   return res.json() as Promise<T>;
+}
+
+async function saveViaEmployeesPatch(
+  employeeId: number,
+  coordinates: string,
+  keepLocation?: string | null,
+): Promise<BranchGpsResult> {
+  const parsed = parseGpsText(coordinates);
+  if (!parsed) {
+    throw new Error(gpsInputError(coordinates) || "Koordinata noto‘g‘ri");
+  }
+  const encoded = withGpsSuffix(keepLocation, parsed.lat, parsed.lng);
+  const patch = async (body: Record<string, unknown>) =>
+    fetch(`/api/employees/${employeeId}`, {
+      credentials: "include",
+      method: "PATCH",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+
+  let res = await patch({
+    location: encoded,
+    latitude: parsed.lat,
+    longitude: parsed.lng,
+    coordinates,
+  });
+  if (!res.ok && (res.status === 400 || res.status === 403 || res.status === 404)) {
+    res = await patch({ location: encoded });
+  }
+  if (!res.ok) {
+    throw new Error(await readError(res));
+  }
+  const emp = (await res.json()) as { id: number; location?: string | null };
+  return {
+    id: emp.id,
+    location: stripGpsSuffix(emp.location ?? keepLocation) || null,
+    latitude: parsed.lat,
+    longitude: parsed.lng,
+  };
+}
+
+export function useSaveManagerLocation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      employeeId: number;
+      coordinates: string;
+      keepLocation?: string | null;
+    }) => {
+      const bad = gpsInputError(data.coordinates);
+      if (bad) throw new Error(bad);
+
+      const tryPost = async (path: string) =>
+        fetch(`/api${path}`, {
+          credentials: "include",
+          method: "POST",
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            employeeId: data.employeeId,
+            coordinates: data.coordinates,
+          }),
+        });
+
+      try {
+        const first = await tryPost("/pharmacy-network/location");
+        if (first.ok) return (await first.json()) as BranchGpsResult;
+        if (first.status === 404) {
+          const nested = await tryPost(`/pharmacy-network/managers/${data.employeeId}/location`);
+          if (nested.ok) return (await nested.json()) as BranchGpsResult;
+        }
+      } catch {
+        /* tarmoq xatosi — employees PATCH orqali saqlaymiz */
+      }
+
+      return saveViaEmployeesPatch(data.employeeId, data.coordinates, data.keepLocation);
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({
+        predicate: (q) => JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
 }
 
 export function useCreatePharmacyStaff() {

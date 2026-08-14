@@ -56,7 +56,7 @@ export type BranchAuditInput = {
   checkLongitude?: number;
 };
 
-export const AUDIT_GEOFENCE_METERS = 15;
+export const AUDIT_GEOFENCE_METERS = 50;
 
 export function haversineMeters(
   lat1: number,

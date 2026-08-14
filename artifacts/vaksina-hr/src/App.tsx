@@ -41,6 +41,8 @@ import ChecklistPage from './pages/checklist/index';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
 import EmployeesPage from './pages/employees/index';
+import DavomatPage from './pages/davomat/index';
+import DavomatFacePage from './pages/davomat/face';
 import NotificationsPage from './pages/notifications/index';
 import NotFound from './pages/not-found';
 
@@ -73,6 +75,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/davomat-face" component={DavomatFacePage} />
       <Route path="/" component={() => {
         window.location.replace('/dashboard');
         return null;
@@ -117,6 +120,7 @@ function Router() {
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       
       <ProtectedRoute path="/employees" component={EmployeesPage} />
+      <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/kuzatuv" component={KuzatuvPage} />

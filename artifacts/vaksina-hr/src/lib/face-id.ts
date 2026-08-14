@@ -438,8 +438,10 @@ export async function enrollFace(descriptor: number[]): Promise<void> {
   });
 }
 
-export async function loginWithFace<TUser>(descriptor: number[]): Promise<{ user: TUser }> {
-  return apiJson<{ user: TUser }>("/auth/face/login", {
+export async function loginWithFace<TUser>(
+  descriptor: number[],
+): Promise<{ user: TUser; fullName?: string; message?: string }> {
+  return apiJson<{ user: TUser; fullName?: string; message?: string }>("/auth/face/login", {
     method: "POST",
     body: JSON.stringify({ descriptor }),
   });

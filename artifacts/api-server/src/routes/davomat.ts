@@ -1,0 +1,1516 @@
+﻿import { Router, type IRouter } from "express";
+import { and, eq, gte, lte, inArray } from "drizzle-orm";
+import ExcelJS from "exceljs";
+import {
+  db,
+  employeesTable,
+  departmentsTable,
+  attendanceRecordsTable,
+  faceProfilesTable,
+  usersTable,
+} from "@workspace/db";
+import { requireAuth, type AuthRequest } from "../middlewares/auth";
+import { canViewDavomat } from "../lib/roles";
+import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
+
+const router: IRouter = Router();
+
+const WORK_START = "09:00";
+const WORK_END = "18:00";
+const TZ_OFFSET = "+05:00"; // Asia/Tashkent
+/** Davomat Face ID faqat shu radiusda (metr) */
+export const DAVOMAT_GEOFENCE_METERS = 15;
+/** Belgilangan ish joyi: 41°13'09.3"N 69°16'22.9"E */
+export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600; // 41.21925
+export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600; // ≈ 69.273028
+export const DAVOMAT_SITE_LABEL = "41°13'09.3\"N 69°16'22.9\"E";
+const FACE_DESCRIPTOR_LEN = 128;
+const FACE_MATCH_MAX = 0.48;
+
+function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function parseFaceDescriptor(raw: unknown): number[] | null {
+  if (!Array.isArray(raw) || raw.length !== FACE_DESCRIPTOR_LEN) return null;
+  const out: number[] = [];
+  for (const n of raw) {
+    if (typeof n !== "number" || !Number.isFinite(n)) return null;
+    out.push(n);
+  }
+  return out;
+}
+
+function euclidean(a: number[], b: number[]): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i]! - b[i]!;
+    s += d * d;
+  }
+  return Math.sqrt(s);
+}
+
+function requireDavomat(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
+  if (!canViewDavomat(req.userRole)) {
+    res.status(403).json({ error: "Davomat faqat Direktor / HR Direktor / HR Menejer uchun" });
+    return false;
+  }
+  return true;
+}
+
+function todayTashkent(): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function addDays(ymd: string, delta: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + delta));
+  return dt.toISOString().slice(0, 10);
+}
+
+function eachDateInclusive(from: string, to: string): string[] {
+  const out: string[] = [];
+  let cur = from;
+  let guard = 0;
+  while (cur <= to && guard < 400) {
+    out.push(cur);
+    cur = addDays(cur, 1);
+    guard += 1;
+  }
+  return out;
+}
+
+function parseHm(hm: string): { h: number; m: number } {
+  const [h, m] = hm.split(":").map(Number);
+  return { h: h ?? 0, m: m ?? 0 };
+}
+
+/** YYYY-MM-DD + HH:mm → Date in Tashkent */
+function atTashkent(ymd: string, hm: string): Date {
+  const { h, m } = parseHm(hm);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return new Date(`${ymd}T${pad(h)}:${pad(m)}:00${TZ_OFFSET}`);
+}
+
+function formatHm(d: Date | null | undefined): string {
+  if (!d) return "—";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(d);
+}
+
+function minutesBetween(a: Date, b: Date): number {
+  return Math.round((b.getTime() - a.getTime()) / 60000);
+}
+
+function fmtHours(mins: number): string {
+  if (!Number.isFinite(mins) || mins <= 0) return "0:00";
+  const h = Math.floor(mins / 60);
+  const m = Math.abs(mins % 60);
+  return `${h}:${String(m).padStart(2, "0")}`;
+}
+
+function fmtSignedMin(mins: number): string {
+  if (!mins) return "0 daq";
+  const abs = Math.abs(mins);
+  const h = Math.floor(abs / 60);
+  const m = abs % 60;
+  const body = h > 0 ? `${h} soat ${m} daq` : `${m} daq`;
+  return mins < 0 ? `в€’${body}` : body;
+}
+
+type Metrics = {
+  status: string;
+  checkIn: string;
+  checkOut: string;
+  workedMinutes: number;
+  workedHours: string;
+  earlyArrivalMin: number;
+  lateArrivalMin: number;
+  earlyLeaveMin: number;
+  overtimeMin: number;
+  earlyArrivalLabel: string;
+  lateArrivalLabel: string;
+  earlyLeaveLabel: string;
+  overtimeLabel: string;
+};
+
+function computeMetrics(
+  workDate: string,
+  checkInAt: Date | null | undefined,
+  checkOutAt: Date | null | undefined,
+  forcedStatus?: string | null,
+): Metrics {
+  const start = atTashkent(workDate, WORK_START);
+  const end = atTashkent(workDate, WORK_END);
+  let earlyArrivalMin = 0;
+  let lateArrivalMin = 0;
+  let earlyLeaveMin = 0;
+  let overtimeMin = 0;
+  let workedMinutes = 0;
+  let status = forcedStatus || "absent";
+
+  if (checkInAt) {
+    const inDiff = minutesBetween(start, checkInAt);
+    if (inDiff < 0) earlyArrivalMin = -inDiff;
+    else if (inDiff > 0) lateArrivalMin = inDiff;
+    status = lateArrivalMin > 0 ? "late" : "present";
+    if (!checkOutAt) status = "incomplete";
+  }
+
+  if (checkInAt && checkOutAt) {
+    workedMinutes = Math.max(0, minutesBetween(checkInAt, checkOutAt));
+    const outDiff = minutesBetween(end, checkOutAt);
+    if (outDiff < 0) earlyLeaveMin = -outDiff;
+    else if (outDiff > 0) overtimeMin = outDiff;
+    if (lateArrivalMin > 0) status = "late";
+    else status = "present";
+  }
+
+  if (forcedStatus === "leave" || forcedStatus === "absent") {
+    status = forcedStatus;
+  }
+
+  return {
+    status,
+    checkIn: formatHm(checkInAt ?? null),
+    checkOut: formatHm(checkOutAt ?? null),
+    workedMinutes,
+    workedHours: fmtHours(workedMinutes),
+    earlyArrivalMin,
+    lateArrivalMin,
+    earlyLeaveMin,
+    overtimeMin,
+    earlyArrivalLabel: earlyArrivalMin ? fmtSignedMin(earlyArrivalMin) : "—",
+    lateArrivalLabel: lateArrivalMin ? fmtSignedMin(lateArrivalMin) : "—",
+    earlyLeaveLabel: earlyLeaveMin ? fmtSignedMin(earlyLeaveMin) : "—",
+    overtimeLabel: overtimeMin ? fmtSignedMin(overtimeMin) : "—",
+  };
+}
+
+async function loadActiveEmployees(filters: {
+  departmentId?: string;
+  location?: string;
+  search?: string;
+  employeeId?: string;
+}) {
+  const rows = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      position: employeesTable.position,
+      departmentId: employeesTable.departmentId,
+      departmentName: departmentsTable.name,
+      location: employeesTable.location,
+      employmentStatus: employeesTable.employmentStatus,
+      userId: employeesTable.userId,
+      orgRole: employeesTable.orgRole,
+    })
+    .from(employeesTable)
+    .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id));
+
+  return rows.filter((e) => {
+    const st = e.employmentStatus || "working";
+    if (st === "dismissed") return false;
+    if (filters.employeeId && e.id !== Number(filters.employeeId)) return false;
+    if (filters.departmentId && e.departmentId !== Number(filters.departmentId)) return false;
+    if (filters.location && (e.location || "") !== filters.location) return false;
+    if (filters.search) {
+      const q = filters.search.toLowerCase();
+      const hay = [e.fullName, e.position, e.departmentName, e.location].filter(Boolean).join(" ").toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+async function loadRecords(from: string, to: string, employeeIds: number[]) {
+  if (!employeeIds.length) return [];
+  return db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(
+      and(
+        gte(attendanceRecordsTable.workDate, from),
+        lte(attendanceRecordsTable.workDate, to),
+        inArray(attendanceRecordsTable.employeeId, employeeIds),
+      ),
+    );
+}
+
+function buildReport(
+  employees: Awaited<ReturnType<typeof loadActiveEmployees>>,
+  records: Awaited<ReturnType<typeof loadRecords>>,
+  from: string,
+  to: string,
+) {
+  const dates = eachDateInclusive(from, to);
+  const byEmpDate = new Map<string, (typeof records)[0]>();
+  for (const r of records) {
+    byEmpDate.set(`${r.employeeId}|${r.workDate}`, r);
+  }
+
+  const dayStats = dates.map((date) => {
+    let present = 0;
+    let late = 0;
+    let incomplete = 0;
+    let leave = 0;
+    let absent = 0;
+    const presentList: string[] = [];
+    const absentList: string[] = [];
+    const lateList: string[] = [];
+
+    for (const e of employees) {
+      const rec = byEmpDate.get(`${e.id}|${date}`);
+      if (!rec || (!rec.checkInAt && rec.status === "absent")) {
+        absent += 1;
+        absentList.push(e.fullName);
+        continue;
+      }
+      if (rec.status === "leave") {
+        leave += 1;
+        continue;
+      }
+      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status);
+      if (m.status === "late") {
+        late += 1;
+        lateList.push(e.fullName);
+        present += 1;
+        presentList.push(e.fullName);
+      } else if (m.status === "incomplete") {
+        incomplete += 1;
+        present += 1;
+        presentList.push(e.fullName);
+      } else if (m.status === "absent") {
+        absent += 1;
+        absentList.push(e.fullName);
+      } else {
+        present += 1;
+        presentList.push(e.fullName);
+      }
+    }
+    return {
+      date,
+      present,
+      late,
+      incomplete,
+      leave,
+      absent,
+      presentList,
+      absentList,
+      lateList,
+    };
+  });
+
+  const employeeRows = employees
+    .map((e) => {
+      const days = dates.map((date) => {
+        const rec = byEmpDate.get(`${e.id}|${date}`);
+        if (!rec || (!rec.checkInAt && (rec.status === "absent" || !rec.status))) {
+          return {
+            date,
+            status: "absent" as const,
+            checkIn: "—",
+            checkOut: "—",
+            workedMinutes: 0,
+            workedHours: "0:00",
+            earlyArrivalMin: 0,
+            lateArrivalMin: 0,
+            earlyLeaveMin: 0,
+            overtimeMin: 0,
+            earlyArrivalLabel: "—",
+            lateArrivalLabel: "—",
+            earlyLeaveLabel: "—",
+            overtimeLabel: "—",
+            source: null as string | null,
+            notes: null as string | null,
+            recordId: null as number | null,
+          };
+        }
+        if (rec.status === "leave") {
+          return {
+            date,
+            status: "leave" as const,
+            checkIn: "—",
+            checkOut: "—",
+            workedMinutes: 0,
+            workedHours: "0:00",
+            earlyArrivalMin: 0,
+            lateArrivalMin: 0,
+            earlyLeaveMin: 0,
+            overtimeMin: 0,
+            earlyArrivalLabel: "—",
+            lateArrivalLabel: "—",
+            earlyLeaveLabel: "—",
+            overtimeLabel: "—",
+            source: rec.source,
+            notes: rec.notes,
+            recordId: rec.id,
+          };
+        }
+        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status);
+        return {
+          date,
+          ...m,
+          source: rec.source,
+          notes: rec.notes,
+          recordId: rec.id,
+        };
+      });
+
+      const totals = days.reduce(
+        (acc, d) => {
+          if (d.status === "absent") acc.absent += 1;
+          else if (d.status === "leave") acc.leave += 1;
+          else {
+            acc.present += 1;
+            if (d.status === "late") acc.late += 1;
+            if (d.status === "incomplete") acc.incomplete += 1;
+          }
+          acc.workedMinutes += d.workedMinutes;
+          acc.lateArrivalMin += d.lateArrivalMin;
+          acc.earlyArrivalMin += d.earlyArrivalMin;
+          acc.earlyLeaveMin += d.earlyLeaveMin;
+          acc.overtimeMin += d.overtimeMin;
+          return acc;
+        },
+        {
+          present: 0,
+          absent: 0,
+          late: 0,
+          incomplete: 0,
+          leave: 0,
+          workedMinutes: 0,
+          lateArrivalMin: 0,
+          earlyArrivalMin: 0,
+          earlyLeaveMin: 0,
+          overtimeMin: 0,
+        },
+      );
+
+      return {
+        id: e.id,
+        fullName: e.fullName,
+        position: e.position,
+        departmentId: e.departmentId,
+        departmentName: e.departmentName,
+        location: e.location,
+        orgRole: e.orgRole,
+        days,
+        totals: {
+          ...totals,
+          workedHours: fmtHours(totals.workedMinutes),
+          lateArrivalLabel: totals.lateArrivalMin ? fmtSignedMin(totals.lateArrivalMin) : "—",
+          earlyArrivalLabel: totals.earlyArrivalMin ? fmtSignedMin(totals.earlyArrivalMin) : "—",
+          earlyLeaveLabel: totals.earlyLeaveMin ? fmtSignedMin(totals.earlyLeaveMin) : "—",
+          overtimeLabel: totals.overtimeMin ? fmtSignedMin(totals.overtimeMin) : "—",
+        },
+      };
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
+
+  const summary = {
+    employees: employees.length,
+    days: dates.length,
+    presentPersonDays: employeeRows.reduce((s, e) => s + e.totals.present, 0),
+    absentPersonDays: employeeRows.reduce((s, e) => s + e.totals.absent, 0),
+    latePersonDays: employeeRows.reduce((s, e) => s + e.totals.late, 0),
+    totalWorkedHours: fmtHours(employeeRows.reduce((s, e) => s + e.totals.workedMinutes, 0)),
+    totalLateMinutes: employeeRows.reduce((s, e) => s + e.totals.lateArrivalMin, 0),
+    totalLateLabel: fmtSignedMin(
+      employeeRows.reduce((s, e) => s + e.totals.lateArrivalMin, 0),
+    ),
+  };
+
+  return {
+    workStart: WORK_START,
+    workEnd: WORK_END,
+    from,
+    to,
+    dates,
+    summary,
+    days: dayStats,
+    employees: employeeRows,
+  };
+}
+
+router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  try {
+    const q = req.query as Record<string, string>;
+    const to = q.to || todayTashkent();
+    const from = q.from || addDays(to, -13);
+    const employees = await loadActiveEmployees({
+      departmentId: q.departmentId,
+      location: q.location,
+      search: q.search,
+      employeeId: q.employeeId,
+    });
+    const records = await loadRecords(
+      from,
+      to,
+      employees.map((e) => e.id),
+    );
+    res.json(buildReport(employees, records, from, to));
+  } catch (err) {
+    console.error("GET /davomat error:", err);
+    res.status(503).json({ error: "Davomat yuklanmadi" });
+  }
+});
+
+/** Bugungi kun: kelgan / kelmagan */
+router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  try {
+    const date = (req.query as { date?: string }).date || todayTashkent();
+    const employees = await loadActiveEmployees({});
+    const records = await loadRecords(date, date, employees.map((e) => e.id));
+    const report = buildReport(employees, records, date, date);
+    const day = report.days[0];
+    res.json({
+      date,
+      workStart: WORK_START,
+      workEnd: WORK_END,
+      ...day,
+      employees: report.employees.map((e) => ({
+        id: e.id,
+        fullName: e.fullName,
+        position: e.position,
+        departmentName: e.departmentName,
+        location: e.location,
+        day: e.days[0],
+      })),
+    });
+  } catch (err) {
+    console.error("GET /davomat/today error:", err);
+    res.status(503).json({ error: "Bugungi davomat yuklanmadi" });
+  }
+});
+
+/** HR: qo‘lda kelish/ketish yozish yoki tahrirlash */
+router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  try {
+    const {
+      employeeId,
+      workDate,
+      checkIn,
+      checkOut,
+      status,
+      notes,
+    } = req.body as {
+      employeeId?: number;
+      workDate?: string;
+      checkIn?: string | null;
+      checkOut?: string | null;
+      status?: string;
+      notes?: string;
+    };
+
+    if (!employeeId || !workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      res.status(400).json({ error: "employeeId va workDate (YYYY-MM-DD) majburiy" });
+      return;
+    }
+
+    const [emp] = await db
+      .select({ id: employeesTable.id, userId: employeesTable.userId })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employeeId))
+      .limit(1);
+    if (!emp) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+
+    const checkInAt =
+      checkIn && /^\d{1,2}:\d{2}$/.test(checkIn) ? atTashkent(workDate, checkIn) : null;
+    const checkOutAt =
+      checkOut && /^\d{1,2}:\d{2}$/.test(checkOut) ? atTashkent(workDate, checkOut) : null;
+
+    let nextStatus = status || "absent";
+    if (!status || status === "auto") {
+      nextStatus = computeMetrics(workDate, checkInAt, checkOutAt).status;
+      if (!checkInAt && !checkOutAt) nextStatus = "absent";
+    }
+
+    const [existing] = await db
+      .select({ id: attendanceRecordsTable.id })
+      .from(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.employeeId, employeeId),
+          eq(attendanceRecordsTable.workDate, workDate),
+        ),
+      )
+      .limit(1);
+
+    const payload = {
+      employeeId,
+      userId: emp.userId,
+      workDate,
+      checkInAt,
+      checkOutAt,
+      status: nextStatus,
+      source: "manual" as const,
+      notes: notes || null,
+      createdById: req.userId!,
+      updatedAt: new Date(),
+    };
+
+    if (existing) {
+      await db
+        .update(attendanceRecordsTable)
+        .set(payload)
+        .where(eq(attendanceRecordsTable.id, existing.id));
+    } else {
+      await db.insert(attendanceRecordsTable).values(payload);
+    }
+
+    const metrics = computeMetrics(workDate, checkInAt, checkOutAt, nextStatus);
+    res.json({ ok: true, workDate, employeeId, ...metrics });
+  } catch (err) {
+    console.error("POST /davomat/manual error:", err);
+    res.status(503).json({ error: "Saqlanmadi" });
+  }
+});
+
+/** Xodim o‘zi: kelish / ketish — faqat Face ID + 15 m geozona orqali */
+router.post("/davomat/punch", requireAuth, async (_req: AuthRequest, res): Promise<void> => {
+  res.status(400).json({
+    error: "Oddiy punch o‘chirilgan. Davomat faqat Face ID + ish joyi (15 m) orqali.",
+    code: "use_face_punch",
+  });
+});
+
+type WorkplaceEmp = {
+  id: number;
+  userId: number | null;
+  fullName: string;
+  location: string | null;
+  latitude: number | null;
+  longitude: number | null;
+};
+
+function normalizeName(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/[‘’ʻʼ'`]/g, "'")
+    .trim();
+}
+
+const ROLE_POSITION: Record<string, string> = {
+  admin: "Admin",
+  director: "Direktor",
+  hr: "HR",
+  hr_direktor: "HR Direktor",
+  hr_menejer: "HR Menejer",
+  hr_auditor: "HR Auditor",
+  recruiter: "Rekruter",
+  trainer: "Trener",
+  mentor: "Mentor",
+  department_head: "Bo‘lim boshlig‘i",
+  mudir: "Mudir",
+  koordinator: "Koordinator",
+  texnik: "Texnik",
+  ombor: "Ombor",
+  farmasevt: "Farmasevt",
+  stajyor: "Stajyor",
+};
+
+async function findEmployeeByUserId(userId: number): Promise<WorkplaceEmp | null> {
+  const [emp] = await db
+    .select({
+      id: employeesTable.id,
+      userId: employeesTable.userId,
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, userId))
+    .limit(1);
+  return emp ?? null;
+}
+
+/**
+ * Davomat majburiy: har bir faol user uchun employees yozuvi bo‘lishi shart.
+ * — userId bo‘yicha topadi
+ * — yoki F.I.Sh. mos kelgan xodimni bog‘laydi
+ * — yo‘q bo‘lsa avtomatik yaratadi
+ */
+async function ensureEmployeeForUser(user: {
+  id: number;
+  fullName: string;
+  role: string;
+  departmentId: number | null;
+}): Promise<WorkplaceEmp> {
+  const existing = await findEmployeeByUserId(user.id);
+  if (existing) return existing;
+
+  const all = await db
+    .select({
+      id: employeesTable.id,
+      userId: employeesTable.userId,
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+      employmentStatus: employeesTable.employmentStatus,
+    })
+    .from(employeesTable);
+
+  const target = normalizeName(user.fullName);
+  const byName = all.find(
+    (e) =>
+      normalizeName(e.fullName) === target &&
+      (e.userId == null || e.userId === user.id) &&
+      (e.employmentStatus || "working") !== "dismissed",
+  );
+
+  if (byName) {
+    await db
+      .update(employeesTable)
+      .set({
+        userId: user.id,
+        location: byName.location || DAVOMAT_SITE_LABEL,
+        latitude: byName.latitude ?? DAVOMAT_SITE_LAT,
+        longitude: byName.longitude ?? DAVOMAT_SITE_LNG,
+        updatedAt: new Date(),
+      })
+      .where(eq(employeesTable.id, byName.id));
+    return {
+      id: byName.id,
+      userId: user.id,
+      fullName: byName.fullName,
+      location: byName.location || DAVOMAT_SITE_LABEL,
+      latitude: byName.latitude ?? DAVOMAT_SITE_LAT,
+      longitude: byName.longitude ?? DAVOMAT_SITE_LNG,
+    };
+  }
+
+  let departmentId = user.departmentId;
+  if (!departmentId) {
+    const [anyDept] = await db
+      .select({ id: departmentsTable.id })
+      .from(departmentsTable)
+      .limit(1);
+    departmentId = anyDept?.id ?? 1;
+  }
+
+  const [created] = await db
+    .insert(employeesTable)
+    .values({
+      fullName: user.fullName,
+      position: ROLE_POSITION[user.role] || user.role || "Xodim",
+      departmentId,
+      hiredAt: todayTashkent(),
+      userId: user.id,
+      employmentStatus: "working",
+      location: DAVOMAT_SITE_LABEL,
+      latitude: DAVOMAT_SITE_LAT,
+      longitude: DAVOMAT_SITE_LNG,
+      shiftType: "one",
+    })
+    .returning({
+      id: employeesTable.id,
+      userId: employeesTable.userId,
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+    });
+
+  if (!created) throw new Error("Xodim yaratilmadi");
+  return created;
+}
+
+async function ensureAllActiveUsersLinked(): Promise<number> {
+  const users = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+      departmentId: usersTable.departmentId,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.status, "active"));
+  let n = 0;
+  for (const u of users) {
+    await ensureEmployeeForUser(u);
+    n += 1;
+  }
+  return n;
+}
+
+async function matchFaceUserId(
+  descriptor: number[],
+): Promise<{ ok: true; userId: number; faceId: number } | { ok: false; error: string; code: string }> {
+  const rows = await db
+    .select({
+      id: faceProfilesTable.id,
+      userId: faceProfilesTable.userId,
+      descriptor: faceProfilesTable.descriptor,
+    })
+    .from(faceProfilesTable);
+
+  let best: { id: number; userId: number; dist: number } | null = null;
+  let second = Number.POSITIVE_INFINITY;
+  for (const row of rows) {
+    let stored: number[];
+    try {
+      stored = JSON.parse(row.descriptor) as number[];
+    } catch {
+      continue;
+    }
+    if (!Array.isArray(stored) || stored.length !== FACE_DESCRIPTOR_LEN) continue;
+    const dist = euclidean(descriptor, stored);
+    if (!best || dist < best.dist) {
+      second = best?.dist ?? Number.POSITIVE_INFINITY;
+      best = { id: row.id, userId: row.userId, dist };
+    } else if (dist < second) {
+      second = dist;
+    }
+  }
+
+  if (!best || best.dist > FACE_MATCH_MAX) {
+    return {
+      ok: false,
+      error: "Bu yuz aniqlanmadi. Avval tizimga kirib Face ID ni ro‘yxatdan o‘tkazing.",
+      code: "face_not_registered",
+    };
+  }
+  if (second - best.dist < 0.06 && second <= FACE_MATCH_MAX) {
+    return {
+      ok: false,
+      error: "Yuz aniq ajratilmadi — yorug‘likni tekshiring",
+      code: "face_ambiguous",
+    };
+  }
+  return { ok: true, userId: best.userId, faceId: best.id };
+}
+
+function geoGate(
+  emp: WorkplaceEmp,
+  latitude: number,
+  longitude: number,
+  accuracyMeters?: number,
+):
+  | { ok: true; distanceMeters: number; effectiveRadius: number }
+  | {
+      ok: false;
+      status: number;
+      body: Record<string, unknown>;
+    } {
+  const distanceMeters = haversineMeters(
+    latitude,
+    longitude,
+    DAVOMAT_SITE_LAT,
+    DAVOMAT_SITE_LNG,
+  );
+  // Telefon GPS xatosi (±) bo‘lsa, ruxsat radiusini biroz kengaytiramiz (max +50 m)
+  const gpsSlop =
+    typeof accuracyMeters === "number" && Number.isFinite(accuracyMeters)
+      ? Math.min(Math.max(0, accuracyMeters), 50)
+      : 0;
+  const effectiveRadius = DAVOMAT_GEOFENCE_METERS + gpsSlop;
+
+  if (distanceMeters > effectiveRadius) {
+    const remainMeters = distanceMeters - effectiveRadius;
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error: `Belgilangan hududdan uzoqdasiz: ${distanceMeters} m. Yana ${remainMeters} m yaqinlashgach Face ID ochiladi (ruxsat: ${effectiveRadius} m). Hududdan tashqarida davomat qabul qilinmaydi.`,
+        code: "outside_geofence",
+        distanceMeters,
+        remainMeters,
+        allowedMeters: effectiveRadius,
+        workplace: {
+          location: DAVOMAT_SITE_LABEL,
+          latitude: DAVOMAT_SITE_LAT,
+          longitude: DAVOMAT_SITE_LNG,
+        },
+        fullName: emp.fullName,
+      },
+    };
+  }
+  return { ok: true, distanceMeters, effectiveRadius };
+}
+
+async function applyFacePunch(opts: {
+  emp: WorkplaceEmp;
+  latitude: number;
+  longitude: number;
+  distanceMeters: number;
+  faceProfileId: number;
+}): Promise<
+  | { ok: true; payload: Record<string, unknown> }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  const { emp, latitude, longitude, distanceMeters, faceProfileId } = opts;
+  const workDate = todayTashkent();
+  const now = new Date();
+
+  const [existing] = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(
+      and(
+        eq(attendanceRecordsTable.employeeId, emp.id),
+        eq(attendanceRecordsTable.workDate, workDate),
+      ),
+    )
+    .limit(1);
+
+  const geoFields = {
+    checkLatitude: latitude,
+    checkLongitude: longitude,
+    distanceMeters,
+    source: "face" as const,
+    userId: emp.userId,
+    updatedAt: now,
+  };
+
+  let action: "in" | "out";
+  let checkInAt = existing?.checkInAt ?? null;
+  let checkOutAt = existing?.checkOutAt ?? null;
+
+  if (!existing?.checkInAt) {
+    action = "in";
+    checkInAt = now;
+    const status = computeMetrics(workDate, checkInAt, null).status;
+    if (existing) {
+      await db
+        .update(attendanceRecordsTable)
+        .set({ ...geoFields, checkInAt, status })
+        .where(eq(attendanceRecordsTable.id, existing.id));
+    } else {
+      await db.insert(attendanceRecordsTable).values({
+        employeeId: emp.id,
+        userId: emp.userId,
+        workDate,
+        checkInAt,
+        status,
+        ...geoFields,
+        createdById: emp.userId,
+      });
+    }
+  } else if (!existing.checkOutAt) {
+    action = "out";
+    checkOutAt = now;
+    const status = computeMetrics(workDate, existing.checkInAt, checkOutAt).status;
+    await db
+      .update(attendanceRecordsTable)
+      .set({ ...geoFields, checkOutAt, status })
+      .where(eq(attendanceRecordsTable.id, existing.id));
+    checkInAt = existing.checkInAt;
+  } else {
+    return {
+      ok: false,
+      status: 400,
+      body: {
+        error: `Bugun davomat yopilgan: kelish ${formatHm(existing.checkInAt)}, ketish ${formatHm(existing.checkOutAt)}`,
+        code: "already_complete",
+        fullName: emp.fullName,
+        checkIn: formatHm(existing.checkInAt),
+        checkOut: formatHm(existing.checkOutAt),
+      },
+    };
+  }
+
+  await db
+    .update(faceProfilesTable)
+    .set({ lastUsedAt: now })
+    .where(eq(faceProfilesTable.id, faceProfileId));
+
+  const metrics = computeMetrics(workDate, checkInAt, checkOutAt);
+  return {
+    ok: true,
+    payload: {
+      ok: true,
+      action,
+      workDate,
+      fullName: emp.fullName,
+      location: emp.location,
+      distanceMeters,
+      allowedMeters: DAVOMAT_GEOFENCE_METERS,
+      message:
+        action === "in"
+          ? `${emp.fullName}: kelish belgilandi (${metrics.checkIn})`
+          : `${emp.fullName}: ketish belgilandi (${metrics.checkOut})`,
+      ...metrics,
+    },
+  };
+}
+
+/** Login qilgan xodim — ish joyi GPS (UI masofa hisobi uchun) */
+router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    if (!user) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    const emp = await ensureEmployeeForUser(user);
+    const workDate = todayTashkent();
+    const [rec] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.employeeId, emp.id),
+          eq(attendanceRecordsTable.workDate, workDate),
+        ),
+      )
+      .limit(1);
+
+    res.json({
+      allowedMeters: DAVOMAT_GEOFENCE_METERS,
+      site: {
+        label: DAVOMAT_SITE_LABEL,
+        latitude: DAVOMAT_SITE_LAT,
+        longitude: DAVOMAT_SITE_LNG,
+      },
+      workDate,
+      employee: {
+        id: emp.id,
+        fullName: emp.fullName,
+        location: emp.location || DAVOMAT_SITE_LABEL,
+        latitude: DAVOMAT_SITE_LAT,
+        longitude: DAVOMAT_SITE_LNG,
+        hasGps: true,
+      },
+      today: rec
+        ? {
+            checkIn: formatHm(rec.checkInAt),
+            checkOut: formatHm(rec.checkOutAt),
+            status: rec.status,
+            complete: Boolean(rec.checkInAt && rec.checkOutAt),
+            nextAction: !rec.checkInAt ? "in" : !rec.checkOutAt ? "out" : "done",
+          }
+        : { checkIn: "—", checkOut: "—", status: "absent", complete: false, nextAction: "in" },
+    });
+  } catch (err) {
+    console.error("GET /davomat/me/workplace error:", err);
+    res.status(503).json({ error: "Ish joyi yuklanmadi" });
+  }
+});
+
+/** Belgilangan davomat nuqtasi — login shart emas */
+router.get("/davomat/site", async (_req, res): Promise<void> => {
+  res.json({
+    allowedMeters: DAVOMAT_GEOFENCE_METERS,
+    label: DAVOMAT_SITE_LABEL,
+    latitude: DAVOMAT_SITE_LAT,
+    longitude: DAVOMAT_SITE_LNG,
+  });
+});
+
+/** Banner / ogohlantirish holati — barcha login qilgan xodimlar */
+router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const workDate = todayTashkent();
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+
+    const emp = user ? await ensureEmployeeForUser(user) : null;
+    let nextAction: "in" | "out" | "done" | "unlinked" = "unlinked";
+    let checkIn = "—";
+    let checkOut = "—";
+    let fullName: string | null = user?.fullName ?? null;
+
+    if (emp) {
+      fullName = emp.fullName;
+      const [rec] = await db
+        .select()
+        .from(attendanceRecordsTable)
+        .where(
+          and(
+            eq(attendanceRecordsTable.employeeId, emp.id),
+            eq(attendanceRecordsTable.workDate, workDate),
+          ),
+        )
+        .limit(1);
+      checkIn = formatHm(rec?.checkInAt ?? null);
+      checkOut = formatHm(rec?.checkOutAt ?? null);
+      if (!rec?.checkInAt) nextAction = "in";
+      else if (!rec.checkOutAt) nextAction = "out";
+      else nextAction = "done";
+    }
+
+    const messages: Record<string, string> = {
+      in: "Bugun hali kelish belgilanmagan — Face ID bilan davomatdan o‘ting (15 m hudud).",
+      out: "Kelish belgilandi. Ketishni ham Face ID bilan belgilang.",
+      done: "Bugungi davomat yopilgan (kelish va ketish).",
+      unlinked: "Davomat Face ID orqali majburiy.",
+    };
+
+    res.json({
+      workDate,
+      allowedMeters: DAVOMAT_GEOFENCE_METERS,
+      siteLabel: DAVOMAT_SITE_LABEL,
+      fullName,
+      nextAction,
+      checkIn,
+      checkOut,
+      message: messages[nextAction],
+      linkUrl: "/davomat-face",
+      warn: nextAction === "in" || nextAction === "out",
+    });
+  } catch (err) {
+    console.error("GET /davomat/me/status error:", err);
+    res.status(503).json({ error: "Davomat holati yuklanmadi" });
+  }
+});
+
+/** HR/Direktor: barcha faol xodimlarga darhol xabar + xodim bog‘lash */
+router.post("/davomat/announce", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  try {
+    const linked = await ensureAllActiveUsersLinked();
+    const sent = await forceBroadcastDavomatToAll();
+    res.json({
+      ok: true,
+      sent,
+      linked,
+      message: `${sent} ta xabar, ${linked} ta akkaunt xodimlar bilan bog‘landi`,
+    });
+  } catch (err) {
+    console.error("POST /davomat/announce error:", err);
+    res.status(503).json({ error: "Xabar yuborilmadi" });
+  }
+});
+
+/**
+ * Face ID davomat — login shart emas.
+ * Yuz → user → avto xodim bog‘lash → GPS hududi → kelish/ketish.
+ */
+router.post("/davomat/face-punch", async (req, res): Promise<void> => {
+  try {
+    const descriptor = parseFaceDescriptor(req.body?.descriptor);
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const accuracy = Number(req.body?.accuracy);
+
+    if (!descriptor) {
+      res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
+      return;
+    }
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      res.status(400).json({
+        error: "GPS majburiy — lokatsiyaga ruxsat bering",
+        code: "gps_required",
+      });
+      return;
+    }
+
+    const matched = await matchFaceUserId(descriptor);
+    if (!matched.ok) {
+      res.status(401).json({ error: matched.error, code: matched.code });
+      return;
+    }
+
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        status: usersTable.status,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, matched.userId))
+      .limit(1);
+    if (!user || user.status !== "active") {
+      res.status(403).json({ error: "Profil faol emas", code: "user_inactive" });
+      return;
+    }
+
+    const emp = await ensureEmployeeForUser(user);
+
+    const gate = geoGate(
+      emp,
+      latitude,
+      longitude,
+      Number.isFinite(accuracy) ? accuracy : undefined,
+    );
+    if (!gate.ok) {
+      res.status(gate.status).json(gate.body);
+      return;
+    }
+
+    const punched = await applyFacePunch({
+      emp,
+      latitude,
+      longitude,
+      distanceMeters: gate.distanceMeters,
+      faceProfileId: matched.faceId,
+    });
+    if (!punched.ok) {
+      res.status(punched.status).json(punched.body);
+      return;
+    }
+    res.json(punched.payload);
+  } catch (err) {
+    console.error("POST /davomat/face-punch error:", err);
+    res.status(503).json({ error: "Face ID davomat yozilmadi" });
+  }
+});
+
+/** Faqat masofa tekshiruvi (Face ID ochishdan oldin, login + workplace) */
+router.post("/davomat/geo-check", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const accuracy = Number(req.body?.accuracy);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      res.status(400).json({ error: "GPS majburiy", code: "gps_required" });
+      return;
+    }
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    if (!user) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    const emp = await ensureEmployeeForUser(user);
+    const gate = geoGate(
+      emp,
+      latitude,
+      longitude,
+      Number.isFinite(accuracy) ? accuracy : undefined,
+    );
+    if (!gate.ok) {
+      res.status(gate.status).json(gate.body);
+      return;
+    }
+    res.json({
+      ok: true,
+      inside: true,
+      distanceMeters: gate.distanceMeters,
+      remainMeters: 0,
+      allowedMeters: gate.effectiveRadius,
+      fullName: emp.fullName,
+      location: emp.location,
+    });
+  } catch (err) {
+    console.error("POST /davomat/geo-check error:", err);
+    res.status(503).json({ error: "GPS tekshiruv xatosi" });
+  }
+});
+
+router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  try {
+    const q = req.query as Record<string, string>;
+    const to = q.to || todayTashkent();
+    const from = q.from || addDays(to, -13);
+    const employees = await loadActiveEmployees({
+      departmentId: q.departmentId,
+      location: q.location,
+      search: q.search,
+      employeeId: q.employeeId,
+    });
+    const records = await loadRecords(
+      from,
+      to,
+      employees.map((e) => e.id),
+    );
+    const report = buildReport(employees, records, from, to);
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "VAKSINA MED HR";
+    workbook.created = new Date();
+
+    const headerStyle = (cell: ExcelJS.Cell, fill = "FF0B3A5C") => {
+      cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+      cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FF083049" } },
+        left: { style: "thin", color: { argb: "FF083049" } },
+        bottom: { style: "thin", color: { argb: "FF083049" } },
+        right: { style: "thin", color: { argb: "FF083049" } },
+      };
+    };
+
+    const paintRow = (row: ExcelJS.Row, zebra: boolean, centerCols: number[] = []) => {
+      const bg = zebra ? "FFF7FAFC" : "FFFFFFFF";
+      row.eachCell((cell, col) => {
+        cell.font = { name: "Calibri", size: 10 };
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+        cell.alignment = {
+          vertical: "middle",
+          horizontal: centerCols.includes(col) ? "center" : "left",
+          wrapText: true,
+        };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
+        };
+      });
+      row.height = 20;
+    };
+
+    // —— Sheet 1: Kunlik xulosa ——
+    const s1 = workbook.addWorksheet("Kunlik xulosa", {
+      views: [{ state: "frozen", ySplit: 2 }],
+    });
+    s1.mergeCells("A1:H1");
+    const t1 = s1.getCell("A1");
+    t1.value = `VAKSINA MED — Kunlik davomat (${from} — ${to}) · Norma: ${WORK_START}–${WORK_END}`;
+    t1.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+    t1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+    t1.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    s1.getRow(1).height = 30;
+
+    const h1 = [
+      "Sana",
+      "Kelgan",
+      "Kech",
+      "Ketish yo‘q",
+      "Ta’til",
+      "Kelmagan",
+      "Kelganlar",
+      "Kelmaganlar",
+    ];
+    h1.forEach((h, i) => headerStyle(s1.getRow(2).getCell(i + 1), "FF1A5F8A"));
+    h1.forEach((h, i) => {
+      s1.getRow(2).getCell(i + 1).value = h;
+    });
+    s1.columns = [
+      { width: 12 },
+      { width: 10 },
+      { width: 8 },
+      { width: 12 },
+      { width: 8 },
+      { width: 10 },
+      { width: 42 },
+      { width: 42 },
+    ];
+    report.days.forEach((d, idx) => {
+      const row = s1.addRow([
+        d.date,
+        d.present,
+        d.late,
+        d.incomplete,
+        d.leave,
+        d.absent,
+        d.presentList.join(", ") || "—",
+        d.absentList.join(", ") || "—",
+      ]);
+      paintRow(row, idx % 2 === 0, [1, 2, 3, 4, 5, 6]);
+    });
+
+    // —— Sheet 2: Batafsil (har kun / har xodim) ——
+    const s2 = workbook.addWorksheet("Batafsil davomat", {
+      views: [{ state: "frozen", ySplit: 2, xSplit: 4 }],
+    });
+    s2.mergeCells("A1:N1");
+    const t2 = s2.getCell("A1");
+    t2.value = `Har bir xodim — kunlik kelish/ketish, ishlagan soat, erta/kech (${from} — ${to})`;
+    t2.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+    t2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+    t2.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    s2.getRow(1).height = 30;
+
+    const h2 = [
+      "в„–",
+      "F.I.Sh.",
+      "Lavozim",
+      "Bo‘lim",
+      "Filial",
+      "Sana",
+      "Holat",
+      "Kelish",
+      "Ketish",
+      "Ishlagan soat",
+      "Erta keldi",
+      "Kech qoldi",
+      "Erta ketdi",
+      "Kech qoldi (ketish)",
+    ];
+    h2.forEach((h, i) => {
+      const cell = s2.getRow(2).getCell(i + 1);
+      cell.value = h;
+      headerStyle(cell, "FF1A5F8A");
+    });
+    s2.columns = [
+      { width: 5 },
+      { width: 26 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+      { width: 12 },
+      { width: 12 },
+      { width: 10 },
+      { width: 10 },
+      { width: 12 },
+      { width: 12 },
+      { width: 12 },
+      { width: 12 },
+      { width: 16 },
+    ];
+
+    const statusUz: Record<string, string> = {
+      present: "Kelgan",
+      late: "Kech",
+      incomplete: "Ketish yo‘q",
+      absent: "Kelmagan",
+      leave: "Ta’til",
+    };
+
+    let n = 0;
+    report.employees.forEach((e) => {
+      e.days.forEach((d) => {
+        n += 1;
+        const row = s2.addRow([
+          n,
+          e.fullName,
+          e.position,
+          e.departmentName || "—",
+          e.location || "—",
+          d.date,
+          statusUz[d.status] || d.status,
+          d.checkIn,
+          d.checkOut,
+          d.workedHours,
+          d.earlyArrivalLabel,
+          d.lateArrivalLabel,
+          d.earlyLeaveLabel,
+          d.overtimeLabel,
+        ]);
+        paintRow(row, n % 2 === 0, [1, 6, 7, 8, 9, 10]);
+        if (d.status === "absent") {
+          row.getCell(7).font = { name: "Calibri", size: 10, color: { argb: "FFB91C1C" } };
+        } else if (d.status === "late") {
+          row.getCell(7).font = { name: "Calibri", size: 10, color: { argb: "FFB45309" } };
+        } else if (d.status === "present") {
+          row.getCell(7).font = { name: "Calibri", size: 10, color: { argb: "FF047857" } };
+        }
+      });
+    });
+
+    // —— Sheet 3: Xodimlar jami ——
+    const s3 = workbook.addWorksheet("Xodimlar jami", {
+      views: [{ state: "frozen", ySplit: 2 }],
+    });
+    s3.mergeCells("A1:L1");
+    const t3 = s3.getCell("A1");
+    t3.value = `Xodimlar bo‘yicha jami (${from} — ${to}) · Norma ${WORK_START}–${WORK_END}`;
+    t3.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+    t3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+    t3.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+    s3.getRow(1).height = 30;
+
+    const h3 = [
+      "в„–",
+      "F.I.Sh.",
+      "Lavozim",
+      "Bo‘lim",
+      "Filial",
+      "Kelgan kun",
+      "Kelmagan kun",
+      "Kech kun",
+      "Jami ishlagan",
+      "Jami kech qolish",
+      "Jami erta kelish",
+      "Jami erta ketish",
+    ];
+    h3.forEach((h, i) => {
+      const cell = s3.getRow(2).getCell(i + 1);
+      cell.value = h;
+      headerStyle(cell, "FF1A5F8A");
+    });
+    s3.columns = [
+      { width: 5 },
+      { width: 26 },
+      { width: 16 },
+      { width: 16 },
+      { width: 16 },
+      { width: 12 },
+      { width: 12 },
+      { width: 10 },
+      { width: 14 },
+      { width: 14 },
+      { width: 14 },
+      { width: 14 },
+    ];
+    report.employees.forEach((e, idx) => {
+      const row = s3.addRow([
+        idx + 1,
+        e.fullName,
+        e.position,
+        e.departmentName || "—",
+        e.location || "—",
+        e.totals.present,
+        e.totals.absent,
+        e.totals.late,
+        e.totals.workedHours,
+        e.totals.lateArrivalLabel,
+        e.totals.earlyArrivalLabel,
+        e.totals.earlyLeaveLabel,
+      ]);
+      paintRow(row, idx % 2 === 0, [1, 6, 7, 8, 9]);
+    });
+
+    const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+    const stamp = `${from}_${to}`;
+    res.setHeader(
+      "Content-Type",
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    );
+    res.setHeader("Content-Disposition", `attachment; filename="davomat_${stamp}.xlsx"`);
+    res.setHeader("Cache-Control", "no-store");
+    res.send(buffer);
+  } catch (err) {
+    console.error("GET /davomat/export error:", err);
+    res.status(503).json({ error: "Excel yuklanmadi" });
+  }
+});
+
+export default router;

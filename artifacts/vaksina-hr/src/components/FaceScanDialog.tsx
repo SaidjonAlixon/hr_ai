@@ -21,11 +21,13 @@ import {
 } from "@/lib/face-id";
 import { cn } from "@/lib/utils";
 
+type CaptureResult = { fullName?: string } | void;
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "enroll" | "login";
-  onCaptured: (descriptor: number[]) => Promise<void>;
+  onCaptured: (descriptor: number[]) => Promise<CaptureResult>;
 };
 
 const ENROLL_SAMPLES = 5;
@@ -193,12 +195,25 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
                       setBusy(true);
                       setHint("Yuz tekshirilmoqda…");
                       try {
-                        await onCapturedRef.current(desc);
+                        const captured = await onCapturedRef.current(desc);
+                        const name =
+                          captured && typeof captured === "object" && captured.fullName
+                            ? captured.fullName.trim()
+                            : "";
+                        if (name) {
+                          setError(null);
+                          setHint(`Xush kelibsiz, ${name}`);
+                          setLiveOk(true);
+                          await new Promise((r) => window.setTimeout(r, 1100));
+                        }
                         stopCamera();
                         onOpenChange(false);
                         return;
                       } catch (err) {
-                        setError((err as Error)?.message || "Yuz mos kelmadi");
+                        setError(
+                          (err as Error)?.message ||
+                            "Bu yuz aniqlanmadi. Ro‘yxatdan o‘ting.",
+                        );
                         setBusy(false);
                         loginStreak = 0;
                         setProgress(0);

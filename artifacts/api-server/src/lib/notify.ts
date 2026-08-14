@@ -62,3 +62,25 @@ export async function notifyUser(opts: {
     linkUrl: opts.linkUrl,
   });
 }
+
+/** Barcha faol foydalanuvchilarga (xodimlarga) bildirishnoma */
+export async function notifyAllActiveUsers(opts: {
+  text: string;
+  type: string;
+  linkUrl: string;
+}): Promise<number> {
+  const users = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(eq(usersTable.status, "active"));
+
+  for (const u of users) {
+    await db.insert(notificationsTable).values({
+      userId: u.id,
+      text: opts.text,
+      type: opts.type,
+      linkUrl: opts.linkUrl,
+    });
+  }
+  return users.length;
+}

@@ -1,6 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
 import { startVacancyReminderJob } from "./jobs/vacancy-reminders";
+import { startDavomatReminderJob } from "./jobs/davomat-reminders";
 
 /** Vercel sets VERCEL=1 — serverless uses exported app, no listen. */
 const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -28,6 +29,7 @@ if (!isVercel) {
 
     logger.info({ port }, "Server listening");
     startVacancyReminderJob();
+    startDavomatReminderJob();
   });
 }
 

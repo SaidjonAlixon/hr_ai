@@ -265,6 +265,31 @@ CREATE TABLE IF NOT EXISTS face_profiles (
   last_used_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS face_profiles_user_uidx ON face_profiles (user_id);
+
+CREATE TABLE IF NOT EXISTS attendance_records (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  user_id INTEGER,
+  work_date TEXT NOT NULL,
+  check_in_at TIMESTAMPTZ,
+  check_out_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'present',
+  source TEXT NOT NULL DEFAULT 'manual',
+  check_latitude DOUBLE PRECISION,
+  check_longitude DOUBLE PRECISION,
+  distance_meters INTEGER,
+  notes TEXT,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS attendance_records_emp_date_uidx
+  ON attendance_records (employee_id, work_date);
+CREATE INDEX IF NOT EXISTS attendance_records_date_idx ON attendance_records (work_date);
+CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records (employee_id);
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
 `;
 
 /** Vercel cold start uchun — yetishmayotgan kritik ustunlar (tez) */
@@ -330,6 +355,31 @@ CREATE TABLE IF NOT EXISTS face_profiles (
   last_used_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS face_profiles_user_uidx ON face_profiles (user_id);
+
+CREATE TABLE IF NOT EXISTS attendance_records (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  user_id INTEGER,
+  work_date TEXT NOT NULL,
+  check_in_at TIMESTAMPTZ,
+  check_out_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'present',
+  source TEXT NOT NULL DEFAULT 'manual',
+  check_latitude DOUBLE PRECISION,
+  check_longitude DOUBLE PRECISION,
+  distance_meters INTEGER,
+  notes TEXT,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS attendance_records_emp_date_uidx
+  ON attendance_records (employee_id, work_date);
+CREATE INDEX IF NOT EXISTS attendance_records_date_idx ON attendance_records (work_date);
+CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records (employee_id);
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
 `;
 
 export async function ensureEmployeesOrgColumns(): Promise<void> {

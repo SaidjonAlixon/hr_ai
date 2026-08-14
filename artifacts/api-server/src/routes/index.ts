@@ -30,6 +30,7 @@ import uploadsRouter from "./uploads";
 import pharmacyNetworkRouter from "./pharmacy-network";
 import webauthnRouter from "./webauthn";
 import faceRouter from "./face";
+import davomatRouter from "./davomat";
 
 const router: IRouter = Router();
 
@@ -48,6 +49,7 @@ router.use(kuzatuvRouter);
 router.use(authRouter);
 router.use(webauthnRouter);
 router.use(faceRouter);
+router.use(davomatRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

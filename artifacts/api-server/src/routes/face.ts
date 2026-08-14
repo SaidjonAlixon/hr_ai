@@ -126,17 +126,29 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
   }
 
   if (!best || best.dist > MATCH_MAX_DISTANCE) {
-    res.status(401).json({ error: "Yuz mos kelmadi. Avval tizimga kirib Face ID ni ulang." });
+    res.status(401).json({
+      error: "Bu yuz aniqlanmadi. Ro‘yxatdan o‘ting — login/parol bilan kirib Face ID ni ulang.",
+      code: "face_not_registered",
+    });
     return;
   }
   if (second - best.dist < 0.06 && second <= MATCH_MAX_DISTANCE) {
-    res.status(401).json({ error: "Yuz aniq ajratilmadi — yorug‘likni tekshiring" });
+    res.status(401).json({
+      error: "Yuz aniq ajratilmadi — yorug‘likni tekshiring va qayta urinib ko‘ring",
+      code: "face_ambiguous",
+    });
     return;
   }
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, best.userId));
   if (!user || user.status !== "active") {
-    res.status(403).json({ error: "Foydalanuvchi faol emas" });
+    res.status(403).json({
+      error: user?.fullName
+        ? `${user.fullName}: profil faol emas`
+        : "Foydalanuvchi faol emas",
+      code: "user_inactive",
+      fullName: user?.fullName ?? undefined,
+    });
     return;
   }
 
@@ -147,7 +159,12 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
 
   setSessionCookie(res, user.id);
   const fullUser = await getUserWithDept(user.id);
-  res.json({ user: fullUser });
+  const fullName = fullUser?.fullName ?? user.fullName;
+  res.json({
+    user: fullUser,
+    fullName,
+    message: fullName,
+  });
 });
 
 router.delete("/auth/face", requireAuth, async (req: AuthRequest, res): Promise<void> => {

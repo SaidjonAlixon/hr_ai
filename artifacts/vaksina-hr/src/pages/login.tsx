@@ -137,8 +137,17 @@ export default function Login() {
                   <ScanFace className="h-4 w-4" />
                   Face ID bilan kirish
                 </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  className="mt-2 w-full gap-2"
+                  onClick={() => setLocation("/davomat-face")}
+                >
+                  <ScanFace className="h-4 w-4" />
+                  Davomat Face ID (15 m)
+                </Button>
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  Birinchi marta login/parol bilan kiring va Face ID ni ulang. Keyin faqat yuz.
+                  Davomat faqat ish joyi GPS dan 15 m ichida. Uzoq bo‘lsangiz qancha metr yurish kerakligi chiqadi.
                 </p>
                 <FaceScanDialog
                   open={faceOpen}
@@ -146,7 +155,21 @@ export default function Login() {
                   mode="login"
                   onCaptured={async (descriptor) => {
                     const data = await loginWithFace<User>(descriptor);
-                    goAfterLogin(data.user);
+                    const fullName =
+                      data.fullName ||
+                      (data.user as User & { fullName?: string })?.fullName ||
+                      "";
+                    // Dialog ismni ko‘rsatishi uchun biroz kutamiz
+                    window.setTimeout(() => {
+                      toast({
+                        title: fullName ? `Xush kelibsiz, ${fullName}` : "Face ID",
+                        description: fullName
+                          ? "Profil egasi aniqlandi — tizimga kirdingiz"
+                          : "Tizimga kirdingiz",
+                      });
+                      goAfterLogin(data.user);
+                    }, 1150);
+                    return { fullName };
                   }}
                 />
               </div>

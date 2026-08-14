@@ -248,6 +248,87 @@ export async function downloadBranchAuditsExcel(params: BranchAuditListParams) {
   URL.revokeObjectURL(url);
 }
 
+export type CoverageBranch = {
+  managerEmployeeId: number;
+  managerName: string;
+  branchLocation: string;
+  filled: boolean;
+  visitCount: number;
+  lastVisitDate: string | null;
+  lastScore: number | null;
+  lastCoordinatorName: string | null;
+};
+
+export type CoordinatorCoverage = {
+  employeeId: number;
+  userId: number | null;
+  name: string;
+  dismissed: boolean;
+  total: number;
+  filled: number;
+  missing: number;
+  percent: number;
+  branches: CoverageBranch[];
+};
+
+export type CoverageResponse = {
+  totals: {
+    coordinators: number;
+    branches: number;
+    filled: number;
+    missing: number;
+    unassigned: number;
+  };
+  coordinators: CoordinatorCoverage[];
+  unassigned: CoverageBranch[];
+};
+
+export function useAuditCoverage(
+  params: { from?: string; to?: string },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["branch-audits", "coverage", params],
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      if (params.from) sp.set("from", params.from);
+      if (params.to) sp.set("to", params.to);
+      const qs = sp.toString();
+      return apiFetch<CoverageResponse>(`/branch-audits/coverage${qs ? `?${qs}` : ""}`);
+    },
+    enabled,
+  });
+}
+
+export async function downloadCoverageExcel(params: { from?: string; to?: string }) {
+  const sp = new URLSearchParams();
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  const qs = sp.toString();
+  const res = await fetch(`/api/branch-audits/coverage/export${qs ? `?${qs}` : ""}`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || "Excel yuklanmadi");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `cheklist-qamrov-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 export function useCreateBranchAudit() {
   const qc = useQueryClient();
   return useMutation({

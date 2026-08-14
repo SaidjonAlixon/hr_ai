@@ -30,6 +30,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ import {
   useBranchAuditsList,
   type BranchAudit,
 } from "@/lib/branch-audits-api";
+import { CoveragePanel } from "./coverage-panel";
 
 function scoreTone(pct: number) {
   if (pct >= 85) return "text-emerald-600";
@@ -82,6 +84,7 @@ export default function ChecklistHolatiPage() {
   const [to, setTo] = useState("");
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [tab, setTab] = useState("tashriflar");
 
   const { data: audits = [], isLoading } = useBranchAuditsList(
     {
@@ -240,21 +243,29 @@ export default function ChecklistHolatiPage() {
             </div>
             <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Cheklist holati</h1>
             <p className="mt-1.5 max-w-xl text-xs text-slate-300 sm:text-sm">
-              Barcha koordinatorlar tashriflari, sanalar, filial, mudir, lokatsiya va savol javoblari.
+              Tashriflar, javoblar va har bir koordinatorning filial qamrovi.
             </p>
           </div>
-          <Button
-            variant="secondary"
-            className="w-full bg-white/10 text-white hover:bg-white/20 sm:w-auto"
-            onClick={() => void handleExcel()}
-            disabled={exporting || filtered.length === 0}
-          >
-            <Download className="mr-1.5 h-4 w-4" />
-            {exporting ? "Yuklanmoqda…" : "Excel eksport"}
-          </Button>
+          {tab === "tashriflar" && (
+            <Button
+              variant="secondary"
+              className="w-full bg-white/10 text-white hover:bg-white/20 sm:w-auto"
+              onClick={() => void handleExcel()}
+              disabled={exporting || filtered.length === 0}
+            >
+              <Download className="mr-1.5 h-4 w-4" />
+              {exporting ? "Yuklanmoqda…" : "Excel eksport"}
+            </Button>
+          )}
         </div>
       </div>
 
+      <Tabs value={tab} onValueChange={setTab} className="space-y-4">
+        <TabsList className="grid h-11 w-full grid-cols-2 sm:max-w-md">
+          <TabsTrigger value="tashriflar">Tashriflar</TabsTrigger>
+          <TabsTrigger value="qamrov">Filial qamrovi</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tashriflar" className="mt-0 space-y-4 sm:space-y-6">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         <Stat label="Tashriflar" value={String(stats.visits)} />
         <Stat label="Filiallar" value={String(stats.branches)} />
@@ -461,6 +472,11 @@ export default function ChecklistHolatiPage() {
           </ul>
         )}
       </div>
+        </TabsContent>
+        <TabsContent value="qamrov" className="mt-0">
+          <CoveragePanel enabled={allowed} />
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
         <DialogContent className="max-h-[88vh] w-[calc(100%-1.5rem)] max-w-2xl overflow-y-auto rounded-2xl p-4 sm:p-6">

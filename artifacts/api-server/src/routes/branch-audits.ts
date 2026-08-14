@@ -83,6 +83,176 @@ function answerLabel(a: "yes" | "no" | null | undefined) {
   return "—";
 }
 
+function branchLabelFromEmployee(fullName: string, location: string | null) {
+  const loc = displayBranchName(location);
+  const generic =
+    !loc ||
+    loc === "Filial" ||
+    loc === fullName ||
+    /\d+\s*°/.test(loc) ||
+    /^-?\d+[.,]\d+\s*[,;]\s*-?\d+/.test(loc);
+  return generic ? fullName : loc;
+}
+
+type CoverageVisit = {
+  visitCount: number;
+  lastVisitDate: string | null;
+  lastScore: number | null;
+  lastCoordinatorName: string | null;
+};
+
+type CoverageBranch = {
+  managerEmployeeId: number;
+  managerName: string;
+  branchLocation: string;
+  filled: boolean;
+  visitCount: number;
+  lastVisitDate: string | null;
+  lastScore: number | null;
+  lastCoordinatorName: string | null;
+};
+
+function toCoverageBranch(
+  managerEmployeeId: number,
+  managerName: string,
+  branchLocation: string,
+  visit?: CoverageVisit,
+): CoverageBranch {
+  const visitCount = visit?.visitCount ?? 0;
+  return {
+    managerEmployeeId,
+    managerName,
+    branchLocation,
+    filled: visitCount > 0,
+    visitCount,
+    lastVisitDate: visit?.lastVisitDate ?? null,
+    lastScore: visit?.lastScore ?? null,
+    lastCoordinatorName: visit?.lastCoordinatorName ?? null,
+  };
+}
+
+async function loadCoverage(req: AuthRequest) {
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
+
+  const [coordinators, managers, auditRows] = await Promise.all([
+    db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        userId: employeesTable.userId,
+        employmentStatus: employeesTable.employmentStatus,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.orgRole, "coordinator")),
+    db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        location: employeesTable.location,
+        reportsToId: employeesTable.reportsToId,
+        employmentStatus: employeesTable.employmentStatus,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.orgRole, "manager")),
+    db
+      .select({
+        managerEmployeeId: branchAuditsTable.managerEmployeeId,
+        visitDate: branchAuditsTable.visitDate,
+        scorePercent: branchAuditsTable.scorePercent,
+        coordinatorName: branchAuditsTable.coordinatorName,
+      })
+      .from(branchAuditsTable),
+  ]);
+
+  const visits = new Map<number, CoverageVisit>();
+  for (const a of auditRows) {
+    if (from && a.visitDate < from) continue;
+    if (to && a.visitDate > to) continue;
+    const cur = visits.get(a.managerEmployeeId);
+    if (!cur) {
+      visits.set(a.managerEmployeeId, {
+        visitCount: 1,
+        lastVisitDate: a.visitDate,
+        lastScore: a.scorePercent,
+        lastCoordinatorName: a.coordinatorName,
+      });
+      continue;
+    }
+    cur.visitCount += 1;
+    if (!cur.lastVisitDate || a.visitDate >= cur.lastVisitDate) {
+      cur.lastVisitDate = a.visitDate;
+      cur.lastScore = a.scorePercent;
+      cur.lastCoordinatorName = a.coordinatorName;
+    }
+  }
+
+  const activeManagers = managers.filter((m) => m.employmentStatus !== "dismissed");
+  const coordById = new Map(coordinators.map((c) => [c.id, c]));
+
+  const branchesByCoord = new Map<number, CoverageBranch[]>();
+  const unassigned: CoverageBranch[] = [];
+
+  for (const m of activeManagers) {
+    const branch = toCoverageBranch(
+      m.id,
+      m.fullName,
+      branchLabelFromEmployee(m.fullName, m.location),
+      visits.get(m.id),
+    );
+    const coord = m.reportsToId != null ? coordById.get(m.reportsToId) : undefined;
+    if (!coord) {
+      unassigned.push(branch);
+      continue;
+    }
+    const list = branchesByCoord.get(coord.id) ?? [];
+    list.push(branch);
+    branchesByCoord.set(coord.id, list);
+  }
+
+  const coordinatorRows = coordinators
+    .filter((c) => c.employmentStatus !== "dismissed" || (branchesByCoord.get(c.id)?.length ?? 0) > 0)
+    .map((c) => {
+      const branches = (branchesByCoord.get(c.id) ?? []).sort((a, b) =>
+        a.branchLocation.localeCompare(b.branchLocation, "uz"),
+      );
+      const filled = branches.filter((b) => b.filled).length;
+      const total = branches.length;
+      const missing = total - filled;
+      const dismissed = c.employmentStatus === "dismissed";
+      return {
+        employeeId: c.id,
+        userId: c.userId,
+        name: dismissed ? `${c.fullName} (ishdan ketgan)` : c.fullName,
+        dismissed,
+        total,
+        filled,
+        missing,
+        percent: total === 0 ? 0 : Math.round((filled / total) * 100),
+        branches,
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name, "uz"));
+
+  unassigned.sort((a, b) => a.branchLocation.localeCompare(b.branchLocation, "uz"));
+
+  const assigned = coordinatorRows.reduce((s, c) => s + c.total, 0);
+  const filled = coordinatorRows.reduce((s, c) => s + c.filled, 0) + unassigned.filter((b) => b.filled).length;
+  const allBranches = assigned + unassigned.length;
+
+  return {
+    totals: {
+      coordinators: coordinatorRows.filter((c) => !c.dismissed).length,
+      branches: allBranches,
+      filled,
+      missing: allBranches - filled,
+      unassigned: unassigned.length,
+    },
+    coordinators: coordinatorRows,
+    unassigned,
+  };
+}
+
 async function loadFilteredAudits(req: AuthRequest) {
   let rows = await db
     .select()
@@ -439,6 +609,142 @@ router.get("/branch-audits/export", requireAuth, async (req: AuthRequest, res): 
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   );
   res.setHeader("Content-Disposition", `attachment; filename="cheklist-holati-${stamp}.xlsx"`);
+  res.send(buffer);
+});
+
+router.get("/branch-audits/coverage", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewChecklistStatus(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  res.json(await loadCoverage(req));
+});
+
+router.get("/branch-audits/coverage/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewChecklistStatus(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+
+  const data = await loadCoverage(req);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "VAKSINA MED HR";
+  workbook.created = new Date();
+
+  const headerStyle = (cell: ExcelJS.Cell, fill = "FF0B3A5C") => {
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF083049" } },
+      left: { style: "thin", color: { argb: "FF083049" } },
+      bottom: { style: "thin", color: { argb: "FF083049" } },
+      right: { style: "thin", color: { argb: "FF083049" } },
+    };
+  };
+  const paintRow = (row: ExcelJS.Row, zebra: boolean, fill?: string) => {
+    const bg = fill || (zebra ? "FFF7FAFC" : "FFFFFFFF");
+    row.eachCell((cell) => {
+      cell.font = { name: "Calibri", size: 10 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+      cell.alignment = { vertical: "middle", wrapText: true };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+    });
+    row.height = 22;
+  };
+
+  const s1 = workbook.addWorksheet("Qamrov", { views: [{ state: "frozen", ySplit: 2 }] });
+  s1.mergeCells("A1:F1");
+  const t1 = s1.getCell("A1");
+  t1.value = `VAKSINA MED — Filial qamrovi · ${data.totals.branches} filial · kiritilgan ${data.totals.filled} · kiritilmagan ${data.totals.missing}`;
+  t1.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+  t1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+  t1.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  s1.getRow(1).height = 28;
+  ["Koordinator", "Filiallar", "Kiritilgan", "Kiritilmagan", "Qamrov %", ""].forEach((h, i) => {
+    const cell = s1.getRow(2).getCell(i + 1);
+    cell.value = h;
+    headerStyle(cell, "FF1A5F8A");
+  });
+  s1.columns = [{ width: 32 }, { width: 12 }, { width: 14 }, { width: 16 }, { width: 12 }, { width: 8 }];
+  data.coordinators.forEach((c, idx) => {
+    const row = s1.addRow([c.name, c.total, c.filled, c.missing, c.percent, ""]);
+    paintRow(row, idx % 2 === 0);
+  });
+  if (data.unassigned.length) {
+    const row = s1.addRow([
+      "Biriktirilmagan",
+      data.unassigned.length,
+      data.unassigned.filter((b) => b.filled).length,
+      data.unassigned.filter((b) => !b.filled).length,
+      "",
+      "",
+    ]);
+    paintRow(row, true, "FFFEF3C7");
+  }
+
+  const s2 = workbook.addWorksheet("Filiallar", { views: [{ state: "frozen", ySplit: 2 }] });
+  s2.mergeCells("A1:H1");
+  const t2 = s2.getCell("A1");
+  t2.value = "VAKSINA MED — Har bir filial: kiritilgan / kiritilmagan";
+  t2.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+  t2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+  s2.getRow(1).height = 28;
+  ["Koordinator", "Filial", "Mudir", "Holat", "Tashriflar", "Oxirgi sana", "Ball %", "Oxirgi koordinator"].forEach(
+    (h, i) => {
+      const cell = s2.getRow(2).getCell(i + 1);
+      cell.value = h;
+      headerStyle(cell, "FF1A5F8A");
+    },
+  );
+  s2.columns = [
+    { width: 28 },
+    { width: 24 },
+    { width: 24 },
+    { width: 16 },
+    { width: 12 },
+    { width: 14 },
+    { width: 10 },
+    { width: 24 },
+  ];
+  let i = 0;
+  const writeBranch = (coordName: string, b: CoverageBranch) => {
+    const row = s2.addRow([
+      coordName,
+      b.branchLocation,
+      b.managerName,
+      b.filled ? "Kiritilgan" : "Kiritilmagan",
+      b.visitCount,
+      b.lastVisitDate || "—",
+      b.lastScore ?? "—",
+      b.lastCoordinatorName || "—",
+    ]);
+    paintRow(row, i++ % 2 === 0, b.filled ? "FFECFDF5" : "FFFEF2F2");
+    row.getCell(4).font = {
+      name: "Calibri",
+      size: 10,
+      bold: true,
+      color: { argb: b.filled ? "FF047857" : "FFB91C1C" },
+    };
+  };
+  for (const c of data.coordinators) {
+    for (const b of c.branches) writeBranch(c.name, b);
+  }
+  for (const b of data.unassigned) writeBranch("Biriktirilmagan", b);
+  s2.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 8 } };
+
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader("Content-Disposition", `attachment; filename="cheklist-qamrov-${stamp}.xlsx"`);
   res.send(buffer);
 });
 

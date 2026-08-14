@@ -23,7 +23,12 @@ type FaceApi = {
               score: number;
               box: { x: number; y: number; width: number; height: number };
             };
-            landmarks: { positions: Point[] };
+            landmarks: {
+              positions?: Point[];
+              getLeftEye?: () => Point[];
+              getRightEye?: () => Point[];
+              getNose?: () => Point[];
+            };
             descriptor: Float32Array;
           }
         | undefined
@@ -114,6 +119,31 @@ function averageEar(positions: Point[]): number {
   return (eyeAspectRatio(left) + eyeAspectRatio(right)) / 2;
 }
 
+function earFromLandmarks(landmarks: {
+  positions?: Point[];
+  getLeftEye?: () => Point[];
+  getRightEye?: () => Point[];
+  getNose?: () => Point[];
+}): { ear: number; noseX: number } {
+  const left = landmarks.getLeftEye?.();
+  const right = landmarks.getRightEye?.();
+  if (left && right && left.length >= 6 && right.length >= 6) {
+    const ear = (eyeAspectRatio(left) + eyeAspectRatio(right)) / 2;
+    const nose = landmarks.getNose?.();
+    const tip = nose?.[nose.length - 1] ?? nose?.[3];
+    return { ear, noseX: tip ? tip.x : 0.5 };
+  }
+  const positions = landmarks.positions ?? [];
+  if (positions.length >= 48) {
+    const nose = positions[30];
+    return {
+      ear: averageEar(positions),
+      noseX: nose?.x ?? 0.5,
+    };
+  }
+  return { ear: 0.28, noseX: 0.5 };
+}
+
 function mapVideoBoxToElement(
   video: HTMLVideoElement,
   box: { x: number; y: number; width: number; height: number },
@@ -165,23 +195,23 @@ export async function detectFaceDescriptor(
   if (!mapped) return { descriptor: null, status: "no_face" };
 
   const centerN = ellipseNorm(mapped.cx, mapped.cy, frame);
-  if (centerN > 0.42) {
+  if (centerN > 0.55) {
     return { descriptor: null, status: "outside" };
   }
 
   const fillW = mapped.width / (frame.rx * 2);
   const fillH = mapped.height / (frame.ry * 2);
-  if (fillW < 0.52 || fillH < 0.48) {
+  if (fillW < 0.42 || fillH < 0.4) {
     return { descriptor: null, status: "too_far" };
   }
-  if (fillW > 1.08 || fillH > 1.12) {
+  if (fillW > 1.2 || fillH > 1.25) {
     return { descriptor: null, status: "too_close" };
   }
 
-  const positions = result.landmarks?.positions ?? [];
-  const ear = positions.length >= 48 ? averageEar(positions) : 0.3;
-  const nose = positions[30];
-  const noseX = nose ? nose.x / Math.max(1, video.videoWidth) : 0.5;
+  const { ear, noseX: noseRaw } = earFromLandmarks(result.landmarks);
+  // landmarks pikselda — 0..1 ga normallashtirish
+  const noseX =
+    noseRaw > 1 ? noseRaw / Math.max(1, video.videoWidth) : noseRaw;
 
   return {
     descriptor: Array.from(result.descriptor),
@@ -191,72 +221,86 @@ export async function detectFaceDescriptor(
   };
 }
 
-/** Jonli odam: ko‘z yumish + tabiiy harakat (rasm/staticdan himoya) */
+/** Jonli odam: ko‘z yumish yoki boshni biroz burish (rasmdan himoya) */
 export class LivenessTracker {
   private earHistory: number[] = [];
   private noseHistory: number[] = [];
-  private sawClosed = false;
+  private baselineEar = 0;
+  private sawDip = false;
   private blinkDone = false;
-  private motionScore = 0;
+  private headTurnDone = false;
+  private noseMin = 1;
+  private noseMax = 0;
 
   reset() {
     this.earHistory = [];
     this.noseHistory = [];
-    this.sawClosed = false;
+    this.baselineEar = 0;
+    this.sawDip = false;
     this.blinkDone = false;
-    this.motionScore = 0;
+    this.headTurnDone = false;
+    this.noseMin = 1;
+    this.noseMax = 0;
   }
 
   get isLive() {
-    return this.blinkDone && this.motionScore >= 0.012;
+    return this.blinkDone || this.headTurnDone;
   }
 
   get needsBlink() {
-    return !this.blinkDone;
+    return !this.isLive;
   }
 
   update(ear: number | undefined, noseX: number | undefined): FaceAlignStatus {
-    if (typeof ear !== "number" || typeof noseX !== "number") {
+    if (typeof ear !== "number" || typeof noseX !== "number" || !Number.isFinite(ear)) {
       return "blink";
     }
 
     this.earHistory.push(ear);
     this.noseHistory.push(noseX);
-    if (this.earHistory.length > 24) this.earHistory.shift();
-    if (this.noseHistory.length > 24) this.noseHistory.shift();
+    if (this.earHistory.length > 30) this.earHistory.shift();
+    if (this.noseHistory.length > 30) this.noseHistory.shift();
 
-    // Ko‘z yumilgan (EAR past) → ochilgan (EAR yuqori) = blink
-    const EAR_CLOSED = 0.19;
-    const EAR_OPEN = 0.24;
+    // Ochilgan ko‘z uchun bazaviy EAR (yumshoq o‘rtacha)
+    if (this.earHistory.length >= 3 && this.baselineEar === 0) {
+      const sorted = [...this.earHistory].sort((a, b) => a - b);
+      this.baselineEar = sorted[Math.floor(sorted.length / 2)]!;
+    } else if (ear > this.baselineEar && !this.sawDip) {
+      this.baselineEar = this.baselineEar * 0.85 + ear * 0.15;
+    }
+
+    const base = Math.max(this.baselineEar, 0.18);
+    // Nisbiy: ochiqdan ~22% pastga tushsa — yumilgan
+    const closedThresh = Math.max(0.12, base * 0.78);
+    const openThresh = Math.max(closedThresh + 0.02, base * 0.9);
+    // Absolyut zaxira: ochiq max dan 0.05 pastga
+    const recentMax = Math.max(...this.earHistory.slice(-8));
+    const absoluteDip = ear <= recentMax - 0.05;
+
     if (!this.blinkDone) {
-      if (ear < EAR_CLOSED) this.sawClosed = true;
-      if (this.sawClosed && ear > EAR_OPEN) {
+      if (ear <= closedThresh || absoluteDip) this.sawDip = true;
+      if (this.sawDip && ear >= openThresh) {
         this.blinkDone = true;
       }
     }
 
-    // Burun joylashuvi o‘zgarishi — rasm qimirlamasa past
-    if (this.noseHistory.length >= 4) {
-      let motion = 0;
-      for (let i = 1; i < this.noseHistory.length; i++) {
-        motion += Math.abs(this.noseHistory[i]! - this.noseHistory[i - 1]!);
-      }
-      this.motionScore = Math.max(this.motionScore, motion / (this.noseHistory.length - 1));
+    // Boshni chap-o‘ngga biroz burish (rasm odatda bir xil)
+    this.noseMin = Math.min(this.noseMin, noseX);
+    this.noseMax = Math.max(this.noseMax, noseX);
+    if (this.noseMax - this.noseMin >= 0.035) {
+      this.headTurnDone = true;
     }
 
-    // Juda barqaror EAR (rasm) — blinksiz uzoq turib qolsa photo
-    if (!this.blinkDone && this.earHistory.length >= 14) {
-      const min = Math.min(...this.earHistory.slice(-14));
-      const max = Math.max(...this.earHistory.slice(-14));
-      if (max - min < 0.025 && this.motionScore < 0.004) {
-        return "photo";
-      }
-      return "blink";
+    if (this.isLive) return "ok";
+
+    // EAR deyarli o‘zgarmasa — rasm ehtimoli
+    if (this.earHistory.length >= 18 && this.noseMax - this.noseMin < 0.01) {
+      const min = Math.min(...this.earHistory.slice(-18));
+      const max = Math.max(...this.earHistory.slice(-18));
+      if (max - min < 0.02) return "photo";
     }
 
-    if (!this.blinkDone) return "blink";
-    if (this.motionScore < 0.012) return "blink";
-    return "ok";
+    return "blink";
   }
 }
 
@@ -265,9 +309,9 @@ export function faceAlignHint(status: FaceAlignStatus): string {
     case "ok":
       return "Jonli yuz tasdiqlandi…";
     case "blink":
-      return "Ko‘zingizni yumib oching (rasm emas — jonli)";
+      return "Ko‘zingizni yumib oching yoki boshni chap-o‘ngga biroz buring";
     case "photo":
-      return "Rasm emas — jonli yuzingizni ko‘rsating va ko‘zingizni yumib oching";
+      return "Rasm emas — jonli yuz: ko‘zingizni yumib oching yoki boshni buring";
     case "too_far":
       return "Yuzingizni ramkaga yaqinroq tuting";
     case "too_close":

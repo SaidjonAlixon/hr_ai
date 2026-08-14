@@ -40,6 +40,7 @@ import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
+import EmployeesPage from './pages/employees/index';
 import NotificationsPage from './pages/notifications/index';
 import NotFound from './pages/not-found';
 
@@ -66,7 +67,6 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
 }
 
 // Simple placeholders for missing pages
-function EmployeesPlaceholder() { return <div className="p-8 text-center text-gray-500">Xodimlar ro'yxati (Ishlanmoqda)</div>; }
 function InternshipsPlaceholder() { return <div className="p-8 text-center text-gray-500">Stajirovkalar ro'yxati (Ishlanmoqda)</div>; }
 
 function Router() {
@@ -116,7 +116,7 @@ function Router() {
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       
-      <ProtectedRoute path="/employees" component={EmployeesPlaceholder} />
+      <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/kuzatuv" component={KuzatuvPage} />

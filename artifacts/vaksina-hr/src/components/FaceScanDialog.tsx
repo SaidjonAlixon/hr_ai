@@ -130,8 +130,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
                   samples.length = 0;
                   setProgress(0);
                 }
-                // Ramkadan chiqsa — jonlilikni qayta boshidan (rasm almashtirilmasin)
-                if (alignStatus === "no_face" || alignStatus === "outside") {
+                // Faqat yuz umuman yo‘qolganda qayta boshlash (kichik siljishda saqlash)
+                if (alignStatus === "no_face") {
                   liveness.reset();
                   setLiveOk(false);
                 }
@@ -143,10 +143,6 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
 
                 if (!isLive) {
                   loginStreak = 0;
-                  if (mode === "enroll") {
-                    samples.length = 0;
-                    setProgress(0);
-                  }
                   if (!busy) setHint(faceAlignHint(liveStatus));
                 } else if (result.descriptor && running && !cancelled) {
                   // Faqat jonli + ramkada
@@ -205,7 +201,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
               return;
             }
           }
-          if (running && !cancelled) window.setTimeout(() => void loop(), 200);
+          if (running && !cancelled) window.setTimeout(() => void loop(), 120);
         };
         void loop();
       } catch (err) {
@@ -241,7 +237,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
             {mode === "enroll" ? "Face ID ni ulash" : "Face ID bilan kirish"}
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            Faqat jonli odam. Rasm bilan ochilmaydi — ko‘zingizni yumib oching.
+            Faqat jonli odam. Ko‘zingizni yumib oching yoki boshni chap-o‘ngga biroz buring.
           </DialogDescription>
         </DialogHeader>
 
@@ -270,7 +266,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
             {ready ? (
               <span className="rounded-full bg-emerald-500/90 px-3 py-1">Jonli yuz ✓</span>
             ) : aligned ? (
-              <span className="rounded-full bg-amber-500/90 px-3 py-1">Ko‘zingizni yumib oching</span>
+              <span className="rounded-full bg-amber-500/90 px-3 py-1">Yuming yoki boshni buring</span>
             ) : null}
           </div>
         </div>

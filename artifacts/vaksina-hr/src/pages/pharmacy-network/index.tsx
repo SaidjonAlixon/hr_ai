@@ -36,9 +36,9 @@ import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
   useSaveManagerLocation,
-  stripGpsSuffix,
   gpsFromLocationField,
   gpsInputError,
+  displayBranchName,
   type PharmacyStaffRole,
   type PharmacyStaffResult,
 } from '../../lib/pharmacy-staff-api';
@@ -553,7 +553,7 @@ export default function PharmacyNetworkPage() {
       {
         employeeId: manager.id,
         coordinates,
-        keepLocation: stripGpsSuffix(manager.location),
+        keepLocation: displayBranchName(manager.location),
       },
       {
         onSuccess: (data) => {
@@ -1007,7 +1007,7 @@ export default function PharmacyNetworkPage() {
                       Farmatsevtlar — eʼlon holati
                     </p>
                     <p className="mt-0.5 text-sm font-semibold text-slate-900">
-                      {manager.location} — {manager.fullName}
+                      {displayBranchName(manager.location) || 'Filial'} — {manager.fullName}
                     </p>
                   </div>
                   <Button
@@ -1154,7 +1154,7 @@ export default function PharmacyNetworkPage() {
                               ? branch.longitude
                               : gps?.lng ?? fromField?.lng;
                           const hasGps = typeof lat === 'number' && typeof lng === 'number';
-                          const displayName = stripGpsSuffix(manager.location);
+                          const displayName = displayBranchName(manager.location);
                           const hasName = Boolean(displayName && displayName !== 'Filial');
                           const editing =
                             gpsEditingId === manager.id || (canSetBranchGps && !hasGps && !hasName);

@@ -80,6 +80,18 @@ export function stripGpsSuffix(location: string | null | undefined): string {
   return String(location || "").replace(GPS_SUFFIX, "").trim();
 }
 
+const BRANCH_NAME_FIX: Record<string, string> = {
+  азия: "ТАШСЕЛМАШ",
+  азія: "ТАШСЕЛМАШ",
+  azia: "ТАШСЕЛМАШ",
+  asia: "ТАШСЕЛМАШ",
+};
+
+export function displayBranchName(location: string | null | undefined): string {
+  const raw = stripGpsSuffix(location);
+  return BRANCH_NAME_FIX[raw.toLowerCase()] || raw;
+}
+
 export function gpsFromLocationField(
   location: string | null | undefined,
 ): { lat: number; lng: number } | null {
@@ -97,7 +109,7 @@ export function withGpsSuffix(
   lat: number,
   lng: number,
 ): string {
-  const base = stripGpsSuffix(name);
+  const base = displayBranchName(name);
   const label = !base || base === "Filial" ? "Filial" : base;
   return `${label} |gps:${lat.toFixed(6)},${lng.toFixed(6)}`;
 }

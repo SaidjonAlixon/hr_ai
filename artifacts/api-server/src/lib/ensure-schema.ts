@@ -230,6 +230,10 @@ BEGIN
   END IF;
 END $$;
 
+UPDATE employees
+SET location = regexp_replace(location, '^(Азия|АЗИЯ)', 'ТАШСЕЛМАШ')
+WHERE location ~ '^(Азия|АЗИЯ)($|[[:space:]]|\|)';
+
 -- Face ID / WebAuthn
 CREATE TABLE IF NOT EXISTS webauthn_credentials (
   id SERIAL PRIMARY KEY,
@@ -310,6 +314,9 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+    UPDATE employees
+    SET location = regexp_replace(location, '^(Азия|АЗИЯ)', 'ТАШСЕЛМАШ')
+    WHERE location ~ '^(Азия|АЗИЯ)($|[[:space:]]|\|)';
   END IF;
   IF EXISTS (
     SELECT 1 FROM information_schema.tables

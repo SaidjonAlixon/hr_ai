@@ -64,8 +64,8 @@ import {
   type AuditBranchOption,
 } from "@/lib/branch-audits-api";
 import {
-  stripGpsSuffix,
   gpsFromLocationField,
+  displayBranchName,
 } from "@/lib/pharmacy-staff-api";
 
 const VISIT_NAMES = [
@@ -126,7 +126,7 @@ function normalizeAuditBranches(list: AuditBranchOption[]): PickerBranch[] {
   const counts = new Map<string, number>();
   const cleaned = list.map((b) => {
     const fromField = gpsFromLocationField(b.branchLocation);
-    const loc = stripGpsSuffix(b.branchLocation);
+    const loc = displayBranchName(b.branchLocation);
     const generic = !loc || loc === "Filial" || loc === b.managerName;
     const label = generic ? b.managerName : loc;
     const lat = b.latitude ?? fromField?.lat ?? null;

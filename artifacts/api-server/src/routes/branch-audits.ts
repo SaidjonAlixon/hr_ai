@@ -11,7 +11,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { HR_ROLES } from "../lib/roles";
-import { gpsFromLocationField, stripGpsSuffix } from "../lib/geo-location";
+import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -121,7 +121,7 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
     })
     .map((m) => {
       const fromLoc = gpsFromLocationField(m.location);
-      const loc = stripGpsSuffix(m.location);
+      const loc = displayBranchName(m.location);
       const generic =
         !loc ||
         loc === "Filial" ||
@@ -306,7 +306,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     .insert(branchAuditsTable)
     .values({
       managerEmployeeId,
-      branchLocation: stripGpsSuffix(manager.location) || manager.fullName,
+      branchLocation: displayBranchName(manager.location) || manager.fullName,
       managerName: manager.fullName,
       visitDate,
       visitName,

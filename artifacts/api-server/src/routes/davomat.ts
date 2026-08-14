@@ -20,7 +20,7 @@ const WORK_START = "09:00";
 const WORK_END = "18:00";
 const TZ_OFFSET = "+05:00"; // Asia/Tashkent
 /** Davomat Face ID faqat shu radiusda (metr) */
-export const DAVOMAT_GEOFENCE_METERS = 15;
+export const DAVOMAT_GEOFENCE_METERS = 35;
 /** Belgilangan ish joyi: 41°13'09.3"N 69°16'22.9"E */
 export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600; // 41.21925
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600; // ≈ 69.273028
@@ -602,10 +602,10 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
   }
 });
 
-/** Xodim o‘zi: kelish / ketish — faqat Face ID + 15 m geozona orqali */
+/** Xodim o‘zi: kelish / ketish — faqat Face ID + geozona orqali */
 router.post("/davomat/punch", requireAuth, async (_req: AuthRequest, res): Promise<void> => {
   res.status(400).json({
-    error: "Oddiy punch o‘chirilgan. Davomat faqat Face ID + ish joyi (15 m) orqali.",
+    error: `Oddiy punch o‘chirilgan. Davomat faqat Face ID + ish joyi (${DAVOMAT_GEOFENCE_METERS} m) orqali.`,
     code: "use_face_punch",
   });
 });
@@ -1149,7 +1149,7 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
     }
 
     const messages: Record<string, string> = {
-      in: "Bugun hali kelish belgilanmagan — Face ID bilan davomatdan o‘ting (15 m hudud).",
+      in: `Bugun hali kelish belgilanmagan — Face ID bilan davomatdan o‘ting (${DAVOMAT_GEOFENCE_METERS} m hudud).`,
       out: "Kelish belgilandi. Ketishni ham Face ID bilan belgilang.",
       done: "Bugungi davomat yopilgan (kelish va ketish).",
       unlinked: "Davomat Face ID orqali majburiy.",

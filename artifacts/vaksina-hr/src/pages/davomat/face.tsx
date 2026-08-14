@@ -13,6 +13,7 @@ import {
   CalendarDays,
   XCircle,
   History,
+  ArrowDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -49,8 +50,10 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
+const PUNCH_GUIDE_KEY = "davomat-punch-guide-done";
 
 type Gps = { lat: number; lng: number; accuracy: number };
 type Verified = {
@@ -192,9 +195,39 @@ function sortDaysDesc(days: DavomatDayMetrics[]): DavomatDayMetrics[] {
   return [...days].sort((a, b) => b.date.localeCompare(a.date));
 }
 
+function MobileStepHint({
+  step,
+  label,
+  align = "center",
+}: {
+  step: number;
+  label: string;
+  align?: "left" | "center" | "right";
+}) {
+  return (
+    <div
+      className={cn(
+        "mb-2 flex flex-col gap-0.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950 shadow-sm md:hidden",
+        align === "right" && "items-end text-right",
+        align === "left" && "items-start text-left",
+        align === "center" && "items-center text-center",
+      )}
+    >
+      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+        {step}-qadam
+      </span>
+      <div className="flex items-center gap-1.5 text-sm font-semibold">
+        <span>{label}</span>
+        <ArrowDown className="h-4 w-4 shrink-0 animate-bounce text-amber-600" aria-hidden />
+      </div>
+    </div>
+  );
+}
+
 export default function DavomatFacePage() {
   const { user, isAuthenticated } = useAuth();
   const { toast } = useToast();
+  const isMobile = useIsMobile();
   const canReport = canViewDavomat(user?.role);
   const [gps, setGps] = useState<Gps | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -207,6 +240,13 @@ export default function DavomatFacePage() {
   });
   const [workplace, setWorkplace] = useState<WorkplaceInfo | null>(null);
   const [historyDays, setHistoryDays] = useState<DavomatDayMetrics[]>([]);
+  const [guideDone, setGuideDone] = useState(() => {
+    try {
+      return localStorage.getItem(PUNCH_GUIDE_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
   const [scanOpen, setScanOpen] = useState(false);
   const [verified, setVerified] = useState<Verified | null>(null);
   const [busy, setBusy] = useState(false);
@@ -225,6 +265,15 @@ export default function DavomatFacePage() {
   const applyHistory = useCallback((emp?: DavomatEmployee | null) => {
     if (!emp?.days?.length) return;
     setHistoryDays(sortDaysDesc(emp.days));
+  }, []);
+
+  const completeGuide = useCallback(() => {
+    setGuideDone(true);
+    try {
+      localStorage.setItem(PUNCH_GUIDE_KEY, "1");
+    } catch {
+      /* ignore */
+    }
   }, []);
 
   const loadWorkplace = useCallback(async () => {
@@ -383,6 +432,24 @@ export default function DavomatFacePage() {
   const done = nextAction === "done" || workplace?.today.complete;
   const hasIn = nextAction === "out" || done || Boolean(checkInAtIso);
 
+  const guideStep = useMemo((): "permission" | "face" | "keldim" | null => {
+    if (guideDone || done) return null;
+    if (!gps) return "permission";
+    if (!verified) return "face";
+    if (!hasIn) return "keldim";
+    return null;
+  }, [guideDone, done, gps, verified, hasIn]);
+
+  const showGuide = isMobile && guideStep != null;
+
+  useEffect(() => {
+    if (guideDone) return;
+    const punchedBefore =
+      historyDays.some((d) => d.checkIn !== "—") ||
+      (workplace?.today.checkIn && workplace.today.checkIn !== "—");
+    if (punchedBefore) completeGuide();
+  }, [guideDone, historyDays, workplace?.today.checkIn, completeGuide]);
+
   const todayStatus = done
     ? "complete"
     : hasIn
@@ -413,10 +480,10 @@ export default function DavomatFacePage() {
     if (!gps) return "Avval «Ruxsat berish» ni bosing — brauzer lokatsiya so‘raydi";
     if (!isFaceIdSupported()) return "Face ID bu brauzerda ishlamaydi (HTTPS/localhost kerak)";
     if (remain != null && remain > 0) {
-      return `Siz ${distance} m uzoqdasiz. Ruxsat 15 m. Yana ${remain} m yaqinlashishingiz kerak.`;
+      return `Siz ${distance} m uzoqdasiz. Ruxsat ${allowedMeters} m. Yana ${remain} m yaqinlashishingiz kerak.`;
     }
     return null;
-  }, [gps, gpsError, remain, distance]);
+  }, [gps, gpsError, remain, distance, allowedMeters]);
 
   const geoPayload = () => {
     if (!gps) throw new Error("GPS yo‘q");
@@ -498,6 +565,7 @@ export default function DavomatFacePage() {
         title: action === "in" ? "Keldim" : "Ketdi",
         description: result.message,
       });
+      if (action === "in") completeGuide();
       applyHistory(result.employee);
       await loadWorkplace();
       await loadHistory();
@@ -653,17 +721,25 @@ export default function DavomatFacePage() {
               <MapPin className="h-4 w-4" />
               Joylashuv
             </div>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              className="h-9 gap-1.5 rounded-full border-[#0b3a5c]/20 text-[#0b3a5c]"
-              disabled={gpsSharing}
-              onClick={() => void requestLocationPermission()}
-            >
-              {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-              Ruxsat berish
-            </Button>
+            <div className="relative shrink-0">
+              {showGuide && guideStep === "permission" ? (
+                <MobileStepHint step={1} label="Ruxsat berish ni bosing" align="right" />
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className={cn(
+                  "h-9 gap-1.5 rounded-full border-[#0b3a5c]/20 text-[#0b3a5c]",
+                  showGuide && guideStep === "permission" && "ring-2 ring-amber-400 ring-offset-2",
+                )}
+                disabled={gpsSharing}
+                onClick={() => void requestLocationPermission()}
+              >
+                {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
+                Ruxsat berish
+              </Button>
+            </div>
           </div>
 
           <div className="mt-3 grid grid-cols-[auto_1fr] items-center gap-3">
@@ -808,10 +884,16 @@ export default function DavomatFacePage() {
         <section className="mt-4 space-y-3">
           {dayComplete || done ? null : !verified ? (
             <>
+              {showGuide && guideStep === "face" ? (
+                <MobileStepHint step={2} label="Face ID ni bosing" />
+              ) : null}
               <Button
                 type="button"
                 size="lg"
-                className="h-14 w-full gap-2 rounded-2xl bg-[#0b3a5c] text-base hover:bg-[#0a314d]"
+                className={cn(
+                  "h-14 w-full gap-2 rounded-2xl bg-[#0b3a5c] text-base hover:bg-[#0a314d]",
+                  showGuide && guideStep === "face" && "ring-2 ring-amber-400 ring-offset-2",
+                )}
                 disabled={!canOpenFace}
                 onClick={() => setScanOpen(true)}
               >
@@ -841,16 +923,24 @@ export default function DavomatFacePage() {
             </Button>
           ) : (
             <div className="grid grid-cols-2 gap-3">
-              <Button
-                type="button"
-                size="lg"
-                className="h-14 gap-2 rounded-2xl bg-emerald-600 text-base text-white hover:bg-emerald-700"
-                disabled={busy}
-                onClick={() => void punch("in")}
-              >
-                <LogIn className="h-5 w-5" />
-                Keldim
-              </Button>
+              <div>
+                {showGuide && guideStep === "keldim" ? (
+                  <MobileStepHint step={3} label="Keldim ni bosing" align="left" />
+                ) : null}
+                <Button
+                  type="button"
+                  size="lg"
+                  className={cn(
+                    "h-14 w-full gap-2 rounded-2xl bg-emerald-600 text-base text-white hover:bg-emerald-700",
+                    showGuide && guideStep === "keldim" && "ring-2 ring-amber-400 ring-offset-2",
+                  )}
+                  disabled={busy}
+                  onClick={() => void punch("in")}
+                >
+                  <LogIn className="h-5 w-5" />
+                  Keldim
+                </Button>
+              </div>
               <Button type="button" size="lg" className="h-14 gap-2 rounded-2xl bg-red-600 text-base text-white" disabled>
                 <LogOut className="h-5 w-5" />
                 Ketdim

@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { notifyAllActiveUsers } from "../lib/notify";
+import { DAVOMAT_GEOFENCE_METERS } from "../routes/davomat";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
@@ -62,7 +63,7 @@ export async function broadcastDavomatRuleNotice(): Promise<number> {
 
   let sent = 0;
   const text =
-    "Davomat: kelish va ketish faqat Face ID orqali. Belgilangan lokatsiyadan 15 m ichida bo‘ling — aks holda qabul qilinmaydi.";
+    `Davomat: kelish va ketish faqat Face ID orqali. Belgilangan lokatsiyadan ${DAVOMAT_GEOFENCE_METERS} m ichida bo‘ling — aks holda qabul qilinmaydi.`;
   for (const u of users) {
     if (await alreadyNotifiedToday(u.id, "davomat_rule", since)) continue;
     await db.insert(notificationsTable).values({
@@ -117,7 +118,7 @@ export async function remindDavomatCheckIn(): Promise<number> {
 
     await db.insert(notificationsTable).values({
       userId: e.userId,
-      text: `${e.fullName}: bugun hali kelish belgilanmagan. Face ID bilan davomatdan o‘ting (15 m hudud).`,
+      text: `${e.fullName}: bugun hali kelish belgilanmagan. Face ID bilan davomatdan o‘ting (${DAVOMAT_GEOFENCE_METERS} m hudud).`,
       type: "davomat_checkin",
       linkUrl: "/davomat-face",
     });
@@ -158,7 +159,7 @@ export async function remindDavomatCheckOut(): Promise<number> {
     if (await alreadyNotifiedToday(r.userId, "davomat_checkout", since)) continue;
     await db.insert(notificationsTable).values({
       userId: r.userId,
-      text: `${r.fullName || "Xodim"}: ketishni Face ID bilan belgilang (15 m hudud).`,
+      text: `${r.fullName || "Xodim"}: ketishni Face ID bilan belgilang (${DAVOMAT_GEOFENCE_METERS} m hudud).`,
       type: "davomat_checkout",
       linkUrl: "/davomat-face",
     });
@@ -190,7 +191,7 @@ export function startDavomatReminderJob(): void {
 export async function forceBroadcastDavomatToAll(): Promise<number> {
   return notifyAllActiveUsers({
     text:
-      "Muhim: endi barcha xodimlar davomatdan Face ID orqali o‘tadi. Kelish/ketish — faqat belgilangan joydan 15 m ichida. Ochish: Davomat Face ID.",
+      `Muhim: endi barcha xodimlar davomatdan Face ID orqali o‘tadi. Kelish/ketish — faqat belgilangan joydan ${DAVOMAT_GEOFENCE_METERS} m ichida. Ochish: Davomat Face ID.`,
     type: "davomat_rule",
     linkUrl: "/davomat-face",
   });

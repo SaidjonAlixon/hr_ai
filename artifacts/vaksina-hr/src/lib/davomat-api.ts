@@ -248,7 +248,7 @@ export async function fetchMyDavomat(): Promise<{
   return apiJson("/davomat/me");
 }
 
-export const DAVOMAT_GEOFENCE_METERS = 15;
+export const DAVOMAT_GEOFENCE_METERS = 35;
 /** 41°13'09.3"N 69°16'22.9"E */
 export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600;
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600;

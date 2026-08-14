@@ -12,8 +12,13 @@ import {
   averageDescriptors,
   detectFaceDescriptor,
   ensureFaceModels,
+  faceAlignHint,
   isFaceIdSupported,
+  LivenessTracker,
+  type FaceAlignStatus,
+  type FaceOvalFrame,
 } from "@/lib/face-id";
+import { cn } from "@/lib/utils";
 
 type Props = {
   open: boolean;
@@ -23,21 +28,35 @@ type Props = {
 };
 
 const ENROLL_SAMPLES = 5;
+const LOGIN_STREAK = 2;
 
 export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const ovalRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onCapturedRef = useRef(onCaptured);
   onCapturedRef.current = onCaptured;
   const [hint, setHint] = useState("Kamera ochilmoqda…");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aligned, setAligned] = useState(false);
+  const [liveOk, setLiveOk] = useState(false);
+  const [progress, setProgress] = useState(0);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setAligned(false);
+      setLiveOk(false);
+      setProgress(0);
+      setBusy(false);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     const samples: number[][] = [];
+    let loginStreak = 0;
     let running = true;
+    const liveness = new LivenessTracker();
 
     const stopCamera = () => {
       running = false;
@@ -45,9 +64,28 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
       streamRef.current = null;
     };
 
+    const readFrame = (): FaceOvalFrame | null => {
+      const video = videoRef.current;
+      const oval = ovalRef.current;
+      if (!video || !oval) return null;
+      const vr = video.getBoundingClientRect();
+      const or = oval.getBoundingClientRect();
+      if (vr.width < 8 || or.width < 8) return null;
+      return {
+        cx: or.left + or.width / 2 - vr.left,
+        cy: or.top + or.height / 2 - vr.top,
+        rx: or.width / 2,
+        ry: or.height / 2,
+      };
+    };
+
     const start = async () => {
       setError(null);
       setBusy(false);
+      setAligned(false);
+      setLiveOk(false);
+      setProgress(0);
+      liveness.reset();
       if (!isFaceIdSupported()) {
         setError("Kamera faqat localhost yoki HTTPS da ishlaydi");
         return;
@@ -59,7 +97,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
         setHint("Kamera ochilmoqda…");
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
-          video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } },
+          video: {
+            facingMode: { ideal: "user" },
+            width: { ideal: 720 },
+            height: { ideal: 960 },
+          },
         });
         if (cancelled) {
           stream.getTracks().forEach((t) => t.stop());
@@ -70,59 +112,100 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
         if (!video) return;
         video.srcObject = stream;
         await video.play();
-        setHint("Yuzingizni ramkaga tuting");
+        setHint("Yuzingizni oval ramka ichiga tuting");
 
         const loop = async () => {
           if (!running || cancelled) return;
           const videoEl = videoRef.current;
           if (videoEl && videoEl.readyState >= 2) {
             try {
-              const desc = await detectFaceDescriptor(videoEl);
-              if (desc && running && !cancelled) {
-                samples.push(desc);
-                if (mode === "enroll") {
-                  setHint(`Yuz aniqlandi ${Math.min(samples.length, ENROLL_SAMPLES)}/${ENROLL_SAMPLES}`);
-                  if (samples.length >= ENROLL_SAMPLES) {
-                    running = false;
-                    setBusy(true);
-                    setHint("Yuz saqlanmoqda…");
-                    try {
-                      await onCapturedRef.current(averageDescriptors(samples.slice(0, ENROLL_SAMPLES)));
-                      stopCamera();
-                      onOpenChange(false);
-                    } catch (err) {
-                      setError((err as Error)?.message || "Saqlanmadi");
-                      setBusy(false);
-                      samples.length = 0;
-                      running = true;
-                    }
-                    if (running && !cancelled) window.setTimeout(() => void loop(), 400);
-                    return;
+              const result = await detectFaceDescriptor(videoEl, readFrame(), true);
+              const alignStatus: FaceAlignStatus = result.status;
+              const inFrame = alignStatus === "ok" && Boolean(result.descriptor);
+              setAligned(inFrame);
+
+              if (!inFrame) {
+                loginStreak = 0;
+                if (mode === "enroll" && samples.length > 0) {
+                  samples.length = 0;
+                  setProgress(0);
+                }
+                // Ramkadan chiqsa — jonlilikni qayta boshidan (rasm almashtirilmasin)
+                if (alignStatus === "no_face" || alignStatus === "outside") {
+                  liveness.reset();
+                  setLiveOk(false);
+                }
+                if (!busy) setHint(faceAlignHint(alignStatus));
+              } else {
+                const liveStatus = liveness.update(result.ear, result.noseX);
+                const isLive = liveness.isLive;
+                setLiveOk(isLive);
+
+                if (!isLive) {
+                  loginStreak = 0;
+                  if (mode === "enroll") {
+                    samples.length = 0;
+                    setProgress(0);
                   }
-                } else {
-                  running = false;
-                  setBusy(true);
-                  setHint("Yuz tekshirilmoqda…");
-                  try {
-                    await onCapturedRef.current(desc);
-                    stopCamera();
-                    onOpenChange(false);
-                    return;
-                  } catch (err) {
-                    setError((err as Error)?.message || "Yuz mos kelmadi");
-                    setBusy(false);
-                    running = true;
+                  if (!busy) setHint(faceAlignHint(liveStatus));
+                } else if (result.descriptor && running && !cancelled) {
+                  // Faqat jonli + ramkada
+                  if (mode === "enroll") {
+                    samples.push(result.descriptor);
+                    setProgress(Math.min(samples.length, ENROLL_SAMPLES));
+                    setHint(`Jonli yuz ${Math.min(samples.length, ENROLL_SAMPLES)}/${ENROLL_SAMPLES}`);
+                    if (samples.length >= ENROLL_SAMPLES) {
+                      running = false;
+                      setBusy(true);
+                      setHint("Yuz saqlanmoqda…");
+                      try {
+                        await onCapturedRef.current(averageDescriptors(samples.slice(0, ENROLL_SAMPLES)));
+                        stopCamera();
+                        onOpenChange(false);
+                      } catch (err) {
+                        setError((err as Error)?.message || "Saqlanmadi");
+                        setBusy(false);
+                        samples.length = 0;
+                        setProgress(0);
+                        liveness.reset();
+                        setLiveOk(false);
+                        running = true;
+                      }
+                      if (running && !cancelled) window.setTimeout(() => void loop(), 400);
+                      return;
+                    }
+                  } else {
+                    loginStreak += 1;
+                    setProgress(loginStreak);
+                    setHint(faceAlignHint("ok"));
+                    if (loginStreak >= LOGIN_STREAK) {
+                      running = false;
+                      setBusy(true);
+                      setHint("Yuz tekshirilmoqda…");
+                      try {
+                        await onCapturedRef.current(result.descriptor);
+                        stopCamera();
+                        onOpenChange(false);
+                        return;
+                      } catch (err) {
+                        setError((err as Error)?.message || "Yuz mos kelmadi");
+                        setBusy(false);
+                        loginStreak = 0;
+                        setProgress(0);
+                        liveness.reset();
+                        setLiveOk(false);
+                        running = true;
+                      }
+                    }
                   }
                 }
-              } else {
-                setHint("Yuzingizni kameraga yaqinroq tuting");
               }
             } catch (err) {
               if (!cancelled) setError((err as Error)?.message || "Face ID xatosi");
               return;
             }
           }
-          if (running && !cancelled) window.setTimeout(() => void loop(), 280);
+          if (running && !cancelled) window.setTimeout(() => void loop(), 200);
         };
         void loop();
       } catch (err) {
@@ -143,35 +226,77 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
     };
   }, [open, mode, onOpenChange]);
 
+  const steps = mode === "enroll" ? ENROLL_SAMPLES : LOGIN_STREAK;
+  const ready = aligned && liveOk;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md p-4 sm:p-5" hideClose>
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ScanFace className="h-5 w-5" />
+      <DialogContent
+        hideClose
+        className="w-[calc(100%-0.75rem)] max-w-md gap-3 overflow-hidden rounded-2xl p-3 sm:gap-4 sm:p-5 max-h-[100dvh]"
+      >
+        <DialogHeader className="space-y-1 text-left">
+          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+            <ScanFace className="h-5 w-5 text-[#0b3a5c]" />
             {mode === "enroll" ? "Face ID ni ulash" : "Face ID bilan kirish"}
           </DialogTitle>
-          <DialogDescription>
-            Kameraga qarang. Google parol so‘ralmaydi — faqat yuzingiz.
+          <DialogDescription className="text-xs sm:text-sm">
+            Faqat jonli odam. Rasm bilan ochilmaydi — ko‘zingizni yumib oching.
           </DialogDescription>
         </DialogHeader>
-        <div className="relative overflow-hidden rounded-xl bg-black aspect-[4/3]">
+
+        <div className="relative mx-auto w-full overflow-hidden rounded-3xl bg-zinc-950 aspect-[3/4] max-h-[min(62dvh,440px)] sm:aspect-[4/3] sm:max-h-[min(52vh,380px)]">
           <video
             ref={videoRef}
-            className="h-full w-full object-cover -scale-x-100"
+            className="absolute inset-0 h-full w-full object-cover -scale-x-100"
             playsInline
             muted
             autoPlay
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <div className="h-48 w-36 rounded-full border-2 border-white/80 shadow-[0_0_0_999px_rgba(0,0,0,0.35)]" />
+            <div
+              ref={ovalRef}
+              className={cn(
+                "w-[68%] max-w-[230px] aspect-[3/4] rounded-full border-[3px] transition-all duration-200 sm:w-[52%] sm:max-w-[210px]",
+                ready
+                  ? "border-emerald-400 shadow-[0_0_0_999px_rgba(0,0,0,0.58),0_0_28px_rgba(52,211,153,0.65)]"
+                  : aligned
+                    ? "border-amber-300 shadow-[0_0_0_999px_rgba(0,0,0,0.58),0_0_20px_rgba(251,191,36,0.45)]"
+                    : "border-white/85 shadow-[0_0_0_999px_rgba(0,0,0,0.58)]",
+              )}
+            />
+          </div>
+          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-medium text-white">
+            {ready ? (
+              <span className="rounded-full bg-emerald-500/90 px-3 py-1">Jonli yuz ✓</span>
+            ) : aligned ? (
+              <span className="rounded-full bg-amber-500/90 px-3 py-1">Ko‘zingizni yumib oching</span>
+            ) : null}
           </div>
         </div>
-        <p className="text-center text-sm text-slate-600 min-h-5">
-          {busy ? <Loader2 className="inline h-4 w-4 animate-spin mr-1" /> : null}
+
+        <div className="flex justify-center gap-1.5">
+          {Array.from({ length: steps }).map((_, i) => (
+            <span
+              key={i}
+              className={cn(
+                "h-1.5 w-6 rounded-full transition-colors",
+                i < progress ? "bg-emerald-500" : "bg-slate-200",
+              )}
+            />
+          ))}
+        </div>
+
+        <p
+          className={cn(
+            "min-h-5 text-center text-sm",
+            error ? "text-red-600" : ready ? "text-emerald-700" : "text-slate-600",
+          )}
+        >
+          {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}
           {error || hint}
         </p>
-        <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+        <Button type="button" variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
           <X className="mr-1.5 h-4 w-4" />
           Bekor qilish
         </Button>

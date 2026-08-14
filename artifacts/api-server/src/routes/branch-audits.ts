@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
 import { desc, eq } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import {
   db,
   branchAuditsTable,
@@ -10,7 +11,7 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { HR_ROLES } from "../lib/roles";
+import { HR_ROLES, canViewChecklistStatus } from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
@@ -70,9 +71,61 @@ function sanitizeCategories(raw: unknown): AuditCategory[] {
 async function enrich(row: typeof branchAuditsTable.$inferSelect) {
   return {
     ...row,
+    branchLocation: displayBranchName(row.branchLocation) || row.branchLocation,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+function answerLabel(a: "yes" | "no" | null | undefined) {
+  if (a === "yes") return "Ha";
+  if (a === "no") return "Yo‘q";
+  return "—";
+}
+
+async function loadFilteredAudits(req: AuthRequest) {
+  let rows = await db
+    .select()
+    .from(branchAuditsTable)
+    .orderBy(desc(branchAuditsTable.visitDate), desc(branchAuditsTable.id));
+
+  if (req.userRole === "koordinator" && req.userId) {
+    rows = rows.filter((r) => r.coordinatorId === req.userId);
+  }
+
+  const managerId = req.query.managerId
+    ? parseInt(String(req.query.managerId), 10)
+    : NaN;
+  if (!Number.isNaN(managerId)) {
+    rows = rows.filter((r) => r.managerEmployeeId === managerId);
+  }
+
+  const coordinatorId = req.query.coordinatorId
+    ? parseInt(String(req.query.coordinatorId), 10)
+    : NaN;
+  if (!Number.isNaN(coordinatorId)) {
+    rows = rows.filter((r) => r.coordinatorId === coordinatorId);
+  }
+
+  const from = String(req.query.from || "").trim();
+  const to = String(req.query.to || "").trim();
+  if (from) rows = rows.filter((r) => r.visitDate >= from);
+  if (to) rows = rows.filter((r) => r.visitDate <= to);
+
+  const q = String(req.query.q || "").trim().toLowerCase();
+  if (q) {
+    rows = rows.filter((r) => {
+      const loc = displayBranchName(r.branchLocation) || "";
+      return (
+        loc.toLowerCase().includes(q) ||
+        String(r.managerName || "").toLowerCase().includes(q) ||
+        String(r.coordinatorName || "").toLowerCase().includes(q) ||
+        String(r.visitName || "").toLowerCase().includes(q)
+      );
+    });
+  }
+
+  return rows;
 }
 
 /** Filiallar (mudirlar) ro'yxati — tanlash uchun */
@@ -147,25 +200,246 @@ router.get("/branch-audits", requireAuth, async (req: AuthRequest, res): Promise
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }
-
-  let rows = await db
-    .select()
-    .from(branchAuditsTable)
-    .orderBy(desc(branchAuditsTable.visitDate), desc(branchAuditsTable.id));
-
-  // Koordinator — faqat o'zi yozganlarini (admin/hr — hammasi)
-  if (req.userRole === "koordinator" && req.userId) {
-    rows = rows.filter((r) => r.coordinatorId === req.userId);
-  }
-
-  const managerId = req.query.managerId
-    ? parseInt(String(req.query.managerId), 10)
-    : NaN;
-  if (!Number.isNaN(managerId)) {
-    rows = rows.filter((r) => r.managerEmployeeId === managerId);
-  }
-
+  const rows = await loadFilteredAudits(req);
   res.json(await Promise.all(rows.map(enrich)));
+});
+
+router.get("/branch-audits/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewChecklistStatus(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+
+  const rows = await loadFilteredAudits(req);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "VAKSINA MED HR";
+  workbook.created = new Date();
+
+  const headerStyle = (cell: ExcelJS.Cell, fill = "FF0B3A5C") => {
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF083049" } },
+      left: { style: "thin", color: { argb: "FF083049" } },
+      bottom: { style: "thin", color: { argb: "FF083049" } },
+      right: { style: "thin", color: { argb: "FF083049" } },
+    };
+  };
+
+  const paintRow = (row: ExcelJS.Row, zebra: boolean) => {
+    const bg = zebra ? "FFF7FAFC" : "FFFFFFFF";
+    row.eachCell((cell) => {
+      cell.font = { name: "Calibri", size: 10 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
+      cell.alignment = { vertical: "middle", wrapText: true };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } },
+      };
+    });
+    row.height = 22;
+  };
+
+  const byCoord = new Map<
+    string,
+    { visits: number; branches: Set<string>; scores: number[]; last: string }
+  >();
+  const byBranch = new Map<
+    string,
+    { visits: number; coordinators: Set<string>; scores: number[]; dates: string[] }
+  >();
+  for (const r of rows) {
+    const cKey = r.coordinatorName || `#${r.coordinatorId}`;
+    const bKey = displayBranchName(r.branchLocation) || r.managerName || "Filial";
+    const c = byCoord.get(cKey) ?? {
+      visits: 0,
+      branches: new Set<string>(),
+      scores: [],
+      last: r.visitDate,
+    };
+    c.visits += 1;
+    c.branches.add(bKey);
+    c.scores.push(r.scorePercent);
+    if (r.visitDate > c.last) c.last = r.visitDate;
+    byCoord.set(cKey, c);
+
+    const b = byBranch.get(bKey) ?? {
+      visits: 0,
+      coordinators: new Set<string>(),
+      scores: [],
+      dates: [],
+    };
+    b.visits += 1;
+    b.coordinators.add(cKey);
+    b.scores.push(r.scorePercent);
+    b.dates.push(r.visitDate);
+    byBranch.set(bKey, b);
+  }
+
+  const s1 = workbook.addWorksheet("Xulosa", { views: [{ state: "frozen", ySplit: 2 }] });
+  s1.mergeCells("A1:F1");
+  const t1 = s1.getCell("A1");
+  t1.value = `VAKSINA MED — Cheklist holati · ${rows.length} tashrif`;
+  t1.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+  t1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+  t1.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  s1.getRow(1).height = 28;
+
+  ["Koordinator", "Tashriflar", "Filiallar", "O‘rtacha %", "Oxirgi tashrif", ""].forEach((h, i) => {
+    const cell = s1.getRow(2).getCell(i + 1);
+    cell.value = h;
+    headerStyle(cell, "FF1A5F8A");
+  });
+  s1.columns = [{ width: 28 }, { width: 12 }, { width: 12 }, { width: 14 }, { width: 16 }, { width: 8 }];
+  let i = 0;
+  for (const [name, v] of [...byCoord.entries()].sort((a, b) => b[1].visits - a[1].visits)) {
+    const avg = v.scores.length ? Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length) : 0;
+    const row = s1.addRow([name, v.visits, v.branches.size, avg, v.last, ""]);
+    paintRow(row, i++ % 2 === 0);
+  }
+
+  s1.addRow([]);
+  const gap = s1.addRow(["Filial", "Tashriflar", "Koordinatorlar", "O‘rtacha %", "Sanalar", ""]);
+  gap.eachCell((cell) => headerStyle(cell, "FF0F766E"));
+  i = 0;
+  for (const [name, v] of [...byBranch.entries()].sort((a, b) => b[1].visits - a[1].visits)) {
+    const avg = v.scores.length ? Math.round(v.scores.reduce((a, b) => a + b, 0) / v.scores.length) : 0;
+    const dates = [...new Set(v.dates)].sort().join(", ");
+    const row = s1.addRow([name, v.visits, v.coordinators.size, avg, dates, ""]);
+    paintRow(row, i++ % 2 === 0);
+  }
+
+  const s2 = workbook.addWorksheet("Tashriflar", { views: [{ state: "frozen", ySplit: 2 }] });
+  s2.mergeCells("A1:L1");
+  const t2 = s2.getCell("A1");
+  t2.value = "VAKSINA MED — Tashriflar (sana, vaqt, filial, mudir, koordinator, lokatsiya, ball)";
+  t2.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+  t2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+  s2.getRow(1).height = 28;
+  const h2 = [
+    "Sana",
+    "Vaqt",
+    "Tashrif",
+    "Filial",
+    "Mudir",
+    "Koordinator",
+    "Ball %",
+    "Ha",
+    "Yo‘q",
+    "GPS",
+    "Masofa (m)",
+    "Izoh",
+  ];
+  h2.forEach((h, idx) => {
+    const cell = s2.getRow(2).getCell(idx + 1);
+    cell.value = h;
+    headerStyle(cell, "FF1A5F8A");
+  });
+  s2.columns = [
+    { width: 12 },
+    { width: 12 },
+    { width: 16 },
+    { width: 22 },
+    { width: 24 },
+    { width: 24 },
+    { width: 10 },
+    { width: 8 },
+    { width: 8 },
+    { width: 28 },
+    { width: 12 },
+    { width: 36 },
+  ];
+  rows.forEach((r, idx) => {
+    const created = r.createdAt ? new Date(r.createdAt) : null;
+    const time = created
+      ? created.toLocaleTimeString("uz-UZ", {
+          timeZone: "Asia/Tashkent",
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : "";
+    const gps =
+      r.checkLatitude != null && r.checkLongitude != null
+        ? `${Number(r.checkLatitude).toFixed(6)}, ${Number(r.checkLongitude).toFixed(6)}`
+        : "—";
+    const row = s2.addRow([
+      r.visitDate,
+      time,
+      r.visitName,
+      displayBranchName(r.branchLocation) || "Filial",
+      r.managerName || "—",
+      r.coordinatorName || "—",
+      r.scorePercent,
+      r.yesCount,
+      r.noCount,
+      gps,
+      r.distanceMeters ?? "—",
+      r.generalNote || "",
+    ]);
+    paintRow(row, idx % 2 === 0);
+  });
+  s2.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 12 } };
+
+  const s3 = workbook.addWorksheet("Javoblar", { views: [{ state: "frozen", ySplit: 2 }] });
+  s3.mergeCells("A1:H1");
+  const t3 = s3.getCell("A1");
+  t3.value = "VAKSINA MED — Cheklist savollari va javoblar";
+  t3.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+  t3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+  s3.getRow(1).height = 28;
+  ["Sana", "Filial", "Koordinator", "Bo‘lim", "Savol", "Javob", "Izoh", "Ball %"].forEach((h, idx) => {
+    const cell = s3.getRow(2).getCell(idx + 1);
+    cell.value = h;
+    headerStyle(cell, "FF1A5F8A");
+  });
+  s3.columns = [
+    { width: 12 },
+    { width: 22 },
+    { width: 22 },
+    { width: 28 },
+    { width: 46 },
+    { width: 10 },
+    { width: 28 },
+    { width: 10 },
+  ];
+  let qIdx = 0;
+  for (const r of rows) {
+    const cats = Array.isArray(r.categories) ? r.categories : [];
+    for (const cat of cats) {
+      for (const it of cat.items || []) {
+        const row = s3.addRow([
+          r.visitDate,
+          displayBranchName(r.branchLocation) || "Filial",
+          r.coordinatorName || "—",
+          cat.title,
+          it.label,
+          answerLabel(it.answer),
+          it.note || "",
+          r.scorePercent,
+        ]);
+        paintRow(row, qIdx++ % 2 === 0);
+        if (it.answer === "yes") {
+          row.getCell(6).font = { name: "Calibri", size: 10, color: { argb: "FF047857" }, bold: true };
+        }
+        if (it.answer === "no") {
+          row.getCell(6).font = { name: "Calibri", size: 10, color: { argb: "FFB91C1C" }, bold: true };
+        }
+      }
+    }
+  }
+  s3.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 8 } };
+
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader("Content-Disposition", `attachment; filename="cheklist-holati-${stamp}.xlsx"`);
+  res.send(buffer);
 });
 
 router.get("/branch-audits/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {

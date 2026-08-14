@@ -47,7 +47,7 @@ import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { useChatList } from '../lib/chat-api';
 import { useGoalsMe, GOAL_ROLES } from '../lib/maqsad-api';
 import { cn } from '../lib/utils';
-import { HR_ROLE_LABELS, isHrRole } from '../lib/roles';
+import { HR_ROLE_LABELS, canViewChecklistStatus, isHrRole } from '../lib/roles';
 
 const OPEN_STATUSES = new Set(['submitted', 'reviewing', 'accepted', 'announced']);
 
@@ -470,6 +470,9 @@ export default function Dashboard() {
             <QuickLink href="/requests" title="Arizalar" desc="Bo‘lim arizalarini kuzating" icon={FileText} />
             <QuickLink href="/candidates" title="Nomzodlar" desc="Tanlov jarayoniga nazar" icon={Users} />
             <QuickLink href="/pharmacy-network" title="Aptekalar" desc="Tarmoq holati" icon={Store} />
+            {canViewChecklistStatus(role) && (
+              <QuickLink href="/checklist-holati" title="Cheklist holati" desc="Tashriflar va javoblar" icon={ClipboardCheck} />
+            )}
             <QuickLink href="/vazifalar" title="Topshiriqlar" desc="Jamoa topshiriqlari" icon={ListTodo} />
             <QuickLink href="/maqsad" title="Maqsad" desc="Kunlik intizom" icon={Target} />
             <QuickLink href="/chat" title="Chat" desc="Xodimlar bilan aloqa" icon={MessageCircle} />

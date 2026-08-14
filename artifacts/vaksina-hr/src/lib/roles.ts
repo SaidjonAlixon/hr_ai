@@ -21,15 +21,9 @@ export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || role === "admin";
 }
 
-/** Davomat: direktor, HR direktor, HR menejer (+ admin) */
-export function canViewDavomat(role?: string | null): boolean {
-  return (
-    role === "admin" ||
-    role === "director" ||
-    role === "hr_direktor" ||
-    role === "hr_menejer" ||
-    role === "hr"
-  );
+/** Cheklist holati: admin, direktor, HR direktor */
+export function canViewChecklistStatus(role?: string | null): boolean {
+  return role === "admin" || role === "director" || role === "hr_direktor";
 }
 
 export const HR_ROLE_LABELS: Record<string, string> = {

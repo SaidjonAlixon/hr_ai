@@ -35,6 +35,9 @@ export type BranchAudit = {
   status: string;
   createdAt: string;
   updatedAt: string;
+  checkLatitude?: number | null;
+  checkLongitude?: number | null;
+  distanceMeters?: number | null;
 };
 
 export type AuditBranchOption = {
@@ -188,6 +191,61 @@ export function useBranchAudits(managerId?: number | null) {
     queryKey: ["branch-audits", { managerId: managerId ?? null }],
     queryFn: () => apiFetch<BranchAudit[]>(`/branch-audits${qs}`),
   });
+}
+
+export type BranchAuditListParams = {
+  managerId?: number | null;
+  coordinatorId?: number | null;
+  from?: string;
+  to?: string;
+  q?: string;
+};
+
+export function useBranchAuditsList(params: BranchAuditListParams, enabled = true) {
+  const sp = new URLSearchParams();
+  if (params.managerId) sp.set("managerId", String(params.managerId));
+  if (params.coordinatorId) sp.set("coordinatorId", String(params.coordinatorId));
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  if (params.q) sp.set("q", params.q);
+  const qs = sp.toString();
+  return useQuery({
+    queryKey: ["branch-audits", "list", params],
+    queryFn: () => apiFetch<BranchAudit[]>(`/branch-audits${qs ? `?${qs}` : ""}`),
+    enabled,
+  });
+}
+
+export async function downloadBranchAuditsExcel(params: BranchAuditListParams) {
+  const sp = new URLSearchParams();
+  if (params.managerId) sp.set("managerId", String(params.managerId));
+  if (params.coordinatorId) sp.set("coordinatorId", String(params.coordinatorId));
+  if (params.from) sp.set("from", params.from);
+  if (params.to) sp.set("to", params.to);
+  if (params.q) sp.set("q", params.q);
+  const qs = sp.toString();
+  const res = await fetch(`/api/branch-audits/export${qs ? `?${qs}` : ""}`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || "Excel yuklanmadi");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `cheklist-holati-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }
 
 export function useCreateBranchAudit() {

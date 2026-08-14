@@ -38,6 +38,7 @@ import ChatPage from './pages/chat/index';
 import KirishPage from './pages/kirish/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
+import ChecklistHolatiPage from './pages/checklist-holati/index';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
 import EmployeesPage from './pages/employees/index';
@@ -118,6 +119,7 @@ function Router() {
       <ProtectedRoute path="/kirish" component={KirishPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
+      <ProtectedRoute path="/checklist-holati" component={ChecklistHolatiPage} />
       
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />

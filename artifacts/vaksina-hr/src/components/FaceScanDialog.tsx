@@ -28,12 +28,14 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   mode: "enroll" | "login";
   onCaptured: (descriptor: number[]) => Promise<CaptureResult>;
+  title?: string;
+  description?: string;
 };
 
 const ENROLL_SAMPLES = 5;
 const LOGIN_STREAK = 2;
 
-export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) {
+export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, description }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const ovalRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -267,10 +269,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured }: Props) 
         <DialogHeader className="space-y-1 text-left">
           <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
             <ScanFace className="h-5 w-5 text-[#0b3a5c]" />
-            {mode === "enroll" ? "Face ID ni ulash" : "Face ID bilan kirish"}
+            {title || (mode === "enroll" ? "Face ID ni ulash" : "Face ID bilan kirish")}
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
-            Rasm bilan ochilmaydi. Ko‘zni ochiq tuting, keyin buyruqda SEKIN 2 marta yumib oching (tez miltillash o‘tmaydi).
+            {description ||
+              "Rasm bilan ochilmaydi. Ko‘zni ochiq tuting, keyin buyruqda SEKIN 2 marta yumib oching (tez miltillash o‘tmaydi)."}
           </DialogDescription>
         </DialogHeader>
 

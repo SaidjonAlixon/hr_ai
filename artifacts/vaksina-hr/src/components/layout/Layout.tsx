@@ -316,7 +316,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const chatNav = { name: 'Chat', path: '/chat', icon: MessageCircle };
   const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
   const kuzatuvNav = { name: 'Kuzatuv', path: '/kuzatuv', icon: Eye };
-  const davomatFaceNav = { name: 'Davomat Face ID', path: '/davomat-face', icon: ScanFace };
+  const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
 
   const hrMenejerNav: NavItem[] = [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -330,7 +330,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
     { name: 'Xodimlar', path: '/employees', icon: Users },
-    { name: 'Davomat', path: '/davomat', icon: ClipboardCheck },
+    { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
     davomatFaceNav,
     { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
@@ -350,7 +350,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
     { name: 'Xodimlar', path: '/employees', icon: Users },
-    { name: 'Davomat', path: '/davomat', icon: ClipboardCheck },
+    { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
     davomatFaceNav,
     { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
@@ -384,7 +384,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
-      { name: 'Davomat', path: '/davomat', icon: ClipboardCheck },
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
@@ -419,7 +419,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
-      { name: 'Davomat', path: '/davomat', icon: ClipboardCheck },
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
@@ -505,7 +505,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
   };
 
-  const navItems = roleNavigation[user.role] || [];
+  const roleNav = roleNavigation[user.role] || [
+    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+  ];
+  const navItems = roleNav.some((item) => item.path === '/davomat-face')
+    ? roleNav
+    : [...roleNav, davomatFaceNav];
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {

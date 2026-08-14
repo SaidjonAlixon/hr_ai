@@ -78,7 +78,7 @@ export function DavomatAttendanceBanner() {
           <Button asChild size="sm" className="gap-1.5 bg-[#0b3a5c] hover:bg-[#0a314d]">
             <Link href={status.linkUrl || "/davomat-face"}>
               <ScanFace className="h-4 w-4" />
-              Face ID · Keldim / Ketdim
+              Davomat
             </Link>
           </Button>
           {done ? (

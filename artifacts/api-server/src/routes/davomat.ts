@@ -57,6 +57,11 @@ function euclidean(a: number[], b: number[]): number {
   return Math.sqrt(s);
 }
 
+function isPgUniqueViolation(err: unknown): boolean {
+  const e = err as { code?: string; cause?: { code?: string } };
+  return e?.code === "23505" || e?.cause?.code === "23505";
+}
+
 function requireDavomat(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
   if (!canViewDavomat(req.userRole)) {
     res.status(403).json({ error: "Davomat faqat Direktor / HR Direktor / HR Menejer uchun" });
@@ -473,6 +478,19 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
   }
 });
 
+async function ownEmployeeReport(empId: number) {
+  const to = todayTashkent();
+  const from = addDays(to, -13);
+  const employees = await loadActiveEmployees({ employeeId: String(empId) });
+  const records = await loadRecords(from, to, [empId]);
+  const report = buildReport(employees, records, from, to);
+  return {
+    from,
+    to,
+    employee: report.employees[0] ?? null,
+  };
+}
+
 /** Bugungi kun: kelgan / kelmagan */
 router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
@@ -854,30 +872,51 @@ function geoGate(
   return { ok: true, distanceMeters, effectiveRadius };
 }
 
+type PunchFail = { ok: false; status: number; body: Record<string, unknown> };
+
+function oncePerDayFail(
+  emp: WorkplaceEmp,
+  rec: { checkInAt: Date | null; checkOutAt: Date | null } | undefined,
+  code: "already_in" | "already_complete",
+): PunchFail {
+  const checkIn = formatHm(rec?.checkInAt ?? null);
+  const checkOut = formatHm(rec?.checkOutAt ?? null);
+  return {
+    ok: false,
+    status: 400,
+    body: {
+      error:
+        code === "already_complete"
+          ? `Bugun allaqachon Keldim (${checkIn}) va Ketdim (${checkOut}). Kuniga faqat 1 marta.`
+          : `Bugun allaqachon Keldim: ${checkIn}. Qayta belgilab bo‘lmaydi.`,
+      code,
+      fullName: emp.fullName,
+      checkIn,
+      checkOut,
+      checkInAt: rec?.checkInAt ? rec.checkInAt.toISOString() : null,
+      checkOutAt: rec?.checkOutAt ? rec.checkOutAt.toISOString() : null,
+    },
+  };
+}
+
 async function applyFacePunch(opts: {
   emp: WorkplaceEmp;
   latitude: number;
   longitude: number;
   distanceMeters: number;
   faceProfileId: number;
+  action: "in" | "out";
 }): Promise<
   | { ok: true; payload: Record<string, unknown> }
-  | { ok: false; status: number; body: Record<string, unknown> }
+  | PunchFail
 > {
-  const { emp, latitude, longitude, distanceMeters, faceProfileId } = opts;
+  const { emp, latitude, longitude, distanceMeters, faceProfileId, action } = opts;
   const workDate = todayTashkent();
   const now = new Date();
-
-  const [existing] = await db
-    .select()
-    .from(attendanceRecordsTable)
-    .where(
-      and(
-        eq(attendanceRecordsTable.employeeId, emp.id),
-        eq(attendanceRecordsTable.workDate, workDate),
-      ),
-    )
-    .limit(1);
+  const dateFilter = and(
+    eq(attendanceRecordsTable.employeeId, emp.id),
+    eq(attendanceRecordsTable.workDate, workDate),
+  );
 
   const geoFields = {
     checkLatitude: latitude,
@@ -888,75 +927,151 @@ async function applyFacePunch(opts: {
     updatedAt: now,
   };
 
-  let action: "in" | "out";
-  let checkInAt = existing?.checkInAt ?? null;
-  let checkOutAt = existing?.checkOutAt ?? null;
+  try {
+    return await db.transaction(async (tx) => {
+      const [existing] = await tx
+        .select()
+        .from(attendanceRecordsTable)
+        .where(dateFilter)
+        .limit(1)
+        .for("update");
 
-  if (!existing?.checkInAt) {
-    action = "in";
-    checkInAt = now;
-    const status = computeMetrics(workDate, checkInAt, null).status;
-    if (existing) {
-      await db
-        .update(attendanceRecordsTable)
-        .set({ ...geoFields, checkInAt, status })
-        .where(eq(attendanceRecordsTable.id, existing.id));
-    } else {
-      await db.insert(attendanceRecordsTable).values({
-        employeeId: emp.id,
-        userId: emp.userId,
-        workDate,
-        checkInAt,
-        status,
-        ...geoFields,
-        createdById: emp.userId,
-      });
+      if (existing?.checkOutAt) {
+        return oncePerDayFail(emp, existing, "already_complete");
+      }
+      if (action === "in" && existing?.checkInAt) {
+        return oncePerDayFail(emp, existing, "already_in");
+      }
+      if (action === "out" && !existing?.checkInAt) {
+        return {
+          ok: false,
+          status: 400,
+          body: {
+            error: "Avval Keldim ni belgilang",
+            code: "need_check_in",
+            fullName: emp.fullName,
+          },
+        };
+      }
+
+      let checkInAt = existing?.checkInAt ?? null;
+      let checkOutAt = existing?.checkOutAt ?? null;
+
+      if (action === "in") {
+        checkInAt = now;
+        const status = computeMetrics(workDate, checkInAt, null).status;
+        if (existing) {
+          await tx
+            .update(attendanceRecordsTable)
+            .set({ ...geoFields, checkInAt, status })
+            .where(eq(attendanceRecordsTable.id, existing.id));
+        } else {
+          await tx.insert(attendanceRecordsTable).values({
+            employeeId: emp.id,
+            userId: emp.userId,
+            workDate,
+            checkInAt,
+            status,
+            ...geoFields,
+            createdById: emp.userId,
+          });
+        }
+      } else {
+        checkOutAt = now;
+        checkInAt = existing!.checkInAt;
+        const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt).status;
+        await tx
+          .update(attendanceRecordsTable)
+          .set({ ...geoFields, checkOutAt, status })
+          .where(eq(attendanceRecordsTable.id, existing!.id));
+      }
+
+      await tx
+        .update(faceProfilesTable)
+        .set({ lastUsedAt: now })
+        .where(eq(faceProfilesTable.id, faceProfileId));
+
+      const metrics = computeMetrics(workDate, checkInAt, checkOutAt);
+      return {
+        ok: true as const,
+        payload: {
+          ok: true,
+          action,
+          workDate,
+          fullName: emp.fullName,
+          location: emp.location,
+          distanceMeters,
+          allowedMeters: DAVOMAT_GEOFENCE_METERS,
+          checkInAt: checkInAt ? checkInAt.toISOString() : null,
+          checkOutAt: checkOutAt ? checkOutAt.toISOString() : null,
+          message:
+            action === "in"
+              ? `${emp.fullName}: Keldim (${metrics.checkIn})`
+              : `${emp.fullName}: Ketdi (${metrics.checkOut})`,
+          ...metrics,
+        },
+      };
+    });
+  } catch (err) {
+    if (isPgUniqueViolation(err)) {
+      const [existing] = await db
+        .select()
+        .from(attendanceRecordsTable)
+        .where(dateFilter)
+        .limit(1);
+      if (existing?.checkOutAt) return oncePerDayFail(emp, existing, "already_complete");
+      if (existing?.checkInAt) return oncePerDayFail(emp, existing, "already_in");
     }
-  } else if (!existing.checkOutAt) {
-    action = "out";
-    checkOutAt = now;
-    const status = computeMetrics(workDate, existing.checkInAt, checkOutAt).status;
-    await db
-      .update(attendanceRecordsTable)
-      .set({ ...geoFields, checkOutAt, status })
-      .where(eq(attendanceRecordsTable.id, existing.id));
-    checkInAt = existing.checkInAt;
-  } else {
-    return {
-      ok: false,
-      status: 400,
-      body: {
-        error: `Bugun davomat yopilgan: kelish ${formatHm(existing.checkInAt)}, ketish ${formatHm(existing.checkOutAt)}`,
-        code: "already_complete",
-        fullName: emp.fullName,
-        checkIn: formatHm(existing.checkInAt),
-        checkOut: formatHm(existing.checkOutAt),
-      },
-    };
+    throw err;
+  }
+}
+
+async function resolveFaceAtSite(opts: {
+  descriptor: number[];
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}): Promise<
+  | {
+      ok: true;
+      emp: WorkplaceEmp;
+      faceId: number;
+      user: { id: number; fullName: string; role: string };
+      gate: { distanceMeters: number; effectiveRadius: number };
+    }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  const matched = await matchFaceUserId(opts.descriptor);
+  if (!matched.ok) {
+    return { ok: false, status: 401, body: { error: matched.error, code: matched.code } };
   }
 
-  await db
-    .update(faceProfilesTable)
-    .set({ lastUsedAt: now })
-    .where(eq(faceProfilesTable.id, faceProfileId));
+  const [user] = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      status: usersTable.status,
+      role: usersTable.role,
+      departmentId: usersTable.departmentId,
+    })
+    .from(usersTable)
+    .where(eq(usersTable.id, matched.userId))
+    .limit(1);
+  if (!user || user.status !== "active") {
+    return { ok: false, status: 403, body: { error: "Profil faol emas", code: "user_inactive" } };
+  }
 
-  const metrics = computeMetrics(workDate, checkInAt, checkOutAt);
+  const emp = await ensureEmployeeForUser(user);
+  const gate = geoGate(emp, opts.latitude, opts.longitude, opts.accuracy);
+  if (!gate.ok) {
+    return { ok: false, status: gate.status, body: gate.body };
+  }
   return {
     ok: true,
-    payload: {
-      ok: true,
-      action,
-      workDate,
-      fullName: emp.fullName,
-      location: emp.location,
-      distanceMeters,
-      allowedMeters: DAVOMAT_GEOFENCE_METERS,
-      message:
-        action === "in"
-          ? `${emp.fullName}: kelish belgilandi (${metrics.checkIn})`
-          : `${emp.fullName}: ketish belgilandi (${metrics.checkOut})`,
-      ...metrics,
-    },
+    emp,
+    faceId: matched.faceId,
+    user: { id: user.id, fullName: user.fullName, role: user.role },
+    gate: { distanceMeters: gate.distanceMeters, effectiveRadius: gate.effectiveRadius },
   };
 }
 
@@ -1010,11 +1125,21 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         ? {
             checkIn: formatHm(rec.checkInAt),
             checkOut: formatHm(rec.checkOutAt),
+            checkInAt: rec.checkInAt ? rec.checkInAt.toISOString() : null,
+            checkOutAt: rec.checkOutAt ? rec.checkOutAt.toISOString() : null,
             status: rec.status,
             complete: Boolean(rec.checkInAt && rec.checkOutAt),
             nextAction: !rec.checkInAt ? "in" : !rec.checkOutAt ? "out" : "done",
           }
-        : { checkIn: "—", checkOut: "—", status: "absent", complete: false, nextAction: "in" },
+        : {
+            checkIn: "—",
+            checkOut: "—",
+            checkInAt: null,
+            checkOutAt: null,
+            status: "absent",
+            complete: false,
+            nextAction: "in",
+          },
     });
   } catch (err) {
     console.error("GET /davomat/me/workplace error:", err);
@@ -1115,9 +1240,98 @@ router.post("/davomat/announce", requireAuth, async (req: AuthRequest, res): Pro
   }
 });
 
+/** Xodimning o‘z davomati (so‘nggi 14 kun) */
+router.get("/davomat/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    if (!user) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    const emp = await ensureEmployeeForUser(user);
+    const own = await ownEmployeeReport(emp.id);
+    res.json({
+      from: own.from,
+      to: own.to,
+      fullName: emp.fullName,
+      employee: own.employee,
+    });
+  } catch (err) {
+    console.error("GET /davomat/me error:", err);
+    res.status(503).json({ error: "Davomat yuklanmadi" });
+  }
+});
+
+/** Face ID tasdiq — hali Keldim/Ketdim yozilmaydi */
+router.post("/davomat/face-verify", async (req, res): Promise<void> => {
+  try {
+    const descriptor = parseFaceDescriptor(req.body?.descriptor);
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const accuracy = Number(req.body?.accuracy);
+    if (!descriptor) {
+      res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
+      return;
+    }
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      res.status(400).json({ error: "GPS majburiy — lokatsiyaga ruxsat bering", code: "gps_required" });
+      return;
+    }
+    const resolved = await resolveFaceAtSite({
+      descriptor,
+      latitude,
+      longitude,
+      accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
+    });
+    if (!resolved.ok) {
+      res.status(resolved.status).json(resolved.body);
+      return;
+    }
+    const workDate = todayTashkent();
+    const [rec] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.employeeId, resolved.emp.id),
+          eq(attendanceRecordsTable.workDate, workDate),
+        ),
+      )
+      .limit(1);
+    const nextAction = !rec?.checkInAt ? "in" : !rec.checkOutAt ? "out" : "done";
+    const own = await ownEmployeeReport(resolved.emp.id);
+    res.json({
+      ok: true,
+      fullName: resolved.user.fullName,
+      employeeId: resolved.emp.id,
+      distanceMeters: resolved.gate.distanceMeters,
+      allowedMeters: resolved.gate.effectiveRadius,
+      workDate,
+      nextAction,
+      checkIn: formatHm(rec?.checkInAt ?? null),
+      checkOut: formatHm(rec?.checkOutAt ?? null),
+      checkInAt: rec?.checkInAt ? rec.checkInAt.toISOString() : null,
+      checkOutAt: rec?.checkOutAt ? rec.checkOutAt.toISOString() : null,
+      employee: own.employee,
+    });
+  } catch (err) {
+    console.error("POST /davomat/face-verify error:", err);
+    res.status(503).json({ error: "Yuz tasdiqlanmadi" });
+  }
+});
+
 /**
  * Face ID davomat — login shart emas.
- * Yuz → user → avto xodim bog‘lash → GPS hududi → kelish/ketish.
+ * Yuz → user → avto xodim bog‘lash → GPS hududi → Keldim / Ketdim.
  */
 router.post("/davomat/face-punch", async (req, res): Promise<void> => {
   try {
@@ -1125,6 +1339,8 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
     const latitude = Number(req.body?.latitude);
     const longitude = Number(req.body?.longitude);
     const accuracy = Number(req.body?.accuracy);
+    const actionRaw = String(req.body?.action || "");
+    const action = actionRaw === "out" ? "out" : actionRaw === "in" ? "in" : null;
 
     if (!descriptor) {
       res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
@@ -1137,54 +1353,36 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       });
       return;
     }
-
-    const matched = await matchFaceUserId(descriptor);
-    if (!matched.ok) {
-      res.status(401).json({ error: matched.error, code: matched.code });
+    if (!action) {
+      res.status(400).json({ error: "action: in | out", code: "action_required" });
       return;
     }
 
-    const [user] = await db
-      .select({
-        id: usersTable.id,
-        fullName: usersTable.fullName,
-        status: usersTable.status,
-        role: usersTable.role,
-        departmentId: usersTable.departmentId,
-      })
-      .from(usersTable)
-      .where(eq(usersTable.id, matched.userId))
-      .limit(1);
-    if (!user || user.status !== "active") {
-      res.status(403).json({ error: "Profil faol emas", code: "user_inactive" });
-      return;
-    }
-
-    const emp = await ensureEmployeeForUser(user);
-
-    const gate = geoGate(
-      emp,
+    const resolved = await resolveFaceAtSite({
+      descriptor,
       latitude,
       longitude,
-      Number.isFinite(accuracy) ? accuracy : undefined,
-    );
-    if (!gate.ok) {
-      res.status(gate.status).json(gate.body);
+      accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
+    });
+    if (!resolved.ok) {
+      res.status(resolved.status).json(resolved.body);
       return;
     }
 
     const punched = await applyFacePunch({
-      emp,
+      emp: resolved.emp,
       latitude,
       longitude,
-      distanceMeters: gate.distanceMeters,
-      faceProfileId: matched.faceId,
+      distanceMeters: resolved.gate.distanceMeters,
+      faceProfileId: resolved.faceId,
+      action,
     });
     if (!punched.ok) {
       res.status(punched.status).json(punched.body);
       return;
     }
-    res.json(punched.payload);
+    const own = await ownEmployeeReport(resolved.emp.id);
+    res.json({ ...punched.payload, employee: own.employee });
   } catch (err) {
     console.error("POST /davomat/face-punch error:", err);
     res.status(503).json({ error: "Face ID davomat yozilmadi" });

@@ -84,6 +84,10 @@ export class DavomatApiError extends Error {
   remainMeters?: number;
   allowedMeters?: number;
   fullName?: string;
+  checkIn?: string;
+  checkOut?: string;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
   constructor(body: {
     error?: string;
     code?: string;
@@ -91,6 +95,10 @@ export class DavomatApiError extends Error {
     remainMeters?: number;
     allowedMeters?: number;
     fullName?: string;
+    checkIn?: string;
+    checkOut?: string;
+    checkInAt?: string | null;
+    checkOutAt?: string | null;
   }) {
     super(body.error || "Davomat xatosi");
     this.code = body.code;
@@ -98,6 +106,10 @@ export class DavomatApiError extends Error {
     this.remainMeters = body.remainMeters;
     this.allowedMeters = body.allowedMeters;
     this.fullName = body.fullName;
+    this.checkIn = body.checkIn;
+    this.checkOut = body.checkOut;
+    this.checkInAt = body.checkInAt;
+    this.checkOutAt = body.checkOutAt;
   }
 }
 
@@ -150,11 +162,37 @@ export async function saveDavomatManual(payload: {
   });
 }
 
+export async function faceVerifyDavomat(payload: {
+  descriptor: number[];
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}): Promise<{
+  ok: boolean;
+  fullName: string;
+  employeeId: number;
+  distanceMeters: number;
+  allowedMeters: number;
+  workDate: string;
+  nextAction: "in" | "out" | "done";
+  checkIn: string;
+  checkOut: string;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  employee?: DavomatEmployee | null;
+}> {
+  return apiJson("/davomat/face-verify", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function facePunchDavomat(payload: {
   descriptor: number[];
   latitude: number;
   longitude: number;
   accuracy?: number;
+  action: "in" | "out";
 }): Promise<{
   ok: boolean;
   action: "in" | "out";
@@ -162,9 +200,12 @@ export async function facePunchDavomat(payload: {
   message?: string;
   checkIn: string;
   checkOut: string;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
   workedHours: string;
   distanceMeters: number;
   location?: string | null;
+  employee?: DavomatEmployee | null;
 }> {
   return apiJson("/davomat/face-punch", {
     method: "POST",
@@ -186,6 +227,8 @@ export type WorkplaceInfo = {
   today: {
     checkIn: string;
     checkOut: string;
+    checkInAt?: string | null;
+    checkOutAt?: string | null;
     status: string;
     complete: boolean;
     nextAction: "in" | "out" | "done";
@@ -194,6 +237,15 @@ export type WorkplaceInfo = {
 
 export async function fetchMyWorkplace(): Promise<WorkplaceInfo> {
   return apiJson<WorkplaceInfo>("/davomat/me/workplace");
+}
+
+export async function fetchMyDavomat(): Promise<{
+  from: string;
+  to: string;
+  fullName: string;
+  employee: DavomatEmployee | null;
+}> {
+  return apiJson("/davomat/me");
 }
 
 export const DAVOMAT_GEOFENCE_METERS = 15;

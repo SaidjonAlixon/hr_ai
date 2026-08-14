@@ -144,7 +144,7 @@ export default function Login() {
                   onClick={() => setLocation("/davomat-face")}
                 >
                   <ScanFace className="h-4 w-4" />
-                  Davomat Face ID (15 m)
+                  Davomat
                 </Button>
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
                   Davomat faqat ish joyi GPS dan 15 m ichida. Uzoq bo‘lsangiz qancha metr yurish kerakligi chiqadi.

@@ -6,7 +6,7 @@ import { pool } from "@workspace/db";
 import { logger } from "./logger";
 
 const ENSURE_SQL = `
--- Kirish (farmasevt staj)
+-- Kirish (stajyor o‘quv)
 CREATE TABLE IF NOT EXISTS kirish_progress (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL,
@@ -294,6 +294,32 @@ CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
+
+-- Stajyor: intern xodimlar alohida akkaunt roli; Kirish faqat shu rolga
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'users'
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'employees'
+    ) THEN
+      UPDATE users u
+      SET role = 'stajyor'
+      FROM employees e
+      WHERE e.user_id = u.id
+        AND e.org_role = 'intern'
+        AND u.role IS DISTINCT FROM 'stajyor';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM users WHERE login = 'stajyor1') THEN
+      INSERT INTO users (full_name, role, login, password, status)
+      VALUES ('Demo Stajyor', 'stajyor', 'stajyor1', 'pass123', 'active');
+    END IF;
+  END IF;
+END $$;
 `;
 
 /** Vercel cold start uchun — yetishmayotgan kritik ustunlar (tez) */
@@ -387,6 +413,32 @@ CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
+
+-- Stajyor: intern xodimlar alohida akkaunt roli; Kirish faqat shu rolga
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'users'
+  ) THEN
+    IF EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'employees'
+    ) THEN
+      UPDATE users u
+      SET role = 'stajyor'
+      FROM employees e
+      WHERE e.user_id = u.id
+        AND e.org_role = 'intern'
+        AND u.role IS DISTINCT FROM 'stajyor';
+    END IF;
+
+    IF NOT EXISTS (SELECT 1 FROM users WHERE login = 'stajyor1') THEN
+      INSERT INTO users (full_name, role, login, password, status)
+      VALUES ('Demo Stajyor', 'stajyor', 'stajyor1', 'pass123', 'active');
+    END IF;
+  END IF;
+END $$;
 `;
 
 export async function ensureEmployeesOrgColumns(): Promise<void> {

@@ -125,7 +125,8 @@ const users = [
   ["Nilufar Koordinator", "koordinator", "Farmatsiya", "koordinator1", "pass123", "+998901000008"],
   ["Akmal Texnik", "texnik", "Farmatsiya", "texnik1", "pass123", "+998901000009"],
   ["Zarina Ombor", "ombor", "Farmatsiya", "ombor1", "pass123", "+998901000010"],
-  ["Stajor Farmasevt", "farmasevt", "Farmatsiya", "farmasevt1", "pass123", "+998901000011"],
+  ["Dilshod Farmasevt", "farmasevt", "Farmatsiya", "farmasevt1", "pass123", "+998901000011"],
+  ["Malika Stajyor", "stajyor", "Farmatsiya", "stajyor1", "pass123", "+998901000012"],
 ];
 
 for (const [fullName, role, dept, login, password, phone] of users) {

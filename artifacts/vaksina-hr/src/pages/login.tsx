@@ -25,7 +25,7 @@ export default function Login() {
 
   const goAfterLogin = (user: User) => {
     setUser(user);
-    setLocation(user.role === 'farmasevt' ? '/kirish' : '/dashboard');
+    setLocation(user.role === 'stajyor' ? '/kirish' : '/dashboard');
   };
 
   const handleLogin = (e?: React.FormEvent) => {
@@ -56,6 +56,7 @@ export default function Login() {
     { label: "Mudir", login: "mudir1", pass: "pass123" },
     { label: "Koordinator", login: "koordinator1", pass: "pass123" },
     { label: "Farmasevt", login: "farmasevt1", pass: "pass123" },
+    { label: "Stajyor", login: "stajyor1", pass: "pass123" },
   ];
 
   return (
@@ -199,7 +200,7 @@ export default function Login() {
                             onSuccess: (data) => {
                               setUser(data.user);
                               setLocation(
-                                data.user.role === 'farmasevt' ? '/kirish' : '/dashboard',
+                                data.user.role === 'stajyor' ? '/kirish' : '/dashboard',
                               );
                             },
                           },

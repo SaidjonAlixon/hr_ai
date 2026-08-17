@@ -12,6 +12,7 @@ import {
 } from "@/lib/kirish-api";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { canAccessKirish } from "@/lib/roles";
 import {
   Award,
   CheckCircle2,
@@ -99,10 +100,10 @@ export default function KirishPage() {
     [answers],
   );
 
-  if (user?.role !== "farmasevt" && user?.role !== "admin") {
+  if (!canAccessKirish(user?.role)) {
     return (
       <div className="h-full flex items-center justify-center p-8 text-slate-500">
-        Bu bo‘lim faqat farmasevt (stajor) uchun.
+        Bu bo‘lim faqat stajyor uchun.
       </div>
     );
   }

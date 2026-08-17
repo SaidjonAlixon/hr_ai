@@ -49,7 +49,8 @@ const ROLES = [
   { value: 'koordinator', label: 'Koordinator' },
   { value: 'texnik', label: 'Texnik' },
   { value: 'ombor', label: 'Ombor' },
-  { value: 'farmasevt', label: 'Farmasevt (stajor)' },
+  { value: 'farmasevt', label: 'Farmasevt' },
+  { value: 'stajyor', label: 'Stajyor' },
 ] as const;
 
 const ROLE_LABELS: Record<string, string> = Object.fromEntries(ROLES.map((r) => [r.value, r.label]));

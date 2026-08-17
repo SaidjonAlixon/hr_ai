@@ -36,6 +36,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   texnik: "Texnik",
   ombor: "Ombor",
   farmasevt: "Farmasevt",
+  stajyor: "Stajyor",
 };
 
 const EMP_STATUS_UZ: Record<string, string> = {
@@ -125,7 +126,9 @@ async function loadOrgTree(
             ? "manager"
             : person.role === "farmasevt"
               ? "pharmacist"
-              : null;
+              : person.role === "stajyor"
+                ? "intern"
+                : null;
       if (orgGuess) {
         const [byName] = await db
           .select()

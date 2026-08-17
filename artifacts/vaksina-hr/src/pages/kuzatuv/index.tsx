@@ -84,6 +84,7 @@ const ROLE_LABELS: Record<string, string> = {
   texnik: "Texnik",
   ombor: "Ombor",
   farmasevt: "Farmasevt",
+  stajyor: "Stajyor",
 };
 
 function StatCard({

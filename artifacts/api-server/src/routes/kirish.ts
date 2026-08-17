@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
+import { canAccessKirish } from "../lib/roles";
 import {
   KIRISH_STAGE_COUNT,
   getStage,
@@ -39,9 +40,9 @@ function ensureStagesMap(raw: KirishStagesMap | null | undefined): KirishStagesM
   return map;
 }
 
-function requireFarmasevt(req: AuthRequest, res: import("express").Response): boolean {
-  if (req.userRole !== "farmasevt" && req.userRole !== "admin") {
-    res.status(403).json({ error: "Faqat farmasevt (stajor) uchun" });
+function requireStajyor(req: AuthRequest, res: import("express").Response): boolean {
+  if (!canAccessKirish(req.userRole)) {
+    res.status(403).json({ error: "Faqat stajyor uchun" });
     return false;
   }
   return true;
@@ -93,7 +94,7 @@ function serializeProgress(row: Awaited<ReturnType<typeof getOrCreateProgress>>)
 }
 
 router.get("/kirish/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireFarmasevt(req, res)) return;
+  if (!requireStajyor(req, res)) return;
   const progress = await getOrCreateProgress(req.userId!);
   res.json({
     progress: serializeProgress(progress),
@@ -105,7 +106,7 @@ router.post(
   "/kirish/me/stage/:n/complete-video",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireFarmasevt(req, res)) return;
+    if (!requireStajyor(req, res)) return;
     const n = Number(req.params.n);
     if (!getStage(n)) {
       res.status(400).json({ error: "Noto‘g‘ri bosqich" });
@@ -141,7 +142,7 @@ router.post(
   "/kirish/me/stage/:n/complete-slides",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireFarmasevt(req, res)) return;
+    if (!requireStajyor(req, res)) return;
     const n = Number(req.params.n);
     if (!getStage(n)) {
       res.status(400).json({ error: "Noto‘g‘ri bosqich" });
@@ -182,7 +183,7 @@ router.post(
   "/kirish/me/stage/:n/submit-test",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireFarmasevt(req, res)) return;
+    if (!requireStajyor(req, res)) return;
     const n = Number(req.params.n);
     const stage = getStage(n);
     if (!stage) {
@@ -243,7 +244,7 @@ router.post(
 );
 
 router.post("/kirish/me/finish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireFarmasevt(req, res)) return;
+  if (!requireStajyor(req, res)) return;
   const progress = await getOrCreateProgress(req.userId!);
   const stages = ensureStagesMap(progress.stagesJson);
   const allPassed = Array.from({ length: KIRISH_STAGE_COUNT }, (_, i) =>

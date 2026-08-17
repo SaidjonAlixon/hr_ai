@@ -40,7 +40,7 @@ import { cn } from '@/lib/utils';
 import { DailyGoalPrompt } from '@/components/DailyGoalPrompt';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
-import { isHrManager, isHrRole } from '@/lib/roles';
+import { isHrManager, isHrRole, isStajyor } from '@/lib/roles';
 
 type NavItem = {
   name: string;
@@ -282,7 +282,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     if (
-      user.role === 'farmasevt' &&
+      isStajyor(user.role) &&
       !location.startsWith('/kirish') &&
       !location.startsWith('/tashkiliy-tuzilma') &&
       !location.startsWith('/davomat-face') &&
@@ -502,6 +502,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     farmasevt: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      davomatFaceNav,
+      orgNav,
+    ],
+    stajyor: [
       { name: 'Kirish', path: '/kirish', icon: GraduationCap },
       davomatFaceNav,
       orgNav,

@@ -37,6 +37,15 @@ export function canViewChecklistStatus(role?: string | null): boolean {
   return role === "admin" || role === "director" || role === "hr_direktor";
 }
 
+/** Kirish o‘quv bo‘limi — faqat stajyor (+ admin ko‘rishi mumkin) */
+export function canAccessKirish(role?: string | null): boolean {
+  return role === "stajyor" || role === "admin";
+}
+
+export function isStajyor(role?: string | null): boolean {
+  return role === "stajyor";
+}
+
 export const HR_ROLE_LABELS: Record<string, string> = {
   hr: "HR",
   hr_direktor: "HR Direktor",

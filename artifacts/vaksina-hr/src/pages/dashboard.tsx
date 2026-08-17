@@ -64,6 +64,7 @@ const ROLE_LABELS: Record<string, string> = {
   texnik: 'Texnik',
   ombor: 'Ombor',
   farmasevt: 'Farmasevt',
+  stajyor: 'Stajyor',
 };
 
 type DashKind =
@@ -73,7 +74,7 @@ type DashKind =
   | 'mentor'
   | 'pharmacy' // mudir, koordinator
   | 'ops' // texnik, ombor
-  | 'intern'; // farmasevt
+  | 'intern'; // stajyor
 
 function dashKindFor(role?: string | null): DashKind {
   if (isHrRole(role)) return 'recruitment';
@@ -95,6 +96,8 @@ function dashKindFor(role?: string | null): DashKind {
     case 'ombor':
       return 'ops';
     case 'farmasevt':
+      return 'ops';
+    case 'stajyor':
       return 'intern';
     default:
       return 'ops';

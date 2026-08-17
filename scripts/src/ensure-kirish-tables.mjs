@@ -51,16 +51,16 @@ CREATE UNIQUE INDEX IF NOT EXISTS kirish_progress_user_uidx ON kirish_progress (
 `);
 
 const existing = await client.query(
-  `SELECT id FROM users WHERE login = 'farmasevt1' LIMIT 1`,
+  `SELECT id FROM users WHERE login = 'stajyor1' LIMIT 1`,
 );
 if (!existing.rows.length) {
   await client.query(
     `INSERT INTO users (full_name, role, login, password, status)
-     VALUES ('Stajor Farmasevt', 'farmasevt', 'farmasevt1', 'pass123', 'active')`,
+     VALUES ('Demo Stajyor', 'stajyor', 'stajyor1', 'pass123', 'active')`,
   );
-  console.log("seeded farmasevt1 / pass123");
+  console.log("seeded stajyor1 / pass123");
 } else {
-  console.log("farmasevt1 already exists");
+  console.log("stajyor1 already exists");
 }
 
 console.log("kirish tables ok");

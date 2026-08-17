@@ -34,7 +34,7 @@ export const KIRISH_STAGES: KirishStageContent[] = [
     title: "1-bosqich: Apteka kirish asoslari",
     subtitle: "Video → slaydlar → test. 50% dan yuqori natija keyingi bosqichni ochadi.",
     videoUrl: "/kirish/stage1/intro.mp4",
-    videoPosterHint: "Farmasevt stajori: kirish va odob-axloq",
+    videoPosterHint: "Stajyor: kirish va odob-axloq",
     slides: [
       {
         id: "s1-1",

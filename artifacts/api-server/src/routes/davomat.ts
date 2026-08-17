@@ -121,16 +121,13 @@ function fmtHours(mins: number): string {
   return `${h}:${String(m).padStart(2, "0")}`;
 }
 
-/** Tushlik (abet) — kun yopilganda ish vaqtidan 1 soat ayiriladi */
-const LUNCH_BREAK_MIN = 60;
-
 function fmtSignedMin(mins: number): string {
   if (!mins) return "0 daq";
   const abs = Math.abs(mins);
   const h = Math.floor(abs / 60);
   const m = abs % 60;
   const body = h > 0 ? `${h} soat ${m} daq` : `${m} daq`;
-  return mins < 0 ? `в€’${body}` : body;
+  return mins < 0 ? `−${body}` : body;
 }
 
 type Metrics = {
@@ -173,8 +170,7 @@ function computeMetrics(
   }
 
   if (checkInAt && checkOutAt) {
-    const grossMinutes = Math.max(0, minutesBetween(checkInAt, checkOutAt));
-    workedMinutes = Math.max(0, grossMinutes - LUNCH_BREAK_MIN);
+    workedMinutes = Math.max(0, minutesBetween(checkInAt, checkOutAt));
     const outDiff = minutesBetween(end, checkOutAt);
     if (outDiff < 0) earlyLeaveMin = -outDiff;
     else if (outDiff > 0) overtimeMin = outDiff;
@@ -958,7 +954,7 @@ async function applyFacePunch(opts: {
           message:
             action === "in"
               ? `${emp.fullName}: Keldim (${metrics.checkIn})`
-              : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours} (tushlik 1 soat ayirildi)`,
+              : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours}`,
           ...metrics,
         },
       };
@@ -1505,7 +1501,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       "Holat",
       "Kelish",
       "Ketish",
-      "Ishlagan soat (−1 soat tushlik)",
+      "Ishlagan soat",
       "Erta keldi",
       "Kech keldi",
       "Erta ketdi",
@@ -1594,7 +1590,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       "Kelgan kun",
       "Kelmagan kun",
       "Kech kun",
-      "Jami ishlagan (−1 soat tushlik/kun)",
+      "Jami ishlagan",
       "Kech keldi (09:00 dan keyin)",
       "Erta keldi (09:00 dan oldin)",
       "Erta ketdi (18:00 dan oldin)",

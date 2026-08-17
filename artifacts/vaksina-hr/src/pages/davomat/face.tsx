@@ -76,8 +76,6 @@ function formatElapsed(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-const LUNCH_MINUTES = 60;
-
 function formatHoursUz(mins: number): string {
   const n = Math.max(0, Math.round(mins));
   const h = Math.floor(n / 60);
@@ -94,27 +92,24 @@ function hmToMinutes(hm: string): number | null {
   return Number(match[1]) * 60 + Number(match[2]);
 }
 
-function lunchAdjustedWork(params: {
+function workedMinutesFromPunch(params: {
   checkIn: string;
   checkOut: string;
   checkInAt?: string | null;
   checkOutAt?: string | null;
-}): { gross: number; net: number } | null {
-  let gross = 0;
+}): number | null {
   if (params.checkInAt && params.checkOutAt) {
-    gross = Math.max(
+    return Math.max(
       0,
       Math.round(
         (new Date(params.checkOutAt).getTime() - new Date(params.checkInAt).getTime()) / 60000,
       ),
     );
-  } else {
-    const a = hmToMinutes(params.checkIn);
-    const b = hmToMinutes(params.checkOut);
-    if (a == null || b == null) return null;
-    gross = Math.max(0, b - a);
   }
-  return { gross, net: Math.max(0, gross - LUNCH_MINUTES) };
+  const a = hmToMinutes(params.checkIn);
+  const b = hmToMinutes(params.checkOut);
+  if (a == null || b == null) return null;
+  return Math.max(0, b - a);
 }
 
 function initials(name: string): string {
@@ -609,7 +604,7 @@ export default function DavomatFacePage() {
   const checkInLabel = verified?.checkIn || workplace?.today.checkIn || "—";
   const checkOutLabel = verified?.checkOut || workplace?.today.checkOut || "—";
   const closedWork = done
-    ? lunchAdjustedWork({
+    ? workedMinutesFromPunch({
         checkIn: checkInLabel,
         checkOut: checkOutLabel,
         checkInAt: verified?.checkInAt || workplace?.today.checkInAt,
@@ -971,15 +966,11 @@ export default function DavomatFacePage() {
               </div>
             </div>
           </div>
-          {done && closedWork ? (
+          {done && closedWork != null ? (
             <div className="mx-4 mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-center">
               <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Ishlangan vaqt</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums text-[#0b3a5c]">
-                {formatHoursUz(closedWork.net)}
-              </p>
-              <p className="mt-1 text-xs text-slate-600">
-                Jami {formatHoursUz(closedWork.gross)} dan tushlik (abet) uchun{" "}
-                <span className="font-semibold">1 soat ayirildi</span>
+                {formatHoursUz(closedWork)}
               </p>
               <p className="mt-2 text-[11px] text-slate-400">
                 Kuniga faqat 1 marta Keldim va 1 marta Ketdim
@@ -999,7 +990,7 @@ export default function DavomatFacePage() {
               Tarix
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Bugundan orqaga · Keldim/Ketdim saqlanadi (tushlik −1 soat)
+              Bugundan orqaga · Keldim/Ketdim saqlanadi
             </p>
           </div>
           {historyDays.length === 0 ? (
@@ -1022,9 +1013,9 @@ export default function DavomatFacePage() {
                   {historyDays.map((d) => {
                     const isToday = d.date === todayStamp;
                     const dayParts = splitDayUz(d.date);
-                    const net =
+                    const worked =
                       d.checkIn !== "—" && d.checkOut !== "—"
-                        ? lunchAdjustedWork({
+                        ? workedMinutesFromPunch({
                             checkIn: d.checkIn,
                             checkOut: d.checkOut,
                           })
@@ -1060,11 +1051,8 @@ export default function DavomatFacePage() {
                         </td>
                         <td className="px-3 py-2.5">
                           <div className="font-medium tabular-nums text-slate-800">
-                            {net ? formatHoursUz(net.net) : d.workedHours}
+                            {worked != null ? formatHoursUz(worked) : d.workedHours}
                           </div>
-                          {net ? (
-                            <div className="text-[10px] text-slate-400">tushlik −1 soat</div>
-                          ) : null}
                         </td>
                       </tr>
                     );

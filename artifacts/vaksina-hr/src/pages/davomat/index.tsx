@@ -515,7 +515,6 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">Ketish</th>
                         <th className="px-3 py-2">
                           Ishlagan
-                          <span className="block font-normal text-[10px] text-slate-400">tushlik −1 soat</span>
                         </th>
                         <th className="px-3 py-2">
                           Kech keldi
@@ -683,7 +682,6 @@ export default function DavomatPage() {
                         </th>
                         <th className="px-3 py-2">
                           Ishlagan
-                          <span className="block font-normal text-[10px] text-slate-400">tushlik −1 soat</span>
                         </th>
                         <th className="px-3 py-2">
                           Kech keldi
@@ -746,7 +744,6 @@ export default function DavomatPage() {
                           <th className="px-3 py-2">Ketish</th>
                           <th className="px-3 py-2">
                           Ishlagan
-                          <span className="block font-normal text-[10px] text-slate-400">tushlik −1 soat</span>
                         </th>
                           <th className="px-3 py-2">
                             Kech keldi

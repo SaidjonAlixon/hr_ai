@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
@@ -486,9 +486,46 @@ export default function TashkiliyTuzilmaPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [selectedId, setSelectedId] = useState<string | null>("tasischi");
-  const [zoom, setZoom] = useState(0.7);
+  const [zoom, setZoom] = useState(0.55);
+  const scrollerRef = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<HTMLDivElement>(null);
+  const [natural, setNatural] = useState({ w: 0, h: 0 });
+  const didFit = useRef(false);
 
   const allowed = useMemo(() => (user?.role ? ALLOWED_ROLES.has(user.role) : false), [user?.role]);
+
+  const measure = useCallback(() => {
+    const el = chartRef.current;
+    if (!el) return;
+    setNatural({ w: el.offsetWidth, h: el.offsetHeight });
+  }, []);
+
+  const fitToView = useCallback(() => {
+    const sc = scrollerRef.current;
+    if (!sc || natural.w < 80 || natural.h < 80) return;
+    const next = Math.min(
+      (sc.clientWidth - 48) / natural.w,
+      (sc.clientHeight - 48) / natural.h,
+      1,
+    );
+    setZoom(Math.max(0.22, Number(next.toFixed(2))));
+  }, [natural.w, natural.h]);
+
+  useLayoutEffect(() => {
+    measure();
+    const el = chartRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [measure, allowed]);
+
+  useLayoutEffect(() => {
+    if (didFit.current) return;
+    if (natural.w < 80 || !scrollerRef.current) return;
+    didFit.current = true;
+    fitToView();
+  }, [natural.w, natural.h, fitToView]);
 
   useEffect(() => {
     if (user && !allowed) setLocation("/dashboard");
@@ -527,7 +564,7 @@ export default function TashkiliyTuzilmaPage() {
               variant="ghost"
               size="icon"
               className="h-9 w-9"
-              onClick={() => setZoom((z) => Math.max(0.45, Number((z - 0.1).toFixed(2))))}
+              onClick={() => setZoom((z) => Math.max(0.22, Number((z - 0.1).toFixed(2))))}
               aria-label="Kichiklashtirish"
             >
               <ZoomOut className="h-4 w-4" />
@@ -550,8 +587,8 @@ export default function TashkiliyTuzilmaPage() {
               variant="ghost"
               size="icon"
               className="h-9 w-9"
-              onClick={() => setZoom(0.7)}
-              aria-label="Qayta o‘lchash"
+              onClick={() => fitToView()}
+              aria-label="Ekranga sig‘dirish"
             >
               <Maximize2 className="h-4 w-4" />
             </Button>
@@ -576,7 +613,7 @@ export default function TashkiliyTuzilmaPage() {
         </div>
       </div>
 
-      <div className="relative min-h-0 flex-1 overflow-auto">
+      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto">
         <div
           className="pointer-events-none absolute inset-0"
           style={{
@@ -585,18 +622,35 @@ export default function TashkiliyTuzilmaPage() {
             backgroundSize: "auto, 28px 28px",
           }}
         />
-        <div className="relative flex min-h-full min-w-max items-start justify-center px-10 py-12 sm:px-16 sm:py-14">
+        <div
+          className="relative inline-block min-h-full min-w-full p-6 sm:p-8"
+          style={{
+            width: natural.w ? Math.max(natural.w * zoom + 48, 0) : undefined,
+          }}
+        >
           <div
-            className="origin-top transition-transform duration-300 ease-out"
-            style={{ transform: `scale(${zoom})` }}
+            className="mx-auto"
+            style={{
+              width: Math.max(natural.w * zoom, 1),
+              height: Math.max(natural.h * zoom, 1),
+            }}
           >
-            <div className="rounded-[28px] border border-white/70 bg-white/40 p-8 shadow-[0_30px_80px_-40px_rgba(15,58,92,0.45)] backdrop-blur-sm sm:p-12">
-              <OrgTree
-                node={ORG_TREE}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                isRoot
-              />
+            <div
+              ref={chartRef}
+              className="w-max"
+              style={{
+                transform: `scale(${zoom})`,
+                transformOrigin: "top left",
+              }}
+            >
+              <div className="rounded-[28px] border border-white/70 bg-white/40 p-6 shadow-[0_30px_80px_-40px_rgba(15,58,92,0.45)] backdrop-blur-sm sm:p-8">
+                <OrgTree
+                  node={ORG_TREE}
+                  selectedId={selectedId}
+                  onSelect={setSelectedId}
+                  isRoot
+                />
+              </div>
             </div>
           </div>
         </div>

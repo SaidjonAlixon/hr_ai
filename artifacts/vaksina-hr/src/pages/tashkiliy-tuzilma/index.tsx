@@ -15,6 +15,14 @@ import {
   Waypoints,
   Store,
   Pill,
+  Landmark,
+  Building2,
+  Truck,
+  Wallet,
+  Users,
+  Cpu,
+  ClipboardCheck,
+  Warehouse,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -31,10 +39,22 @@ type OrgNode = {
 };
 
 const TONES = {
+  founder: {
+    card: "from-[#071E33] to-[#0B3A5C]",
+    ring: "ring-[#071E33]/30",
+    soft: "bg-[#0B3A5C]/10 text-[#0B3A5C]",
+    line: "#94A3B8",
+  },
   director: {
     card: "from-[#0B3A5C] to-[#145A8A]",
     ring: "ring-[#0B3A5C]/25",
     soft: "bg-[#0B3A5C]/10 text-[#0B3A5C]",
+    line: "#94A3B8",
+  },
+  dept: {
+    card: "from-[#334155] to-[#64748B]",
+    ring: "ring-slate-500/25",
+    soft: "bg-slate-500/10 text-slate-700",
     line: "#94A3B8",
   },
   manager: {
@@ -155,7 +175,17 @@ function makeManagerBranch(n: number): OrgNode {
   };
 }
 
-const ORG_TREE: OrgNode = {
+function makeDeptHead(id: string, label: string, hint?: string): OrgNode {
+  return {
+    id,
+    label,
+    hint: hint || "Bo‘lim rahbari",
+    tone: "lead",
+    icon: Briefcase,
+  };
+}
+
+const HR_TREE: OrgNode = {
   id: "hr-direktor",
   label: "HR Direktor",
   hint: "Strategiya",
@@ -169,6 +199,79 @@ const ORG_TREE: OrgNode = {
       tone: "director",
       icon: ShieldCheck,
       children: [makeManagerBranch(1), makeManagerBranch(2)],
+    },
+  ],
+};
+
+const ORG_TREE: OrgNode = {
+  id: "tasischi",
+  label: "Ta’sischi",
+  hint: "Muassis",
+  tone: "founder",
+  icon: Landmark,
+  children: [
+    {
+      id: "direktor",
+      label: "Direktor",
+      hint: "Umumiy rahbar",
+      tone: "director",
+      icon: Building2,
+      children: [
+        {
+          id: "taminot",
+          label: "Ta’minot",
+          hint: "Taminot bo‘limi",
+          tone: "dept",
+          icon: Truck,
+          children: [makeDeptHead("taminot-boshliq", "Bo‘lim boshlig‘i")],
+        },
+        {
+          id: "moliya",
+          label: "Moliya",
+          hint: "Moliya bo‘limi",
+          tone: "dept",
+          icon: Wallet,
+          children: [makeDeptHead("moliya-boshliq", "Bo‘lim boshlig‘i")],
+        },
+        {
+          id: "hr-bolimi",
+          label: "HR bo‘limi",
+          hint: "Kadrlar",
+          tone: "dept",
+          icon: Users,
+          children: [HR_TREE],
+        },
+        {
+          id: "cb-it",
+          label: "CB va IT",
+          hint: "Xavfsizlik / IT",
+          tone: "dept",
+          icon: Cpu,
+          children: [
+            makeDeptHead("cb-boshliq", "CB bo‘lim boshlig‘i", "Xavfsizlik"),
+            makeDeptHead("it-boshliq", "IT bo‘lim boshlig‘i", "Texnika"),
+          ],
+        },
+        {
+          id: "reviziya",
+          label: "Reviziya",
+          hint: "Ichki audit",
+          tone: "dept",
+          icon: ClipboardCheck,
+          children: [makeDeptHead("reviziya-boshliq", "Bo‘lim boshlig‘i")],
+        },
+        {
+          id: "axo-gpp",
+          label: "AXO va GPP",
+          hint: "Ma’muriyat / GPP",
+          tone: "dept",
+          icon: Warehouse,
+          children: [
+            makeDeptHead("axo-boshliq", "AXO boshlig‘i", "Ma’muriyat"),
+            makeDeptHead("gpp-boshliq", "GPP bo‘lim boshlig‘i", "Farmatsevtika amaliyoti"),
+          ],
+        },
+      ],
     },
   ],
 };
@@ -339,7 +442,10 @@ function OrgTree({
               {kids.map((child) => (
                 <div
                   key={child.id}
-                  className="flex flex-col items-center px-6 sm:px-10 md:px-14 lg:px-16"
+                  className={cn(
+                    "flex flex-col items-center",
+                    kids.length > 4 ? "px-3 sm:px-5 md:px-6" : "px-6 sm:px-10 md:px-14 lg:px-16",
+                  )}
                 >
                   {kids.length > 1 && (
                     <>
@@ -364,7 +470,10 @@ function OrgTree({
 }
 
 const LEGEND: { label: string; tone: ToneKey }[] = [
-  { label: "HR rahbariyat", tone: "director" },
+  { label: "Ta’sischi", tone: "founder" },
+  { label: "Direktor / HR rahbariyat", tone: "director" },
+  { label: "Bo‘limlar", tone: "dept" },
+  { label: "Bo‘lim boshlig‘i", tone: "lead" },
   { label: "HR Menejer", tone: "manager" },
   { label: "Rekruter / Trener", tone: "specialist" },
   { label: "Koordinator", tone: "coord" },
@@ -376,8 +485,8 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
 export default function TashkiliyTuzilmaPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const [selectedId, setSelectedId] = useState<string | null>("hr-direktor");
-  const [zoom, setZoom] = useState(0.9);
+  const [selectedId, setSelectedId] = useState<string | null>("tasischi");
+  const [zoom, setZoom] = useState(0.7);
 
   const allowed = useMemo(() => (user?.role ? ALLOWED_ROLES.has(user.role) : false), [user?.role]);
 
@@ -406,8 +515,9 @@ export default function TashkiliyTuzilmaPage() {
               Tashkiliy tuzilma
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-slate-500 sm:text-[15px]">
-              Yuqoridan pastga: rahbariyat → menejerlar → rekruter/trener → koordinator → filial →
-              stajyor va farmasevt. Kartani bosing — tanlangan lavozim ajralib ko‘rinadi.
+              Yuqoridan pastga: ta’sischi → direktor → bo‘limlar. HR bo‘limi ostida avvalgidek
+              auditor, menejer, rekruter/trener, koordinator, filial, stajyor va farmasevt. Kartani
+              bosing — tanlangan lavozim ajralib ko‘rinadi.
             </p>
           </div>
 
@@ -440,7 +550,7 @@ export default function TashkiliyTuzilmaPage() {
               variant="ghost"
               size="icon"
               className="h-9 w-9"
-              onClick={() => setZoom(0.9)}
+              onClick={() => setZoom(0.7)}
               aria-label="Qayta o‘lchash"
             >
               <Maximize2 className="h-4 w-4" />

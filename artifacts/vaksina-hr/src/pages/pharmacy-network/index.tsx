@@ -395,7 +395,9 @@ export default function PharmacyNetworkPage() {
   const managers = useMemo(() => {
     const q = search.trim().toLowerCase();
     const allowedCoordIds = new Set(filteredCoordinators.map((c) => c.id));
-    let list = allManagers.filter((m) => m.reportsToId != null && allowedCoordIds.has(m.reportsToId));
+    let list = isMudirOnly
+      ? allManagers
+      : allManagers.filter((m) => m.reportsToId != null && allowedCoordIds.has(m.reportsToId));
 
     if (shiftFilter !== 'all') {
       list = list.filter((m) => {
@@ -412,7 +414,7 @@ export default function PharmacyNetworkPage() {
     }
 
     return list;
-  }, [allManagers, filteredCoordinators, shiftFilter, search, pharmacistsByManager]);
+  }, [allManagers, filteredCoordinators, shiftFilter, search, pharmacistsByManager, isMudirOnly]);
 
   const filterTeam = (managerId: number) => {
     let team = pharmacistsByManager.get(managerId) ?? [];
@@ -667,9 +669,9 @@ export default function PharmacyNetworkPage() {
   const networkEmpty = !isMudirOnly && coordinators.length === 0 && allManagers.length === 0;
 
   return (
-    <div className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
+    <div className={cn('space-y-5', canAddTeam && 'pb-24 md:pb-0')}>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Aptekalar tarmog‘i</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isMudirOnly
@@ -679,11 +681,11 @@ export default function PharmacyNetworkPage() {
                 : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va stajyor qo‘shadi.'}
           </p>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
           {isKoordinatorOnly && (
             <Button
               variant="outline"
-              className="gap-2"
+              className="w-full gap-2 sm:w-auto"
               onClick={() => void handleMudirExcel()}
               disabled={exportingMudirs || allManagers.length === 0}
             >
@@ -692,7 +694,7 @@ export default function PharmacyNetworkPage() {
             </Button>
           )}
           {canAddStaff && (
-            <Button className="gap-2" onClick={openAddStaff}>
+            <Button className="h-11 w-full gap-2 sm:h-9 sm:w-auto" onClick={openAddStaff}>
               <Plus className="h-4 w-4" />
               {canAddMudir ? 'Mudir qo‘shish' : 'Xodim qo‘shish'}
             </Button>
@@ -960,36 +962,50 @@ export default function PharmacyNetworkPage() {
               {isMudirOnly ? 'Koordinator topilmadi' : 'Filter bo‘yicha koordinator topilmadi'}
             </p>
           ) : (
-            <div className="flex flex-wrap justify-center gap-2.5">
+            <div className={cn('flex flex-wrap justify-center gap-2.5', isMudirOnly && 'flex-col items-stretch sm:items-center')}>
               {(isMudirOnly ? coordinators : filteredCoordinators).map((coordinator) => {
                 const alert = isAlertStatus(empStatus(coordinator));
                 return (
                   <div
                     key={coordinator.id}
-                    className="w-full max-w-[calc((100%-2.5rem)/2)] sm:max-w-[calc((100%-1.25rem)/3)] lg:max-w-[calc((100%-3.125rem)/6)]"
+                    className={cn(
+                      isMudirOnly
+                        ? 'mx-auto w-full max-w-sm'
+                        : 'w-full max-w-[calc((100%-2.5rem)/2)] sm:max-w-[calc((100%-1.25rem)/3)] lg:max-w-[calc((100%-3.125rem)/6)]',
+                    )}
                   >
                     <div
                       className={cn(
-                        'flex min-w-0 flex-col overflow-hidden rounded-lg border bg-white shadow-sm',
+                        'flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm',
                         alert ? 'border-red-300 ring-1 ring-red-200' : 'border-[#0b3a5c]/25',
                       )}
                     >
                       <div
                         className={cn(
-                          'flex flex-1 flex-col border-t-[3px] p-2.5',
+                          'flex flex-1 flex-col border-t-[3px]',
+                          isMudirOnly ? 'p-3.5 sm:p-4' : 'p-2.5',
                           alert ? 'border-t-red-500' : 'border-t-[#0b3a5c]',
                         )}
                       >
-                        <span className="mb-2 truncate rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600 w-fit">
+                        <span className="mb-2 w-fit truncate rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
                           Markaz
                         </span>
-                        <div className="flex items-start gap-2">
-                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] text-[9px] font-semibold text-white">
+                        <div className="flex items-start gap-3">
+                          <div
+                            className={cn(
+                              'flex shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] font-semibold text-white',
+                              isMudirOnly ? 'h-11 w-11 text-sm' : 'h-7 w-7 text-[9px]',
+                            )}
+                          >
                             {initials(coordinator.fullName)}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-semibold leading-snug text-slate-900">{coordinator.fullName}</p>
-                            <p className="mt-0.5 truncate text-[10px] text-slate-500">Koordinator</p>
+                            <p className={cn('truncate font-semibold leading-snug text-slate-900', isMudirOnly ? 'text-sm' : 'text-xs')}>
+                              {coordinator.fullName}
+                            </p>
+                            <p className={cn('mt-0.5 truncate text-slate-500', isMudirOnly ? 'text-[11px]' : 'text-[10px]')}>
+                              Koordinator
+                            </p>
                             <div className="mt-1.5 flex flex-wrap items-center gap-1">
                               <EmploymentBadge status={empStatus(coordinator)} />
                               {canSeeFullNetwork && (canEditShift || canEditStatus) && (
@@ -1148,7 +1164,7 @@ export default function PharmacyNetworkPage() {
             <div
               className={cn(
                 isMudirOnly
-                  ? 'mx-auto flex w-full max-w-sm justify-center'
+                  ? 'mx-auto flex w-full max-w-sm flex-col gap-3'
                   : 'grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
               )}
             >
@@ -1287,6 +1303,16 @@ export default function PharmacyNetworkPage() {
                             <Users className="h-3 w-3" />
                             {fullTeam.length}
                           </span>
+                          {canAddTeam && (
+                            <button
+                              type="button"
+                              onClick={openAddStaff}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm"
+                              title="Xodim qo‘shish"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          )}
                           {(canEditShift || canEditStatus) && (
                             <button
                               type="button"
@@ -1428,6 +1454,66 @@ export default function PharmacyNetworkPage() {
                         {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                         {open ? 'Yopish' : 'Batafsil'}
                       </button>
+
+                      {isMudirOnly && (
+                        <div className="space-y-2 border-t border-slate-100 pt-3">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                            Filial xodimlari
+                          </p>
+                          {fullTeam.length === 0 ? (
+                            <p className="text-center text-xs text-slate-400">
+                              Hali farmasevt yoki stajyor yo‘q. «Xodim qo‘shish» bosing.
+                            </p>
+                          ) : (
+                            fullTeam.map((ph) => {
+                              const linked = alertByEmployee.get(ph.id);
+                              const phAlert = isAlertStatus(empStatus(ph)) || !!linked;
+                              return (
+                                <div
+                                  key={ph.id}
+                                  className={cn(
+                                    'rounded-lg border px-3 py-2.5',
+                                    phAlert ? 'border-red-300 bg-red-50/80' : 'border-slate-200 bg-slate-50/70',
+                                  )}
+                                >
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-semibold text-white">
+                                      {initials(ph.fullName)}
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="truncate text-sm font-semibold text-slate-900">{ph.fullName}</p>
+                                      <p className="mt-0.5 text-[11px] text-slate-500">
+                                        {ph.orgRole === 'intern'
+                                          ? 'Stajyor'
+                                          : ph.orgRole === 'supervisor'
+                                            ? 'Boshqaruvchi'
+                                            : 'Farmasevt'}
+                                      </p>
+                                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                        <ShiftBadge
+                                          shiftType={ph.shiftType}
+                                          shiftLabel={ph.shiftLabel}
+                                          alert={phAlert}
+                                        />
+                                        <EmploymentBadge status={empStatus(ph)} />
+                                        {(canEditShift || canEditStatus) && (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => openEditor(ph, e)}
+                                            className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-primary"
+                                          >
+                                            <Pencil className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -1437,8 +1523,17 @@ export default function PharmacyNetworkPage() {
         </div>
       </div>
 
+      {canAddTeam && (
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] md:hidden">
+          <Button className="h-11 w-full gap-2" onClick={openAddStaff}>
+            <Plus className="h-4 w-4" />
+            Xodim qo‘shish
+          </Button>
+        </div>
+      )}
+
       <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
             <DialogTitle>Holat — {editTarget?.fullName}</DialogTitle>
           </DialogHeader>
@@ -1504,7 +1599,7 @@ export default function PharmacyNetworkPage() {
       </Dialog>
 
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
             <DialogTitle>
               {canAddMudir ? 'Yangi mudir' : 'Yangi xodim'}
@@ -1595,7 +1690,7 @@ export default function PharmacyNetworkPage() {
       </Dialog>
 
       <Dialog open={!!createdCreds} onOpenChange={(o) => !o && setCreatedCreds(null)}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
             <DialogTitle>Login va parol</DialogTitle>
           </DialogHeader>

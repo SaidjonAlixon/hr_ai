@@ -672,15 +672,16 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           <div
             className={cn(
               'mx-auto w-full min-w-0',
-              location === '/pharmacy-network' ||
-                location === '/pipeline' ||
+              location === '/pipeline' ||
                 location === '/vazifalar' ||
                 location === '/davomat' ||
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
                 location.startsWith('/tashkiliy-tuzilma')
                 ? 'max-w-none h-full'
-                : 'max-w-7xl',
+                : location === '/pharmacy-network'
+                  ? 'max-w-none'
+                  : 'max-w-7xl',
             )}
           >
             {children}

@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import { db, usersTable, employeesTable, departmentsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { parseGpsText } from "../lib/geo-location";
+import { parseGpsText, displayBranchName } from "../lib/geo-location";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 
 const router: IRouter = Router();
@@ -93,6 +94,133 @@ async function ensureCoordinatorEmployee(userId: number, fullName: string) {
     .returning();
   return created;
 }
+
+type MudirCredential = {
+  employeeId: number;
+  fullName: string;
+  location: string;
+  login: string;
+  password: string;
+};
+
+async function loadOwnMudirCredentials(actorUserId: number): Promise<MudirCredential[]> {
+  const coordRows = await db
+    .select({
+      id: employeesTable.id,
+      orgRole: employeesTable.orgRole,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, actorUserId));
+  const coord = coordRows.find((r) => r.orgRole === "coordinator") ?? coordRows[0];
+  if (!coord) return [];
+
+  const managers = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      userId: employeesTable.userId,
+      reportsToId: employeesTable.reportsToId,
+      employmentStatus: employeesTable.employmentStatus,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.orgRole, "manager"));
+
+  const mine = managers.filter(
+    (m) => m.reportsToId === coord.id && m.employmentStatus !== "dismissed",
+  );
+  const userIds = [...new Set(mine.map((m) => m.userId).filter((id): id is number => id != null))];
+  const users = userIds.length
+    ? await db
+        .select({
+          id: usersTable.id,
+          login: usersTable.login,
+          password: usersTable.password,
+        })
+        .from(usersTable)
+        .where(inArray(usersTable.id, userIds))
+    : [];
+  const byUser = new Map(users.map((u) => [u.id, u]));
+
+  return mine
+    .map((m) => {
+      const u = m.userId != null ? byUser.get(m.userId) : undefined;
+      const loc = displayBranchName(m.location);
+      const generic = !loc || loc === "Filial" || loc === m.fullName;
+      return {
+        employeeId: m.id,
+        fullName: m.fullName,
+        location: generic ? m.fullName : loc,
+        login: u?.login || "—",
+        password: u?.password || "—",
+      };
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
+}
+
+router.get("/pharmacy-network/mudirs", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (req.userRole !== "koordinator" || !req.userId) {
+    res.status(403).json({ error: "Faqat koordinator o‘z mudirlarini ko‘radi" });
+    return;
+  }
+  res.json(await loadOwnMudirCredentials(req.userId));
+});
+
+router.get("/pharmacy-network/mudirs/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (req.userRole !== "koordinator" || !req.userId) {
+    res.status(403).json({ error: "Faqat koordinator Excel yuklashi mumkin" });
+    return;
+  }
+
+  const rows = await loadOwnMudirCredentials(req.userId);
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "VAKSINA MED HR";
+  workbook.created = new Date();
+
+  const sheet = workbook.addWorksheet("Mudirlar", {
+    views: [{ state: "frozen", ySplit: 2 }],
+    properties: { defaultRowHeight: 22 },
+  });
+  sheet.mergeCells("A1:D1");
+  const title = sheet.getCell("A1");
+  title.value = `VAKSINA MED — Mening mudirlarim · ${rows.length} ta`;
+  title.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+  title.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  sheet.getRow(1).height = 30;
+
+  ["F.I.Sh.", "Login", "Parol", "Filial"].forEach((h, i) => {
+    const cell = sheet.getRow(2).getCell(i + 1);
+    cell.value = h;
+    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1A5F8A" } };
+    cell.alignment = { vertical: "middle", horizontal: "center" };
+  });
+  sheet.columns = [{ width: 32 }, { width: 24 }, { width: 16 }, { width: 24 }];
+  rows.forEach((r, idx) => {
+    const row = sheet.addRow([r.fullName, r.login, r.password, r.location]);
+    row.eachCell((cell) => {
+      cell.font = { name: "Calibri", size: 10 };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: idx % 2 === 0 ? "FFF7FAFC" : "FFFFFFFF" },
+      };
+    });
+    row.getCell(2).font = { name: "Consolas", size: 10 };
+    row.getCell(3).font = { name: "Consolas", size: 10 };
+  });
+  sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 4 } };
+
+  const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const stamp = new Date().toISOString().slice(0, 10);
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  );
+  res.setHeader("Content-Disposition", `attachment; filename="mudirlar-login-${stamp}.xlsx"`);
+  res.send(buffer);
+});
 
 /**
  * POST /api/pharmacy-network/staff

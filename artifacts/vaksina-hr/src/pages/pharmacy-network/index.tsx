@@ -31,11 +31,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download } from 'lucide-react';
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
   useSaveManagerLocation,
+  useOwnMudirCredentials,
+  downloadOwnMudirsExcel,
   gpsFromLocationField,
   gpsInputError,
   displayBranchName,
@@ -235,6 +237,13 @@ export default function PharmacyNetworkPage() {
 
   const isMudirOnly = user?.role === 'mudir';
   const isKoordinatorOnly = user?.role === 'koordinator';
+  const { data: mudirCreds = [] } = useOwnMudirCredentials(isKoordinatorOnly);
+  const credByEmployee = useMemo(
+    () => new Map(mudirCreds.map((c) => [c.employeeId, c])),
+    [mudirCreds],
+  );
+  const [showPwdIds, setShowPwdIds] = useState<Record<number, boolean>>({});
+  const [exportingMudirs, setExportingMudirs] = useState(false);
 
   const canEditShift =
     isHrRole(user?.role) ||
@@ -503,6 +512,17 @@ export default function PharmacyNetworkPage() {
     }
   };
 
+  const handleMudirExcel = async () => {
+    setExportingMudirs(true);
+    try {
+      await downloadOwnMudirsExcel();
+    } catch (e: any) {
+      toast({ title: 'Excel yuklanmadi', description: e?.message, variant: 'destructive' });
+    } finally {
+      setExportingMudirs(false);
+    }
+  };
+
   const saveEditor = () => {
     if (!editTarget) return;
     updateEmployee(
@@ -654,15 +674,30 @@ export default function PharmacyNetworkPage() {
           <p className="mt-1 text-sm text-muted-foreground">
             {isMudirOnly
               ? 'Yuqorida koordinatoringiz, pastda o‘z filialingiz. Farmasevt va stajyor qo‘shishingiz mumkin.'
-              : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va stajyor qo‘shadi.'}
+              : isKoordinatorOnly
+                ? 'Faqat o‘z qo‘l ostingizdagi mudirlar — ism, login va parol. Excelga ham shu ro‘yxat tushadi.'
+                : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va stajyor qo‘shadi.'}
           </p>
         </div>
-        {canAddStaff && (
-          <Button className="gap-2 shrink-0" onClick={openAddStaff}>
-            <Plus className="h-4 w-4" />
-            {canAddMudir ? 'Mudir qo‘shish' : 'Xodim qo‘shish'}
-          </Button>
-        )}
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {isKoordinatorOnly && (
+            <Button
+              variant="outline"
+              className="gap-2"
+              onClick={() => void handleMudirExcel()}
+              disabled={exportingMudirs || allManagers.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              {exportingMudirs ? 'Yuklanmoqda…' : 'Excel eksport'}
+            </Button>
+          )}
+          {canAddStaff && (
+            <Button className="gap-2" onClick={openAddStaff}>
+              <Plus className="h-4 w-4" />
+              {canAddMudir ? 'Mudir qo‘shish' : 'Xodim qo‘shish'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {networkEmpty ? (
@@ -1279,6 +1314,70 @@ export default function PharmacyNetworkPage() {
                             {manager.fullName}
                           </p>
                           <p className="mt-0.5 text-[11px] text-slate-500">Mudir (zav.aptek)</p>
+                          {isKoordinatorOnly && credByEmployee.get(manager.id) ? (
+                            <div className="mt-2 space-y-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="min-w-0 truncate">
+                                  <span className="text-slate-500">Login: </span>
+                                  <span className="font-mono font-semibold text-slate-800">
+                                    {credByEmployee.get(manager.id)!.login}
+                                  </span>
+                                </p>
+                                <button
+                                  type="button"
+                                  className="shrink-0 text-slate-400 hover:text-primary"
+                                  title="Loginni nusxalash"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void copyText(credByEmployee.get(manager.id)!.login, 'Login');
+                                  }}
+                                >
+                                  <Copy className="h-3 w-3" />
+                                </button>
+                              </div>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="min-w-0 truncate">
+                                  <span className="text-slate-500">Parol: </span>
+                                  <span className="font-mono font-semibold text-slate-800">
+                                    {showPwdIds[manager.id]
+                                      ? credByEmployee.get(manager.id)!.password
+                                      : '••••••••'}
+                                  </span>
+                                </p>
+                                <div className="flex shrink-0 items-center gap-1">
+                                  <button
+                                    type="button"
+                                    className="text-slate-400 hover:text-primary"
+                                    title={showPwdIds[manager.id] ? 'Yashirish' : 'Ko‘rsatish'}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setShowPwdIds((prev) => ({
+                                        ...prev,
+                                        [manager.id]: !prev[manager.id],
+                                      }));
+                                    }}
+                                  >
+                                    {showPwdIds[manager.id] ? (
+                                      <EyeOff className="h-3 w-3" />
+                                    ) : (
+                                      <Eye className="h-3 w-3" />
+                                    )}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="text-slate-400 hover:text-primary"
+                                    title="Parolni nusxalash"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void copyText(credByEmployee.get(manager.id)!.password, 'Parol');
+                                    }}
+                                  >
+                                    <Copy className="h-3 w-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ) : null}
                           <div className="mt-2 flex flex-wrap gap-1.5">
                             <span
                               className={cn(

@@ -1,4 +1,4 @@
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export type PharmacyStaffRole = "mudir" | "farmasevt" | "stajyor";
 
@@ -252,10 +252,52 @@ export function useCreatePharmacyStaff() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
       qc.invalidateQueries({
         predicate: (q) =>
           JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
       });
     },
   });
+}
+
+export type MudirCredential = {
+  employeeId: number;
+  fullName: string;
+  location: string;
+  login: string;
+  password: string;
+};
+
+export function useOwnMudirCredentials(enabled: boolean) {
+  return useQuery({
+    queryKey: ["pharmacy-mudirs"],
+    queryFn: () => apiFetch<MudirCredential[]>("/pharmacy-network/mudirs"),
+    enabled,
+  });
+}
+
+export async function downloadOwnMudirsExcel() {
+  const res = await fetch("/api/pharmacy-network/mudirs/export", {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    let message = res.statusText;
+    try {
+      const body = await res.json();
+      if (body?.error) message = body.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(message || "Excel yuklanmadi");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `mudirlar-login-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
 }

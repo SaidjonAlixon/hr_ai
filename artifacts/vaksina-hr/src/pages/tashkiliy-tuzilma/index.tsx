@@ -102,6 +102,8 @@ const TONES = {
 } as const;
 
 const ALLOWED_ROLES = new Set([
+  "admin",
+  "director",
   "hr",
   "hr_direktor",
   "hr_auditor",
@@ -276,6 +278,34 @@ const ORG_TREE: OrgNode = {
   ],
 };
 
+function collectEdges(node: OrgNode, edges: Array<[string, string]>) {
+  if (node.mergePair) {
+    edges.push([node.id, node.mergePair[0].id]);
+    edges.push([node.id, node.mergePair[1].id]);
+    for (const child of node.children ?? []) {
+      edges.push([node.mergePair[0].id, child.id]);
+      edges.push([node.mergePair[1].id, child.id]);
+      collectEdges(child, edges);
+    }
+    return;
+  }
+  for (const child of node.children ?? []) {
+    edges.push([node.id, child.id]);
+    collectEdges(child, edges);
+  }
+}
+
+const ORG_EDGES = (() => {
+  const edges: Array<[string, string]> = [];
+  collectEdges(ORG_TREE, edges);
+  return edges;
+})();
+
+function orthoPath(x1: number, y1: number, x2: number, y2: number) {
+  const midY = Math.round((y1 + y2) / 2);
+  return `M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}`;
+}
+
 function NodeCard({
   node,
   highlight,
@@ -292,10 +322,11 @@ function NodeCard({
   return (
     <button
       type="button"
+      data-org-id={node.id}
       onClick={() => onSelect(node.id)}
       className={cn(
-        "group relative z-[2] overflow-hidden rounded-2xl text-left shadow-[0_10px_30px_-12px_rgba(15,58,92,0.35)] transition-all duration-300",
-        "hover:-translate-y-1 hover:shadow-[0_18px_40px_-14px_rgba(15,58,92,0.45)]",
+        "group relative z-[2] overflow-hidden rounded-2xl text-left shadow-[0_10px_28px_-14px_rgba(15,58,92,0.4)] transition-shadow duration-200",
+        "hover:shadow-[0_16px_36px_-12px_rgba(15,58,92,0.45)]",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b3a5c]/40 focus-visible:ring-offset-2",
         highlight && cn("ring-2 ring-offset-2", tone.ring),
         size === "lg" && "min-w-[200px]",
@@ -303,8 +334,8 @@ function NodeCard({
         size === "sm" && "min-w-[148px]",
       )}
     >
-      <div className={cn("bg-gradient-to-br p-[1px]", tone.card)}>
-        <div className="rounded-[15px] bg-white/95 backdrop-blur-sm">
+      <div className={cn("bg-gradient-to-br p-[1.5px]", tone.card)}>
+        <div className="rounded-[15px] bg-white">
           <div className="flex items-center gap-3 px-3.5 py-3">
             <span
               className={cn(
@@ -329,17 +360,6 @@ function NodeCard({
   );
 }
 
-function Connector({ tall = false }: { tall?: boolean }) {
-  return (
-    <div className="relative z-0 flex flex-col items-center">
-      <div
-        className={cn("w-[2.5px] rounded-full bg-slate-500", tall ? "h-10" : "h-7")}
-      />
-      <div className="h-2 w-2 shrink-0 rounded-full border-2 border-slate-500 bg-white" />
-    </div>
-  );
-}
-
 function MergePair({
   left,
   right,
@@ -352,22 +372,12 @@ function MergePair({
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="flex w-full flex-col items-center">
-      <div className="relative flex items-start justify-center gap-10 sm:gap-14">
-        {/* Yuqori gorizontal — to‘liq ko‘rinadigan */}
-        <div className="pointer-events-none absolute top-0 left-[22%] right-[22%] h-[2.5px] rounded-full bg-slate-500" />
-        {[left, right].map((n) => (
-          <div key={n.id} className="relative z-[1] flex flex-col items-center">
-            <div className="h-7 w-[2.5px] rounded-full bg-slate-500" />
-            <NodeCard node={n} highlight={selectedId === n.id} onSelect={onSelect} size="sm" />
-            <div className="h-7 w-[2.5px] rounded-full bg-slate-500" />
-          </div>
-        ))}
-        {/* Pastki gorizontal — birlashish */}
-        <div className="pointer-events-none absolute bottom-0 left-[22%] right-[22%] h-[2.5px] rounded-full bg-slate-500" />
-      </div>
-      <div className="h-7 w-[2.5px] rounded-full bg-slate-500" />
-      <div className="h-2 w-2 shrink-0 rounded-full border-2 border-slate-500 bg-white" />
+    <div className="flex items-start justify-center gap-10 sm:gap-14">
+      {[left, right].map((n) => (
+        <div key={n.id} className="flex flex-col items-center pt-10">
+          <NodeCard node={n} highlight={selectedId === n.id} onSelect={onSelect} size="sm" />
+        </div>
+      ))}
     </div>
   );
 }
@@ -376,13 +386,11 @@ function OrgTree({
   node,
   selectedId,
   onSelect,
-  isRoot = false,
   depth = 0,
 }: {
   node: OrgNode;
   selectedId: string | null;
   onSelect: (id: string) => void;
-  isRoot?: boolean;
   depth?: number;
 }) {
   const kids = node.children ?? [];
@@ -390,15 +398,7 @@ function OrgTree({
   const size = depth === 0 ? "lg" : depth <= 2 ? "md" : "sm";
 
   return (
-    <div
-      className="flex flex-col items-center"
-      style={{
-        opacity: 1,
-        transform: "translateY(0)",
-        transition: "opacity 0.4s ease, transform 0.4s ease",
-        transitionDelay: `${Math.min(depth, 8) * 35}ms`,
-      }}
-    >
+    <div className="flex flex-col items-center">
       <NodeCard
         node={node}
         highlight={selectedId === node.id}
@@ -407,11 +407,9 @@ function OrgTree({
       />
 
       {(hasMerge || kids.length > 0) && (
-        <>
-          <Connector tall={depth === 0} />
-
+        <div className="flex flex-col items-center pt-10">
           {hasMerge && node.mergePair ? (
-            <div className="flex flex-col items-center">
+            <>
               <MergePair
                 left={node.mergePair[0]}
                 right={node.mergePair[1]}
@@ -419,40 +417,26 @@ function OrgTree({
                 onSelect={onSelect}
               />
               {kids.map((child) => (
-                <OrgTree
-                  key={child.id}
-                  node={child}
-                  selectedId={selectedId}
-                  onSelect={onSelect}
-                  depth={depth + 1}
-                />
+                <div key={child.id} className="pt-10">
+                  <OrgTree
+                    node={child}
+                    selectedId={selectedId}
+                    onSelect={onSelect}
+                    depth={depth + 1}
+                  />
+                </div>
               ))}
-            </div>
+            </>
           ) : (
-            <div className="relative flex items-start">
-              {kids.length > 1 && (
-                <div
-                  className="pointer-events-none absolute top-0 h-[2.5px] rounded-full bg-slate-500"
-                  style={{
-                    left: `calc(100% / ${kids.length * 2})`,
-                    right: `calc(100% / ${kids.length * 2})`,
-                  }}
-                />
-              )}
+            <div className="flex items-start">
               {kids.map((child) => (
                 <div
                   key={child.id}
                   className={cn(
                     "flex flex-col items-center",
-                    kids.length > 4 ? "px-3 sm:px-5 md:px-6" : "px-6 sm:px-10 md:px-14 lg:px-16",
+                    kids.length > 4 ? "px-4 sm:px-6" : "px-7 sm:px-10 md:px-12",
                   )}
                 >
-                  {kids.length > 1 && (
-                    <>
-                      <div className="h-7 w-[2.5px] rounded-full bg-slate-500" />
-                      <div className="mb-0 h-2 w-2 shrink-0 rounded-full border-2 border-slate-500 bg-white" />
-                    </>
-                  )}
                   <OrgTree
                     node={child}
                     selectedId={selectedId}
@@ -463,7 +447,7 @@ function OrgTree({
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
     </div>
   );
@@ -482,54 +466,159 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
   { label: "Farmasevt", tone: "staff" },
 ];
 
+const MIN_ZOOM = 0.2;
+const MAX_ZOOM = 2.4;
+
 export default function TashkiliyTuzilmaPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [selectedId, setSelectedId] = useState<string | null>("tasischi");
   const [zoom, setZoom] = useState(0.55);
-  const scrollerRef = useRef<HTMLDivElement>(null);
-  const chartRef = useRef<HTMLDivElement>(null);
-  const [natural, setNatural] = useState({ w: 0, h: 0 });
+  const [pan, setPan] = useState({ x: 40, y: 40 });
+  const [paths, setPaths] = useState<string[]>([]);
+  const [dragging, setDragging] = useState(false);
+
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const worldRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const didFit = useRef(false);
+
+  zoomRef.current = zoom;
+  panRef.current = pan;
 
   const allowed = useMemo(() => (user?.role ? ALLOWED_ROLES.has(user.role) : false), [user?.role]);
 
-  const measure = useCallback(() => {
-    const el = chartRef.current;
-    if (!el) return;
-    setNatural({ w: el.offsetWidth, h: el.offsetHeight });
+  const redrawLines = useCallback(() => {
+    const world = worldRef.current;
+    if (!world) return;
+    const z = zoomRef.current || 1;
+    const wr = world.getBoundingClientRect();
+    if (wr.width < 8) return;
+
+    const box = (id: string) => {
+      const el = world.querySelector(`[data-org-id="${id}"]`) as HTMLElement | null;
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return {
+        cx: (r.left + r.width / 2 - wr.left) / z,
+        top: (r.top - wr.top) / z,
+        bottom: (r.bottom - wr.top) / z,
+      };
+    };
+
+    const next: string[] = [];
+    for (const [fromId, toId] of ORG_EDGES) {
+      const a = box(fromId);
+      const b = box(toId);
+      if (!a || !b) continue;
+      next.push(orthoPath(Math.round(a.cx), Math.round(a.bottom), Math.round(b.cx), Math.round(b.top)));
+    }
+    setPaths((prev) => {
+      if (prev.length === next.length && prev.every((p, i) => p === next[i])) return prev;
+      return next;
+    });
   }, []);
 
   const fitToView = useCallback(() => {
-    const sc = scrollerRef.current;
-    if (!sc || natural.w < 80 || natural.h < 80) return;
-    const next = Math.min(
-      (sc.clientWidth - 48) / natural.w,
-      (sc.clientHeight - 48) / natural.h,
+    const vp = viewportRef.current;
+    const world = worldRef.current;
+    if (!vp || !world) return;
+    if (vp.clientWidth < 80 || vp.clientHeight < 80) return;
+    const zNow = zoomRef.current || 1;
+    const wr = world.getBoundingClientRect();
+    const naturalW = wr.width / zNow;
+    const naturalH = wr.height / zNow;
+    if (naturalW < 40 || naturalH < 40) return;
+    const nextZ = Math.min(
+      (vp.clientWidth - 72) / naturalW,
+      (vp.clientHeight - 72) / naturalH,
       1,
     );
-    setZoom(Math.max(0.22, Number(next.toFixed(2))));
-  }, [natural.w, natural.h]);
+    const z = Math.max(MIN_ZOOM, Number(nextZ.toFixed(3)));
+    const x = (vp.clientWidth - naturalW * z) / 2;
+    const y = Math.max(28, (vp.clientHeight - naturalH * z) / 2);
+    setZoom(z);
+    setPan({ x, y });
+  }, []);
 
   useLayoutEffect(() => {
-    measure();
-    const el = chartRef.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => measure());
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [measure, allowed]);
+    redrawLines();
+  }, [zoom, pan, selectedId, allowed, redrawLines]);
 
-  useLayoutEffect(() => {
-    if (didFit.current) return;
-    if (natural.w < 80 || !scrollerRef.current) return;
-    didFit.current = true;
-    fitToView();
-  }, [natural.w, natural.h, fitToView]);
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      redrawLines();
+      if (!didFit.current) {
+        didFit.current = true;
+        fitToView();
+      }
+    }, 80);
+    return () => window.clearTimeout(t);
+  }, [allowed, redrawLines, fitToView]);
 
   useEffect(() => {
     if (user && !allowed) setLocation("/dashboard");
   }, [user, allowed, setLocation]);
+
+  const applyZoomAt = useCallback((clientX: number, clientY: number, nextZoom: number) => {
+    const vp = viewportRef.current;
+    if (!vp) return;
+    const z = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, nextZoom));
+    const rect = vp.getBoundingClientRect();
+    const mx = clientX - rect.left;
+    const my = clientY - rect.top;
+    const worldX = (mx - panRef.current.x) / zoomRef.current;
+    const worldY = (my - panRef.current.y) / zoomRef.current;
+    setZoom(Number(z.toFixed(3)));
+    setPan({ x: mx - worldX * z, y: my - worldY * z });
+  }, []);
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.button !== 0) return;
+    const target = e.target as HTMLElement;
+    if (target.closest("button")) return;
+    dragRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      panX: panRef.current.x,
+      panY: panRef.current.y,
+    };
+    setDragging(true);
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    setPan({ x: d.panX + dx, y: d.panY + dy });
+  };
+
+  const onPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    setDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  useEffect(() => {
+    const el = viewportRef.current;
+    if (!el) return;
+    const onWheelNative = (ev: WheelEvent) => {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault();
+      const factor = ev.deltaY > 0 ? 0.92 : 1.08;
+      applyZoomAt(ev.clientX, ev.clientY, zoomRef.current * factor);
+    };
+    el.addEventListener("wheel", onWheelNative, { passive: false });
+    return () => el.removeEventListener("wheel", onWheelNative);
+  }, [allowed, applyZoomAt]);
 
   if (!user || !allowed) {
     return (
@@ -552,9 +641,8 @@ export default function TashkiliyTuzilmaPage() {
               Tashkiliy tuzilma
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-slate-500 sm:text-[15px]">
-              Yuqoridan pastga: ta’sischi → direktor → bo‘limlar. HR bo‘limi ostida avvalgidek
-              auditor, menejer, rekruter/trener, koordinator, filial, stajyor va farmasevt. Kartani
-              bosing — tanlangan lavozim ajralib ko‘rinadi.
+              Sichqoncha bilan ushlab siljiting. Ctrl + g‘ildirak — yaqinlashtirish. Kartani bosing —
+              lavozim ajralib ko‘rinadi.
             </p>
           </div>
 
@@ -564,7 +652,15 @@ export default function TashkiliyTuzilmaPage() {
               variant="ghost"
               size="icon"
               className="h-9 w-9"
-              onClick={() => setZoom((z) => Math.max(0.22, Number((z - 0.1).toFixed(2))))}
+              onClick={() =>
+                applyZoomAt(
+                  (viewportRef.current?.getBoundingClientRect().left ?? 0) +
+                    (viewportRef.current?.clientWidth ?? 0) / 2,
+                  (viewportRef.current?.getBoundingClientRect().top ?? 0) +
+                    (viewportRef.current?.clientHeight ?? 0) / 2,
+                  zoomRef.current - 0.1,
+                )
+              }
               aria-label="Kichiklashtirish"
             >
               <ZoomOut className="h-4 w-4" />
@@ -577,7 +673,15 @@ export default function TashkiliyTuzilmaPage() {
               variant="ghost"
               size="icon"
               className="h-9 w-9"
-              onClick={() => setZoom((z) => Math.min(1.35, Number((z + 0.1).toFixed(2))))}
+              onClick={() =>
+                applyZoomAt(
+                  (viewportRef.current?.getBoundingClientRect().left ?? 0) +
+                    (viewportRef.current?.clientWidth ?? 0) / 2,
+                  (viewportRef.current?.getBoundingClientRect().top ?? 0) +
+                    (viewportRef.current?.clientHeight ?? 0) / 2,
+                  zoomRef.current + 0.1,
+                )
+              }
               aria-label="Kattalashtirish"
             >
               <ZoomIn className="h-4 w-4" />
@@ -613,44 +717,56 @@ export default function TashkiliyTuzilmaPage() {
         </div>
       </div>
 
-      <div ref={scrollerRef} className="relative min-h-0 flex-1 overflow-auto">
+      <div
+        ref={viewportRef}
+        className={cn(
+          "relative min-h-0 flex-1 overflow-hidden touch-none",
+          dragging ? "cursor-grabbing" : "cursor-grab",
+        )}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
         <div
           className="pointer-events-none absolute inset-0"
           style={{
             backgroundImage:
-              "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(11,58,92,0.08), transparent 55%), radial-gradient(circle at 1px 1px, rgba(15,58,92,0.06) 1px, transparent 0)",
+              "radial-gradient(ellipse 80% 50% at 50% -10%, rgba(11,58,92,0.08), transparent 55%), radial-gradient(circle at 1px 1px, rgba(15,58,92,0.07) 1px, transparent 0)",
             backgroundSize: "auto, 28px 28px",
           }}
         />
         <div
-          className="relative inline-block min-h-full min-w-full p-6 sm:p-8"
+          className="absolute left-0 top-0"
           style={{
-            width: natural.w ? Math.max(natural.w * zoom + 48, 0) : undefined,
+            transform: `translate(${Math.round(pan.x)}px, ${Math.round(pan.y)}px)`,
           }}
         >
           <div
-            className="mx-auto"
-            style={{
-              width: Math.max(natural.w * zoom, 1),
-              height: Math.max(natural.h * zoom, 1),
-            }}
+            ref={worldRef}
+            className="relative w-max [text-rendering:geometricPrecision]"
+            style={{ zoom }}
           >
-            <div
-              ref={chartRef}
-              className="w-max"
-              style={{
-                transform: `scale(${zoom})`,
-                transformOrigin: "top left",
-              }}
+            <svg
+              className="pointer-events-none absolute inset-0 h-full w-full overflow-visible"
+              aria-hidden
             >
-              <div className="rounded-[28px] border border-white/70 bg-white/40 p-6 shadow-[0_30px_80px_-40px_rgba(15,58,92,0.45)] backdrop-blur-sm sm:p-8">
-                <OrgTree
-                  node={ORG_TREE}
-                  selectedId={selectedId}
-                  onSelect={setSelectedId}
-                  isRoot
+              {paths.map((d, i) => (
+                <path
+                  key={i}
+                  d={d}
+                  fill="none"
+                  stroke="#0B3A5C"
+                  strokeOpacity="0.45"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  shapeRendering="geometricPrecision"
                 />
-              </div>
+              ))}
+            </svg>
+            <div className="relative p-8 sm:p-10">
+              <OrgTree node={ORG_TREE} selectedId={selectedId} onSelect={setSelectedId} />
             </div>
           </div>
         </div>

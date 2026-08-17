@@ -24,7 +24,7 @@ const ORG_ROLE_UZ: Record<string, string> = {
   coordinator: "Koordinator",
   manager: "Mudir",
   pharmacist: "Farmasevt",
-  intern: "Stajor",
+  intern: "Stajyor",
   supervisor: "Nazoratchi",
 };
 

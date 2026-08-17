@@ -1,4 +1,4 @@
-import { HR_ROLES, HR_ROLE_LABELS, isHrManager as isHrManagerRole } from './roles';
+import { HR_ROLES, isHrManager as isHrManagerRole, userRoleLabel } from './roles';
 
 /** HR suhbatni shu rollarga o'tkaza oladi */
 export const ASSIGNABLE_ROLES = [
@@ -12,21 +12,9 @@ export const ASSIGNABLE_ROLES = [
 
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
-const ROLE_LABELS: Record<string, string> = {
-  admin: 'Admin',
-  ...HR_ROLE_LABELS,
-  recruiter: 'Rekruter',
-  trainer: 'Trener',
-  director: 'Direktor',
-  department_head: "Bo'lim boshlig'i",
-  mentor: 'Mentor',
-  mudir: 'Mudir',
-  koordinator: 'Koordinator',
-};
-
 export function roleLabel(role?: string | null): string {
   if (!role) return '';
-  return ROLE_LABELS[role] || role;
+  return userRoleLabel(role);
 }
 
 export function isHrManager(role?: string | null): boolean {

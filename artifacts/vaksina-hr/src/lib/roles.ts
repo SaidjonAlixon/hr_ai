@@ -52,3 +52,25 @@ export const HR_ROLE_LABELS: Record<string, string> = {
   hr_auditor: "HR Auditor",
   hr_menejer: "HR Menejer",
 };
+
+/** Foydalanuvchi rollari — Farmasevt va Stajyor alohida */
+export const USER_ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  ...HR_ROLE_LABELS,
+  recruiter: "Rekruter",
+  trainer: "Trener",
+  mentor: "Mentor",
+  director: "Direktor",
+  department_head: "Bo‘lim boshlig‘i",
+  mudir: "Mudir",
+  koordinator: "Koordinator",
+  texnik: "Texnik",
+  ombor: "Ombor",
+  farmasevt: "Farmasevt",
+  stajyor: "Stajyor",
+};
+
+export function userRoleLabel(role?: string | null): string {
+  if (!role) return "";
+  return USER_ROLE_LABELS[role] || role;
+}

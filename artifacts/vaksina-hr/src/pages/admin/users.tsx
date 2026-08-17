@@ -33,6 +33,7 @@ import {
   normalizeUzPhone,
   UZ_PHONE_HINT,
 } from '../../lib/phone';
+import { userRoleLabel } from '../../lib/roles';
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -52,8 +53,6 @@ const ROLES = [
   { value: 'farmasevt', label: 'Farmasevt' },
   { value: 'stajyor', label: 'Stajyor' },
 ] as const;
-
-const ROLE_LABELS: Record<string, string> = Object.fromEntries(ROLES.map((r) => [r.value, r.label]));
 
 type CreatedCredentials = {
   fullName: string;
@@ -346,7 +345,7 @@ export default function AdminUsersPage() {
                         {u.phone && <div className="text-xs text-muted-foreground">{u.phone}</div>}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge variant="secondary">{ROLE_LABELS[u.role] || u.role}</Badge>
+                        <Badge variant="secondary">{userRoleLabel(u.role) || u.role}</Badge>
                       </td>
                       <td className="px-4 py-3 font-mono text-xs">{u.login}</td>
                       <td className="px-4 py-3 text-muted-foreground">{u.departmentName || '—'}</td>
@@ -455,7 +454,7 @@ export default function AdminUsersPage() {
           <DialogHeader>
             <DialogTitle>Login va parol</DialogTitle>
             <DialogDescription>
-              {created?.fullName} ({ROLE_LABELS[created?.role || ''] || created?.role}) uchun
+              {created?.fullName} ({userRoleLabel(created?.role || '') || created?.role}) uchun
               ma’lumotlar. Parol faqat hozir ko‘rsatiladi — saqlab qo‘ying.
             </DialogDescription>
           </DialogHeader>

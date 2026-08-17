@@ -179,7 +179,7 @@ export default function KirishPage() {
           <div className="relative flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
             <div>
               <p className="text-[#8ec8f0] text-xs font-semibold tracking-[0.2em] uppercase mb-2">
-                Stajor · Farmasevt
+                Stajyor
               </p>
               <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight flex items-center gap-2">
                 <Sparkles className="h-7 w-7 text-[#F1C40F]" />

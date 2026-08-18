@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
+import { useGetEmployees, useGetUsers, type Employee, type User } from "@workspace/api-client-react";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
   Network,
   ZoomIn,
@@ -23,9 +25,10 @@ import {
   Cpu,
   ClipboardCheck,
   Warehouse,
-  User,
-  Shield,
-  MonitorSmartphone,
+  ChevronDown,
+  ChevronRight,
+  ArrowLeft,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -39,6 +42,10 @@ type OrgNode = {
   icon: React.ComponentType<{ className?: string }>;
   children?: OrgNode[];
   mergePair?: [OrgNode, OrgNode];
+  count?: number;
+  expandable?: boolean;
+  expandHint?: string;
+  inChart?: boolean;
 };
 
 const TONES = {
@@ -156,252 +163,282 @@ const ALLOWED_ROLES = new Set([
   "stajyor",
 ]);
 
-function makeBranchChain(prefix: string): OrgNode {
+function isActiveEmp(e: Employee) {
+  return e.employmentStatus !== "dismissed";
+}
+
+function empKind(e: Employee, usersById: Map<number, User>): string {
+  const role = String(e.orgRole || "");
+  if (role === "coordinator" || role === "manager" || role === "pharmacist" || role === "intern" || role === "supervisor") {
+    return role;
+  }
+  const u = e.userId != null ? usersById.get(e.userId) : undefined;
+  if (u?.role === "koordinator") return "coordinator";
+  if (u?.role === "mudir") return "manager";
+  if (u?.role === "farmasevt") return "pharmacist";
+  if (u?.role === "stajyor") return "intern";
+  return role;
+}
+
+function activeUsers(users: User[] | undefined, role: string) {
+  return (users ?? []).filter((u) => u.role === role && u.status === "active");
+}
+
+function staffHint(role?: string | null) {
+  if (role === "intern") return "Stajyor · o‘quv / amaliyot";
+  if (role === "supervisor") return "Nazoratchi";
+  return "Farmasevt · smena / savdo";
+}
+
+function staffTone(role?: string | null): ToneKey {
+  return role === "intern" ? "intern" : "staff";
+}
+
+function staffIcon(role?: string | null) {
+  return role === "intern" ? GraduationCap : Pill;
+}
+
+function assignCoordinatorLanes(coords: Employee[], hrMgrEmps: Employee[]): [Employee[], Employee[]] {
+  const sorted = [...coords].sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
+  const lanes: [Employee[], Employee[]] = [[], []];
+  const id0 = hrMgrEmps[0]?.id;
+  const id1 = hrMgrEmps[1]?.id;
+  if (id0 || id1) {
+    const rest: Employee[] = [];
+    for (const c of sorted) {
+      if (id0 && c.reportsToId === id0) lanes[0].push(c);
+      else if (id1 && c.reportsToId === id1) lanes[1].push(c);
+      else rest.push(c);
+    }
+    rest.forEach((c, i) => lanes[i % 2].push(c));
+    return lanes;
+  }
+  const mid = Math.ceil(sorted.length / 2);
+  return [sorted.slice(0, mid), sorted.slice(mid)];
+}
+
+function buildStaffNodes(staff: Employee[], usersById: Map<number, User>): OrgNode[] {
+  return staff.map((p) => {
+    const role = empKind(p, usersById);
+    return {
+      id: `emp-${p.id}`,
+      label: p.fullName,
+      hint: staffHint(role),
+      tone: staffTone(role),
+      icon: staffIcon(role),
+      inChart: false,
+    };
+  });
+}
+
+function buildMudirNode(
+  m: Employee,
+  staff: Employee[],
+  usersById: Map<number, User>,
+): OrgNode {
+  const id = `emp-${m.id}`;
+  const loc = displayBranchName(m.location);
+  const generic = !loc || loc === "Filial" || loc === m.fullName;
   return {
-    id: `${prefix}-koordinator`,
-    label: "Koordinator",
-    hint: "Filiallar nazorati",
+    id,
+    label: generic ? m.fullName : loc,
+    hint: generic ? "Filial mudiri · apteka rahbari" : `Mudir · ${m.fullName}`,
+    tone: "branch",
+    icon: Store,
+    count: staff.length,
+    expandable: staff.length > 0,
+    expandHint: `${staff.length} ta xodim`,
+    inChart: false,
+    children: buildStaffNodes(staff, usersById),
+  };
+}
+
+function buildCoordinatorNode(
+  c: Employee,
+  mudirs: Employee[],
+  staffByMgr: Map<number, Employee[]>,
+  usersById: Map<number, User>,
+): OrgNode {
+  return {
+    id: `emp-${c.id}`,
+    label: c.fullName,
+    hint: "Koordinator · filiallar nazorati",
     tone: "coord",
     icon: Waypoints,
+    count: mudirs.length,
+    expandable: mudirs.length > 0,
+    expandHint: `${mudirs.length} ta filial`,
+    inChart: false,
+    children: mudirs.map((m) => buildMudirNode(m, staffByMgr.get(m.id) ?? [], usersById)),
+  };
+}
+
+function makeManagerBranchLive(
+  n: number,
+  managerUser: User | undefined,
+  coords: Employee[],
+  mudirsByCoord: Map<number, Employee[]>,
+  staffByMgr: Map<number, Employee[]>,
+  recruiters: User[],
+  trainers: User[],
+  usersById: Map<number, User>,
+): OrgNode {
+  const rec = recruiters[n - 1];
+  const tr = trainers[n - 1];
+  return {
+    id: `hr-menejer-${n}`,
+    label: managerUser?.fullName || "HR Menejer",
+    hint: `${n}-yo‘nalish`,
+    tone: "manager",
+    icon: Briefcase,
+    count: coords.length,
+    expandable: coords.length > 0,
+    expandHint: `${coords.length} ta koordinator · bosing`,
+    mergePair: [
+      {
+        id: `rekruter-${n}`,
+        label: rec?.fullName || "Rekruter",
+        hint: rec ? "Rekruter · tanlov" : "Tanlov",
+        tone: "specialist",
+        icon: UserSearch,
+      },
+      {
+        id: `trener-${n}`,
+        label: tr?.fullName || "Trener",
+        hint: tr ? "Trener · o‘qitish" : "O‘qitish",
+        tone: "specialist",
+        icon: GraduationCap,
+      },
+    ],
+    children: coords.map((c) =>
+      buildCoordinatorNode(c, mudirsByCoord.get(c.id) ?? [], staffByMgr, usersById),
+    ),
+  };
+}
+
+function buildHrTree(employees: Employee[], users: User[]): OrgNode {
+  const usersById = new Map((users ?? []).map((u) => [u.id, u]));
+  const people = employees.filter(isActiveEmp);
+  const coords = people.filter((e) => empKind(e, usersById) === "coordinator");
+  const mudirs = people.filter((e) => empKind(e, usersById) === "manager");
+  const staff = people.filter((e) => {
+    const role = empKind(e, usersById);
+    return role === "pharmacist" || role === "intern" || role === "supervisor";
+  });
+
+  const hrMgrUsers = activeUsers(users, "hr_menejer");
+  const hrMgrEmps = people.filter((e) => hrMgrUsers.some((u) => u.id === e.userId));
+  const lanes = assignCoordinatorLanes(coords, hrMgrEmps);
+
+  const mudirsByCoord = new Map<number, Employee[]>();
+  for (const m of mudirs) {
+    if (m.reportsToId == null) continue;
+    const list = mudirsByCoord.get(m.reportsToId) ?? [];
+    list.push(m);
+    mudirsByCoord.set(m.reportsToId, list);
+  }
+  for (const [, list] of mudirsByCoord) {
+    list.sort((a, b) =>
+      (displayBranchName(a.location) || a.fullName).localeCompare(
+        displayBranchName(b.location) || b.fullName,
+        "uz",
+      ),
+    );
+  }
+
+  const staffByMgr = new Map<number, Employee[]>();
+  for (const p of staff) {
+    if (p.reportsToId == null) continue;
+    const list = staffByMgr.get(p.reportsToId) ?? [];
+    list.push(p);
+    staffByMgr.set(p.reportsToId, list);
+  }
+  for (const [, list] of staffByMgr) {
+    list.sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
+  }
+
+  const direktor = activeUsers(users, "hr_direktor")[0];
+  const auditor = activeUsers(users, "hr_auditor")[0];
+  const recruiters = activeUsers(users, "recruiter");
+  const trainers = activeUsers(users, "trainer");
+
+  return {
+    id: "hr-direktor",
+    label: direktor?.fullName || "HR Direktor",
+    hint: "Strategiya",
+    tone: "director",
+    icon: Crown,
     children: [
       {
-        id: `${prefix}-filial-mudiri`,
-        label: "Filial mudiri",
-        hint: "Apteka rahbari",
-        tone: "branch",
-        icon: Store,
+        id: "hr-auditor",
+        label: auditor?.fullName || "HR Auditor",
+        hint: "Nazorat",
+        tone: "director",
+        icon: ShieldCheck,
         children: [
-          {
-            id: `${prefix}-stajyor`,
-            label: "Stajyor",
-            hint: "O‘quv / amaliyot",
-            tone: "intern",
-            icon: GraduationCap,
-          },
-          {
-            id: `${prefix}-farmasevt`,
-            label: "Farmasevt",
-            hint: "Smena / savdo",
-            tone: "staff",
-            icon: Pill,
-          },
+          makeManagerBranchLive(1, hrMgrUsers[0], lanes[0], mudirsByCoord, staffByMgr, recruiters, trainers, usersById),
+          makeManagerBranchLive(2, hrMgrUsers[1], lanes[1], mudirsByCoord, staffByMgr, recruiters, trainers, usersById),
         ],
       },
     ],
   };
 }
 
-function makeManagerBranch(n: number): OrgNode {
+function makeOrgTree(hr: OrgNode): OrgNode {
   return {
-    id: `hr-menejer-${n}`,
-    label: "HR Menejer",
-    hint: `${n}-yo‘nalish`,
-    tone: "manager",
-    icon: Briefcase,
-    mergePair: [
+    id: "tasischi",
+    label: "Ta’sischi",
+    hint: "Muassis",
+    tone: "founder",
+    icon: Landmark,
+    children: [
       {
-        id: `rekruter-${n}`,
-        label: "Rekruter",
-        hint: "Tanlov",
-        tone: "specialist",
-        icon: UserSearch,
-      },
-      {
-        id: `trener-${n}`,
-        label: "Trener",
-        hint: "O‘qitish",
-        tone: "specialist",
-        icon: GraduationCap,
+        id: "direktor",
+        label: "Direktor",
+        hint: "Umumiy rahbar",
+        tone: "director",
+        icon: Building2,
+        children: [
+          { id: "taminot", label: "Ta’minot", hint: "Logistika", tone: "taminot", icon: Truck },
+          { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet },
+          { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, children: [hr] },
+          { id: "cb-it", label: "CB va IT", hint: "Xavfsizlik / IT", tone: "cbit", icon: Cpu },
+          { id: "reviziya", label: "Reviziya", hint: "Ichki audit", tone: "reviziya", icon: ClipboardCheck },
+          { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse },
+        ],
       },
     ],
-    children: [makeBranchChain(`m${n}`)],
   };
 }
-
-function makeDeptStaff(id: string, hint: string, tone: ToneKey, icon = User): OrgNode {
-  return {
-    id,
-    label: "Bo‘lim xodimi",
-    hint,
-    tone,
-    icon,
-  };
-}
-
-function makeDeptHead(
-  id: string,
-  label: string,
-  hint: string,
-  staffHint: string,
-  tone: ToneKey,
-  staffIcon?: React.ComponentType<{ className?: string }>,
-): OrgNode {
-  return {
-    id,
-    label,
-    hint,
-    tone,
-    icon: Briefcase,
-    children: [makeDeptStaff(`${id}-xodim`, staffHint, tone, staffIcon)],
-  };
-}
-
-const HR_TREE: OrgNode = {
-  id: "hr-direktor",
-  label: "HR Direktor",
-  hint: "Strategiya",
-  tone: "director",
-  icon: Crown,
-  children: [
-    {
-      id: "hr-auditor",
-      label: "HR Auditor",
-      hint: "Nazorat",
-      tone: "director",
-      icon: ShieldCheck,
-      children: [makeManagerBranch(1), makeManagerBranch(2)],
-    },
-  ],
-};
-
-const ORG_TREE: OrgNode = {
-  id: "tasischi",
-  label: "Ta’sischi",
-  hint: "Muassis",
-  tone: "founder",
-  icon: Landmark,
-  children: [
-    {
-      id: "direktor",
-      label: "Direktor",
-      hint: "Umumiy rahbar",
-      tone: "director",
-      icon: Building2,
-      children: [
-        {
-          id: "taminot",
-          label: "Ta’minot",
-          hint: "Logistika",
-          tone: "taminot",
-          icon: Truck,
-          children: [
-            makeDeptHead(
-              "taminot-boshliq",
-              "Bo‘lim boshlig‘i",
-              "Ta’minot rahbari",
-              "Logistika",
-              "taminot",
-              Truck,
-            ),
-          ],
-        },
-        {
-          id: "moliya",
-          label: "Moliya",
-          hint: "Moliya bo‘limi",
-          tone: "moliya",
-          icon: Wallet,
-          children: [
-            makeDeptHead(
-              "moliya-boshliq",
-              "Bo‘lim boshlig‘i",
-              "Moliya rahbari",
-              "Hisob-kitob",
-              "moliya",
-              Wallet,
-            ),
-          ],
-        },
-        {
-          id: "hr-bolimi",
-          label: "HR bo‘limi",
-          hint: "Kadrlar",
-          tone: "hrDept",
-          icon: Users,
-          children: [HR_TREE],
-        },
-        {
-          id: "cb-it",
-          label: "CB va IT",
-          hint: "Xavfsizlik / IT",
-          tone: "cbit",
-          icon: Cpu,
-          children: [
-            makeDeptHead("cb-boshliq", "CB bo‘lim boshlig‘i", "Xavfsizlik", "Nazorat xodimi", "cbit", Shield),
-            makeDeptHead(
-              "it-boshliq",
-              "IT bo‘lim boshlig‘i",
-              "Texnika",
-              "IT mutaxassisi",
-              "cbit",
-              MonitorSmartphone,
-            ),
-          ],
-        },
-        {
-          id: "reviziya",
-          label: "Reviziya",
-          hint: "Ichki audit",
-          tone: "reviziya",
-          icon: ClipboardCheck,
-          children: [
-            makeDeptHead(
-              "reviziya-boshliq",
-              "Bo‘lim boshlig‘i",
-              "Reviziya rahbari",
-              "Ichki auditor",
-              "reviziya",
-              ClipboardCheck,
-            ),
-          ],
-        },
-        {
-          id: "axo-gpp",
-          label: "AXO va GPP",
-          hint: "Ma’muriyat / GPP",
-          tone: "axogpp",
-          icon: Warehouse,
-          children: [
-            makeDeptHead("axo-boshliq", "AXO boshlig‘i", "Ma’muriyat", "AXO xodimi", "axogpp", Warehouse),
-            makeDeptHead(
-              "gpp-boshliq",
-              "GPP bo‘lim boshlig‘i",
-              "Farmatsevtika amaliyoti",
-              "GPP mutaxassisi",
-              "axogpp",
-              Pill,
-            ),
-          ],
-        },
-      ],
-    },
-  ],
-};
 
 type OrgBus = { from: string[]; to: string[] };
+
+function busesFor(tree: OrgNode) {
+  const buses: OrgBus[] = [];
+  collectBuses(tree, buses);
+  return buses;
+}
+
+function chartChildren(node: OrgNode): OrgNode[] {
+  return (node.children ?? []).filter((c) => c.inChart !== false);
+}
+
+function drillChildren(node: OrgNode): OrgNode[] {
+  return (node.children ?? []).filter((c) => c.inChart === false);
+}
 
 function collectBuses(node: OrgNode, buses: OrgBus[]) {
   if (node.mergePair) {
     buses.push({ from: [node.id], to: [node.mergePair[0].id, node.mergePair[1].id] });
-    const kids = node.children ?? [];
-    if (kids.length) {
-      buses.push({ from: [node.mergePair[0].id, node.mergePair[1].id], to: kids.map((k) => k.id) });
-    }
-    for (const child of kids) collectBuses(child, buses);
+    for (const child of chartChildren(node)) collectBuses(child, buses);
     return;
   }
-  const kids = node.children ?? [];
+  const kids = chartChildren(node);
   if (kids.length) {
     buses.push({ from: [node.id], to: kids.map((k) => k.id) });
     for (const child of kids) collectBuses(child, buses);
   }
 }
-
-const ORG_BUSES = (() => {
-  const buses: OrgBus[] = [];
-  collectBuses(ORG_TREE, buses);
-  return buses;
-})();
 
 type Box = { cx: number; top: number; bottom: number };
 
@@ -449,29 +486,6 @@ function findNode(node: OrgNode, id: string): OrgNode | null {
   return null;
 }
 
-function findParent(node: OrgNode, id: string, parent: OrgNode | null = null): OrgNode | null {
-  if (node.id === id) return parent;
-  if (node.mergePair) {
-    for (const side of node.mergePair) {
-      const hit = findParent(side, id, node);
-      if (hit) return hit;
-    }
-  }
-  for (const child of node.children ?? []) {
-    const hit = findParent(child, id, node);
-    if (hit) return hit;
-  }
-  return null;
-}
-
-function childSummaries(node: OrgNode): string[] {
-  const names: string[] = [];
-  if (node.mergePair) names.push(node.mergePair[0].label, node.mergePair[1].label);
-  for (const child of node.children ?? []) names.push(child.label);
-  return names;
-}
-
-
 function NodeCard({
   node,
   highlight,
@@ -497,7 +511,7 @@ function NodeCard({
         "group relative z-[2] text-left transition-shadow duration-200",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0b3a5c]/35 focus-visible:ring-offset-2",
         exec && "min-w-[228px] rounded-[22px]",
-        dept && "min-w-[188px] rounded-[18px]",
+        dept && "min-w-[158px] rounded-[18px]",
         !exec && !dept && "rounded-[16px]",
         !exec && size === "lg" && "min-w-[200px]",
         !exec && size === "md" && "min-w-[176px]",
@@ -533,7 +547,7 @@ function NodeCard({
             tone.soft,
           )}
         >
-          <div className={cn("h-1.5 bg-gradient-to-r", tone.fill)} />
+          <div className={cn("h-2.5 bg-gradient-to-r", tone.fill)} />
           <div className="flex items-center gap-3 px-3.5 py-3">
             <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", tone.chip)}>
               <Icon className="h-5 w-5" />
@@ -559,6 +573,12 @@ function NodeCard({
               {node.hint ? (
                 <span className="mt-0.5 block text-[11px] leading-tight text-slate-500">{node.hint}</span>
               ) : null}
+              {node.expandable ? (
+                <span className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                  {node.expandHint || `${node.count} ta · bosing`}
+                  <ChevronDown className="h-3 w-3" />
+                </span>
+              ) : null}
             </span>
           </div>
         </div>
@@ -571,18 +591,20 @@ function MergePair({
   left,
   right,
   selectedId,
+  activeIds,
   onSelect,
 }: {
   left: OrgNode;
   right: OrgNode;
   selectedId: string | null;
+  activeIds: Set<string>;
   onSelect: (id: string) => void;
 }) {
   return (
     <div className="flex items-start justify-center gap-8 sm:gap-12">
       {[left, right].map((n) => (
         <div key={n.id} className="flex flex-col items-center pt-14">
-          <NodeCard node={n} highlight={selectedId === n.id} onSelect={onSelect} size="sm" />
+          <NodeCard node={n} highlight={activeIds.has(n.id) || selectedId === n.id} onSelect={onSelect} size="sm" />
         </div>
       ))}
     </div>
@@ -592,38 +614,63 @@ function MergePair({
 function OrgTree({
   node,
   selectedId,
+  activeIds,
   onSelect,
   depth = 0,
 }: {
   node: OrgNode;
   selectedId: string | null;
+  activeIds: Set<string>;
   onSelect: (id: string) => void;
   depth?: number;
 }) {
-  const kids = node.children ?? [];
+  const kids = chartChildren(node);
   const hasMerge = !!node.mergePair;
   const size = depth === 0 ? "lg" : depth <= 2 ? "md" : "sm";
-  const lanes = node.id === "direktor";
+  const isDirektor = node.id === "direktor";
+  const hrDept = isDirektor ? kids.find((d) => d.id === "hr-bolimi") : null;
+  const hrInner = hrDept ? chartChildren(hrDept) : [];
+  const deptRow = isDirektor ? kids : null;
 
   return (
     <div className="flex flex-col items-center">
-      <NodeCard node={node} highlight={selectedId === node.id} onSelect={onSelect} size={size} />
+      <NodeCard
+        node={node}
+        highlight={activeIds.has(node.id) || selectedId === node.id}
+        onSelect={onSelect}
+        size={size}
+      />
 
-      {(hasMerge || kids.length > 0) && (
-        <div className="flex flex-col items-center pt-14">
+      {deptRow ? (
+        <div className="flex flex-col items-center pt-10">
+          <div className="flex flex-nowrap items-start justify-center gap-3 sm:gap-4">
+            {deptRow.map((child) => (
+              <NodeCard
+                key={child.id}
+                node={child}
+                highlight={child.id === "hr-bolimi" || activeIds.has(child.id) || selectedId === child.id}
+                onSelect={onSelect}
+                size="md"
+              />
+            ))}
+          </div>
+          {hrInner.map((h) => (
+            <div key={h.id} className="pt-10">
+              <OrgTree node={h} selectedId={selectedId} activeIds={activeIds} onSelect={onSelect} depth={depth + 1} />
+            </div>
+          ))}
+        </div>
+      ) : (hasMerge || kids.length > 0) ? (
+        <div className="flex flex-col items-center pt-10">
           {hasMerge && node.mergePair ? (
             <>
               <MergePair
                 left={node.mergePair[0]}
                 right={node.mergePair[1]}
                 selectedId={selectedId}
+                activeIds={activeIds}
                 onSelect={onSelect}
               />
-              {kids.map((child) => (
-                <div key={child.id} className="pt-14">
-                  <OrgTree node={child} selectedId={selectedId} onSelect={onSelect} depth={depth + 1} />
-                </div>
-              ))}
             </>
           ) : (
             <div className="flex items-start">
@@ -632,24 +679,129 @@ function OrgTree({
                   key={child.id}
                   className={cn(
                     "flex flex-col items-center",
-                    lanes
-                      ? cn(
-                          "mx-2 rounded-[26px] px-4 pb-6 pt-4 shadow-[0_12px_40px_-28px_rgba(15,58,92,0.45)] ring-1",
-                          "lane" in TONES[child.tone] ? TONES[child.tone].lane : "bg-white/70 ring-white/80",
-                        )
-                      : kids.length > 4
-                        ? "px-4 sm:px-5"
-                        : "px-6 sm:px-8 md:px-10",
+                    kids.length > 4 ? "px-4 sm:px-5" : "px-6 sm:px-8 md:px-10",
                   )}
                 >
-                  <OrgTree node={child} selectedId={selectedId} onSelect={onSelect} depth={depth + 1} />
+                  <OrgTree
+                    node={child}
+                    selectedId={selectedId}
+                    activeIds={activeIds}
+                    onSelect={onSelect}
+                    depth={depth + 1}
+                  />
                 </div>
               ))}
             </div>
           )}
         </div>
-      )}
+      ) : null}
     </div>
+  );
+}
+
+function TeamCard({
+  node,
+  selected,
+  onOpen,
+}: {
+  node: OrgNode;
+  selected: boolean;
+  onOpen: (id: string) => void;
+}) {
+  const tone = TONES[node.tone];
+  const Icon = node.icon;
+  const deeper = drillChildren(node).length > 0;
+
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(node.id)}
+      className={cn(
+        "flex w-full items-center gap-3 rounded-2xl border bg-white p-3.5 text-left shadow-sm transition",
+        "hover:border-slate-300 hover:shadow-md",
+        selected ? "border-[#0b3a5c]/40 ring-2 ring-[#0b3a5c]/15" : "border-slate-200/80",
+      )}
+    >
+      <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", tone.chip)}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-[14px] font-semibold leading-tight text-slate-900">{node.label}</span>
+        {node.hint ? (
+          <span className="mt-0.5 block truncate text-[12px] text-slate-500">{node.hint}</span>
+        ) : null}
+        {deeper ? (
+          <span className="mt-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+            {node.expandHint || `${node.count} ta`}
+          </span>
+        ) : null}
+      </span>
+      {deeper ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> : null}
+    </button>
+  );
+}
+
+function TeamPanel({
+  crumbs,
+  title,
+  hint,
+  countLabel,
+  items,
+  selectedId,
+  onOpen,
+  onCrumb,
+  onBack,
+  onClose,
+}: {
+  crumbs: { id: string; label: string }[];
+  title: string;
+  hint?: string;
+  countLabel: string;
+  items: OrgNode[];
+  selectedId: string | null;
+  onOpen: (id: string) => void;
+  onCrumb: (id: string) => void;
+  onBack: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <aside
+      className="pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[58%] flex-col overflow-hidden rounded-t-3xl border border-white/80 bg-white/96 shadow-[0_-18px_50px_-24px_rgba(15,58,92,0.45)] backdrop-blur-md sm:inset-y-3 sm:bottom-auto sm:left-auto sm:right-3 sm:max-h-none sm:w-[min(100%-1.5rem,420px)] sm:rounded-3xl"
+      onPointerDown={(e) => e.stopPropagation()}
+    >
+      <div className="flex items-start gap-2 border-b border-slate-100 px-4 py-3">
+        <Button type="button" variant="ghost" size="icon" className="mt-0.5 h-8 w-8 shrink-0" onClick={onBack} aria-label="Orqaga">
+          <ArrowLeft className="h-4 w-4" />
+        </Button>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
+            {crumbs.map((c, i) => (
+              <span key={c.id} className="inline-flex items-center gap-1">
+                {i > 0 ? <ChevronRight className="h-3 w-3" /> : null}
+                <button type="button" className="max-w-[9rem] truncate hover:text-slate-700" onClick={() => onCrumb(c.id)}>
+                  {c.label}
+                </button>
+              </span>
+            ))}
+          </div>
+          <p className="mt-1 truncate text-[16px] font-semibold leading-tight text-slate-900">{title}</p>
+          {hint ? <p className="truncate text-[12px] text-slate-500">{hint}</p> : null}
+          <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-[#0b3a5c]">{countLabel}</p>
+        </div>
+        <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onClose} aria-label="Yopish">
+          <X className="h-4 w-4" />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+        {items.length ? (
+          items.map((item) => (
+            <TeamCard key={item.id} node={item} selected={selectedId === item.id} onOpen={onOpen} />
+          ))
+        ) : (
+          <p className="px-2 py-8 text-center text-sm text-slate-400">Hali xodim biriktirilmagan</p>
+        )}
+      </div>
+    </aside>
   );
 }
 
@@ -662,20 +814,31 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
   { label: "AXO va GPP", tone: "axogpp" },
 ];
 
-const MIN_ZOOM = 0.2;
+const MIN_ZOOM = 0.75;
 const MAX_ZOOM = 2.4;
 
 export default function TashkiliyTuzilmaPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [selectedId, setSelectedId] = useState<string | null>("tasischi");
-  const [zoom, setZoom] = useState(0.55);
-  const [pan, setPan] = useState({ x: 40, y: 40 });
+  const [focusPath, setFocusPath] = useState<string[]>([]);
+  const [zoom, setZoom] = useState(0.92);
+  const [pan, setPan] = useState({ x: 40, y: 20 });
   const [paths, setPaths] = useState<{ lines: string[]; dots: Array<[number, number]> }>({
     lines: [],
     dots: [],
   });
   const [dragging, setDragging] = useState(false);
+
+  const allowed = useMemo(() => (user?.role ? ALLOWED_ROLES.has(user.role) : false), [user?.role]);
+  const { data: employees = [] } = useGetEmployees(undefined, { query: { enabled: allowed } });
+  const { data: users = [] } = useGetUsers(undefined, { query: { enabled: allowed } });
+
+  const orgTree = useMemo(
+    () => makeOrgTree(buildHrTree(employees as Employee[], users as User[])),
+    [employees, users],
+  );
+  const orgBuses = useMemo(() => busesFor(orgTree), [orgTree]);
 
   const viewportRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
@@ -683,13 +846,28 @@ export default function TashkiliyTuzilmaPage() {
   const panRef = useRef(pan);
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
   const didFit = useRef(false);
+  const busesRef = useRef(orgBuses);
+  busesRef.current = orgBuses;
 
   zoomRef.current = zoom;
   panRef.current = pan;
 
-  const allowed = useMemo(() => (user?.role ? ALLOWED_ROLES.has(user.role) : false), [user?.role]);
-  const selected = useMemo(() => (selectedId ? findNode(ORG_TREE, selectedId) : null), [selectedId]);
-  const parent = useMemo(() => (selectedId ? findParent(ORG_TREE, selectedId) : null), [selectedId]);
+  const handleSelect = useCallback(
+    (id: string) => {
+      setSelectedId(id);
+      const node = findNode(orgTree, id);
+      const kids = node ? drillChildren(node) : [];
+      if (!kids.length) return;
+      setFocusPath((prev) => {
+        if (prev[prev.length - 1] === id) return prev;
+        const idx = prev.indexOf(id);
+        if (idx >= 0) return prev.slice(0, idx + 1);
+        if (id.startsWith("hr-menejer-") || prev.length === 0) return [id];
+        return [...prev, id];
+      });
+    },
+    [orgTree],
+  );
 
   const redrawLines = useCallback(() => {
     const world = worldRef.current;
@@ -711,7 +889,7 @@ export default function TashkiliyTuzilmaPage() {
 
     const lines: string[] = [];
     const dots: Array<[number, number]> = [];
-    for (const bus of ORG_BUSES) {
+    for (const bus of busesRef.current) {
       const from = bus.from.map(box).filter((b): b is Box => !!b);
       const to = bus.to.map(box).filter((b): b is Box => !!b);
       if (from.length !== bus.from.length || to.length !== bus.to.length) continue;
@@ -740,19 +918,18 @@ export default function TashkiliyTuzilmaPage() {
     const zNow = zoomRef.current || 1;
     const wr = world.getBoundingClientRect();
     const naturalW = wr.width / zNow;
-    const naturalH = wr.height / zNow;
-    if (naturalW < 40 || naturalH < 40) return;
-    const nextZ = Math.min((vp.clientWidth - 64) / naturalW, (vp.clientHeight - 64) / naturalH, 1);
+    if (naturalW < 40) return;
+    const nextZ = Math.min((vp.clientWidth - 48) / naturalW, 1);
     const z = Math.max(MIN_ZOOM, Number(nextZ.toFixed(3)));
     const x = (vp.clientWidth - naturalW * z) / 2;
-    const y = Math.max(24, (vp.clientHeight - naturalH * z) / 2);
+    const y = 20;
     setZoom(z);
     setPan({ x, y });
   }, []);
 
   useLayoutEffect(() => {
     redrawLines();
-  }, [zoom, pan, selectedId, allowed, redrawLines]);
+  }, [zoom, pan, selectedId, allowed, orgTree, redrawLines]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -763,7 +940,7 @@ export default function TashkiliyTuzilmaPage() {
       }
     }, 80);
     return () => window.clearTimeout(t);
-  }, [allowed, redrawLines, fitToView]);
+  }, [allowed, orgTree, redrawLines, fitToView]);
 
   useEffect(() => {
     const onResize = () => redrawLines();
@@ -843,22 +1020,41 @@ export default function TashkiliyTuzilmaPage() {
     );
   }
 
-  const reports = selected ? childSummaries(selected) : [];
+  const focusId = focusPath[focusPath.length - 1] ?? null;
+  const focusNode = focusId ? findNode(orgTree, focusId) : null;
+  const focusItems = focusNode ? drillChildren(focusNode) : [];
+  const crumbs = focusPath
+    .map((id) => findNode(orgTree, id))
+    .filter((n): n is OrgNode => !!n)
+    .map((n) => ({ id: n.id, label: n.label }));
 
   return (
     <div className="flex h-full min-h-[calc(100vh-4rem)] flex-col bg-[#E8EEF4]">
-      <div className="shrink-0 border-b border-slate-200/80 bg-white/90 px-4 py-3.5 backdrop-blur-xl sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="mb-1 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
-              <Network className="h-3.5 w-3.5 text-[#0b3a5c]" />
-              VAKSINA MED
-            </div>
-            <h1 className="text-xl font-semibold tracking-tight text-[#0b3a5c] sm:text-2xl">Tashkiliy tuzilma</h1>
-          </div>
-          <p className="max-w-md text-xs leading-relaxed text-slate-500 sm:text-sm">
-            Ushlab siljiting · Ctrl + g‘ildirak — zoom · kartani bosing
-          </p>
+      <div className="shrink-0 border-b border-slate-200/80 bg-white/95 px-4 py-3 sm:px-6">
+        <div className="mb-2 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+          <Network className="h-3.5 w-3.5 text-[#0b3a5c]" />
+          VAKSINA MED
+        </div>
+        <h1 className="text-xl font-semibold tracking-tight text-[#0b3a5c] sm:text-2xl">Tashkiliy tuzilma</h1>
+        <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 text-[12px] font-medium sm:text-[13px]">
+          <span className="shrink-0 rounded-full bg-[#071E33] px-2.5 py-1 text-white">Ta’sischi</span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+          <span className="shrink-0 rounded-full bg-[#0B3A5C] px-2.5 py-1 text-white">Direktor</span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+          {LEGEND.map((item) => (
+            <span
+              key={item.label}
+              className={cn(
+                "inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1",
+                TONES[item.tone].chip,
+              )}
+            >
+              <span className={cn("h-2 w-2 rounded-full bg-gradient-to-br", TONES[item.tone].fill)} />
+              {item.label}
+            </span>
+          ))}
+          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+          <span className="shrink-0 rounded-full bg-[#0b3a5c] px-2.5 py-1 text-white">HR Menejer</span>
         </div>
       </div>
 
@@ -921,54 +1117,57 @@ export default function TashkiliyTuzilmaPage() {
               ))}
             </svg>
             <div className="relative px-10 py-12">
-              <OrgTree node={ORG_TREE} selectedId={selectedId} onSelect={setSelectedId} />
+              <OrgTree
+                node={orgTree}
+                selectedId={selectedId}
+                activeIds={new Set([...focusPath, selectedId].filter((x): x is string => !!x))}
+                onSelect={handleSelect}
+              />
             </div>
           </div>
         </div>
 
-        {selected ? (
-          <aside className="pointer-events-none absolute bottom-4 left-4 z-10 w-[min(100%-2rem,280px)] rounded-2xl border border-white/80 bg-white/92 p-4 shadow-[0_18px_50px_-28px_rgba(15,58,92,0.55)] backdrop-blur-md sm:bottom-5 sm:left-5">
-            <div className="flex items-start gap-3">
-              <span
-                className={cn(
-                  "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
-                  TONES[selected.tone].chip,
-                )}
-              >
-                <selected.icon className="h-[18px] w-[18px]" />
-              </span>
-              <div className="min-w-0">
-                <p className="text-[15px] font-semibold leading-tight text-slate-900">{selected.label}</p>
-                {selected.hint ? <p className="mt-0.5 text-[12px] text-slate-500">{selected.hint}</p> : null}
-              </div>
-            </div>
-            <dl className="mt-3 space-y-1.5 text-[12px]">
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Hisobot</dt>
-                <dd className="text-right font-medium text-slate-700">{parent?.label ?? "—"}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-slate-400">Ostida</dt>
-                <dd className="text-right font-medium text-slate-700">
-                  {reports.length ? reports.join(", ") : "—"}
-                </dd>
-              </div>
-            </dl>
-          </aside>
+        {focusNode ? (
+          <TeamPanel
+            crumbs={crumbs}
+            title={focusNode.label}
+            hint={focusNode.hint}
+            countLabel={
+              focusNode.expandHint
+                ? focusNode.expandHint
+                : focusItems.length
+                  ? `${focusItems.length} ta`
+                  : "Bo‘sh"
+            }
+            items={focusItems}
+            selectedId={selectedId}
+            onOpen={handleSelect}
+            onCrumb={(id) => {
+              const idx = focusPath.indexOf(id);
+              if (idx >= 0) {
+                setFocusPath(focusPath.slice(0, idx + 1));
+                setSelectedId(id);
+              }
+            }}
+            onBack={() => {
+              if (focusPath.length <= 1) {
+                setFocusPath([]);
+                return;
+              }
+              const next = focusPath.slice(0, -1);
+              setFocusPath(next);
+              setSelectedId(next[next.length - 1] ?? null);
+            }}
+            onClose={() => setFocusPath([])}
+          />
         ) : null}
 
-        <div className="absolute bottom-4 right-4 z-10 flex flex-col items-end gap-2 sm:bottom-5 sm:right-5">
-          <div className="hidden max-w-[420px] flex-wrap justify-end gap-1.5 rounded-2xl border border-white/80 bg-white/90 p-2 shadow-sm backdrop-blur-md md:flex">
-            {LEGEND.map((item) => (
-              <span
-                key={item.label}
-                className="inline-flex items-center gap-1.5 rounded-full bg-slate-50 px-2 py-1 text-[10px] font-medium text-slate-600"
-              >
-                <span className={cn("h-1.5 w-1.5 rounded-full bg-gradient-to-br", TONES[item.tone].fill)} />
-                {item.label}
-              </span>
-            ))}
-          </div>
+        <div
+          className={cn(
+            "absolute bottom-4 z-10 sm:bottom-5",
+            focusNode ? "left-4 sm:left-5" : "right-4 sm:right-5",
+          )}
+        >
           <div className="flex items-center gap-1 rounded-2xl border border-white/80 bg-white/95 p-1.5 shadow-[0_12px_32px_-18px_rgba(15,58,92,0.5)] backdrop-blur-md">
             <Button
               type="button"

@@ -29,6 +29,7 @@ import {
   ChevronRight,
   ArrowLeft,
   X,
+  User as UserIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -148,6 +149,25 @@ const TONES = {
 } as const;
 
 const DEPT_TONES = new Set<ToneKey>(["taminot", "moliya", "hrDept", "cbit", "reviziya", "axogpp"]);
+const DEPT_IDS = new Set(["taminot", "moliya", "hr-bolimi", "cb-it", "reviziya", "axo-gpp"]);
+
+const DEPT_META: Array<{
+  id: string;
+  label: string;
+  hint: string;
+  tone: ToneKey;
+  icon: React.ComponentType<{ className?: string }>;
+  keys: string[];
+  head: string;
+  staff: string;
+}> = [
+  { id: "taminot", label: "Ta’minot", hint: "Logistika", tone: "taminot", icon: Truck, keys: ["taminot", "logistika"], head: "Ta’minot rahbari", staff: "Logistika" },
+  { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet, keys: ["moliya"], head: "Moliya rahbari", staff: "Hisob-kitob" },
+  { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, keys: ["hr", "kadr"], head: "HR rahbari", staff: "Kadrlar" },
+  { id: "cb-it", label: "CB va IT", hint: "Xavfsizlik / IT", tone: "cbit", icon: Cpu, keys: ["cb", "it", "xavfsizlik"], head: "CB / IT rahbari", staff: "Texnika" },
+  { id: "reviziya", label: "Reviziya", hint: "Ichki audit", tone: "reviziya", icon: ClipboardCheck, keys: ["reviziya", "audit"], head: "Reviziya rahbari", staff: "Ichki auditor" },
+  { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse, keys: ["axo", "gpp", "mamuriyat"], head: "AXO / GPP rahbari", staff: "Ma’muriyat" },
+];
 
 const ALLOWED_ROLES = new Set([
   "admin",
@@ -162,6 +182,65 @@ const ALLOWED_ROLES = new Set([
   "farmasevt",
   "stajyor",
 ]);
+
+function isPharmacyOrg(e: Employee, usersById: Map<number, User>) {
+  const k = empKind(e, usersById);
+  return k === "coordinator" || k === "manager" || k === "pharmacist" || k === "intern" || k === "supervisor";
+}
+
+function normDept(s: string) {
+  return s.toLowerCase().replace(/[''`‘’]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function officePeopleForDept(
+  people: Employee[],
+  usersById: Map<number, User>,
+  keys: string[],
+  tone: ToneKey,
+  icon: React.ComponentType<{ className?: string }>,
+): OrgNode[] {
+  return people
+    .filter((e) => {
+      if (isPharmacyOrg(e, usersById)) return false;
+      const name = normDept(String(e.departmentName || ""));
+      return keys.some((k) => name.includes(k));
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"))
+    .map((e) => ({
+      id: `emp-${e.id}`,
+      label: e.fullName,
+      hint: e.position || "Bo‘lim xodimi",
+      tone,
+      icon,
+    }));
+}
+
+function makeDeptFallback(
+  id: string,
+  tone: ToneKey,
+  icon: React.ComponentType<{ className?: string }>,
+  head: string,
+  staff: string,
+): OrgNode[] {
+  return [
+    {
+      id: `${id}-boshliq`,
+      label: "Bo‘lim boshlig‘i",
+      hint: head,
+      tone,
+      icon: Briefcase,
+      children: [
+        {
+          id: `${id}-xodim`,
+          label: "Bo‘lim xodimi",
+          hint: staff,
+          tone,
+          icon: icon === Cpu || icon === ClipboardCheck ? icon : UserIcon,
+        },
+      ],
+    },
+  ];
+}
 
 function isActiveEmp(e: Employee) {
   return e.employmentStatus !== "dismissed";
@@ -384,7 +463,9 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
   };
 }
 
-function makeOrgTree(hr: OrgNode): OrgNode {
+function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode {
+  const usersById = new Map((users ?? []).map((u) => [u.id, u]));
+  const people = employees.filter(isActiveEmp);
   return {
     id: "tasischi",
     label: "Ta’sischi",
@@ -398,14 +479,23 @@ function makeOrgTree(hr: OrgNode): OrgNode {
         hint: "Umumiy rahbar",
         tone: "director",
         icon: Building2,
-        children: [
-          { id: "taminot", label: "Ta’minot", hint: "Logistika", tone: "taminot", icon: Truck },
-          { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet },
-          { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, children: [hr] },
-          { id: "cb-it", label: "CB va IT", hint: "Xavfsizlik / IT", tone: "cbit", icon: Cpu },
-          { id: "reviziya", label: "Reviziya", hint: "Ichki audit", tone: "reviziya", icon: ClipboardCheck },
-          { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse },
-        ],
+        children: DEPT_META.map((d) => {
+          const kids =
+            d.id === "hr-bolimi"
+              ? [hr]
+              : officePeopleForDept(people, usersById, d.keys, d.tone, d.icon);
+          return {
+            id: d.id,
+            label: d.label,
+            hint: d.hint,
+            tone: d.tone,
+            icon: d.icon,
+            expandable: true,
+            expandHint: d.id === "hr-bolimi" ? "Tuzilma · bosing" : `${Math.max(kids.length, 1)} ta · bosing`,
+            count: kids.length,
+            children: d.id === "hr-bolimi" ? [hr] : kids.length ? kids : makeDeptFallback(d.id, d.tone, d.icon, d.head, d.staff),
+          };
+        }),
       },
     ],
   };
@@ -491,11 +581,13 @@ function NodeCard({
   highlight,
   onSelect,
   size = "md",
+  expanded = false,
 }: {
   node: OrgNode;
   highlight: boolean;
   onSelect: (id: string) => void;
   size?: "sm" | "md" | "lg";
+  expanded?: boolean;
 }) {
   const tone = TONES[node.tone];
   const Icon = node.icon;
@@ -556,6 +648,12 @@ function NodeCard({
               <span className="block text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400">Bo‘lim</span>
               <span className="block text-[14px] font-semibold leading-tight text-slate-900">{node.label}</span>
               {node.hint ? <span className="mt-0.5 block text-[11px] text-slate-500">{node.hint}</span> : null}
+              {node.expandable ? (
+                <span className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                  {expanded ? "Yig‘ish" : "Struktura · bosing"}
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
+                </span>
+              ) : null}
             </span>
           </div>
         </div>
@@ -575,8 +673,8 @@ function NodeCard({
               ) : null}
               {node.expandable ? (
                 <span className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
-                  {node.expandHint || `${node.count} ta · bosing`}
-                  <ChevronDown className="h-3 w-3" />
+                  {expanded ? "Yig‘ish" : node.expandHint || `${node.count} ta · bosing`}
+                  <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
                 </span>
               ) : null}
             </span>
@@ -616,21 +714,24 @@ function OrgTree({
   selectedId,
   activeIds,
   onSelect,
+  openDeptId,
   depth = 0,
 }: {
   node: OrgNode;
   selectedId: string | null;
   activeIds: Set<string>;
   onSelect: (id: string) => void;
+  openDeptId: string | null;
   depth?: number;
 }) {
   const kids = chartChildren(node);
   const hasMerge = !!node.mergePair;
   const size = depth === 0 ? "lg" : depth <= 2 ? "md" : "sm";
   const isDirektor = node.id === "direktor";
-  const hrDept = isDirektor ? kids.find((d) => d.id === "hr-bolimi") : null;
-  const hrInner = hrDept ? chartChildren(hrDept) : [];
   const deptRow = isDirektor ? kids : null;
+  const openDept = deptRow?.find((d) => d.id === openDeptId) ?? null;
+  const hrInner = openDeptId === "hr-bolimi" && openDept ? chartChildren(openDept) : [];
+  const otherKids = openDept && openDeptId !== "hr-bolimi" ? chartChildren(openDept) : [];
 
   return (
     <div className="flex flex-col items-center">
@@ -648,7 +749,8 @@ function OrgTree({
               <NodeCard
                 key={child.id}
                 node={child}
-                highlight={child.id === "hr-bolimi" || activeIds.has(child.id) || selectedId === child.id}
+                highlight={openDeptId === child.id || activeIds.has(child.id) || selectedId === child.id}
+                expanded={openDeptId === child.id}
                 onSelect={onSelect}
                 size="md"
               />
@@ -656,22 +758,42 @@ function OrgTree({
           </div>
           {hrInner.map((h) => (
             <div key={h.id} className="pt-10">
-              <OrgTree node={h} selectedId={selectedId} activeIds={activeIds} onSelect={onSelect} depth={depth + 1} />
-            </div>
-          ))}
-        </div>
-      ) : (hasMerge || kids.length > 0) ? (
-        <div className="flex flex-col items-center pt-10">
-          {hasMerge && node.mergePair ? (
-            <>
-              <MergePair
-                left={node.mergePair[0]}
-                right={node.mergePair[1]}
+              <OrgTree
+                node={h}
                 selectedId={selectedId}
                 activeIds={activeIds}
                 onSelect={onSelect}
+                openDeptId={openDeptId}
+                depth={depth + 1}
               />
-            </>
+            </div>
+          ))}
+          {otherKids.length > 0 ? (
+            <div className="flex flex-wrap items-start justify-center gap-4 pt-10">
+              {otherKids.map((child) => (
+                <OrgTree
+                  key={child.id}
+                  node={child}
+                  selectedId={selectedId}
+                  activeIds={activeIds}
+                  onSelect={onSelect}
+                  openDeptId={openDeptId}
+                  depth={depth + 1}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : hasMerge || kids.length > 0 ? (
+        <div className="flex flex-col items-center pt-10">
+          {hasMerge && node.mergePair ? (
+            <MergePair
+              left={node.mergePair[0]}
+              right={node.mergePair[1]}
+              selectedId={selectedId}
+              activeIds={activeIds}
+              onSelect={onSelect}
+            />
           ) : (
             <div className="flex items-start">
               {kids.map((child) => (
@@ -687,6 +809,7 @@ function OrgTree({
                     selectedId={selectedId}
                     activeIds={activeIds}
                     onSelect={onSelect}
+                    openDeptId={openDeptId}
                     depth={depth + 1}
                   />
                 </div>
@@ -822,6 +945,7 @@ export default function TashkiliyTuzilmaPage() {
   const [, setLocation] = useLocation();
   const [selectedId, setSelectedId] = useState<string | null>("tasischi");
   const [focusPath, setFocusPath] = useState<string[]>([]);
+  const [openDeptId, setOpenDeptId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0.92);
   const [pan, setPan] = useState({ x: 40, y: 20 });
   const [paths, setPaths] = useState<{ lines: string[]; dots: Array<[number, number]> }>({
@@ -835,7 +959,7 @@ export default function TashkiliyTuzilmaPage() {
   const { data: users = [] } = useGetUsers(undefined, { query: { enabled: allowed } });
 
   const orgTree = useMemo(
-    () => makeOrgTree(buildHrTree(employees as Employee[], users as User[])),
+    () => makeOrgTree(buildHrTree(employees as Employee[], users as User[]), employees as Employee[], users as User[]),
     [employees, users],
   );
   const orgBuses = useMemo(() => busesFor(orgTree), [orgTree]);
@@ -855,6 +979,11 @@ export default function TashkiliyTuzilmaPage() {
   const handleSelect = useCallback(
     (id: string) => {
       setSelectedId(id);
+      if (DEPT_IDS.has(id)) {
+        setOpenDeptId((prev) => (prev === id ? null : id));
+        setFocusPath([]);
+        return;
+      }
       const node = findNode(orgTree, id);
       const kids = node ? drillChildren(node) : [];
       if (!kids.length) return;
@@ -929,7 +1058,7 @@ export default function TashkiliyTuzilmaPage() {
 
   useLayoutEffect(() => {
     redrawLines();
-  }, [zoom, pan, selectedId, allowed, orgTree, redrawLines]);
+  }, [zoom, pan, selectedId, openDeptId, allowed, orgTree, redrawLines]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -940,7 +1069,7 @@ export default function TashkiliyTuzilmaPage() {
       }
     }, 80);
     return () => window.clearTimeout(t);
-  }, [allowed, orgTree, redrawLines, fitToView]);
+  }, [allowed, orgTree, openDeptId, redrawLines, fitToView]);
 
   useEffect(() => {
     const onResize = () => redrawLines();
@@ -1120,8 +1249,9 @@ export default function TashkiliyTuzilmaPage() {
               <OrgTree
                 node={orgTree}
                 selectedId={selectedId}
-                activeIds={new Set([...focusPath, selectedId].filter((x): x is string => !!x))}
+                activeIds={new Set([...focusPath, selectedId, openDeptId].filter((x): x is string => !!x))}
                 onSelect={handleSelect}
+                openDeptId={openDeptId}
               />
             </div>
           </div>

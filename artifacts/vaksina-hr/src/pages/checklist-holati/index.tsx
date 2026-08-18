@@ -41,6 +41,7 @@ import {
   type BranchAudit,
 } from "@/lib/branch-audits-api";
 import { CoveragePanel } from "./coverage-panel";
+import { ChecklistDashboard } from "./dashboard-panel";
 
 function scoreTone(pct: number) {
   if (pct >= 85) return "text-emerald-600";
@@ -122,7 +123,7 @@ export default function ChecklistHolatiPage() {
   const [to, setTo] = useState("");
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [tab, setTab] = useState("tashriflar");
+  const [tab, setTab] = useState("dashboard");
 
   const { data: audits = [], isLoading } = useBranchAuditsList(
     {
@@ -282,7 +283,7 @@ export default function ChecklistHolatiPage() {
             </div>
             <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Cheklist holati</h1>
             <p className="mt-1.5 max-w-xl text-xs text-slate-300 sm:text-sm">
-              Tashriflar, javoblar va har bir koordinatorning filial qamrovi.
+              Dashboard, tashriflar, javoblar va har bir koordinatorning filial qamrovi.
             </p>
           </div>
           {tab === "tashriflar" && (
@@ -300,10 +301,21 @@ export default function ChecklistHolatiPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="grid h-11 w-full grid-cols-2 sm:max-w-md">
-          <TabsTrigger value="tashriflar">Tashriflar</TabsTrigger>
-          <TabsTrigger value="qamrov">Filial qamrovi</TabsTrigger>
+        <TabsList className="grid h-11 w-full grid-cols-3 sm:max-w-xl">
+          <TabsTrigger value="dashboard" className="text-[11px] sm:text-sm">
+            Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="tashriflar" className="text-[11px] sm:text-sm">
+            Tashriflar
+          </TabsTrigger>
+          <TabsTrigger value="qamrov" className="text-[11px] sm:text-sm">
+            <span className="sm:hidden">Qamrov</span>
+            <span className="hidden sm:inline">Filial qamrovi</span>
+          </TabsTrigger>
         </TabsList>
+        <TabsContent value="dashboard" className="mt-0">
+          <ChecklistDashboard enabled={allowed} />
+        </TabsContent>
         <TabsContent value="tashriflar" className="mt-0 space-y-4 sm:space-y-6">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         <Stat label="Tashriflar" value={String(stats.visits)} />

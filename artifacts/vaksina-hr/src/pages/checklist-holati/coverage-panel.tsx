@@ -55,7 +55,7 @@ function isCoordinatorRole(role?: string | null) {
   return role === "coordinator" || role === "koordinator";
 }
 
-function buildCoverage(
+export function buildCoverage(
   people: OrgPerson[],
   audits: { managerEmployeeId: number; visitDate: string; scorePercent: number; coordinatorName?: string | null }[],
   from?: string,

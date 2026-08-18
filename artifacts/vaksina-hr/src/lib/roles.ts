@@ -46,6 +46,29 @@ export function isStajyor(role?: string | null): boolean {
   return role === "stajyor";
 }
 
+/** Ish o‘rinlari, nomzod, suhbat, pipeline, stajirovka — faqat HR oilasi + admin/direktor/rekruter/trener */
+export const HR_RECRUITMENT_PATHS = [
+  "/vacancies",
+  "/candidates",
+  "/interviews",
+  "/pipeline",
+  "/internships",
+] as const;
+
+export function canSeeHrRecruitment(role?: string | null): boolean {
+  return (
+    isHrRole(role) ||
+    role === "admin" ||
+    role === "director" ||
+    role === "recruiter" ||
+    role === "trainer"
+  );
+}
+
+export function isHrRecruitmentPath(pathname: string): boolean {
+  return HR_RECRUITMENT_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+}
+
 export const HR_ROLE_LABELS: Record<string, string> = {
   hr: "HR",
   hr_direktor: "HR Direktor",

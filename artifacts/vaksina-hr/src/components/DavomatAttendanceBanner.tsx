@@ -52,7 +52,7 @@ export function DavomatAttendanceBanner() {
   return (
     <div
       className={cn(
-        "border-b px-3 py-1.5 sm:px-4",
+        "border-b px-3 py-2 sm:px-4 sm:py-1.5",
         done
           ? "bg-emerald-50 border-emerald-200 text-emerald-900"
           : urgent
@@ -60,22 +60,28 @@ export function DavomatAttendanceBanner() {
             : "bg-sky-50 border-sky-200 text-sky-950",
       )}
     >
-      <div className="mx-auto flex max-w-6xl items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2 text-sm">
+      <div className="mx-auto flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+        <div className="flex min-w-0 items-start gap-2 text-sm sm:items-center">
           {done ? (
-            <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 sm:mt-0" />
           ) : (
-            <AlertTriangle className="h-4 w-4 shrink-0" />
+            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 sm:mt-0" />
           )}
-          <p className="min-w-0 truncate">
+          <p className="min-w-0 leading-snug">
             <span className="font-semibold">{status.fullName || "Xodim"}</span>
-            <span className="mx-1.5 text-[11px] font-medium opacity-70">{HOLAT[status.nextAction]}</span>
-            <span className="tabular-nums text-xs">
+            <span className="mt-0.5 block text-[11px] font-medium opacity-70 sm:mt-0 sm:ml-1.5 sm:inline">
+              {HOLAT[status.nextAction]}
+            </span>
+            <span className="mt-0.5 block tabular-nums text-xs sm:ml-1.5 sm:inline">
               Kelish {status.checkIn} · Ketish {status.checkOut}
             </span>
           </p>
         </div>
-        <Button asChild size="sm" className="h-7 shrink-0 gap-1 bg-[#0b3a5c] px-2.5 text-xs hover:bg-[#0a314d]">
+        <Button
+          asChild
+          size="sm"
+          className="h-9 w-full gap-1.5 bg-[#0b3a5c] text-xs hover:bg-[#0a314d] sm:h-7 sm:w-auto sm:px-2.5"
+        >
           <Link href={status.linkUrl || "/davomat-face"}>
             <ScanFace className="h-3.5 w-3.5" />
             Davomat

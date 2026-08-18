@@ -24,6 +24,8 @@ import {
   Network,
   Eye,
   ScanFace,
+  ChevronDown,
+  Pin,
 } from 'lucide-react';
 import {
   useLogout,
@@ -40,13 +42,125 @@ import { cn } from '@/lib/utils';
 import { DailyGoalPrompt } from '@/components/DailyGoalPrompt';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
-import { isHrManager, isHrRole, isStajyor } from '@/lib/roles';
+import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath } from '@/lib/roles';
 
 type NavItem = {
   name: string;
   path: string;
   icon: React.ComponentType<{ className?: string }>;
 };
+
+type NavSection = {
+  id: string;
+  label: string;
+  items: NavItem[];
+  accent: string;
+  line: string;
+  chip: string;
+};
+
+const NAV_SECTIONS: {
+  id: string;
+  label: string;
+  accent: string;
+  line: string;
+  chip: string;
+  paths: string[];
+}[] = [
+  {
+    id: 'main',
+    label: 'Asosiy',
+    accent: 'bg-sky-400',
+    line: 'border-sky-400/55',
+    chip: 'text-sky-300',
+    paths: ['/dashboard', '/kirish', '/kuzatuv', '/maqsad', '/chat', '/tashkiliy-tuzilma'],
+  },
+  {
+    id: 'work',
+    label: 'Mening ishim',
+    accent: 'bg-amber-400',
+    line: 'border-amber-400/55',
+    chip: 'text-amber-300',
+    paths: ['/vazifalar', '/eslatmalar'],
+  },
+  {
+    id: 'hr',
+    label: 'HR va kadrlar',
+    accent: 'bg-indigo-400',
+    line: 'border-indigo-400/55',
+    chip: 'text-indigo-300',
+    paths: [
+      '/requests',
+      '/vacancies',
+      '/candidates',
+      '/interviews',
+      '/pipeline',
+      '/internships',
+      '/employees',
+    ],
+  },
+  {
+    id: 'attendance',
+    label: 'Davomat',
+    accent: 'bg-teal-400',
+    line: 'border-teal-400/55',
+    chip: 'text-teal-300',
+    paths: ['/davomat-face', '/davomat'],
+  },
+  {
+    id: 'pharmacy',
+    label: "Apteka tarmog'i",
+    accent: 'bg-emerald-400',
+    line: 'border-emerald-400/55',
+    chip: 'text-emerald-300',
+    paths: ['/pharmacy-network', '/checklist-holati', '/checklist', '/ehtiyoj'],
+  },
+  {
+    id: 'admin',
+    label: 'Sozlamalar',
+    accent: 'bg-rose-400',
+    line: 'border-rose-400/55',
+    chip: 'text-rose-300',
+    paths: ['/admin/users', '/admin/departments'],
+  },
+];
+
+function groupNavItems(items: NavItem[]): NavSection[] {
+  const byPath = new Map(items.map((item) => [item.path, item]));
+  const used = new Set<string>();
+  const groups: NavSection[] = [];
+  for (const sec of NAV_SECTIONS) {
+    const list = sec.paths
+      .map((path) => byPath.get(path))
+      .filter((item): item is NavItem => !!item);
+    if (!list.length) continue;
+    groups.push({
+      id: sec.id,
+      label: sec.label,
+      accent: sec.accent,
+      line: sec.line,
+      chip: sec.chip,
+      items: list,
+    });
+    for (const item of list) used.add(item.path);
+  }
+  const rest = items.filter((item) => !used.has(item.path));
+  if (rest.length) {
+    groups.push({
+      id: 'other',
+      label: 'Boshqa',
+      accent: 'bg-slate-400',
+      line: 'border-slate-400/55',
+      chip: 'text-slate-300',
+      items: rest,
+    });
+  }
+  return groups;
+}
+
+function pathIsActive(location: string, path: string) {
+  return location === path || location.startsWith(`${path}/`);
+}
 
 /** Map notification linkUrl → sidebar path */
 function linkToNavPath(linkUrl?: string | null): string | null {
@@ -120,12 +234,35 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   /** Mobil: drawer ochiq/yopiq. Desktop: kengaytirilgan/icon-only. */
   const [mobileOpen, setMobileOpen] = React.useState(false);
   const [desktopCollapsed, setDesktopCollapsed] = React.useState(false);
+  const [openSectionId, setOpenSectionId] = React.useState<string | null>(null);
+  const [pinnedIds, setPinnedIds] = React.useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('vaksina-nav-pins');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
   const markedPathsRef = useRef<Set<string>>(new Set());
 
   // Sahifa o‘zgaganda mobil menyuni yopish
   useEffect(() => {
     setMobileOpen(false);
   }, [location]);
+
+  useEffect(() => {
+    const sec = NAV_SECTIONS.find((s) => s.paths.some((p) => pathIsActive(location, p)));
+    if (sec) setOpenSectionId(sec.id);
+  }, [location]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('vaksina-nav-pins', JSON.stringify(pinnedIds));
+    } catch {
+      /* ignore */
+    }
+  }, [pinnedIds]);
 
   // Mobil menyu ochiq bo‘lsa body scrollni bloklash
   useEffect(() => {
@@ -290,6 +427,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ) {
       setLocation('/kirish');
     }
+    if (isHrRecruitmentPath(location) && !canSeeHrRecruitment(user.role)) {
+      setLocation('/dashboard');
+    }
   }, [isLoading, isAuthenticated, user, setLocation, location]);
 
   if (isLoading) {
@@ -329,13 +469,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
-    { name: 'Xodimlar', path: '/employees', icon: Users },
-    { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
-    davomatFaceNav,
-    { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
-    { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-    { name: 'Pipeline', path: '/pipeline', icon: Kanban },
-  ];
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFaceNav,
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+    ];
 
   const hrDirektorNav: NavItem[] = [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -354,9 +495,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     davomatFaceNav,
     { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
     { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
-    { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-    { name: 'Pipeline', path: '/pipeline', icon: Kanban },
-  ];
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+    ];
 
   const hrAuditorNav: NavItem[] = [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -428,6 +570,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     hr: hrMenejerNav,
     hr_menejer: hrMenejerNav,
@@ -440,7 +585,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Maqsad', path: '/maqsad', icon: Target },
       chatNav,
       davomatFaceNav,
+      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+      { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     mentor: [
@@ -448,6 +596,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       chatNav,
       davomatFaceNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     department_head: [
@@ -458,7 +607,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       chatNav,
       davomatFaceNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
@@ -470,6 +618,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       chatNav,
       orgNav,
       davomatFaceNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
@@ -481,6 +631,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       chatNav,
       orgNav,
       davomatFaceNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
@@ -492,6 +644,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Maqsad', path: '/maqsad', icon: Target },
       chatNav,
       davomatFaceNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     ombor: [
@@ -501,12 +655,16 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Maqsad', path: '/maqsad', icon: Target },
       chatNav,
       davomatFaceNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     farmasevt: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       davomatFaceNav,
       orgNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     stajyor: [
       { name: 'Kirish', path: '/kirish', icon: GraduationCap },
@@ -518,9 +676,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const roleNav = roleNavigation[user.role] || [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
   ];
-  const navItems = roleNav.some((item) => item.path === '/davomat-face')
+  const withFace = roleNav.some((item) => item.path === '/davomat-face')
     ? roleNav
     : [...roleNav, davomatFaceNav];
+  const navItems = canSeeHrRecruitment(user.role)
+    ? withFace
+    : withFace.filter((item) => !isHrRecruitmentPath(item.path));
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
@@ -530,33 +691,121 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
+  const navSections = groupNavItems(navItems);
+  const pinnedSet = new Set(pinnedIds);
+
+  const togglePin = (id: string) => {
+    setPinnedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setOpenSectionId(id);
+  };
+
+  const renderNavItem = (
+    item: NavItem,
+    opts: { collapsed: boolean; onNavigate?: () => void; nested?: boolean },
+  ) => {
+    const count = badgeByPath[item.path] ?? 0;
+    const active = pathIsActive(location, item.path);
+    const pulse = item.path === '/pharmacy-network' && count > 0;
+    return (
+      <Link key={item.path} href={item.path}>
+        <div
+          role="link"
+          onClick={opts.onNavigate}
+          className={cn(
+            'relative flex items-center rounded-lg hover:bg-white/10 cursor-pointer transition-colors',
+            opts.nested ? 'px-2.5 py-2' : 'px-3 py-3',
+            active && 'bg-white/15 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]',
+          )}
+        >
+          <span className="relative shrink-0">
+            <item.icon className="w-5 h-5 min-w-[20px]" />
+            {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} />}
+          </span>
+          {!opts.collapsed && (
+            <>
+              <span className="ml-3 font-medium text-sm min-w-0 break-words">{item.name}</span>
+              <NavBadge count={count} pulse={pulse} />
+            </>
+          )}
+        </div>
+      </Link>
+    );
+  };
+
   const renderNavLinks = (opts: { collapsed: boolean; onNavigate?: () => void }) =>
-    navItems.map((item) => {
-      const count = badgeByPath[item.path] ?? 0;
-      const active = location === item.path || location.startsWith(item.path + '/');
-      const pulse = item.path === '/pharmacy-network' && count > 0;
-      return (
-        <Link key={item.path} href={item.path}>
-          <div
-            role="link"
-            onClick={opts.onNavigate}
-            className={cn(
-              'relative flex items-center px-3 py-3 rounded-md hover:bg-sidebar-accent hover:text-sidebar-accent-foreground cursor-pointer transition-colors group',
-              active && 'bg-sidebar-accent text-sidebar-accent-foreground',
-            )}
-          >
-            <span className="relative shrink-0">
-              <item.icon className="w-5 h-5 min-w-[20px]" />
-              {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} />}
-            </span>
-            {!opts.collapsed && (
-              <>
-                <span className="ml-3 font-medium text-sm min-w-0 break-words">{item.name}</span>
-                <NavBadge count={count} pulse={pulse} />
-              </>
-            )}
+    navSections.map((section) => {
+      const badgeSum = section.items.reduce((sum, item) => sum + (badgeByPath[item.path] ?? 0), 0);
+      const hasActive = section.items.some((item) => pathIsActive(location, item.path));
+      const pinned = pinnedSet.has(section.id);
+      const open = opts.collapsed || pinned || openSectionId === section.id;
+
+      if (opts.collapsed) {
+        return (
+          <div key={section.id} className="flex flex-col gap-1">
+            {section.id !== navSections[0]?.id ? (
+              <div className={cn('mx-2 my-1.5 h-0.5 rounded-full opacity-70', section.accent)} />
+            ) : null}
+            {section.items.map((item) => renderNavItem(item, opts))}
           </div>
-        </Link>
+        );
+      }
+
+      return (
+        <div
+          key={section.id}
+          className={cn(
+            'mb-1 overflow-hidden rounded-xl transition-colors',
+            open ? 'bg-white/[0.05] ring-1 ring-white/10' : 'hover:bg-white/[0.03]',
+          )}
+        >
+          <div className="flex items-center gap-0.5 pr-1">
+            <button
+              type="button"
+              onClick={() =>
+                setOpenSectionId((prev) => (prev === section.id && !pinned ? null : section.id))
+              }
+              className={cn(
+                'flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left',
+                hasActive || open ? section.chip : 'text-white/50',
+              )}
+            >
+              <span className={cn('h-4 w-1 shrink-0 rounded-full', section.accent)} />
+              <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-[0.14em]">
+                {section.label}
+              </span>
+              {badgeSum > 0 ? (
+                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                  {badgeSum > 99 ? '99+' : badgeSum}
+                </span>
+              ) : null}
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 shrink-0 text-white/45 transition-transform',
+                  open && 'rotate-180',
+                )}
+              />
+            </button>
+            <button
+              type="button"
+              onClick={() => togglePin(section.id)}
+              title={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
+              aria-label={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
+              className={cn(
+                'shrink-0 rounded-md p-1.5 transition-colors',
+                pinned
+                  ? 'bg-amber-400/15 text-amber-300'
+                  : 'text-white/30 hover:bg-white/10 hover:text-white/70',
+              )}
+            >
+              <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
+            </button>
+          </div>
+          {open ? (
+            <div className={cn('mb-1.5 ml-3 mr-1.5 flex flex-col gap-0.5 border-l-2 pl-2', section.line)}>
+              {section.items.map((item) => renderNavItem(item, { ...opts, nested: true }))}
+            </div>
+          ) : null}
+        </div>
       );
     });
 

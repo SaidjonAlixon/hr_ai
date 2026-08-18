@@ -105,7 +105,7 @@ const NAV_SECTIONS: {
     accent: 'bg-teal-400',
     line: 'border-teal-400/55',
     chip: 'text-teal-300',
-    paths: ['/davomat-face', '/davomat'],
+    paths: ['/davomat-face', '/davomat', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
@@ -113,7 +113,7 @@ const NAV_SECTIONS: {
     accent: 'bg-emerald-400',
     line: 'border-emerald-400/55',
     chip: 'text-emerald-300',
-    paths: ['/pharmacy-network', '/checklist-holati', '/checklist', '/ehtiyoj'],
+    paths: ['/pharmacy-network', '/checklist', '/ehtiyoj'],
   },
   {
     id: 'admin',
@@ -171,6 +171,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/vacancies')) return '/vacancies';
   if (path.startsWith('/employees')) return '/employees';
   if (path.startsWith('/davomat')) return '/davomat';
+  if (path.startsWith('/checklist-holati')) return '/checklist-holati';
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
 import { useGetDepartments } from "@workspace/api-client-react";
 import {
   CalendarDays,
   ChevronLeft,
   ChevronRight,
+  ClipboardCheck,
   Clock3,
   FileSpreadsheet,
   Loader2,
@@ -44,7 +46,7 @@ import {
   type DavomatReport,
 } from "../../lib/davomat-api";
 import { useAuth } from "../../contexts/AuthContext";
-import { canViewDavomat } from "../../lib/roles";
+import { canViewChecklistStatus, canViewDavomat } from "../../lib/roles";
 
 function todayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -415,6 +417,14 @@ export default function DavomatPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          {canViewChecklistStatus(user?.role) && (
+            <Link href="/checklist-holati">
+              <Button type="button" variant="outline" className="gap-2">
+                <ClipboardCheck className="h-4 w-4" />
+                Cheklist holati
+              </Button>
+            </Link>
+          )}
           <Button
             type="button"
             variant="outline"

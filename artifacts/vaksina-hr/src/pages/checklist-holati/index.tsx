@@ -72,6 +72,23 @@ function mapsUrl(lat?: number | null, lng?: number | null) {
   return `https://www.google.com/maps?q=${lat},${lng}`;
 }
 
+function FilterField({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-w-0 flex-col justify-end gap-1">
+      <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </Label>
+      {children}
+    </div>
+  );
+}
+
 export default function ChecklistHolatiPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -107,12 +124,13 @@ export default function ChecklistHolatiPage() {
   const branches = useMemo(() => {
     const map = new Map<string, string>();
     for (const a of audits) {
+      if (coordinatorId !== "all" && String(a.coordinatorId) !== coordinatorId) continue;
       const key = String(a.managerEmployeeId);
       const label = a.branchLocation || a.managerName || "Filial";
       if (!map.has(key)) map.set(key, label);
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
-  }, [audits]);
+  }, [audits, coordinatorId]);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -278,50 +296,60 @@ export default function ChecklistHolatiPage() {
           <Filter className="h-3.5 w-3.5" />
           Filter
         </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
-          <div className="relative lg:col-span-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Qidirish…"
-              className="h-11 pl-9"
-            />
-          </div>
-          <Select value={coordinatorId} onValueChange={setCoordinatorId}>
-            <SelectTrigger className="h-11">
-              <SelectValue placeholder="Koordinator" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Barcha koordinatorlar</SelectItem>
-              {coordinators.map(([id, name]) => (
-                <SelectItem key={id} value={String(id)}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <Select value={branchKey} onValueChange={setBranchKey}>
-            <SelectTrigger className="h-11">
-              <SelectValue placeholder="Filial" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Barcha filiallar</SelectItem>
-              {branches.map(([id, name]) => (
-                <SelectItem key={id} value={id}>
-                  {name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase text-slate-400">Dan</Label>
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <FilterField label="Qidiruv">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Qidirish…"
+                className="h-11 pl-9"
+              />
+            </div>
+          </FilterField>
+          <FilterField label="Koordinator">
+            <Select
+              value={coordinatorId}
+              onValueChange={(v) => {
+                setCoordinatorId(v);
+                setBranchKey("all");
+              }}
+            >
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Koordinator" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha koordinatorlar</SelectItem>
+                {coordinators.map(([id, name]) => (
+                  <SelectItem key={id} value={String(id)}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="Filial">
+            <Select value={branchKey} onValueChange={setBranchKey}>
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Filial" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha filiallar</SelectItem>
+                {branches.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="Dan">
             <Input type="date" className="h-11" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase text-slate-400">Gacha</Label>
+          </FilterField>
+          <FilterField label="Gacha">
             <Input type="date" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
-          </div>
+          </FilterField>
         </div>
       </div>
 
@@ -339,7 +367,10 @@ export default function ChecklistHolatiPage() {
                 <li key={c.id}>
                   <button
                     type="button"
-                    onClick={() => setCoordinatorId(c.id)}
+                    onClick={() => {
+                      setCoordinatorId(c.id);
+                      setBranchKey("all");
+                    }}
                     className={cn(
                       "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50",
                       coordinatorId === c.id && "bg-cyan-50",

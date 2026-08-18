@@ -263,41 +263,51 @@ export function CoveragePanel({ enabled }: { enabled: boolean }) {
       </div>
 
       <div className="rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Select value={coordKey} onValueChange={setCoordKey}>
-            <SelectTrigger className="h-11">
-              <SelectValue placeholder="Koordinator" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Barcha koordinatorlar</SelectItem>
-              {(data?.coordinators ?? []).map((c) => (
-                <SelectItem key={c.employeeId} value={String(c.employeeId)}>
-                  {c.name} · {c.filled}/{c.total}
-                </SelectItem>
-              ))}
-              {(data?.unassigned.length ?? 0) > 0 && (
-                <SelectItem value="unassigned">
-                  Biriktirilmagan · {data?.unassigned.length}
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-            <Input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Filial / mudir…"
-              className="h-11 pl-9"
-              disabled={coordKey === "all"}
-            />
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Koordinator
+            </Label>
+            <Select value={coordKey} onValueChange={setCoordKey}>
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Koordinator" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha koordinatorlar</SelectItem>
+                {(data?.coordinators ?? []).map((c) => (
+                  <SelectItem key={c.employeeId} value={String(c.employeeId)}>
+                    {c.name} · {c.filled}/{c.total}
+                  </SelectItem>
+                ))}
+                {(data?.unassigned.length ?? 0) > 0 && (
+                  <SelectItem value="unassigned">
+                    Biriktirilmagan · {data?.unassigned.length}
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
           </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase text-slate-400">Dan</Label>
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Qidiruv
+            </Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Input
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="Filial / mudir…"
+                className="h-11 pl-9"
+                disabled={coordKey === "all"}
+              />
+            </div>
+          </div>
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dan</Label>
             <Input type="date" className="h-11" value={from} onChange={(e) => setFrom(e.target.value)} />
           </div>
-          <div className="space-y-1">
-            <Label className="text-[10px] uppercase text-slate-400">Gacha</Label>
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gacha</Label>
             <Input type="date" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
         </div>

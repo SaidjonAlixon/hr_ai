@@ -10,22 +10,17 @@ const app: Express = express();
 
 /**
  * Schema ensure — eng yaxshi urinish.
- * Vercel’da faqat kritik ustunlar (tez ALTER IF NOT EXISTS).
- * Ustunlar yo‘q bo‘lsa kuzatuv/tasks 503 beradi — shuning uchun birinchi so‘rov kutadi.
+ * Vercel’da loginni bloklamaydi: fon rejimida ishlaydi (pool 1 ta ulanishni ushlab qolmasin).
  */
-const schemaReady =
-  process.env.VERCEL === "1" || process.env.VERCEL === "true"
-    ? ensureEmployeesOrgColumns().catch((err) => {
-        logger.error({ err }, "Critical columns ensure failed (non-blocking)");
-      })
-    : ensurePersistentSchema().catch((err) => {
-        logger.error({ err }, "Schema ensure failed (non-blocking)");
-      });
-
-app.use(async (_req, _res, next) => {
-  await schemaReady;
-  next();
-});
+if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
+  void ensureEmployeesOrgColumns().catch((err) => {
+    logger.error({ err }, "Critical columns ensure failed (non-blocking)");
+  });
+} else {
+  void ensurePersistentSchema().catch((err) => {
+    logger.error({ err }, "Schema ensure failed (non-blocking)");
+  });
+}
 
 app.use(
   pinoHttp({

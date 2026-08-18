@@ -442,13 +442,8 @@ END $$;
 `;
 
 export async function ensureEmployeesOrgColumns(): Promise<void> {
-  const timeoutMs = 5_000;
-  const client = await Promise.race([
-    pool.connect(),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`critical columns connect timeout ${timeoutMs}ms`)), timeoutMs),
-    ),
-  ]);
+  const timeoutMs = 8_000;
+  const client = await pool.connect();
   try {
     await Promise.race([
       client.query(CRITICAL_COLUMNS_SQL),
@@ -462,14 +457,8 @@ export async function ensureEmployeesOrgColumns(): Promise<void> {
 }
 
 export async function ensurePersistentSchema(): Promise<void> {
-  // Vercel cold start — uzoq DDL loginni bloklamasin
   const timeoutMs = process.env.VERCEL ? 8_000 : 30_000;
-  const client = await Promise.race([
-    pool.connect(),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`schema ensure connect timeout ${timeoutMs}ms`)), timeoutMs),
-    ),
-  ]);
+  const client = await pool.connect();
   try {
     await Promise.race([
       client.query(ENSURE_SQL),

@@ -23,6 +23,14 @@ import {
 } from "recharts";
 import { useGetEmployees } from "@workspace/api-client-react";
 import { Progress } from "@/components/ui/progress";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useBranchAuditsList, type BranchAudit } from "@/lib/branch-audits-api";
 import { buildCoverage } from "./coverage-panel";
@@ -94,6 +102,8 @@ function ChartTip({
 
 export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
   const [range, setRange] = useState<RangeKey>("all");
+  const [coordinatorId, setCoordinatorId] = useState("all");
+  const [branchKey, setBranchKey] = useState("all");
   const today = tashkentYmd();
 
   const { data: audits = [], isLoading: auditsLoading } = useBranchAuditsList({}, enabled);
@@ -105,15 +115,92 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
   const from =
     range === "today" ? today : range === "7d" ? addDaysYmd(today, -6) : range === "30d" ? addDaysYmd(today, -29) : "";
 
-  const sliced = useMemo(() => {
-    if (!from) return audits;
-    return audits.filter((a) => a.visitDate >= from && a.visitDate <= today);
-  }, [audits, from, today]);
+  const coordinators = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of audits) {
+      const id = String(a.coordinatorId);
+      if (!map.has(id)) map.set(id, a.coordinatorName || `Koordinator #${id}`);
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
+  }, [audits]);
 
-  const coverage = useMemo(() => {
+  const coverageAll = useMemo(() => {
     if (!employees) return undefined;
     return buildCoverage(employees as Parameters<typeof buildCoverage>[0], audits, from || undefined, today);
   }, [employees, audits, from, today]);
+
+  const branches = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const a of audits) {
+      if (coordinatorId !== "all" && String(a.coordinatorId) !== coordinatorId) continue;
+      const id = String(a.managerEmployeeId);
+      if (!map.has(id)) map.set(id, a.branchLocation || a.managerName || "Filial");
+    }
+    if (coverageAll && coordinatorId !== "all") {
+      const coord = coverageAll.coordinators.find(
+        (c) => String(c.userId ?? "") === coordinatorId || String(c.employeeId) === coordinatorId,
+      );
+      for (const b of coord?.branches ?? []) {
+        const id = String(b.managerEmployeeId);
+        if (!map.has(id)) map.set(id, b.branchLocation);
+      }
+    }
+    return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
+  }, [audits, coordinatorId, coverageAll]);
+
+  const sliced = useMemo(() => {
+    return audits.filter((a) => {
+      if (from && (a.visitDate < from || a.visitDate > today)) return false;
+      if (coordinatorId !== "all" && String(a.coordinatorId) !== coordinatorId) return false;
+      if (branchKey !== "all" && String(a.managerEmployeeId) !== branchKey) return false;
+      return true;
+    });
+  }, [audits, from, today, coordinatorId, branchKey]);
+
+  const coverage = useMemo(() => {
+    if (!coverageAll) return undefined;
+    if (coordinatorId === "all" && branchKey === "all") return coverageAll;
+
+    const matchCoord = (c: (typeof coverageAll.coordinators)[number]) =>
+      String(c.userId ?? "") === coordinatorId || String(c.employeeId) === coordinatorId;
+
+    let coords = coverageAll.coordinators;
+    let unassigned = coverageAll.unassigned;
+    if (coordinatorId !== "all") {
+      coords = coords.filter(matchCoord);
+      unassigned = [];
+    }
+    if (branchKey !== "all") {
+      coords = coords.map((c) => {
+        const branches = c.branches.filter((b) => String(b.managerEmployeeId) === branchKey);
+        const filled = branches.filter((b) => b.filled).length;
+        return {
+          ...c,
+          branches,
+          total: branches.length,
+          filled,
+          missing: branches.length - filled,
+          percent: branches.length === 0 ? 0 : Math.round((filled / branches.length) * 100),
+        };
+      });
+      unassigned = unassigned.filter((b) => String(b.managerEmployeeId) === branchKey);
+    }
+
+    const assigned = coords.reduce((s, c) => s + c.total, 0);
+    const filled = coords.reduce((s, c) => s + c.filled, 0) + unassigned.filter((b) => b.filled).length;
+    const allBranches = assigned + unassigned.length;
+    return {
+      coordinators: coords,
+      unassigned,
+      totals: {
+        coordinators: coords.filter((c) => !c.dismissed).length,
+        branches: allBranches,
+        filled,
+        missing: allBranches - filled,
+        unassigned: unassigned.length,
+      },
+    };
+  }, [coverageAll, coordinatorId, branchKey]);
 
   const dash = useMemo(() => computeDashboard(sliced, coverage), [sliced, coverage]);
 
@@ -127,27 +214,71 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
 
   return (
     <div className="space-y-4 sm:space-y-5">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Umumiy holat</h2>
-          <p className="text-xs text-slate-500 sm:text-sm">
-            Tashriflar, ball, qamrov, GPS va cheklist jarayonlari — bir joyda.
-          </p>
+      <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div>
+            <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Umumiy holat</h2>
+            <p className="text-xs text-slate-500 sm:text-sm">
+              Tashriflar, ball, qamrov, GPS va cheklist jarayonlari — bir joyda.
+            </p>
+          </div>
+          <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 lg:w-auto">
+            {(Object.keys(RANGE_LABEL) as RangeKey[]).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setRange(key)}
+                className={cn(
+                  "flex-1 rounded-lg px-2.5 py-1.5 text-xs font-medium sm:px-3 lg:flex-none",
+                  range === key ? "bg-white text-[#0b1a2e] shadow-sm" : "text-slate-600 hover:text-slate-900",
+                )}
+              >
+                {RANGE_LABEL[key]}
+              </button>
+            ))}
+          </div>
         </div>
-        <div className="inline-flex rounded-xl bg-slate-100 p-1">
-          {(Object.keys(RANGE_LABEL) as RangeKey[]).map((key) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => setRange(key)}
-              className={cn(
-                "rounded-lg px-2.5 py-1.5 text-xs font-medium sm:px-3",
-                range === key ? "bg-white text-[#0b1a2e] shadow-sm" : "text-slate-600 hover:text-slate-900",
-              )}
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+              Koordinator
+            </Label>
+            <Select
+              value={coordinatorId}
+              onValueChange={(v) => {
+                setCoordinatorId(v);
+                setBranchKey("all");
+              }}
             >
-              {RANGE_LABEL[key]}
-            </button>
-          ))}
+              <SelectTrigger className="h-11 w-full bg-white">
+                <SelectValue placeholder="Koordinator" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha koordinatorlar</SelectItem>
+                {coordinators.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex min-w-0 flex-col gap-1">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Filial</Label>
+            <Select value={branchKey} onValueChange={setBranchKey}>
+              <SelectTrigger className="h-11 w-full bg-white">
+                <SelectValue placeholder="Filial" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha filiallar</SelectItem>
+                {branches.map(([id, name]) => (
+                  <SelectItem key={id} value={id}>
+                    {name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </div>
 

@@ -72,6 +72,27 @@ function mapsUrl(lat?: number | null, lng?: number | null) {
   return `https://www.google.com/maps?q=${lat},${lng}`;
 }
 
+const DATE_CHIP = [
+  "bg-sky-100 text-sky-800",
+  "bg-emerald-100 text-emerald-800",
+  "bg-amber-100 text-amber-900",
+  "bg-violet-100 text-violet-800",
+  "bg-rose-100 text-rose-800",
+  "bg-cyan-100 text-cyan-800",
+  "bg-orange-100 text-orange-800",
+  "bg-indigo-100 text-indigo-800",
+] as const;
+
+function dateChipClass(ymd: string) {
+  let n = 0;
+  for (let i = 0; i < ymd.length; i++) n = (n + ymd.charCodeAt(i) * (i + 1)) % DATE_CHIP.length;
+  return DATE_CHIP[n];
+}
+
+function visitLabel(count: number) {
+  return `${count} tashrif`;
+}
+
 function FilterField({
   label,
   children,
@@ -357,7 +378,7 @@ export default function ChecklistHolatiPage() {
         <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Koordinatorlar bo‘yicha</h2>
-            <p className="text-[11px] text-slate-500">Necha marta tashrif · o‘rtacha ball</p>
+            <p className="text-[11px] text-slate-500">Tashrif soni · o‘rtacha ball</p>
           </div>
           <ul className="max-h-64 divide-y overflow-y-auto">
             {byCoordinator.length === 0 ? (
@@ -381,7 +402,7 @@ export default function ChecklistHolatiPage() {
                       <p className="text-[11px] text-slate-500">Oxirgi: {formatWhen(c.last)}</p>
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-sm font-bold tabular-nums">{c.visits} marta</p>
+                      <p className="text-sm font-bold tabular-nums">{visitLabel(c.visits)}</p>
                       <p className={cn("text-[11px] font-semibold", scoreTone(c.avg))}>{c.avg}%</p>
                     </div>
                   </button>
@@ -414,12 +435,26 @@ export default function ChecklistHolatiPage() {
                         <p className="truncate text-sm font-medium">{b.name}</p>
                         <p className="truncate text-[11px] text-slate-500">{b.manager}</p>
                       </div>
-                      <p className="shrink-0 text-sm font-bold tabular-nums">{b.visits} marta</p>
+                      <p className="shrink-0 text-sm font-bold tabular-nums">{visitLabel(b.visits)}</p>
                     </div>
-                    <p className="mt-1 text-[11px] leading-snug text-slate-500">
-                      {b.dates.slice(0, 6).map((d) => formatWhen(d)).join(" · ")}
-                      {b.dates.length > 6 ? " …" : ""}
-                    </p>
+                    <div className="mt-1.5 flex flex-wrap gap-1">
+                      {b.dates.slice(0, 8).map((d) => (
+                        <span
+                          key={d}
+                          className={cn(
+                            "inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums",
+                            dateChipClass(d),
+                          )}
+                        >
+                          {formatWhen(d)}
+                        </span>
+                      ))}
+                      {b.dates.length > 8 ? (
+                        <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+                          +{b.dates.length - 8}
+                        </span>
+                      ) : null}
+                    </div>
                   </button>
                 </li>
               ))

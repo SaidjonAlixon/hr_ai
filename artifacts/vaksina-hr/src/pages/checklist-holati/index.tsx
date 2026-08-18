@@ -41,7 +41,7 @@ import {
   type BranchAudit,
 } from "@/lib/branch-audits-api";
 import { CoveragePanel } from "./coverage-panel";
-import { ChecklistDashboard } from "./dashboard-panel";
+import { ChecklistDashboard, type ChecklistDashNav } from "./dashboard-panel";
 
 function scoreTone(pct: number) {
   if (pct >= 85) return "text-emerald-600";
@@ -121,6 +121,9 @@ export default function ChecklistHolatiPage() {
   const [branchKey, setBranchKey] = useState<string>("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
+  const [scoreBand, setScoreBand] = useState<"all" | "excellent" | "mid" | "low">("all");
+  const [gpsFilter, setGpsFilter] = useState<"all" | "yes" | "no">("all");
+  const [coverageFocus, setCoverageFocus] = useState<string | undefined>();
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
   const [exporting, setExporting] = useState(false);
   const [tab, setTab] = useState("dashboard");
@@ -159,6 +162,11 @@ export default function ChecklistHolatiPage() {
     return audits.filter((a) => {
       if (coordinatorId !== "all" && String(a.coordinatorId) !== coordinatorId) return false;
       if (branchKey !== "all" && String(a.managerEmployeeId) !== branchKey) return false;
+      if (scoreBand === "excellent" && a.scorePercent < 85) return false;
+      if (scoreBand === "mid" && (a.scorePercent < 70 || a.scorePercent >= 85)) return false;
+      if (scoreBand === "low" && a.scorePercent >= 70) return false;
+      if (gpsFilter === "yes" && (a.checkLatitude == null || a.checkLongitude == null)) return false;
+      if (gpsFilter === "no" && a.checkLatitude != null && a.checkLongitude != null) return false;
       if (!needle) return true;
       return (
         String(a.branchLocation || "").toLowerCase().includes(needle) ||
@@ -167,7 +175,7 @@ export default function ChecklistHolatiPage() {
         String(a.visitName || "").toLowerCase().includes(needle)
       );
     });
-  }, [audits, coordinatorId, branchKey, q]);
+  }, [audits, coordinatorId, branchKey, q, scoreBand, gpsFilter]);
 
   const stats = useMemo(() => {
     const branchSet = new Set(filtered.map((a) => a.managerEmployeeId));
@@ -242,6 +250,21 @@ export default function ChecklistHolatiPage() {
       .sort((a, b) => b.visits - a.visits);
   }, [filtered]);
 
+  function openVisits(nav: ChecklistDashNav = {}) {
+    setCoordinatorId(nav.coordinatorId ?? "all");
+    setBranchKey(nav.branchKey ?? "all");
+    setFrom(nav.from ?? "");
+    setTo(nav.to ?? "");
+    setScoreBand(nav.scoreBand ?? "all");
+    setGpsFilter(nav.gps ?? "all");
+    setTab("tashriflar");
+  }
+
+  function openCoverage(coordinatorId?: string) {
+    setCoverageFocus(coordinatorId);
+    setTab("qamrov");
+  }
+
   async function handleExcel() {
     setExporting(true);
     try {
@@ -314,7 +337,12 @@ export default function ChecklistHolatiPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-0">
-          <ChecklistDashboard enabled={allowed} />
+          <ChecklistDashboard
+            enabled={allowed}
+            onOpenVisits={openVisits}
+            onOpenCoverage={openCoverage}
+            onOpenVisit={(a) => setViewing(a)}
+          />
         </TabsContent>
         <TabsContent value="tashriflar" className="mt-0 space-y-4 sm:space-y-6">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
@@ -329,7 +357,7 @@ export default function ChecklistHolatiPage() {
           <Filter className="h-3.5 w-3.5" />
           Filter
         </div>
-        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           <FilterField label="Qidiruv">
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -382,6 +410,31 @@ export default function ChecklistHolatiPage() {
           </FilterField>
           <FilterField label="Gacha">
             <Input type="date" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
+          </FilterField>
+          <FilterField label="Ball">
+            <Select value={scoreBand} onValueChange={(v) => setScoreBand(v as typeof scoreBand)}>
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="Ball" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barcha ball</SelectItem>
+                <SelectItem value="excellent">A’lo ≥85%</SelectItem>
+                <SelectItem value="mid">O‘rtacha 70–84%</SelectItem>
+                <SelectItem value="low">Past &lt;70%</SelectItem>
+              </SelectContent>
+            </Select>
+          </FilterField>
+          <FilterField label="GPS">
+            <Select value={gpsFilter} onValueChange={(v) => setGpsFilter(v as typeof gpsFilter)}>
+              <SelectTrigger className="h-11 w-full">
+                <SelectValue placeholder="GPS" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Barchasi</SelectItem>
+                <SelectItem value="yes">GPS bor</SelectItem>
+                <SelectItem value="no">GPS yo‘q</SelectItem>
+              </SelectContent>
+            </Select>
           </FilterField>
         </div>
       </div>
@@ -552,7 +605,7 @@ export default function ChecklistHolatiPage() {
       </div>
         </TabsContent>
         <TabsContent value="qamrov" className="mt-0">
-          <CoveragePanel enabled={allowed} />
+          <CoveragePanel enabled={allowed} focusCoordinator={coverageFocus} />
         </TabsContent>
       </Tabs>
 

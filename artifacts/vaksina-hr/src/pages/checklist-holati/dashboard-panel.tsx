@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   CalendarDays,
   CheckCircle2,
+  ChevronRight,
   ClipboardCheck,
   MapPin,
   Store,
@@ -100,7 +101,26 @@ function ChartTip({
   );
 }
 
-export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
+export type ChecklistDashNav = {
+  coordinatorId?: string;
+  branchKey?: string;
+  from?: string;
+  to?: string;
+  scoreBand?: "all" | "excellent" | "mid" | "low";
+  gps?: "all" | "yes" | "no";
+};
+
+export function ChecklistDashboard({
+  enabled,
+  onOpenVisits,
+  onOpenCoverage,
+  onOpenVisit,
+}: {
+  enabled: boolean;
+  onOpenVisits: (nav?: ChecklistDashNav) => void;
+  onOpenCoverage: (coordinatorId?: string) => void;
+  onOpenVisit: (audit: BranchAudit) => void;
+}) {
   const [range, setRange] = useState<RangeKey>("all");
   const [coordinatorId, setCoordinatorId] = useState("all");
   const [branchKey, setBranchKey] = useState("all");
@@ -204,6 +224,17 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
 
   const dash = useMemo(() => computeDashboard(sliced, coverage), [sliced, coverage]);
 
+  const baseNav = (): ChecklistDashNav => ({
+    coordinatorId,
+    branchKey,
+    from: from || undefined,
+    to: from ? today : undefined,
+  });
+
+  const goVisits = (extra?: ChecklistDashNav) => {
+    onOpenVisits({ ...baseNav(), ...extra });
+  };
+
   if (isLoading) {
     return (
       <div className="rounded-2xl border bg-white px-4 py-16 text-center text-sm text-slate-500">
@@ -283,15 +314,34 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6 sm:gap-3">
-        <Kpi icon={ClipboardCheck} label="Tashriflar" value={String(dash.visits)} tone="bg-sky-50 text-sky-700" />
-        <Kpi icon={Store} label="Filial (tashrif)" value={String(dash.visitedBranches)} tone="bg-indigo-50 text-indigo-700" />
-        <Kpi icon={Users} label="Koordinator" value={String(dash.coordinators)} tone="bg-violet-50 text-violet-700" />
+        <Kpi
+          icon={ClipboardCheck}
+          label="Tashriflar"
+          value={String(dash.visits)}
+          tone="bg-sky-50 text-sky-700"
+          onClick={() => goVisits()}
+        />
+        <Kpi
+          icon={Store}
+          label="Filial (tashrif)"
+          value={String(dash.visitedBranches)}
+          tone="bg-indigo-50 text-indigo-700"
+          onClick={() => goVisits()}
+        />
+        <Kpi
+          icon={Users}
+          label="Koordinator"
+          value={String(dash.coordinators)}
+          tone="bg-violet-50 text-violet-700"
+          onClick={() => goVisits()}
+        />
         <Kpi
           icon={TrendingUp}
           label="O‘rtacha ball"
           value={`${dash.avg}%`}
           tone="bg-emerald-50"
           valueClass={scoreTone(dash.avg)}
+          onClick={() => goVisits()}
         />
         <Kpi
           icon={CheckCircle2}
@@ -299,6 +349,7 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
           value={`${dash.coveragePct}%`}
           tone="bg-cyan-50 text-cyan-800"
           hint={coverage ? `${coverage.totals.filled}/${coverage.totals.branches}` : undefined}
+          onClick={() => onOpenCoverage(coordinatorId !== "all" ? coordinatorId : undefined)}
         />
         <Kpi
           icon={MapPin}
@@ -306,6 +357,7 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
           value={`${dash.gpsPct}%`}
           tone="bg-amber-50 text-amber-800"
           hint={`${dash.withGps} ta tashrif`}
+          onClick={() => goVisits({ gps: "yes" })}
         />
       </div>
 
@@ -313,30 +365,73 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
         <StatusCard
           title="Ball holati"
           items={[
-            { label: "A’lo ≥85%", value: dash.bands.excellent, color: "bg-emerald-500", text: "text-emerald-700" },
-            { label: "O‘rtacha 70–84%", value: dash.bands.mid, color: "bg-amber-500", text: "text-amber-700" },
-            { label: "Past <70%", value: dash.bands.low, color: "bg-rose-500", text: "text-rose-700" },
+            {
+              label: "A’lo ≥85%",
+              value: dash.bands.excellent,
+              color: "bg-emerald-500",
+              text: "text-emerald-700",
+              onClick: () => goVisits({ scoreBand: "excellent" }),
+            },
+            {
+              label: "O‘rtacha 70–84%",
+              value: dash.bands.mid,
+              color: "bg-amber-500",
+              text: "text-amber-700",
+              onClick: () => goVisits({ scoreBand: "mid" }),
+            },
+            {
+              label: "Past <70%",
+              value: dash.bands.low,
+              color: "bg-rose-500",
+              text: "text-rose-700",
+              onClick: () => goVisits({ scoreBand: "low" }),
+            },
           ]}
           total={dash.visits}
         />
         <StatusCard
           title="Javoblar"
           items={[
-            { label: "Ha", value: dash.yes, color: "bg-emerald-500", text: "text-emerald-700" },
-            { label: "Yo‘q", value: dash.no, color: "bg-rose-500", text: "text-rose-700" },
+            {
+              label: "Ha",
+              value: dash.yes,
+              color: "bg-emerald-500",
+              text: "text-emerald-700",
+              onClick: () => goVisits(),
+            },
+            {
+              label: "Yo‘q",
+              value: dash.no,
+              color: "bg-rose-500",
+              text: "text-rose-700",
+              onClick: () => goVisits({ scoreBand: "low" }),
+            },
           ]}
           total={dash.yes + dash.no}
         />
         <StatusCard
           title="Jarayon"
           items={[
-            { label: "GPS bor", value: dash.withGps, color: "bg-sky-500", text: "text-sky-700" },
-            { label: "GPS yo‘q", value: dash.visits - dash.withGps, color: "bg-slate-400", text: "text-slate-600" },
+            {
+              label: "GPS bor",
+              value: dash.withGps,
+              color: "bg-sky-500",
+              text: "text-sky-700",
+              onClick: () => goVisits({ gps: "yes" }),
+            },
+            {
+              label: "GPS yo‘q",
+              value: dash.visits - dash.withGps,
+              color: "bg-slate-400",
+              text: "text-slate-600",
+              onClick: () => goVisits({ gps: "no" }),
+            },
             {
               label: "Kiritilmagan filial",
               value: coverage?.totals.missing ?? 0,
               color: "bg-rose-400",
               text: "text-rose-700",
+              onClick: () => onOpenCoverage(coordinatorId !== "all" ? coordinatorId : undefined),
             },
           ]}
           total={Math.max(dash.visits, coverage?.totals.branches ?? 0)}
@@ -350,7 +445,10 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
               <h3 className="text-sm font-semibold">Kunlik tashriflar</h3>
               <p className="text-[11px] text-slate-500">Oxirgi 14 kun · nechta cheklist</p>
             </div>
-            <CalendarDays className="h-4 w-4 text-slate-400" />
+            <CalendarDays
+              className="h-4 w-4 cursor-pointer text-slate-400 hover:text-sky-600"
+              onClick={() => goVisits()}
+            />
           </div>
           <div className="h-52">
             {dash.byDay.every((d) => d.tashrif === 0) ? (
@@ -361,7 +459,18 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
                   <XAxis dataKey="label" tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
                   <YAxis allowDecimals={false} width={24} tick={{ fontSize: 10, fill: "#64748b" }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
-                  <Bar dataKey="tashrif" name="Tashrif" radius={[6, 6, 0, 0]} fill="#0ea5e9" />
+                  <Bar
+                    dataKey="tashrif"
+                    name="Tashrif"
+                    radius={[6, 6, 0, 0]}
+                    fill="#0ea5e9"
+                    cursor="pointer"
+                    onClick={(d) => {
+                      const row = d as { ymd?: string; payload?: { ymd?: string } };
+                      const ymd = row?.ymd || row?.payload?.ymd;
+                      if (ymd) goVisits({ from: ymd, to: ymd });
+                    }}
+                  />
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -385,6 +494,11 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
                     outerRadius={74}
                     paddingAngle={2}
                     stroke="none"
+                    cursor="pointer"
+                    onClick={(_, i) => {
+                      const key = dash.pie[i]?.key;
+                      if (key) goVisits({ scoreBand: key });
+                    }}
                   >
                     {dash.pie.map((p) => (
                       <Cell key={p.name} fill={p.color} />
@@ -397,10 +511,15 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
           </div>
           <div className="mt-1 flex flex-wrap justify-center gap-3 text-[11px]">
             {dash.pie.map((p) => (
-              <span key={p.name} className="inline-flex items-center gap-1.5 text-slate-600">
+              <button
+                key={p.name}
+                type="button"
+                onClick={() => goVisits({ scoreBand: p.key })}
+                className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
+              >
                 <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
                 {p.name} · {p.value}
-              </span>
+              </button>
             ))}
           </div>
         </div>
@@ -417,22 +536,29 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
               <li className="px-4 py-8 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
             ) : (
               dash.byCoordinator.map((c, i) => (
-                <li key={c.id} className="px-4 py-3">
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-sm font-medium">{c.name}</p>
-                    <p className="shrink-0 text-xs tabular-nums text-slate-500">
-                      {c.visits} tashrif · <span className={cn("font-semibold", scoreTone(c.avg))}>{c.avg}%</span>
-                    </p>
-                  </div>
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${dash.maxVisits ? Math.max(8, (c.visits / dash.maxVisits) * 100) : 0}%`,
-                        background: COORD_BAR[i % COORD_BAR.length],
-                      }}
-                    />
-                  </div>
+                <li key={c.id}>
+                  <button
+                    type="button"
+                    onClick={() => goVisits({ coordinatorId: c.id, branchKey: "all" })}
+                    className="w-full px-4 py-3 text-left hover:bg-slate-50"
+                  >
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-medium">{c.name}</p>
+                      <p className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-slate-500">
+                        {c.visits} tashrif · <span className={cn("font-semibold", scoreTone(c.avg))}>{c.avg}%</span>
+                        <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                      </p>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full"
+                        style={{
+                          width: `${dash.maxVisits ? Math.max(8, (c.visits / dash.maxVisits) * 100) : 0}%`,
+                          background: COORD_BAR[i % COORD_BAR.length],
+                        }}
+                      />
+                    </div>
+                  </button>
                 </li>
               ))
             )}
@@ -449,15 +575,24 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
               <li className="px-4 py-8 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
             ) : (
               dash.categories.map((cat) => (
-                <li key={cat.title} className="px-4 py-3">
-                  <div className="mb-1.5 flex items-center justify-between gap-2">
-                    <p className="min-w-0 truncate text-sm font-medium">{cat.title}</p>
-                    <p className={cn("shrink-0 text-xs font-semibold tabular-nums", scoreTone(cat.pct))}>{cat.pct}%</p>
-                  </div>
-                  <Progress value={cat.pct} className="h-2" />
-                  <p className="mt-1 text-[11px] text-slate-500">
-                    Ha {cat.yes} · Yo‘q {cat.no}
-                  </p>
+                <li key={cat.title}>
+                  <button
+                    type="button"
+                    onClick={() => goVisits()}
+                    className="w-full px-4 py-3 text-left hover:bg-slate-50"
+                  >
+                    <div className="mb-1.5 flex items-center justify-between gap-2">
+                      <p className="min-w-0 truncate text-sm font-medium">{cat.title}</p>
+                      <p className={cn("inline-flex shrink-0 items-center gap-1 text-xs font-semibold tabular-nums", scoreTone(cat.pct))}>
+                        {cat.pct}%
+                        <ChevronRight className="h-3.5 w-3.5 font-normal text-slate-400" />
+                      </p>
+                    </div>
+                    <Progress value={cat.pct} className="h-2" />
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      Ha {cat.yes} · Yo‘q {cat.no}
+                    </p>
+                  </button>
                 </li>
               ))
             )}
@@ -476,26 +611,33 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
               <li className="px-4 py-8 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
             ) : (
               dash.weakBranches.map((b) => (
-                <li key={b.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{b.name}</p>
-                    <p className="truncate text-[11px] text-slate-500">
-                      {b.visits} tashrif · {b.manager}
-                    </p>
-                  </div>
-                  <span
-                    className={cn(
-                      "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold tabular-nums",
-                      b.avg >= 85
-                        ? "bg-emerald-50 text-emerald-700"
-                        : b.avg >= 70
-                          ? "bg-amber-50 text-amber-800"
-                          : "bg-rose-50 text-rose-700",
-                    )}
+                <li key={b.id}>
+                  <button
+                    type="button"
+                    onClick={() => goVisits({ branchKey: b.id })}
+                    className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50"
                   >
-                    {b.avg < 70 ? <AlertTriangle className="h-3 w-3" /> : null}
-                    {b.avg}%
-                  </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{b.name}</p>
+                      <p className="truncate text-[11px] text-slate-500">
+                        {b.visits} tashrif · {b.manager}
+                      </p>
+                    </div>
+                    <span
+                      className={cn(
+                        "inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold tabular-nums",
+                        b.avg >= 85
+                          ? "bg-emerald-50 text-emerald-700"
+                          : b.avg >= 70
+                            ? "bg-amber-50 text-amber-800"
+                            : "bg-rose-50 text-rose-700",
+                      )}
+                    >
+                      {b.avg < 70 ? <AlertTriangle className="h-3 w-3" /> : null}
+                      {b.avg}%
+                      <ChevronRight className="h-3.5 w-3.5 opacity-60" />
+                    </span>
+                  </button>
                 </li>
               ))
             )}
@@ -512,21 +654,28 @@ export function ChecklistDashboard({ enabled }: { enabled: boolean }) {
               <li className="px-4 py-8 text-center text-sm text-slate-400">Hali tashrif yo‘q</li>
             ) : (
               dash.recent.map((a) => (
-                <li key={a.id} className="flex items-start justify-between gap-2 px-4 py-2.5">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium">{a.branchLocation || "Filial"}</p>
-                    <p className="truncate text-[11px] text-slate-500">
-                      {a.coordinatorName || "Koordinator"} · {formatShort(a.visitDate)} · {a.visitName}
-                    </p>
-                  </div>
-                  <span className="inline-flex items-center gap-1 text-xs">
-                    {a.checkLatitude != null ? (
-                      <MapPin className="h-3 w-3 text-sky-500" />
-                    ) : (
-                      <XCircle className="h-3 w-3 text-slate-300" />
-                    )}
-                    <span className={cn("font-bold tabular-nums", scoreTone(a.scorePercent))}>{a.scorePercent}%</span>
-                  </span>
+                <li key={a.id}>
+                  <button
+                    type="button"
+                    onClick={() => onOpenVisit(a)}
+                    className="flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium">{a.branchLocation || "Filial"}</p>
+                      <p className="truncate text-[11px] text-slate-500">
+                        {a.coordinatorName || "Koordinator"} · {formatShort(a.visitDate)} · {a.visitName}
+                      </p>
+                    </div>
+                    <span className="inline-flex items-center gap-1 text-xs">
+                      {a.checkLatitude != null ? (
+                        <MapPin className="h-3 w-3 text-sky-500" />
+                      ) : (
+                        <XCircle className="h-3 w-3 text-slate-300" />
+                      )}
+                      <span className={cn("font-bold tabular-nums", scoreTone(a.scorePercent))}>{a.scorePercent}%</span>
+                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                    </span>
+                  </button>
                 </li>
               ))
             )}
@@ -652,9 +801,9 @@ function computeDashboard(
     bands,
     byDay,
     pie: [
-      { name: "A’lo", value: bands.excellent, color: "#10b981" },
-      { name: "O‘rtacha", value: bands.mid, color: "#f59e0b" },
-      { name: "Past", value: bands.low, color: "#f43f5e" },
+      { key: "excellent" as const, name: "A’lo", value: bands.excellent, color: "#10b981" },
+      { key: "mid" as const, name: "O‘rtacha", value: bands.mid, color: "#f59e0b" },
+      { key: "low" as const, name: "Past", value: bands.low, color: "#f43f5e" },
     ].filter((p) => p.value > 0),
     byCoordinator,
     maxVisits: byCoordinator[0]?.visits ?? 0,
@@ -671,6 +820,7 @@ function Kpi({
   tone,
   valueClass,
   hint,
+  onClick,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
@@ -678,16 +828,21 @@ function Kpi({
   tone: string;
   valueClass?: string;
   hint?: string;
+  onClick?: () => void;
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-3 shadow-sm">
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-2xl border bg-white p-3 text-left shadow-sm transition hover:border-sky-200 hover:shadow-md"
+    >
       <div className={cn("mb-2 inline-flex rounded-lg p-1.5", tone)}>
         <Icon className="h-3.5 w-3.5" />
       </div>
       <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
       <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-slate-900 sm:text-2xl", valueClass)}>{value}</p>
       {hint ? <p className="text-[10px] text-slate-400">{hint}</p> : null}
-    </div>
+    </button>
   );
 }
 
@@ -697,7 +852,7 @@ function StatusCard({
   total,
 }: {
   title: string;
-  items: { label: string; value: number; color: string; text: string }[];
+  items: { label: string; value: number; color: string; text: string; onClick?: () => void }[];
   total: number;
 }) {
   return (
@@ -706,18 +861,34 @@ function StatusCard({
       <div className="mb-3 flex h-2 overflow-hidden rounded-full bg-slate-100">
         {items.map((it) =>
           it.value <= 0 || total <= 0 ? null : (
-            <div key={it.label} className={it.color} style={{ width: `${(it.value / total) * 100}%` }} />
+            <button
+              key={it.label}
+              type="button"
+              title={it.label}
+              onClick={it.onClick}
+              className={cn(it.color, "h-full")}
+              style={{ width: `${(it.value / total) * 100}%` }}
+            />
           ),
         )}
       </div>
       <ul className="space-y-1.5">
         {items.map((it) => (
-          <li key={it.label} className="flex items-center justify-between text-xs">
-            <span className="inline-flex items-center gap-2 text-slate-600">
-              <span className={cn("h-2 w-2 rounded-full", it.color)} />
-              {it.label}
-            </span>
-            <span className={cn("font-semibold tabular-nums", it.text)}>{it.value}</span>
+          <li key={it.label}>
+            <button
+              type="button"
+              onClick={it.onClick}
+              className="flex w-full items-center justify-between text-xs hover:opacity-80"
+            >
+              <span className="inline-flex items-center gap-2 text-slate-600">
+                <span className={cn("h-2 w-2 rounded-full", it.color)} />
+                {it.label}
+              </span>
+              <span className={cn("inline-flex items-center gap-0.5 font-semibold tabular-nums", it.text)}>
+                {it.value}
+                <ChevronRight className="h-3 w-3 text-slate-400" />
+              </span>
+            </button>
           </li>
         ))}
       </ul>

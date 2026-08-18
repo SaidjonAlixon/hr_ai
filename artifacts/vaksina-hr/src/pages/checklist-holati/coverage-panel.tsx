@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Check, Download, Search, Store, X } from "lucide-react";
 import { useGetEmployees } from "@workspace/api-client-react";
 import { Button } from "@/components/ui/button";
@@ -160,7 +160,13 @@ export function buildCoverage(
   };
 }
 
-export function CoveragePanel({ enabled }: { enabled: boolean }) {
+export function CoveragePanel({
+  enabled,
+  focusCoordinator,
+}: {
+  enabled: boolean;
+  focusCoordinator?: string;
+}) {
   const { toast } = useToast();
   const [q, setQ] = useState("");
   const [coordKey, setCoordKey] = useState("all");
@@ -178,6 +184,14 @@ export function CoveragePanel({ enabled }: { enabled: boolean }) {
     if (!employees) return undefined;
     return buildCoverage(employees as OrgPerson[], audits, from || undefined, to || undefined);
   }, [employees, audits, from, to]);
+
+  useEffect(() => {
+    if (!focusCoordinator || !data) return;
+    const match = data.coordinators.find(
+      (c) => String(c.userId ?? "") === focusCoordinator || String(c.employeeId) === focusCoordinator,
+    );
+    if (match) setCoordKey(String(match.employeeId));
+  }, [focusCoordinator, data]);
 
   const selected = useMemo(() => {
     if (!data) return null;

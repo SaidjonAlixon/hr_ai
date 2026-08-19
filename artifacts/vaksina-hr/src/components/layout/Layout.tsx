@@ -27,6 +27,7 @@ import {
   ChevronDown,
   Pin,
   Video,
+  Trophy,
 } from 'lucide-react';
 import {
   useLogout,
@@ -641,7 +642,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
-      { name: 'Reyting', path: '/checklist-holati', icon: ClipboardList },
+      { name: 'Reyting', path: '/checklist-holati', icon: Trophy },
     ],
     texnik: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },

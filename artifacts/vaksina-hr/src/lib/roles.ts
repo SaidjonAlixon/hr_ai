@@ -32,16 +32,20 @@ export function canViewDavomat(role?: string | null): boolean {
   );
 }
 
-/** Cheklist holati / reyting: admin, direktor, HR direktor, HR menejer, koordinator */
+/** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR */
 export function canViewChecklistStatus(role?: string | null): boolean {
   return (
     role === "admin" ||
     role === "director" ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
-    role === "hr" ||
-    role === "koordinator"
+    role === "hr"
   );
+}
+
+/** Koordinatorlar reytingi — HR + koordinatorlar (faqat reyting) */
+export function canViewCoordinatorRanking(role?: string | null): boolean {
+  return canViewChecklistStatus(role) || role === "koordinator";
 }
 
 /** Excel eksport — barcha tashriflar: admin, direktor, HR rahbariyat */

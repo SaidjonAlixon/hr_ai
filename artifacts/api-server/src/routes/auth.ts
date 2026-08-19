@@ -36,6 +36,8 @@ function statusBlockMessage(status?: string | null) {
   }
   return "Foydalanuvchi faol emas";
 }
+
+function isDbDown(err: unknown): boolean {
   if (!err || typeof err !== "object") return false;
   const e = err as { code?: string; message?: string };
   return (

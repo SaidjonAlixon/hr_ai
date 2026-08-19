@@ -34,7 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { canExportChecklistStatus, canViewChecklistStatus } from "@/lib/roles";
+import { canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRanking } from "@/lib/roles";
 import {
   downloadBranchAuditsExcel,
   useBranchAuditsList,
@@ -115,7 +115,9 @@ function FilterField({
 export default function ChecklistHolatiPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const allowed = canViewChecklistStatus(user?.role);
+  const allowedFull = canViewChecklistStatus(user?.role);
+  const allowedRanking = canViewCoordinatorRanking(user?.role);
+  const isCoordOnly = user?.role === "koordinator";
 
   const [q, setQ] = useState("");
   const [coordinatorId, setCoordinatorId] = useState<string>("all");
@@ -127,14 +129,14 @@ export default function ChecklistHolatiPage() {
   const [coverageFocus, setCoverageFocus] = useState<string | undefined>();
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [tab, setTab] = useState(user?.role === "koordinator" ? "reyting" : "dashboard");
+  const [tab, setTab] = useState("dashboard");
 
   const { data: audits = [], isLoading } = useBranchAuditsList(
     {
       from: from || undefined,
       to: to || undefined,
     },
-    allowed,
+    allowedFull && !isCoordOnly,
   );
 
   const coordinators = useMemo(() => {
@@ -293,14 +295,35 @@ export default function ChecklistHolatiPage() {
     }
   }
 
-  if (!allowed) {
+  if (!allowedFull && !allowedRanking) {
     return (
       <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
         <Info className="mx-auto h-10 w-10 text-slate-400" />
         <h2 className="mt-3 text-lg font-semibold">Ruxsat yo‘q</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Cheklist holatini admin, direktor, HR direktor, HR menejer va koordinatorlar ko‘radi.
+          Cheklist holatini admin, direktor, HR direktor va HR menejer ko‘radi.
         </p>
+      </div>
+    );
+  }
+
+  if (isCoordOnly) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-4 pb-10 sm:space-y-6">
+        <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-white shadow-lg sm:px-6 sm:py-7">
+          <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
+          <div className="relative">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
+              <ClipboardCheck className="h-3.5 w-3.5" />
+              Koordinatorlar
+            </div>
+            <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Reyting</h1>
+            <p className="mt-1.5 max-w-xl text-xs text-slate-300 sm:text-sm">
+              Kunlik, haftalik va oylik natija — tashrif, ball, qamrov va GPS asosida.
+            </p>
+          </div>
+        </div>
+        <CoordinatorRankingBoard enabled={allowedRanking} />
       </div>
     );
   }
@@ -352,7 +375,7 @@ export default function ChecklistHolatiPage() {
         </TabsList>
         <TabsContent value="dashboard" className="mt-0">
           <ChecklistDashboard
-            enabled={allowed}
+            enabled={allowedFull}
             onOpenVisits={openVisits}
             onOpenCoverage={openCoverage}
             onOpenVisit={(a) => setViewing(a)}
@@ -360,16 +383,12 @@ export default function ChecklistHolatiPage() {
         </TabsContent>
         <TabsContent value="reyting" className="mt-0">
           <CoordinatorRankingBoard
-            enabled={allowed}
-            onOpenCoordinator={
-              user?.role === "koordinator"
-                ? undefined
-                : (id) => {
-                    setCoordinatorId(id);
-                    setBranchKey("all");
-                    setTab("tashriflar");
-                  }
-            }
+            enabled={allowedRanking}
+            onOpenCoordinator={(id) => {
+              setCoordinatorId(id);
+              setBranchKey("all");
+              setTab("tashriflar");
+            }}
           />
         </TabsContent>
         <TabsContent value="tashriflar" className="mt-0 space-y-4 sm:space-y-6">
@@ -633,7 +652,7 @@ export default function ChecklistHolatiPage() {
       </div>
         </TabsContent>
         <TabsContent value="qamrov" className="mt-0">
-          <CoveragePanel enabled={allowed} focusCoordinator={coverageFocus} />
+          <CoveragePanel enabled={allowedFull} focusCoordinator={coverageFocus} />
         </TabsContent>
       </Tabs>
 

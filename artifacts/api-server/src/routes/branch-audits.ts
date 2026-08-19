@@ -11,7 +11,7 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { HR_ROLES, canExportChecklistStatus, canViewChecklistStatus } from "../lib/roles";
+import { HR_ROLES, canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRanking } from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
@@ -857,6 +857,7 @@ async function loadCoordinatorRanking(periodRaw: string) {
       .select({
         id: usersTable.id,
         fullName: usersTable.fullName,
+        status: usersTable.status,
       })
       .from(usersTable)
       .where(eq(usersTable.role, "koordinator")),
@@ -875,33 +876,26 @@ async function loadCoordinatorRanking(periodRaw: string) {
       .from(branchAuditsTable),
   ]);
 
-  const isCoord = (role: string | null | undefined) =>
-    role === "coordinator" || role === "koordinator";
+  const RANKING_OK = new Set(["active", "on_leave"]);
 
   type Coord = {
     employeeId: number;
     userId: number | null;
     name: string;
-    dismissed: boolean;
   };
   const byUser = new Map<number, Coord>();
-  for (const p of people) {
-    if (!isCoord(p.orgRole) || p.userId == null) continue;
-    byUser.set(p.userId, {
-      employeeId: p.id,
-      userId: p.userId,
-      name: p.fullName,
-      dismissed: p.employmentStatus === "dismissed",
-    });
-  }
   for (const u of coordUsers) {
-    if (byUser.has(u.id)) continue;
-    const emp = people.find((p) => p.userId === u.id);
+    if (!RANKING_OK.has(u.status)) continue;
+    const emp = people.find(
+      (p) =>
+        p.userId === u.id &&
+        (p.orgRole === "coordinator" || p.orgRole === "koordinator") &&
+        p.employmentStatus !== "dismissed",
+    ) ?? people.find((p) => p.userId === u.id && p.employmentStatus !== "dismissed");
     byUser.set(u.id, {
       employeeId: emp?.id ?? -u.id,
       userId: u.id,
       name: emp?.fullName || u.fullName,
-      dismissed: emp?.employmentStatus === "dismissed",
     });
   }
 
@@ -945,14 +939,7 @@ async function loadCoordinatorRanking(periodRaw: string) {
 
   for (const a of auditRows) {
     if (a.visitDate < range.from || a.visitDate > range.to) continue;
-    if (!byUser.has(a.coordinatorId)) {
-      byUser.set(a.coordinatorId, {
-        employeeId: -a.coordinatorId,
-        userId: a.coordinatorId,
-        name: a.coordinatorName || `Koordinator #${a.coordinatorId}`,
-        dismissed: false,
-      });
-    }
+    if (!byUser.has(a.coordinatorId)) continue;
     const meta = byUser.get(a.coordinatorId)!;
     const row = ensure(a.coordinatorId, meta.name);
     row.visits += 1;
@@ -966,17 +953,16 @@ async function loadCoordinatorRanking(periodRaw: string) {
   }
 
   for (const [userId, meta] of byUser) {
-    if (meta.dismissed && !acc.has(userId)) continue;
     ensure(userId, meta.name);
   }
 
   const maxVisits = Math.max(0, ...[...acc.values()].map((r) => r.visits));
 
   const rankings = [...byUser.values()]
-    .filter((c) => c.userId != null && (!c.dismissed || (acc.get(c.userId)?.visits ?? 0) > 0))
     .map((c) => {
       const userId = c.userId!;
-      const row = acc.get(userId)!;
+      const row = acc.get(userId);
+      if (!row) return null;
       const assigned = assignedByEmp.get(c.employeeId) ?? new Set<number>();
       let covered = 0;
       for (const id of assigned) if (row.branches.has(id)) covered += 1;
@@ -1014,6 +1000,7 @@ async function loadCoordinatorRanking(periodRaw: string) {
         lastVisit: row.last || null,
       };
     })
+    .filter((row): row is NonNullable<typeof row> => row != null)
     .sort((a, b) => b.rating - a.rating || b.visits - a.visits || b.avgScore - a.avgScore)
     .map((row, i) => ({ ...row, rank: i + 1 }));
 
@@ -1025,7 +1012,7 @@ async function loadCoordinatorRanking(periodRaw: string) {
 }
 
 router.get("/branch-audits/ranking", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canViewChecklistStatus(req.userRole)) {
+  if (!canViewCoordinatorRanking(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }

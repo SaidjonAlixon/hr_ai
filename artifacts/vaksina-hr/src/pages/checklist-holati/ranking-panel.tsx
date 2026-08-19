@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Medal, Trophy } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useGetUsers } from "@workspace/api-client-react";
 import {
   useCoordinatorRanking,
   type CoordinatorRankRow,
@@ -138,7 +139,18 @@ export function CoordinatorRankingBoard({
   const { user } = useAuth();
   const [period, setPeriod] = useState<RankingPeriod>("week");
   const { data, isLoading } = useCoordinatorRanking(period, enabled);
+  const { data: coordUsers } = useGetUsers({ role: "koordinator" }, { query: { enabled } });
   const myId = user?.id;
+
+  const rankings = useMemo(() => {
+    const allowed = new Set(
+      (coordUsers ?? [])
+        .filter((u) => u.status === "active" || u.status === "on_leave")
+        .map((u) => u.id),
+    );
+    const rows = (data?.rankings ?? []).filter((r) => allowed.has(r.coordinatorId));
+    return rows.map((row, i) => ({ ...row, rank: i + 1 }));
+  }, [coordUsers, data?.rankings]);
 
   return (
     <div className={cn("overflow-hidden rounded-2xl border bg-white shadow-sm", !compact && "shadow-sm")}>
@@ -172,11 +184,11 @@ export function CoordinatorRankingBoard({
 
       {isLoading ? (
         <p className="px-4 py-10 text-center text-sm text-slate-400">Reyting yuklanmoqda…</p>
-      ) : !data?.rankings.length ? (
+      ) : !rankings.length ? (
         <p className="px-4 py-10 text-center text-sm text-slate-400">Koordinator topilmadi</p>
       ) : (
         <ul className={cn("divide-y", compact && "max-h-[28rem] overflow-y-auto")}>
-          {data.rankings.map((row) => (
+          {rankings.map((row) => (
             <li key={row.coordinatorId}>
               <RankRow
                 row={row}

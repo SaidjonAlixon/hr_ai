@@ -32,9 +32,27 @@ export function canViewDavomat(role?: string | null): boolean {
   );
 }
 
-/** Cheklist holati: admin, direktor, HR direktor */
+/** Cheklist holati / reyting: admin, direktor, HR direktor, HR menejer, koordinator */
 export function canViewChecklistStatus(role?: string | null): boolean {
-  return role === "admin" || role === "director" || role === "hr_direktor";
+  return (
+    role === "admin" ||
+    role === "director" ||
+    role === "hr_direktor" ||
+    role === "hr_menejer" ||
+    role === "hr" ||
+    role === "koordinator"
+  );
+}
+
+/** Excel eksport — barcha tashriflar: admin, direktor, HR rahbariyat */
+export function canExportChecklistStatus(role?: string | null): boolean {
+  return (
+    role === "admin" ||
+    role === "director" ||
+    role === "hr_direktor" ||
+    role === "hr_menejer" ||
+    role === "hr"
+  );
 }
 
 /** Kirish o‘quv bo‘limi — faqat stajyor (+ admin ko‘rishi mumkin) */

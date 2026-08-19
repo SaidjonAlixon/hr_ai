@@ -475,6 +475,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
+      { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Pipeline', path: '/pipeline', icon: Kanban },
@@ -640,6 +641,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
+      { name: 'Reyting', path: '/checklist-holati', icon: ClipboardList },
     ],
     texnik: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },

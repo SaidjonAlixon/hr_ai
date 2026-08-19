@@ -34,7 +34,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { canViewChecklistStatus } from "@/lib/roles";
+import { canExportChecklistStatus, canViewChecklistStatus } from "@/lib/roles";
 import {
   downloadBranchAuditsExcel,
   useBranchAuditsList,
@@ -42,6 +42,7 @@ import {
 } from "@/lib/branch-audits-api";
 import { CoveragePanel } from "./coverage-panel";
 import { ChecklistDashboard, type ChecklistDashNav } from "./dashboard-panel";
+import { CoordinatorRankingBoard } from "./ranking-panel";
 
 function scoreTone(pct: number) {
   if (pct >= 85) return "text-emerald-600";
@@ -126,7 +127,7 @@ export default function ChecklistHolatiPage() {
   const [coverageFocus, setCoverageFocus] = useState<string | undefined>();
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
   const [exporting, setExporting] = useState(false);
-  const [tab, setTab] = useState("dashboard");
+  const [tab, setTab] = useState(user?.role === "koordinator" ? "reyting" : "dashboard");
 
   const { data: audits = [], isLoading } = useBranchAuditsList(
     {
@@ -223,7 +224,15 @@ export default function ChecklistHolatiPage() {
   const byBranch = useMemo(() => {
     const map = new Map<
       string,
-      { id: string; name: string; manager: string; visits: number; dates: string[]; avg: number; scores: number[] }
+      {
+        id: string;
+        name: string;
+        manager: string;
+        visits: number;
+        stamps: { id: number; visitDate: string; createdAt?: string }[];
+        avg: number;
+        scores: number[];
+      }
     >();
     for (const a of filtered) {
       const key = String(a.managerEmployeeId);
@@ -232,12 +241,12 @@ export default function ChecklistHolatiPage() {
         name: a.branchLocation || "Filial",
         manager: a.managerName || "—",
         visits: 0,
-        dates: [],
+        stamps: [],
         avg: 0,
         scores: [],
       };
       cur.visits += 1;
-      cur.dates.push(a.visitDate);
+      cur.stamps.push({ id: a.id, visitDate: a.visitDate, createdAt: a.createdAt });
       cur.scores.push(a.scorePercent);
       map.set(key, cur);
     }
@@ -245,7 +254,9 @@ export default function ChecklistHolatiPage() {
       .map((v) => ({
         ...v,
         avg: Math.round(v.scores.reduce((s, n) => s + n, 0) / v.scores.length),
-        dates: [...new Set(v.dates)].sort().reverse(),
+        stamps: [...v.stamps].sort((a, b) =>
+          String(b.createdAt || b.visitDate).localeCompare(String(a.createdAt || a.visitDate)),
+        ),
       }))
       .sort((a, b) => b.visits - a.visits);
   }, [filtered]);
@@ -288,7 +299,7 @@ export default function ChecklistHolatiPage() {
         <Info className="mx-auto h-10 w-10 text-slate-400" />
         <h2 className="mt-3 text-lg font-semibold">Ruxsat yo‘q</h2>
         <p className="mt-1 text-sm text-slate-500">
-          Cheklist holatini admin, direktor va HR direktor ko‘radi.
+          Cheklist holatini admin, direktor, HR direktor, HR menejer va koordinatorlar ko‘radi.
         </p>
       </div>
     );
@@ -306,10 +317,10 @@ export default function ChecklistHolatiPage() {
             </div>
             <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Cheklist holati</h1>
             <p className="mt-1.5 max-w-xl text-xs text-slate-300 sm:text-sm">
-              Dashboard, tashriflar, javoblar va har bir koordinatorning filial qamrovi.
+              Dashboard, tashriflar, reyting va har bir koordinatorning filial qamrovi.
             </p>
           </div>
-          {tab === "tashriflar" && (
+          {tab === "tashriflar" && canExportChecklistStatus(user?.role) && (
             <Button
               variant="secondary"
               className="w-full bg-white/10 text-white hover:bg-white/20 sm:w-auto"
@@ -324,9 +335,12 @@ export default function ChecklistHolatiPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="grid h-11 w-full grid-cols-3 sm:max-w-xl">
+        <TabsList className="grid h-11 w-full grid-cols-2 sm:grid-cols-4 sm:max-w-2xl">
           <TabsTrigger value="dashboard" className="text-[11px] sm:text-sm">
             Dashboard
+          </TabsTrigger>
+          <TabsTrigger value="reyting" className="text-[11px] sm:text-sm">
+            Reyting
           </TabsTrigger>
           <TabsTrigger value="tashriflar" className="text-[11px] sm:text-sm">
             Tashriflar
@@ -342,6 +356,20 @@ export default function ChecklistHolatiPage() {
             onOpenVisits={openVisits}
             onOpenCoverage={openCoverage}
             onOpenVisit={(a) => setViewing(a)}
+          />
+        </TabsContent>
+        <TabsContent value="reyting" className="mt-0">
+          <CoordinatorRankingBoard
+            enabled={allowed}
+            onOpenCoordinator={
+              user?.role === "koordinator"
+                ? undefined
+                : (id) => {
+                    setCoordinatorId(id);
+                    setBranchKey("all");
+                    setTab("tashriflar");
+                  }
+            }
           />
         </TabsContent>
         <TabsContent value="tashriflar" className="mt-0 space-y-4 sm:space-y-6">
@@ -503,20 +531,20 @@ export default function ChecklistHolatiPage() {
                       <p className="shrink-0 text-sm font-bold tabular-nums">{visitLabel(b.visits)}</p>
                     </div>
                     <div className="mt-1.5 flex flex-wrap gap-1">
-                      {b.dates.slice(0, 8).map((d) => (
+                      {b.stamps.slice(0, 8).map((s) => (
                         <span
-                          key={d}
+                          key={s.id}
                           className={cn(
                             "inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums",
-                            dateChipClass(d),
+                            dateChipClass(s.visitDate),
                           )}
                         >
-                          {formatWhen(d)}
+                          {formatWhen(s.visitDate, s.createdAt)}
                         </span>
                       ))}
-                      {b.dates.length > 8 ? (
+                      {b.stamps.length > 8 ? (
                         <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
-                          +{b.dates.length - 8}
+                          +{b.stamps.length - 8}
                         </span>
                       ) : null}
                     </div>

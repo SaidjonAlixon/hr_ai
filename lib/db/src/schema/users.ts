@@ -8,6 +8,6 @@ export const usersTable = pgTable("users", {
   login: text("login").notNull().unique(),
   password: text("password").notNull(),
   phone: text("phone"),
-  status: text("status").notNull().default("active"), // active|inactive
+  status: text("status").notNull().default("active"), // active|vacant|terminated|on_leave
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

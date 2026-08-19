@@ -11,7 +11,7 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { HR_ROLES, canViewChecklistStatus } from "../lib/roles";
+import { HR_ROLES, canExportChecklistStatus, canViewChecklistStatus } from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
@@ -413,7 +413,7 @@ router.get("/branch-audits", requireAuth, async (req: AuthRequest, res): Promise
 });
 
 router.get("/branch-audits/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canViewChecklistStatus(req.userRole)) {
+  if (!canExportChecklistStatus(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }
@@ -664,7 +664,7 @@ router.get("/branch-audits/coverage", requireAuth, async (req: AuthRequest, res)
 });
 
 router.get("/branch-audits/coverage/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canViewChecklistStatus(req.userRole)) {
+  if (!canExportChecklistStatus(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }
@@ -789,6 +789,252 @@ router.get("/branch-audits/coverage/export", requireAuth, async (req: AuthReques
   );
   res.setHeader("Content-Disposition", `attachment; filename="cheklist-qamrov-${stamp}.xlsx"`);
   res.send(buffer);
+});
+
+function tashkentYmd(d = new Date()) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+function addDaysYmd(ymd: string, delta: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + delta));
+  return dt.toISOString().slice(0, 10);
+}
+
+function periodRange(period: string): { period: "day" | "week" | "month"; from: string; to: string } {
+  const to = tashkentYmd();
+  if (period === "day") return { period: "day", from: to, to };
+  if (period === "week") {
+    const [y, m, d] = to.split("-").map(Number);
+    const dt = new Date(Date.UTC(y!, m! - 1, d!));
+    const dow = dt.getUTCDay();
+    const offset = dow === 0 ? -6 : 1 - dow;
+    return { period: "week", from: addDaysYmd(to, offset), to };
+  }
+  return { period: "month", from: `${to.slice(0, 7)}-01`, to };
+}
+
+function compositeRating(parts: {
+  visits: number;
+  maxVisits: number;
+  avgScore: number;
+  coveragePct: number;
+  gpsPct: number;
+  excellentPct: number;
+  diversityPct: number;
+}) {
+  if (parts.visits <= 0) return 0;
+  const visitPart = parts.maxVisits > 0 ? (parts.visits / parts.maxVisits) * 100 : 0;
+  return Math.round(
+    visitPart * 0.25 +
+      parts.avgScore * 0.25 +
+      parts.coveragePct * 0.2 +
+      parts.gpsPct * 0.15 +
+      parts.excellentPct * 0.1 +
+      parts.diversityPct * 0.05,
+  );
+}
+
+async function loadCoordinatorRanking(periodRaw: string) {
+  const range = periodRange(periodRaw);
+  const [people, coordUsers, auditRows] = await Promise.all([
+    db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        userId: employeesTable.userId,
+        orgRole: employeesTable.orgRole,
+        reportsToId: employeesTable.reportsToId,
+        employmentStatus: employeesTable.employmentStatus,
+      })
+      .from(employeesTable),
+    db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.role, "koordinator")),
+    db
+      .select({
+        coordinatorId: branchAuditsTable.coordinatorId,
+        coordinatorName: branchAuditsTable.coordinatorName,
+        managerEmployeeId: branchAuditsTable.managerEmployeeId,
+        visitDate: branchAuditsTable.visitDate,
+        scorePercent: branchAuditsTable.scorePercent,
+        checkLatitude: branchAuditsTable.checkLatitude,
+        checkLongitude: branchAuditsTable.checkLongitude,
+        yesCount: branchAuditsTable.yesCount,
+        noCount: branchAuditsTable.noCount,
+      })
+      .from(branchAuditsTable),
+  ]);
+
+  const isCoord = (role: string | null | undefined) =>
+    role === "coordinator" || role === "koordinator";
+
+  type Coord = {
+    employeeId: number;
+    userId: number | null;
+    name: string;
+    dismissed: boolean;
+  };
+  const byUser = new Map<number, Coord>();
+  for (const p of people) {
+    if (!isCoord(p.orgRole) || p.userId == null) continue;
+    byUser.set(p.userId, {
+      employeeId: p.id,
+      userId: p.userId,
+      name: p.fullName,
+      dismissed: p.employmentStatus === "dismissed",
+    });
+  }
+  for (const u of coordUsers) {
+    if (byUser.has(u.id)) continue;
+    const emp = people.find((p) => p.userId === u.id);
+    byUser.set(u.id, {
+      employeeId: emp?.id ?? -u.id,
+      userId: u.id,
+      name: emp?.fullName || u.fullName,
+      dismissed: emp?.employmentStatus === "dismissed",
+    });
+  }
+
+  const assignedByEmp = new Map<number, Set<number>>();
+  for (const m of people) {
+    if (m.orgRole !== "manager" || m.employmentStatus === "dismissed" || m.reportsToId == null) continue;
+    const set = assignedByEmp.get(m.reportsToId) ?? new Set<number>();
+    set.add(m.id);
+    assignedByEmp.set(m.reportsToId, set);
+  }
+
+  type Acc = {
+    visits: number;
+    scores: number[];
+    gps: number;
+    excellent: number;
+    yes: number;
+    no: number;
+    branches: Set<number>;
+    last: string;
+    name: string;
+  };
+  const acc = new Map<number, Acc>();
+  const ensure = (userId: number, name: string): Acc => {
+    const cur = acc.get(userId);
+    if (cur) return cur;
+    const row: Acc = {
+      visits: 0,
+      scores: [],
+      gps: 0,
+      excellent: 0,
+      yes: 0,
+      no: 0,
+      branches: new Set(),
+      last: "",
+      name,
+    };
+    acc.set(userId, row);
+    return row;
+  };
+
+  for (const a of auditRows) {
+    if (a.visitDate < range.from || a.visitDate > range.to) continue;
+    if (!byUser.has(a.coordinatorId)) {
+      byUser.set(a.coordinatorId, {
+        employeeId: -a.coordinatorId,
+        userId: a.coordinatorId,
+        name: a.coordinatorName || `Koordinator #${a.coordinatorId}`,
+        dismissed: false,
+      });
+    }
+    const meta = byUser.get(a.coordinatorId)!;
+    const row = ensure(a.coordinatorId, meta.name);
+    row.visits += 1;
+    row.scores.push(a.scorePercent);
+    row.yes += a.yesCount ?? 0;
+    row.no += a.noCount ?? 0;
+    row.branches.add(a.managerEmployeeId);
+    if (a.checkLatitude != null && a.checkLongitude != null) row.gps += 1;
+    if (a.scorePercent >= 85) row.excellent += 1;
+    if (!row.last || a.visitDate >= row.last) row.last = a.visitDate;
+  }
+
+  for (const [userId, meta] of byUser) {
+    if (meta.dismissed && !acc.has(userId)) continue;
+    ensure(userId, meta.name);
+  }
+
+  const maxVisits = Math.max(0, ...[...acc.values()].map((r) => r.visits));
+
+  const rankings = [...byUser.values()]
+    .filter((c) => c.userId != null && (!c.dismissed || (acc.get(c.userId)?.visits ?? 0) > 0))
+    .map((c) => {
+      const userId = c.userId!;
+      const row = acc.get(userId)!;
+      const assigned = assignedByEmp.get(c.employeeId) ?? new Set<number>();
+      let covered = 0;
+      for (const id of assigned) if (row.branches.has(id)) covered += 1;
+      const coveragePct =
+        assigned.size > 0 ? Math.round((covered / assigned.size) * 100) : row.visits > 0 ? 50 : 0;
+      const avgScore =
+        row.scores.length === 0 ? 0 : Math.round(row.scores.reduce((s, n) => s + n, 0) / row.scores.length);
+      const gpsPct = row.visits === 0 ? 0 : Math.round((row.gps / row.visits) * 100);
+      const excellentPct = row.visits === 0 ? 0 : Math.round((row.excellent / row.visits) * 100);
+      const diversityPct = row.visits === 0 ? 0 : Math.round((row.branches.size / row.visits) * 100);
+      const rating = compositeRating({
+        visits: row.visits,
+        maxVisits,
+        avgScore,
+        coveragePct,
+        gpsPct,
+        excellentPct,
+        diversityPct,
+      });
+      return {
+        coordinatorId: userId,
+        employeeId: c.employeeId,
+        name: c.name,
+        rating,
+        visits: row.visits,
+        uniqueBranches: row.branches.size,
+        assignedBranches: assigned.size,
+        coveredBranches: covered,
+        coveragePct,
+        avgScore,
+        gpsPct,
+        excellentPct,
+        yesCount: row.yes,
+        noCount: row.no,
+        lastVisit: row.last || null,
+      };
+    })
+    .sort((a, b) => b.rating - a.rating || b.visits - a.visits || b.avgScore - a.avgScore)
+    .map((row, i) => ({ ...row, rank: i + 1 }));
+
+  return {
+    ...range,
+    maxVisits,
+    rankings,
+  };
+}
+
+router.get("/branch-audits/ranking", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewChecklistStatus(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    res.json(await loadCoordinatorRanking(String(req.query.period || "week")));
+  } catch (err) {
+    console.error("branch-audits/ranking", err);
+    res.status(500).json({ error: "Reyting yuklanmadi" });
+  }
 });
 
 router.get("/branch-audits/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {

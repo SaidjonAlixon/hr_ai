@@ -9,7 +9,7 @@ import {
   type User,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2 } from 'lucide-react';
+import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -54,6 +54,32 @@ const ROLES = [
   { value: 'stajyor', label: 'Stajyor' },
 ] as const;
 
+const STATUSES = [
+  { value: 'active', label: 'Faol' },
+  { value: 'vacant', label: "Bo‘sh" },
+  { value: 'terminated', label: 'Tugatilgan' },
+  { value: 'on_leave', label: 'Tatilda' },
+] as const;
+
+function normalizeUserStatus(status?: string | null) {
+  if (status === 'inactive' || status === 'blocked') return 'vacant';
+  if (STATUSES.some((s) => s.value === status)) return status as (typeof STATUSES)[number]['value'];
+  return 'active';
+}
+
+function statusLabel(status?: string | null) {
+  const key = normalizeUserStatus(status);
+  return STATUSES.find((s) => s.value === key)?.label || 'Faol';
+}
+
+function statusClass(status?: string | null) {
+  const key = normalizeUserStatus(status);
+  if (key === 'active') return 'bg-emerald-100 text-emerald-800';
+  if (key === 'on_leave') return 'bg-amber-100 text-amber-900';
+  if (key === 'terminated') return 'bg-rose-100 text-rose-800';
+  return 'bg-slate-100 text-slate-700';
+}
+
 type CreatedCredentials = {
   fullName: string;
   role: string;
@@ -69,6 +95,8 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
   const [createOpen, setCreateOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editing, setEditing] = useState<User | null>(null);
   const [credsOpen, setCredsOpen] = useState(false);
   const [created, setCreated] = useState<CreatedCredentials | null>(null);
   const [showPwd, setShowPwd] = useState(true);
@@ -79,6 +107,7 @@ export default function AdminUsersPage() {
   const [role, setRole] = useState('recruiter');
   const [phone, setPhone] = useState('');
   const [departmentId, setDepartmentId] = useState<string>('none');
+  const [status, setStatus] = useState('active');
 
   const { data: users, isLoading } = useGetUsers({
     search: search || undefined,
@@ -131,6 +160,18 @@ export default function AdminUsersPage() {
     setRole('recruiter');
     setPhone('');
     setDepartmentId('none');
+    setStatus('active');
+    setEditing(null);
+  };
+
+  const openEdit = (u: User) => {
+    setEditing(u);
+    setFullName(u.fullName);
+    setRole(u.role);
+    setPhone(u.phone || '');
+    setDepartmentId(u.departmentId != null ? String(u.departmentId) : 'none');
+    setStatus(normalizeUserStatus(u.status));
+    setEditOpen(true);
   };
 
   const invalidate = () => {
@@ -196,6 +237,55 @@ export default function AdminUsersPage() {
     );
   };
 
+  const onUpdate = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isAdmin || !editing) return;
+    if (!fullName.trim() || fullName.trim().split(/\s+/).length < 2) {
+      toast({ title: 'Xatolik', description: 'Ism va familiyani to‘liq yozing', variant: 'destructive' });
+      return;
+    }
+    if (!role) {
+      toast({ title: 'Xatolik', description: 'Rolni tanlang', variant: 'destructive' });
+      return;
+    }
+    if (!isOptionalUzPhoneValid(phone)) {
+      toast({
+        title: 'Telefon noto‘g‘ri',
+        description: UZ_PHONE_HINT,
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    updateMutation.mutate(
+      {
+        id: editing.id,
+        data: {
+          fullName: fullName.trim(),
+          role,
+          phone: normalizeUzPhone(phone) || null,
+          departmentId: departmentId === 'none' ? null : Number(departmentId),
+          status,
+        },
+      },
+      {
+        onSuccess: () => {
+          invalidate();
+          setEditOpen(false);
+          resetForm();
+          toast({ title: 'Saqlandi', description: 'Foydalanuvchi yangilandi' });
+        },
+        onError: (err: any) => {
+          toast({
+            title: 'Xatolik',
+            description: err?.message || 'Saqlanmadi',
+            variant: 'destructive',
+          });
+        },
+      },
+    );
+  };
+
   const copyText = async (text: string, kind: 'login' | 'password' | 'both') => {
     try {
       await navigator.clipboard.writeText(text);
@@ -207,15 +297,23 @@ export default function AdminUsersPage() {
     }
   };
 
-  const toggleStatus = (u: User) => {
+  const setUserStatus = (u: User, next: string) => {
     if (!isAdmin) return;
-    const next = u.status === 'active' ? 'inactive' : 'active';
+    if (u.id === me?.id && next !== 'active') {
+      toast({ title: 'O‘zingizni faoldan chiqara olmaysiz', variant: 'destructive' });
+      return;
+    }
+    const current = normalizeUserStatus(u.status);
+    if (current === next) return;
     updateMutation.mutate(
       { id: u.id, data: { status: next } },
       {
         onSuccess: () => {
           invalidate();
-          toast({ title: next === 'active' ? 'Faollashtirildi' : 'O‘chirib qo‘yildi' });
+          toast({ title: 'Holat yangilandi', description: statusLabel(next) });
+        },
+        onError: (err: any) => {
+          toast({ title: 'Xatolik', description: err?.message || 'Holat saqlanmadi', variant: 'destructive' });
         },
       },
     );
@@ -350,30 +448,49 @@ export default function AdminUsersPage() {
                       <td className="px-4 py-3 font-mono text-xs">{u.login}</td>
                       <td className="px-4 py-3 text-muted-foreground">{u.departmentName || '—'}</td>
                       <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => toggleStatus(u)}
-                          className={cn(
-                            'rounded-full px-2.5 py-0.5 text-xs font-semibold',
-                            u.status === 'active'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-slate-100 text-slate-600',
-                          )}
+                        <Select
+                          value={normalizeUserStatus(u.status)}
+                          onValueChange={(v) => setUserStatus(u, v)}
+                          disabled={u.id === me?.id}
                         >
-                          {u.status === 'active' ? 'Faol' : 'Nofaol'}
-                        </button>
+                          <SelectTrigger
+                            className={cn(
+                              'h-8 w-[132px] rounded-full border-0 px-2.5 text-xs font-semibold shadow-none focus:ring-0',
+                              statusClass(u.status),
+                            )}
+                          >
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {STATUSES.map((s) => (
+                              <SelectItem key={s.value} value={s.value}>
+                                {s.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </td>
                       <td className="px-4 py-3 text-right">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="text-destructive hover:text-destructive"
-                          onClick={() => onDelete(u)}
-                          disabled={u.id === me?.id}
-                          title="O‘chirish"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+                        <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => openEdit(u)}
+                            title="Tahrirlash"
+                          >
+                            <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="text-destructive hover:text-destructive"
+                            onClick={() => onDelete(u)}
+                            disabled={u.id === me?.id}
+                            title="O‘chirish"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -442,6 +559,94 @@ export default function AdminUsersPage() {
               <Button type="submit" disabled={createMutation.isPending} className="gap-2">
                 <Plus className="h-4 w-4" />
                 {createMutation.isPending ? 'Yaratilmoqda...' : 'Yaratish'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={editOpen}
+        onOpenChange={(open) => {
+          setEditOpen(open);
+          if (!open) resetForm();
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Foydalanuvchini tahrirlash</DialogTitle>
+            <DialogDescription>
+              {editing?.login ? (
+                <>
+                  Login: <span className="font-mono font-medium text-foreground">{editing.login}</span>
+                </>
+              ) : (
+                'Ism, rol, telefon va bo‘limni o‘zgartiring.'
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={onUpdate} className="space-y-4">
+            <div className="space-y-2">
+              <Label>Ism familiya *</Label>
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Masalan: Aziza Karimova"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Rol *</Label>
+              <Select value={role} onValueChange={setRole}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Rolni tanlang" />
+                </SelectTrigger>
+                <SelectContent className="z-[100]">
+                  {ROLES.map((r) => (
+                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Telefon (ixtiyoriy)</Label>
+              <PhoneInput value={phone} onChange={setPhone} />
+              <p className="text-xs text-muted-foreground">{UZ_PHONE_HINT}</p>
+            </div>
+            <div className="space-y-2">
+              <Label>Bo‘lim (ixtiyoriy)</Label>
+              <Select value={departmentId} onValueChange={setDepartmentId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Bo‘lim" />
+                </SelectTrigger>
+                <SelectContent className="z-[100]">
+                  <SelectItem value="none">Belgilanmagan</SelectItem>
+                  {(departments ?? []).map((d) => (
+                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Holat</Label>
+              <Select value={status} onValueChange={setStatus}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Holat" />
+                </SelectTrigger>
+                <SelectContent className="z-[100]">
+                  {STATUSES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <DialogFooter className="gap-2 sm:gap-0">
+              <Button type="button" variant="ghost" onClick={() => setEditOpen(false)}>
+                Bekor qilish
+              </Button>
+              <Button type="submit" disabled={updateMutation.isPending} className="gap-2">
+                <Pencil className="h-4 w-4" />
+                {updateMutation.isPending ? 'Saqlanmoqda...' : 'Saqlash'}
               </Button>
             </DialogFooter>
           </form>

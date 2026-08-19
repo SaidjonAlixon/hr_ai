@@ -283,6 +283,43 @@ export type CoverageResponse = {
   unassigned: CoverageBranch[];
 };
 
+export type RankingPeriod = "day" | "week" | "month";
+
+export type CoordinatorRankRow = {
+  coordinatorId: number;
+  employeeId: number;
+  name: string;
+  rank: number;
+  rating: number;
+  visits: number;
+  uniqueBranches: number;
+  assignedBranches: number;
+  coveredBranches: number;
+  coveragePct: number;
+  avgScore: number;
+  gpsPct: number;
+  excellentPct: number;
+  yesCount: number;
+  noCount: number;
+  lastVisit: string | null;
+};
+
+export type CoordinatorRankingResponse = {
+  period: RankingPeriod;
+  from: string;
+  to: string;
+  maxVisits: number;
+  rankings: CoordinatorRankRow[];
+};
+
+export function useCoordinatorRanking(period: RankingPeriod, enabled = true) {
+  return useQuery({
+    queryKey: ["branch-audits", "ranking", period],
+    queryFn: () => apiFetch<CoordinatorRankingResponse>(`/branch-audits/ranking?period=${period}`),
+    enabled,
+  });
+}
+
 export function useAuditCoverage(
   params: { from?: string; to?: string },
   enabled = true,

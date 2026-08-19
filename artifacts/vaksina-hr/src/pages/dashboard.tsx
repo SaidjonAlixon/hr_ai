@@ -626,6 +626,9 @@ export default function Dashboard() {
             {role === 'koordinator' && (
               <QuickLink href="/checklist" title="Cheklist" desc="Filial audit / GPS" icon={ClipboardCheck} />
             )}
+            {role === 'koordinator' && (
+              <QuickLink href="/checklist-holati" title="Reyting" desc="Kunlik, haftalik, oylik" icon={TrendingUp} />
+            )}
             <QuickLink href="/maqsad" title="Maqsad" desc="Kunlik natija" icon={Target} />
             <QuickLink href="/chat" title="Chat" desc="Jamoa bilan suhbat" icon={MessageCircle} />
           </div>

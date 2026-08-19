@@ -33,8 +33,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
 import { useBranchAuditsList, type BranchAudit } from "@/lib/branch-audits-api";
 import { buildCoverage } from "./coverage-panel";
+import { CoordinatorRankingBoard } from "./ranking-panel";
 
 type RangeKey = "all" | "today" | "7d" | "30d";
 
@@ -44,8 +46,6 @@ const RANGE_LABEL: Record<RangeKey, string> = {
   "7d": "7 kun",
   "30d": "30 kun",
 };
-
-const COORD_BAR = ["#0ea5e9", "#10b981", "#f59e0b", "#8b5cf6", "#f43f5e", "#06b6d4", "#f97316", "#6366f1"];
 
 function tashkentYmd(d = new Date()) {
   return new Intl.DateTimeFormat("en-CA", {
@@ -121,6 +121,7 @@ export function ChecklistDashboard({
   onOpenCoverage: (coordinatorId?: string) => void;
   onOpenVisit: (audit: BranchAudit) => void;
 }) {
+  const { user } = useAuth();
   const [range, setRange] = useState<RangeKey>("all");
   const [coordinatorId, setCoordinatorId] = useState("all");
   const [branchKey, setBranchKey] = useState("all");
@@ -526,44 +527,15 @@ export function ChecklistDashboard({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
-          <div className="border-b px-4 py-3">
-            <h3 className="text-sm font-semibold">Koordinatorlar reytingi</h3>
-            <p className="text-[11px] text-slate-500">Tashrif soni va o‘rtacha ball</p>
-          </div>
-          <ul className="divide-y">
-            {dash.byCoordinator.length === 0 ? (
-              <li className="px-4 py-8 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
-            ) : (
-              dash.byCoordinator.map((c, i) => (
-                <li key={c.id}>
-                  <button
-                    type="button"
-                    onClick={() => goVisits({ coordinatorId: c.id, branchKey: "all" })}
-                    className="w-full px-4 py-3 text-left hover:bg-slate-50"
-                  >
-                    <div className="mb-1.5 flex items-center justify-between gap-2">
-                      <p className="min-w-0 truncate text-sm font-medium">{c.name}</p>
-                      <p className="inline-flex shrink-0 items-center gap-1 text-xs tabular-nums text-slate-500">
-                        {c.visits} tashrif · <span className={cn("font-semibold", scoreTone(c.avg))}>{c.avg}%</span>
-                        <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
-                      </p>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                      <div
-                        className="h-full rounded-full"
-                        style={{
-                          width: `${dash.maxVisits ? Math.max(8, (c.visits / dash.maxVisits) * 100) : 0}%`,
-                          background: COORD_BAR[i % COORD_BAR.length],
-                        }}
-                      />
-                    </div>
-                  </button>
-                </li>
-              ))
-            )}
-          </ul>
-        </div>
+        <CoordinatorRankingBoard
+          enabled={enabled}
+          compact
+          onOpenCoordinator={
+            user?.role === "koordinator"
+              ? undefined
+              : (id) => goVisits({ coordinatorId: id, branchKey: "all" })
+          }
+        />
 
         <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
           <div className="border-b px-4 py-3">

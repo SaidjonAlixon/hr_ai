@@ -24,7 +24,18 @@ async function getUserWithDept(userId: number) {
   return user ?? null;
 }
 
-function isDbDown(err: unknown): boolean {
+function canSignIn(status?: string | null) {
+  return status === "active" || status === "on_leave";
+}
+
+function statusBlockMessage(status?: string | null) {
+  if (status === "on_leave") return "Foydalanuvchi tatilda";
+  if (status === "terminated") return "Foydalanuvchi tugatilgan";
+  if (status === "vacant" || status === "inactive" || status === "blocked") {
+    return "Foydalanuvchi hozir bo‘sh holatda";
+  }
+  return "Foydalanuvchi faol emas";
+}
   if (!err || typeof err !== "object") return false;
   const e = err as { code?: string; message?: string };
   return (
@@ -54,8 +65,8 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       return;
     }
 
-    if (user.status !== "active") {
-      res.status(403).json({ error: "Foydalanuvchi faol emas" });
+    if (!canSignIn(user.status)) {
+      res.status(403).json({ error: statusBlockMessage(user.status) });
       return;
     }
 

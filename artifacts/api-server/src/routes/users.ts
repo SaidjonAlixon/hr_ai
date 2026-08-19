@@ -26,6 +26,8 @@ const ALLOWED_ROLES = [
   "stajyor",
 ] as const;
 
+const ALLOWED_STATUSES = ["active", "vacant", "terminated", "on_leave"] as const;
+
 const ROLE_LABEL_UZ: Record<string, string> = {
   admin: "Admin",
   recruiter: "Rekruter",
@@ -47,8 +49,11 @@ const ROLE_LABEL_UZ: Record<string, string> = {
 
 const STATUS_UZ: Record<string, string> = {
   active: "Faol",
-  inactive: "Nofaol",
-  blocked: "Bloklangan",
+  inactive: "Bo‘sh",
+  vacant: "Bo‘sh",
+  terminated: "Tugatilgan",
+  on_leave: "Tatilda",
+  blocked: "Bo‘sh",
 };
 
 function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
@@ -418,6 +423,19 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   }
   if (updates.role && !ALLOWED_ROLES.includes(updates.role as typeof ALLOWED_ROLES[number])) {
     res.status(400).json({ error: "Noto'g'ri rol" });
+    return;
+  }
+  if (updates.status) {
+    const st = String(updates.status);
+    const mapped = st === "inactive" || st === "blocked" ? "vacant" : st;
+    if (!ALLOWED_STATUSES.includes(mapped as (typeof ALLOWED_STATUSES)[number])) {
+      res.status(400).json({ error: "Noto‘g‘ri holat" });
+      return;
+    }
+    updates.status = mapped;
+  }
+  if (req.userId === id && updates.status && updates.status !== "active") {
+    res.status(400).json({ error: "O‘zingizni faoldan chiqara olmaysiz" });
     return;
   }
   const [updated] = await db

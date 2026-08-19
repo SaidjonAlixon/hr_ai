@@ -15,6 +15,8 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { useAuth } from "@/contexts/AuthContext";
+import { canExportChecklistStatus } from "@/lib/roles";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
   downloadCoverageExcel,
@@ -168,6 +170,8 @@ export function CoveragePanel({
   focusCoordinator?: string;
 }) {
   const { toast } = useToast();
+  const { user } = useAuth();
+  const canExport = canExportChecklistStatus(user?.role);
   const [q, setQ] = useState("");
   const [coordKey, setCoordKey] = useState("all");
   const [from, setFrom] = useState("");
@@ -250,6 +254,7 @@ export function CoveragePanel({
         <p className="text-sm text-slate-600">
           Har bir koordinatorning barcha filiallari: cheklist kiritilgan va kiritilmagan.
         </p>
+        {canExport ? (
         <Button
           variant="outline"
           className="w-full sm:w-auto"
@@ -259,6 +264,7 @@ export function CoveragePanel({
           <Download className="mr-1.5 h-4 w-4" />
           {exporting ? "Yuklanmoqda…" : "Excel eksport"}
         </Button>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">

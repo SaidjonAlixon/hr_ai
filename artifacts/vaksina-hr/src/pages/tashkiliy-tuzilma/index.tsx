@@ -42,7 +42,7 @@ type OrgNode = {
   tone: ToneKey;
   icon: React.ComponentType<{ className?: string }>;
   children?: OrgNode[];
-  mergePair?: [OrgNode, OrgNode];
+  mergePair?: OrgNode[];
   count?: number;
   expandable?: boolean;
   expandHint?: string;
@@ -364,15 +364,16 @@ function makeManagerBranchLive(
 ): OrgNode {
   const rec = recruiters[n - 1];
   const tr = trainers[n - 1];
+  const coordNodes = coords.map((c) => ({
+    ...buildCoordinatorNode(c, mudirsByCoord.get(c.id) ?? [], staffByMgr, usersById),
+    inChart: true,
+  }));
   return {
     id: `hr-menejer-${n}`,
     label: managerUser?.fullName || "HR Menejer",
     hint: `${n}-yo‘nalish`,
     tone: "manager",
     icon: Briefcase,
-    count: coords.length,
-    expandable: coords.length > 0,
-    expandHint: `${coords.length} ta koordinator · bosing`,
     mergePair: [
       {
         id: `rekruter-${n}`,
@@ -382,6 +383,17 @@ function makeManagerBranchLive(
         icon: UserSearch,
       },
       {
+        id: `koordinatorlar-${n}`,
+        label: "Koordinatorlar",
+        hint: "Filiallar nazorati",
+        tone: "coord",
+        icon: Waypoints,
+        count: coordNodes.length,
+        expandable: coordNodes.length > 0,
+        expandHint: `${coordNodes.length} ta koordinator · bosing`,
+        children: coordNodes,
+      },
+      {
         id: `trener-${n}`,
         label: tr?.fullName || "Trener",
         hint: tr ? "Trener · o‘qitish" : "O‘qitish",
@@ -389,9 +401,6 @@ function makeManagerBranchLive(
         icon: GraduationCap,
       },
     ],
-    children: coords.map((c) =>
-      buildCoordinatorNode(c, mudirsByCoord.get(c.id) ?? [], staffByMgr, usersById),
-    ),
   };
 }
 
@@ -518,8 +527,9 @@ function drillChildren(node: OrgNode): OrgNode[] {
 }
 
 function collectBuses(node: OrgNode, buses: OrgBus[]) {
-  if (node.mergePair) {
-    buses.push({ from: [node.id], to: [node.mergePair[0].id, node.mergePair[1].id] });
+  if (node.mergePair?.length) {
+    buses.push({ from: [node.id], to: node.mergePair.map((p) => p.id) });
+    for (const side of node.mergePair) collectBuses(side, buses);
     for (const child of chartChildren(node)) collectBuses(child, buses);
     return;
   }
@@ -686,23 +696,29 @@ function NodeCard({
 }
 
 function MergePair({
-  left,
-  right,
+  nodes,
   selectedId,
   activeIds,
   onSelect,
+  openCoordGroupId,
 }: {
-  left: OrgNode;
-  right: OrgNode;
+  nodes: OrgNode[];
   selectedId: string | null;
   activeIds: Set<string>;
   onSelect: (id: string) => void;
+  openCoordGroupId: string | null;
 }) {
   return (
-    <div className="flex items-start justify-center gap-8 sm:gap-12">
-      {[left, right].map((n) => (
+    <div className="flex items-start justify-center gap-6 sm:gap-10">
+      {nodes.map((n) => (
         <div key={n.id} className="flex flex-col items-center pt-14">
-          <NodeCard node={n} highlight={activeIds.has(n.id) || selectedId === n.id} onSelect={onSelect} size="sm" />
+          <NodeCard
+            node={n}
+            highlight={activeIds.has(n.id) || selectedId === n.id || openCoordGroupId === n.id}
+            expanded={openCoordGroupId === n.id}
+            onSelect={onSelect}
+            size="sm"
+          />
         </div>
       ))}
     </div>
@@ -715,6 +731,7 @@ function OrgTree({
   activeIds,
   onSelect,
   openDeptId,
+  openCoordGroupId,
   depth = 0,
 }: {
   node: OrgNode;
@@ -722,10 +739,14 @@ function OrgTree({
   activeIds: Set<string>;
   onSelect: (id: string) => void;
   openDeptId: string | null;
+  openCoordGroupId: string | null;
   depth?: number;
 }) {
   const kids = chartChildren(node);
-  const hasMerge = !!node.mergePair;
+  const hasMerge = !!node.mergePair?.length;
+  const coordHub = node.mergePair?.find((p) => p.id.startsWith("koordinatorlar-"));
+  const coordKids =
+    coordHub && openCoordGroupId === coordHub.id ? chartChildren(coordHub) : [];
   const size = depth === 0 ? "lg" : depth <= 2 ? "md" : "sm";
   const isDirektor = node.id === "direktor";
   const deptRow = isDirektor ? kids : null;
@@ -764,6 +785,7 @@ function OrgTree({
                 activeIds={activeIds}
                 onSelect={onSelect}
                 openDeptId={openDeptId}
+                openCoordGroupId={openCoordGroupId}
                 depth={depth + 1}
               />
             </div>
@@ -778,6 +800,7 @@ function OrgTree({
                   activeIds={activeIds}
                   onSelect={onSelect}
                   openDeptId={openDeptId}
+                  openCoordGroupId={openCoordGroupId}
                   depth={depth + 1}
                 />
               ))}
@@ -787,13 +810,32 @@ function OrgTree({
       ) : hasMerge || kids.length > 0 ? (
         <div className="flex flex-col items-center pt-10">
           {hasMerge && node.mergePair ? (
-            <MergePair
-              left={node.mergePair[0]}
-              right={node.mergePair[1]}
-              selectedId={selectedId}
-              activeIds={activeIds}
-              onSelect={onSelect}
-            />
+            <>
+              <MergePair
+                nodes={node.mergePair}
+                selectedId={selectedId}
+                activeIds={activeIds}
+                onSelect={onSelect}
+                openCoordGroupId={openCoordGroupId}
+              />
+              {coordKids.length > 0 ? (
+                <div className="flex max-w-[920px] flex-wrap items-start justify-center gap-x-6 gap-y-8 pt-10">
+                  {coordKids.map((child) => (
+                    <div key={child.id} className="flex flex-col items-center px-1">
+                      <OrgTree
+                        node={child}
+                        selectedId={selectedId}
+                        activeIds={activeIds}
+                        onSelect={onSelect}
+                        openDeptId={openDeptId}
+                        openCoordGroupId={openCoordGroupId}
+                        depth={depth + 2}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+            </>
           ) : (
             <div className="flex items-start">
               {kids.map((child) => (
@@ -810,6 +852,7 @@ function OrgTree({
                     activeIds={activeIds}
                     onSelect={onSelect}
                     openDeptId={openDeptId}
+                    openCoordGroupId={openCoordGroupId}
                     depth={depth + 1}
                   />
                 </div>
@@ -946,6 +989,7 @@ export default function TashkiliyTuzilmaPage() {
   const [selectedId, setSelectedId] = useState<string | null>("tasischi");
   const [focusPath, setFocusPath] = useState<string[]>([]);
   const [openDeptId, setOpenDeptId] = useState<string | null>(null);
+  const [openCoordGroupId, setOpenCoordGroupId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0.92);
   const [pan, setPan] = useState({ x: 40, y: 20 });
   const [paths, setPaths] = useState<{ lines: string[]; dots: Array<[number, number]> }>({
@@ -981,6 +1025,12 @@ export default function TashkiliyTuzilmaPage() {
       setSelectedId(id);
       if (DEPT_IDS.has(id)) {
         setOpenDeptId((prev) => (prev === id ? null : id));
+        setOpenCoordGroupId(null);
+        setFocusPath([]);
+        return;
+      }
+      if (id.startsWith("koordinatorlar-")) {
+        setOpenCoordGroupId((prev) => (prev === id ? null : id));
         setFocusPath([]);
         return;
       }
@@ -991,7 +1041,7 @@ export default function TashkiliyTuzilmaPage() {
         if (prev[prev.length - 1] === id) return prev;
         const idx = prev.indexOf(id);
         if (idx >= 0) return prev.slice(0, idx + 1);
-        if (id.startsWith("hr-menejer-") || prev.length === 0) return [id];
+        if (prev.length === 0) return [id];
         return [...prev, id];
       });
     },
@@ -1058,7 +1108,7 @@ export default function TashkiliyTuzilmaPage() {
 
   useLayoutEffect(() => {
     redrawLines();
-  }, [zoom, pan, selectedId, openDeptId, allowed, orgTree, redrawLines]);
+  }, [zoom, pan, selectedId, openDeptId, openCoordGroupId, allowed, orgTree, redrawLines]);
 
   useEffect(() => {
     const t = window.setTimeout(() => {
@@ -1069,7 +1119,7 @@ export default function TashkiliyTuzilmaPage() {
       }
     }, 80);
     return () => window.clearTimeout(t);
-  }, [allowed, orgTree, openDeptId, redrawLines, fitToView]);
+  }, [allowed, orgTree, openDeptId, openCoordGroupId, redrawLines, fitToView]);
 
   useEffect(() => {
     const onResize = () => redrawLines();
@@ -1249,9 +1299,10 @@ export default function TashkiliyTuzilmaPage() {
               <OrgTree
                 node={orgTree}
                 selectedId={selectedId}
-                activeIds={new Set([...focusPath, selectedId, openDeptId].filter((x): x is string => !!x))}
+                activeIds={new Set([...focusPath, selectedId, openDeptId, openCoordGroupId].filter((x): x is string => !!x))}
                 onSelect={handleSelect}
                 openDeptId={openDeptId}
+                openCoordGroupId={openCoordGroupId}
               />
             </div>
           </div>

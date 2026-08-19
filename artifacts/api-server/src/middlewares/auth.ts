@@ -37,7 +37,7 @@ export async function requireAuth(
       .from(usersTable)
       .where(eq(usersTable.id, decoded.userId));
 
-    if (!user || user.status !== "active") {
+    if (!user || (user.status !== "active" && user.status !== "on_leave")) {
       res.status(401).json({ error: "Foydalanuvchi topilmadi" });
       return;
     }

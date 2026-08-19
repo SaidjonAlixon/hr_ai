@@ -5,6 +5,7 @@ import {
   downloadHolatExcel,
   useHolat,
   type HolatCoordNode,
+  type HolatExcelSection,
   type HolatMudirNode,
   type HolatReport,
 } from "../../lib/holat-api";
@@ -63,7 +64,7 @@ export default function AdminHolatPage() {
   const [branchQ, setBranchQ] = useState("");
   const [branchSide, setBranchSide] = useState<"with" | "without">("without");
   const [openId, setOpenId] = useState<number | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<HolatExcelSection | null>(null);
 
   const filteredCoords = useMemo(() => {
     const list = data?.coordinators ?? [];
@@ -97,14 +98,16 @@ export default function AdminHolatPage() {
 
   async function onExport() {
     if (!data) return;
-    setExporting(true);
+    const section = (tab === "royxat" ? "royxat" : tab) as HolatExcelSection;
+    setExporting(section);
+    await new Promise((r) => window.setTimeout(r, 40));
     try {
-      await downloadHolatExcel(data);
-      toast({ title: "Excel yuklandi", description: "XLSX — barcha varaqlar bilan" });
+      await downloadHolatExcel(data, section);
+      toast({ title: "Excel yuklandi", description: "Ochiq bo‘limdagi jadvallar" });
     } catch (e: any) {
-      toast({ title: "Excel xato", description: e.message, variant: "destructive" });
+      toast({ title: "Excel xato", description: e.message || String(e), variant: "destructive" });
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -148,45 +151,48 @@ export default function AdminHolatPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/90">Sozlamalar</p>
               <h1 className="text-2xl font-semibold">Holat</h1>
               <p className="mt-1 max-w-2xl text-sm text-sky-50/90">
-                Tarmoq: koordinator → mudir → farmasevt/stajyor. Har bir bo‘lim alohida ochiladi.
+                Tarmoq: koordinator → mudir → farmasevt/stajyor. Excel — hozir ochiq bo‘lim uchun.
                 {data.scoped ? " Hozir faqat sizning tarmog‘ingiz." : " To‘liq tizim."} Yangilangan: {data.generatedAt}
               </p>
             </div>
           </div>
-          <Button
-            onClick={() => void onExport()}
-            disabled={exporting}
-            className="bg-white text-[#0b3a5c] hover:bg-sky-50"
-          >
-            {exporting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />}
-            Excel (hammasi)
-          </Button>
         </div>
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-xl bg-slate-100 p-1">
-          <TabsTrigger value="sonlar" className="rounded-lg px-3 py-2">
-            Sonlar
-          </TabsTrigger>
-          <TabsTrigger value="qoshgan" className="rounded-lg px-3 py-2">
-            Kim qo‘shgan
-          </TabsTrigger>
-          <TabsTrigger value="filiallar" className="rounded-lg px-3 py-2">
-            Filiallar
-            <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">
-              {data.branchesWithoutStaff.length}
-            </span>
-          </TabsTrigger>
-          <TabsTrigger value="tarmoq" className="rounded-lg px-3 py-2">
-            Tarmoq daraxti
-          </TabsTrigger>
-          {!data.scoped && (
-            <TabsTrigger value="royxat" className="rounded-lg px-3 py-2">
-              To‘liq ro‘yxat
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-xl bg-slate-100 p-1 lg:w-auto lg:flex-1">
+            <TabsTrigger value="sonlar" className="rounded-lg px-3 py-2">
+              Sonlar
             </TabsTrigger>
-          )}
-        </TabsList>
+            <TabsTrigger value="qoshgan" className="rounded-lg px-3 py-2">
+              Kim qo‘shgan
+            </TabsTrigger>
+            <TabsTrigger value="filiallar" className="rounded-lg px-3 py-2">
+              Filiallar
+              <span className="ml-1.5 rounded-full bg-amber-100 px-1.5 text-[10px] font-semibold text-amber-800">
+                {data.branchesWithoutStaff.length}
+              </span>
+            </TabsTrigger>
+            <TabsTrigger value="tarmoq" className="rounded-lg px-3 py-2">
+              Tarmoq daraxti
+            </TabsTrigger>
+            {!data.scoped && (
+              <TabsTrigger value="royxat" className="rounded-lg px-3 py-2">
+                To‘liq ro‘yxat
+              </TabsTrigger>
+            )}
+          </TabsList>
+          <Button
+            type="button"
+            disabled={exporting != null}
+            onClick={() => void onExport()}
+            className="h-11 shrink-0 gap-2 rounded-xl bg-[#0b3a5c] px-5 text-sm font-semibold text-white shadow-sm hover:bg-[#0f4a73]"
+          >
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            Excel yuklab olish
+          </Button>
+        </div>
 
         <TabsContent value="sonlar" className="mt-0 space-y-6">
           <SonlarPanel data={data} />
@@ -292,11 +298,13 @@ function SonlarPanel({ data }: { data: HolatReport }) {
 function AddedByPanel({ data }: { data: HolatReport }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-      <h2 className="text-base font-semibold text-slate-800">Kim nechta odam qo‘shgan</h2>
-      <p className="mt-1 text-sm text-slate-500">
-        Avval tizimda kim qo‘shgani yozilgan bo‘lsa, o‘sha inson. Yozuv bo‘lmasa: mudirni koordinator, xodimni mudir
-        qo‘shgan deb hisoblanadi.
-      </p>
+      <div>
+        <h2 className="text-base font-semibold text-slate-800">Kim nechta odam qo‘shgan</h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Avval tizimda kim qo‘shgani yozilgan bo‘lsa, o‘sha inson. Yozuv bo‘lmasa: mudirni koordinator, xodimni mudir
+          qo‘shgan deb hisoblanadi.
+        </p>
+      </div>
       <div className="mt-4 overflow-x-auto">
         <table className="w-full min-w-[640px] text-sm">
           <thead>

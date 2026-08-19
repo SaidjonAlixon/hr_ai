@@ -1,4 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
+import { downloadHolatXlsxFile, type HolatExcelSection } from "./holat-excel";
+
+export type { HolatExcelSection };
 
 export type HolatPerson = {
   employeeId: number | null;
@@ -168,8 +171,7 @@ export function useHolat(enabled = true) {
   });
 }
 
-export async function downloadHolatExcel(report?: HolatReport) {
-  const { downloadHolatXlsxFile } = await import("./holat-excel");
+export async function downloadHolatExcel(report: HolatReport | undefined, section: HolatExcelSection) {
   const data = report ?? (await loadHolatReport());
-  await downloadHolatXlsxFile(data);
+  await downloadHolatXlsxFile(data, section);
 }

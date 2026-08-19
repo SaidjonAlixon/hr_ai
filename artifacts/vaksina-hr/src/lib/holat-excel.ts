@@ -25,6 +25,7 @@ const LINE = "FFD0D7DE";
 
 function xml(s: string) {
   return s
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -68,15 +69,6 @@ function crc32(buf: Uint8Array) {
   return (c ^ 0xffffffff) >>> 0;
 }
 
-async function deflateRaw(data: Uint8Array) {
-  if (typeof CompressionStream === "undefined") return data;
-  const cs = new CompressionStream("deflate-raw");
-  const writer = cs.writable.getWriter();
-  await writer.write(data);
-  await writer.close();
-  return new Uint8Array(await new Response(cs.readable).arrayBuffer());
-}
-
 function u16(n: number) {
   const b = new Uint8Array(2);
   new DataView(b.buffer).setUint16(0, n, true);
@@ -98,31 +90,29 @@ async function zipFiles(files: { path: string; text: string }[]) {
   for (const f of files) {
     const name = enc.encode(f.path);
     const raw = enc.encode(f.text);
-    const compressed = await deflateRaw(raw);
-    const method = compressed.length < raw.length && typeof CompressionStream !== "undefined" ? 8 : 0;
-    const payload = method === 8 ? compressed : raw;
+    const method = 0;
     const crc = crc32(raw);
-    const local = new Uint8Array(30 + name.length + payload.length);
-    local.set([0x50, 0x4b, 0x03, 0x04, 20, 0, 0, 8], 0);
+    const local = new Uint8Array(30 + name.length + raw.length);
+    local.set([0x50, 0x4b, 0x03, 0x04, 20, 0, 0, 0], 0);
     local.set(u16(method), 8);
     local.set(u16(0), 10);
     local.set(u16(0), 12);
     local.set(u32(crc), 14);
-    local.set(u32(payload.length), 18);
+    local.set(u32(raw.length), 18);
     local.set(u32(raw.length), 22);
     local.set(u16(name.length), 26);
     local.set(u16(0), 28);
     local.set(name, 30);
-    local.set(payload, 30 + name.length);
+    local.set(raw, 30 + name.length);
     locals.push(local);
 
     const central = new Uint8Array(46 + name.length);
-    central.set([0x50, 0x4b, 0x01, 0x02, 20, 0, 20, 0, 0, 8], 0);
+    central.set([0x50, 0x4b, 0x01, 0x02, 20, 0, 20, 0, 0, 0], 0);
     central.set(u16(method), 10);
     central.set(u16(0), 12);
     central.set(u16(0), 14);
     central.set(u32(crc), 16);
-    central.set(u32(payload.length), 20);
+    central.set(u32(raw.length), 20);
     central.set(u32(raw.length), 24);
     central.set(u16(name.length), 28);
     central.set(u16(0), 30);
@@ -261,8 +251,6 @@ function sheetXml(spec: SheetSpec) {
     <mergeCell ref="A1:${lastCol}1"/>
     <mergeCell ref="A2:${lastCol}2"/>
   </mergeCells>
-  <autoFilter ref="A${headerRow}:${lastCol}${headerRow}"/>
-  <pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0" paperSize="9"/>
 </worksheet>`;
 }
 
@@ -352,128 +340,207 @@ const PEOPLE_H = [
 ];
 const PEOPLE_W = [6, 14, 16, 26, 16, 14, 14, 16, 16, 14, 22, 22, 22, 18, 14, 18, 22];
 
-function sheetsFromReport(report: HolatReport): SheetSpec[] {
+export type HolatExcelSection = "sonlar" | "qoshgan" | "filiallar" | "tarmoq" | "royxat";
+
+const SECTION_FILE: Record<HolatExcelSection, string> = {
+  sonlar: "Sonlar",
+  qoshgan: "Kim_qoshgan",
+  filiallar: "Filiallar",
+  tarmoq: "Tarmoq_daraxti",
+  royxat: "Toliq_royxat",
+};
+
+function sheetsFromReport(report: HolatReport, section: HolatExcelSection): SheetSpec[] {
   const when = report.generatedAt;
   const scope = report.scoped ? "Faqat sizning tarmog‘ingiz" : "To‘liq tizim";
+
   const treeRows: Cell[][] = [];
-  for (const c of report.coordinators) {
-    if (!c.mudirs.length) {
-      treeRows.push([
-        c.fullName, "—", "—", "—", "—", c.position, "Koordinator",
-        c.employmentStatusLabel, c.phone, c.hiredAt, c.createdAt, c.createdByName,
-      ]);
-    }
-    for (const m of c.mudirs) {
-      if (!m.staff.length) {
+  if (section === "tarmoq") {
+    for (const c of report.coordinators) {
+      if (!c.mudirs.length) {
         treeRows.push([
-          c.fullName, m.fullName, m.branch, m.firstName, m.lastName, m.position, "Mudir",
-          m.employmentStatusLabel, m.phone, m.hiredAt, m.createdAt, m.createdByName,
+          c.fullName, "—", "—", "—", "—", c.position, "Koordinator",
+          c.employmentStatusLabel, c.phone, c.hiredAt, c.createdAt, c.createdByName,
         ]);
       }
-      for (const s of m.staff) {
-        treeRows.push([
-          c.fullName, m.fullName, m.branch, s.firstName, s.lastName, s.position, s.orgRoleLabel,
-          s.employmentStatusLabel, s.phone, s.hiredAt, s.createdAt, s.createdByName,
-        ]);
+      for (const m of c.mudirs) {
+        if (!m.staff.length) {
+          treeRows.push([
+            c.fullName, m.fullName, m.branch, m.firstName, m.lastName, m.position, "Mudir",
+            m.employmentStatusLabel, m.phone, m.hiredAt, m.createdAt, m.createdByName,
+          ]);
+        }
+        for (const s of m.staff) {
+          treeRows.push([
+            c.fullName, m.fullName, m.branch, s.firstName, s.lastName, s.position, s.orgRoleLabel,
+            s.employmentStatusLabel, s.phone, s.hiredAt, s.createdAt, s.createdByName,
+          ]);
+        }
       }
     }
   }
 
-  return [
-    {
-      name: "Umumiy",
-      title: "VAKSINA MED — Holat hisoboti",
-      subtitle: `${when}  ·  ${scope}`,
-      headers: ["Ko‘rsatkich", "Son", "Izoh"],
-      widths: [36, 12, 42],
-      rows: [
-        ["Koordinatorlar (tarmoq)", report.pharmacyCounts.coordinators, "employees.org_role"],
-        ["Mudirlar", report.pharmacyCounts.mudirs, "Filial mudirlari"],
-        ["Farmasevtlar", report.pharmacyCounts.pharmacists, ""],
-        ["Stajyorlar", report.pharmacyCounts.interns, ""],
-        ["Tarmoq jami", report.pharmacyCounts.total, "Bo‘shatilganlar kirmaydi"],
-        ["Login: koordinator", report.loginCounts.koordinator, "users.role, faol"],
-        ["Login: mudir", report.loginCounts.mudir, ""],
-        ["Login: farmasevt", report.loginCounts.farmasevt, ""],
-        ["Login: stajyor", report.loginCounts.stajyor, ""],
-        ["Bo‘limlar", report.office.departments, "departments"],
-        ["Barcha xodimlar", report.office.employeesTotal, "employees"],
-        ["Barcha loginlar", report.office.usersTotal, "users"],
-        ["Filialda jamoa bor", report.branchesWithStaff.length, ""],
-        ["Filialda jamoa yo‘q", report.branchesWithoutStaff.length, "Mudir bor, xodim yo‘q"],
-      ],
-    },
-    {
-      name: "Kim qoshgan",
-      title: "Kim nechta odam qo‘shgan",
-      subtitle: "created_by_id, yo‘q bo‘lsa tarmoq daraxti",
-      headers: ["F.I.Sh.", "Rol", "Mudir", "Farmasevt", "Stajyor", "Jami", "User ID"],
-      widths: [30, 18, 12, 14, 12, 10, 12],
-      rows: report.addedBy.map((a) => [a.fullName, a.roleLabel, a.mudirs, a.pharmacists, a.interns, a.total, a.userId]),
-    },
-    {
-      name: "Tarmoq daraxti",
-      title: "Koordinator → mudir → xodim",
-      subtitle: "Har qator — bitta odam",
-      headers: ["Koordinator", "Mudir", "Filial", "Ism", "Familiya", "Lavozim", "Rol", "Holat", "Telefon", "Ishga olingan", "Yaratilgan", "Qo‘shgan"],
-      widths: [24, 24, 22, 16, 16, 16, 14, 14, 16, 14, 18, 22],
-      statusCol: 8,
-      rows: treeRows,
-    },
-    {
-      name: "Filiallar",
-      title: "Filiallar — jamoa bor / yo‘q",
-      subtitle: when,
-      headers: ["Filial", "Mudir", "Koordinator", "Farmasevt", "Stajyor", "Jami xodim", "Holat"],
-      widths: [26, 26, 24, 12, 12, 14, 20],
-      statusCol: 7,
-      rows: [
-        ...report.branchesWithStaff.map((b) => [b.branch, b.mudirName, b.coordinatorName, b.pharmacistCount, b.internCount, b.staffCount, "Xodim bor"]),
-        ...report.branchesWithoutStaff.map((b) => [b.branch, b.mudirName, b.coordinatorName, 0, 0, 0, "Xodim qo‘shilmagan"]),
-      ],
-    },
-    {
-      name: "Tarmoq xodimlari",
-      title: "Tarmoq xodimlari (koordinator → stajyor)",
-      subtitle: when,
-      headers: PEOPLE_H,
-      widths: PEOPLE_W,
-      statusCol: 7,
-      rows: report.networkPeople.map(personRow),
-    },
-    {
-      name: "Barcha xodimlar",
-      title: "Tizimdagi barcha xodimlar",
-      subtitle: when,
-      headers: PEOPLE_H,
-      widths: PEOPLE_W,
-      statusCol: 7,
-      rows: report.allEmployees.map(personRow),
-    },
-    {
-      name: "Bolimlar",
-      title: "Bo‘limlar",
-      subtitle: when,
-      headers: ["ID", "Bo‘lim", "Rahbar", "Xodimlar soni", "Yaratilgan"],
-      widths: [8, 32, 28, 16, 20],
-      rows: report.departments.map((d) => [d.id, d.name, d.headName, d.employeeCount, d.createdAt]),
-    },
-    {
-      name: "Loginlar",
-      title: "Barcha foydalanuvchi loginlari",
-      subtitle: when,
-      headers: ["ID", "Ism", "Familiya", "F.I.Sh.", "Lavozim (rol)", "Login", "Telefon", "Bo‘lim", "Holat", "Yaratilgan"],
-      widths: [8, 16, 16, 26, 18, 18, 16, 18, 12, 20],
-      statusCol: 9,
-      rows: report.allUsers.map((u) => [
-        u.id, u.firstName, u.lastName, u.fullName, u.roleLabel, u.login, u.phone, u.departmentName, u.statusLabel, u.createdAt,
-      ]),
-    },
-  ];
+  const all: Record<HolatExcelSection, SheetSpec[]> = {
+    sonlar: [
+      {
+        name: "Umumiy",
+        title: "VAKSINA MED — Holat sonlari",
+        subtitle: `${when}  ·  ${scope}`,
+        headers: ["Ko‘rsatkich", "Son", "Izoh"],
+        widths: [36, 12, 42],
+        rows: [
+          ["Koordinatorlar (tarmoq)", report.pharmacyCounts.coordinators, "employees.org_role"],
+          ["Mudirlar", report.pharmacyCounts.mudirs, "Filial mudirlari"],
+          ["Farmasevtlar", report.pharmacyCounts.pharmacists, ""],
+          ["Stajyorlar", report.pharmacyCounts.interns, ""],
+          ["Tarmoq jami", report.pharmacyCounts.total, "Bo‘shatilganlar kirmaydi"],
+          ["Login: koordinator", report.loginCounts.koordinator, "users.role, faol"],
+          ["Login: mudir", report.loginCounts.mudir, ""],
+          ["Login: farmasevt", report.loginCounts.farmasevt, ""],
+          ["Login: stajyor", report.loginCounts.stajyor, ""],
+          ["Bo‘limlar", report.office.departments, "departments"],
+          ["Barcha xodimlar", report.office.employeesTotal, "employees"],
+          ["Barcha loginlar", report.office.usersTotal, "users"],
+          ["Filialda jamoa bor", report.branchesWithStaff.length, ""],
+          ["Filialda jamoa yo‘q", report.branchesWithoutStaff.length, "Mudir bor, xodim yo‘q"],
+        ],
+      },
+    ],
+    qoshgan: [
+      {
+        name: "Kim qoshgan",
+        title: "Kim nechta odam qo‘shgan",
+        subtitle: "Yozuv bo‘lmasa: mudirni koordinator, xodimni mudir qo‘shgan",
+        headers: ["F.I.Sh.", "Rol", "Mudir", "Farmasevt", "Stajyor", "Jami", "User ID"],
+        widths: [30, 18, 12, 14, 12, 10, 12],
+        rows: report.addedBy.map((a) => [
+          a.fullName,
+          a.roleLabel,
+          a.mudirs,
+          a.pharmacists,
+          a.interns,
+          a.total,
+          a.userId,
+        ]),
+      },
+    ],
+    filiallar: [
+      {
+        name: "Jamoa yoq",
+        title: "Xodim qo‘shilmagan filiallar",
+        subtitle: when,
+        headers: ["Filial", "Mudir", "Koordinator", "Farmasevt", "Stajyor", "Jami xodim", "Holat"],
+        widths: [26, 26, 24, 12, 12, 14, 20],
+        statusCol: 7,
+        rows: report.branchesWithoutStaff.map((b) => [
+          b.branch,
+          b.mudirName,
+          b.coordinatorName,
+          0,
+          0,
+          0,
+          "Xodim qo‘shilmagan",
+        ]),
+      },
+      {
+        name: "Jamoa bor",
+        title: "Xodim qo‘shilgan filiallar",
+        subtitle: when,
+        headers: ["Filial", "Mudir", "Koordinator", "Farmasevt", "Stajyor", "Jami xodim", "Holat"],
+        widths: [26, 26, 24, 12, 12, 14, 20],
+        statusCol: 7,
+        rows: report.branchesWithStaff.map((b) => [
+          b.branch,
+          b.mudirName,
+          b.coordinatorName,
+          b.pharmacistCount,
+          b.internCount,
+          b.staffCount,
+          "Xodim bor",
+        ]),
+      },
+    ],
+    tarmoq: [
+      {
+        name: "Tarmoq daraxti",
+        title: "Koordinator → mudir → xodim",
+        subtitle: "Har qator — bitta odam",
+        headers: [
+          "Koordinator",
+          "Mudir",
+          "Filial",
+          "Ism",
+          "Familiya",
+          "Lavozim",
+          "Rol",
+          "Holat",
+          "Telefon",
+          "Ishga olingan",
+          "Yaratilgan",
+          "Qo‘shgan",
+        ],
+        widths: [24, 24, 22, 16, 16, 16, 14, 14, 16, 14, 18, 22],
+        statusCol: 8,
+        rows: treeRows,
+      },
+    ],
+    royxat: [
+      {
+        name: "Barcha xodimlar",
+        title: "Tizimdagi barcha xodimlar",
+        subtitle: when,
+        headers: PEOPLE_H,
+        widths: PEOPLE_W,
+        statusCol: 7,
+        rows: report.allEmployees.map(personRow),
+      },
+      {
+        name: "Bolimlar",
+        title: "Bo‘limlar",
+        subtitle: when,
+        headers: ["ID", "Bo‘lim", "Rahbar", "Xodimlar soni", "Yaratilgan"],
+        widths: [8, 32, 28, 16, 20],
+        rows: report.departments.map((d) => [d.id, d.name, d.headName, d.employeeCount, d.createdAt]),
+      },
+      {
+        name: "Loginlar",
+        title: "Barcha foydalanuvchi loginlari",
+        subtitle: when,
+        headers: [
+          "ID",
+          "Ism",
+          "Familiya",
+          "F.I.Sh.",
+          "Lavozim (rol)",
+          "Login",
+          "Telefon",
+          "Bo‘lim",
+          "Holat",
+          "Yaratilgan",
+        ],
+        widths: [8, 16, 16, 26, 18, 18, 16, 18, 12, 20],
+        statusCol: 9,
+        rows: report.allUsers.map((u) => [
+          u.id,
+          u.firstName,
+          u.lastName,
+          u.fullName,
+          u.roleLabel,
+          u.login,
+          u.phone,
+          u.departmentName,
+          u.statusLabel,
+          u.createdAt,
+        ]),
+      },
+    ],
+  };
+  return all[section];
 }
 
-export async function downloadHolatXlsxFile(report: HolatReport) {
-  const sheets = sheetsFromReport(report);
+export async function downloadHolatXlsxFile(report: HolatReport, section: HolatExcelSection) {
+  const sheets = sheetsFromReport(report, section);
+  if (!sheets?.length) throw new Error("Bu bo‘lim uchun ma’lumot yo‘q");
   const files = [
     { path: "[Content_Types].xml", text: contentTypes(sheets.length) },
     { path: "_rels/.rels", text: ROOT_RELS },
@@ -483,16 +550,21 @@ export async function downloadHolatXlsxFile(report: HolatReport) {
     ...sheets.map((s, i) => ({ path: `xl/worksheets/sheet${i + 1}.xml`, text: sheetXml(s) })),
   ];
   const bytes = await zipFiles(files);
-  const blob = new Blob([bytes], {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  const blob = new Blob([copy], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   const stamp = new Date().toISOString().slice(0, 10);
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `VAKSINA_Holat_${stamp}.xlsx`;
+  a.download = `VAKSINA_Holat_${SECTION_FILE[section]}_${stamp}.xlsx`;
+  a.rel = "noopener";
   document.body.appendChild(a);
   a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    a.remove();
+    URL.revokeObjectURL(url);
+  }, 1500);
 }

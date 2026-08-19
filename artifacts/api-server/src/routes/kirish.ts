@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import {
   db,
   kirishProgressTable,
+  kirishVideosTable,
   type KirishStageState,
   type KirishStagesMap,
 } from "@workspace/db";
@@ -16,7 +17,10 @@ import {
   scoreAnswers,
   KIRISH_STAGES,
   KIRISH_PASS_SCORE,
+  type KirishQuestion,
 } from "../lib/kirish-content";
+import { parseYoutubeId } from "../lib/youtube-id";
+import { parseDriveFileId } from "../lib/drive-id";
 
 const router: IRouter = Router();
 
@@ -93,13 +97,202 @@ function serializeProgress(row: Awaited<ReturnType<typeof getOrCreateProgress>>)
   };
 }
 
+async function youtubeByStage() {
+  const rows = await db.select().from(kirishVideosTable);
+  return new Map(rows.map((r) => [r.stage, r]));
+}
+
+function parseAdminQuestions(raw: unknown): KirishQuestion[] | { error: string } {
+  if (raw == null) return [];
+  if (!Array.isArray(raw)) return { error: "Test savollari noto‘g‘ri" };
+  const out: KirishQuestion[] = [];
+  for (let i = 0; i < raw.length; i++) {
+    const q = raw[i] as Record<string, unknown>;
+    const text = String(q?.text ?? "").trim();
+    const options = Array.isArray(q?.options)
+      ? q.options.map((o) => String(o ?? "").trim()).filter(Boolean)
+      : [];
+    const correctIndex = Number(q?.correctIndex);
+    if (!text) return { error: `${i + 1}-savol matnini yozing` };
+    if (options.length < 2) return { error: `${i + 1}-savolda kamida 2 ta variant bo‘lsin` };
+    if (!Number.isInteger(correctIndex) || correctIndex < 0 || correctIndex >= options.length) {
+      return { error: `${i + 1}-savolda to‘g‘ri javobni belgilang` };
+    }
+    const idRaw = String(q?.id ?? "").trim();
+    out.push({
+      id: idRaw || `q-${i + 1}-${Date.now()}`,
+      text,
+      options,
+      correctIndex,
+    });
+  }
+  return out;
+}
+
+function questionsForStage(
+  stage: (typeof KIRISH_STAGES)[number],
+  ov?: { questionsJson?: KirishQuestion[] | null } | null,
+): KirishQuestion[] {
+  const custom = ov?.questionsJson;
+  if (!Array.isArray(custom) || custom.length === 0) return stage.questions;
+  return custom.map((q, i) => {
+    const expected = Number(q?.correctIndex);
+    return {
+      id: String(q?.id || stage.questions[i]?.id || `q-${i + 1}`),
+      text: String(q?.text || ""),
+      options: Array.isArray(q?.options) ? q.options.map((o) => String(o ?? "")) : [],
+      correctIndex: Number.isInteger(expected)
+        ? expected
+        : Number(stage.questions[i]?.correctIndex ?? 0),
+    };
+  });
+}
+
+function publicStagesWithVideos(
+  byStage: Map<
+    number,
+    {
+      youtubeUrl: string;
+      youtubeId: string;
+      pdfUrl: string | null;
+      driveFileId: string | null;
+      questionsJson?: KirishQuestion[] | null;
+    }
+  >,
+) {
+  return KIRISH_STAGES.map((s) => {
+    const ov = byStage.get(s.stage);
+    const questions = questionsForStage(s, ov);
+    const pub = publicStagePayload({ ...s, questions });
+    const youtubeId = ov?.youtubeId || null;
+    const driveFileId = ov?.driveFileId || null;
+    return {
+      ...pub,
+      videoUrl: youtubeId ? ov!.youtubeUrl : pub.videoUrl,
+      videoKind: youtubeId ? ("youtube" as const) : ("file" as const),
+      youtubeId,
+      pdfUrl: ov?.pdfUrl ?? null,
+      driveFileId,
+    };
+  });
+}
+
+function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
+  if (req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat admin" });
+    return false;
+  }
+  return true;
+}
+
 router.get("/kirish/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireStajyor(req, res)) return;
   const progress = await getOrCreateProgress(req.userId!);
+  const byStage = await youtubeByStage();
   res.json({
     progress: serializeProgress(progress),
-    stages: KIRISH_STAGES.map(publicStagePayload),
+    stages: publicStagesWithVideos(byStage),
   });
+});
+
+router.get("/kirish/videos", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const byStage = await youtubeByStage();
+  res.json({
+    videos: KIRISH_STAGES.map((s) => {
+      const ov = byStage.get(s.stage);
+      return {
+        stage: s.stage,
+        title: s.title,
+        subtitle: s.subtitle,
+        youtubeUrl: ov?.youtubeUrl ?? "",
+        youtubeId: ov?.youtubeId || null,
+        pdfUrl: ov?.pdfUrl ?? "",
+        driveFileId: ov?.driveFileId ?? null,
+        questions: questionsForStage(s, ov),
+        updatedAt: ov?.updatedAt ? ov.updatedAt.toISOString() : null,
+      };
+    }),
+  });
+});
+
+router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const n = Number(req.params.n);
+  if (!getStage(n)) {
+    res.status(400).json({ error: "Noto‘g‘ri bosqich" });
+    return;
+  }
+  const rawYoutube = String(req.body?.youtubeUrl ?? "").trim();
+  const rawPdf = String(req.body?.pdfUrl ?? "").trim();
+  const youtubeId = rawYoutube ? parseYoutubeId(rawYoutube) : "";
+  if (rawYoutube && !youtubeId) {
+    res.status(400).json({ error: "YouTube havolasi noto‘g‘ri" });
+    return;
+  }
+  const driveFileId = rawPdf ? parseDriveFileId(rawPdf) : null;
+  if (rawPdf && !driveFileId) {
+    res.status(400).json({ error: "Google Drive PDF havolasi noto‘g‘ri" });
+    return;
+  }
+  const parsedQs = parseAdminQuestions(req.body?.questions);
+  if (!Array.isArray(parsedQs)) {
+    res.status(400).json({ error: parsedQs.error });
+    return;
+  }
+  if (!youtubeId && !driveFileId && parsedQs.length === 0) {
+    res.status(400).json({ error: "YouTube, Google Drive PDF yoki test savolini yozing" });
+    return;
+  }
+  const youtubeUrl = youtubeId ? `https://www.youtube.com/watch?v=${youtubeId}` : "";
+  const pdfUrl = driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null;
+  const [existing] = await db
+    .select()
+    .from(kirishVideosTable)
+    .where(eq(kirishVideosTable.stage, n))
+    .limit(1);
+  const now = new Date();
+  if (existing) {
+    const [updated] = await db
+      .update(kirishVideosTable)
+      .set({
+        youtubeUrl,
+        youtubeId: youtubeId || "",
+        pdfUrl,
+        driveFileId,
+        questionsJson: parsedQs,
+        updatedById: req.userId ?? null,
+        updatedAt: now,
+      })
+      .where(eq(kirishVideosTable.id, existing.id))
+      .returning();
+    res.json({ video: updated });
+    return;
+  }
+  const [created] = await db
+    .insert(kirishVideosTable)
+    .values({
+      stage: n,
+      youtubeUrl,
+      youtubeId: youtubeId || "",
+      pdfUrl,
+      driveFileId,
+      questionsJson: parsedQs,
+      updatedById: req.userId ?? null,
+    })
+    .returning();
+  res.json({ video: created });
+});
+
+router.delete("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const n = Number(req.params.n);
+  if (!getStage(n)) {
+    res.status(400).json({ error: "Noto‘g‘ri bosqich" });
+    return;
+  }
+  await db.delete(kirishVideosTable).where(eq(kirishVideosTable.stage, n));
+  res.json({ ok: true });
 });
 
 router.post(
@@ -208,10 +401,13 @@ router.post(
     }
 
     const answers = (req.body?.answers || {}) as Record<string, number>;
-    const result = scoreAnswers(stage, answers);
+    const byStage = await youtubeByStage();
+    const overlayQs = questionsForStage(stage, byStage.get(n));
+    const result = scoreAnswers({ ...stage, questions: overlayQs }, answers);
     const nowIso = new Date().toISOString();
     stages[key] = {
       ...st,
+      videoDone: result.passed ? st.videoDone : false,
       score: result.score,
       attempts: st.attempts + 1,
       passed: result.passed,

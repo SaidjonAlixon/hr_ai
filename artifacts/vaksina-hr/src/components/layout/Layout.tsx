@@ -26,6 +26,7 @@ import {
   ScanFace,
   ChevronDown,
   Pin,
+  Video,
 } from 'lucide-react';
 import {
   useLogout,
@@ -121,7 +122,7 @@ const NAV_SECTIONS: {
     accent: 'bg-rose-400',
     line: 'border-rose-400/55',
     chip: 'text-rose-300',
-    paths: ['/admin/users', '/admin/departments'],
+    paths: ['/admin/users', '/admin/departments', '/admin/kirish-videolar'],
   },
 ];
 
@@ -186,6 +187,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/interviews')) return '/interviews';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
+  if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
   if (path.startsWith('/dashboard')) return '/dashboard';
 
   if (
@@ -537,6 +539,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
+      { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
       { name: 'Pipeline', path: '/pipeline', icon: Kanban },
     ],
     recruiter: [

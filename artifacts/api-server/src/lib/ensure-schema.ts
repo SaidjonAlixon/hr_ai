@@ -19,6 +19,20 @@ CREATE TABLE IF NOT EXISTS kirish_progress (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS kirish_progress_user_uidx ON kirish_progress (user_id);
 
+CREATE TABLE IF NOT EXISTS kirish_videos (
+  id SERIAL PRIMARY KEY,
+  stage INTEGER NOT NULL,
+  youtube_url TEXT NOT NULL,
+  youtube_id TEXT NOT NULL,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS kirish_videos_stage_uidx ON kirish_videos (stage);
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS pdf_url TEXT;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS drive_file_id TEXT;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS questions_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 -- Chat
 CREATE TABLE IF NOT EXISTS chats (
   id SERIAL PRIMARY KEY,

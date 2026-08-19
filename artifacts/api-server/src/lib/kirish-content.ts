@@ -1,7 +1,7 @@
-/** Kirish o‘quv moduli — 3 bosqich. To‘g‘ri javoblar faqat serverda ishlatiladi. */
+/** Kirish o‘quv moduli — 8 bosqich. To‘g‘ri javoblar faqat serverda ishlatiladi. */
 
-export const KIRISH_PASS_SCORE = 50; // > 50%
-export const KIRISH_STAGE_COUNT = 3;
+export const KIRISH_PASS_SCORE = 50; // 50% va undan yuqori (masalan 3/6)
+export const KIRISH_STAGE_COUNT = 8;
 
 export type KirishSlide = {
   id: string;
@@ -32,7 +32,7 @@ export const KIRISH_STAGES: KirishStageContent[] = [
   {
     stage: 1,
     title: "1-bosqich: Apteka kirish asoslari",
-    subtitle: "Video → slaydlar → test. 50% dan yuqori natija keyingi bosqichni ochadi.",
+    subtitle: "Video → slaydlar → test. Kamida 50% natija keyingi bosqichni ochadi.",
     videoUrl: "/kirish/stage1/intro.mp4",
     videoPosterHint: "Stajyor: kirish va odob-axloq",
     slides: [
@@ -69,7 +69,7 @@ export const KIRISH_STAGES: KirishStageContent[] = [
       {
         id: "s1-6",
         title: "Keyingi qadam",
-        body: "Slaydlarni ko‘rib chiqdingiz. Endi qisqa test — 50% dan yuqori ball bilan 2-bosqich ochiladi.",
+        body: "Slaydlarni ko‘rib chiqdingiz. Endi qisqa test — kamida 50% (masalan 6 tadan 3 ta) bilan 2-bosqich ochiladi.",
         accent: "#2D3436",
       },
     ],
@@ -132,7 +132,7 @@ export const KIRISH_STAGES: KirishStageContent[] = [
       {
         id: "q1-6",
         text: "Keyingi bosqich ochilishi uchun minimal natija?",
-        options: ["30%", "50% dan yuqori", "Aniq 50%", "100% majburiy"],
+        options: ["30%", "50% va undan yuqori (masalan 3/6)", "Faqat 100%", "25%"],
         correctIndex: 1,
       },
     ],
@@ -191,8 +191,8 @@ export const KIRISH_STAGES: KirishStageContent[] = [
   },
   {
     stage: 3,
-    title: "3-bosqich: Yakuniy standartlar",
-    subtitle: "Oxirgi bosqich. Muvaffaqiyatli tugatsangiz — «Tugatish».",
+    title: "3-bosqich: Jamoa va sifat",
+    subtitle: "Video, PDF slayd va test. kamida 50% natija 4-bosqichni ochadi.",
     videoUrl: "/kirish/stage3/intro.mp4",
     videoPosterHint: "Yakuniy standartlar — demo",
     slides: [
@@ -210,8 +210,8 @@ export const KIRISH_STAGES: KirishStageContent[] = [
       },
       {
         id: "s3-3",
-        title: "Tayyorgarlik",
-        body: "Barcha bosqichlarni o‘tgach «Tugatish» ni bosing — holatingiz HR uchun tayyorlanadi.",
+        title: "Sifat nazorati",
+        body: "Har smenada javon, muddat va tartibni tekshiring. Kamchilikni yashirmang.",
         accent: "#00B894",
       },
     ],
@@ -229,12 +229,12 @@ export const KIRISH_STAGES: KirishStageContent[] = [
       },
       {
         id: "q3-2",
-        text: "Yakuniy bosqichdan keyin nima qilinadi?",
+        text: "Kundalik sifat nimalarni o‘z ichiga oladi?",
         options: [
-          "Hech narsa",
-          "«Tugatish» — holat HR uchun tayyorlanadi",
-          "Darhol director bo‘lasiz",
-          "Parol o‘zgaradi",
+          "Faqat kassa hisobi",
+          "Toza javon, to‘g‘ri joylashuv, mijoz kutishini kamaytirish",
+          "Faqat reklama",
+          "Faqat tanaffus",
         ],
         correctIndex: 1,
       },
@@ -246,6 +246,126 @@ export const KIRISH_STAGES: KirishStageContent[] = [
           "Toza javon, tartib, mijoz kutishini kamaytirish",
           "Faqat reklama",
           "Faqat kassa",
+        ],
+        correctIndex: 1,
+      },
+    ],
+  },
+  {
+    stage: 4,
+    title: "4-bosqich: Ombor va saqlash",
+    subtitle: "Video, PDF slayd va test. kamida 50% natija keyingi bosqichni ochadi.",
+    videoUrl: "/kirish/stage4/intro.mp4",
+    videoPosterHint: "Ombor tartibi — admin video qo‘shadi",
+    slides: [
+      {
+        id: "s4-1",
+        title: "Ombor tartibi",
+        body: "Dorilar toifalar bo‘yicha joylashadi. Muddati yaqinlar oldinga qo‘yiladi.",
+        accent: "#2AABEE",
+      },
+    ],
+    questions: [
+      {
+        id: "q4-1",
+        text: "Muddati yaqin dorilar qayerda turishi kerak?",
+        options: ["Orqada", "Oldinda, birinchi olinadigan joyda", "Ombor tashqarisida", "Kassa yonida"],
+        correctIndex: 1,
+      },
+    ],
+  },
+  {
+    stage: 5,
+    title: "5-bosqich: Retsept va hujjatlar",
+    subtitle: "Video, PDF slayd va test. kamida 50% natija keyingi bosqichni ochadi.",
+    videoUrl: "/kirish/stage5/intro.mp4",
+    videoPosterHint: "Retsept qoidalari — admin video qo‘shadi",
+    slides: [
+      {
+        id: "s5-1",
+        title: "Retsept",
+        body: "Retseptli dorilar faqat to‘g‘ri rasmiylashtirilgan retsept asosida beriladi.",
+        accent: "#6C5CE7",
+      },
+    ],
+    questions: [
+      {
+        id: "q5-1",
+        text: "Retseptli dori qachon beriladi?",
+        options: ["Har doim", "Faqat to‘g‘ri retsept asosida", "Do‘st so‘roviga", "Faqat kechqurun"],
+        correctIndex: 1,
+      },
+    ],
+  },
+  {
+    stage: 6,
+    title: "6-bosqich: Mijoz murojaatlari",
+    subtitle: "Video, PDF slayd va test. kamida 50% natija keyingi bosqichni ochadi.",
+    videoUrl: "/kirish/stage6/intro.mp4",
+    videoPosterHint: "Mijoz murojaati — admin video qo‘shadi",
+    slides: [
+      {
+        id: "s6-1",
+        title: "Shikoyat",
+        body: "Shikoyatni tinglang, yozib oling, mudirga xabar bering. Bahslashmang.",
+        accent: "#00B894",
+      },
+    ],
+    questions: [
+      {
+        id: "q6-1",
+        text: "Mijoz shikoyat qilsa nima qilinadi?",
+        options: ["E'tiborsiz qoldirish", "Tinglash, yozib olish, mudirga xabar", "Bahslashish", "Eshikni yopish"],
+        correctIndex: 1,
+      },
+    ],
+  },
+  {
+    stage: 7,
+    title: "7-bosqich: Xavfsizlik",
+    subtitle: "Video, PDF slayd va test. kamida 50% natija keyingi bosqichni ochadi.",
+    videoUrl: "/kirish/stage7/intro.mp4",
+    videoPosterHint: "Xavfsizlik — admin video qo‘shadi",
+    slides: [
+      {
+        id: "s7-1",
+        title: "Favqulodda holat",
+        body: "Yong‘in, o‘g‘rilik yoki tibbiy holatda — xavfsizlik birinchi. Keyin mudir/koordinator.",
+        accent: "#E17055",
+      },
+    ],
+    questions: [
+      {
+        id: "q7-1",
+        text: "Favqulodda holatda nima birinchi?",
+        options: ["Chek yozish", "Odamlar xavfsizligi", "Telefon o‘ynash", "Eshikni qulflash"],
+        correctIndex: 1,
+      },
+    ],
+  },
+  {
+    stage: 8,
+    title: "8-bosqich: Yakuniy standartlar",
+    subtitle: "Oxirgi bosqich. Muvaffaqiyatli tugatsangiz — «Tugatish».",
+    videoUrl: "/kirish/stage8/intro.mp4",
+    videoPosterHint: "Yakuniy standartlar — admin video qo‘shadi",
+    slides: [
+      {
+        id: "s8-1",
+        title: "Tayyorgarlik",
+        body: "Barcha bosqichlarni o‘tgach «Tugatish» ni bosing — holatingiz HR uchun tayyorlanadi.",
+        accent: "#2D3436",
+      },
+    ],
+    questions: [
+      {
+        id: "q8-1",
+        text: "Yakuniy bosqichdan keyin nima qilinadi?",
+        options: [
+          "Hech narsa",
+          "«Tugatish» — holat HR uchun tayyorlanadi",
+          "Darhol director bo‘lasiz",
+          "Parol o‘zgaradi",
         ],
         correctIndex: 1,
       },
@@ -280,8 +400,10 @@ export function scoreAnswers(
   const total = stage.questions.length;
   let correct = 0;
   for (const q of stage.questions) {
-    if (answers[q.id] === q.correctIndex) correct += 1;
+    const given = Number(answers[q.id]);
+    const expected = Number(q.correctIndex);
+    if (Number.isInteger(given) && given === expected) correct += 1;
   }
   const score = total ? Math.round((correct / total) * 100) : 0;
-  return { score, correct, total, passed: score > KIRISH_PASS_SCORE };
+  return { score, correct, total, passed: score >= KIRISH_PASS_SCORE };
 }

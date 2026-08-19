@@ -45,6 +45,10 @@ export type KirishStagePublic = {
   subtitle: string;
   videoUrl: string;
   videoPosterHint: string;
+  videoKind?: "youtube" | "file";
+  youtubeId?: string | null;
+  pdfUrl?: string | null;
+  driveFileId?: string | null;
   slides: KirishSlide[];
   questions: KirishQuestionPublic[];
 };
@@ -156,5 +160,69 @@ export function useFinishKirish() {
         { method: "POST" },
       ),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["kirish", "me"] }),
+  });
+}
+
+export type KirishAdminQuestion = {
+  id: string;
+  text: string;
+  options: string[];
+  correctIndex: number;
+};
+
+export type KirishAdminVideo = {
+  stage: number;
+  title: string;
+  subtitle: string;
+  youtubeUrl: string;
+  youtubeId: string | null;
+  pdfUrl: string;
+  driveFileId: string | null;
+  questions: KirishAdminQuestion[];
+  updatedAt: string | null;
+};
+
+export function useKirishAdminVideos(enabled: boolean) {
+  return useQuery({
+    queryKey: ["kirish", "videos"],
+    queryFn: () => apiFetch<{ videos: KirishAdminVideo[] }>("/kirish/videos"),
+    enabled,
+  });
+}
+
+export function useSaveKirishVideo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      stage,
+      youtubeUrl,
+      pdfUrl,
+      questions,
+    }: {
+      stage: number;
+      youtubeUrl: string;
+      pdfUrl: string;
+      questions: KirishAdminQuestion[];
+    }) =>
+      apiFetch<{ video: unknown }>(`/kirish/videos/${stage}`, {
+        method: "PUT",
+        body: JSON.stringify({ youtubeUrl, pdfUrl, questions }),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["kirish", "videos"] });
+      void qc.invalidateQueries({ queryKey: ["kirish", "me"] });
+    },
+  });
+}
+
+export function useClearKirishVideo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (stage: number) =>
+      apiFetch<{ ok: boolean }>(`/kirish/videos/${stage}`, { method: "DELETE" }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["kirish", "videos"] });
+      void qc.invalidateQueries({ queryKey: ["kirish", "me"] });
+    },
   });
 }

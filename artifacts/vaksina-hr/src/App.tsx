@@ -41,6 +41,7 @@ import ChecklistPage from './pages/checklist/index';
 import ChecklistHolatiPage from './pages/checklist-holati/index';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
+import AdminKirishVideosPage from './pages/admin/kirish-videos';
 import EmployeesPage from './pages/employees/index';
 import DavomatPage from './pages/davomat/index';
 import DavomatFacePage from './pages/davomat/face';
@@ -130,6 +131,7 @@ function Router() {
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
+      <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
       
       <Route component={NotFound} />
     </Switch>

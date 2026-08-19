@@ -10,7 +10,7 @@ import { saveManagerBranchLocation } from "../lib/branch-gps";
 
 const router: IRouter = Router();
 
-const VALID_EMP_STATUS = new Set(["working", "new", "dismissed", "need_hire", "searching"]);
+const VALID_EMP_STATUS = new Set(["working", "new", "dismissed", "need_hire", "searching", "no_manager"]);
 
 const FULL_NETWORK_ROLES = new Set([
   "admin",
@@ -18,6 +18,8 @@ const FULL_NETWORK_ROLES = new Set([
   "director",
   "recruiter",
   "department_head",
+  "sb",
+  "sb_boshliq",
 ]);
 
 const ORG_ROLE_UZ: Record<string, string> = {
@@ -34,6 +36,7 @@ const STATUS_UZ: Record<string, string> = {
   dismissed: "Bo‘shagan",
   need_hire: "Yollash kerak",
   searching: "Qidiruvda",
+  no_manager: "Mudir yo‘q",
 };
 
 const SHIFT_UZ: Record<string, string> = {
@@ -414,6 +417,7 @@ router.post("/employees", requireAuth, async (req: AuthRequest, res): Promise<vo
       photoUrl: photoUrl ?? null,
       employmentStatus: status,
       userId: userId ? parseInt(String(userId), 10) : null,
+      createdById: req.userId ?? null,
     })
     .returning();
 
@@ -515,6 +519,16 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
       if (!VALID_EMP_STATUS.has(req.body[key])) {
         res.status(400).json({ error: "Noto‘g‘ri xodim holati" });
         return;
+      }
+      if (req.body[key] === "no_manager") {
+        if (role === "mudir") {
+          res.status(400).json({ error: "Mudir yo‘q holatini faqat koordinator belgilaydi" });
+          return;
+        }
+        if (before.orgRole !== "manager") {
+          res.status(400).json({ error: "Mudir yo‘q faqat mudir kartasiga qo‘yiladi" });
+          return;
+        }
       }
     }
     if (key === "userId" && !isHrManager(role)) continue;

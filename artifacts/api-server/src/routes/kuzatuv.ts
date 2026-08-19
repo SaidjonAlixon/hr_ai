@@ -45,6 +45,7 @@ const EMP_STATUS_UZ: Record<string, string> = {
   dismissed: "Bo‘shatilgan",
   need_hire: "Xodim kerak",
   searching: "Qidirilmoqda",
+  no_manager: "Mudir yo‘q",
 };
 
 const ORG_ROLE_UZ: Record<string, string> = {

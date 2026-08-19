@@ -3,7 +3,7 @@ import { useGetEmployees, useUpdateEmployee, type Employee } from '@workspace/ap
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
-import { isHrManager, isHrRole } from '../../lib/roles';
+import { isHrManager, isHrRole, isSbRole } from '../../lib/roles';
 import {
   EMPLOYMENT_STATUS_LABELS,
   PIPELINE_STEPS,
@@ -85,7 +85,11 @@ function googleMapsUrl(lat: number, lng: number) {
 }
 
 function isAlertStatus(status?: string | null) {
-  return !!status && status !== 'working';
+  return !!status && status !== 'working' && status !== 'no_manager';
+}
+
+function isNoManagerStatus(status?: string | null) {
+  return status === 'no_manager';
 }
 
 function resolvePipelineStep(ph: Employee, linked?: StaffingAlert) {
@@ -129,6 +133,8 @@ function EmploymentBadge({ status }: { status?: string | null }) {
         ? 'bg-sky-50 text-sky-700 ring-sky-200'
         : s === 'dismissed'
           ? 'bg-red-100 text-red-800 ring-red-300'
+          : s === 'no_manager'
+            ? 'bg-amber-100 text-amber-900 ring-amber-300'
           : s === 'searching'
             ? 'bg-violet-100 text-violet-800 ring-violet-300 animate-pulse'
             : 'bg-orange-100 text-orange-800 ring-orange-300';
@@ -233,7 +239,8 @@ export default function PharmacyNetworkPage() {
     user?.role === 'admin' ||
     user?.role === 'recruiter' ||
     user?.role === 'koordinator' ||
-    user?.role === 'department_head';
+    user?.role === 'department_head' ||
+    isSbRole(user?.role);
 
   const isMudirOnly = user?.role === 'mudir';
   const isKoordinatorOnly = user?.role === 'koordinator';
@@ -269,6 +276,11 @@ export default function PharmacyNetworkPage() {
 
   const canConfirmAlerts = user?.role === 'koordinator' || isHrManager(user?.role);
   const canSetBranchGps = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
+  const canSetNoManager =
+    user?.role === 'koordinator' ||
+    user?.role === 'admin' ||
+    user?.role === 'director' ||
+    isHrRole(user?.role);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);
@@ -376,21 +388,28 @@ export default function PharmacyNetworkPage() {
       if (coordinatorFilter !== 'all' && String(c.id) !== coordinatorFilter) return false;
 
       const managersUnder = allManagers.filter((m) => m.reportsToId === c.id);
+      const orphansUnder = orgPeople.filter(
+        (p) =>
+          (p.orgRole === 'pharmacist' || p.orgRole === 'intern' || p.orgRole === 'supervisor') &&
+          p.reportsToId === c.id,
+      );
       const personShiftOk = (p: Employee) => shiftFilter === 'all' || (p.shiftType || 'one') === shiftFilter;
-      const underMatchesShift = managersUnder.some((m) => {
-        if (personShiftOk(m)) return true;
-        return (pharmacistsByManager.get(m.id) ?? []).some((p) => personShiftOk(p));
-      });
+      const underMatchesShift =
+        managersUnder.some((m) => {
+          if (personShiftOk(m)) return true;
+          return (pharmacistsByManager.get(m.id) ?? []).some((p) => personShiftOk(p));
+        }) || orphansUnder.some((p) => personShiftOk(p));
       if (shiftFilter !== 'all' && !personShiftOk(c) && !underMatchesShift) return false;
 
       if (!q) return true;
       if (c.fullName.toLowerCase().includes(q)) return true;
+      if (orphansUnder.some((p) => p.fullName.toLowerCase().includes(q))) return true;
       return managersUnder.some((m) => {
         if (m.fullName.toLowerCase().includes(q)) return true;
         return (pharmacistsByManager.get(m.id) ?? []).some((p) => p.fullName.toLowerCase().includes(q));
       });
     });
-  }, [coordinators, coordinatorFilter, search, shiftFilter, allManagers, pharmacistsByManager]);
+  }, [coordinators, coordinatorFilter, search, shiftFilter, allManagers, pharmacistsByManager, orgPeople]);
 
   const managers = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -415,6 +434,32 @@ export default function PharmacyNetworkPage() {
 
     return list;
   }, [allManagers, filteredCoordinators, shiftFilter, search, pharmacistsByManager, isMudirOnly]);
+
+  const orphanStaffGroups = useMemo(() => {
+    if (isMudirOnly) return [] as { key: string; location: string; staff: Employee[] }[];
+    const allowedCoordIds = new Set(filteredCoordinators.map((c) => c.id));
+    const staffRoles = new Set(['pharmacist', 'intern', 'supervisor']);
+    const q = search.trim().toLowerCase();
+    const orphans = orgPeople.filter((p) => {
+      if (!staffRoles.has(p.orgRole || '')) return false;
+      if (!p.reportsToId || !allowedCoordIds.has(p.reportsToId)) return false;
+      if (shiftFilter !== 'all' && !shiftMatch(p)) return false;
+      if (q && !nameMatch(p, q)) return false;
+      return true;
+    });
+    const map = new Map<string, Employee[]>();
+    for (const p of orphans) {
+      const loc = (p.location || '').trim() || 'Filial';
+      const list = map.get(loc) ?? [];
+      list.push(p);
+      map.set(loc, list);
+    }
+    return [...map.entries()].map(([location, staff]) => ({
+      key: location,
+      location,
+      staff: staff.sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz')),
+    }));
+  }, [isMudirOnly, filteredCoordinators, orgPeople, shiftFilter, search]);
 
   const filterTeam = (managerId: number) => {
     let team = pharmacistsByManager.get(managerId) ?? [];
@@ -541,9 +586,11 @@ export default function PharmacyNetworkPage() {
           toast({
             title: 'Saqlandi',
             description:
-              canEditStatus && employmentStatus !== 'working'
-                ? 'Holat yangilandi — ogohlantirish yuborildi'
-                : 'Maʼlumot yangilandi',
+              canEditStatus && employmentStatus === 'no_manager'
+                ? 'Mudir yo‘q deb belgilandi. Xodimlar ishlashda davom etadi.'
+                : canEditStatus && employmentStatus !== 'working'
+                  ? 'Holat yangilandi — ogohlantirish yuborildi'
+                  : 'Maʼlumot yangilandi',
           });
           setEditTarget(null);
           refetch();
@@ -1035,7 +1082,9 @@ export default function PharmacyNetworkPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
               {isMudirOnly ? 'Mening filiali' : '2 · Filial mudirlari'}
             </p>
-            <p className="text-xs text-slate-400">{managers.length} ta filial</p>
+            <p className="text-xs text-slate-400">
+              {managers.length + orphanStaffGroups.length} ta filial
+            </p>
           </div>
 
           {expandedId != null && (() => {
@@ -1049,7 +1098,11 @@ export default function PharmacyNetworkPage() {
                 ref={teamPanelRef}
                 className={cn(
                   'mb-4 flex max-h-[min(55vh,480px)] scroll-mt-20 flex-col rounded-xl border bg-white shadow-sm',
-                  alert ? 'border-red-300' : 'border-slate-200',
+                  alert
+                    ? 'border-red-300'
+                    : isNoManagerStatus(empStatus(manager))
+                      ? 'border-amber-300'
+                      : 'border-slate-200',
                 )}
               >
                 <div className="mb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
@@ -1158,7 +1211,7 @@ export default function PharmacyNetworkPage() {
             );
           })()}
 
-          {managers.length === 0 ? (
+          {managers.length === 0 && orphanStaffGroups.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400">Filter bo‘yicha mudir topilmadi</p>
           ) : (
             <div
@@ -1171,10 +1224,13 @@ export default function PharmacyNetworkPage() {
               {managers.map((manager, idx) => {
                 const fullTeam = pharmacistsByManager.get(manager.id) ?? [];
                 const open = expandedId === manager.id;
+                const noMudir = isNoManagerStatus(empStatus(manager));
                 const alert = branchHasAlert(manager.id);
                 const accent = alert
                   ? 'border-t-red-500'
-                  : BRANCH_ACCENTS[idx % BRANCH_ACCENTS.length];
+                  : noMudir
+                    ? 'border-t-amber-500'
+                    : BRANCH_ACCENTS[idx % BRANCH_ACCENTS.length];
 
                 return (
                   <div
@@ -1183,10 +1239,13 @@ export default function PharmacyNetworkPage() {
                       'group flex min-w-0 flex-col overflow-hidden rounded-xl border border-t-[3px] bg-white shadow-sm transition-all hover:shadow-md',
                       accent,
                       alert && 'border-red-300 bg-red-50/30 ring-1 ring-red-200',
+                      noMudir && !alert && 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-200',
                       open
                         ? alert
                           ? 'shadow-md ring-2 ring-red-200'
-                          : 'border-primary/40 shadow-md ring-2 ring-primary/20'
+                          : noMudir
+                            ? 'shadow-md ring-2 ring-amber-200'
+                            : 'border-primary/40 shadow-md ring-2 ring-primary/20'
                         : !alert && 'border-slate-200 hover:border-slate-300',
                     )}
                   >
@@ -1339,7 +1398,9 @@ export default function PharmacyNetworkPage() {
                           <p className="text-sm font-semibold leading-snug text-slate-900">
                             {manager.fullName}
                           </p>
-                          <p className="mt-0.5 text-[11px] text-slate-500">Mudir (zav.aptek)</p>
+                          <p className="mt-0.5 text-[11px] text-slate-500">
+                            {noMudir ? 'Mudir yo‘q' : 'Mudir (zav.aptek)'}
+                          </p>
                           {isKoordinatorOnly && credByEmployee.get(manager.id) ? (
                             <div className="mt-2 space-y-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]">
                               <div className="flex items-center justify-between gap-2">
@@ -1430,6 +1491,8 @@ export default function PharmacyNetworkPage() {
                                       ? 'bg-red-100 text-red-800 ring-red-300'
                                       : empStatus(manager) === 'new'
                                         ? 'bg-sky-50 text-sky-700 ring-sky-200'
+                                        : empStatus(manager) === 'no_manager'
+                                          ? 'bg-amber-100 text-amber-900 ring-amber-300'
                                         : 'bg-orange-100 text-orange-800 ring-orange-300',
                               )}
                             >
@@ -1518,6 +1581,76 @@ export default function PharmacyNetworkPage() {
                   </div>
                 );
               })}
+              {orphanStaffGroups.map((group) => (
+                <div
+                  key={`orphan-${group.key}`}
+                  className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-amber-300 border-t-[3px] border-t-amber-500 bg-amber-50/40 shadow-sm ring-1 ring-amber-200"
+                >
+                  <div className="flex flex-1 flex-col gap-3 p-3.5 sm:p-4">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="inline-flex min-w-0 items-start gap-1.5 rounded-lg bg-amber-100 px-2 py-1 text-amber-900">
+                        <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
+                        <span className="text-[11px] font-semibold leading-snug tracking-wide">
+                          {displayBranchName(group.location) || group.location}
+                        </span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-800">
+                        <Users className="h-3 w-3" />
+                        {group.staff.length}
+                      </span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">Mudir yo‘q</p>
+                      <p className="mt-0.5 text-[11px] text-slate-500">
+                        Filialda xodimlar bor, mudir biriktirilmagan. Ular ishlashda davom etadi.
+                      </p>
+                      <div className="mt-2">
+                        <span className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-300">
+                          Mudir yo‘q
+                        </span>
+                      </div>
+                    </div>
+                    <div className="space-y-2 border-t border-amber-100 pt-3">
+                      {group.staff.map((ph) => (
+                        <div key={ph.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                          <div className="flex items-start gap-3">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-semibold text-white">
+                              {initials(ph.fullName)}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm font-semibold text-slate-900">{ph.fullName}</p>
+                              <p className="mt-0.5 text-[11px] text-slate-500">
+                                {ph.orgRole === 'intern'
+                                  ? 'Stajyor'
+                                  : ph.orgRole === 'supervisor'
+                                    ? 'Boshqaruvchi'
+                                    : 'Farmasevt'}
+                              </p>
+                              <div className="mt-1.5 flex flex-wrap items-center gap-1">
+                                <ShiftBadge
+                                  shiftType={ph.shiftType}
+                                  shiftLabel={ph.shiftLabel}
+                                  alert={isAlertStatus(empStatus(ph))}
+                                />
+                                <EmploymentBadge status={empStatus(ph)} />
+                                {(canEditShift || canEditStatus) && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => openEditor(ph, e)}
+                                    className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-primary"
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
@@ -1554,13 +1687,20 @@ export default function PharmacyNetworkPage() {
                     <SelectItem value="dismissed">Bo'shatilgan</SelectItem>
                     <SelectItem value="need_hire">Xodim kerak</SelectItem>
                     <SelectItem value="searching">Qidirilmoqda</SelectItem>
+                    {canSetNoManager && editTarget?.orgRole === 'manager' && (
+                      <SelectItem value="no_manager">Mudir yo‘q</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
-                {employmentStatus !== 'working' && (
+                {employmentStatus === 'no_manager' ? (
+                  <p className="text-xs text-amber-700">
+                    Faqat mudir yo‘q deb belgilanadi. Filialdagi xodimlar ishlashda davom etadi, yollash ochilmaydi.
+                  </p>
+                ) : employmentStatus !== 'working' ? (
                   <p className="text-xs text-red-600">
                     Bu holat filialni qizil qiladi va ogohlantirish yuboradi.
                   </p>
-                )}
+                ) : null}
               </div>
             )}
             {canEditShift && editTarget?.orgRole !== 'coordinator' && (

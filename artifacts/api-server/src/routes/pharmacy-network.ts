@@ -90,6 +90,7 @@ async function ensureCoordinatorEmployee(userId: number, fullName: string) {
       userId,
       employmentStatus: "working",
       shiftType: "one",
+      createdById: userId,
     })
     .returning();
   return created;
@@ -378,6 +379,7 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
         userId: user.id,
         employmentStatus: "working",
         shiftType: "one",
+        createdById: actorId,
       })
       .returning();
 

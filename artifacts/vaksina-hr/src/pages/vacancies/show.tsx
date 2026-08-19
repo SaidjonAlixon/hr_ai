@@ -26,12 +26,13 @@ import {
   GraduationCap,
   Briefcase,
   ExternalLink,
+  CalendarClock,
 } from 'lucide-react';
 import { Link, useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
-import { isHrManager, isHrRole } from '../../lib/roles';
+import { isHrManager, isHrRole, canExtendVacancy } from '../../lib/roles';
 import { openCandidatePdf, openVacancyCandidatesPdf } from '../../lib/candidate-pdf';
 import {
   Dialog,
@@ -54,6 +55,8 @@ import {
   AlertDialogTrigger,
 } from '../../components/ui/alert-dialog';
 import { Checkbox } from '../../components/ui/checkbox';
+import { Input } from '../../components/ui/input';
+import { Label } from '../../components/ui/label';
 
 const STAGE_LABELS: Record<string, string> = {
   phone_interview: 'Tanishuv',
@@ -73,6 +76,21 @@ const STATUS_LABELS: Record<string, string> = {
   hired: 'Ishga olingan',
   rejected: 'Rad etilgan',
 };
+
+function toLocalInput(iso?: string | null) {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return '';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function addDaysIso(fromIso: string | null | undefined, days: number) {
+  const now = new Date();
+  const cur = fromIso ? new Date(fromIso) : now;
+  const base = !Number.isNaN(cur.getTime()) && cur.getTime() > now.getTime() ? cur : now;
+  const next = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+  return next.toISOString();
+}
 
 function formatMaybeDate(iso?: string | null) {
   if (!iso) return '—';
@@ -113,11 +131,14 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   );
   const { mutate: publish, isPending: isPublishing } = usePublishVacancy();
   const { mutate: removeVacancy, isPending: isDeleting } = useDeleteVacancy();
-  const { mutate: updateVacancy, isPending: isClosing } = useUpdateVacancy();
+  const { mutate: updateVacancy, isPending: isUpdating } = useUpdateVacancy();
   const { toast } = useToast();
   const [selectedChannels, setSelectedChannels] = React.useState<number[]>([]);
   const autoPublish = new URLSearchParams(window.location.search).get('publish') === '1';
   const [publishOpen, setPublishOpen] = React.useState(autoPublish);
+  const [extendOpen, setExtendOpen] = React.useState(false);
+  const [customDeadline, setCustomDeadline] = React.useState('');
+  const [busyKind, setBusyKind] = React.useState<'close' | 'extend' | null>(null);
   const canPublish = isHrManager(user?.role) || user?.role === 'recruiter';
   const canDelete = isHrRole(user?.role) || user?.role === 'director';
   const isAssignedRecruiter =
@@ -129,6 +150,10 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
       isHrRole(user?.role) ||
       user?.role === 'director' ||
       isAssignedRecruiter);
+  const canExtend =
+    !!vacancy &&
+    vacancy.status !== 'closed' &&
+    canExtendVacancy(user?.role);
 
   React.useEffect(() => {
     if (autoPublish && vacancy?.status === 'draft' && canPublish) {
@@ -218,6 +243,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   };
 
   const handleClose = () => {
+    setBusyKind('close');
     updateVacancy(
       { id, data: { status: 'closed' } },
       {
@@ -232,9 +258,38 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
             variant: 'destructive',
           });
         },
+        onSettled: () => setBusyKind(null),
       },
     );
   };
+
+  const handleExtend = (deadlineIso: string) => {
+    setBusyKind('extend');
+    updateVacancy(
+      { id, data: { deadline: deadlineIso } },
+      {
+        onSuccess: () => {
+          toast({
+            title: 'Muddat cho‘zildi',
+            description: `Yangi muddat: ${format(new Date(deadlineIso), 'dd.MM.yyyy HH:mm')}`,
+          });
+          setExtendOpen(false);
+          refetch();
+        },
+        onError: (err: any) => {
+          toast({
+            title: 'Xatolik',
+            description: err?.message || "Ish o'rinini cho‘zib bo'lmadi",
+            variant: 'destructive',
+          });
+        },
+        onSettled: () => setBusyKind(null),
+      },
+    );
+  };
+
+  const isClosing = isUpdating && busyKind === 'close';
+  const isExtending = isUpdating && busyKind === 'extend';
 
   const publishChannels = [
     { id: 1, name: 'HeadHunter (hh.uz)' },
@@ -299,6 +354,69 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                 <Users className="w-4 h-4" /> Nomzod qo'shish
               </Button>
             </Link>
+          )}
+
+          {canExtend && (
+            <Dialog
+              open={extendOpen}
+              onOpenChange={(open) => {
+                setExtendOpen(open);
+                if (open) setCustomDeadline(toLocalInput((vacancy as any).deadline));
+              }}
+            >
+              <DialogTrigger asChild>
+                <Button variant="outline" className="gap-2" disabled={isExtending}>
+                  <CalendarClock className="w-4 h-4" />
+                  {isExtending ? 'Cho‘zilmoqda...' : "Ish o'rinini cho'zish"}
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Ish o‘rinini cho‘zish</DialogTitle>
+                  <DialogDescription>
+                    Joriy muddat:{' '}
+                    {(vacancy as any).deadline
+                      ? format(new Date((vacancy as any).deadline), 'dd.MM.yyyy HH:mm')
+                      : 'Belgilanmagan'}
+                    . Yangi muddat hozirgisidan keyin bo‘lishi kerak.
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex flex-wrap gap-2">
+                  {[3, 7, 14, 30].map((d) => (
+                    <Button
+                      key={d}
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      disabled={isExtending}
+                      onClick={() => handleExtend(addDaysIso((vacancy as any).deadline, d))}
+                    >
+                      +{d} kun
+                    </Button>
+                  ))}
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Yoki aniq sana va vaqt</Label>
+                  <Input
+                    type="datetime-local"
+                    value={customDeadline}
+                    onChange={(e) => setCustomDeadline(e.target.value)}
+                  />
+                </div>
+                <DialogFooter>
+                  <Button type="button" variant="ghost" onClick={() => setExtendOpen(false)}>
+                    Bekor
+                  </Button>
+                  <Button
+                    type="button"
+                    disabled={isExtending || !customDeadline}
+                    onClick={() => handleExtend(new Date(customDeadline).toISOString())}
+                  >
+                    Cho‘zish
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           )}
 
           {canClose && (

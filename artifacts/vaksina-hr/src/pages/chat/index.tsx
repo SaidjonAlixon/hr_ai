@@ -86,6 +86,8 @@ const ROLE_LABELS: Record<string, string> = {
   koordinator: "Koordinator",
   texnik: "Texnik",
   ombor: "Ombor",
+  sb: "SB operatori",
+  sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
 };

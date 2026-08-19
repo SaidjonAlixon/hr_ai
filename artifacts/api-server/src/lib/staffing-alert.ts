@@ -15,6 +15,7 @@ const EMP_STATUS_LABEL: Record<string, string> = {
   need_hire: "Xodim kerak",
   searching: "Qidirilmoqda",
   working: "Ishlamoqda",
+  no_manager: "Mudir yo‘q",
 };
 
 /** Xodim holati o‘zgarganda ogohlantirish yaratish/yopish */
@@ -26,6 +27,9 @@ export async function syncStaffingAlertForEmployee(opts: {
 }): Promise<void> {
   const { employee, previousStatus, newStatus, userId } = opts;
   if (previousStatus === newStatus) return;
+
+  // Mudir yo‘q — faqat belgi, yollash pipeline ochilmasin
+  if (newStatus === "no_manager") return;
 
   if (newStatus === "working") {
     await db

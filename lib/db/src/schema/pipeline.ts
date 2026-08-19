@@ -56,10 +56,12 @@ export const employeesTable = pgTable("employees", {
   shiftType: text("shift_type").default("one"),
   /** Mudir belgilagan maxsus holat matni */
   shiftLabel: text("shift_label"),
-  /** working | new | dismissed | need_hire | searching */
+  /** working | new | dismissed | need_hire | searching | no_manager */
   employmentStatus: text("employment_status").notNull().default("working"),
   /** Login foydalanuvchisi (users.id) — mudir/koordinator bog‘lash */
   userId: integer("user_id"),
+  /** Kim qo‘shgan (users.id) — pharmacy-network / employees create */
+  createdById: integer("created_by_id"),
   photoUrl: text("photo_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

@@ -16,6 +16,13 @@ export function isHrDirektor(role?: string | null): boolean {
   return role === "hr_direktor";
 }
 
+/** Xavfsizlik (SB) — operator va bo‘lim boshlig‘i */
+export const SB_ROLES = ["sb", "sb_boshliq"] as const;
+
+export function isSbRole(role?: string | null): boolean {
+  return role === "sb" || role === "sb_boshliq";
+}
+
 /** HR + admin — boshqaruv huquqi */
 export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || role === "admin";
@@ -28,7 +35,8 @@ export function canViewDavomat(role?: string | null): boolean {
     role === "director" ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
-    role === "hr"
+    role === "hr" ||
+    isSbRole(role)
   );
 }
 
@@ -59,6 +67,17 @@ export function canExportChecklistStatus(role?: string | null): boolean {
   );
 }
 
+/** Ish o‘rni muddatini cho‘zish — HR menejer, HR direktor, direktor */
+export function canExtendVacancy(role?: string | null): boolean {
+  return (
+    role === "admin" ||
+    role === "director" ||
+    role === "hr_direktor" ||
+    role === "hr_menejer" ||
+    role === "hr"
+  );
+}
+
 /** Kirish o‘quv bo‘limi — faqat stajyor (+ admin ko‘rishi mumkin) */
 export function canAccessKirish(role?: string | null): boolean {
   return role === "stajyor" || role === "admin";
@@ -66,6 +85,21 @@ export function canAccessKirish(role?: string | null): boolean {
 
 export function isStajyor(role?: string | null): boolean {
   return role === "stajyor";
+}
+
+/** Tarmoq Holat (koordinator→stajyor + bo‘limlar) */
+export function canViewHolat(role?: string | null): boolean {
+  return (
+    role === "admin" ||
+    role === "director" ||
+    isHrRole(role) ||
+    role === "koordinator" ||
+    role === "mudir"
+  );
+}
+
+export function canViewHolatFull(role?: string | null): boolean {
+  return role === "admin" || role === "director" || isHrRole(role);
 }
 
 /** Ish o‘rinlari, nomzod, suhbat, pipeline, stajirovka — faqat HR oilasi + admin/direktor/rekruter/trener */
@@ -111,6 +145,8 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   koordinator: "Koordinator",
   texnik: "Texnik",
   ombor: "Ombor",
+  sb: "SB operatori",
+  sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
 };

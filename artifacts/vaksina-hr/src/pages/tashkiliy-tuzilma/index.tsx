@@ -104,6 +104,13 @@ const TONES = {
     chip: "bg-pink-100 text-pink-800",
     lane: "bg-pink-50/80 ring-pink-200/80",
   },
+  sb: {
+    ink: "#1E3A5F",
+    fill: "from-[#1E3A5F] to-[#334155]",
+    soft: "bg-slate-100 text-slate-800",
+    chip: "bg-slate-200 text-slate-800",
+    lane: "bg-slate-50/80 ring-slate-200/80",
+  },
   manager: {
     ink: "#1D4E89",
     fill: "from-[#1D4E89] to-[#2E6FAF]",
@@ -148,8 +155,8 @@ const TONES = {
   },
 } as const;
 
-const DEPT_TONES = new Set<ToneKey>(["taminot", "moliya", "hrDept", "cbit", "reviziya", "axogpp"]);
-const DEPT_IDS = new Set(["taminot", "moliya", "hr-bolimi", "cb-it", "reviziya", "axo-gpp"]);
+const DEPT_TONES = new Set<ToneKey>(["taminot", "moliya", "hrDept", "cbit", "sb", "reviziya", "axogpp"]);
+const DEPT_IDS = new Set(["taminot", "moliya", "hr-bolimi", "cb-it", "xavfsizlik", "reviziya", "axo-gpp"]);
 
 const DEPT_META: Array<{
   id: string;
@@ -164,7 +171,8 @@ const DEPT_META: Array<{
   { id: "taminot", label: "Ta’minot", hint: "Logistika", tone: "taminot", icon: Truck, keys: ["taminot", "logistika"], head: "Ta’minot rahbari", staff: "Logistika" },
   { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet, keys: ["moliya"], head: "Moliya rahbari", staff: "Hisob-kitob" },
   { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, keys: ["hr", "kadr"], head: "HR rahbari", staff: "Kadrlar" },
-  { id: "cb-it", label: "CB va IT", hint: "Xavfsizlik / IT", tone: "cbit", icon: Cpu, keys: ["cb", "it", "xavfsizlik"], head: "CB / IT rahbari", staff: "Texnika" },
+  { id: "cb-it", label: "CB va IT", hint: "IT / texnika", tone: "cbit", icon: Cpu, keys: ["cb", "it"], head: "CB / IT rahbari", staff: "Texnika" },
+  { id: "xavfsizlik", label: "Xavfsizlik (SB)", hint: "Ob’ekt / navbatchilik", tone: "sb", icon: ShieldCheck, keys: ["xavfsizlik", "sb", "security"], head: "SB bo‘limi boshlig‘i", staff: "SB operatori" },
   { id: "reviziya", label: "Reviziya", hint: "Ichki audit", tone: "reviziya", icon: ClipboardCheck, keys: ["reviziya", "audit"], head: "Reviziya rahbari", staff: "Ichki auditor" },
   { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse, keys: ["axo", "gpp", "mamuriyat"], head: "AXO / GPP rahbari", staff: "Ma’muriyat" },
 ];
@@ -181,6 +189,8 @@ const ALLOWED_ROLES = new Set([
   "mudir",
   "farmasevt",
   "stajyor",
+  "sb",
+  "sb_boshliq",
 ]);
 
 function isPharmacyOrg(e: Employee, usersById: Map<number, User>) {
@@ -202,6 +212,8 @@ function officePeopleForDept(
   return people
     .filter((e) => {
       if (isPharmacyOrg(e, usersById)) return false;
+      const u = e.userId != null ? usersById.get(e.userId) : undefined;
+      if (keys.includes("sb") && (u?.role === "sb" || u?.role === "sb_boshliq")) return true;
       const name = normDept(String(e.departmentName || ""));
       return keys.some((k) => name.includes(k));
     })
@@ -489,10 +501,34 @@ function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode
         tone: "director",
         icon: Building2,
         children: DEPT_META.map((d) => {
-          const kids =
+          let kids =
             d.id === "hr-bolimi"
               ? [hr]
               : officePeopleForDept(people, usersById, d.keys, d.tone, d.icon);
+          if (d.id === "xavfsizlik") {
+            const linked = new Set(
+              people.filter((e) => e.userId != null).map((e) => e.userId as number),
+            );
+            const extra = (users ?? [])
+              .filter(
+                (u) =>
+                  (u.role === "sb" || u.role === "sb_boshliq") &&
+                  (u.status === "active" || u.status === "on_leave"),
+              )
+              .filter((u) => !linked.has(u.id))
+              .sort((a, b) => {
+                if (a.role !== b.role) return a.role === "sb_boshliq" ? -1 : 1;
+                return a.fullName.localeCompare(b.fullName, "uz");
+              })
+              .map((u) => ({
+                id: `user-${u.id}`,
+                label: u.fullName,
+                hint: u.role === "sb_boshliq" ? "SB bo‘limi boshlig‘i" : "SB operatori",
+                tone: d.tone,
+                icon: ShieldCheck,
+              }));
+            kids = [...kids, ...extra];
+          }
           return {
             id: d.id,
             label: d.label,
@@ -976,6 +1012,7 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
   { label: "Moliya", tone: "moliya" },
   { label: "HR bo‘limi", tone: "hrDept" },
   { label: "CB va IT", tone: "cbit" },
+  { label: "Xavfsizlik (SB)", tone: "sb" },
   { label: "Reviziya", tone: "reviziya" },
   { label: "AXO va GPP", tone: "axogpp" },
 ];

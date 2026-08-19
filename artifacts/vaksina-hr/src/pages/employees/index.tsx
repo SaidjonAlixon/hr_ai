@@ -30,6 +30,7 @@ const STATUS_UZ: Record<string, string> = {
   dismissed: "Bo‘shagan",
   need_hire: "Yollash kerak",
   searching: "Qidiruvda",
+  no_manager: "Mudir yo‘q",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -38,6 +39,7 @@ const STATUS_STYLE: Record<string, string> = {
   dismissed: "bg-slate-100 text-slate-600 border-slate-200",
   need_hire: "bg-amber-50 text-amber-800 border-amber-200",
   searching: "bg-violet-50 text-violet-800 border-violet-200",
+  no_manager: "bg-amber-50 text-amber-900 border-amber-300",
 };
 
 function shiftLabel(e: Employee): string {

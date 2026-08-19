@@ -22,6 +22,8 @@ const ALLOWED_ROLES = [
   "koordinator",
   "texnik",
   "ombor",
+  "sb",
+  "sb_boshliq",
   "farmasevt",
   "stajyor",
 ] as const;
@@ -43,6 +45,8 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   koordinator: "Koordinator",
   texnik: "Texnik",
   ombor: "Ombor",
+  sb: "SB operatori",
+  sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
 };

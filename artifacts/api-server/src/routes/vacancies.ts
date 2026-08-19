@@ -13,7 +13,8 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canDeleteHrRecords, deleteVacancyCascade } from "../lib/delete-candidate";
-import { isHrManager, isHrRole } from "../lib/roles";
+import { isHrManager, isHrRole, canExtendVacancy } from "../lib/roles";
+import { notifyUser } from "../lib/notify";
 
 const router: IRouter = Router();
 
@@ -246,20 +247,56 @@ router.patch("/vacancies/:id", requireAuth, async (req: AuthRequest, res): Promi
       res.status(400).json({ error: "Ish o'rni allaqachon bajarilgan" });
       return;
     }
+  } else if (req.body?.deadline !== undefined || req.body?.extendDays !== undefined) {
+    if (!canExtendVacancy(role)) {
+      res.status(403).json({ error: "Ish o‘rnini cho‘zishga ruxsat yo‘q" });
+      return;
+    }
+    if (existing.status === "closed") {
+      res.status(400).json({ error: "Yopilgan ish o‘rnini cho‘zib bo‘lmaydi" });
+      return;
+    }
   } else if (role === "recruiter" && existing.recruiterId !== req.userId) {
     res.status(403).json({ error: "Bu ish o'rni sizga biriktirilmagan" });
     return;
   }
 
+  let nextDeadline: Date | undefined;
+  if (req.body?.extendDays !== undefined) {
+    const days = parseInt(String(req.body.extendDays), 10);
+    if (!Number.isFinite(days) || days < 1 || days > 365) {
+      res.status(400).json({ error: "Cho‘zish 1–365 kun oralig‘ida bo‘lsin" });
+      return;
+    }
+    const base =
+      existing.deadline && existing.deadline.getTime() > Date.now()
+        ? existing.deadline
+        : new Date();
+    nextDeadline = new Date(base.getTime() + days * 24 * 60 * 60 * 1000);
+  } else if (req.body?.deadline !== undefined) {
+    nextDeadline = new Date(req.body.deadline);
+    if (Number.isNaN(nextDeadline.getTime())) {
+      res.status(400).json({ error: "Muddat noto‘g‘ri" });
+      return;
+    }
+    const min = existing.deadline ?? new Date();
+    if (nextDeadline.getTime() <= min.getTime()) {
+      res.status(400).json({ error: "Yangi muddat joriy muddatdan keyin bo‘lishi kerak" });
+      return;
+    }
+  }
+
   const allowed = ["title", "description", "salaryRange", "location", "schedule", "benefits", "status", "recruiterId", "deadline"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
+    if (key === "deadline") continue;
     if (req.body[key] !== undefined) {
-      if (key === "deadline") updates[key] = new Date(req.body[key]);
-      else if (key === "recruiterId") updates[key] = parseInt(req.body[key], 10);
+      if (key === "recruiterId") updates[key] = parseInt(req.body[key], 10);
       else updates[key] = req.body[key];
     }
   }
+  if (nextDeadline) updates.deadline = nextDeadline;
+
   const [updated] = await db.update(vacanciesTable).set(updates).where(eq(vacanciesTable.id, id)).returning();
   if (!updated) { res.status(404).json({ error: "Topilmadi" }); return; }
 
@@ -269,6 +306,27 @@ router.patch("/vacancies/:id", requireAuth, async (req: AuthRequest, res): Promi
       .update(requestsTable)
       .set({ status: "closed" })
       .where(eq(requestsTable.id, existing.requestId));
+  }
+
+  if (nextDeadline && existing.requestId) {
+    await db
+      .update(requestsTable)
+      .set({ deadline: nextDeadline.toISOString() })
+      .where(eq(requestsTable.id, existing.requestId));
+    const when = nextDeadline.toLocaleString("uz-UZ", {
+      timeZone: "Asia/Tashkent",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    await notifyUser({
+      userId: existing.recruiterId,
+      text: `"${existing.title}" ish o‘rni muddati cho‘zildi. Yangi muddat: ${when}`,
+      type: "vacancy_extended",
+      linkUrl: `/vacancies/${id}`,
+    });
   }
 
   res.json(await enrichVacancy(updated));

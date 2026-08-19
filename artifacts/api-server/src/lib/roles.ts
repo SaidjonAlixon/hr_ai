@@ -16,6 +16,13 @@ export function isHrDirektor(role?: string | null): boolean {
   return role === "hr_direktor";
 }
 
+/** Xavfsizlik (SB) — operator va bo‘lim boshlig‘i */
+export const SB_ROLES = ["sb", "sb_boshliq"] as const;
+
+export function isSbRole(role?: string | null): boolean {
+  return role === "sb" || role === "sb_boshliq";
+}
+
 /** HR + admin — boshqaruv huquqi (ariza, nomzod, vakansiya va h.k.) */
 export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || role === "admin";
@@ -28,7 +35,8 @@ export function canViewDavomat(role?: string | null): boolean {
     role === "director" ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
-    role === "hr"
+    role === "hr" ||
+    isSbRole(role)
   );
 }
 
@@ -59,7 +67,31 @@ export function canExportChecklistStatus(role?: string | null): boolean {
   );
 }
 
-/** Kirish o‘quv bo‘limi — faqat stajyor (+ admin) */
+/** Ish o‘rni muddatini cho‘zish — HR menejer, HR direktor, direktor */
+export function canExtendVacancy(role?: string | null): boolean {
+  return (
+    role === "admin" ||
+    role === "director" ||
+    role === "hr_direktor" ||
+    role === "hr_menejer" ||
+    role === "hr"
+  );
+}
+
+/** Tarmoq Holat (koordinator→stajyor + bo‘limlar) */
+export function canViewHolat(role?: string | null): boolean {
+  return (
+    role === "admin" ||
+    role === "director" ||
+    isHrRole(role) ||
+    role === "koordinator" ||
+    role === "mudir"
+  );
+}
+
+export function canViewHolatFull(role?: string | null): boolean {
+  return role === "admin" || role === "director" || isHrRole(role);
+}
 export function canAccessKirish(role?: string | null): boolean {
   return role === "stajyor" || role === "admin";
 }

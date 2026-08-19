@@ -33,12 +33,12 @@ import KuzatuvPage from './pages/kuzatuv/index';
 import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
 import EslatmalarPage from './pages/eslatmalar/index';
-import MaqsadPage from './pages/maqsad/index';
 import ChatPage from './pages/chat/index';
 import KirishPage from './pages/kirish/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
 import ChecklistHolatiPage from './pages/checklist-holati/index';
+import AdminHolatPage from './pages/admin/holat';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
 import AdminKirishVideosPage from './pages/admin/kirish-videos';
@@ -115,7 +115,6 @@ function Router() {
       <ProtectedRoute path="/pipeline" component={PipelineBoardPage} />
       <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
       <ProtectedRoute path="/eslatmalar" component={EslatmalarPage} />
-      <ProtectedRoute path="/maqsad" component={MaqsadPage} />
       <ProtectedRoute path="/chat" component={ChatPage} />
       <ProtectedRoute path="/kirish" component={KirishPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
@@ -130,6 +129,7 @@ function Router() {
       <ProtectedRoute path="/internships" component={InternshipsPlaceholder} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
+      <ProtectedRoute path="/admin/holat" component={AdminHolatPage} />
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
       

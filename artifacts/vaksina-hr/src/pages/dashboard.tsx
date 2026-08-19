@@ -24,10 +24,10 @@ import {
   ClipboardCheck,
   ListTodo,
   AlarmClock,
-  Target,
   MessageCircle,
   GraduationCap,
   Calendar,
+  Shield,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
@@ -45,9 +45,9 @@ import { useGetTasks } from '../lib/vazifalar-api';
 import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { useChatList } from '../lib/chat-api';
-import { useGoalsMe, GOAL_ROLES } from '../lib/maqsad-api';
 import { cn } from '../lib/utils';
-import { HR_ROLE_LABELS, canViewChecklistStatus, isHrRole } from '../lib/roles';
+import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, isHrRole, isSbRole } from '../lib/roles';
+import { useHolat } from '../lib/holat-api';
 
 const OPEN_STATUSES = new Set(['submitted', 'reviewing', 'accepted', 'announced']);
 
@@ -63,6 +63,8 @@ const ROLE_LABELS: Record<string, string> = {
   koordinator: 'Koordinator',
   texnik: 'Texnik',
   ombor: 'Ombor',
+  sb: 'SB operatori',
+  sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: 'Farmasevt',
   stajyor: 'Stajyor',
 };
@@ -74,10 +76,12 @@ type DashKind =
   | 'mentor'
   | 'pharmacy' // mudir, koordinator
   | 'ops' // texnik, ombor
+  | 'security' // sb, sb_boshliq
   | 'intern'; // stajyor
 
 function dashKindFor(role?: string | null): DashKind {
   if (isHrRole(role)) return 'recruitment';
+  if (isSbRole(role)) return 'security';
   switch (role) {
     case 'admin':
     case 'director':
@@ -242,9 +246,8 @@ export default function Dashboard() {
     query: { enabled: kind !== 'intern' },
   });
   const { data: chats } = useChatList({ enabled: kind !== 'intern' } as any);
-  const { data: goalsMe } = useGoalsMe({
-    query: { enabled: !!role && GOAL_ROLES.has(role) },
-  });
+  const holatOn = canViewHolat(role);
+  const { data: holat, isLoading: holatLoading } = useHolat(holatOn);
 
   const deadlineVacancies = useMemo(() => {
     const uid = user?.id;
@@ -395,6 +398,27 @@ export default function Dashboard() {
             )}
           </div>
 
+          {canViewHolatFull(role) && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-sm font-semibold text-slate-800">Tarmoq holati (fakt: reports_to_id)</p>
+                {canViewHolatFull(role) && (
+                  <Link href="/admin/holat" className="text-sm font-medium text-[#0b3a5c] hover:underline">
+                    Batafsil Holat
+                  </Link>
+                )}
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+                <StatsCard title="Koordinator" value={holat?.pharmacyCounts.coordinators} icon={Users} loading={holatLoading} color="text-teal-600" clickable href="/admin/holat" />
+                <StatsCard title="Mudir" value={holat?.pharmacyCounts.mudirs} icon={Store} loading={holatLoading} color="text-sky-600" clickable href="/pharmacy-network" />
+                <StatsCard title="Farmasevt" value={holat?.pharmacyCounts.pharmacists} icon={Users} loading={holatLoading} color="text-emerald-600" clickable href="/pharmacy-network" />
+                <StatsCard title="Stajyor" value={holat?.pharmacyCounts.interns} icon={GraduationCap} loading={holatLoading} color="text-violet-600" clickable href="/pharmacy-network" />
+                <StatsCard title="Filial (jamoa bor)" value={holat?.branchesWithStaff.length} icon={Store} loading={holatLoading} color="text-indigo-600" clickable href="/pharmacy-network" />
+                <StatsCard title="Filial (jamoa yo‘q)" value={holat?.branchesWithoutStaff.length} icon={AlertCircle} loading={holatLoading} color="text-amber-600" clickable href="/pharmacy-network" />
+              </div>
+            </div>
+          )}
+
           {canSeeDeadlineVacancies && (deadlineVacancies.length > 0 || vacanciesLoading) && (
             <DeadlineBlock
               loading={vacanciesLoading}
@@ -477,7 +501,6 @@ export default function Dashboard() {
               <QuickLink href="/checklist-holati" title="Cheklist holati" desc="Tashriflar va javoblar" icon={ClipboardCheck} />
             )}
             <QuickLink href="/vazifalar" title="Topshiriqlar" desc="Jamoa topshiriqlari" icon={ListTodo} />
-            <QuickLink href="/maqsad" title="Maqsad" desc="Kunlik intizom" icon={Target} />
             <QuickLink href="/chat" title="Chat" desc="Xodimlar bilan aloqa" icon={MessageCircle} />
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -516,14 +539,6 @@ export default function Dashboard() {
               color="text-violet-500"
               clickable
               href="/chat"
-            />
-            <StatsCard
-              title="Maqsad"
-              value={goalsMe?.todaySubmitted ? 1 : 0}
-              icon={Target}
-              color="text-emerald-500"
-              clickable
-              href="/maqsad"
             />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -614,6 +629,49 @@ export default function Dashboard() {
             />
           </div>
 
+          {holatOn && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {role === 'koordinator' && (
+                <StatsCard
+                  title="Mening mudirlarim"
+                  value={holat?.pharmacyCounts.mudirs}
+                  icon={Users}
+                  loading={holatLoading}
+                  color="text-sky-600"
+                  clickable
+                  href="/pharmacy-network"
+                />
+              )}
+              <StatsCard
+                title="Farmasevtlar"
+                value={holat?.pharmacyCounts.pharmacists}
+                icon={Users}
+                loading={holatLoading}
+                color="text-emerald-600"
+                clickable
+                href="/pharmacy-network"
+              />
+              <StatsCard
+                title="Stajyorlar"
+                value={holat?.pharmacyCounts.interns}
+                icon={GraduationCap}
+                loading={holatLoading}
+                color="text-violet-600"
+                clickable
+                href="/pharmacy-network"
+              />
+              <StatsCard
+                title="Jamoa yo‘q filial"
+                value={holat?.branchesWithoutStaff.length}
+                icon={AlertCircle}
+                loading={holatLoading}
+                color="text-amber-600"
+                clickable
+                href="/pharmacy-network"
+              />
+            </div>
+          )}
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <QuickLink
               href="/pharmacy-network"
@@ -629,7 +687,6 @@ export default function Dashboard() {
             {role === 'koordinator' && (
               <QuickLink href="/checklist-holati" title="Reyting" desc="Kunlik, haftalik, oylik" icon={TrendingUp} />
             )}
-            <QuickLink href="/maqsad" title="Maqsad" desc="Kunlik natija" icon={Target} />
             <QuickLink href="/chat" title="Chat" desc="Jamoa bilan suhbat" icon={MessageCircle} />
           </div>
 
@@ -684,6 +741,61 @@ export default function Dashboard() {
         </>
       )}
 
+      {/* ===== SECURITY (SB) ===== */}
+      {kind === 'security' && (
+        <>
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start gap-3">
+              <span className="rounded-xl bg-slate-100 p-2 text-slate-700">
+                <Shield className="h-5 w-5" />
+              </span>
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Xavfsizlik (SB)</p>
+                <p className="mt-1 text-sm text-slate-600">
+                  Eskalatsiya: SB operatori → SB bo‘limi boshlig‘i → Direktor. Favqulodda holatda tezkor xizmatlar parallel.
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <StatsCard
+              title="Topshiriqlar"
+              value={openTaskCount}
+              icon={ListTodo}
+              loading={myTasksLoading}
+              color="text-sky-500"
+              clickable
+              href="/vazifalar"
+            />
+            <StatsCard
+              title="Eslatmalar"
+              value={activeReminders}
+              icon={AlarmClock}
+              loading={remindersLoading}
+              color="text-amber-500"
+              clickable
+              href="/eslatmalar"
+            />
+            <StatsCard
+              title="Chat"
+              value={unreadChats}
+              icon={MessageCircle}
+              color="text-violet-500"
+              clickable
+              href="/chat"
+            />
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            <QuickLink href="/davomat" title="Davomat jurnali" desc="Kirish-chiqish, kechikkanlar, tahrirlash" icon={ClipboardCheck} />
+            <QuickLink href="/pharmacy-network" title="Aptekalar tarmog‘i" desc="Ochilish nazorati uchun filiallar" icon={Store} />
+            <QuickLink href="/vazifalar" title="Topshiriqlar" desc="IT, Ombor, HR, AXO, Reviziyaga so‘rov" icon={ListTodo} />
+            <QuickLink href="/tashkiliy-tuzilma" title="Tashkiliy tuzilma" desc="SB bo‘limi va eskalatsiya" icon={Users} />
+            <QuickLink href="/eslatmalar" title="Eslatmalarim" desc="Navbatchilik eslatmalari" icon={AlarmClock} />
+          </div>
+          <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
+        </>
+      )}
+
       {/* ===== OPS (texnik / ombor) ===== */}
       {kind === 'ops' && (
         <>
@@ -727,7 +839,6 @@ export default function Dashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             <QuickLink href="/vazifalar" title="Topshiriqlar" desc="Sizga berilgan ishlar" icon={ListTodo} />
             <QuickLink href="/ehtiyoj" title="Ehtiyoj" desc="Filialdan kelgan so‘rovlar" icon={ClipboardList} />
-            <QuickLink href="/maqsad" title="Maqsad" desc="Kunlik natija yozuvi" icon={Target} />
             <QuickLink href="/eslatmalar" title="Eslatmalarim" desc="Shaxsiy eslatmalar" icon={AlarmClock} />
             <QuickLink href="/chat" title="Chat" desc="Jamoa bilan muloqot" icon={MessageCircle} />
           </div>

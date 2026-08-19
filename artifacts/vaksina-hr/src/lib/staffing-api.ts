@@ -5,7 +5,7 @@ import {
   type UseQueryOptions,
 } from "@tanstack/react-query";
 
-export type EmploymentStatus = "working" | "new" | "dismissed" | "need_hire" | "searching";
+export type EmploymentStatus = "working" | "new" | "dismissed" | "need_hire" | "searching" | "no_manager";
 
 export const EMPLOYMENT_STATUS_LABELS: Record<EmploymentStatus, string> = {
   working: "Ishlamoqda",
@@ -13,6 +13,7 @@ export const EMPLOYMENT_STATUS_LABELS: Record<EmploymentStatus, string> = {
   dismissed: "Bo'shatilgan",
   need_hire: "Xodim kerak",
   searching: "Qidirilmoqda",
+  no_manager: "Mudir yo‘q",
 };
 
 export const PIPELINE_STEPS = [

@@ -23,6 +23,7 @@ const EMP_STATUS_LABEL: Record<string, string> = {
   need_hire: "Xodim kerak",
   searching: "Qidirilmoqda",
   working: "Ishlamoqda",
+  no_manager: "Mudir yo‘q",
 };
 
 /** Koordinator tasdiqi uchun default muddat — 48 soat */

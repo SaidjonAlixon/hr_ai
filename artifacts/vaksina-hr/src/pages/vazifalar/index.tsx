@@ -72,7 +72,8 @@ import {
   type TaskAttachment,
 } from "@/lib/vazifalar-api";
 
-import { HR_ROLES } from "@/lib/roles";
+import { HR_ROLES, isSbRole } from "@/lib/roles";
+import { SB_TASK_TEMPLATES } from "@/lib/sb";
 
 type BoardCol = "past" | "today" | "tomorrow" | "week" | "completed";
 
@@ -85,6 +86,8 @@ const ASSIGNER_ROLES = new Set([
   "trainer",
   "mudir",
   "koordinator",
+  "sb",
+  "sb_boshliq",
 ]);
 
 const COLUMNS: {
@@ -754,6 +757,32 @@ export default function VazifalarPage() {
 
             <div className="space-y-1.5">
               <Label>Sarlavha</Label>
+              {isSbRole(user?.role) && !editing && (
+                <div className="space-y-1.5">
+                  <Select
+                    onValueChange={(v) => {
+                      const t = SB_TASK_TEMPLATES[Number(v)];
+                      if (!t) return;
+                      setTitle(t.title);
+                      setDescription(t.description);
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="SB shablon: kunlik / hodisa / oylik" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {SB_TASK_TEMPLATES.map((t, i) => (
+                        <SelectItem key={`${t.group}-${t.title}`} value={String(i)}>
+                          {t.group}: {t.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500">
+                    Eskalatsiya: SB operatori → SB boshlig‘i → Direktor. Boshqa bo‘limlarga (IT, Ombor, Logistika, AXO, HR, Reviziya) ijrochi sifatida yuboring.
+                  </p>
+                </div>
+              )}
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}

@@ -25,6 +25,8 @@ const MANAGER_ROLES = new Set([
   "trainer",
   "mudir",
   "koordinator",
+  "sb",
+  "sb_boshliq",
 ]);
 
 function canAssignTasks(role?: string): boolean {

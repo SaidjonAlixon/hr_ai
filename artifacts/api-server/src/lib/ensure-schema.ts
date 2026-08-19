@@ -241,6 +241,7 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS location TEXT;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_type TEXT;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_label TEXT;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS created_by_id INTEGER;
   END IF;
 END $$;
 
@@ -354,6 +355,7 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS photo_url TEXT;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS created_by_id INTEGER;
     UPDATE employees
     SET location = regexp_replace(location, '^(Азия|АЗИЯ)', 'ТАШСЕЛМАШ')
     WHERE location ~ '^(Азия|АЗИЯ)($|[[:space:]]|\|)';

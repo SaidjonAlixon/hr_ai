@@ -756,7 +756,7 @@ export interface Employee {
   shiftType?: EmployeeShiftType;
   /** @nullable */
   shiftLabel?: string | null;
-  /** working | new | dismissed | need_hire | searching */
+  /** working | new | dismissed | need_hire | searching | no_manager */
   employmentStatus?: EmployeeEmploymentStatus;
   /** @nullable */
   userId?: number | null;
@@ -773,6 +773,7 @@ export const EmployeeEmploymentStatus = {
   dismissed: 'dismissed',
   need_hire: 'need_hire',
   searching: 'searching',
+  no_manager: 'no_manager',
 } as const;
 
 export type EmployeeInputOrgRole = typeof EmployeeInputOrgRole[keyof typeof EmployeeInputOrgRole];

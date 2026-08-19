@@ -50,6 +50,8 @@ const ROLES = [
   { value: 'koordinator', label: 'Koordinator' },
   { value: 'texnik', label: 'Texnik' },
   { value: 'ombor', label: 'Ombor' },
+  { value: 'sb', label: 'SB operatori' },
+  { value: 'sb_boshliq', label: "SB bo‘limi boshlig‘i" },
   { value: 'farmasevt', label: 'Farmasevt' },
   { value: 'stajyor', label: 'Stajyor' },
 ] as const;

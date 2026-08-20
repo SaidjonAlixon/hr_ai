@@ -272,6 +272,7 @@ export default function DavomatFacePage() {
   });
   const [workplace, setWorkplace] = useState<WorkplaceInfo | null>(null);
   const [historyDays, setHistoryDays] = useState<DavomatDayMetrics[]>([]);
+  const [historyRange, setHistoryRange] = useState<"day" | "week" | "month">("week");
   const [guideDone, setGuideDone] = useState(() => {
     try {
       return localStorage.getItem(PUNCH_GUIDE_KEY) === "1";
@@ -716,6 +717,36 @@ export default function DavomatFacePage() {
       day: "2-digit",
     }).format(nowTick);
 
+  const filteredHistoryDays = useMemo(() => {
+    const sorted = sortDaysDesc(historyDays);
+    if (historyRange === "day") {
+      return sorted.filter((d) => d.date === todayStamp).slice(0, 1);
+    }
+    if (historyRange === "week") {
+      return sorted.slice(0, 7);
+    }
+    return sorted.slice(0, 31);
+  }, [historyDays, historyRange, todayStamp]);
+
+  const historySummary = useMemo(() => {
+    let present = 0;
+    let late = 0;
+    let absent = 0;
+    let minutes = 0;
+    for (const d of filteredHistoryDays) {
+      if (d.status === "present") present += 1;
+      else if (d.status === "late") late += 1;
+      else if (d.status === "absent") absent += 1;
+      const w =
+        d.checkIn !== "—" && d.checkOut !== "—"
+          ? workedMinutesFromPunch({ checkIn: d.checkIn, checkOut: d.checkOut })
+          : null;
+      if (w != null) minutes += w;
+      else if (typeof d.workedMinutes === "number") minutes += d.workedMinutes;
+    }
+    return { present, late, absent, minutes, count: filteredHistoryDays.length };
+  }, [filteredHistoryDays]);
+
   const ringClass = inside
     ? "ring-4 ring-emerald-400/80"
     : gps
@@ -728,7 +759,7 @@ export default function DavomatFacePage() {
 
   return (
     <div className="min-h-[100dvh] bg-[linear-gradient(180deg,#e8f1f7_0%,#f8fafc_42%,#ffffff_100%)]">
-      <div className="mx-auto max-w-lg px-3 pb-10 pt-4 sm:px-4">
+      <div className="mx-auto max-w-lg px-3 pb-10 pt-4 sm:px-4 md:max-w-3xl lg:max-w-4xl">
         <section className="overflow-hidden rounded-[28px] bg-[#0b3a5c] text-white shadow-[0_20px_50px_-24px_rgba(11,58,92,0.7)]">
           <div className="relative px-5 pb-6 pt-5">
             <div className="pointer-events-none absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/10" />
@@ -1103,85 +1134,243 @@ export default function DavomatFacePage() {
           ) : null}
         </section>
 
-        <section className="mt-4 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm">
-          <div className="border-b border-slate-100 px-4 py-3">
-            <h2 className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
-              <History className="h-4 w-4" />
-              {isTgMiniApp ? "To‘liq davomat holati" : "Tarix"}
-            </h2>
-            <p className="mt-0.5 text-xs text-slate-500">
-              {isTgMiniApp
-                ? "Bugun + so‘nggi 14 kun · Keldim/Ketdim va ishlangan vaqt"
-                : "Bugundan orqaga · Keldim/Ketdim saqlanadi"}
-            </p>
+        <section className="mt-3 overflow-hidden rounded-xl border border-slate-300/80 bg-white shadow-sm md:rounded-lg">
+          <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/90 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-3">
+            <div className="min-w-0">
+              <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-[#0b3a5c]">
+                <History className="h-3.5 w-3.5 shrink-0" />
+                {isTgMiniApp ? "Davomat holati" : "Tarix"}
+              </h2>
+              <p className="mt-0.5 text-[10px] leading-tight text-slate-500 sm:text-[11px]">
+                {historyRange === "day"
+                  ? "Bugungi kun"
+                  : historyRange === "week"
+                    ? "So‘nggi 7 kun"
+                    : "So‘nggi 31 kun"}
+                {" · "}
+                {historySummary.count} qator
+                {historySummary.minutes > 0
+                  ? ` · jami ${formatHoursUz(historySummary.minutes)}`
+                  : ""}
+              </p>
+            </div>
+            <div
+              className="grid grid-cols-3 gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 sm:inline-flex sm:w-auto"
+              role="tablist"
+              aria-label="Davomat oralig‘i"
+            >
+              {(
+                [
+                  { id: "day" as const, label: "Kunlik" },
+                  { id: "week" as const, label: "Haftalik" },
+                  { id: "month" as const, label: "Oylik" },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={historyRange === opt.id}
+                  onClick={() => setHistoryRange(opt.id)}
+                  className={cn(
+                    "rounded px-2 py-1 text-[11px] font-semibold transition-colors sm:px-2.5 sm:text-xs",
+                    historyRange === opt.id
+                      ? "bg-[#0b3a5c] text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100",
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
+
           {historyDays.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-400">
+            <p className="px-3 py-5 text-center text-xs text-slate-400 sm:text-sm">
               Hali yozuv yo‘q. Face ID bilan belgilang — tarix shu yerda chiqadi.
             </p>
+          ) : filteredHistoryDays.length === 0 ? (
+            <p className="px-3 py-5 text-center text-xs text-slate-400 sm:text-sm">
+              Tanlangan oralikda yozuv yo‘q.
+            </p>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[420px] border-collapse text-sm">
-                <thead>
-                  <tr className="border-b bg-slate-50 text-left text-[11px] text-slate-500">
-                    <th className="px-3 py-2 font-medium">Sana</th>
-                    <th className="px-3 py-2 font-medium">Keldim</th>
-                    <th className="px-3 py-2 font-medium">Ketdim</th>
-                    <th className="px-3 py-2 font-medium">Holat</th>
-                    <th className="px-3 py-2 font-medium">Ishlagan</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {historyDays.map((d) => {
-                    const isToday = d.date === todayStamp;
-                    const dayParts = splitDayUz(d.date);
-                    const worked =
-                      d.checkIn !== "—" && d.checkOut !== "—"
-                        ? workedMinutesFromPunch({
-                            checkIn: d.checkIn,
-                            checkOut: d.checkOut,
-                          })
-                        : null;
-                    return (
-                      <tr
-                        key={d.date}
-                        className={cn(
-                          "border-b border-slate-100",
-                          isToday ? "bg-sky-50/70" : "bg-white",
-                        )}
-                      >
-                        <td className="whitespace-nowrap px-3 py-2.5 align-middle">
-                          <div className="flex items-baseline gap-2">
-                            <span className="font-semibold text-slate-800">{dayParts.date}</span>
-                            <span className="font-medium text-sky-600">{dayParts.weekday}</span>
-                            {isToday ? (
-                              <span className="text-[11px] font-medium text-emerald-700">bugun</span>
-                            ) : null}
-                          </div>
-                        </td>
-                        <td className="px-3 py-2.5 font-mono tabular-nums text-emerald-800">{d.checkIn}</td>
-                        <td className="px-3 py-2.5 font-mono tabular-nums text-rose-800">{d.checkOut}</td>
-                        <td className="px-3 py-2.5">
-                          <span
+            <>
+              <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-2.5 py-1.5 text-[10px] sm:px-3 sm:text-[11px]">
+                <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-800">
+                  Kelgan {historySummary.present}
+                </span>
+                <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-900">
+                  Kech {historySummary.late}
+                </span>
+                <span className="rounded bg-rose-50 px-1.5 py-0.5 font-medium text-rose-800">
+                  Kelmagan {historySummary.absent}
+                </span>
+              </div>
+
+              {/* Mobile: compact sheet rows */}
+              <div
+                className={cn(
+                  "md:hidden overflow-y-auto overscroll-contain",
+                  historyRange === "day" ? "max-h-[220px]" : "max-h-[280px]",
+                )}
+              >
+                <table className="w-full border-collapse text-[11px]">
+                  <thead className="sticky top-0 z-10 bg-[#eef2f6] shadow-[inset_0_-1px_0_#cbd5e1]">
+                    <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-600">
+                      <th className="border-r border-slate-200 px-2 py-1.5">Sana</th>
+                      <th className="border-r border-slate-200 px-1.5 py-1.5 text-center">Kel</th>
+                      <th className="border-r border-slate-200 px-1.5 py-1.5 text-center">Ket</th>
+                      <th className="border-r border-slate-200 px-1.5 py-1.5 text-center">Holat</th>
+                      <th className="px-1.5 py-1.5 text-right">Vaqt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredHistoryDays.map((d, i) => {
+                      const isToday = d.date === todayStamp;
+                      const dayParts = splitDayUz(d.date);
+                      const worked =
+                        d.checkIn !== "—" && d.checkOut !== "—"
+                          ? workedMinutesFromPunch({
+                              checkIn: d.checkIn,
+                              checkOut: d.checkOut,
+                            })
+                          : null;
+                      return (
+                        <tr
+                          key={d.date}
+                          className={cn(
+                            "border-b border-slate-100",
+                            isToday
+                              ? "bg-sky-50"
+                              : i % 2 === 1
+                                ? "bg-slate-50/70"
+                                : "bg-white",
+                          )}
+                        >
+                          <td className="border-r border-slate-100 px-2 py-1.5">
+                            <div className="leading-tight">
+                              <span className="font-semibold text-slate-800">{dayParts.date}</span>
+                              <span className="ml-1 text-[10px] text-slate-500">
+                                {dayParts.weekday.slice(0, 2)}
+                              </span>
+                              {isToday ? (
+                                <span className="ml-1 text-[9px] font-semibold text-emerald-700">
+                                  bugun
+                                </span>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="border-r border-slate-100 px-1.5 py-1.5 text-center font-mono tabular-nums text-emerald-800">
+                            {d.checkIn}
+                          </td>
+                          <td className="border-r border-slate-100 px-1.5 py-1.5 text-center font-mono tabular-nums text-rose-800">
+                            {d.checkOut}
+                          </td>
+                          <td className="border-r border-slate-100 px-1.5 py-1.5 text-center">
+                            <span
+                              className={cn(
+                                "inline-flex rounded px-1 py-0.5 text-[9px] font-semibold",
+                                STATUS_STYLE[d.status] || "bg-slate-100 text-slate-600",
+                              )}
+                            >
+                              {STATUS_UZ[d.status] || d.status}
+                            </span>
+                          </td>
+                          <td className="px-1.5 py-1.5 text-right font-medium tabular-nums text-slate-800">
+                            {worked != null ? formatHoursUz(worked) : d.workedHours || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Desktop: wide spreadsheet */}
+              <div
+                className={cn(
+                  "hidden md:block overflow-auto overscroll-contain",
+                  historyRange === "day" ? "max-h-[260px]" : "max-h-[340px]",
+                )}
+              >
+                <table className="w-full min-w-[640px] border-collapse text-sm">
+                  <thead className="sticky top-0 z-10 bg-[#e8eef4] shadow-[inset_0_-1px_0_#94a3b8]">
+                    <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">
+                      <th className="sticky left-0 z-[1] border-r border-slate-300 bg-[#e8eef4] px-3 py-2">
+                        Sana
+                      </th>
+                      <th className="border-r border-slate-200 px-3 py-2">Hafta kuni</th>
+                      <th className="border-r border-slate-200 px-3 py-2 text-center">Keldim</th>
+                      <th className="border-r border-slate-200 px-3 py-2 text-center">Ketdim</th>
+                      <th className="border-r border-slate-200 px-3 py-2 text-center">Holat</th>
+                      <th className="px-3 py-2 text-right">Ishlangan vaqt</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredHistoryDays.map((d, i) => {
+                      const isToday = d.date === todayStamp;
+                      const dayParts = splitDayUz(d.date);
+                      const worked =
+                        d.checkIn !== "—" && d.checkOut !== "—"
+                          ? workedMinutesFromPunch({
+                              checkIn: d.checkIn,
+                              checkOut: d.checkOut,
+                            })
+                          : null;
+                      return (
+                        <tr
+                          key={d.date}
+                          className={cn(
+                            "border-b border-slate-200/80 hover:bg-sky-50/60",
+                            isToday
+                              ? "bg-sky-50"
+                              : i % 2 === 1
+                                ? "bg-slate-50/80"
+                                : "bg-white",
+                          )}
+                        >
+                          <td
                             className={cn(
-                              "inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium",
-                              STATUS_STYLE[d.status] || "bg-slate-100 text-slate-600",
+                              "sticky left-0 z-[1] border-r border-slate-200 px-3 py-1.5 font-semibold tabular-nums text-slate-900",
+                              isToday ? "bg-sky-50" : i % 2 === 1 ? "bg-slate-50/80" : "bg-white",
                             )}
                           >
-                            {STATUS_UZ[d.status] || d.status}
-                          </span>
-                        </td>
-                        <td className="px-3 py-2.5">
-                          <div className="font-medium tabular-nums text-slate-800">
-                            {worked != null ? formatHoursUz(worked) : d.workedHours}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                            {dayParts.date}
+                            {isToday ? (
+                              <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
+                                bugun
+                              </span>
+                            ) : null}
+                          </td>
+                          <td className="border-r border-slate-100 px-3 py-1.5 capitalize text-slate-600">
+                            {dayParts.weekday}
+                          </td>
+                          <td className="border-r border-slate-100 px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-emerald-800">
+                            {d.checkIn}
+                          </td>
+                          <td className="border-r border-slate-100 px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-rose-800">
+                            {d.checkOut}
+                          </td>
+                          <td className="border-r border-slate-100 px-3 py-1.5 text-center">
+                            <span
+                              className={cn(
+                                "inline-flex rounded px-2 py-0.5 text-[11px] font-semibold",
+                                STATUS_STYLE[d.status] || "bg-slate-100 text-slate-600",
+                              )}
+                            >
+                              {STATUS_UZ[d.status] || d.status}
+                            </span>
+                          </td>
+                          <td className="px-3 py-1.5 text-right font-medium tabular-nums text-slate-800">
+                            {worked != null ? formatHoursUz(worked) : d.workedHours || "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
         </section>
 

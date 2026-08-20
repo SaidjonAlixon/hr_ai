@@ -133,10 +133,12 @@ async function createMiniToken(opts: {
   return token;
 }
 
-function miniAppUrl(token: string): string | null {
+function miniAppUrl(token: string, next?: string): string | null {
   const base = publicAppUrl();
   if (!base) return null;
-  return `${base}/tg?token=${encodeURIComponent(token)}`;
+  const params = new URLSearchParams({ token });
+  if (next) params.set("next", next);
+  return `${base}/tg?${params.toString()}`;
 }
 
 function formatUserCard(user: {
@@ -164,8 +166,8 @@ function formatUserCard(user: {
   }
   lines.push(
     ``,
-    `Pastdagi <b>Kirish</b> tugmasini bosing — Mini App to‘liq ekranda ochiladi.`,
-    `Dasturdagi barcha funksiyalar shu yerda ishlaydi.`,
+    `Pastdagi <b>Kirish</b> — dastur, <b>Davomat</b> — Face ID + to‘liq holat.`,
+    `Mini App to‘liq ekranda ochiladi.`,
   );
   return lines.join("\n");
 }
@@ -206,6 +208,7 @@ function helpText(): string {
     `<b>Buyruqlar</b>`,
     `/start — boshidan boshlash`,
     `/holat — bog‘langan akkaunt`,
+    `/davomat — Face ID davomat (Mini App)`,
     `/chiqish — Telegram bog‘lanishni uzish`,
     `/yordam — yordam`,
     ``,
@@ -213,35 +216,72 @@ function helpText(): string {
   ].join("\n");
 }
 
+async function createMiniAppTokens(opts: {
+  userId: number;
+  telegramUserId: string;
+  chatId: string;
+}) {
+  const [loginToken, davomatToken] = await Promise.all([
+    createMiniToken(opts),
+    createMiniToken(opts),
+  ]);
+  return {
+    loginUrl: miniAppUrl(loginToken),
+    davomatUrl: miniAppUrl(davomatToken, "davomat-face"),
+  };
+}
+
 async function sendLoggedInCard(
   chatId: number | string,
   user: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>>,
   telegramUserId: string,
 ) {
-  const token = await createMiniToken({
+  const { loginUrl, davomatUrl } = await createMiniAppTokens({
     userId: user.id,
     telegramUserId,
     chatId: String(chatId),
   });
-  const url = miniAppUrl(token);
-  const markup = url
-    ? {
-        inline_keyboard: [
-          [{ text: "🚀 Kirish — Mini App", web_app: { url } }],
-          [{ text: "🔄 Yangi token", callback_data: "refresh_token" }],
-          [{ text: "🚪 Chiqish", callback_data: "logout" }],
-        ],
-      }
-    : {
-        inline_keyboard: [[{ text: "🚪 Chiqish", callback_data: "logout" }]],
-      };
+
+  const rows: Array<Array<{ text: string; web_app?: { url: string }; callback_data?: string }>> = [];
+  if (loginUrl) {
+    rows.push([{ text: "🚀 Kirish — Mini App", web_app: { url: loginUrl } }]);
+  }
+  if (davomatUrl) {
+    rows.push([{ text: "📋 Davomat — Face ID", web_app: { url: davomatUrl } }]);
+  }
+  rows.push([{ text: "🔄 Yangi token", callback_data: "refresh_token" }]);
+  rows.push([{ text: "🚪 Chiqish", callback_data: "logout" }]);
+
+  const markup = { inline_keyboard: rows };
 
   let text = formatUserCard(user);
-  if (!url) {
+  if (!loginUrl && !davomatUrl) {
     text +=
       "\n\n⚠️ <b>PUBLIC_APP_URL</b> sozlanmagan — Mini App havolasi yaratilmadi. Admin Vercel env ga qo‘shishi kerak.";
   }
   await sendMessage(chatId, text, { reply_markup: markup });
+}
+
+async function sendDavomatMiniApp(
+  chatId: number | string,
+  user: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>>,
+  telegramUserId: string,
+) {
+  const davomatToken = await createMiniToken({
+    userId: user.id,
+    telegramUserId,
+    chatId: String(chatId),
+  });
+  const davomatUrl = miniAppUrl(davomatToken, "davomat-face");
+  if (!davomatUrl) {
+    await sendMessage(chatId, "⚠️ PUBLIC_APP_URL sozlanmagan — Davomat Mini App ochilmaydi.");
+    return;
+  }
+  await sendMessage(chatId, `📋 <b>Davomat — Face ID</b>\n\n${escapeHtml(user.fullName)}, tugmani bosing:`, {
+    reply_markup: {
+      inline_keyboard: [[{ text: "📋 Davomat — Face ID", web_app: { url: davomatUrl } }]],
+    },
+  });
 }
 
 async function handleStart(chatId: number, fromId: number, firstName?: string) {
@@ -342,6 +382,15 @@ async function handleUpdate(update: TelegramUpdate) {
       return;
     }
     await sendLoggedInCard(chatId, linked, String(fromId));
+    return;
+  }
+  if (text === "/davomat") {
+    const linked = await findUserByTelegramId(String(fromId));
+    if (!linked || !canSignIn(linked.status)) {
+      await sendMessage(chatId, "Avval login va parol yuboring.\n/start");
+      return;
+    }
+    await sendDavomatMiniApp(chatId, linked, String(fromId));
     return;
   }
   if (text === "/chiqish" || text === "/logout") {
@@ -496,6 +545,7 @@ router.post("/telegram/setup", async (req, res): Promise<void> => {
     await setMyCommands([
       { command: "start", description: "Boshlash / kirish" },
       { command: "holat", description: "Akkaunt va Mini App" },
+      { command: "davomat", description: "Face ID davomat" },
       { command: "chiqish", description: "Bog‘lanishni uzish" },
       { command: "yordam", description: "Yordam" },
     ]);

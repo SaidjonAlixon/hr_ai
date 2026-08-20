@@ -51,6 +51,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
 const PUNCH_GUIDE_KEY = "davomat-punch-guide-done";
@@ -243,8 +244,20 @@ function MobileStepHint({
   );
 }
 
+function isTelegramMiniAppContext(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.Telegram?.WebApp) return true;
+  try {
+    return new URL(window.location.href).searchParams.get("tg") === "1";
+  } catch {
+    return false;
+  }
+}
+
 export default function DavomatFacePage() {
   const { user, isAuthenticated } = useAuth();
+  const isTgMiniApp = useMemo(() => isTelegramMiniAppContext(), []);
+  useTelegramMiniAppChrome();
   const { toast } = useToast();
   const isMobile = useIsMobile();
   const canReport = canViewDavomat(user?.role);
@@ -280,6 +293,8 @@ export default function DavomatFacePage() {
   });
   const watchRef = useRef<number | null>(null);
   const punchLockRef = useRef(false);
+  const tgBootRef = useRef(false);
+  const tgScanRef = useRef(false);
 
   const applyHistory = useCallback((emp?: DavomatEmployee | null) => {
     if (!emp?.days?.length) return;
@@ -524,6 +539,22 @@ export default function DavomatFacePage() {
     return null;
   }, [gps, gpsError, remain, distance, allowedMeters]);
 
+  useEffect(() => {
+    if (!isTgMiniApp || tgBootRef.current) return;
+    tgBootRef.current = true;
+    completeGuide();
+    void requestLocationPermission();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTgMiniApp]);
+
+  useEffect(() => {
+    if (!isTgMiniApp || tgScanRef.current || done || verified) return;
+    if (canOpenFace) {
+      tgScanRef.current = true;
+      setScanOpen(true);
+    }
+  }, [isTgMiniApp, canOpenFace, done, verified]);
+
   const geoPayload = () => {
     if (!gps) throw new Error("GPS yo‘q");
     return { latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracy };
@@ -705,7 +736,9 @@ export default function DavomatFacePage() {
 
             <div className="relative flex items-start justify-between gap-3">
               <div>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-200/90">Davomat</p>
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-200/90">
+                  {isTgMiniApp ? "Telegram · Davomat" : "Davomat"}
+                </p>
                 <div className="mt-1 flex items-center gap-2 text-sky-100/90">
                   <CalendarDays className="h-3.5 w-3.5" />
                   <span className="text-xs">{dateLabel}</span>
@@ -1074,10 +1107,12 @@ export default function DavomatFacePage() {
           <div className="border-b border-slate-100 px-4 py-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
               <History className="h-4 w-4" />
-              Tarix
+              {isTgMiniApp ? "To‘liq davomat holati" : "Tarix"}
             </h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              Bugundan orqaga · Keldim/Ketdim saqlanadi
+              {isTgMiniApp
+                ? "Bugun + so‘nggi 14 kun · Keldim/Ketdim va ishlangan vaqt"
+                : "Bugundan orqaga · Keldim/Ketdim saqlanadi"}
             </p>
           </div>
           {historyDays.length === 0 ? (
@@ -1151,9 +1186,11 @@ export default function DavomatFacePage() {
         </section>
 
         <div className="mt-5 flex justify-center gap-4 text-sm">
-          <Link href="/login" className="text-[#0b3a5c] underline-offset-2 hover:underline">
-            Login
-          </Link>
+          {!isTgMiniApp ? (
+            <Link href="/login" className="text-[#0b3a5c] underline-offset-2 hover:underline">
+              Login
+            </Link>
+          ) : null}
           {isAuthenticated && canReport ? (
             <Link href="/davomat" className="text-[#0b3a5c] underline-offset-2 hover:underline">
               Hisobot

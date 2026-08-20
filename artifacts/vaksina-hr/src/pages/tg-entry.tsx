@@ -36,6 +36,15 @@ function readTokenFromUrl(): string | null {
   }
 }
 
+function readNextFromUrl(): string | null {
+  try {
+    const u = new URL(window.location.href);
+    return u.searchParams.get("next");
+  } catch {
+    return null;
+  }
+}
+
 function prepareTelegramUi() {
   const wa = window.Telegram?.WebApp;
   if (!wa) return false;
@@ -98,6 +107,16 @@ export default function TgEntryPage() {
         const u = await exchangeToken(token);
         if (cancelled) return;
         setUser(u);
+        const next = readNextFromUrl();
+        if (next === "davomat-face") {
+          window.history.replaceState({}, "", "/davomat-face?tg=1");
+          setLocation("/davomat-face?tg=1");
+          toast({
+            title: "Davomat",
+            description: `${u.fullName} · Face ID`,
+          });
+          return;
+        }
         // URL dan tokenni olib tashlash
         window.history.replaceState({}, "", "/dashboard");
         setLocation(u.role === "stajyor" ? "/kirish" : "/dashboard");

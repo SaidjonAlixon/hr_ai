@@ -71,6 +71,7 @@ async function viaTelegramDirect() {
       commands: [
         { command: "start", description: "Boshlash / kirish" },
         { command: "holat", description: "Akkaunt va Mini App" },
+        { command: "davomat", description: "Face ID davomat" },
         { command: "chiqish", description: "Bog‘lanishni uzish" },
         { command: "yordam", description: "Yordam" },
       ],

@@ -45,6 +45,7 @@ import { cn } from '@/lib/utils';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath } from '@/lib/roles';
+import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 
 type NavItem = {
   name: string;
@@ -231,6 +232,7 @@ function NavBadge({
 }
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
+  useTelegramMiniAppChrome();
   const { user, isAuthenticated, isLoading, setUser } = useAuth();
   const [location, setLocation] = useLocation();
   const logout = useLogout();

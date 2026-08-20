@@ -17,3 +17,4 @@ export * from "./kirish";
 export * from "./webauthn";
 export * from "./face-profiles";
 export * from "./attendance";
+export * from "./telegram";

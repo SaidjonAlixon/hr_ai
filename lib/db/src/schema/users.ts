@@ -9,5 +9,7 @@ export const usersTable = pgTable("users", {
   password: text("password").notNull(),
   phone: text("phone"),
   status: text("status").notNull().default("active"), // active|vacant|terminated|on_leave
+  /** Telegram user id (string) — bot orqali bog‘langan akkaunt */
+  telegramId: text("telegram_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

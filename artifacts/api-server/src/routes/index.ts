@@ -32,6 +32,7 @@ import faceRouter from "./face";
 import davomatRouter from "./davomat";
 import holatRouter from "./holat";
 import oylikRouter from "./oylik";
+import telegramRouter from "./telegram";
 
 const router: IRouter = Router();
 
@@ -52,6 +53,7 @@ router.use(faceRouter);
 router.use(davomatRouter);
 router.use(holatRouter);
 router.use(oylikRouter);
+router.use(telegramRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

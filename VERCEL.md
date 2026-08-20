@@ -20,6 +20,10 @@ pnpm run db:push
 | `DATABASE_URL` | yes | `?sslmode=require` for Neon/Supabase |
 | `SESSION_SECRET` | recommended | random string |
 | `CRON_SECRET` | recommended | Vercel Cron Bearer token |
+| `TELEGRAM_BOT_TOKEN` | for bot | BotFather token — see `TELEGRAM.md` |
+| `PUBLIC_APP_URL` | for bot | e.g. `https://hr-ai-gamma.vercel.app` |
+| `TELEGRAM_WEBHOOK_SECRET` | recommended | Webhook header secret |
+| `TELEGRAM_SETUP_SECRET` | optional | Setup endpoint (or use CRON_SECRET) |
 
 5. Deploy.
 

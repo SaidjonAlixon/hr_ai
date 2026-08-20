@@ -48,6 +48,7 @@ import EmployeesPage from './pages/employees/index';
 import DavomatPage from './pages/davomat/index';
 import DavomatFacePage from './pages/davomat/face';
 import NotificationsPage from './pages/notifications/index';
+import TgEntryPage from './pages/tg-entry';
 import NotFound from './pages/not-found';
 
 const queryClient = new QueryClient({
@@ -79,6 +80,7 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/tg" component={TgEntryPage} />
       <Route path="/davomat-face" component={DavomatFacePage} />
       <Route path="/" component={() => {
         window.location.replace('/dashboard');

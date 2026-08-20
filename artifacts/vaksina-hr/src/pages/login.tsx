@@ -149,7 +149,7 @@ export default function Login() {
                   Davomat
                 </Button>
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  Davomat faqat ish joyi GPS dan {DAVOMAT_GEOFENCE_METERS} m ichida. Uzoq bo‘lsangiz qancha metr yurish kerakligi chiqadi.
+                  Davomat: farmasevt, mudir va stajyor — o‘z filiali GPS ({DAVOMAT_GEOFENCE_METERS} m). Qolganlar — asosiy ofis.
                 </p>
                 <FaceScanDialog
                   open={faceOpen}

@@ -186,6 +186,30 @@ function formatLongDateUz(ms: number): string {
   return `${week[0]!.toUpperCase()}${week.slice(1)}, ${p.d}-${MONTH_UZ[p.m - 1]} ${p.y}`;
 }
 
+function formatDistanceParts(meters: number): { value: string; unit: string } {
+  if (!Number.isFinite(meters)) return { value: "—", unit: "" };
+  if (Math.abs(meters) >= 1000) {
+    const km = meters / 1000;
+    const raw = km >= 10 ? km.toFixed(1) : km.toFixed(2);
+    const value = raw.replace(/\.0$/, "").replace(/(\.\d)0$/, "$1");
+    return { value, unit: "km" };
+  }
+  const steps = Math.max(1, Math.round(Math.abs(meters) / 0.75));
+  return { value: String(steps), unit: "qadam" };
+}
+
+function formatDistance(meters: number | null | undefined): string {
+  if (meters == null || !Number.isFinite(meters)) return "—";
+  const p = formatDistanceParts(meters);
+  return `${p.value} ${p.unit}`;
+}
+
+function formatApproach(remain: number | null | undefined): string {
+  if (remain == null || !Number.isFinite(remain) || remain <= 0) return "Hududdasiz";
+  if (remain >= 1000) return `yana ${formatDistance(remain)} yaqinlashishingiz kerak`;
+  return `yana ${formatDistanceParts(remain).value} qadam bosing`;
+}
+
 function sortDaysDesc(days: DavomatDayMetrics[]): DavomatDayMetrics[] {
   return [...days].sort((a, b) => b.date.localeCompare(a.date));
 }
@@ -297,6 +321,22 @@ export default function DavomatFacePage() {
   useEffect(() => {
     void fetchDavomatSite().then(setSite);
   }, []);
+
+  useEffect(() => {
+    if (!workplace?.site) return;
+    if (
+      typeof workplace.site.latitude !== "number" ||
+      typeof workplace.site.longitude !== "number"
+    ) {
+      return;
+    }
+    setSite({
+      allowedMeters: workplace.allowedMeters || DAVOMAT_GEOFENCE_METERS,
+      label: workplace.site.label,
+      latitude: workplace.site.latitude,
+      longitude: workplace.site.longitude,
+    });
+  }, [workplace]);
 
   useEffect(() => {
     void loadWorkplace();
@@ -420,8 +460,12 @@ export default function DavomatFacePage() {
   const allowedMeters = DAVOMAT_GEOFENCE_METERS;
   const remain = distance != null ? Math.max(0, distance - allowedMeters) : null;
   const inside = distance != null ? distance <= allowedMeters : false;
+  const officeDistance = useMemo(() => {
+    if (!gps) return null;
+    return haversineMeters(gps.lat, gps.lng, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+  }, [gps]);
 
-  const canOpenFace = Boolean(gps) && !gpsError && isFaceIdSupported() && inside;
+  const canOpenFace = Boolean(gps) && !gpsError && isFaceIdSupported() && (workplace ? workplace.employee.hasGps && inside : true);
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   const done = nextAction === "done" || workplace?.today.complete;
@@ -475,7 +519,7 @@ export default function DavomatFacePage() {
     if (!gps) return "Avval «Ruxsat berish» ni bosing — brauzer lokatsiya so‘raydi";
     if (!isFaceIdSupported()) return "Face ID bu brauzerda ishlamaydi (HTTPS/localhost kerak)";
     if (remain != null && remain > 0) {
-      return `Siz ${distance} m uzoqdasiz. Ruxsat ${allowedMeters} m. Yana ${remain} m yaqinlashishingiz kerak.`;
+      return `Siz ${formatDistance(distance)} uzoqdasiz. Ruxsat ${allowedMeters} m. ${formatApproach(remain)}.`;
     }
     return null;
   }, [gps, gpsError, remain, distance, allowedMeters]);
@@ -498,7 +542,7 @@ export default function DavomatFacePage() {
   const onCaptured = async (descriptor: number[], snapshot?: string) => {
     if (!gps) throw new Error("GPS yo‘q");
     if (!inside) {
-      throw new Error(`Hududdan tashqarida (${distance} m). Yana ${remain} m yaqinlashing.`);
+      throw new Error(`Hududdan tashqarida (${formatDistance(distance)}). Yana ${formatDistance(remain)} yaqinlashing.`);
     }
     try {
       const result = await faceVerifyDavomat({
@@ -529,9 +573,30 @@ export default function DavomatFacePage() {
       return { fullName: result.fullName };
     } catch (err) {
       if (err instanceof DavomatApiError && err.code === "outside_geofence") {
-        const text = err.message || `Uzoqdasiz: ${err.distanceMeters} m`;
+        if (
+          err.workplace &&
+          typeof err.workplace.latitude === "number" &&
+          typeof err.workplace.longitude === "number"
+        ) {
+          setSite({
+            allowedMeters: err.allowedMeters || DAVOMAT_GEOFENCE_METERS,
+            label: err.workplace.location || site.label,
+            latitude: err.workplace.latitude,
+            longitude: err.workplace.longitude,
+          });
+        }
+        const text =
+          err.remainMeters != null && err.remainMeters < 1000
+            ? formatApproach(err.remainMeters)
+            : err.distanceMeters != null
+              ? `Siz ${formatDistance(err.distanceMeters)} uzoqdasiz. ${formatApproach(err.remainMeters)}.`
+              : err.message || "Hududdan tashqarida";
         toast({ title: "Hududdan tashqarida", description: text, variant: "destructive" });
         throw new Error(text);
+      }
+      if (err instanceof DavomatApiError && err.code === "branch_gps_missing") {
+        toast({ title: "Filial GPS yo‘q", description: err.message, variant: "destructive" });
+        throw err;
       }
       throw err;
     }
@@ -755,8 +820,10 @@ export default function DavomatFacePage() {
             >
               {gps && distance != null ? (
                 <>
-                  <span className="text-lg font-semibold tabular-nums leading-none">{distance}</span>
-                  <span className="text-[10px]">metr</span>
+                  <span className="text-lg font-semibold tabular-nums leading-none">
+                    {formatDistanceParts(distance).value}
+                  </span>
+                  <span className="text-[10px]">{formatDistanceParts(distance).unit}</span>
                 </>
               ) : (
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -776,7 +843,12 @@ export default function DavomatFacePage() {
               ) : (
                 <p className="text-slate-500">«Ruxsat berish» ni bosing — lokatsiya so‘raladi</p>
               )}
-              <p className="mt-0.5 text-xs text-slate-500">Ruxsat faqat {allowedMeters} m</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {workplace?.site?.kind === "branch" ? "O‘z filiali" : "Asosiy ofis"} · ruxsat {allowedMeters} m
+              </p>
+              {site.label ? (
+                <p className="mt-0.5 truncate text-[11px] text-slate-400">{site.label}</p>
+              ) : null}
               {gps ? (
                 <p className="mt-0.5 font-mono text-[11px] text-slate-400">
                   {gps.lat.toFixed(5)}, {gps.lng.toFixed(5)} · ±{gps.accuracy} m
@@ -784,6 +856,13 @@ export default function DavomatFacePage() {
               ) : null}
             </div>
           </div>
+
+          {workplace && workplace.employee.hasGps === false ? (
+            <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm text-amber-950">
+              {workplace.gpsError ||
+                "Filial lokatsiyasi kiritilmagan. Koordinator GPS kiritsin."}
+            </p>
+          ) : null}
 
           {gps && distance != null ? (
             <div
@@ -797,18 +876,26 @@ export default function DavomatFacePage() {
               {inside ? (
                 <>
                   <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                  Hududdasiz · {distance} m (ruxsat {allowedMeters} m)
+                  Hududdasiz · {formatDistance(distance)} (ruxsat {allowedMeters} m)
                 </>
               ) : (
                 <>
                   <XCircle className="mr-1 inline h-4 w-4" />
-                  Siz {distance} m uzoqdasiz · yana{" "}
-                  <span className="tabular-nums font-semibold">{remain}</span> m yaqinlashishingiz kerak
+                  Siz {formatDistance(distance)} uzoqdasiz · {formatApproach(remain)}
                   <span className="mt-0.5 block text-xs font-normal text-rose-700">
-                    Davomat faqat {allowedMeters} m ichida
+                    Davomat faqat {workplace?.site?.kind === "branch" ? "filial" : "asosiy ofis"}dan {allowedMeters} m ichida
                   </span>
                 </>
               )}
+            </div>
+          ) : null}
+
+          {officeDistance != null && officeDistance > 1000 ? (
+            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800">
+              <p className="font-semibold">
+                Asosiy ofisdan {formatDistance(officeDistance)} · {1} kishi
+              </p>
+              <p className="mt-1 text-slate-700">{displayName}</p>
             </div>
           ) : null}
           {gpsError ? <p className="mt-2 text-sm text-rose-600">{gpsError}</p> : null}

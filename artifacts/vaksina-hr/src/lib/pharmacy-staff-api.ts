@@ -154,6 +154,39 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+export type EmployeeProfilePatch = {
+  employeeId: number;
+  firstName?: string;
+  lastName?: string;
+  fullName?: string;
+  phone?: string;
+  shiftType?: string;
+  shiftLabel?: string;
+  employmentStatus?: string;
+};
+
+export function usePatchEmployeeProfile() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: EmployeeProfilePatch) => {
+      const { employeeId, ...body } = data;
+      return apiFetch(`/employees/${employeeId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["holat"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+      qc.invalidateQueries({
+        predicate: (q) => JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
+}
+
 async function saveViaEmployeesPatch(
   employeeId: number,
   coordinates: string,

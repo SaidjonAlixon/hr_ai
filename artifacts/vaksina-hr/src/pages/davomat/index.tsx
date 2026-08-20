@@ -500,6 +500,33 @@ export default function DavomatPage() {
             </div>
           ) : report ? (
             calMode === "day" ? (
+              <>
+              {(dayInfo?.farFromOffice?.length ?? 0) > 0 ? (
+                <Card className="border-amber-200 bg-amber-50/70 shadow-sm">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-base text-amber-950">
+                      Asosiy ofisdan 1 km dan uzoq · {dayInfo!.farFromOffice!.length} kishi
+                    </CardTitle>
+                    <p className="text-xs text-amber-800">
+                      Shu kuni Face ID/GPS bo‘yicha ofisdan uzoqda davomat qilganlar
+                    </p>
+                  </CardHeader>
+                  <CardContent>
+                    <ul className="space-y-1.5 text-sm">
+                      {dayInfo!.farFromOffice!.map((p) => {
+                        const km = p.officeDistanceMeters / 1000;
+                        const label = km >= 10 ? km.toFixed(1) : km.toFixed(2);
+                        return (
+                          <li key={p.fullName} className="flex justify-between gap-3 text-amber-950">
+                            <span className="font-medium">{p.fullName}</span>
+                            <span className="shrink-0 tabular-nums">{label} km</span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </CardContent>
+                </Card>
+              ) : null}
               <Card className="border-slate-200/80 shadow-sm overflow-hidden">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Kunlik davomat · {selectedDay}</CardTitle>
@@ -592,6 +619,7 @@ export default function DavomatPage() {
                   </table>
                 </CardContent>
               </Card>
+              </>
             ) : (
               <Card className="border-slate-200/80 shadow-sm overflow-hidden">
                 <CardHeader className="pb-2">

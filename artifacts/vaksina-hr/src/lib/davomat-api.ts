@@ -74,6 +74,7 @@ export type DavomatReport = {
     presentList: string[];
     absentList: string[];
     lateList: string[];
+    farFromOffice?: Array<{ fullName: string; officeDistanceMeters: number }>;
   }>;
   employees: DavomatEmployee[];
 };
@@ -88,6 +89,12 @@ export class DavomatApiError extends Error {
   checkOut?: string;
   checkInAt?: string | null;
   checkOutAt?: string | null;
+  workplace?: {
+    location?: string;
+    latitude?: number;
+    longitude?: number;
+    kind?: "branch" | "office";
+  };
   constructor(body: {
     error?: string;
     code?: string;
@@ -99,6 +106,12 @@ export class DavomatApiError extends Error {
     checkOut?: string;
     checkInAt?: string | null;
     checkOutAt?: string | null;
+    workplace?: {
+      location?: string;
+      latitude?: number;
+      longitude?: number;
+      kind?: "branch" | "office";
+    };
   }) {
     super(body.error || "Davomat xatosi");
     this.code = body.code;
@@ -110,6 +123,7 @@ export class DavomatApiError extends Error {
     this.checkOut = body.checkOut;
     this.checkInAt = body.checkInAt;
     this.checkOutAt = body.checkOutAt;
+    this.workplace = body.workplace;
   }
 }
 
@@ -215,7 +229,15 @@ export async function facePunchDavomat(payload: {
 
 export type WorkplaceInfo = {
   allowedMeters: number;
+  gpsReady?: boolean;
+  gpsError?: string | null;
   workDate: string;
+  site?: {
+    label: string;
+    latitude: number;
+    longitude: number;
+    kind?: "branch" | "office";
+  };
   employee: {
     id: number;
     fullName: string;

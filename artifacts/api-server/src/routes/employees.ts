@@ -12,6 +12,51 @@ const router: IRouter = Router();
 
 const VALID_EMP_STATUS = new Set(["working", "new", "dismissed", "need_hire", "searching", "no_manager"]);
 
+const BRANCH_STAFF_ROLES = new Set(["pharmacist", "intern", "supervisor"]);
+
+async function pharmacyEditDenied(
+  role: string,
+  actorUserId: number | undefined,
+  target: typeof employeesTable.$inferSelect,
+): Promise<string | null> {
+  if (role !== "mudir" && role !== "koordinator") return null;
+  if (!actorUserId) return "Ruxsat yo‘q";
+
+  const mine = await db
+    .select({
+      id: employeesTable.id,
+      orgRole: employeesTable.orgRole,
+      userId: employeesTable.userId,
+      reportsToId: employeesTable.reportsToId,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, actorUserId));
+
+  if (role === "mudir") {
+    const myBranch =
+      target.orgRole === "manager" && target.userId === actorUserId
+        ? target
+        : mine.find((e) => e.orgRole === "manager");
+    const ok =
+      myBranch &&
+      (target.id === myBranch.id ||
+        (BRANCH_STAFF_ROLES.has(target.orgRole || "") && target.reportsToId === myBranch.id));
+    return ok ? null : "Faqat o‘z filialingizdagi mudir va xodimlarni tahrirlashingiz mumkin";
+  }
+
+  const coord = mine.find((e) => e.orgRole === "coordinator") ?? mine[0];
+  if (!coord) return "Koordinator kartasi topilmadi";
+  if (target.orgRole === "manager" && target.reportsToId === coord.id) return null;
+  if (BRANCH_STAFF_ROLES.has(target.orgRole || "") && target.reportsToId != null) {
+    const [mgr] = await db
+      .select({ id: employeesTable.id, reportsToId: employeesTable.reportsToId })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, target.reportsToId));
+    if (mgr?.reportsToId === coord.id) return null;
+  }
+  return "Faqat o‘z tarmog‘ingizdagi mudir va xodimlarni tahrirlashingiz mumkin";
+}
+
 const FULL_NETWORK_ROLES = new Set([
   "admin",
   ...HR_ROLES,
@@ -476,21 +521,19 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     "koordinator",
   ].includes(role);
   const canEditStatus = ["mudir", ...HR_ROLES, "admin", "director", "koordinator"].includes(role);
+  const canEditIdentity = canEditStatus;
 
-  // Mudir faqat o‘z filiali xodimlarini o‘zgartira oladi
-  if (role === "mudir" && req.userId) {
-    const myBranch = before.orgRole === "manager" && before.userId === req.userId
-      ? before
-      : (
-          await db.select().from(employeesTable).where(eq(employeesTable.userId, req.userId))
-        ).find((e) => e.orgRole === "manager");
-    const allowed =
-      myBranch &&
-      (before.id === myBranch.id ||
-        (before.orgRole === "pharmacist" && before.reportsToId === myBranch.id));
-    if (!allowed) {
-      res.status(403).json({ error: "Faqat o‘z filialingizni tahrirlashingiz mumkin" });
-      return;
+  const scopeErr = await pharmacyEditDenied(role, req.userId, before);
+  if (scopeErr) {
+    res.status(403).json({ error: scopeErr });
+    return;
+  }
+
+  if (canEditIdentity) {
+    const fn = String(req.body.firstName ?? "").trim();
+    const ln = String(req.body.lastName ?? "").trim();
+    if (req.body.fullName === undefined && (fn || ln)) {
+      req.body.fullName = `${fn} ${ln}`.replace(/\s+/g, " ").trim();
     }
   }
 
@@ -513,6 +556,7 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body[key] === undefined) continue;
+    if (key === "fullName" && !canEditIdentity) continue;
     if ((key === "shiftType" || key === "shiftLabel") && !canEditShift) continue;
     if (key === "employmentStatus") {
       if (!canEditStatus) continue;
@@ -535,15 +579,33 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     updates[key] = req.body[key];
   }
 
-  if (!Object.keys(updates).length) {
+  const nextPhone =
+    canEditIdentity && req.body.phone !== undefined ? String(req.body.phone).trim() : undefined;
+
+  if (!Object.keys(updates).length && nextPhone === undefined) {
     res.status(400).json({ error: "Yangilash uchun maydon yo‘q" });
     return;
   }
 
-  const [updated] = await db.update(employeesTable).set(updates).where(eq(employeesTable.id, id)).returning();
-  if (!updated) {
-    res.status(404).json({ error: "Topilmadi" });
-    return;
+  let updated = before;
+  if (Object.keys(updates).length) {
+    const [row] = await db.update(employeesTable).set(updates).where(eq(employeesTable.id, id)).returning();
+    if (!row) {
+      res.status(404).json({ error: "Topilmadi" });
+      return;
+    }
+    updated = row;
+  }
+
+  if (before.userId && (typeof updates.fullName === "string" || nextPhone !== undefined)) {
+    const userPatch: { fullName?: string; phone?: string | null } = {};
+    if (typeof updates.fullName === "string" && updates.fullName.trim()) {
+      userPatch.fullName = String(updates.fullName).trim();
+    }
+    if (nextPhone !== undefined) userPatch.phone = nextPhone || null;
+    if (Object.keys(userPatch).length) {
+      await db.update(usersTable).set(userPatch).where(eq(usersTable.id, before.userId));
+    }
   }
 
   if (typeof updates.employmentStatus === "string") {

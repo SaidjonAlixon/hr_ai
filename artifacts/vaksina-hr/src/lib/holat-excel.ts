@@ -10,6 +10,7 @@ type SheetSpec = {
   rows: Cell[][];
   widths: number[];
   statusCol?: number;
+  rowHeights?: number[];
 };
 
 const NAVY = "FF0B3A5C";
@@ -29,7 +30,10 @@ function xml(s: string) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/\r\n/g, "\n")
+    .replace(/\r/g, "\n")
+    .replace(/\n/g, "&#10;");
 }
 
 function dash(v: Cell) {
@@ -218,6 +222,7 @@ function sheetXml(spec: SheetSpec) {
     .map((vals, ri) => {
       const r = headerRow + 1 + ri;
       const zebra = ri % 2 === 0 ? 3 : 4;
+      const ht = spec.rowHeights?.[ri] ?? 22;
       const cells = spec.headers
         .map((_, i) => {
           const raw = dash(vals[i]);
@@ -227,10 +232,11 @@ function sheetXml(spec: SheetSpec) {
           if (typeof raw === "number") {
             return `<c r="${ref}" s="${s}"><v>${raw}</v></c>`;
           }
-          return `<c r="${ref}" s="${s}" t="inlineStr"><is><t xml:space="preserve">${xml(String(raw))}</t></is></c>`;
+          const text = String(raw).length > 32000 ? `${String(raw).slice(0, 31990)}…` : String(raw);
+          return `<c r="${ref}" s="${s}" t="inlineStr"><is><t>${xml(text)}</t></is></c>`;
         })
         .join("");
-      return `<row r="${r}" ht="20" customHeight="1">${cells}</row>`;
+      return `<row r="${r}" ht="${ht}" customHeight="1">${cells}</row>`;
     })
     .join("");
 
@@ -256,7 +262,10 @@ function sheetXml(spec: SheetSpec) {
 
 function workbookXml(names: string[]) {
   const sheets = names
-    .map((n, i) => `<sheet name="${xml(n)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`)
+    .map((n, i) => {
+      const safe = n.replace(/[:\\/?*[\]]/g, " ").slice(0, 31) || `Sheet${i + 1}`;
+      return `<sheet name="${xml(safe)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`;
+    })
     .join("");
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
@@ -350,52 +359,147 @@ const SECTION_FILE: Record<HolatExcelSection, string> = {
   royxat: "Toliq_royxat",
 };
 
+function personLine(p: HolatPerson) {
+  const bits = [p.fullName || "—"];
+  bits.push(p.phone ? `tel: ${p.phone}` : "tel: yo‘q");
+  bits.push(p.login ? `login: ${p.login}` : "login: yo‘q");
+  if (p.employmentStatusLabel && p.employmentStatusLabel !== "—") {
+    bits.push(p.employmentStatusLabel);
+  }
+  return bits.join(" · ");
+}
+
+function staffKind(s: HolatPerson): "Farmasevt" | "Stajyor" | "Xodim" {
+  if (s.orgRole === "pharmacist" || s.orgRole === "supervisor" || s.loginRole === "farmasevt") {
+    return "Farmasevt";
+  }
+  if (s.orgRole === "intern" || s.loginRole === "stajyor" || /staj/i.test(s.orgRoleLabel || s.position || "")) {
+    return "Stajyor";
+  }
+  return "Xodim";
+}
+
+function listStaff(people: HolatPerson[]) {
+  if (!people.length) return "—";
+  return people.map((p, i) => `${i + 1}) ${personLine(p)}`).join("  |  ");
+}
+
 function dashboardSheets(report: HolatReport, coordinatorEmployeeId?: number | null): SheetSpec[] {
   const when = report.generatedAt;
-  const coords = coordinatorEmployeeId
-    ? report.coordinators.filter((c) => c.employeeId === coordinatorEmployeeId)
-    : report.coordinators;
+  const coords = (
+    coordinatorEmployeeId
+      ? (report.coordinators ?? []).filter((c) => c.employeeId === coordinatorEmployeeId)
+      : report.coordinators ?? []
+  );
   const who = coords.length === 1 ? coords[0]!.fullName : "Barcha koordinatorlar";
 
   const filialRows: Cell[][] = [];
+  const filialHeights: number[] = [];
   const peopleRows: Cell[][] = [];
+  const holatRows: Cell[][] = [];
+  let nFilial = 0;
+  let nPerson = 0;
+  let withTeam = 0;
+  let farmTotal = 0;
+  let internTotal = 0;
+
   for (const c of coords) {
-    if (!c.mudirs.length) {
-      peopleRows.push([c.fullName, "—", "Koordinator", c.fullName, c.phone, c.login, c.employmentStatusLabel, "Filial yo‘q"]);
-    }
-    for (const m of c.mudirs) {
-      const has = m.staffCount > 0;
-      filialRows.push([
+    const mudirs = c.mudirs ?? [];
+    if (!mudirs.length) {
+      nPerson += 1;
+      peopleRows.push([
+        nPerson,
+        "—",
+        "—",
+        "Koordinator",
         c.fullName,
-        m.branch,
+        c.phone,
+        c.login,
+        c.employmentStatusLabel,
+        c.fullName,
+        c.createdByName,
+      ]);
+    }
+    for (const m of mudirs) {
+      const staff = m.staff ?? [];
+      const farmasevts = staff.filter((s) => staffKind(s) === "Farmasevt");
+      const interns = staff.filter((s) => staffKind(s) === "Stajyor");
+      const other = staff.filter((s) => staffKind(s) === "Xodim");
+      const has = staff.length > 0;
+      if (has) withTeam += 1;
+      farmTotal += farmasevts.length;
+      internTotal += interns.length;
+      const miss: string[] = [];
+      if (!has) miss.push("Jamoa yo‘q — faqat mudir");
+      if (!farmasevts.length) miss.push("Farmasevt kiritilmagan");
+      if (!interns.length) miss.push("Stajyor kiritilmagan");
+      if (!String(m.phone || "").trim()) miss.push("Mudir telefoni yo‘q");
+      if (!String(m.login || "").trim()) miss.push("Mudir login yo‘q");
+      if (!String(m.branch || "").trim()) miss.push("Filial nomi yo‘q");
+      holatRows.push([
+        0,
+        c.fullName,
+        m.branch || "Filial yo‘q",
         m.fullName,
-        m.pharmacistCount,
-        m.internCount,
-        m.staffCount,
-        has ? "Jamoa bor" : "Farmasevt/stajyor yo‘q",
+        has ? "Jamoa bor" : "Jamoa yo‘q",
+        farmasevts.length,
+        interns.length,
+        miss.length ? miss.join("; ") : "Hammasi kiritilgan",
         m.phone,
         m.login,
       ]);
-      peopleRows.push([
+      const farmText = listStaff(farmasevts);
+      const internText = listStaff(interns);
+      const otherText = other.length ? listStaff(other) : "";
+      nFilial += 1;
+      filialRows.push([
+        nFilial,
         c.fullName,
-        m.branch,
+        m.branch || "Filial yo‘q",
+        m.fullName,
+        m.phone,
+        m.login,
+        has ? "Jamoa bor" : "Jamoa yo‘q",
+        farmasevts.length,
+        interns.length,
+        farmText,
+        internText,
+        otherText || "—",
+      ]);
+      const approxLines = Math.max(
+        1,
+        Math.ceil(farmText.length / 55),
+        Math.ceil(internText.length / 55),
+        Math.ceil((otherText || "—").length / 55),
+      );
+      filialHeights.push(Math.min(90, 22 + (approxLines - 1) * 14));
+
+      nPerson += 1;
+      peopleRows.push([
+        nPerson,
+        m.branch || "—",
+        m.fullName,
         "Mudir",
         m.fullName,
         m.phone,
         m.login,
         m.employmentStatusLabel,
-        has ? "Jamoa bor" : "Jamoa yo‘q",
+        c.fullName,
+        m.createdByName,
       ]);
-      for (const s of m.staff) {
+      for (const s of [...farmasevts, ...interns, ...other]) {
+        nPerson += 1;
         peopleRows.push([
-          c.fullName,
-          m.branch,
-          s.orgRoleLabel,
+          nPerson,
+          m.branch || "—",
+          m.fullName,
+          staffKind(s) === "Xodim" ? s.orgRoleLabel || "Xodim" : staffKind(s),
           s.fullName,
           s.phone,
           s.login,
           s.employmentStatusLabel,
-          "",
+          c.fullName,
+          s.createdByName,
         ]);
       }
     }
@@ -403,32 +507,90 @@ function dashboardSheets(report: HolatReport, coordinatorEmployeeId?: number | n
 
   return [
     {
-      name: "Filiallar",
-      title: `Dashboard — filiallar · ${who}`,
-      subtitle: `${when}  ·  ${filialRows.length} ta filial`,
+      name: "Filial va jamoa",
+      title: `Filial · mudir · xodimlar · ${who}`,
+      subtitle: `${when}  ·  ${filialRows.length} ta filial  ·  har qatorda mudir va ichidagi farmasevt/stajyor`,
       headers: [
+        "№",
         "Koordinator",
         "Filial",
         "Mudir",
+        "Mudir telefon",
+        "Mudir login",
+        "Jamoa",
+        "Farmasevt soni",
+        "Stajyor soni",
+        "Farmasevtlar (F.I.Sh. · telefon · login)",
+        "Stajyorlar (F.I.Sh. · telefon · login)",
+        "Boshqa xodimlar",
+      ],
+      widths: [6, 24, 26, 24, 16, 16, 14, 14, 14, 48, 48, 36],
+      statusCol: 7,
+      rows: filialRows,
+      rowHeights: filialHeights,
+    },
+    {
+      name: "Batafsil xodimlar",
+      title: `Har bir odam alohida qator · ${who}`,
+      subtitle: "Filial va mudir har qatorda takrorlanadi — filtrlash oson",
+      headers: [
+        "№",
+        "Filial",
+        "Mudir",
+        "Rol",
+        "F.I.Sh.",
+        "Telefon",
+        "Login",
+        "Ish holati",
+        "Koordinator",
+        "Qo‘shgan",
+      ],
+      widths: [6, 26, 24, 14, 26, 16, 18, 16, 24, 22],
+      statusCol: 8,
+      rows: peopleRows,
+    },
+    {
+      name: "Holat bor-yoq",
+      title: `Filial · jamoa bor/yo‘q · kiritilmaganlar · ${who}`,
+      subtitle: `${when}  ·  Filial: ${nFilial}  ·  Jamoa bor: ${withTeam}  ·  Jamoa yo‘q: ${nFilial - withTeam}  ·  Xodimlar: ${farmTotal + internTotal} (${farmTotal} farmasevt · ${internTotal} stajyor)`,
+      headers: [
+        "№",
+        "Koordinator",
+        "Filial / ko‘rsatkich",
+        "Mudir",
+        "Jamoa",
         "Farmasevt",
         "Stajyor",
-        "Jami xodim",
-        "Holat",
+        "Nima kiritilmagan",
         "Mudir telefon",
         "Mudir login",
       ],
-      widths: [24, 28, 24, 12, 12, 12, 22, 16, 18],
-      statusCol: 7,
-      rows: filialRows,
-    },
-    {
-      name: "Xodimlar",
-      title: `Dashboard — mudir, farmasevt, stajyor · ${who}`,
-      subtitle: "Har qator — bitta odam",
-      headers: ["Koordinator", "Filial", "Lavozim", "F.I.Sh.", "Telefon", "Login", "Holat", "Izoh"],
-      widths: [24, 28, 16, 26, 16, 18, 16, 20],
-      statusCol: 7,
-      rows: peopleRows,
+      widths: [6, 24, 28, 24, 14, 12, 12, 48, 16, 18],
+      statusCol: 5,
+      rows: [
+        ["", who, "FILIAL", "—", "Jami", nFilial, "", "Shu tarmoqdagi aptekalar soni", "", ""],
+        ["", who, "JAMOA BOR", "—", "Jamoa bor", withTeam, "", "Farmasevt yoki stajyor qo‘shilgan filiallar", "", ""],
+        ["", who, "JAMOA YO‘Q", "—", "Jamoa yo‘q", nFilial - withTeam, "", "Faqat mudir — xodim kiritilmagan", "", ""],
+        [
+          "",
+          who,
+          "XODIMLAR",
+          "—",
+          "Jami",
+          farmTotal,
+          internTotal,
+          `${farmTotal + internTotal} ta xodim: ${farmTotal} farmasevt · ${internTotal} stajyor`,
+          "",
+          "",
+        ],
+        ...holatRows
+          .sort((a, b) => String(a[4]).localeCompare(String(b[4]), "uz") * -1)
+          .map((row, i) => {
+            const next = [...row];
+            next[0] = i + 1;
+            return next;
+          }),
+      ],
     },
   ];
 }

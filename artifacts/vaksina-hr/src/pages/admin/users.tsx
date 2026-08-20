@@ -9,7 +9,7 @@ import {
   type User,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2, Pencil } from 'lucide-react';
+import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2, Pencil, KeyRound } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -104,6 +104,7 @@ export default function AdminUsersPage() {
   const [showPwd, setShowPwd] = useState(true);
   const [copied, setCopied] = useState<'login' | 'password' | 'both' | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [regeneratingId, setRegeneratingId] = useState<number | null>(null);
 
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('recruiter');
@@ -321,6 +322,49 @@ export default function AdminUsersPage() {
     );
   };
 
+  const onRegenerateLogin = async (u: User) => {
+    if (!isAdmin) return;
+    if (u.id === me?.id) {
+      toast({ title: 'O‘zingizning loginni shu yerda yangilay olmaysiz', variant: 'destructive' });
+      return;
+    }
+    const ok = window.confirm(
+      `${u.fullName} uchun yangi login va parol yaratilsinmi?\nEski login/parol ishlamay qoladi.`,
+    );
+    if (!ok) return;
+    setRegeneratingId(u.id);
+    try {
+      const res = await fetch(`/api/users/${u.id}/regenerate-login`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error((data as { error?: string }).error || 'Yaratilmadi');
+      }
+      invalidate();
+      setCreated({
+        fullName: data.fullName,
+        role: data.role,
+        login: data.login,
+        temporaryPassword: data.temporaryPassword || '',
+      });
+      setShowPwd(true);
+      setCopied(null);
+      setCredsOpen(true);
+      toast({ title: 'Yangi login va parol', description: 'Foydalanuvchiga bering — eski kirish yopildi' });
+    } catch (err: any) {
+      toast({
+        title: 'Xatolik',
+        description: err?.message || 'Login/parol yaratilmadi',
+        variant: 'destructive',
+      });
+    } finally {
+      setRegeneratingId(null);
+    }
+  };
+
   const onDelete = (u: User) => {
     if (!isAdmin) return;
     if (u.id === me?.id) {
@@ -481,6 +525,19 @@ export default function AdminUsersPage() {
                             title="Tahrirlash"
                           >
                             <Pencil className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => void onRegenerateLogin(u)}
+                            disabled={u.id === me?.id || regeneratingId === u.id}
+                            title="Yangi login va parol"
+                          >
+                            {regeneratingId === u.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <KeyRound className="h-4 w-4" />
+                            )}
                           </Button>
                           <Button
                             variant="ghost"
@@ -659,10 +716,10 @@ export default function AdminUsersPage() {
       <Dialog open={credsOpen} onOpenChange={setCredsOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Login va parol</DialogTitle>
+            <DialogTitle>Yangi login va parol</DialogTitle>
             <DialogDescription>
               {created?.fullName} ({userRoleLabel(created?.role || '') || created?.role}) uchun
-              ma’lumotlar. Parol faqat hozir ko‘rsatiladi — saqlab qo‘ying.
+              kirish ma’lumotlari. Parol faqat hozir ko‘rsatiladi — foydalanuvchiga bering.
             </DialogDescription>
           </DialogHeader>
           {created && (

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useGetEmployees, useUpdateEmployee, type Employee } from '@workspace/api-client-react';
+import { useGetEmployees, type Employee } from '@workspace/api-client-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
@@ -39,6 +39,7 @@ import {
   useOwnMudirCredentials,
   useOwnStaffLogins,
   usePatchNetworkCredentials,
+  usePatchEmployeeProfile,
   downloadOwnMudirsExcel,
   downloadOwnStaffExcel,
   gpsFromLocationField,
@@ -303,7 +304,7 @@ export default function PharmacyNetworkPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { data: employees, isLoading, refetch } = useGetEmployees();
-  const { mutate: updateEmployee, isPending } = useUpdateEmployee();
+  const patchProfile = usePatchEmployeeProfile();
   const { data: alerts, refetch: refetchAlerts } = useStaffingAlerts('open', {
     enabled: !!user,
   });
@@ -376,6 +377,9 @@ export default function PharmacyNetworkPage() {
   const [shiftType, setShiftType] = useState<ShiftType>('one');
   const [shiftLabel, setShiftLabel] = useState('');
   const [employmentStatus, setEmploymentStatus] = useState<EmploymentStatus>('working');
+  const [editFirstName, setEditFirstName] = useState('');
+  const [editLastName, setEditLastName] = useState('');
+  const [editPhone, setEditPhone] = useState('');
   const [search, setSearch] = useState('');
   const [coordinatorFilter, setCoordinatorFilter] = useState<string>('all');
   const [shiftFilter, setShiftFilter] = useState<string>('all');
@@ -613,6 +617,10 @@ export default function PharmacyNetworkPage() {
   const openEditor = (person: Employee, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setEditTarget(person);
+    const parts = String(person.fullName || '').trim().split(/\s+/).filter(Boolean);
+    setEditFirstName(parts.length <= 1 ? person.fullName || '' : parts.slice(0, -1).join(' '));
+    setEditLastName(parts.length <= 1 ? '' : parts[parts.length - 1]);
+    setEditPhone(String((person as Employee & { phone?: string | null }).phone || ''));
     setShiftType((person.shiftType as ShiftType) || 'one');
     setShiftLabel(person.shiftLabel ?? '');
     setEmploymentStatus(empStatus(person));
@@ -723,14 +731,21 @@ export default function PharmacyNetworkPage() {
 
   const saveEditor = () => {
     if (!editTarget) return;
-    updateEmployee(
+    const fullName = `${editFirstName.trim()} ${editLastName.trim()}`.replace(/\s+/g, ' ').trim();
+    if (!fullName) {
+      toast({ title: 'Ism kiriting', variant: 'destructive' });
+      return;
+    }
+    patchProfile.mutate(
       {
-        id: editTarget.id,
-        data: {
-          shiftType,
-          shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : '',
-          ...(canEditStatus ? { employmentStatus } : {}),
-        },
+        employeeId: editTarget.id,
+        firstName: editFirstName.trim(),
+        lastName: editLastName.trim(),
+        fullName,
+        phone: editPhone.trim(),
+        shiftType,
+        shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : '',
+        ...(canEditStatus ? { employmentStatus } : {}),
       },
       {
         onSuccess: () => {
@@ -741,7 +756,7 @@ export default function PharmacyNetworkPage() {
                 ? 'Mudir yo‘q deb belgilandi. Xodimlar ishlashda davom etadi.'
                 : canEditStatus && employmentStatus !== 'working'
                   ? 'Holat yangilandi — ogohlantirish yuborildi'
-                  : 'Maʼlumot yangilandi',
+                  : 'Ism va maʼlumot yangilandi',
           });
           setEditTarget(null);
           refetch();
@@ -1908,9 +1923,27 @@ export default function PharmacyNetworkPage() {
       <Dialog open={!!editTarget} onOpenChange={(open) => !open && setEditTarget(null)}>
         <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
-            <DialogTitle>Holat — {editTarget?.fullName}</DialogTitle>
+            <DialogTitle>Tahrirlash — {editTarget?.fullName}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Ism</Label>
+                <Input value={editFirstName} onChange={(e) => setEditFirstName(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Familiya</Label>
+                <Input value={editLastName} onChange={(e) => setEditLastName(e.target.value)} />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Telefon</Label>
+              <Input
+                value={editPhone}
+                onChange={(e) => setEditPhone(e.target.value)}
+                placeholder="+998 90 123 45 67"
+              />
+            </div>
             {canEditStatus && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">Xodim holati</p>
@@ -1973,7 +2006,7 @@ export default function PharmacyNetworkPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditTarget(null)}>Bekor qilish</Button>
-            <Button onClick={saveEditor} disabled={isPending}>Saqlash</Button>
+            <Button onClick={saveEditor} disabled={patchProfile.isPending}>Saqlash</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

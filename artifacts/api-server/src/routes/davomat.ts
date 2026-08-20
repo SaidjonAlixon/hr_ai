@@ -13,6 +13,7 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
 import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
 import { matchFaceForAuth } from "../lib/face-match";
+import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -270,9 +271,26 @@ function buildReport(
     const presentList: string[] = [];
     const absentList: string[] = [];
     const lateList: string[] = [];
+    const farFromOffice: Array<{ fullName: string; officeDistanceMeters: number }> = [];
 
     for (const e of employees) {
       const rec = byEmpDate.get(`${e.id}|${date}`);
+      if (
+        rec?.checkLatitude != null &&
+        rec?.checkLongitude != null &&
+        Number.isFinite(rec.checkLatitude) &&
+        Number.isFinite(rec.checkLongitude)
+      ) {
+        const officeM = haversineMeters(
+          rec.checkLatitude,
+          rec.checkLongitude,
+          DAVOMAT_SITE_LAT,
+          DAVOMAT_SITE_LNG,
+        );
+        if (officeM > 1000) {
+          farFromOffice.push({ fullName: e.fullName, officeDistanceMeters: officeM });
+        }
+      }
       if (!rec || (!rec.checkInAt && rec.status === "absent")) {
         absent += 1;
         absentList.push(e.fullName);
@@ -310,6 +328,7 @@ function buildReport(
       presentList,
       absentList,
       lateList,
+      farFromOffice,
     };
   });
 
@@ -613,7 +632,108 @@ type WorkplaceEmp = {
   location: string | null;
   latitude: number | null;
   longitude: number | null;
+  orgRole: string | null;
+  reportsToId: number | null;
 };
+
+const BRANCH_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
+const BRANCH_ORG_ROLES = new Set(["manager", "pharmacist", "intern"]);
+
+function usesBranchDavomat(userRole: string, orgRole: string | null | undefined) {
+  return BRANCH_USER_ROLES.has(userRole) || BRANCH_ORG_ROLES.has(orgRole || "");
+}
+
+function orgRoleFromUserRole(role: string): string | null {
+  if (role === "mudir") return "manager";
+  if (role === "farmasevt") return "pharmacist";
+  if (role === "stajyor") return "intern";
+  if (role === "koordinator") return "coordinator";
+  return null;
+}
+
+type DavomatPoint = {
+  latitude: number;
+  longitude: number;
+  label: string;
+  kind: "branch" | "office";
+};
+
+function coordsFromEmp(row: {
+  latitude: number | null;
+  longitude: number | null;
+  location: string | null;
+}): { lat: number; lng: number } | null {
+  if (
+    row.latitude != null &&
+    row.longitude != null &&
+    Number.isFinite(row.latitude) &&
+    Number.isFinite(row.longitude)
+  ) {
+    return { lat: row.latitude, lng: row.longitude };
+  }
+  return gpsFromLocationField(row.location);
+}
+
+async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise<
+  | { ok: true; point: DavomatPoint }
+  | { ok: false; status: number; body: Record<string, unknown> }
+> {
+  if (!usesBranchDavomat(userRole, emp.orgRole)) {
+    return {
+      ok: true,
+      point: {
+        latitude: DAVOMAT_SITE_LAT,
+        longitude: DAVOMAT_SITE_LNG,
+        label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+        kind: "office",
+      },
+    };
+  }
+
+  let latLng = coordsFromEmp(emp);
+  let label = displayBranchName(emp.location) || emp.location || emp.fullName;
+
+  if (emp.orgRole !== "manager" && emp.reportsToId) {
+    const [mgr] = await db
+      .select({
+        latitude: employeesTable.latitude,
+        longitude: employeesTable.longitude,
+        location: employeesTable.location,
+        fullName: employeesTable.fullName,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, emp.reportsToId))
+      .limit(1);
+    if (mgr) {
+      const fromMgr = coordsFromEmp(mgr);
+      if (fromMgr) latLng = fromMgr;
+      label = displayBranchName(mgr.location) || mgr.location || mgr.fullName || label;
+    }
+  }
+
+  if (!latLng) {
+    return {
+      ok: false,
+      status: 403,
+      body: {
+        error:
+          "Filial lokatsiyasi kiritilmagan. Koordinator avval shu filial GPS ni kiritsin, keyin davomat qilasiz.",
+        code: "branch_gps_missing",
+        fullName: emp.fullName,
+      },
+    };
+  }
+
+  return {
+    ok: true,
+    point: {
+      latitude: latLng.lat,
+      longitude: latLng.lng,
+      label: label || "Filial",
+      kind: "branch",
+    },
+  };
+}
 
 function normalizeName(s: string): string {
   return s
@@ -651,6 +771,8 @@ async function findEmployeeByUserId(userId: number): Promise<WorkplaceEmp | null
       location: employeesTable.location,
       latitude: employeesTable.latitude,
       longitude: employeesTable.longitude,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
     })
     .from(employeesTable)
     .where(eq(employeesTable.userId, userId))
@@ -681,6 +803,8 @@ async function ensureEmployeeForUser(user: {
       location: employeesTable.location,
       latitude: employeesTable.latitude,
       longitude: employeesTable.longitude,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
       employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable);
@@ -694,13 +818,12 @@ async function ensureEmployeeForUser(user: {
   );
 
   if (byName) {
+    const orgRole = byName.orgRole || orgRoleFromUserRole(user.role);
     await db
       .update(employeesTable)
       .set({
         userId: user.id,
-        location: byName.location || DAVOMAT_SITE_LABEL,
-        latitude: byName.latitude ?? DAVOMAT_SITE_LAT,
-        longitude: byName.longitude ?? DAVOMAT_SITE_LNG,
+        ...(orgRole && !byName.orgRole ? { orgRole } : {}),
         updatedAt: new Date(),
       })
       .where(eq(employeesTable.id, byName.id));
@@ -708,9 +831,11 @@ async function ensureEmployeeForUser(user: {
       id: byName.id,
       userId: user.id,
       fullName: byName.fullName,
-      location: byName.location || DAVOMAT_SITE_LABEL,
-      latitude: byName.latitude ?? DAVOMAT_SITE_LAT,
-      longitude: byName.longitude ?? DAVOMAT_SITE_LNG,
+      location: byName.location,
+      latitude: byName.latitude,
+      longitude: byName.longitude,
+      orgRole: orgRole,
+      reportsToId: byName.reportsToId,
     };
   }
 
@@ -723,6 +848,8 @@ async function ensureEmployeeForUser(user: {
     departmentId = anyDept?.id ?? 1;
   }
 
+  const orgRole = orgRoleFromUserRole(user.role);
+  const branchStaff = usesBranchDavomat(user.role, orgRole);
   const [created] = await db
     .insert(employeesTable)
     .values({
@@ -732,9 +859,10 @@ async function ensureEmployeeForUser(user: {
       hiredAt: todayTashkent(),
       userId: user.id,
       employmentStatus: "working",
-      location: DAVOMAT_SITE_LABEL,
-      latitude: DAVOMAT_SITE_LAT,
-      longitude: DAVOMAT_SITE_LNG,
+      orgRole,
+      location: branchStaff ? null : DAVOMAT_SITE_LABEL,
+      latitude: branchStaff ? null : DAVOMAT_SITE_LAT,
+      longitude: branchStaff ? null : DAVOMAT_SITE_LNG,
       shiftType: "one",
     })
     .returning({
@@ -744,6 +872,8 @@ async function ensureEmployeeForUser(user: {
       location: employeesTable.location,
       latitude: employeesTable.latitude,
       longitude: employeesTable.longitude,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
     });
 
   if (!created) throw new Error("Xodim yaratilmadi");
@@ -776,47 +906,49 @@ async function matchFaceUserId(
   return { ok: true, userId: matched.userId, faceId: matched.id };
 }
 
-function geoGate(
+async function geoGate(
   emp: WorkplaceEmp,
+  userRole: string,
   latitude: number,
   longitude: number,
   _accuracyMeters?: number,
-):
-  | { ok: true; distanceMeters: number; effectiveRadius: number }
+): Promise<
+  | { ok: true; distanceMeters: number; effectiveRadius: number; point: DavomatPoint }
   | {
       ok: false;
       status: number;
       body: Record<string, unknown>;
-    } {
-  const distanceMeters = haversineMeters(
-    latitude,
-    longitude,
-    DAVOMAT_SITE_LAT,
-    DAVOMAT_SITE_LNG,
-  );
+    }
+> {
+  const resolved = await resolveDavomatPoint(emp, userRole);
+  if (!resolved.ok) return resolved;
+  const point = resolved.point;
+  const distanceMeters = haversineMeters(latitude, longitude, point.latitude, point.longitude);
   const effectiveRadius = DAVOMAT_GEOFENCE_METERS;
 
   if (distanceMeters > effectiveRadius) {
     const remainMeters = distanceMeters - effectiveRadius;
+    const where = point.kind === "branch" ? "o‘z filiali" : "asosiy ofis";
     return {
       ok: false,
       status: 403,
       body: {
-        error: `Hududdan tashqaridasiz: ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
+        error: `Hududdan tashqaridasiz (${where}): ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
         code: "outside_geofence",
         distanceMeters,
         remainMeters,
         allowedMeters: effectiveRadius,
         workplace: {
-          location: DAVOMAT_SITE_LABEL,
-          latitude: DAVOMAT_SITE_LAT,
-          longitude: DAVOMAT_SITE_LNG,
+          location: point.label,
+          latitude: point.latitude,
+          longitude: point.longitude,
+          kind: point.kind,
         },
         fullName: emp.fullName,
       },
     };
   }
-  return { ok: true, distanceMeters, effectiveRadius };
+  return { ok: true, distanceMeters, effectiveRadius, point };
 }
 
 type PunchFail = { ok: false; status: number; body: Record<string, unknown> };
@@ -1009,7 +1141,7 @@ async function resolveFaceAtSite(opts: {
   }
 
   const emp = await ensureEmployeeForUser(user);
-  const gate = geoGate(emp, opts.latitude, opts.longitude, opts.accuracy);
+  const gate = await geoGate(emp, user.role, opts.latitude, opts.longitude, opts.accuracy);
   if (!gate.ok) {
     return { ok: false, status: gate.status, body: gate.body };
   }
@@ -1040,6 +1172,15 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       return;
     }
     const emp = await ensureEmployeeForUser(user);
+    const resolved = await resolveDavomatPoint(emp, user.role);
+    const point = resolved.ok
+      ? resolved.point
+      : {
+          latitude: DAVOMAT_SITE_LAT,
+          longitude: DAVOMAT_SITE_LNG,
+          label: DAVOMAT_SITE_LABEL,
+          kind: "office" as const,
+        };
     const workDate = todayTashkent();
     const [rec] = await db
       .select()
@@ -1055,18 +1196,21 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     res.json({
       allowedMeters: DAVOMAT_GEOFENCE_METERS,
       site: {
-        label: DAVOMAT_SITE_LABEL,
-        latitude: DAVOMAT_SITE_LAT,
-        longitude: DAVOMAT_SITE_LNG,
+        label: point.label,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        kind: point.kind,
       },
+      gpsReady: resolved.ok,
+      gpsError: resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q"),
       workDate,
       employee: {
         id: emp.id,
         fullName: emp.fullName,
-        location: emp.location || DAVOMAT_SITE_LABEL,
-        latitude: DAVOMAT_SITE_LAT,
-        longitude: DAVOMAT_SITE_LNG,
-        hasGps: true,
+        location: point.label,
+        latitude: point.latitude,
+        longitude: point.longitude,
+        hasGps: resolved.ok,
       },
       today: rec
         ? {
@@ -1361,8 +1505,9 @@ router.post("/davomat/geo-check", requireAuth, async (req: AuthRequest, res): Pr
       return;
     }
     const emp = await ensureEmployeeForUser(user);
-    const gate = geoGate(
+    const gate = await geoGate(
       emp,
+      user.role,
       latitude,
       longitude,
       Number.isFinite(accuracy) ? accuracy : undefined,

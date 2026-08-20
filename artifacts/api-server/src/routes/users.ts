@@ -416,6 +416,44 @@ router.get("/users/:id", async (req, res): Promise<void> => {
   res.json(row);
 });
 
+router.post("/users/:id/regenerate-login", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Noto‘g‘ri ID" });
+    return;
+  }
+  if (req.userId === id) {
+    res.status(400).json({ error: "O‘zingizning login/parolingizni shu yerda yangilay olmaysiz" });
+    return;
+  }
+
+  const [row] = await db.select().from(usersTable).where(eq(usersTable.id, id));
+  if (!row) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
+  const login = await uniqueLogin(row.role, row.fullName);
+  const temporaryPassword = randomPassword(8);
+
+  const [updated] = await db
+    .update(usersTable)
+    .set({ login, password: temporaryPassword })
+    .where(eq(usersTable.id, id))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
+  res.json({
+    ...publicUser(updated),
+    temporaryPassword,
+  });
+});
+
 router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
 

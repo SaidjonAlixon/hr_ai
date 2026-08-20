@@ -65,3 +65,6 @@ artifacts/api-server/uploads/
 # Vite intermediate (copied into .vercel/output / public by build:vercel)
 # Note: bare `dist` above already covers most packages; keep explicit path for clarity.
 artifacts/vaksina-hr/dist/
+
+.vercel
+.env*

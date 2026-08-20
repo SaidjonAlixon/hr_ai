@@ -9,6 +9,7 @@ import {
 import { setTelegramSessionCookie } from "../lib/session";
 import {
   answerCallbackQuery,
+  getMe,
   getWebhookInfo,
   isTelegramConfigured,
   newAuthToken,
@@ -83,12 +84,17 @@ async function getUserWithDept(userId: number) {
 }
 
 async function findUserByTelegramId(telegramUserId: string) {
-  const [row] = await db
-    .select({ id: usersTable.id })
-    .from(usersTable)
-    .where(eq(usersTable.telegramId, telegramUserId))
-    .limit(1);
-  return row ? getUserWithDept(row.id) : null;
+  try {
+    const [row] = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(eq(usersTable.telegramId, telegramUserId))
+      .limit(1);
+    return row ? getUserWithDept(row.id) : null;
+  } catch (err) {
+    console.error("findUserByTelegramId:", err);
+    return null;
+  }
 }
 
 async function linkTelegram(userId: number, telegramUserId: string) {
@@ -356,7 +362,7 @@ async function handleUpdate(update: TelegramUpdate) {
   );
 }
 
-/** Telegram webhook */
+/** Telegram webhook — avval ishlov berish, keyin 200 (Vercel serverless freeze muammosi) */
 router.post("/telegram/webhook", async (req, res): Promise<void> => {
   if (!isTelegramConfigured()) {
     res.status(503).json({ error: "TELEGRAM_BOT_TOKEN sozlanmagan" });
@@ -367,14 +373,14 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
     return;
   }
 
-  res.status(200).json({ ok: true });
-
   try {
     await ensureTelegramSchema();
     await handleUpdate(req.body as TelegramUpdate);
   } catch (err) {
     console.error("telegram webhook handler:", err);
   }
+
+  res.status(200).json({ ok: true });
 });
 
 /** Mini App: token → session cookie */
@@ -440,10 +446,20 @@ router.get("/telegram/status", async (_req, res): Promise<void> => {
       webhook = { error: (e as Error).message };
     }
   }
+  let bot: { username?: string; first_name?: string } | null = null;
+  if (configured) {
+    try {
+      bot = await getMe();
+    } catch {
+      bot = null;
+    }
+  }
   res.json({
     configured,
     appUrl: appUrl || null,
     miniAppReady: !!(configured && appUrl),
+    botUsername: bot?.username ? `@${bot.username}` : null,
+    botName: bot?.first_name ?? null,
     webhook,
   });
 });

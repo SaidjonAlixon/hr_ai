@@ -102,6 +102,10 @@ export async function answerCallbackQuery(id: string, text?: string) {
   });
 }
 
+export async function getMe() {
+  return tgCall<{ id: number; username?: string; first_name?: string }>("getMe", {});
+}
+
 export async function setWebhook(url: string, secret?: string) {
   return tgCall("setWebhook", {
     url,

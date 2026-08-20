@@ -38,6 +38,8 @@ import KirishPage from './pages/kirish/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
 import ChecklistHolatiPage from './pages/checklist-holati/index';
+import OylikPage from './pages/oylik/index';
+import ReytingPage from './pages/reyting/index';
 import AdminHolatPage from './pages/admin/holat';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
@@ -120,6 +122,8 @@ function Router() {
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       <ProtectedRoute path="/checklist-holati" component={ChecklistHolatiPage} />
+      <ProtectedRoute path="/oylik" component={OylikPage} />
+      <ProtectedRoute path="/reyting" component={ReytingPage} />
       
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />

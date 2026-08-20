@@ -92,6 +92,16 @@ export function canViewHolat(role?: string | null): boolean {
 export function canViewHolatFull(role?: string | null): boolean {
   return role === "admin" || role === "director" || isHrRole(role);
 }
+
+/** Apteka filiali — mudir, farmasevt, stajyor */
+export function isPharmacyBranchRole(role?: string | null): boolean {
+  return role === "mudir" || role === "farmasevt" || role === "stajyor";
+}
+
+/** Filial reytingi (cheklist ball) — o‘z filiali */
+export function canViewPharmacyReyting(role?: string | null): boolean {
+  return isPharmacyBranchRole(role);
+}
 export function canAccessKirish(role?: string | null): boolean {
   return role === "stajyor" || role === "admin";
 }

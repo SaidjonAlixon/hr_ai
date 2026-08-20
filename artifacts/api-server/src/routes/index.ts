@@ -31,6 +31,7 @@ import webauthnRouter from "./webauthn";
 import faceRouter from "./face";
 import davomatRouter from "./davomat";
 import holatRouter from "./holat";
+import oylikRouter from "./oylik";
 
 const router: IRouter = Router();
 
@@ -50,6 +51,7 @@ router.use(webauthnRouter);
 router.use(faceRouter);
 router.use(davomatRouter);
 router.use(holatRouter);
+router.use(oylikRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

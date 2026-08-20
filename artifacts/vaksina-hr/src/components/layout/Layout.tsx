@@ -28,6 +28,7 @@ import {
   Video,
   Trophy,
   BarChart3,
+  Banknote,
 } from 'lucide-react';
 import {
   useLogout,
@@ -74,7 +75,7 @@ const NAV_SECTIONS: {
     accent: 'bg-sky-400',
     line: 'border-sky-400/55',
     chip: 'text-sky-300',
-    paths: ['/dashboard', '/kirish', '/kuzatuv', '/chat', '/tashkiliy-tuzilma'],
+    paths: ['/dashboard', '/kirish', '/kuzatuv', '/chat', '/tashkiliy-tuzilma', '/oylik', '/reyting'],
   },
   {
     id: 'work',
@@ -460,6 +461,18 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
   const kuzatuvNav = { name: 'Kuzatuv', path: '/kuzatuv', icon: Eye };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
+  const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
+  const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
+
+  function injectCommonNav(items: NavItem[]): NavItem[] {
+    let next = [...items];
+    if (!next.some((i) => i.path === '/oylik')) {
+      const dashIdx = next.findIndex((i) => i.path === '/dashboard');
+      const at = dashIdx >= 0 ? dashIdx + 1 : 0;
+      next = [...next.slice(0, at), oylikNav, ...next.slice(at)];
+    }
+    return next;
+  }
 
   const hrMenejerNav: NavItem[] = [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -683,21 +696,23 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     farmasevt: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      chatNav,
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      reytingNav,
       davomatFaceNav,
-      orgNav,
-      { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     stajyor: [
       { name: 'Kirish', path: '/kirish', icon: GraduationCap },
+      reytingNav,
       davomatFaceNav,
-      orgNav,
     ],
   };
 
-  const roleNav = roleNavigation[user.role] || [
+  const roleNav = injectCommonNav(roleNavigation[user.role] || [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-  ];
+  ]);
   const withFace = roleNav.some((item) => item.path === '/davomat-face')
     ? roleNav
     : [...roleNav, davomatFaceNav];

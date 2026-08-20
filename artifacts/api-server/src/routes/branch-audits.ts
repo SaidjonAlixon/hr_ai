@@ -11,12 +11,27 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { HR_ROLES, canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRanking } from "../lib/roles";
+import {
+  HR_ROLES,
+  canExportChecklistStatus,
+  canViewChecklistStatus,
+  canViewCoordinatorRanking,
+  canViewPharmacyReyting,
+  isPharmacyBranchRole,
+} from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
-const VIEW_ROLES = new Set(["koordinator", "admin", ...HR_ROLES, "director"]);
+const VIEW_ROLES = new Set([
+  "koordinator",
+  "admin",
+  ...HR_ROLES,
+  "director",
+  "mudir",
+  "farmasevt",
+  "stajyor",
+]);
 const WRITE_ROLES = new Set(["koordinator", "admin"]);
 
 /** Koordinator filialga 50 m dan yaqin bo‘lishi shart */
@@ -278,6 +293,21 @@ async function loadCoverage(req: AuthRequest) {
   };
 }
 
+async function resolvePharmacyManagerEmployeeId(userId: number, role?: string | null) {
+  const [emp] = await db
+    .select({
+      id: employeesTable.id,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, userId))
+    .limit(1);
+  if (!emp) return null;
+  if (role === "mudir" || emp.orgRole === "manager") return emp.id;
+  return emp.reportsToId ?? null;
+}
+
 async function loadFilteredAudits(req: AuthRequest) {
   let rows = await db
     .select()
@@ -286,6 +316,11 @@ async function loadFilteredAudits(req: AuthRequest) {
 
   if (req.userRole === "koordinator" && req.userId) {
     rows = rows.filter((r) => r.coordinatorId === req.userId);
+  }
+
+  if (isPharmacyBranchRole(req.userRole) && req.userId) {
+    const managerId = await resolvePharmacyManagerEmployeeId(req.userId, req.userRole);
+    rows = managerId ? rows.filter((r) => r.managerEmployeeId === managerId) : [];
   }
 
   const managerId = req.query.managerId
@@ -404,7 +439,7 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
 
 /** Saqlangan auditlar tarixi */
 router.get("/branch-audits", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireRole(req, VIEW_ROLES)) {
+  if (!requireRole(req, VIEW_ROLES) && !canViewPharmacyReyting(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
     return;
   }

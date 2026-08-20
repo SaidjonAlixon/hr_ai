@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   useGetDashboardStats,
   useGetRecentActivity,
@@ -28,6 +28,8 @@ import {
   GraduationCap,
   Calendar,
   Shield,
+  Trophy,
+  Banknote,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
@@ -48,6 +50,21 @@ import { useChatList } from '../lib/chat-api';
 import { cn } from '../lib/utils';
 import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, isHrRole, isSbRole } from '../lib/roles';
 import { useHolat } from '../lib/holat-api';
+import {
+  BranchListRows,
+  ChatListRows,
+  DashActionBar,
+  DashDetailDialog,
+  DashListRow,
+  DashTile,
+  flattenHolatTree,
+  MudirListRows,
+  NeedListRows,
+  PersonListRows,
+  ReminderListRows,
+  StaffingAlertRows,
+  TaskListRows,
+} from '../components/dashboard/dashboard-widgets';
 
 const OPEN_STATUSES = new Set(['submitted', 'reviewing', 'accepted', 'announced']);
 
@@ -75,9 +92,32 @@ type DashKind =
   | 'trainer'
   | 'mentor'
   | 'pharmacy' // mudir, koordinator
+  | 'pharmacy_staff' // farmasevt
   | 'ops' // texnik, ombor
   | 'security' // sb, sb_boshliq
   | 'intern'; // stajyor
+
+type DashDetailKey =
+  | 'staffing'
+  | 'needs'
+  | 'tasks'
+  | 'reminders'
+  | 'chat'
+  | 'mudirs'
+  | 'pharmacists'
+  | 'interns'
+  | 'no_staff'
+  | 'open_requests'
+  | 'vacancies'
+  | 'candidates'
+  | 'hired'
+  | 'holat_coord'
+  | 'holat_mudir'
+  | 'holat_pharm'
+  | 'holat_intern'
+  | 'holat_with'
+  | 'holat_without'
+  | null;
 
 function dashKindFor(role?: string | null): DashKind {
   if (isHrRole(role)) return 'recruitment';
@@ -100,7 +140,7 @@ function dashKindFor(role?: string | null): DashKind {
     case 'ombor':
       return 'ops';
     case 'farmasevt':
-      return 'ops';
+      return 'pharmacy_staff';
     case 'stajyor':
       return 'intern';
     default:
@@ -125,76 +165,14 @@ function requestStatusBadge(status: RequestStatus | string) {
   }
 }
 
-function QuickLink({
-  href,
-  title,
-  desc,
-  icon: Icon,
-}: {
-  href: string;
-  title: string;
-  desc: string;
-  icon: React.ComponentType<{ className?: string }>;
-}) {
-  return (
-    <Link href={href}>
-      <div className="flex items-start gap-3 rounded-xl border bg-white p-4 hover:border-primary/40 hover:shadow-sm transition cursor-pointer h-full">
-        <div className="p-2.5 rounded-lg bg-slate-100 text-slate-700">
-          <Icon className="w-5 h-5" />
-        </div>
-        <div className="min-w-0">
-          <p className="font-semibold text-slate-900">{title}</p>
-          <p className="text-xs text-muted-foreground mt-0.5">{desc}</p>
-        </div>
-      </div>
-    </Link>
-  );
-}
-
-function StatsCard({
-  title,
-  value,
-  icon: Icon,
-  loading,
-  color,
-  clickable,
-  href,
-}: {
-  title: string;
-  value?: number;
-  icon: any;
-  loading?: boolean;
-  color: string;
-  clickable?: boolean;
-  href?: string;
-}) {
-  const inner = (
-    <Card className={clickable ? 'hover:border-primary/40 transition-colors cursor-pointer h-full' : 'h-full'}>
-      <CardContent className="p-4 sm:p-6">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium text-muted-foreground break-words">{title}</p>
-            {loading ? (
-              <Skeleton className="h-8 w-16 mt-2" />
-            ) : (
-              <p className="text-2xl sm:text-3xl font-bold mt-1 tabular-nums">{value ?? 0}</p>
-            )}
-          </div>
-          <div className={`p-2.5 sm:p-3 rounded-xl bg-muted shrink-0 ${color}`}>
-            <Icon className="w-5 h-5 sm:w-6 sm:h-6" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-  return href ? <Link href={href}>{inner}</Link> : inner;
-}
-
 export default function Dashboard() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const role = user?.role;
   const kind = dashKindFor(role);
+  const [detail, setDetail] = useState<DashDetailKey>(null);
+  const openDetail = (key: DashDetailKey) => setDetail(key);
+  const closeDetail = () => setDetail(null);
 
   React.useEffect(() => {
     if (kind === 'intern') setLocation('/kirish');
@@ -202,6 +180,7 @@ export default function Dashboard() {
 
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';
+  const isPharmacyStaff = kind === 'pharmacy_staff';
   const canWatchRequests = role === 'director' || isHrRole(role) || role === 'admin';
   const canSeePipeline = role === 'admin' || isHrRole(role) || role === 'recruiter' || role === 'director';
   const canSeeRecruiterTasks = role === 'admin' || isHrRole(role) || role === 'recruiter';
@@ -237,7 +216,7 @@ export default function Dashboard() {
     { enabled: isPharmacy },
   );
   const { data: branchNeeds, isLoading: needsLoading } = useBranchNeeds({
-    enabled: isPharmacy || kind === 'ops',
+    enabled: isPharmacy || isPharmacyStaff || kind === 'ops',
   });
   const { data: myTasks, isLoading: myTasksLoading } = useGetTasks(undefined, {
     enabled: kind !== 'intern' && kind !== 'mentor',
@@ -315,6 +294,29 @@ export default function Dashboard() {
     [staffingAlerts],
   );
 
+  const holatTree = useMemo(() => flattenHolatTree(holat), [holat]);
+  const pendingStaffingList = useMemo(
+    () => (staffingAlerts ?? []).filter((a) => a.workflowStatus === 'pending'),
+    [staffingAlerts],
+  );
+  const filteredNeedsList = useMemo(() => {
+    const list = branchNeeds ?? [];
+    if (role === 'koordinator') return list.filter((n) => n.status === 'pending' || n.status === 'done');
+    if (role === 'mudir') {
+      return list.filter((n) => ['pending', 'assigned', 'in_progress', 'done'].includes(String(n.status)));
+    }
+    return list.filter((n) => n.status !== 'verified' && n.status !== 'closed');
+  }, [branchNeeds, role]);
+  const openTasksList = useMemo(
+    () => (myTasks ?? []).filter((t) => t.status === 'todo' || t.status === 'in_progress'),
+    [myTasks],
+  );
+  const activeRemindersList = useMemo(
+    () => (reminders ?? []).filter((r: any) => r.status === 'active'),
+    [reminders],
+  );
+  const chatItems = useMemo(() => chats?.chats ?? [], [chats]);
+
   if (kind === 'intern') {
     return (
       <div className="min-h-[40vh] flex items-center justify-center text-muted-foreground">
@@ -325,19 +327,167 @@ export default function Dashboard() {
 
   const subtitle = ROLE_LABELS[role || ''] || role;
 
+  const detailDialog = (
+    <DashDetailDialog
+      open={detail !== null}
+      onOpenChange={(v) => !v && closeDetail()}
+      title={
+        detail === 'staffing'
+          ? 'Kadr ogohlantirishlari'
+          : detail === 'needs'
+            ? 'Ehtiyojlar'
+            : detail === 'tasks'
+              ? 'Topshiriqlar'
+              : detail === 'reminders'
+                ? 'Eslatmalar'
+                : detail === 'chat'
+                  ? 'Chatlar'
+                  : detail === 'mudirs'
+                    ? 'Mening mudirlarim'
+                    : detail === 'pharmacists'
+                      ? 'Farmasevtlar'
+                      : detail === 'interns'
+                        ? 'Stajyorlar'
+                        : detail === 'no_staff'
+                          ? 'Jamoa yo‘q filiallar'
+                          : detail === 'open_requests'
+                            ? 'Ochiq arizalar'
+                            : detail === 'vacancies'
+                              ? 'Faol ish o‘rinlari'
+                              : detail === 'candidates'
+                                ? 'Faol nomzodlar'
+                                : detail === 'hired'
+                                  ? 'Bu oy ishga qabul'
+                                  : detail === 'holat_coord'
+                                    ? 'Koordinatorlar'
+                                    : detail === 'holat_mudir'
+                                      ? 'Mudirlar'
+                                      : detail === 'holat_pharm'
+                                        ? 'Farmasevtlar (tarmoq)'
+                                        : detail === 'holat_intern'
+                                          ? 'Stajyorlar (tarmoq)'
+                                          : detail === 'holat_with'
+                                            ? 'Jamoa bor filiallar'
+                                            : detail === 'holat_without'
+                                              ? 'Jamoa yo‘q filiallar'
+                                              : ''
+      }
+      description={
+        detail === 'staffing'
+          ? 'Kutilayotgan kadr holatlari — bosib to‘liq ro‘yxatni oching'
+          : detail === 'needs'
+            ? 'Filial ehtiyojlari va ularning holati'
+            : detail === 'tasks'
+              ? 'Sizga biriktirilgan ochiq topshiriqlar'
+              : undefined
+      }
+      href={
+        detail === 'staffing'
+          ? '/pharmacy-network'
+          : detail === 'needs'
+            ? '/ehtiyoj'
+            : detail === 'tasks'
+              ? '/vazifalar'
+              : detail === 'reminders'
+                ? '/eslatmalar'
+                : detail === 'chat'
+                  ? '/chat'
+                  : detail === 'mudirs' || detail === 'pharmacists' || detail === 'interns' || detail === 'no_staff'
+                    ? '/pharmacy-network'
+                    : detail === 'open_requests'
+                      ? '/requests'
+                      : detail === 'vacancies'
+                        ? '/vacancies'
+                        : detail === 'candidates'
+                          ? '/candidates'
+                          : detail === 'hired'
+                            ? '/candidates?stage=hired'
+                            : detail?.startsWith('holat_')
+                              ? '/admin/holat'
+                              : undefined
+      }
+    >
+      {detail === 'staffing' ? <StaffingAlertRows alerts={pendingStaffingList} /> : null}
+      {detail === 'needs' ? <NeedListRows needs={filteredNeedsList.slice(0, 20)} /> : null}
+      {detail === 'tasks' ? <TaskListRows tasks={openTasksList.slice(0, 20)} /> : null}
+      {detail === 'reminders' ? <ReminderListRows reminders={activeRemindersList.slice(0, 20)} /> : null}
+      {detail === 'chat' ? <ChatListRows chats={chatItems.slice(0, 20)} /> : null}
+      {detail === 'vacancies' ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          Faol ish o‘rinlari: <strong>{stats?.activeVacancies ?? 0}</strong> ta
+        </p>
+      ) : null}
+      {detail === 'candidates' ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          Faol nomzodlar: <strong>{stats?.activeCandidates ?? 0}</strong> ta
+        </p>
+      ) : null}
+      {detail === 'hired' ? (
+        <p className="py-6 text-center text-sm text-muted-foreground">
+          Bu oy ishga qabul: <strong>{stats?.hiredThisMonth ?? 0}</strong> ta
+        </p>
+      ) : null}
+      {detail === 'mudirs' ? <MudirListRows mudirs={holatTree.mudirs} /> : null}
+      {detail === 'pharmacists' ? <PersonListRows people={holatTree.pharmacists} /> : null}
+      {detail === 'interns' ? <PersonListRows people={holatTree.interns} /> : null}
+      {detail === 'no_staff' ? <BranchListRows branches={holat?.branchesWithoutStaff ?? []} /> : null}
+      {detail === 'open_requests' ? (
+        <>
+          {openRequests.slice(0, 12).map((r) => (
+            <Link key={r.id} href={`/requests/${r.id}`}>
+              <DashListRow
+                title={`#${r.id} · ${r.position}`}
+                subtitle={[r.departmentName, r.assignedToName].filter(Boolean).join(' · ')}
+                badge={requestStatusBadge(r.status)}
+              />
+            </Link>
+          ))}
+        </>
+      ) : null}
+      {detail === 'holat_mudir' ? <MudirListRows mudirs={holatTree.mudirs} /> : null}
+      {detail === 'holat_pharm' ? <PersonListRows people={holatTree.pharmacists} /> : null}
+      {detail === 'holat_intern' ? <PersonListRows people={holatTree.interns} /> : null}
+      {detail === 'holat_without' ? <BranchListRows branches={holat?.branchesWithoutStaff ?? []} /> : null}
+      {detail === 'holat_with' ? (
+        <>
+          {(holat?.branchesWithStaff ?? []).map((b) => (
+            <DashListRow
+              key={b.branch}
+              title={b.branch}
+              subtitle={`${b.mudirName} · ${b.staffCount} xodim`}
+              badge={<Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100 text-[10px]">Jamoa bor</Badge>}
+            />
+          ))}
+        </>
+      ) : null}
+      {detail === 'holat_coord' ? (
+        <>
+          {(holat?.coordinators ?? []).map((c) => (
+            <DashListRow
+              key={c.employeeId ?? c.fullName}
+              title={c.fullName}
+              subtitle={`Mudir: ${c.mudirCount} · Farmasevt: ${c.pharmacistCount}`}
+            />
+          ))}
+        </>
+      ) : null}
+    </DashDetailDialog>
+  );
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+    <div className="space-y-5">
+      <div className="flex items-start justify-between gap-3 flex-wrap rounded-2xl border bg-gradient-to-br from-white to-slate-50/80 p-4 sm:p-5">
         <div className="min-w-0 flex-1">
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight break-words">Boshqaruv paneli</h1>
-          <p className="text-muted-foreground mt-1 text-sm sm:text-base break-words">
-            Xush kelibsiz, {user?.fullName}
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#0b3a5c]">Boshqaruv paneli</h1>
+          <p className="text-muted-foreground mt-1 text-sm break-words">
+            {user?.fullName}
             {subtitle ? (
-              <span className="ml-2 inline-flex items-center rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-medium text-slate-700 align-middle">
+              <span className="ml-2 inline-flex items-center rounded-full bg-[#0b3a5c]/10 px-2.5 py-0.5 text-xs font-semibold text-[#0b3a5c] align-middle">
                 {subtitle}
               </span>
             ) : null}
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">Kartochkani bosing — tezkor ma&apos;lumot ochiladi</p>
         </div>
       </div>
 
@@ -346,75 +496,86 @@ export default function Dashboard() {
       {/* ===== RECRUITMENT (admin / hr / director / recruiter) ===== */}
       {isRecruitment && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
             {(role === 'admin' || isHrRole(role) || role === 'director') && (
-              <StatsCard
-                title="Ochiq Arizalar"
+              <DashTile
+                title="Ochiq arizalar"
                 value={stats?.openRequests}
                 icon={FileText}
                 loading={statsLoading}
-                color="text-blue-500"
-                clickable
-                href="/requests"
+                color="text-blue-600"
+                accent="bg-blue-50"
+                onClick={() => openDetail('open_requests')}
+                active={detail === 'open_requests'}
               />
             )}
-            <StatsCard
+            <DashTile
               title="Faol ish o'rinlari"
               value={stats?.activeVacancies}
               icon={Briefcase}
               loading={statsLoading}
-              color="text-indigo-500"
-              clickable
-              href="/vacancies"
+              color="text-indigo-600"
+              accent="bg-indigo-50"
+              onClick={() => openDetail('vacancies')}
+              active={detail === 'vacancies'}
             />
-            <StatsCard
+            <DashTile
               title="Faol nomzodlar"
               value={stats?.activeCandidates}
               icon={Users}
               loading={statsLoading}
-              color="text-amber-500"
-              clickable
-              href="/candidates"
+              color="text-amber-600"
+              accent="bg-amber-50"
+              onClick={() => openDetail('candidates')}
+              active={detail === 'candidates'}
             />
-            <StatsCard
+            <DashTile
               title="Bu oy ishga qabul"
               value={stats?.hiredThisMonth}
               icon={TrendingUp}
               loading={statsLoading}
-              color="text-emerald-500"
-              clickable
-              href="/candidates?stage=hired"
+              color="text-emerald-600"
+              accent="bg-emerald-50"
+              onClick={() => openDetail('hired')}
+              active={detail === 'hired'}
             />
-            {role === 'recruiter' && (
-              <StatsCard
-                title="Ochiq topshiriqlar"
-                value={openTaskCount}
-                icon={ListTodo}
-                loading={myTasksLoading}
-                color="text-sky-500"
-                clickable
-                href="/vazifalar"
-              />
-            )}
+            <DashTile
+              title="Topshiriqlar"
+              value={openTaskCount}
+              icon={ListTodo}
+              loading={myTasksLoading}
+              color="text-sky-600"
+              accent="bg-sky-50"
+              onClick={() => openDetail('tasks')}
+              active={detail === 'tasks'}
+            />
+            <DashTile
+              title="Chat"
+              value={unreadChats || undefined}
+              icon={MessageCircle}
+              color="text-violet-600"
+              accent="bg-violet-50"
+              onClick={() => openDetail('chat')}
+              active={detail === 'chat'}
+              hint={unreadChats ? 'o‘qilmagan' : undefined}
+            />
           </div>
 
           {canViewHolatFull(role) && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-800">Tarmoq holati (fakt: reports_to_id)</p>
-                {canViewHolatFull(role) && (
-                  <Link href="/admin/holat" className="text-sm font-medium text-[#0b3a5c] hover:underline">
-                    Batafsil Holat
-                  </Link>
-                )}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 px-0.5">
+                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tarmoq holati</p>
+                <Link href="/admin/holat" className="text-xs font-medium text-[#0b3a5c] hover:underline">
+                  Holat →
+                </Link>
               </div>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                <StatsCard title="Koordinator" value={holat?.pharmacyCounts.coordinators} icon={Users} loading={holatLoading} color="text-teal-600" clickable href="/admin/holat" />
-                <StatsCard title="Mudir" value={holat?.pharmacyCounts.mudirs} icon={Store} loading={holatLoading} color="text-sky-600" clickable href="/pharmacy-network" />
-                <StatsCard title="Farmasevt" value={holat?.pharmacyCounts.pharmacists} icon={Users} loading={holatLoading} color="text-emerald-600" clickable href="/pharmacy-network" />
-                <StatsCard title="Stajyor" value={holat?.pharmacyCounts.interns} icon={GraduationCap} loading={holatLoading} color="text-violet-600" clickable href="/pharmacy-network" />
-                <StatsCard title="Filial (jamoa bor)" value={holat?.branchesWithStaff.length} icon={Store} loading={holatLoading} color="text-indigo-600" clickable href="/pharmacy-network" />
-                <StatsCard title="Filial (jamoa yo‘q)" value={holat?.branchesWithoutStaff.length} icon={AlertCircle} loading={holatLoading} color="text-amber-600" clickable href="/pharmacy-network" />
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                <DashTile title="Koordinator" value={holat?.pharmacyCounts.coordinators} icon={Users} loading={holatLoading} color="text-teal-600" accent="bg-teal-50" onClick={() => openDetail('holat_coord')} active={detail === 'holat_coord'} />
+                <DashTile title="Mudir" value={holat?.pharmacyCounts.mudirs} icon={Store} loading={holatLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('holat_mudir')} active={detail === 'holat_mudir'} />
+                <DashTile title="Farmasevt" value={holat?.pharmacyCounts.pharmacists} icon={Users} loading={holatLoading} color="text-emerald-600" accent="bg-emerald-50" onClick={() => openDetail('holat_pharm')} active={detail === 'holat_pharm'} />
+                <DashTile title="Stajyor" value={holat?.pharmacyCounts.interns} icon={GraduationCap} loading={holatLoading} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('holat_intern')} active={detail === 'holat_intern'} />
+                <DashTile title="Jamoa bor" value={holat?.branchesWithStaff.length} icon={Store} loading={holatLoading} color="text-indigo-600" accent="bg-indigo-50" onClick={() => openDetail('holat_with')} active={detail === 'holat_with'} />
+                <DashTile title="Jamoa yo‘q" value={holat?.branchesWithoutStaff.length} icon={AlertCircle} loading={holatLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('holat_without')} active={detail === 'holat_without'} />
               </div>
             </div>
           )}
@@ -455,54 +616,23 @@ export default function Dashboard() {
       {/* ===== DEPARTMENT HEAD ===== */}
       {kind === 'department' && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatsCard
-              title="Ochiq Arizalar"
-              value={openRequests.length}
-              icon={FileText}
-              loading={requestsLoading}
-              color="text-blue-500"
-              clickable
-              href="/requests"
-            />
-            <StatsCard
-              title="Topshiriqlar"
-              value={openTaskCount}
-              icon={ListTodo}
-              loading={myTasksLoading}
-              color="text-sky-500"
-              clickable
-              href="/vazifalar"
-            />
-            <StatsCard
-              title="Eslatmalar"
-              value={activeReminders}
-              icon={AlarmClock}
-              loading={remindersLoading}
-              color="text-amber-500"
-              clickable
-              href="/eslatmalar"
-            />
-            <StatsCard
-              title="Chat (o‘qilmagan)"
-              value={unreadChats}
-              icon={MessageCircle}
-              color="text-violet-500"
-              clickable
-              href="/chat"
-            />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <DashTile title="Ochiq arizalar" value={openRequests.length} icon={FileText} loading={requestsLoading} color="text-blue-600" accent="bg-blue-50" onClick={() => openDetail('open_requests')} active={detail === 'open_requests'} />
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} hint={unreadChats ? 'o‘qilmagan' : undefined} />
           </div>
           {deadlineVacancies.length > 0 && <DeadlineBlock loading={false} items={deadlineVacancies} />}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <QuickLink href="/requests" title="Arizalar" desc="Bo‘lim arizalarini kuzating" icon={FileText} />
-            <QuickLink href="/candidates" title="Nomzodlar" desc="Tanlov jarayoniga nazar" icon={Users} />
-            <QuickLink href="/pharmacy-network" title="Aptekalar" desc="Tarmoq holati" icon={Store} />
-            {canViewChecklistStatus(role) && (
-              <QuickLink href="/checklist-holati" title="Cheklist holati" desc="Tashriflar va javoblar" icon={ClipboardCheck} />
-            )}
-            <QuickLink href="/vazifalar" title="Topshiriqlar" desc="Jamoa topshiriqlari" icon={ListTodo} />
-            <QuickLink href="/chat" title="Chat" desc="Xodimlar bilan aloqa" icon={MessageCircle} />
-          </div>
+          <DashActionBar
+            items={[
+              { href: '/requests', title: 'Arizalar', desc: 'Bo‘lim arizalari', icon: FileText },
+              { href: '/candidates', title: 'Nomzodlar', desc: 'Tanlov jarayoni', icon: Users },
+              { href: '/pharmacy-network', title: 'Aptekalar', desc: 'Tarmoq holati', icon: Store },
+              ...(canViewChecklistStatus(role) ? [{ href: '/checklist-holati', title: 'Cheklist', desc: 'Tashriflar', icon: ClipboardCheck }] : []),
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Jamoa vazifalari', icon: ListTodo },
+              { href: '/chat', title: 'Chat', desc: 'Xodimlar bilan aloqa', icon: MessageCircle },
+            ]}
+          />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
             <ActivityCard activities={activities} loading={activitiesLoading} />
@@ -513,39 +643,18 @@ export default function Dashboard() {
       {/* ===== TRAINER ===== */}
       {kind === 'trainer' && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatsCard
-              title="Topshiriqlar"
-              value={openTaskCount}
-              icon={ListTodo}
-              loading={myTasksLoading}
-              color="text-sky-500"
-              clickable
-              href="/vazifalar"
-            />
-            <StatsCard
-              title="Eslatmalar"
-              value={activeReminders}
-              icon={AlarmClock}
-              loading={remindersLoading}
-              color="text-amber-500"
-              clickable
-              href="/eslatmalar"
-            />
-            <StatsCard
-              title="Chat"
-              value={unreadChats}
-              icon={MessageCircle}
-              color="text-violet-500"
-              clickable
-              href="/chat"
-            />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <QuickLink href="/interviews" title="Suhbatlar" desc="Rejalashtirilgan suhbatlar" icon={Calendar} />
-            <QuickLink href="/internships" title="Stajirovkalar" desc="Stajorlar bilan ishlash" icon={GraduationCap} />
-            <QuickLink href="/vazifalar" title="Topshiriqlar" desc="Kunlik vazifalar" icon={ListTodo} />
-          </div>
+          <DashActionBar
+            items={[
+              { href: '/interviews', title: 'Suhbatlar', desc: 'Rejalashtirish', icon: Calendar },
+              { href: '/internships', title: 'Stajirovkalar', desc: 'Stajorlar', icon: GraduationCap },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ishlar', icon: ListTodo },
+            ]}
+          />
           <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
         </>
       )}
@@ -553,188 +662,250 @@ export default function Dashboard() {
       {/* ===== MENTOR ===== */}
       {kind === 'mentor' && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <StatsCard
-              title="Eslatmalar"
-              value={activeReminders}
-              icon={AlarmClock}
-              loading={remindersLoading}
-              color="text-amber-500"
-              clickable
-              href="/eslatmalar"
-            />
-            <StatsCard
-              title="Chat"
-              value={unreadChats}
-              icon={MessageCircle}
-              color="text-violet-500"
-              clickable
-              href="/chat"
-            />
-            <StatsCard
-              title="Xodimlar"
-              value={undefined}
-              icon={Users}
-              color="text-blue-500"
-              clickable
-              href="/employees"
-            />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
+            <DashTile title="Xodimlar" value="→" icon={Users} color="text-blue-600" accent="bg-blue-50" hint="Ro‘yxatni ochish" onClick={() => setLocation('/employees')} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <QuickLink href="/employees" title="Xodimlar" desc="Mentorlik qilinadigan xodimlar" icon={Users} />
-            <QuickLink href="/eslatmalar" title="Eslatmalarim" desc="Shaxsiy eslatmalar" icon={AlarmClock} />
-            <QuickLink href="/chat" title="Chat" desc="Jamoa bilan muloqot" icon={MessageCircle} />
-          </div>
+          <DashActionBar
+            items={[
+              { href: '/employees', title: 'Xodimlar', desc: 'Mentorlik', icon: Users },
+              { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
+              { href: '/chat', title: 'Chat', desc: 'Jamoa', icon: MessageCircle },
+            ]}
+          />
         </>
       )}
 
       {/* ===== PHARMACY (mudir / koordinator) ===== */}
       {isPharmacy && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatsCard
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-2.5">
+            <DashTile
               title="Kadr ogohlantirish"
               value={pendingStaffing}
               icon={AlertCircle}
               loading={staffingLoading}
-              color="text-red-500"
-              clickable
-              href="/pharmacy-network"
+              color="text-red-600"
+              accent="bg-red-50"
+              onClick={() => openDetail('staffing')}
+              active={detail === 'staffing'}
             />
-            <StatsCard
+            <DashTile
               title="Ehtiyoj"
               value={pendingNeeds}
               icon={ClipboardList}
               loading={needsLoading}
-              color="text-orange-500"
-              clickable
-              href="/ehtiyoj"
+              color="text-orange-600"
+              accent="bg-orange-50"
+              onClick={() => openDetail('needs')}
+              active={detail === 'needs'}
             />
-            <StatsCard
+            <DashTile
               title="Topshiriqlar"
               value={openTaskCount}
               icon={ListTodo}
               loading={myTasksLoading}
-              color="text-sky-500"
-              clickable
-              href="/vazifalar"
+              color="text-sky-600"
+              accent="bg-sky-50"
+              onClick={() => openDetail('tasks')}
+              active={detail === 'tasks'}
             />
-            <StatsCard
-              title={role === 'koordinator' ? 'Cheklist' : 'Eslatmalar'}
-              value={role === 'koordinator' ? undefined : activeReminders}
-              icon={role === 'koordinator' ? ClipboardCheck : AlarmClock}
-              color="text-emerald-500"
-              clickable
-              href={role === 'koordinator' ? '/checklist' : '/eslatmalar'}
-            />
+            {role === 'koordinator' ? (
+              <DashTile
+                title="Cheklist"
+                value="→"
+                icon={ClipboardCheck}
+                color="text-emerald-600"
+                accent="bg-emerald-50"
+                hint="Audit / GPS"
+                onClick={() => setLocation('/checklist')}
+              />
+            ) : (
+              <DashTile
+                title="Eslatmalar"
+                value={activeReminders}
+                icon={AlarmClock}
+                loading={remindersLoading}
+                color="text-emerald-600"
+                accent="bg-emerald-50"
+                onClick={() => openDetail('reminders')}
+                active={detail === 'reminders'}
+              />
+            )}
           </div>
 
           {holatOn && (
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {role === 'koordinator' && (
-                <StatsCard
+                <DashTile
                   title="Mening mudirlarim"
                   value={holat?.pharmacyCounts.mudirs}
                   icon={Users}
                   loading={holatLoading}
                   color="text-sky-600"
-                  clickable
-                  href="/pharmacy-network"
+                  accent="bg-sky-50"
+                  onClick={() => openDetail('mudirs')}
+                  active={detail === 'mudirs'}
                 />
               )}
-              <StatsCard
+              {role === 'mudir' && (
+                <DashTile
+                  title="Mening filialim"
+                  value={holatTree.mudirs[0]?.branch?.slice(0, 12) ?? '—'}
+                  icon={Store}
+                  loading={holatLoading}
+                  color="text-indigo-600"
+                  accent="bg-indigo-50"
+                  hint={holatTree.mudirs[0]?.fullName}
+                  onClick={() => openDetail('mudirs')}
+                  active={detail === 'mudirs'}
+                />
+              )}
+              <DashTile
                 title="Farmasevtlar"
                 value={holat?.pharmacyCounts.pharmacists}
                 icon={Users}
                 loading={holatLoading}
                 color="text-emerald-600"
-                clickable
-                href="/pharmacy-network"
+                accent="bg-emerald-50"
+                onClick={() => openDetail('pharmacists')}
+                active={detail === 'pharmacists'}
               />
-              <StatsCard
+              <DashTile
                 title="Stajyorlar"
                 value={holat?.pharmacyCounts.interns}
                 icon={GraduationCap}
                 loading={holatLoading}
                 color="text-violet-600"
-                clickable
-                href="/pharmacy-network"
+                accent="bg-violet-50"
+                onClick={() => openDetail('interns')}
+                active={detail === 'interns'}
               />
-              <StatsCard
-                title="Jamoa yo‘q filial"
-                value={holat?.branchesWithoutStaff.length}
-                icon={AlertCircle}
-                loading={holatLoading}
-                color="text-amber-600"
-                clickable
-                href="/pharmacy-network"
-              />
+              {role === 'koordinator' && (
+                <DashTile
+                  title="Jamoa yo‘q filial"
+                  value={holat?.branchesWithoutStaff.length}
+                  icon={AlertCircle}
+                  loading={holatLoading}
+                  color="text-amber-600"
+                  accent="bg-amber-50"
+                  onClick={() => openDetail('no_staff')}
+                  active={detail === 'no_staff'}
+                />
+              )}
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <QuickLink
-              href="/pharmacy-network"
-              title="Aptekalar tarmog'i"
-              desc="Filiallar va xodim holati"
-              icon={Store}
-            />
-            <QuickLink href="/ehtiyoj" title="Ehtiyoj" desc="Filial ehtiyojlari va topshiriqlar" icon={ClipboardList} />
-            <QuickLink href="/vazifalar" title="Topshiriqlar" desc="Kunlik ishlar" icon={ListTodo} />
-            {role === 'koordinator' && (
-              <QuickLink href="/checklist" title="Cheklist" desc="Filial audit / GPS" icon={ClipboardCheck} />
-            )}
-            {role === 'koordinator' && (
-              <QuickLink href="/checklist-holati" title="Reyting" desc="Kunlik, haftalik, oylik" icon={TrendingUp} />
-            )}
-            <QuickLink href="/chat" title="Chat" desc="Jamoa bilan suhbat" icon={MessageCircle} />
-          </div>
+          <DashActionBar
+            items={[
+              { href: '/pharmacy-network', title: 'Aptekalar', desc: 'Filiallar holati', icon: Store },
+              { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'So‘rovlar', icon: ClipboardList },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ishlar', icon: ListTodo },
+              ...(role === 'koordinator'
+                ? [
+                    { href: '/checklist', title: 'Cheklist', desc: 'Filial audit', icon: ClipboardCheck },
+                    { href: '/checklist-holati', title: 'Reyting', desc: 'Kunlik / haftalik', icon: TrendingUp },
+                  ]
+                : []),
+              { href: '/chat', title: 'Chat', desc: 'Jamoa suhbati', icon: MessageCircle },
+            ]}
+          />
 
           {(pendingStaffing > 0 || staffingLoading) && (
-            <Card className="border-red-200 bg-red-50/50">
-              <CardHeader className="flex flex-row items-center justify-between">
+            <Card className="border-red-200/80 bg-red-50/40">
+              <CardHeader className="flex flex-row items-center justify-between py-3">
                 <div>
-                  <CardTitle className="text-base">Kadr ogohlantirishlari</CardTitle>
-                  <p className="text-sm text-muted-foreground">Aptekalar tarmog‘idan kelgan holatlar</p>
+                  <CardTitle className="text-sm">Kadr ogohlantirishlari</CardTitle>
+                  <p className="text-xs text-muted-foreground">Bosing — ro‘yxat ochiladi</p>
                 </div>
-                <Link href="/pharmacy-network">
-                  <Button variant="outline" size="sm" className="gap-1">
-                    Ochish <ArrowRight className="w-4 h-4" />
-                  </Button>
-                </Link>
+                <Button variant="outline" size="sm" className="gap-1 h-8" onClick={() => openDetail('staffing')}>
+                  {pendingStaffing} ta <ArrowRight className="w-3.5 h-3.5" />
+                </Button>
               </CardHeader>
-              <CardContent className="space-y-2">
-                {staffingLoading ? (
-                  <Skeleton className="h-14 w-full" />
-                ) : (
-                  (staffingAlerts ?? [])
-                    .filter((a) => a.workflowStatus === 'pending')
-                    .slice(0, 5)
-                    .map((a) => (
-                      <div
-                        key={a.id}
-                        className="flex items-center justify-between gap-3 rounded-lg border border-red-200 bg-white px-3 py-2.5"
-                      >
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {a.branchLocation || 'Filial'} · {a.employmentStatusLabel}
-                          </p>
-                          <p className="text-xs text-muted-foreground">
-                            {a.shiftLabel || a.shiftType || 'Smena'}
-                          </p>
-                        </div>
-                        <Badge className="bg-red-100 text-red-800 hover:bg-red-100">Kutilmoqda</Badge>
-                      </div>
-                    ))
-                )}
-                {!staffingLoading && pendingStaffing === 0 && (
-                  <p className="text-sm text-muted-foreground text-center py-4">Hozircha ogohlantirish yo‘q</p>
-                )}
-              </CardContent>
             </Card>
           )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
+            <NeedsPreview needs={branchNeeds} loading={needsLoading} />
+          </div>
+        </>
+      )}
+
+      {isPharmacyStaff && (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            <DashTile
+              title="Ehtiyoj"
+              value={pendingNeeds}
+              icon={ClipboardList}
+              loading={needsLoading}
+              color="text-orange-600"
+              accent="bg-orange-50"
+              onClick={() => openDetail('needs')}
+              active={detail === 'needs'}
+            />
+            <DashTile
+              title="Chat"
+              value={unreadChats || undefined}
+              icon={MessageCircle}
+              color="text-violet-600"
+              accent="bg-violet-50"
+              onClick={() => openDetail('chat')}
+              active={detail === 'chat'}
+              hint={unreadChats ? 'o‘qilmagan' : undefined}
+            />
+            <DashTile
+              title="Topshiriqlar"
+              value={openTaskCount}
+              icon={ListTodo}
+              loading={myTasksLoading}
+              color="text-sky-600"
+              accent="bg-sky-50"
+              onClick={() => openDetail('tasks')}
+              active={detail === 'tasks'}
+            />
+            <DashTile
+              title="Eslatmalar"
+              value={activeReminders}
+              icon={AlarmClock}
+              loading={remindersLoading}
+              color="text-amber-600"
+              accent="bg-amber-50"
+              onClick={() => openDetail('reminders')}
+              active={detail === 'reminders'}
+            />
+            <DashTile
+              title="Reyting"
+              value="→"
+              icon={Trophy}
+              color="text-emerald-600"
+              accent="bg-emerald-50"
+              hint="Filial balli"
+              onClick={() => setLocation('/reyting')}
+            />
+            <DashTile
+              title="Oylik"
+              value="→"
+              icon={Banknote}
+              color="text-[#0b3a5c]"
+              accent="bg-slate-100"
+              hint="Maosh / davomat"
+              onClick={() => setLocation('/oylik')}
+            />
+          </div>
+          <DashActionBar
+            items={[
+              { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'Filial so‘rovi', icon: ClipboardList },
+              { href: '/chat', title: 'Chat', desc: 'Jamoa suhbati', icon: MessageCircle },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ishlar', icon: ListTodo },
+              { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
+              { href: '/reyting', title: 'Reyting', desc: 'Filial balli', icon: Trophy },
+              { href: '/oylik', title: 'Oylik', desc: 'Maosh varaqasi', icon: Banknote },
+            ]}
+          />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
             <NeedsPreview needs={branchNeeds} loading={needsLoading} />
           </div>
@@ -744,110 +915,61 @@ export default function Dashboard() {
       {/* ===== SECURITY (SB) ===== */}
       {kind === 'security' && (
         <>
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
             <div className="flex items-start gap-3">
-              <span className="rounded-xl bg-slate-100 p-2 text-slate-700">
-                <Shield className="h-5 w-5" />
+              <span className="rounded-lg bg-slate-100 p-2 text-slate-700">
+                <Shield className="h-4 w-4" />
               </span>
               <div>
                 <p className="text-sm font-semibold text-slate-900">Xavfsizlik (SB)</p>
-                <p className="mt-1 text-sm text-slate-600">
-                  Eskalatsiya: SB operatori → SB bo‘limi boshlig‘i → Direktor. Favqulodda holatda tezkor xizmatlar parallel.
+                <p className="mt-0.5 text-xs text-slate-600">
+                  Eskalatsiya: operator → boshliq → direktor
                 </p>
               </div>
             </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatsCard
-              title="Topshiriqlar"
-              value={openTaskCount}
-              icon={ListTodo}
-              loading={myTasksLoading}
-              color="text-sky-500"
-              clickable
-              href="/vazifalar"
-            />
-            <StatsCard
-              title="Eslatmalar"
-              value={activeReminders}
-              icon={AlarmClock}
-              loading={remindersLoading}
-              color="text-amber-500"
-              clickable
-              href="/eslatmalar"
-            />
-            <StatsCard
-              title="Chat"
-              value={unreadChats}
-              icon={MessageCircle}
-              color="text-violet-500"
-              clickable
-              href="/chat"
-            />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <QuickLink href="/davomat" title="Davomat jurnali" desc="Kirish-chiqish, kechikkanlar, tahrirlash" icon={ClipboardCheck} />
-            <QuickLink href="/pharmacy-network" title="Aptekalar tarmog‘i" desc="Ochilish nazorati uchun filiallar" icon={Store} />
-            <QuickLink href="/vazifalar" title="Topshiriqlar" desc="IT, Ombor, HR, AXO, Reviziyaga so‘rov" icon={ListTodo} />
-            <QuickLink href="/tashkiliy-tuzilma" title="Tashkiliy tuzilma" desc="SB bo‘limi va eskalatsiya" icon={Users} />
-            <QuickLink href="/eslatmalar" title="Eslatmalarim" desc="Navbatchilik eslatmalari" icon={AlarmClock} />
-          </div>
+          <DashActionBar
+            items={[
+              { href: '/davomat', title: 'Davomat', desc: 'Jurnal', icon: ClipboardCheck },
+              { href: '/pharmacy-network', title: 'Aptekalar', desc: 'Filiallar', icon: Store },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'So‘rovlar', icon: ListTodo },
+              { href: '/tashkiliy-tuzilma', title: 'Tuzilma', desc: 'SB bo‘limi', icon: Users },
+              { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Navbatchilik', icon: AlarmClock },
+            ]}
+          />
           <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
         </>
       )}
 
-      {/* ===== OPS (texnik / ombor) ===== */}
       {kind === 'ops' && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <StatsCard
-              title="Topshiriqlar"
-              value={openTaskCount}
-              icon={ListTodo}
-              loading={myTasksLoading}
-              color="text-sky-500"
-              clickable
-              href="/vazifalar"
-            />
-            <StatsCard
-              title="Ehtiyoj"
-              value={pendingNeeds}
-              icon={ClipboardList}
-              loading={needsLoading}
-              color="text-orange-500"
-              clickable
-              href="/ehtiyoj"
-            />
-            <StatsCard
-              title="Eslatmalar"
-              value={activeReminders}
-              icon={AlarmClock}
-              loading={remindersLoading}
-              color="text-amber-500"
-              clickable
-              href="/eslatmalar"
-            />
-            <StatsCard
-              title="Chat"
-              value={unreadChats}
-              icon={MessageCircle}
-              color="text-violet-500"
-              clickable
-              href="/chat"
-            />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="Ehtiyoj" value={pendingNeeds} icon={ClipboardList} loading={needsLoading} color="text-orange-600" accent="bg-orange-50" onClick={() => openDetail('needs')} active={detail === 'needs'} />
+            <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-            <QuickLink href="/vazifalar" title="Topshiriqlar" desc="Sizga berilgan ishlar" icon={ListTodo} />
-            <QuickLink href="/ehtiyoj" title="Ehtiyoj" desc="Filialdan kelgan so‘rovlar" icon={ClipboardList} />
-            <QuickLink href="/eslatmalar" title="Eslatmalarim" desc="Shaxsiy eslatmalar" icon={AlarmClock} />
-            <QuickLink href="/chat" title="Chat" desc="Jamoa bilan muloqot" icon={MessageCircle} />
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <DashActionBar
+            items={[
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Berilgan ishlar', icon: ListTodo },
+              { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'Filial so‘rovlari', icon: ClipboardList },
+              { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
+              { href: '/chat', title: 'Chat', desc: 'Jamoa', icon: MessageCircle },
+            ]}
+          />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
             <NeedsPreview needs={branchNeeds} loading={needsLoading} />
           </div>
         </>
       )}
+
+      {detailDialog}
     </div>
   );
 }

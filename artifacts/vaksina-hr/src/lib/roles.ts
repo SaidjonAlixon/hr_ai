@@ -102,6 +102,16 @@ export function canViewHolatFull(role?: string | null): boolean {
   return role === "admin" || role === "director" || isHrRole(role);
 }
 
+/** Apteka filiali — mudir, farmasevt, stajyor */
+export function isPharmacyBranchRole(role?: string | null): boolean {
+  return role === "mudir" || role === "farmasevt" || role === "stajyor";
+}
+
+/** Filial reytingi (cheklist ball) — o‘z filiali */
+export function canViewPharmacyReyting(role?: string | null): boolean {
+  return isPharmacyBranchRole(role);
+}
+
 /** Ish o‘rinlari, nomzod, suhbat, pipeline, stajirovka — faqat HR oilasi + admin/direktor/rekruter/trener */
 export const HR_RECRUITMENT_PATHS = [
   "/vacancies",

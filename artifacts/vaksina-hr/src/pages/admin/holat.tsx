@@ -13,11 +13,10 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton } from "../../components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { HolatDashboardPanel } from "./holat-dashboard";
 import {
   AlertTriangle,
   BarChart3,
-  Building2,
   ChevronDown,
   ChevronRight,
   Download,
@@ -25,29 +24,9 @@ import {
   Phone,
   Search,
   Store,
-  UserPlus,
-  Users,
 } from "lucide-react";
 import { useToast } from "../../hooks/use-toast";
 import { cn } from "../../lib/utils";
-
-function Stat({
-  label,
-  value,
-  hint,
-}: {
-  label: string;
-  value: number;
-  hint?: string;
-}) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold tabular-nums text-slate-900">{value}</p>
-      {hint ? <p className="mt-1 text-xs leading-snug text-slate-500">{hint}</p> : null}
-    </div>
-  );
-}
 
 function matchesQuery(parts: Array<string | null | undefined>, q: string) {
   if (!q) return true;
@@ -65,6 +44,7 @@ export default function AdminHolatPage() {
   const [branchSide, setBranchSide] = useState<"with" | "without">("without");
   const [openId, setOpenId] = useState<number | null>(null);
   const [exporting, setExporting] = useState<HolatExcelSection | null>(null);
+  const [dashCoordKey, setDashCoordKey] = useState<string>("");
 
   const filteredCoords = useMemo(() => {
     const list = data?.coordinators ?? [];
@@ -102,8 +82,28 @@ export default function AdminHolatPage() {
     setExporting(section);
     await new Promise((r) => window.setTimeout(r, 40));
     try {
-      await downloadHolatExcel(data, section);
-      toast({ title: "Excel yuklandi", description: "Ochiq bo‘limdagi jadvallar" });
+      const coordId =
+        section === "sonlar"
+          ? dashCoordKey && dashCoordKey !== "all"
+            ? Number(dashCoordKey)
+            : data.scoped && data.coordinators[0]?.employeeId
+              ? data.coordinators[0].employeeId
+              : null
+          : null;
+      await downloadHolatExcel(
+        data,
+        section,
+        coordId != null && Number.isFinite(coordId) ? coordId : null,
+      );
+      toast({
+        title: "Excel yuklandi",
+        description:
+          section === "sonlar"
+            ? coordId
+              ? "Tanlangan koordinator — filiallar va xodimlar"
+              : "Barcha koordinatorlar — to‘liq"
+            : "Ochiq bo‘limdagi jadvallar",
+      });
     } catch (e: any) {
       toast({ title: "Excel xato", description: e.message || String(e), variant: "destructive" });
     } finally {
@@ -151,7 +151,7 @@ export default function AdminHolatPage() {
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/90">Sozlamalar</p>
               <h1 className="text-2xl font-semibold">Holat</h1>
               <p className="mt-1 max-w-2xl text-sm text-sky-50/90">
-                Tarmoq: koordinator → mudir → farmasevt/stajyor. Excel — hozir ochiq bo‘lim uchun.
+                Tarmoq: koordinator → mudir → farmasevt/stajyor. Dashboarddan koordinatorni tanlang — filiallar ochiladi.
                 {data.scoped ? " Hozir faqat sizning tarmog‘ingiz." : " To‘liq tizim."} Yangilangan: {data.generatedAt}
               </p>
             </div>
@@ -163,7 +163,7 @@ export default function AdminHolatPage() {
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <TabsList className="flex h-auto w-full flex-wrap justify-start gap-1 rounded-xl bg-slate-100 p-1 lg:w-auto lg:flex-1">
             <TabsTrigger value="sonlar" className="rounded-lg px-3 py-2">
-              Sonlar
+              Dashboard
             </TabsTrigger>
             <TabsTrigger value="qoshgan" className="rounded-lg px-3 py-2">
               Kim qo‘shgan
@@ -190,12 +190,16 @@ export default function AdminHolatPage() {
             className="h-11 shrink-0 gap-2 rounded-xl bg-[#0b3a5c] px-5 text-sm font-semibold text-white shadow-sm hover:bg-[#0f4a73]"
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Excel yuklab olish
+            {tab === "sonlar" ? "Excel — to‘liq" : "Excel yuklab olish"}
           </Button>
         </div>
 
         <TabsContent value="sonlar" className="mt-0 space-y-6">
-          <SonlarPanel data={data} />
+          <HolatDashboardPanel
+            data={data}
+            coordKey={dashCoordKey}
+            onCoordKey={setDashCoordKey}
+          />
         </TabsContent>
 
         <TabsContent value="qoshgan" className="mt-0">
@@ -232,65 +236,6 @@ export default function AdminHolatPage() {
           </TabsContent>
         )}
       </Tabs>
-    </div>
-  );
-}
-
-function SonlarPanel({ data }: { data: HolatReport }) {
-  const pc = data.pharmacyCounts;
-  const lc = data.loginCounts;
-  return (
-    <div className="space-y-6">
-      <section>
-        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold text-slate-800">
-          <Users className="h-4 w-4" /> Tarmoqdagi odamlar
-        </h2>
-        <p className="mb-3 text-sm text-slate-500">
-          Apteka tarmog‘idagi lavozimlar. Login bo‘lmasa ham, xodim kartasi shu yerga tushadi.
-        </p>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label="Koordinator" value={pc.coordinators} hint="Tarmoq boshliqlari" />
-          <Stat label="Mudir" value={pc.mudirs} hint="Filial mudirlari" />
-          <Stat label="Farmasevt" value={pc.pharmacists} />
-          <Stat label="Stajyor" value={pc.interns} />
-          <Stat label="Jami tarmoq" value={pc.total} hint="Bo‘shatilganlar kirmaydi" />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold text-slate-800">
-          <UserPlus className="h-4 w-4" /> Tizimga kirish (login)
-        </h2>
-        <p className="mb-3 text-sm text-slate-500">
-          Faol loginlar. Masalan, mudir 142 ta bo‘lishi, login esa 117 ta bo‘lishi mumkin — 25 tasida akkaunt yo‘q.
-        </p>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-          <Stat label="Koordinator login" value={lc.koordinator} />
-          <Stat label="Mudir login" value={lc.mudir} />
-          <Stat label="Farmasevt login" value={lc.farmasevt} />
-          <Stat label="Stajyor login" value={lc.stajyor} />
-          <Stat label="Boshqa loginlar" value={lc.other} hint="HR, admin, SB…" />
-        </div>
-      </section>
-
-      <section>
-        <h2 className="mb-1 flex items-center gap-2 text-base font-semibold text-slate-800">
-          <Building2 className="h-4 w-4" /> Tizim va filiallar
-        </h2>
-        <p className="mb-3 text-sm text-slate-500">
-          «Filial xodimsiz» — mudir bor, lekin farmasevt/stajyor qo‘shilmagan. Batafsil «Filiallar» bo‘limida.
-        </p>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <Stat label="Bo‘limlar" value={data.office.departments} />
-          <Stat label="Xodimlar (employees)" value={data.office.employeesTotal} />
-          <Stat label="Loginlar (users)" value={data.office.usersTotal} />
-          <Stat
-            label="Filial xodimsiz"
-            value={data.branchesWithoutStaff.length}
-            hint={`${data.branchesWithStaff.length} ta filialda jamoa bor`}
-          />
-        </div>
-      </section>
     </div>
   );
 }

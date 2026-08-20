@@ -253,6 +253,7 @@ export function useCreatePharmacyStaff() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/employees"] });
       qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
       qc.invalidateQueries({
         predicate: (q) =>
           JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
@@ -269,6 +270,12 @@ export type MudirCredential = {
   password: string;
 };
 
+export type StaffLoginCredential = MudirCredential & {
+  userId?: number | null;
+  roleLabel: string;
+  mudirName: string;
+};
+
 export function useOwnMudirCredentials(enabled: boolean) {
   return useQuery({
     queryKey: ["pharmacy-mudirs"],
@@ -277,10 +284,34 @@ export function useOwnMudirCredentials(enabled: boolean) {
   });
 }
 
-export async function downloadOwnMudirsExcel() {
-  const res = await fetch("/api/pharmacy-network/mudirs/export", {
-    credentials: "include",
+export function useOwnStaffLogins(enabled: boolean) {
+  return useQuery({
+    queryKey: ["pharmacy-staff-logins"],
+    queryFn: () => apiFetch<StaffLoginCredential[]>("/pharmacy-network/staff-logins"),
+    enabled,
   });
+}
+
+export function usePatchNetworkCredentials() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { employeeId: number; login: string; password: string }) =>
+      apiFetch<{ employeeId: number; userId: number; login: string; password: string }>(
+        `/pharmacy-network/credentials/${data.employeeId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ login: data.login, password: data.password }),
+        },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+    },
+  });
+}
+
+async function downloadExcel(path: string, fallbackName: string) {
+  const res = await fetch(`/api${path}`, { credentials: "include" });
   if (!res.ok) {
     let message = res.statusText;
     try {
@@ -295,9 +326,18 @@ export async function downloadOwnMudirsExcel() {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  a.download = `mudirlar-login-${new Date().toISOString().slice(0, 10)}.xlsx`;
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.download = fallbackName.includes("DATE") ? fallbackName.replace("DATE", stamp) : fallbackName;
   document.body.appendChild(a);
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
+}
+
+export async function downloadOwnMudirsExcel() {
+  await downloadExcel("/pharmacy-network/mudirs/export", "tarmoq-login-DATE.xlsx");
+}
+
+export async function downloadOwnStaffExcel() {
+  await downloadExcel("/pharmacy-network/staff-logins/export", "filial-xodimlar-login-DATE.xlsx");
 }

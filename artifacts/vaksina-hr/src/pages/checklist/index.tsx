@@ -13,7 +13,6 @@ import {
   History,
   Trash2,
   Info,
-  Sparkles,
   MapPin,
   Navigation,
   Crosshair,
@@ -452,15 +451,6 @@ export default function ChecklistPage() {
     );
   }
 
-  function markAllYes() {
-    setCategories((prev) =>
-      prev.map((cat) => ({
-        ...cat,
-        items: cat.items.map((it) => ({ ...it, answer: "yes" as const, note: null })),
-      })),
-    );
-  }
-
   function clearAnswers() {
     setCategories(createEmptyAuditTemplate());
     setGeneralNote("");
@@ -868,28 +858,16 @@ export default function ChecklistPage() {
                 </p>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="h-10"
-                onClick={clearAnswers}
-                disabled={!canFillChecklist}
-              >
-                Tozalash
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                className="h-10"
-                onClick={markAllYes}
-                disabled={!canFillChecklist}
-              >
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-                Barchasi «Ha»
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-10"
+              onClick={clearAnswers}
+              disabled={!canFillChecklist}
+            >
+              Tozalash
+            </Button>
           </div>
 
           {!canFillChecklist && (

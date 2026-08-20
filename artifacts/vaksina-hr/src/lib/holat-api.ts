@@ -171,7 +171,11 @@ export function useHolat(enabled = true) {
   });
 }
 
-export async function downloadHolatExcel(report: HolatReport | undefined, section: HolatExcelSection) {
+export async function downloadHolatExcel(
+  report: HolatReport | undefined,
+  section: HolatExcelSection,
+  coordinatorEmployeeId?: number | null,
+) {
   const data = report ?? (await loadHolatReport());
-  await downloadHolatXlsxFile(data, section);
+  await downloadHolatXlsxFile(data, section, coordinatorEmployeeId);
 }

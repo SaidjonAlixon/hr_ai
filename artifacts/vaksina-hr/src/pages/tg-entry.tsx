@@ -63,12 +63,21 @@ function prepareTelegramUi() {
   return true;
 }
 
-async function exchangeToken(token: string): Promise<User> {
+async function fetchExistingSession(): Promise<User | null> {
+  const res = await fetch("/api/auth/me", {
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) return null;
+  return res.json() as Promise<User>;
+}
+
+async function miniAuth(payload: { initData?: string; token?: string }): Promise<User> {
   const res = await fetch("/api/telegram/mini-auth", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json", Accept: "application/json" },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify(payload),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -77,9 +86,19 @@ async function exchangeToken(token: string): Promise<User> {
   return body.user as User;
 }
 
-/** Telegram Mini App kirish — token → cookie → dashboard */
+function redirectAfterLogin(user: User, next: string | null, setLocation: (path: string) => void) {
+  if (next === "davomat-face") {
+    window.history.replaceState({}, "", "/davomat-face?tg=1");
+    setLocation("/davomat-face?tg=1");
+    return;
+  }
+  window.history.replaceState({}, "", "/dashboard");
+  setLocation(user.role === "stajyor" ? "/kirish" : "/dashboard");
+}
+
+/** Telegram Mini App kirish — doimiy sessiya (login/parol botda bir marta) */
 export default function TgEntryPage() {
-  const { setUser, isAuthenticated, user } = useAuth();
+  const { setUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const [phase, setPhase] = useState<"boot" | "auth" | "error">("boot");
@@ -90,40 +109,53 @@ export default function TgEntryPage() {
 
     async function run() {
       prepareTelegramUi();
-      const token = readTokenFromUrl();
-
-      if (!token) {
-        if (isAuthenticated && user) {
-          setLocation(user.role === "stajyor" ? "/kirish" : "/dashboard");
-          return;
-        }
-        setPhase("error");
-        setError("Token topilmadi. Botdagi «Kirish» tugmasidan oching.");
-        return;
-      }
+      const next = readNextFromUrl();
 
       setPhase("auth");
       try {
-        const u = await exchangeToken(token);
+        // 1. Mavjud sessiya (yopib qayta ochganda)
+        const existing = await fetchExistingSession();
         if (cancelled) return;
-        setUser(u);
-        const next = readNextFromUrl();
-        if (next === "davomat-face") {
-          window.history.replaceState({}, "", "/davomat-face?tg=1");
-          setLocation("/davomat-face?tg=1");
+        if (existing) {
+          setUser(existing);
+          redirectAfterLogin(existing, next, setLocation);
           toast({
-            title: "Davomat",
-            description: `${u.fullName} · Face ID`,
+            title: "Xush kelibsiz",
+            description: existing.fullName,
           });
           return;
         }
-        // URL dan tokenni olib tashlash
-        window.history.replaceState({}, "", "/dashboard");
-        setLocation(u.role === "stajyor" ? "/kirish" : "/dashboard");
-        toast({
-          title: "Xush kelibsiz",
-          description: `${u.fullName} · Mini App`,
-        });
+
+        // 2. Telegram initData — bog‘langan akkaunt
+        const initData = window.Telegram?.WebApp?.initData?.trim();
+        if (initData) {
+          const u = await miniAuth({ initData });
+          if (cancelled) return;
+          setUser(u);
+          redirectAfterLogin(u, next, setLocation);
+          toast({
+            title: "Xush kelibsiz",
+            description: `${u.fullName} · Mini App`,
+          });
+          return;
+        }
+
+        // 3. Eski bir martalik token (orqaga moslik)
+        const token = readTokenFromUrl();
+        if (token) {
+          const u = await miniAuth({ token });
+          if (cancelled) return;
+          setUser(u);
+          redirectAfterLogin(u, next, setLocation);
+          toast({
+            title: "Xush kelibsiz",
+            description: `${u.fullName} · Mini App`,
+          });
+          return;
+        }
+
+        setPhase("error");
+        setError("Avval botda login va parol yuboring, keyin «Platformaga kirish» ni bosing.");
       } catch (e) {
         if (cancelled) return;
         setPhase("error");
@@ -156,7 +188,7 @@ export default function TgEntryPage() {
           <p className="text-base font-semibold text-rose-700">Kirish amalga oshmadi</p>
           <p className="mt-2 max-w-sm text-sm text-slate-600">{error}</p>
           <p className="mt-4 text-xs text-muted-foreground">
-            Botga qaytib /start bosing va yangi «Kirish» tugmasini bosing.
+            Botga qaytib login va parol yuboring yoki «Chiqish» bosgan bo‘lsangiz qayta kiriting.
           </p>
           <a
             href="/login"

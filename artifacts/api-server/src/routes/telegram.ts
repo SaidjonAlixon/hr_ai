@@ -20,6 +20,7 @@ import {
   setMyCommands,
   setWebhook,
   statusLabelUz,
+  verifyTelegramInitData,
   verifyWebhookSecret,
   type TelegramUpdate,
 } from "../lib/telegram";
@@ -133,12 +134,11 @@ async function createMiniToken(opts: {
   return token;
 }
 
-function miniAppUrl(token: string, next?: string): string | null {
+function miniAppEntryUrl(next?: string): string | null {
   const base = publicAppUrl();
   if (!base) return null;
-  const params = new URLSearchParams({ token });
-  if (next) params.set("next", next);
-  return `${base}/tg?${params.toString()}`;
+  if (next) return `${base}/tg?next=${encodeURIComponent(next)}`;
+  return `${base}/tg`;
 }
 
 function formatUserCard(user: {
@@ -166,8 +166,9 @@ function formatUserCard(user: {
   }
   lines.push(
     ``,
-    `Pastdagi <b>Platformaga kirish</b> — dastur, <b>Davomat</b> — Face ID + to‘liq holat.`,
-    `Mini App to‘liq ekranda ochiladi.`,
+    `Pastdagi <b>Platformaga kirish</b> — istalgan vaqt oching (login/parol bir marta yetarli).`,
+    `<b>Davomat</b> — Face ID + to‘liq holat.`,
+    `Chiqish uchun <b>Chiqish</b> tugmasini bosing.`,
   );
   return lines.join("\n");
 }
@@ -216,31 +217,13 @@ function helpText(): string {
   ].join("\n");
 }
 
-async function createMiniAppTokens(opts: {
-  userId: number;
-  telegramUserId: string;
-  chatId: string;
-}) {
-  const [loginToken, davomatToken] = await Promise.all([
-    createMiniToken(opts),
-    createMiniToken(opts),
-  ]);
-  return {
-    loginUrl: miniAppUrl(loginToken),
-    davomatUrl: miniAppUrl(davomatToken, "davomat-face"),
-  };
-}
-
 async function sendLoggedInCard(
   chatId: number | string,
   user: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>>,
-  telegramUserId: string,
+  _telegramUserId: string,
 ) {
-  const { loginUrl, davomatUrl } = await createMiniAppTokens({
-    userId: user.id,
-    telegramUserId,
-    chatId: String(chatId),
-  });
+  const loginUrl = miniAppEntryUrl();
+  const davomatUrl = miniAppEntryUrl("davomat-face");
 
   const rows: Array<Array<{ text: string; web_app?: { url: string }; callback_data?: string }>> = [];
   if (loginUrl) {
@@ -249,7 +232,6 @@ async function sendLoggedInCard(
   if (davomatUrl) {
     rows.push([{ text: "📋 Davomat — Face ID", web_app: { url: davomatUrl } }]);
   }
-  rows.push([{ text: "🔄 Yangi token", callback_data: "refresh_token" }]);
   rows.push([{ text: "🚪 Chiqish", callback_data: "logout" }]);
 
   const markup = { inline_keyboard: rows };
@@ -265,14 +247,9 @@ async function sendLoggedInCard(
 async function sendDavomatMiniApp(
   chatId: number | string,
   user: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>>,
-  telegramUserId: string,
+  _telegramUserId: string,
 ) {
-  const davomatToken = await createMiniToken({
-    userId: user.id,
-    telegramUserId,
-    chatId: String(chatId),
-  });
-  const davomatUrl = miniAppUrl(davomatToken, "davomat-face");
+  const davomatUrl = miniAppEntryUrl("davomat-face");
   if (!davomatUrl) {
     await sendMessage(chatId, "⚠️ PUBLIC_APP_URL sozlanmagan — Davomat Mini App ochilmaydi.");
     return;
@@ -345,16 +322,7 @@ async function handleUpdate(update: TelegramUpdate) {
 
     if (data === "logout") {
       await unlinkTelegram(String(fromId));
-      await sendMessage(chatId, "🚪 Telegram bog‘lanish uzildi.\nQayta kirish uchun /start bosing.");
-      return;
-    }
-    if (data === "refresh_token") {
-      const linked = await findUserByTelegramId(String(fromId));
-      if (!linked || !canSignIn(linked.status)) {
-        await sendMessage(chatId, "Avval login va parol yuboring.\n/start");
-        return;
-      }
-      await sendLoggedInCard(chatId, linked, String(fromId));
+      await sendMessage(chatId, "🚪 Chiqildi. Qayta kirish uchun login va parol yuboring.\n/start");
       return;
     }
     return;
@@ -432,16 +400,44 @@ router.post("/telegram/webhook", async (req, res): Promise<void> => {
   res.status(200).json({ ok: true });
 });
 
-/** Mini App: token → session cookie */
+/** Mini App: Telegram initData yoki (eski) token → session cookie */
 router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
+  const initData = String(req.body?.initData || "").trim();
   const token = String(req.body?.token || "").trim();
-  if (!token) {
-    res.status(400).json({ error: "Token kerak" });
-    return;
-  }
 
   try {
     await ensureTelegramSchema();
+
+    if (initData) {
+      const parsed = verifyTelegramInitData(initData);
+      if (!parsed) {
+        res.status(401).json({ error: "Telegram tasdiqlanmadi. Botdan qayta oching." });
+        return;
+      }
+
+      const linked = await findUserByTelegramId(String(parsed.user.id));
+      if (!linked) {
+        res.status(403).json({
+          error: "Avval botda login va parol yuboring, keyin «Platformaga kirish» ni bosing.",
+        });
+        return;
+      }
+      if (!canSignIn(linked.status)) {
+        res.status(403).json({ error: statusBlockMessage(linked.status) });
+        return;
+      }
+
+      setTelegramSessionCookie(res, linked.id);
+      const { telegramId: _tg, ...safe } = linked as typeof linked & { telegramId?: string | null };
+      res.json({ user: safe, ok: true });
+      return;
+    }
+
+    if (!token) {
+      res.status(400).json({ error: "Telegram initData kerak" });
+      return;
+    }
+
     const [row] = await db
       .select()
       .from(telegramAuthTokensTable)

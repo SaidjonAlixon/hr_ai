@@ -133,6 +133,8 @@ function EmploymentBadge({ status }: { status?: string | null }) {
       ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
       : s === 'new'
         ? 'bg-sky-50 text-sky-700 ring-sky-200'
+        : s === 'closed'
+          ? 'bg-slate-200 text-slate-800 ring-slate-400'
         : s === 'dismissed'
           ? 'bg-red-100 text-red-800 ring-red-300'
           : s === 'no_manager'
@@ -369,6 +371,14 @@ export default function PharmacyNetworkPage() {
     user?.role === 'admin' ||
     user?.role === 'director' ||
     isHrRole(user?.role);
+
+  /** Filialni «Yopilgan» qilish — faqat Admin / Direktor / HR menejer / HR direktor */
+  const canCloseBranch =
+    user?.role === 'admin' ||
+    user?.role === 'director' ||
+    user?.role === 'hr_direktor' ||
+    user?.role === 'hr_menejer' ||
+    user?.role === 'hr';
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);
@@ -1448,9 +1458,12 @@ export default function PharmacyNetworkPage() {
                 const hasTeam = counts.total > 0;
                 const open = expandedId === manager.id;
                 const noMudir = isNoManagerStatus(empStatus(manager));
+                const branchClosed = empStatus(manager) === 'closed';
                 const alert = branchHasAlert(manager.id);
                 const accent = alert
                   ? 'border-t-red-500'
+                  : branchClosed
+                    ? 'border-t-slate-500'
                   : noMudir
                     ? 'border-t-amber-500'
                     : hasTeam
@@ -1464,12 +1477,15 @@ export default function PharmacyNetworkPage() {
                       'group flex min-w-0 flex-col overflow-hidden rounded-xl border border-t-[3px] bg-white shadow-sm transition-all hover:shadow-md',
                       accent,
                       alert && 'border-red-300 bg-red-50/30 ring-1 ring-red-200',
-                      noMudir && !alert && 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-200',
-                      !alert && !noMudir && !hasTeam && 'border-amber-200 bg-amber-50/30',
-                      !alert && !noMudir && hasTeam && 'border-emerald-200',
+                      branchClosed && !alert && 'border-slate-300 bg-slate-100/70 ring-1 ring-slate-300',
+                      noMudir && !alert && !branchClosed && 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-200',
+                      !alert && !noMudir && !branchClosed && !hasTeam && 'border-amber-200 bg-amber-50/30',
+                      !alert && !noMudir && !branchClosed && hasTeam && 'border-emerald-200',
                       open
                         ? alert
                           ? 'shadow-md ring-2 ring-red-200'
+                          : branchClosed
+                            ? 'shadow-md ring-2 ring-slate-300'
                           : noMudir
                             ? 'shadow-md ring-2 ring-amber-200'
                             : 'border-primary/40 shadow-md ring-2 ring-primary/20'
@@ -1691,6 +1707,8 @@ export default function PharmacyNetworkPage() {
                                   ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
                                   : empStatus(manager) === 'searching'
                                     ? 'bg-violet-100 text-violet-800 ring-violet-300'
+                                    : empStatus(manager) === 'closed'
+                                      ? 'bg-slate-200 text-slate-800 ring-slate-400'
                                     : empStatus(manager) === 'dismissed'
                                       ? 'bg-red-100 text-red-800 ring-red-300'
                                       : empStatus(manager) === 'new'
@@ -1963,9 +1981,19 @@ export default function PharmacyNetworkPage() {
                     {canSetNoManager && editTarget?.orgRole === 'manager' && (
                       <SelectItem value="no_manager">Mudir yo‘q</SelectItem>
                     )}
+                    {editTarget?.orgRole === 'manager' &&
+                      (canCloseBranch || employmentStatus === 'closed') && (
+                      <SelectItem value="closed" disabled={!canCloseBranch}>
+                        Yopilgan
+                      </SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
-                {employmentStatus === 'no_manager' ? (
+                {employmentStatus === 'closed' ? (
+                  <p className="text-xs text-slate-600">
+                    Filial yopilgan deb belgilanadi, lekin ro‘yxatda «Yopilgan» statusi bilan qoladi.
+                  </p>
+                ) : employmentStatus === 'no_manager' ? (
                   <p className="text-xs text-amber-700">
                     Faqat mudir yo‘q deb belgilanadi. Filialdagi xodimlar ishlashda davom etadi, yollash ochilmaydi.
                   </p>

@@ -10,7 +10,15 @@ import { saveManagerBranchLocation } from "../lib/branch-gps";
 
 const router: IRouter = Router();
 
-const VALID_EMP_STATUS = new Set(["working", "new", "dismissed", "need_hire", "searching", "no_manager"]);
+const VALID_EMP_STATUS = new Set([
+  "working",
+  "new",
+  "dismissed",
+  "need_hire",
+  "searching",
+  "no_manager",
+  "closed",
+]);
 
 const BRANCH_STAFF_ROLES = new Set(["pharmacist", "intern", "supervisor"]);
 
@@ -82,6 +90,7 @@ const STATUS_UZ: Record<string, string> = {
   need_hire: "Yollash kerak",
   searching: "Qidiruvda",
   no_manager: "Mudir yo‘q",
+  closed: "Yopilgan",
 };
 
 const SHIFT_UZ: Record<string, string> = {
@@ -571,6 +580,19 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
         }
         if (before.orgRole !== "manager") {
           res.status(400).json({ error: "Mudir yo‘q faqat mudir kartasiga qo‘yiladi" });
+          return;
+        }
+      }
+      if (req.body[key] === "closed") {
+        const canCloseBranch = ["admin", "director", "hr_direktor", "hr_menejer", "hr"].includes(role);
+        if (!canCloseBranch) {
+          res.status(403).json({
+            error: "Filialni yopish faqat Admin, Direktor, HR menejer yoki HR direktor uchun",
+          });
+          return;
+        }
+        if (before.orgRole !== "manager") {
+          res.status(400).json({ error: "Yopilgan holati faqat filial (mudir) kartasiga qo‘yiladi" });
           return;
         }
       }

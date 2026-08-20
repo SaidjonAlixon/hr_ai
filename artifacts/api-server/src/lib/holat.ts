@@ -38,6 +38,7 @@ const EMP_STATUS_UZ: Record<string, string> = {
   need_hire: "Yollash kerak",
   searching: "Qidiruvda",
   no_manager: "Mudir yo‘q",
+  closed: "Yopilgan",
 };
 
 const USER_STATUS_UZ: Record<string, string> = {
@@ -202,7 +203,7 @@ function fmtTs(d: Date | string | null | undefined): string | null {
 }
 
 function isActiveEmp(status?: string | null) {
-  return status !== "dismissed";
+  return status !== "dismissed" && status !== "closed";
 }
 
 type Emp = {

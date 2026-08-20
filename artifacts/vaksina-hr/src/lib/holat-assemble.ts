@@ -42,6 +42,7 @@ const EMP_STATUS_UZ: Record<string, string> = {
   need_hire: "Yollash kerak",
   searching: "Qidiruvda",
   no_manager: "Mudir yo‘q",
+  closed: "Yopilgan",
 };
 
 const USER_STATUS_UZ: Record<string, string> = {
@@ -184,7 +185,7 @@ export function assembleHolatReport(opts: {
     };
   });
 
-  const active = people.filter((p) => p.employmentStatus !== "dismissed");
+  const active = people.filter((p) => p.employmentStatus !== "dismissed" && p.employmentStatus !== "closed");
   let coords = active.filter((p) => p.orgRole === "coordinator");
   const coordIds = new Set(coords.map((c) => c.employeeId));
   for (const p of active) {

@@ -16,6 +16,7 @@ const EMP_STATUS_LABEL: Record<string, string> = {
   searching: "Qidirilmoqda",
   working: "Ishlamoqda",
   no_manager: "Mudir yo‘q",
+  closed: "Yopilgan",
 };
 
 /** Xodim holati o‘zgarganda ogohlantirish yaratish/yopish */
@@ -30,6 +31,16 @@ export async function syncStaffingAlertForEmployee(opts: {
 
   // Mudir yo‘q — faqat belgi, yollash pipeline ochilmasin
   if (newStatus === "no_manager") return;
+  // Filial yopilgan — ro‘yxatda qoladi, yollash ochilmaydi
+  if (newStatus === "closed") {
+    await db
+      .update(staffingAlertsTable)
+      .set({ workflowStatus: "cancelled" })
+      .where(
+        and(eq(staffingAlertsTable.employeeId, employee.id), eq(staffingAlertsTable.workflowStatus, "pending")),
+      );
+    return;
+  }
 
   if (newStatus === "working") {
     await db

@@ -4,6 +4,10 @@ import ExcelJS from "exceljs";
 import { db, usersTable, departmentsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
+import {
+  ensureFarmasevtDepartmentId,
+  isFarmasevtDepartmentRole,
+} from "../lib/farmasevt-department";
 
 const router: IRouter = Router();
 
@@ -360,12 +364,17 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
   }
 
   try {
+    let resolvedDeptId = departmentId ? parseInt(String(departmentId), 10) : null;
+    if (isFarmasevtDepartmentRole(role)) {
+      resolvedDeptId = await ensureFarmasevtDepartmentId();
+    }
+
     const [user] = await db
       .insert(usersTable)
       .values({
         fullName: String(fullName).trim(),
         role,
-        departmentId: departmentId ? parseInt(String(departmentId), 10) : null,
+        departmentId: resolvedDeptId,
         login: finalLogin,
         password: generatedPassword,
         phone: phone ?? null,
@@ -458,6 +467,16 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   if (!requireAdmin(req, res)) return;
 
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const [existing] = await db
+    .select({ id: usersTable.id, role: usersTable.role })
+    .from(usersTable)
+    .where(eq(usersTable.id, id))
+    .limit(1);
+  if (!existing) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
   const allowed = ["fullName", "role", "departmentId", "phone", "status"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
@@ -480,6 +499,14 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     res.status(400).json({ error: "O‘zingizni faoldan chiqara olmaysiz" });
     return;
   }
+
+  const effectiveRole = (updates.role as string | undefined) || existing.role;
+  if (isFarmasevtDepartmentRole(effectiveRole)) {
+    updates.departmentId = await ensureFarmasevtDepartmentId();
+  } else if (updates.departmentId !== undefined && updates.departmentId !== null) {
+    updates.departmentId = parseInt(String(updates.departmentId), 10);
+  }
+
   const [updated] = await db
     .update(usersTable)
     .set(updates)

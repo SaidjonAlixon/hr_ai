@@ -2,7 +2,7 @@ import pg from "../../lib/db/node_modules/pg/lib/index.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-const departments = ["Rekruting", "HR", "Trening", "Farmatsiya", "Laboratoriya"];
+const departments = ["Rekruting", "HR", "Trening", "Farmatsiya", "Farmasevt", "Laboratoriya"];
 
 const users = [
   ["System Admin", "admin", null, "admin", "admin123", "+998901000001"],
@@ -11,7 +11,7 @@ const users = [
   ["Jasur Trener", "trainer", "Trening", "trainer1", "pass123", "+998901000004"],
   ["Bahodir Direktor", "director", null, "director1", "pass123", "+998901000005"],
   ["Madina Bo'lim boshlig'i", "department_head", "Farmatsiya", "dept_head1", "pass123", "+998901000006"],
-  ["Sardor Mudir", "mudir", "Farmatsiya", "mudir1", "pass123", "+998901000007"],
+  ["Sardor Mudir", "mudir", "Farmasevt", "mudir1", "pass123", "+998901000007"],
   ["Nilufar Koordinator", "koordinator", "Farmatsiya", "koordinator1", "pass123", "+998901000008"],
 ];
 

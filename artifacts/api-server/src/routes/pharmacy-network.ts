@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
 import { and, eq, inArray, ne } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { db, usersTable, employeesTable, departmentsTable } from "@workspace/db";
+import { db, usersTable, employeesTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { parseGpsText, displayBranchName } from "../lib/geo-location";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
+import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
 
 const router: IRouter = Router();
 
@@ -52,12 +53,7 @@ async function uniqueLogin(role: string, fullName: string): Promise<string> {
 }
 
 async function defaultDepartmentId(): Promise<number> {
-  const [row] = await db
-    .select({ id: departmentsTable.id })
-    .from(departmentsTable)
-    .limit(1);
-  if (!row) throw new Error("Bo'lim topilmadi — avval bo'lim yarating");
-  return row.id;
+  return ensureFarmasevtDepartmentId();
 }
 
 async function ensureCoordinatorEmployee(userId: number, fullName: string) {
@@ -675,9 +671,8 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
 
   const generatedPassword = randomPassword(8);
   const finalLogin = await uniqueLogin(staffRole, fullName);
-  const departmentId =
-    actor?.departmentId ||
-    (await defaultDepartmentId());
+  // Mudir / farmasevt / stajyor — bo‘lim doim «Farmasevt»
+  const departmentId = await defaultDepartmentId();
 
   try {
     const [user] = await db

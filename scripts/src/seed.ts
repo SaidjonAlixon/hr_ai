@@ -6,6 +6,7 @@ const departments = [
   { name: "HR" },
   { name: "Trening" },
   { name: "Farmatsiya" },
+  { name: "Farmasevt" },
   { name: "Laboratoriya" },
 ];
 

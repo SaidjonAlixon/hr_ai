@@ -489,4 +489,11 @@ export async function ensurePersistentSchema(): Promise<void> {
   } finally {
     client.release();
   }
+
+  try {
+    const { syncFarmasevtDepartmentAssignments } = await import("./farmasevt-department");
+    await syncFarmasevtDepartmentAssignments();
+  } catch (err) {
+    logger.warn({ err }, "Farmasevt department sync skipped");
+  }
 }

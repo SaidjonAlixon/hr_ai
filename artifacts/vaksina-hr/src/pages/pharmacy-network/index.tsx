@@ -55,15 +55,6 @@ type BranchEmployee = Employee & {
   longitude?: number | null;
 };
 
-const BRANCH_ACCENTS = [
-  'border-t-sky-500',
-  'border-t-emerald-500',
-  'border-t-amber-500',
-  'border-t-rose-500',
-  'border-t-teal-500',
-  'border-t-indigo-500',
-];
-
 function initials(name: string) {
   return name
     .split(/\s+/)
@@ -81,6 +72,13 @@ function shiftText(shiftType?: string | null, shiftLabel?: string | null) {
 
 function empStatus(person: Employee): EmploymentStatus {
   return (person.employmentStatus as EmploymentStatus) || 'working';
+}
+
+function staffCounts(team: Employee[]) {
+  const live = team.filter((p) => empStatus(p) !== 'dismissed');
+  const pharmacists = live.filter((p) => p.orgRole === 'pharmacist' || p.orgRole === 'supervisor').length;
+  const interns = live.filter((p) => p.orgRole === 'intern').length;
+  return { pharmacists, interns, total: pharmacists + interns };
 }
 
 function googleMapsUrl(lat: number, lng: number) {
@@ -381,12 +379,15 @@ export default function PharmacyNetworkPage() {
   const [search, setSearch] = useState('');
   const [coordinatorFilter, setCoordinatorFilter] = useState<string>('all');
   const [shiftFilter, setShiftFilter] = useState<string>('all');
+  const [teamFilter, setTeamFilter] = useState<'all' | 'with' | 'without'>('all');
 
   const [addOpen, setAddOpen] = useState(false);
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [staffRole, setStaffRole] = useState<PharmacyStaffRole>('mudir');
+  const [addKind, setAddKind] = useState<'mudir' | 'xodim'>('mudir');
+  const [addManagerId, setAddManagerId] = useState('');
   const [branchLocation, setBranchLocation] = useState('');
   const [createdCreds, setCreatedCreds] = useState<PharmacyStaffResult | null>(null);
   const [showPwd, setShowPwd] = useState(false);
@@ -531,6 +532,22 @@ export default function PharmacyNetworkPage() {
     return list;
   }, [allManagers, filteredCoordinators, shiftFilter, search, pharmacistsByManager, isMudirOnly]);
 
+  const teamStats = useMemo(() => {
+    let withTeam = 0;
+    for (const m of managers) {
+      if (staffCounts(pharmacistsByManager.get(m.id) ?? []).total > 0) withTeam += 1;
+    }
+    return { total: managers.length, withTeam, without: managers.length - withTeam };
+  }, [managers, pharmacistsByManager]);
+
+  const visibleManagers = useMemo(() => {
+    if (teamFilter === 'all') return managers;
+    return managers.filter((m) => {
+      const has = staffCounts(pharmacistsByManager.get(m.id) ?? []).total > 0;
+      return teamFilter === 'with' ? has : !has;
+    });
+  }, [managers, teamFilter, pharmacistsByManager]);
+
   const orphanStaffGroups = useMemo(() => {
     if (isMudirOnly) return [] as { key: string; location: string; staff: Employee[] }[];
     const allowedCoordIds = new Set(filteredCoordinators.map((c) => c.id));
@@ -601,12 +618,14 @@ export default function PharmacyNetworkPage() {
     setEmploymentStatus(empStatus(person));
   };
 
-  const openAddStaff = () => {
+  const openAddStaff = (kind: 'mudir' | 'xodim' = canAddMudir ? 'mudir' : 'xodim', managerId?: number) => {
     setFirstName('');
     setLastName('');
     setPhone('');
     setBranchLocation('');
-    setStaffRole(canAddMudir ? 'mudir' : 'farmasevt');
+    setAddKind(kind);
+    setStaffRole(kind === 'mudir' ? 'mudir' : 'farmasevt');
+    setAddManagerId(managerId != null ? String(managerId) : '');
     setShowPwd(false);
     setAddOpen(true);
   };
@@ -620,6 +639,10 @@ export default function PharmacyNetworkPage() {
       toast({ title: 'Telefon raqam kiriting', variant: 'destructive' });
       return;
     }
+    if (addKind === 'xodim' && isKoordinatorOnly && !addManagerId) {
+      toast({ title: 'Filialni tanlang', variant: 'destructive' });
+      return;
+    }
     createStaff.mutate(
       {
         firstName: firstName.trim(),
@@ -627,6 +650,8 @@ export default function PharmacyNetworkPage() {
         phone: phone.trim(),
         role: staffRole,
         location: staffRole === 'mudir' ? branchLocation.trim() || undefined : undefined,
+        managerEmployeeId:
+          addKind === 'xodim' && addManagerId ? Number(addManagerId) : undefined,
       },
       {
         onSuccess: (data) => {
@@ -850,7 +875,7 @@ export default function PharmacyNetworkPage() {
             {isMudirOnly
               ? 'O‘z filialingizdagi farmasevt va stajyorlar — login/parol, Excel va tahrirlash.'
               : isKoordinatorOnly
-                ? '1-varaq: mudirlar. 2-varaq: qo‘l ostidagi farmasevt va stajyorlar (login/parol).'
+                ? 'Faqat o‘z filiallaringiz. «Xodim qo‘shish» — istalgan filialga farmasevt/stajyor. Excelda ham chiqadi.'
                 : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va stajyor qo‘shadi.'}
           </p>
         </div>
@@ -863,11 +888,22 @@ export default function PharmacyNetworkPage() {
               disabled={exportingMudirs || allManagers.length === 0}
             >
               <Download className="h-4 w-4" />
-              {exportingMudirs ? 'Yuklanmoqda…' : isMudirOnly ? 'Xodimlar Excel' : 'Excel (2 varaq)'}
+              {exportingMudirs ? 'Yuklanmoqda…' : 'Excel yuklash'}
+            </Button>
+          )}
+          {isKoordinatorOnly && (
+            <Button
+              variant="outline"
+              className="h-11 w-full gap-2 sm:h-9 sm:w-auto"
+              onClick={() => openAddStaff('xodim')}
+              disabled={allManagers.length === 0}
+            >
+              <Plus className="h-4 w-4" />
+              Xodim qo‘shish
             </Button>
           )}
           {canAddStaff && (
-            <Button className="h-11 w-full gap-2 sm:h-9 sm:w-auto" onClick={openAddStaff}>
+            <Button className="h-11 w-full gap-2 sm:h-9 sm:w-auto" onClick={() => openAddStaff(canAddMudir ? 'mudir' : 'xodim')}>
               <Plus className="h-4 w-4" />
               {canAddMudir ? 'Mudir qo‘shish' : 'Xodim qo‘shish'}
             </Button>
@@ -885,7 +921,7 @@ export default function PharmacyNetworkPage() {
               : 'Koordinator va mudirlar hali qo‘shilmagan.'}
           </p>
           {canAddMudir && (
-            <Button className="mt-4 gap-2" onClick={openAddStaff}>
+            <Button className="mt-4 gap-2" onClick={() => openAddStaff('mudir')}>
               <Plus className="h-4 w-4" /> Mudir qo‘shish
             </Button>
           )}
@@ -1121,6 +1157,33 @@ export default function PharmacyNetworkPage() {
               <SelectItem value="custom">Maxsus</SelectItem>
             </SelectContent>
           </Select>
+          <div className="flex w-full flex-wrap gap-1.5 sm:w-auto">
+            {(
+              [
+                ['all', `Barchasi (${teamStats.total})`],
+                ['with', `Jamoa bor (${teamStats.withTeam})`],
+                ['without', `Jamoa yo‘q (${teamStats.without})`],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setTeamFilter(key)}
+                className={cn(
+                  'rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset',
+                  teamFilter === key
+                    ? key === 'without'
+                      ? 'bg-amber-100 text-amber-900 ring-amber-300'
+                      : key === 'with'
+                        ? 'bg-emerald-100 text-emerald-800 ring-emerald-300'
+                        : 'bg-[#0b3a5c] text-white ring-[#0b3a5c]'
+                    : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50',
+                )}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
         </div>
         )}
 
@@ -1208,8 +1271,9 @@ export default function PharmacyNetworkPage() {
             <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
               {isMudirOnly ? 'Mening filiali' : '2 · Filial mudirlari'}
             </p>
-            <p className="text-xs text-slate-400">
-              {managers.length + orphanStaffGroups.length} ta filial
+            <p className="text-xs text-slate-500">
+              {teamStats.total} ta filial
+              {!isMudirOnly ? ` · ${teamStats.withTeam} jamoa bor · ${teamStats.without} yo‘q` : ''}
             </p>
           </div>
 
@@ -1252,7 +1316,9 @@ export default function PharmacyNetworkPage() {
                 </div>
 
                 {team.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-sm text-slate-400">Filter bo‘yicha farmatsevt yo‘q</p>
+                  <p className="px-4 py-6 text-center text-sm text-amber-800">
+                    Bu filialda farmasevt va stajyor yo‘q
+                  </p>
                 ) : (
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -1351,7 +1417,7 @@ export default function PharmacyNetworkPage() {
             );
           })()}
 
-          {managers.length === 0 && orphanStaffGroups.length === 0 ? (
+          {visibleManagers.length === 0 && orphanStaffGroups.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400">Filter bo‘yicha mudir topilmadi</p>
           ) : (
             <div
@@ -1361,8 +1427,10 @@ export default function PharmacyNetworkPage() {
                   : 'grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5',
               )}
             >
-              {managers.map((manager, idx) => {
+              {visibleManagers.map((manager) => {
                 const fullTeam = pharmacistsByManager.get(manager.id) ?? [];
+                const counts = staffCounts(fullTeam);
+                const hasTeam = counts.total > 0;
                 const open = expandedId === manager.id;
                 const noMudir = isNoManagerStatus(empStatus(manager));
                 const alert = branchHasAlert(manager.id);
@@ -1370,7 +1438,9 @@ export default function PharmacyNetworkPage() {
                   ? 'border-t-red-500'
                   : noMudir
                     ? 'border-t-amber-500'
-                    : BRANCH_ACCENTS[idx % BRANCH_ACCENTS.length];
+                    : hasTeam
+                      ? 'border-t-emerald-500'
+                      : 'border-t-amber-400';
 
                 return (
                   <div
@@ -1380,6 +1450,8 @@ export default function PharmacyNetworkPage() {
                       accent,
                       alert && 'border-red-300 bg-red-50/30 ring-1 ring-red-200',
                       noMudir && !alert && 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-200',
+                      !alert && !noMudir && !hasTeam && 'border-amber-200 bg-amber-50/30',
+                      !alert && !noMudir && hasTeam && 'border-emerald-200',
                       open
                         ? alert
                           ? 'shadow-md ring-2 ring-red-200'
@@ -1494,18 +1566,27 @@ export default function PharmacyNetworkPage() {
                         <div className="flex shrink-0 items-center gap-1">
                           <span
                             className={cn(
-                              'inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-medium tabular-nums',
-                              alert ? 'bg-red-100 text-red-700' : 'bg-slate-50 text-slate-500',
+                              'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
+                              hasTeam ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900',
                             )}
-                            title={`${fullTeam.length} ta xodim`}
+                            title={hasTeam ? 'Farmasevt yoki stajyor bor' : 'Farmasevt va stajyor yo‘q'}
                           >
-                            <Users className="h-3 w-3" />
-                            {fullTeam.length}
+                            {hasTeam ? 'Jamoa bor' : 'Jamoa yo‘q'}
                           </span>
+                          {isKoordinatorOnly && (
+                            <button
+                              type="button"
+                              onClick={() => openAddStaff('xodim', manager.id)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                              title="Farmasevt yoki stajyor qo‘shish"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          )}
                           {canAddTeam && (
                             <button
                               type="button"
-                              onClick={openAddStaff}
+                              onClick={() => openAddStaff('xodim', manager.id)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm"
                               title="Xodim qo‘shish"
                             >
@@ -1541,6 +1622,24 @@ export default function PharmacyNetworkPage() {
                           <p className="mt-0.5 text-[11px] text-slate-500">
                             {noMudir ? 'Mudir yo‘q' : 'Mudir (zav.aptek)'}
                           </p>
+                          <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
+                            <span
+                              className={cn(
+                                'rounded-md px-2 py-0.5 font-medium',
+                                counts.pharmacists > 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-500',
+                              )}
+                            >
+                              Farmasevt: {counts.pharmacists}
+                            </span>
+                            <span
+                              className={cn(
+                                'rounded-md px-2 py-0.5 font-medium',
+                                counts.interns > 0 ? 'bg-indigo-50 text-indigo-800' : 'bg-slate-100 text-slate-500',
+                              )}
+                            >
+                              Stajyor: {counts.interns}
+                            </span>
+                          </div>
                           {isKoordinatorOnly && credByEmployee.get(manager.id) ? (
                             <LoginPassCard
                               cred={credByEmployee.get(manager.id)!}
@@ -1762,7 +1861,7 @@ export default function PharmacyNetworkPage() {
 
       {canAddTeam && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] md:hidden">
-          <Button className="h-11 w-full gap-2" onClick={openAddStaff}>
+          <Button className="h-11 w-full gap-2" onClick={() => openAddStaff('xodim')}>
             <Plus className="h-4 w-4" />
             Xodim qo‘shish
           </Button>
@@ -1883,7 +1982,7 @@ export default function PharmacyNetworkPage() {
         <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
             <DialogTitle>
-              {canAddMudir ? 'Yangi mudir' : 'Yangi xodim'}
+              {addKind === 'mudir' ? 'Yangi mudir' : 'Yangi xodim'}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
@@ -1913,7 +2012,7 @@ export default function PharmacyNetworkPage() {
                 placeholder="+998 90 123 45 67"
               />
             </div>
-            {canAddMudir ? (
+            {addKind === 'mudir' ? (
               <>
                 <div className="space-y-1.5">
                   <Label>Rol</Label>
@@ -1939,21 +2038,43 @@ export default function PharmacyNetworkPage() {
                 </div>
               </>
             ) : (
-              <div className="space-y-1.5">
-                <Label>Rol</Label>
-                <Select
-                  value={staffRole}
-                  onValueChange={(v) => setStaffRole(v as PharmacyStaffRole)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="farmasevt">Farmasevt</SelectItem>
-                    <SelectItem value="stajyor">Stajyor</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              <>
+                {isKoordinatorOnly ? (
+                  <div className="space-y-1.5">
+                    <Label>Filial</Label>
+                    <Select value={addManagerId || undefined} onValueChange={setAddManagerId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Filialni tanlang" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allManagers.map((m) => (
+                          <SelectItem key={m.id} value={String(m.id)}>
+                            {displayBranchName(m.location) || m.fullName} — {m.fullName}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <p className="text-[11px] text-muted-foreground">
+                      Faqat o‘z qo‘l ostidagi filiallar. Xodim shu mudir ostiga tushadi va Excelda chiqadi.
+                    </p>
+                  </div>
+                ) : null}
+                <div className="space-y-1.5">
+                  <Label>Rol</Label>
+                  <Select
+                    value={staffRole}
+                    onValueChange={(v) => setStaffRole(v as PharmacyStaffRole)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="farmasevt">Farmasevt</SelectItem>
+                      <SelectItem value="stajyor">Stajyor</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </>
             )}
             <p className="text-xs text-muted-foreground">
               Yaratilgach tizim avtomatik login va parol beradi.

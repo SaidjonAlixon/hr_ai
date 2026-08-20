@@ -1,13 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { Search, Store, Users } from "lucide-react";
 import { Input } from "../../components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../../components/ui/select";
 import { cn } from "../../lib/utils";
 import type { HolatMudirNode, HolatPerson, HolatReport } from "../../lib/holat-api";
 
@@ -63,18 +56,20 @@ export function HolatDashboardPanel({
 
   const coords = useMemo(() => {
     const s = coordSearch.trim().toLowerCase();
-    const list = data.coordinators;
+    const list = (data.coordinators ?? []).filter((c) => c.employeeId != null);
     if (!s) return list;
     return list.filter((c) => matchesQuery([c.fullName, c.phone], s));
   }, [data.coordinators, coordSearch]);
 
   const effectiveKey = useMemo(() => {
-    if (coordKey) return coordKey;
-    if (data.scoped && data.coordinators[0]?.employeeId != null) {
-      return String(data.coordinators[0].employeeId);
+    if (coordKey === "all" || (coordKey && coords.some((c) => String(c.employeeId) === coordKey))) {
+      return coordKey;
+    }
+    if (data.scoped && coords[0]?.employeeId != null) {
+      return String(coords[0].employeeId);
     }
     return "";
-  }, [coordKey, data.scoped, data.coordinators]);
+  }, [coordKey, data.scoped, coords]);
 
   const selected =
     effectiveKey && effectiveKey !== "all"
@@ -84,10 +79,12 @@ export function HolatDashboardPanel({
   const branches = useMemo(() => {
     if (!effectiveKey) return [] as Array<{ coordName: string; mudir: HolatMudirNode }>;
     if (effectiveKey === "all") {
-      return data.coordinators.flatMap((c) => c.mudirs.map((m) => ({ coordName: c.fullName, mudir: m })));
+      return (data.coordinators ?? []).flatMap((c) =>
+        (c.mudirs ?? []).map((m) => ({ coordName: c.fullName, mudir: m })),
+      );
     }
     if (!selected) return [];
-    return selected.mudirs.map((m) => ({ coordName: selected.fullName, mudir: m }));
+    return (selected.mudirs ?? []).map((m) => ({ coordName: selected.fullName, mudir: m }));
   }, [data.coordinators, effectiveKey, selected]);
 
   const open = branches.find((b) => b.mudir.employeeId === openBranchId)?.mudir ?? null;
@@ -102,7 +99,7 @@ export function HolatDashboardPanel({
         <p className="mt-1 text-sm text-slate-500">
           Tanlangan koordinatorning nechta filiali borligi chiqadi. Kartani bosing — mudir, farmasevt va stajyor.
         </p>
-        <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-4 space-y-3">
           <div className="relative w-full sm:max-w-xs">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
             <Input
@@ -112,29 +109,50 @@ export function HolatDashboardPanel({
               onChange={(e) => setCoordSearch(e.target.value)}
             />
           </div>
-          <Select
-            value={effectiveKey || undefined}
-            onValueChange={(v) => {
-              onCoordKey(v);
-              setOpenBranchId(null);
-            }}
-          >
-            <SelectTrigger className="h-11 w-full rounded-xl sm:max-w-md">
-              <SelectValue placeholder="Koordinator…" />
-            </SelectTrigger>
-            <SelectContent>
-              {!data.scoped && <SelectItem value="all">Barcha koordinatorlar</SelectItem>}
-              {coords.map((c) => (
-                <SelectItem
-                  key={c.employeeId ?? c.fullName}
-                  value={String(c.employeeId ?? "")}
-                  disabled={c.employeeId == null}
+          <div className="flex max-h-40 flex-wrap gap-1.5 overflow-y-auto">
+            {!data.scoped && (
+              <button
+                type="button"
+                onClick={() => {
+                  onCoordKey("all");
+                  setOpenBranchId(null);
+                }}
+                className={cn(
+                  "rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset",
+                  effectiveKey === "all"
+                    ? "bg-[#0b3a5c] text-white ring-[#0b3a5c]"
+                    : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50",
+                )}
+              >
+                Barchasi
+              </button>
+            )}
+            {coords.map((c) => {
+              const key = String(c.employeeId);
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    onCoordKey(key);
+                    setOpenBranchId(null);
+                  }}
+                  className={cn(
+                    "rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset",
+                    effectiveKey === key
+                      ? "bg-[#0b3a5c] text-white ring-[#0b3a5c]"
+                      : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50",
+                  )}
                 >
-                  {c.fullName} · {c.mudirCount} filial
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                  {c.fullName}
+                  <span className="ml-1 opacity-80">· {c.mudirCount ?? 0}</span>
+                </button>
+              );
+            })}
+            {!coords.length ? (
+              <p className="px-1 py-2 text-sm text-slate-400">Koordinator topilmadi</p>
+            ) : null}
+          </div>
         </div>
       </section>
 
@@ -171,14 +189,17 @@ export function HolatDashboardPanel({
               </p>
             ) : (
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {branches.map(({ coordName, mudir }) => {
-                  const has = mudir.staffCount > 0;
-                  const isOpen = openBranchId === mudir.employeeId;
+                {branches.map(({ coordName, mudir }, i) => {
+                  const has = (mudir.staffCount ?? 0) > 0;
+                  const branchKey = mudir.employeeId ?? `${coordName}-${mudir.fullName}-${i}`;
+                  const isOpen = openBranchId != null && mudir.employeeId === openBranchId;
                   return (
                     <button
-                      key={mudir.employeeId}
+                      key={branchKey}
                       type="button"
-                      onClick={() => setOpenBranchId(isOpen ? null : mudir.employeeId)}
+                      onClick={() =>
+                        setOpenBranchId(isOpen || mudir.employeeId == null ? null : mudir.employeeId)
+                      }
                       className={cn(
                         "rounded-2xl border p-4 text-left shadow-sm transition-all",
                         isOpen
@@ -234,7 +255,7 @@ export function HolatDashboardPanel({
                     Farmasevtlar ({open.pharmacistCount})
                   </p>
                   <div className="mt-2 space-y-2">
-                    {open.staff
+                    {(open.staff ?? [])
                       .filter((s) => s.orgRole === "pharmacist")
                       .map((s) => (
                         <div key={s.employeeId ?? s.fullName} className="rounded-lg bg-white p-2 ring-1 ring-slate-100">
@@ -251,7 +272,7 @@ export function HolatDashboardPanel({
                     Stajyorlar ({open.internCount})
                   </p>
                   <div className="mt-2 space-y-2">
-                    {open.staff
+                    {(open.staff ?? [])
                       .filter((s) => s.orgRole === "intern")
                       .map((s) => (
                         <div key={s.employeeId ?? s.fullName} className="rounded-lg bg-white p-2 ring-1 ring-slate-100">

@@ -533,7 +533,7 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
     return;
   }
 
-  const { firstName, lastName, phone, role, location, coordinates } = req.body ?? {};
+  const { firstName, lastName, phone, role, location, coordinates, managerEmployeeId } = req.body ?? {};
   const fn = String(firstName || "").trim();
   const ln = String(lastName || "").trim();
   const phoneVal = String(phone || "").trim();
@@ -553,8 +553,8 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
   }
 
   if (actorRole === "koordinator") {
-    if (staffRole !== "mudir") {
-      res.status(403).json({ error: "Koordinator faqat mudir qo‘sha oladi" });
+    if (staffRole !== "mudir" && staffRole !== "farmasevt" && staffRole !== "stajyor") {
+      res.status(403).json({ error: "Koordinator mudir, farmasevt yoki stajyor qo‘sha oladi" });
       return;
     }
   } else if (actorRole === "mudir") {
@@ -620,24 +620,56 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
     }
     if (!branchLocation) branchLocation = "Filial";
   } else {
-    const [myBranch] = await db
-      .select()
-      .from(employeesTable)
-      .where(eq(employeesTable.userId, actorId));
-    if (!myBranch || myBranch.orgRole !== "manager") {
-      res.status(400).json({
-        error: "Filial bog‘lanmagan — avval sizni mudir sifatida tarmoqqa ulang",
-      });
-      return;
-    }
-    reportsToId = myBranch.id;
-    branchLocation = myBranch.location;
     if (staffRole === "stajyor") {
       orgRole = "intern";
       position = "Stajyor";
     } else {
       orgRole = "pharmacist";
       position = "Farmasevt";
+    }
+
+    if (actorRole === "mudir") {
+      const [myBranch] = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.userId, actorId));
+      if (!myBranch || myBranch.orgRole !== "manager") {
+        res.status(400).json({
+          error: "Filial bog‘lanmagan — avval sizni mudir sifatida tarmoqqa ulang",
+        });
+        return;
+      }
+      reportsToId = myBranch.id;
+      branchLocation = myBranch.location;
+    } else {
+      const mid = parseInt(String(managerEmployeeId ?? ""), 10);
+      if (!Number.isFinite(mid)) {
+        res.status(400).json({ error: "Qaysi filialga qo‘shishni tanlang" });
+        return;
+      }
+      const [mgr] = await db
+        .select({
+          id: employeesTable.id,
+          orgRole: employeesTable.orgRole,
+          reportsToId: employeesTable.reportsToId,
+          location: employeesTable.location,
+          employmentStatus: employeesTable.employmentStatus,
+        })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, mid));
+      if (!mgr || mgr.orgRole !== "manager") {
+        res.status(400).json({ error: "Filial (mudir) topilmadi" });
+        return;
+      }
+      if (actorRole === "koordinator") {
+        const coord = await actorEmployee(actorId, "coordinator");
+        if (!coord || mgr.reportsToId !== coord.id) {
+          res.status(403).json({ error: "Faqat o‘z qo‘l ostidagi filialga qo‘shasiz" });
+          return;
+        }
+      }
+      reportsToId = mgr.id;
+      branchLocation = mgr.location;
     }
   }
 

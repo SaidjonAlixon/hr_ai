@@ -8,6 +8,7 @@ export type PharmacyStaffInput = {
   phone: string;
   role: PharmacyStaffRole;
   location?: string;
+  managerEmployeeId?: number;
 };
 
 export type PharmacyStaffResult = {

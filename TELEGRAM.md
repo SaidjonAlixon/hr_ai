@@ -11,7 +11,7 @@ VAKSINA MED HR Telegram boti: login/parol qabul qiladi, faol akkaunt ma’lumoti
    - yoki 2 qator: login / parol
    - yoki `login: farmasevt1` + `parol: pass123`
 4. Baza tekshiradi — faol bo‘lsa ism, lavozim, holat chiqadi
-5. **Kirish — Mini App** tugmasi → dastur to‘liq ekranda ochiladi (sessiya avtomatik)
+5. **Platformaga kirish** tugmasi → dastur to‘liq ekranda ochiladi (sessiya avtomatik)
 
 Buyruqlar: `/holat`, `/chiqish`, `/yordam`
 

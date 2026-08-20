@@ -166,7 +166,7 @@ function formatUserCard(user: {
   }
   lines.push(
     ``,
-    `Pastdagi <b>Kirish</b> — dastur, <b>Davomat</b> — Face ID + to‘liq holat.`,
+    `Pastdagi <b>Platformaga kirish</b> — dastur, <b>Davomat</b> — Face ID + to‘liq holat.`,
     `Mini App to‘liq ekranda ochiladi.`,
   );
   return lines.join("\n");
@@ -244,7 +244,7 @@ async function sendLoggedInCard(
 
   const rows: Array<Array<{ text: string; web_app?: { url: string }; callback_data?: string }>> = [];
   if (loginUrl) {
-    rows.push([{ text: "🚀 Kirish — Mini App", web_app: { url: loginUrl } }]);
+    rows.push([{ text: "🚀 Platformaga kirish", web_app: { url: loginUrl } }]);
   }
   if (davomatUrl) {
     rows.push([{ text: "📋 Davomat — Face ID", web_app: { url: davomatUrl } }]);

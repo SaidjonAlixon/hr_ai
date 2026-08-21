@@ -50,8 +50,10 @@ function isDbDown(err: unknown): boolean {
 }
 
 router.post("/auth/login", async (req, res): Promise<void> => {
-  const login = String(req.body?.login ?? "").trim();
-  const password = String(req.body?.password ?? "").trim();
+  // Bo‘sh joy / tab / NBSP — avtomatik olib tashlanadi
+  const compact = (v: unknown) => String(v ?? "").replace(/[\s\u00a0\u200b\uFEFF]+/g, "");
+  const login = compact(req.body?.login);
+  const password = compact(req.body?.password);
   if (!login || !password) {
     res.status(400).json({ error: "Login va parol kerak" });
     return;
@@ -63,7 +65,7 @@ router.post("/auth/login", async (req, res): Promise<void> => {
       .from(usersTable)
       .where(sql`lower(${usersTable.login}) = lower(${login})`);
 
-    if (!user || String(user.password ?? "").trim() !== password) {
+    if (!user || compact(user.password) !== password) {
       res.status(401).json({ error: "Login yoki parol noto'g'ri" });
       return;
     }

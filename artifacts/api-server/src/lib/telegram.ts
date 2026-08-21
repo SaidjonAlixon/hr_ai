@@ -184,6 +184,7 @@ export function verifyTelegramInitData(initData: string): {
 
 /** Login/parol matnini ajratib olish — bir necha namuna format */
 export function parseLoginPassword(text: string): { login: string; password: string } | null {
+  const compact = (v: string) => v.replace(/[\s\u00a0\u200b\uFEFF]+/g, "");
   const t = text.trim().replace(/\u00a0/g, " ");
   if (!t) return null;
 
@@ -192,7 +193,9 @@ export function parseLoginPassword(text: string): { login: string; password: str
       t,
     );
   if (labeled?.[1] && labeled[2]) {
-    return { login: labeled[1], password: labeled[2] };
+    const login = compact(labeled[1]);
+    const password = compact(labeled[2]);
+    if (login && password) return { login, password };
   }
 
   const lines = t
@@ -200,16 +203,16 @@ export function parseLoginPassword(text: string): { login: string; password: str
     .map((l) => l.trim())
     .filter(Boolean);
   if (lines.length === 2) {
-    const a = lines[0]!.replace(/^(?:login|логин)\s*[:=]\s*/i, "").trim();
-    const b = lines[1]!.replace(/^(?:parol|password|пароль|pass)\s*[:=]\s*/i, "").trim();
-    if (a && b && !/\s/.test(a) && !/\s/.test(b)) {
-      return { login: a, password: b };
-    }
+    const a = compact(lines[0]!.replace(/^(?:login|логин)\s*[:=]\s*/i, ""));
+    const b = compact(lines[1]!.replace(/^(?:parol|password|пароль|pass)\s*[:=]\s*/i, ""));
+    if (a && b) return { login: a, password: b };
   }
 
   const parts = t.split(/\s+/).filter(Boolean);
   if (parts.length === 2 && parts[0] && parts[1]) {
-    return { login: parts[0], password: parts[1] };
+    const login = compact(parts[0]);
+    const password = compact(parts[1]);
+    if (login && password) return { login, password };
   }
 
   return null;

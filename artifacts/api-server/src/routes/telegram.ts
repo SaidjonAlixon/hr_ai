@@ -296,15 +296,16 @@ async function handleCredentials(
   loginRaw: string,
   passwordRaw: string,
 ) {
-  const login = String(loginRaw || "").trim();
-  const password = String(passwordRaw || "").trim();
+  const compact = (v: string) => String(v ?? "").replace(/[\s\u00a0\u200b\uFEFF]+/g, "");
+  const login = compact(loginRaw);
+  const password = compact(passwordRaw);
   const [user] = await db
     .select()
     .from(usersTable)
     .where(sql`lower(${usersTable.login}) = lower(${login})`)
     .limit(1);
 
-  if (!user || String(user.password ?? "").trim() !== password) {
+  if (!user || compact(String(user.password ?? "")) !== password) {
     await sendMessage(
       chatId,
       `❌ Login yoki parol noto‘g‘ri.\n\nNamuna:\n<code>farmasevt1 pass123</code>`,

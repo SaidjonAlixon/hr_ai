@@ -7,6 +7,8 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   setUser: (user: User | null) => void;
+  /** Face ID / akkaunt almashtirish — eski cache tozalanadi, yangi profil ochiladi */
+  switchToUser: (user: User) => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -14,6 +16,7 @@ const AuthContext = createContext<AuthContextType>({
   isLoading: true,
   isAuthenticated: false,
   setUser: () => {},
+  switchToUser: () => {},
 });
 
 const AUTH_LOAD_TIMEOUT_MS = 8_000;
@@ -64,6 +67,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     [queryClient],
   );
 
+  const switchToUser = useCallback(
+    (next: User) => {
+      setLoadTimedOut(false);
+      // Eski foydalanuvchi ma’lumotlari (dashboard, chat, …) qolmasin
+      queryClient.clear();
+      queryClient.setQueryData(getGetMeQueryKey(), next);
+      setOverrideUser(next);
+    },
+    [queryClient],
+  );
+
   const user = useMemo(() => {
     if (overrideUser !== undefined) return overrideUser;
     if (isSuccess && data) return data;
@@ -71,7 +85,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return null;
   }, [overrideUser, isSuccess, data, isError, loadTimedOut]);
 
-  // Hali /auth/me kutilmoqda yoki muvaffaqiyatli javob bor, lekin user hali bog'lanmagan
   const isLoading =
     overrideUser === undefined &&
     !loadTimedOut &&
@@ -80,8 +93,8 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const isAuthenticated = !!user;
 
   const value = useMemo(
-    () => ({ user, isLoading, isAuthenticated, setUser }),
-    [user, isLoading, isAuthenticated, setUser],
+    () => ({ user, isLoading, isAuthenticated, setUser, switchToUser }),
+    [user, isLoading, isAuthenticated, setUser, switchToUser],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

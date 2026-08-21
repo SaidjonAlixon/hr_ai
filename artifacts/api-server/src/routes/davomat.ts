@@ -14,6 +14,7 @@ import { canViewDavomat } from "../lib/roles";
 import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
 import { matchFaceForAuth } from "../lib/face-match";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
+import { setSessionCookie } from "../lib/session";
 
 const router: IRouter = Router();
 
@@ -1150,7 +1151,7 @@ async function resolveFaceAtSite(opts: {
     .from(usersTable)
     .where(eq(usersTable.id, matched.userId))
     .limit(1);
-  if (!user || user.status !== "active") {
+  if (!user || (user.status !== "active" && user.status !== "on_leave")) {
     return { ok: false, status: 403, body: { error: "Profil faol emas", code: "user_inactive" } };
   }
 
@@ -1166,6 +1167,28 @@ async function resolveFaceAtSite(opts: {
     user: { id: user.id, fullName: user.fullName, role: user.role },
     gate: { distanceMeters: gate.distanceMeters, effectiveRadius: gate.effectiveRadius },
   };
+}
+
+/** Face ID tanilgan user — to‘liq profil + sessiya shu akkauntga */
+async function adoptFaceSession(res: import("express").Response, userId: number) {
+  setSessionCookie(res, userId);
+  const [row] = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+      departmentId: usersTable.departmentId,
+      departmentName: departmentsTable.name,
+      login: usersTable.login,
+      phone: usersTable.phone,
+      status: usersTable.status,
+      createdAt: usersTable.createdAt,
+    })
+    .from(usersTable)
+    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  return row ?? null;
 }
 
 /** Login qilgan xodim — ish joyi GPS (UI masofa hisobi uchun) */
@@ -1414,6 +1437,7 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       .limit(1);
     const nextAction = !rec?.checkInAt ? "in" : !rec.checkOutAt ? "out" : "done";
     const own = await ownEmployeeReport(resolved.emp.id);
+    const sessionUser = await adoptFaceSession(res, resolved.user.id);
     res.json({
       ok: true,
       fullName: resolved.user.fullName,
@@ -1427,6 +1451,8 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       checkInAt: rec?.checkInAt ? rec.checkInAt.toISOString() : null,
       checkOutAt: rec?.checkOutAt ? rec.checkOutAt.toISOString() : null,
       employee: own.employee,
+      user: sessionUser,
+      sessionSwitched: true,
     });
   } catch (err) {
     console.error("POST /davomat/face-verify error:", err);
@@ -1487,7 +1513,13 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       return;
     }
     const own = await ownEmployeeReport(resolved.emp.id);
-    res.json({ ...punched.payload, employee: own.employee });
+    const sessionUser = await adoptFaceSession(res, resolved.user.id);
+    res.json({
+      ...punched.payload,
+      employee: own.employee,
+      user: sessionUser,
+      sessionSwitched: true,
+    });
   } catch (err) {
     console.error("POST /davomat/face-punch error:", err);
     res.status(503).json({ error: "Face ID davomat yozilmadi" });

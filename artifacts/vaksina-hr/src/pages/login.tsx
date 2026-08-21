@@ -12,6 +12,7 @@ import { isFaceIdSupported, loginWithFace } from '../lib/face-id';
 import { DAVOMAT_GEOFENCE_METERS } from '../lib/davomat-api';
 import { FaceScanDialog } from '../components/FaceScanDialog';
 import type { User } from '@workspace/api-client-react';
+import { compactCredential } from '../lib/utils';
 
 export default function Login() {
   const [login, setLogin] = useState('');
@@ -19,19 +20,21 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [faceOpen, setFaceOpen] = useState(false);
   const { mutate, isPending } = useLogin();
-  const { setUser } = useAuth();
+  const { switchToUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
 
   const goAfterLogin = (user: User) => {
-    setUser(user);
+    switchToUser(user);
     setLocation(user.role === 'stajyor' ? '/kirish' : '/dashboard');
   };
 
   const handleLogin = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    const loginTrim = login.trim();
-    const passwordTrim = password.trim();
+    const loginTrim = compactCredential(login);
+    const passwordTrim = compactCredential(password);
+    if (loginTrim !== login) setLogin(loginTrim);
+    if (passwordTrim !== password) setPassword(passwordTrim);
     if (!loginTrim || !passwordTrim) return;
 
     mutate({ data: { login: loginTrim, password: passwordTrim } }, {
@@ -93,8 +96,14 @@ export default function Login() {
                 <Input 
                   id="login" 
                   value={login} 
-                  onChange={(e) => setLogin(e.target.value)} 
+                  onChange={(e) => setLogin(compactCredential(e.target.value))}
+                  onBlur={() => setLogin((v) => compactCredential(v))}
+                  onPaste={(e) => {
+                    e.preventDefault();
+                    setLogin(compactCredential(e.clipboardData.getData('text')));
+                  }}
                   placeholder="Loginni kiriting"
+                  autoComplete="username"
                   required 
                 />
               </div>
@@ -105,9 +114,15 @@ export default function Login() {
                     id="password"
                     type={showPassword ? 'text' : 'password'}
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={(e) => setPassword(compactCredential(e.target.value))}
+                    onBlur={() => setPassword((v) => compactCredential(v))}
+                    onPaste={(e) => {
+                      e.preventDefault();
+                      setPassword(compactCredential(e.clipboardData.getData('text')));
+                    }}
                     placeholder="Parolni kiriting"
                     className="pr-10"
+                    autoComplete="current-password"
                     required
                   />
                   <button
@@ -170,16 +185,19 @@ export default function Login() {
                       data.fullName ||
                       (data.user as User & { fullName?: string })?.fullName ||
                       "";
+                    if (data.user) {
+                      switchToUser(data.user);
+                    }
                     // Dialog ismni ko‘rsatishi uchun biroz kutamiz
                     window.setTimeout(() => {
                       toast({
                         title: fullName ? `Xush kelibsiz, ${fullName}` : "Face ID",
                         description: fullName
-                          ? "Profil egasi aniqlandi — tizimga kirdingiz"
+                          ? "Yuz aniqlandi — shu profilga kirdingiz"
                           : "Tizimga kirdingiz",
                       });
-                      goAfterLogin(data.user);
-                    }, 1150);
+                      if (data.user) goAfterLogin(data.user);
+                    }, 900);
                     return { fullName };
                   }}
                 />
@@ -207,7 +225,7 @@ export default function Login() {
                           { data: { login: acc.login, password: acc.pass } },
                           {
                             onSuccess: (data) => {
-                              setUser(data.user);
+                              switchToUser(data.user);
                               setLocation(
                                 data.user.role === 'stajyor' ? '/kirish' : '/dashboard',
                               );

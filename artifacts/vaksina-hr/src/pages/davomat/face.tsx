@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import {
   MapPin,
   ScanFace,
@@ -48,6 +48,7 @@ import {
 } from "@/lib/davomat-api";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import type { User } from "@workspace/api-client-react";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
@@ -461,7 +462,8 @@ function isTelegramMiniAppContext(): boolean {
 }
 
 export default function DavomatFacePage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, switchToUser } = useAuth();
+  const [, setLocation] = useLocation();
   const isTgMiniApp = useMemo(() => isTelegramMiniAppContext(), []);
   useTelegramMiniAppChrome();
   const { toast } = useToast();
@@ -781,6 +783,18 @@ export default function DavomatFacePage() {
     }
   };
 
+  const adoptRecognizedProfile = useCallback(
+    (sessionUser: User | null | undefined, fullName: string) => {
+      if (!sessionUser?.id) return;
+      switchToUser(sessionUser as User);
+      toast({
+        title: fullName || sessionUser.fullName,
+        description: "Yuz aniqlandi — tizim shu profilga o‘tdi",
+      });
+    },
+    [switchToUser, toast],
+  );
+
   const onCaptured = async (descriptor: number[], snapshot?: string) => {
     if (!gps) throw new Error("GPS yo‘q");
     if (!inside) {
@@ -803,15 +817,22 @@ export default function DavomatFacePage() {
         faceImage: snapshot,
       });
       applyHistory(result.employee);
-      toast({
-        title: result.fullName,
-        description:
-          result.nextAction === "done"
-            ? "Bugun Keldim va Ketdim allaqachon belgilangan"
-            : result.nextAction === "out"
-              ? "Bugun Keldim belgilangan — faqat Ketdim qolgan"
-              : "Yuz tasdiqlandi — Keldim ni bosing",
-      });
+      if (result.user) {
+        adoptRecognizedProfile(result.user as User, result.fullName);
+        // Yangi sessiya uchun ish joyi / tarix
+        void loadWorkplace();
+        void loadHistory();
+      } else {
+        toast({
+          title: result.fullName,
+          description:
+            result.nextAction === "done"
+              ? "Bugun Keldim va Ketdim allaqachon belgilangan"
+              : result.nextAction === "out"
+                ? "Bugun Keldim belgilangan — faqat Ketdim qolgan"
+                : "Yuz tasdiqlandi — Keldim ni bosing",
+        });
+      }
       return { fullName: result.fullName };
     } catch (err) {
       if (err instanceof DavomatApiError && err.code === "outside_geofence") {
@@ -863,6 +884,9 @@ export default function DavomatFacePage() {
         checkInAt: result.checkInAt ?? verified.checkInAt,
         checkOutAt: result.checkOutAt ?? verified.checkOutAt,
       });
+      if (result.user) {
+        adoptRecognizedProfile(result.user as User, result.fullName || verified.fullName);
+      }
       toast({
         title: action === "in" ? "Keldim" : "Ketdi",
         description: result.message,
@@ -1265,12 +1289,29 @@ export default function DavomatFacePage() {
               <h2 className="text-sm font-semibold text-[#0b3a5c]">Face ID</h2>
             </div>
             {verified ? (
-              <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-                <CheckCircle2 className="h-5 w-5 shrink-0" />
-                <div>
-                  <p className="font-semibold">Yuz tasdiqlandi</p>
-                  <p className="text-xs text-emerald-700">{verified.fullName}</p>
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                  <CheckCircle2 className="h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="font-semibold">Yuz tasdiqlandi</p>
+                    <p className="text-xs text-emerald-700">{verified.fullName}</p>
+                    <p className="mt-0.5 text-[11px] text-emerald-600">
+                      Tizim shu xodim profiliga o‘tdi
+                    </p>
+                  </div>
                 </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-11 w-full gap-2 rounded-2xl border-[#0b3a5c]/30 text-[#0b3a5c]"
+                  onClick={() => {
+                    const role = user?.role;
+                    setLocation(role === "stajyor" ? "/kirish" : "/dashboard");
+                  }}
+                >
+                  <LogIn className="h-4 w-4" />
+                  {verified.fullName} profiliga o‘tish
+                </Button>
               </div>
             ) : (
               <div className="space-y-3">

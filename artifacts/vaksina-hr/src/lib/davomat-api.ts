@@ -201,6 +201,18 @@ export async function faceVerifyDavomat(payload: {
   checkInAt: string | null;
   checkOutAt: string | null;
   employee?: DavomatEmployee | null;
+  user?: {
+    id: number;
+    fullName: string;
+    role: string;
+    departmentId?: number | null;
+    departmentName?: string | null;
+    login?: string;
+    phone?: string | null;
+    status?: string;
+    createdAt?: string;
+  } | null;
+  sessionSwitched?: boolean;
 }> {
   return apiJson("/davomat/face-verify", {
     method: "POST",
@@ -227,6 +239,18 @@ export async function facePunchDavomat(payload: {
   distanceMeters: number;
   location?: string | null;
   employee?: DavomatEmployee | null;
+  user?: {
+    id: number;
+    fullName: string;
+    role: string;
+    departmentId?: number | null;
+    departmentName?: string | null;
+    login?: string;
+    phone?: string | null;
+    status?: string;
+    createdAt?: string;
+  } | null;
+  sessionSwitched?: boolean;
 }> {
   return apiJson("/davomat/face-punch", {
     method: "POST",

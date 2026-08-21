@@ -173,7 +173,7 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
   }
 
   const [user] = await db.select().from(usersTable).where(eq(usersTable.id, matched.userId));
-  if (!user || user.status !== "active") {
+  if (!user || (user.status !== "active" && user.status !== "on_leave")) {
     res.status(403).json({
       error: user?.fullName
         ? `${user.fullName}: profil faol emas`
@@ -189,13 +189,16 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
     .set({ lastUsedAt: new Date() })
     .where(eq(faceProfilesTable.id, matched.id));
 
+  // Tanilgan yuz egasi — sessiya shu profilga o‘tadi (eski cookie yoziladi)
   setSessionCookie(res, user.id);
   const fullUser = await getUserWithDept(user.id);
   const fullName = fullUser?.fullName ?? user.fullName;
   res.json({
+    ok: true,
     user: fullUser,
     fullName,
     message: fullName,
+    sessionUserId: user.id,
   });
 });
 

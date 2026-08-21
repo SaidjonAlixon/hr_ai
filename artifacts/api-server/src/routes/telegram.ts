@@ -122,7 +122,8 @@ async function createMiniToken(opts: {
   chatId: string;
 }) {
   const token = newAuthToken();
-  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  // Mini App qayta ochilishi uchun — 7 kun amal qiladi (bir marta ishlatilsa ham qayta ochish mumkin)
+  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
   await db.insert(telegramAuthTokensTable).values({
     token,
     userId: opts.userId,
@@ -212,7 +213,7 @@ function helpText(): string {
   return [
     `<b>Buyruqlar</b>`,
     `/start — boshidan boshlash`,
-    `/holat — bog‘langan akkaunt`,
+    `/holat yoki /kirish — yangi «Platformaga kirish» havolasi`,
     `/davomat — Face ID davomat (Mini App)`,
     `/chiqish — Telegram bog‘lanishni uzish`,
     `/yordam — yordam`,
@@ -243,6 +244,7 @@ async function sendLoggedInCard(
   if (davomatUrl) {
     rows.push([{ text: "📋 Davomat — Face ID", web_app: { url: davomatUrl } }]);
   }
+  rows.push([{ text: "🔄 Yangi kirish havolasi", callback_data: "refresh_entry" }]);
   rows.push([{ text: "🚪 Chiqish", callback_data: "logout" }]);
 
   const markup = { inline_keyboard: rows };
@@ -348,6 +350,16 @@ async function handleUpdate(update: TelegramUpdate) {
       await sendMessage(chatId, "🚪 Chiqildi. Qayta kirish uchun login va parol yuboring.\n/start");
       return;
     }
+    if (data === "refresh_entry") {
+      const linked = await findUserByTelegramId(String(fromId));
+      if (!linked || !canSignIn(linked.status)) {
+        await sendMessage(chatId, "Avval login va parol yuboring.\n/start");
+        return;
+      }
+      await sendMessage(chatId, "🔄 Yangi kirish havolasi tayyor:");
+      await sendLoggedInCard(chatId, linked, String(fromId));
+      return;
+    }
     return;
   }
 
@@ -366,7 +378,7 @@ async function handleUpdate(update: TelegramUpdate) {
     await sendMessage(chatId, helpText());
     return;
   }
-  if (text === "/holat") {
+  if (text === "/holat" || text === "/kirish") {
     const linked = await findUserByTelegramId(String(fromId));
     if (!linked) {
       await sendMessage(chatId, "Hali akkaunt bog‘lanmagan.\nLogin va parol yuboring yoki /start.");
@@ -461,20 +473,23 @@ router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
       return;
     }
 
+    // Muddat ichida — ishlatilgan token ham qayta ochishda ishlaydi (Mini App yopib qayta kirish)
     const [row] = await db
       .select()
       .from(telegramAuthTokensTable)
       .where(
         and(
           eq(telegramAuthTokensTable.token, token),
-          eq(telegramAuthTokensTable.used, false),
           gt(telegramAuthTokensTable.expiresAt, new Date()),
         ),
       )
       .limit(1);
 
     if (!row) {
-      res.status(401).json({ error: "Token muddati tugagan yoki ishlatilgan. Botdan yangi «Kirish» oling." });
+      res.status(401).json({
+        error: "Token muddati tugagan. Botdan «Platformaga kirish» yoki /start bosing.",
+        code: "token_invalid",
+      });
       return;
     }
 
@@ -484,10 +499,12 @@ router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
       return;
     }
 
-    await db
-      .update(telegramAuthTokensTable)
-      .set({ used: true })
-      .where(eq(telegramAuthTokensTable.id, row.id));
+    if (!row.used) {
+      await db
+        .update(telegramAuthTokensTable)
+        .set({ used: true })
+        .where(eq(telegramAuthTokensTable.id, row.id));
+    }
 
     if (user.telegramId !== row.telegramUserId) {
       await linkTelegram(user.id, row.telegramUserId);

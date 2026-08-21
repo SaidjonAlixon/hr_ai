@@ -114,7 +114,7 @@ export function useChatList(
   return useQuery({
     queryKey: ["chats"],
     queryFn: () => apiFetch<{ chats: ChatListItem[] }>("/chats"),
-    refetchInterval: 20_000,
+    refetchInterval: 45_000,
     ...options,
   });
 }

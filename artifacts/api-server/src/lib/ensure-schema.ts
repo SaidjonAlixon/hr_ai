@@ -279,11 +279,13 @@ CREATE TABLE IF NOT EXISTS face_profiles (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL,
   descriptor TEXT NOT NULL,
+  photo_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_used_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS face_profiles_user_uidx ON face_profiles (user_id);
+ALTER TABLE face_profiles ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
 CREATE TABLE IF NOT EXISTS attendance_records (
   id SERIAL PRIMARY KEY,
@@ -399,11 +401,13 @@ CREATE TABLE IF NOT EXISTS face_profiles (
   id SERIAL PRIMARY KEY,
   user_id INTEGER NOT NULL,
   descriptor TEXT NOT NULL,
+  photo_url TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   last_used_at TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX IF NOT EXISTS face_profiles_user_uidx ON face_profiles (user_id);
+ALTER TABLE face_profiles ADD COLUMN IF NOT EXISTS photo_url TEXT;
 
 CREATE TABLE IF NOT EXISTS attendance_records (
   id SERIAL PRIMARY KEY,

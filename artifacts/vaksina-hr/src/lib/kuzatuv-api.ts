@@ -344,7 +344,7 @@ export function useKuzatuvPeople(
     queryKey: ["kuzatuv-people", params.q ?? "", params.role ?? "all"],
     queryFn: () => fetchPeople(params),
     enabled,
-    refetchInterval: 20_000,
+    refetchInterval: 45_000,
   });
 }
 
@@ -353,7 +353,9 @@ export function useKuzatuv(enabled = true) {
     queryKey: ["kuzatuv"],
     queryFn: fetchKuzatuv,
     enabled,
-    refetchInterval: 15_000,
+    staleTime: 30_000,
+    refetchInterval: 45_000,
+    refetchOnWindowFocus: false,
   });
 }
 

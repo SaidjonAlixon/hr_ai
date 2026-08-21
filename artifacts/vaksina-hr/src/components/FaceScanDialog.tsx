@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ScanFace, Loader2, X } from "lucide-react";
+import { Loader2, ScanFace, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -9,13 +9,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  averageDescriptors,
+  averageDescriptorsRobust,
   detectFaceDescriptor,
-  detectFaceLiveness,
   ensureFaceModels,
   faceAlignHint,
   isFaceIdSupported,
-  LivenessTracker,
+  isStableSample,
   type FaceAlignStatus,
   type FaceOvalFrame,
 } from "@/lib/face-id";
@@ -45,14 +44,16 @@ function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
     ctx.translate(w, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, w, h);
-    return canvas.toDataURL("image/jpeg", 0.84);
+    return canvas.toDataURL("image/jpeg", 0.82);
   } catch {
     return undefined;
   }
 }
 
-const ENROLL_SAMPLES = 5;
-const LOGIN_STREAK = 2;
+const ENROLL_SAMPLES = 9;
+const LOGIN_STREAK = 4;
+const MIN_SCORE_ENROLL = 0.7;
+const MIN_SCORE_LOGIN = 0.65;
 
 export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, description }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -60,27 +61,27 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const streamRef = useRef<MediaStream | null>(null);
   const onCapturedRef = useRef(onCaptured);
   onCapturedRef.current = onCaptured;
+
   const [hint, setHint] = useState("Kamera ochilmoqda…");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aligned, setAligned] = useState(false);
-  const [liveOk, setLiveOk] = useState(false);
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
     if (!open) {
       setAligned(false);
-      setLiveOk(false);
       setProgress(0);
       setBusy(false);
       setError(null);
       return;
     }
+
     let cancelled = false;
     const samples: number[][] = [];
     let loginStreak = 0;
     let running = true;
-    const liveness = new LivenessTracker();
+    let lastDesc: number[] | null = null;
 
     const stopCamera = () => {
       running = false;
@@ -107,9 +108,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setError(null);
       setBusy(false);
       setAligned(false);
-      setLiveOk(false);
       setProgress(0);
-      liveness.reset();
+      lastDesc = null;
+      samples.length = 0;
       if (!isFaceIdSupported()) {
         setError("Kamera faqat localhost yoki HTTPS da ishlaydi");
         return;
@@ -123,8 +124,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           audio: false,
           video: {
             facingMode: { ideal: "user" },
-            width: { ideal: 720 },
-            height: { ideal: 960 },
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
           },
         });
         if (cancelled) {
@@ -136,115 +137,98 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         if (!video) return;
         video.srcObject = stream;
         await video.play();
-        setHint("Yuzingizni oval ramka ichiga tuting");
+        setHint(
+          mode === "enroll"
+            ? "Yuzni oval ichiga joylashtiring — bir necha aniq kadr olinadi"
+            : "Yuzni oval ichiga tuting",
+        );
+
+        const minScore = mode === "enroll" ? MIN_SCORE_ENROLL : MIN_SCORE_LOGIN;
 
         const loop = async () => {
           if (!running || cancelled) return;
           const videoEl = videoRef.current;
           if (videoEl && videoEl.readyState >= 2) {
             try {
-              // Liveness gacha tez landmark; keyin to‘liq descriptor
-              const needDesc = liveness.isLive;
-              const result = needDesc
-                ? await detectFaceDescriptor(videoEl, readFrame(), true)
-                : await detectFaceLiveness(videoEl, readFrame(), true);
+              const result = await detectFaceDescriptor(videoEl, readFrame(), true);
               const alignStatus: FaceAlignStatus = result.status;
               const inFrame = alignStatus === "ok";
               setAligned(inFrame);
 
               if (!inFrame) {
                 loginStreak = 0;
+                lastDesc = null;
                 if (mode === "enroll" && samples.length > 0) {
                   samples.length = 0;
                   setProgress(0);
                 }
-                if (alignStatus === "no_face") {
-                  liveness.reset();
-                  setLiveOk(false);
-                }
                 setHint(faceAlignHint(alignStatus));
+              } else if (!result.descriptor || (result.score ?? 0) < minScore) {
+                setHint(faceAlignHint("low_quality"));
+                loginStreak = 0;
+              } else if (!isStableSample(lastDesc, result.descriptor)) {
+                lastDesc = result.descriptor;
+                loginStreak = 0;
+                setHint(faceAlignHint("hold_still"));
               } else {
-                const liveStatus = liveness.update(result.ear);
-                const isLive = liveness.isLive;
-                setLiveOk(isLive);
+                lastDesc = result.descriptor;
+                const desc = result.descriptor;
 
-                if (!isLive) {
-                  loginStreak = 0;
-                  setHint(faceAlignHint(liveStatus));
-                } else {
-                  // Jonli tasdiqlandi — descriptor olish (agar hali yo‘q bo‘lsa)
-                  let desc = result.descriptor;
-                  if (!desc) {
-                    const full = await detectFaceDescriptor(videoEl, readFrame(), true);
-                    if (full.status !== "ok" || !full.descriptor) {
-                      setHint(faceAlignHint(full.status === "ok" ? "no_face" : full.status));
-                      if (running && !cancelled) window.setTimeout(() => void loop(), 80);
-                      return;
+                if (mode === "enroll") {
+                  samples.push(desc);
+                  setProgress(Math.min(samples.length, ENROLL_SAMPLES));
+                  setHint(`Aniq kadr ${Math.min(samples.length, ENROLL_SAMPLES)}/${ENROLL_SAMPLES}`);
+                  if (samples.length >= ENROLL_SAMPLES) {
+                    running = false;
+                    setBusy(true);
+                    setHint("Yuz saqlanmoqda…");
+                    try {
+                      await onCapturedRef.current(
+                        averageDescriptorsRobust(samples.slice(0, ENROLL_SAMPLES)),
+                        grabFaceSnapshot(videoEl),
+                      );
+                      stopCamera();
+                      onOpenChange(false);
+                    } catch (err) {
+                      setError((err as Error)?.message || "Saqlanmadi");
+                      setBusy(false);
+                      samples.length = 0;
+                      setProgress(0);
+                      lastDesc = null;
+                      running = true;
                     }
-                    desc = full.descriptor;
+                    if (running && !cancelled) window.setTimeout(() => void loop(), 400);
+                    return;
                   }
-                  if (mode === "enroll") {
-                    samples.push(desc);
-                    setProgress(Math.min(samples.length, ENROLL_SAMPLES));
-                    setHint(`Jonli yuz ${Math.min(samples.length, ENROLL_SAMPLES)}/${ENROLL_SAMPLES}`);
-                    if (samples.length >= ENROLL_SAMPLES) {
-                      running = false;
-                      setBusy(true);
-                      setHint("Yuz saqlanmoqda…");
-                      try {
-                        await onCapturedRef.current(
-                          averageDescriptors(samples.slice(0, ENROLL_SAMPLES)),
-                          grabFaceSnapshot(videoEl),
-                        );
-                        stopCamera();
-                        onOpenChange(false);
-                      } catch (err) {
-                        setError((err as Error)?.message || "Saqlanmadi");
-                        setBusy(false);
-                        samples.length = 0;
-                        setProgress(0);
-                        liveness.reset();
-                        setLiveOk(false);
-                        running = true;
+                } else {
+                  loginStreak += 1;
+                  setProgress(loginStreak);
+                  setHint(faceAlignHint("ok"));
+                  if (loginStreak >= LOGIN_STREAK) {
+                    running = false;
+                    setBusy(true);
+                    setHint("Yuz tekshirilmoqda…");
+                    try {
+                      const captured = await onCapturedRef.current(desc, grabFaceSnapshot(videoEl));
+                      const name =
+                        captured && typeof captured === "object" && captured.fullName
+                          ? captured.fullName.trim()
+                          : "";
+                      if (name) {
+                        setError(null);
+                        setHint(`Xush kelibsiz, ${name}`);
+                        await new Promise((r) => window.setTimeout(r, 800));
                       }
-                      if (running && !cancelled) window.setTimeout(() => void loop(), 400);
+                      stopCamera();
+                      onOpenChange(false);
                       return;
-                    }
-                  } else {
-                    loginStreak += 1;
-                    setProgress(loginStreak);
-                    setHint(faceAlignHint("ok"));
-                    if (loginStreak >= LOGIN_STREAK) {
-                      running = false;
-                      setBusy(true);
-                      setHint("Yuz tekshirilmoqda…");
-                      try {
-                        const captured = await onCapturedRef.current(desc, grabFaceSnapshot(videoEl));
-                        const name =
-                          captured && typeof captured === "object" && captured.fullName
-                            ? captured.fullName.trim()
-                            : "";
-                        if (name) {
-                          setError(null);
-                          setHint(`Xush kelibsiz, ${name}`);
-                          setLiveOk(true);
-                          await new Promise((r) => window.setTimeout(r, 1100));
-                        }
-                        stopCamera();
-                        onOpenChange(false);
-                        return;
-                      } catch (err) {
-                        setError(
-                          (err as Error)?.message ||
-                            "Bu yuz aniqlanmadi. Ro‘yxatdan o‘ting.",
-                        );
-                        setBusy(false);
-                        loginStreak = 0;
-                        setProgress(0);
-                        liveness.reset();
-                        setLiveOk(false);
-                        running = true;
-                      }
+                    } catch (err) {
+                      setError((err as Error)?.message || "Bu yuz aniqlanmadi.");
+                      setBusy(false);
+                      loginStreak = 0;
+                      setProgress(0);
+                      lastDesc = null;
+                      running = true;
                     }
                   }
                 }
@@ -254,12 +238,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               return;
             }
           }
-          if (running && !cancelled) window.setTimeout(() => void loop(), needDescDelay(liveness.isLive));
+          if (running && !cancelled) window.setTimeout(() => void loop(), 85);
         };
 
-        function needDescDelay(isLive: boolean) {
-          return isLive ? 100 : 55;
-        }
         void loop();
       } catch (err) {
         if (cancelled) return;
@@ -280,7 +261,6 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   }, [open, mode, onOpenChange]);
 
   const steps = mode === "enroll" ? ENROLL_SAMPLES : LOGIN_STREAK;
-  const ready = aligned && liveOk;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -295,11 +275,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
             {description ||
-              "Rasm bilan ochilmaydi. Ko‘zni ochiq tuting, keyin buyruqda SEKIN 2 marta yumib oching (tez miltillash o‘tmaydi)."}
+              (mode === "enroll"
+                ? "Kameraga to‘g‘ri qarang — bir necha aniq kadr olinadi."
+                : "Kameraga qarang — yuzingiz aniqlanadi.")}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="relative mx-auto w-full overflow-hidden rounded-3xl bg-zinc-950 aspect-[3/4] max-h-[min(62dvh,440px)] sm:aspect-[4/3] sm:max-h-[min(52vh,380px)]">
+        <div className="relative mx-auto w-full overflow-hidden rounded-3xl bg-zinc-950 aspect-[3/4] max-h-[min(56dvh,420px)] sm:aspect-[4/3] sm:max-h-[min(48vh,360px)]">
           <video
             ref={videoRef}
             className="absolute inset-0 h-full w-full object-cover -scale-x-100"
@@ -312,21 +294,19 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               ref={ovalRef}
               className={cn(
                 "w-[68%] max-w-[230px] aspect-[3/4] rounded-full border-[3px] transition-all duration-200 sm:w-[52%] sm:max-w-[210px]",
-                ready
-                  ? "border-emerald-400 shadow-[0_0_0_999px_rgba(0,0,0,0.58),0_0_28px_rgba(52,211,153,0.65)]"
-                  : aligned
-                    ? "border-amber-300 shadow-[0_0_0_999px_rgba(0,0,0,0.58),0_0_20px_rgba(251,191,36,0.45)]"
-                    : "border-white/85 shadow-[0_0_0_999px_rgba(0,0,0,0.58)]",
+                aligned
+                  ? "border-emerald-400 shadow-[0_0_0_999px_rgba(0,0,0,0.58),0_0_28px_rgba(52,211,153,0.55)]"
+                  : "border-white/85 shadow-[0_0_0_999px_rgba(0,0,0,0.58)]",
               )}
             />
           </div>
-          <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full px-3 py-1 text-[11px] font-medium text-white">
-            {ready ? (
-              <span className="rounded-full bg-emerald-500/90 px-3 py-1">Jonli yuz ✓</span>
-            ) : aligned ? (
-              <span className="rounded-full bg-amber-500/90 px-3 py-1">Buyruqni bajaring</span>
-            ) : null}
-          </div>
+          {aligned ? (
+            <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
+              <span className="rounded-full bg-emerald-500/90 px-3 py-1 text-[11px] font-medium text-white">
+                Yuz aniq ✓
+              </span>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex justify-center gap-1.5">
@@ -344,7 +324,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         <p
           className={cn(
             "min-h-5 text-center text-sm",
-            error ? "text-red-600" : ready ? "text-emerald-700" : "text-slate-600",
+            error ? "text-red-600" : aligned ? "text-emerald-700" : "text-slate-600",
           )}
         >
           {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}

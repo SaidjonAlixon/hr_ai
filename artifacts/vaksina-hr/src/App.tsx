@@ -44,9 +44,12 @@ import AdminHolatPage from './pages/admin/holat';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
 import AdminKirishVideosPage from './pages/admin/kirish-videos';
+import AdminFacesPage from './pages/admin/faces';
+import AdminFacesSimilarPage from './pages/admin/faces-similar';
 import EmployeesPage from './pages/employees/index';
 import DavomatPage from './pages/davomat/index';
 import DavomatFacePage from './pages/davomat/face';
+import DavomatFarOfficePage from './pages/davomat/far-office';
 import NotificationsPage from './pages/notifications/index';
 import TgEntryPage from './pages/tg-entry';
 import NotFound from './pages/not-found';
@@ -54,8 +57,14 @@ import NotFound from './pages/not-found';
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      retry: 1,
-      refetchOnWindowFocus: true,
+      retry: (count, err) => {
+        const status = (err as { status?: number } | undefined)?.status;
+        if (status === 401 || status === 403 || status === 404 || status === 204) return false;
+        return count < 1;
+      },
+      staleTime: 45_000,
+      gcTime: 10 * 60_000,
+      refetchOnWindowFocus: false,
       refetchOnReconnect: true,
     },
   },
@@ -129,6 +138,7 @@ function Router() {
       
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
+      <ProtectedRoute path="/davomat-uzoq" component={DavomatFarOfficePage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/kuzatuv" component={KuzatuvPage} />
@@ -138,6 +148,8 @@ function Router() {
       <ProtectedRoute path="/admin/holat" component={AdminHolatPage} />
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
+      <ProtectedRoute path="/admin/faces" component={AdminFacesPage} />
+      <ProtectedRoute path="/admin/faces-similar" component={AdminFacesSimilarPage} />
       
       <Route component={NotFound} />
     </Switch>

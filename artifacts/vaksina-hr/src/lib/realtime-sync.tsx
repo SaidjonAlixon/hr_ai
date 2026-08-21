@@ -14,9 +14,9 @@ type SyncPayload = {
   newMessages: ChatMessage[];
 };
 
-const POLL_CHAT_MS = 2_500;
-const POLL_IDLE_MS = 8_000;
-const BACKOFF_MAX_MS = 30_000;
+const POLL_CHAT_MS = 4_500;
+const POLL_IDLE_MS = 20_000;
+const BACKOFF_MAX_MS = 45_000;
 
 function activeChatIdFromUrl(): number | null {
   try {
@@ -198,8 +198,12 @@ export function RealtimeSync() {
       const afterMsgId = lastPositiveMsgId(cached?.messages);
 
       const params = new URLSearchParams();
-      if (chatId) params.set("chatId", String(chatId));
-      if (afterMsgId > 0) params.set("afterMsgId", String(afterMsgId));
+      if (chatId) {
+        params.set("chatId", String(chatId));
+        if (afterMsgId > 0) params.set("afterMsgId", String(afterMsgId));
+      } else {
+        params.set("light", "1");
+      }
 
       try {
         const res = await fetch(`/api/realtime/sync?${params.toString()}`, {

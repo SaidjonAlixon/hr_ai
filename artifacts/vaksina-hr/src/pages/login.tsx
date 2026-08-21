@@ -30,16 +30,25 @@ export default function Login() {
 
   const handleLogin = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!login || !password) return;
+    const loginTrim = login.trim();
+    const passwordTrim = password.trim();
+    if (!loginTrim || !passwordTrim) return;
 
-    mutate({ data: { login, password } }, {
+    mutate({ data: { login: loginTrim, password: passwordTrim } }, {
       onSuccess: (data) => {
         goAfterLogin(data.user);
       },
-      onError: () => {
+      onError: (err) => {
+        const data = (err as { data?: { error?: string }; message?: string } | undefined)?.data;
+        const msg =
+          (typeof data?.error === 'string' && data.error) ||
+          (typeof (err as { message?: string })?.message === 'string'
+            ? String((err as { message?: string }).message).replace(/^HTTP \d+ [^:]+:\s*/, '')
+            : null) ||
+          "Login yoki parol noto'g'ri";
         toast({
           title: 'Xatolik',
-          description: 'Login yoki parol noto\'g\'ri',
+          description: msg,
           variant: 'destructive',
         });
       }

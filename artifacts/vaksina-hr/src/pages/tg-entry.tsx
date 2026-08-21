@@ -63,15 +63,6 @@ function prepareTelegramUi() {
   return true;
 }
 
-async function fetchExistingSession(): Promise<User | null> {
-  const res = await fetch("/api/auth/me", {
-    credentials: "include",
-    headers: { Accept: "application/json" },
-  });
-  if (!res.ok) return null;
-  return res.json() as Promise<User>;
-}
-
 async function miniAuth(payload: { initData?: string; token?: string }): Promise<User> {
   const res = await fetch("/api/telegram/mini-auth", {
     method: "POST",
@@ -96,7 +87,11 @@ function redirectAfterLogin(user: User, next: string | null, setLocation: (path:
   setLocation(user.role === "stajyor" ? "/kirish" : "/dashboard");
 }
 
-/** Telegram Mini App kirish — doimiy sessiya (login/parol botda bir marta) */
+/**
+ * Telegram Mini App kirish.
+ * Muhim: URL dagi token / Telegram initData — eski brauzer cookiesidan ustun.
+ * Aks holda yangi login/parol yuborilsa ham avvalgi akkaunt ochilib qolardi.
+ */
 export default function TgEntryPage() {
   const { setUser } = useAuth();
   const [, setLocation] = useLocation();
@@ -110,24 +105,25 @@ export default function TgEntryPage() {
     async function run() {
       prepareTelegramUi();
       const next = readNextFromUrl();
+      const token = readTokenFromUrl();
+      const initData = window.Telegram?.WebApp?.initData?.trim() || "";
 
       setPhase("auth");
       try {
-        // 1. Mavjud sessiya (yopib qayta ochganda)
-        const existing = await fetchExistingSession();
-        if (cancelled) return;
-        if (existing) {
-          setUser(existing);
-          redirectAfterLogin(existing, next, setLocation);
+        // 1) Botdagi yangi «Platformaga kirish» — bir martalik token (shu akkaunt)
+        if (token) {
+          const u = await miniAuth({ token });
+          if (cancelled) return;
+          setUser(u);
+          redirectAfterLogin(u, next, setLocation);
           toast({
             title: "Xush kelibsiz",
-            description: existing.fullName,
+            description: `${u.fullName} · Telegram`,
           });
           return;
         }
 
-        // 2. Telegram initData — bog‘langan akkaunt
-        const initData = window.Telegram?.WebApp?.initData?.trim();
+        // 2) Mini App initData — Telegramga bog‘langan joriy akkaunt
         if (initData) {
           const u = await miniAuth({ initData });
           if (cancelled) return;
@@ -140,18 +136,23 @@ export default function TgEntryPage() {
           return;
         }
 
-        // 3. Eski bir martalik token (orqaga moslik)
-        const token = readTokenFromUrl();
-        if (token) {
-          const u = await miniAuth({ token });
+        // 3) Faqat token/initData yo‘q bo‘lsa — mavjud cookie (oddiy brauzer)
+        const res = await fetch("/api/auth/me", {
+          credentials: "include",
+          headers: { Accept: "application/json" },
+        });
+        if (res.ok) {
+          const existing = (await res.json()) as User;
           if (cancelled) return;
-          setUser(u);
-          redirectAfterLogin(u, next, setLocation);
-          toast({
-            title: "Xush kelibsiz",
-            description: `${u.fullName} · Mini App`,
-          });
-          return;
+          if (existing?.id) {
+            setUser(existing);
+            redirectAfterLogin(existing, next, setLocation);
+            toast({
+              title: "Xush kelibsiz",
+              description: existing.fullName,
+            });
+            return;
+          }
         }
 
         setPhase("error");
@@ -180,7 +181,7 @@ export default function TgEntryPage() {
             Telegram orqali kirilmoqda…
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Sessiyangiz tekshirilmoqda
+            Sessiyangiz yangilanmoqda
           </p>
         </>
       ) : (
@@ -188,7 +189,7 @@ export default function TgEntryPage() {
           <p className="text-base font-semibold text-rose-700">Kirish amalga oshmadi</p>
           <p className="mt-2 max-w-sm text-sm text-slate-600">{error}</p>
           <p className="mt-4 text-xs text-muted-foreground">
-            Botga qaytib login va parol yuboring yoki «Chiqish» bosgan bo‘lsangiz qayta kiriting.
+            Botga qaytib login va parol yuboring — yangi xabardagi «Platformaga kirish» ni bosing.
           </p>
           <a
             href="/login"

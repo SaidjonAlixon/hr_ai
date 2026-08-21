@@ -25,16 +25,27 @@ import {
   DialogTitle,
 } from '../../components/ui/dialog';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../components/ui/alert-dialog';
+import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download } from 'lucide-react';
+import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2 } from 'lucide-react';
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
+  useHardDeletePharmacyEmployee,
   useSaveManagerLocation,
   useOwnMudirCredentials,
   useOwnStaffLogins,
@@ -313,11 +324,19 @@ export default function PharmacyNetworkPage() {
   const { mutate: confirmAlert, isPending: confirming } = useConfirmStaffingAlert();
   const { mutate: cancelAlert, isPending: cancelling } = useCancelStaffingAlert();
   const createStaff = useCreatePharmacyStaff();
+  const hardDeleteStaff = useHardDeletePharmacyEmployee();
   const saveBranchGps = useSaveManagerLocation();
 
   const canAddMudir = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
   const canAddTeam = user?.role === 'mudir';
   const canAddStaff = canAddMudir || canAddTeam;
+  const canHardDelete =
+    user?.role === 'admin' ||
+    user?.role === 'hr' ||
+    user?.role === 'hr_menejer' ||
+    user?.role === 'hr_direktor' ||
+    user?.role === 'director';
+  const canPickFilialForStaff = canAddMudir;
 
   const canSeeFullNetwork =
     isHrRole(user?.role) ||
@@ -406,6 +425,7 @@ export default function PharmacyNetworkPage() {
   const [createdCreds, setCreatedCreds] = useState<PharmacyStaffResult | null>(null);
   const [showPwd, setShowPwd] = useState(false);
   const [gpsDraft, setGpsDraft] = useState<Record<number, string>>({});
+  const [branchNameDraft, setBranchNameDraft] = useState<Record<number, string>>({});
   const [gpsEditingId, setGpsEditingId] = useState<number | null>(null);
   const [savedGps, setSavedGps] = useState<Record<number, { lat: number; lng: number }>>({});
   const [credTarget, setCredTarget] = useState<{
@@ -415,6 +435,13 @@ export default function PharmacyNetworkPage() {
   } | null>(null);
   const [credLogin, setCredLogin] = useState('');
   const [credPassword, setCredPassword] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{
+    id: number;
+    userId: number | null;
+    fullName: string;
+    kind: 'filial' | 'staff';
+    staffCount?: number;
+  } | null>(null);
 
   const orgPeople = useMemo(
     () => (employees ?? []).filter((e) => !!e.orgRole),
@@ -636,6 +663,49 @@ export default function PharmacyNetworkPage() {
     setEmploymentStatus(empStatus(person));
   };
 
+  const openDeleteTarget = (person: Employee, staffCount = 0) => {
+    const kind = person.orgRole === 'manager' ? 'filial' : 'staff';
+    setDeleteTarget({
+      id: person.id,
+      userId: person.userId ?? null,
+      fullName: person.fullName,
+      kind,
+      staffCount: kind === 'filial' ? staffCount : 0,
+    });
+  };
+
+  const confirmHardDelete = () => {
+    if (!deleteTarget) return;
+    hardDeleteStaff.mutate(
+      {
+        employeeId: deleteTarget.id,
+        userId: deleteTarget.userId,
+        fullName: deleteTarget.fullName,
+      },
+      {
+        onSuccess: (data) => {
+          setDeleteTarget(null);
+          setEditTarget(null);
+          setExpandedId(null);
+          void refetch();
+          void refetchAlerts();
+          toast({
+            title: 'O‘chirildi',
+            description: data.message,
+          });
+        },
+        onError: (err: Error) => {
+          void refetch();
+          toast({
+            title: 'O‘chirilmadi',
+            description: err.message || 'Xatolik',
+            variant: 'destructive',
+          });
+        },
+      },
+    );
+  };
+
   const openAddStaff = (kind: 'mudir' | 'xodim' = canAddMudir ? 'mudir' : 'xodim', managerId?: number) => {
     setFirstName('');
     setLastName('');
@@ -657,7 +727,7 @@ export default function PharmacyNetworkPage() {
       toast({ title: 'Telefon raqam kiriting', variant: 'destructive' });
       return;
     }
-    if (addKind === 'xodim' && isKoordinatorOnly && !addManagerId) {
+    if (addKind === 'xodim' && canPickFilialForStaff && !addManagerId && !canAddTeam) {
       toast({ title: 'Filialni tanlang', variant: 'destructive' });
       return;
     }
@@ -785,20 +855,47 @@ export default function PharmacyNetworkPage() {
 
   const saveBranchLocation = (manager: BranchEmployee) => {
     const coordinates = (gpsDraft[manager.id] || '').trim();
-    const bad = gpsInputError(coordinates);
-    if (bad) {
+    const branchName = (branchNameDraft[manager.id] ?? displayBranchName(manager.location) ?? '').trim();
+    const fromField = gpsFromLocationField(manager.location);
+    const hasExistingGps =
+      (typeof manager.latitude === 'number' && typeof manager.longitude === 'number') ||
+      Boolean(fromField) ||
+      Boolean(savedGps[manager.id]);
+
+    if (coordinates) {
+      const bad = gpsInputError(coordinates);
+      if (bad) {
+        toast({
+          title: 'Koordinata to‘liq emas',
+          description: bad,
+          variant: 'destructive',
+        });
+        return;
+      }
+    } else if (!hasExistingGps) {
       toast({
-        title: 'Koordinata to‘liq emas',
-        description: bad,
+        title: 'Koordinata kerak',
+        description: `Avval GPS yozing: 41°18'23.3"N 69°18'28.0"E`,
         variant: 'destructive',
       });
       return;
     }
+
+    if (!branchName || branchName === 'Filial' || branchName === 'Lokatsiya') {
+      toast({
+        title: 'Filial nomini yozing',
+        description: 'Masalan: Novza, Olmos 2, Chilonzor',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     saveBranchGps.mutate(
       {
         employeeId: manager.id,
         coordinates,
-        keepLocation: displayBranchName(manager.location),
+        branchName,
+        keepLocation: branchName,
       },
       {
         onSuccess: (data) => {
@@ -809,11 +906,16 @@ export default function PharmacyNetworkPage() {
             }));
           }
           toast({
-            title: 'Lokatsiya saqlandi',
-            description: 'Pinni bosing — xarita ochiladi',
+            title: 'Saqlandi',
+            description: `«${displayBranchName(data.location) || branchName}» — pinni bosing, xarita ochiladi`,
           });
           setGpsEditingId(null);
           setGpsDraft((prev) => {
+            const next = { ...prev };
+            delete next[manager.id];
+            return next;
+          });
+          setBranchNameDraft((prev) => {
             const next = { ...prev };
             delete next[manager.id];
             return next;
@@ -1387,6 +1489,16 @@ export default function PharmacyNetworkPage() {
                                       <Pencil className="h-3.5 w-3.5" />
                                     </button>
                                   )}
+                                  {canHardDelete && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDeleteTarget(ph)}
+                                      className="rounded p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                                      title="Butunlay o‘chirish"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                                 <div className="mt-1 flex flex-wrap gap-1">
                                   <ShiftBadge
@@ -1513,37 +1625,88 @@ export default function PharmacyNetworkPage() {
                             gpsEditingId === manager.id || (canSetBranchGps && !hasGps && !hasName);
                           if (canSetBranchGps && editing) {
                             return (
-                              <div className="min-w-0 flex-1 space-y-1.5">
-                                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
-                                  Filial koordinatasi
-                                </label>
-                                <textarea
-                                  value={gpsDraft[manager.id] ?? ''}
-                                  onChange={(e) =>
-                                    setGpsDraft((prev) => ({ ...prev, [manager.id]: e.target.value }))
-                                  }
-                                  placeholder={`41°18'23.3"N 69°18'28.0"E`}
-                                  rows={2}
-                                  className="w-full resize-none rounded-md border border-input bg-background px-2.5 py-1.5 font-mono text-xs leading-snug"
-                                />
-                                <p className="text-[10px] leading-snug text-slate-500">
-                                  Google Maps dan to‘liq nusxa: kenglik (N) va uzunlik (E)
-                                </p>
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  className="h-8 w-full sm:w-auto"
-                                  disabled={saveBranchGps.isPending}
-                                  onClick={() => saveBranchLocation(branch)}
-                                >
-                                  {saveBranchGps.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
-                                </Button>
+                              <div className="min-w-0 flex-1 space-y-2">
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                    Filial nomi
+                                  </label>
+                                  <Input
+                                    value={
+                                      branchNameDraft[manager.id] ??
+                                      (hasName ? displayName : '')
+                                    }
+                                    onChange={(e) =>
+                                      setBranchNameDraft((prev) => ({
+                                        ...prev,
+                                        [manager.id]: e.target.value,
+                                      }))
+                                    }
+                                    placeholder="Masalan: Novza, Olmos 2"
+                                    className="h-9 text-sm"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                    Koordinata (GPS)
+                                  </label>
+                                  <textarea
+                                    value={gpsDraft[manager.id] ?? ''}
+                                    onChange={(e) =>
+                                      setGpsDraft((prev) => ({ ...prev, [manager.id]: e.target.value }))
+                                    }
+                                    placeholder={`41°18'23.3"N 69°18'28.0"E`}
+                                    rows={2}
+                                    className="w-full resize-none rounded-md border border-input bg-background px-2.5 py-1.5 font-mono text-xs leading-snug"
+                                  />
+                                  <p className="text-[10px] leading-snug text-slate-500">
+                                    Google Maps dan nusxa. Agar GPS allaqachon bor bo‘lsa, faqat nomni
+                                    o‘zgartirish mumkin.
+                                  </p>
+                                </div>
+                                <div className="flex flex-wrap gap-2">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    className="h-9 min-w-[7rem] flex-1 sm:flex-none"
+                                    disabled={saveBranchGps.isPending}
+                                    onClick={() => saveBranchLocation(branch)}
+                                  >
+                                    {saveBranchGps.isPending ? 'Saqlanmoqda…' : 'Saqlash'}
+                                  </Button>
+                                  {gpsEditingId === manager.id && (hasGps || hasName) ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="outline"
+                                      className="h-9 flex-1 sm:flex-none"
+                                      onClick={() => {
+                                        setGpsEditingId(null);
+                                        setGpsDraft((prev) => {
+                                          const next = { ...prev };
+                                          delete next[manager.id];
+                                          return next;
+                                        });
+                                        setBranchNameDraft((prev) => {
+                                          const next = { ...prev };
+                                          delete next[manager.id];
+                                          return next;
+                                        });
+                                      }}
+                                    >
+                                      Bekor
+                                    </Button>
+                                  ) : null}
+                                </div>
                               </div>
                             );
                           }
-                          const label = hasName ? displayName : hasGps ? 'Lokatsiya' : 'Lokatsiya ko‘rsatilmagan';
+                          const label = hasName
+                            ? displayName
+                            : hasGps
+                              ? 'Nomsiz lokatsiya'
+                              : 'Lokatsiya yo‘q';
                           return (
-                            <div className="flex min-w-0 max-w-[calc(100%-3rem)] items-start gap-1">
+                            <div className="flex min-w-0 flex-1 items-center gap-2">
                               {hasGps ? (
                                 <a
                                   href={googleMapsUrl(lat, lng)}
@@ -1552,24 +1715,24 @@ export default function PharmacyNetworkPage() {
                                   title="Xaritada ochish"
                                   onClick={(e) => e.stopPropagation()}
                                   className={cn(
-                                    'inline-flex min-w-0 items-start gap-1.5 rounded-lg px-2 py-1 transition-colors hover:bg-sky-50 hover:text-sky-800',
+                                    'inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-2 transition-colors hover:bg-sky-50 hover:text-sky-800',
                                     alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
                                   )}
                                 >
-                                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
-                                  <span className="text-[11px] font-semibold leading-snug tracking-wide underline decoration-slate-300 underline-offset-2">
+                                  <MapPin className="h-4 w-4 shrink-0 opacity-80" />
+                                  <span className="min-w-0 truncate text-[12px] font-semibold leading-snug underline decoration-slate-300 underline-offset-2">
                                     {label}
                                   </span>
                                 </a>
                               ) : (
                                 <div
                                   className={cn(
-                                    'inline-flex min-w-0 items-start gap-1.5 rounded-lg px-2 py-1',
+                                    'inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-2',
                                     alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
                                   )}
                                 >
-                                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
-                                  <span className="text-[11px] font-semibold leading-snug tracking-wide">
+                                  <MapPin className="h-4 w-4 shrink-0 opacity-80" />
+                                  <span className="min-w-0 truncate text-[12px] font-semibold leading-snug">
                                     {label}
                                   </span>
                                 </div>
@@ -1577,10 +1740,14 @@ export default function PharmacyNetworkPage() {
                               {canSetBranchGps ? (
                                 <button
                                   type="button"
-                                  className="mt-1 shrink-0 text-slate-400 hover:text-primary"
-                                  title="Koordinatani o‘zgartirish"
+                                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-[#0b3a5c]/30 hover:text-[#0b3a5c]"
+                                  title="Nom va koordinatani tahrirlash"
                                   onClick={() => {
                                     setGpsEditingId(manager.id);
+                                    setBranchNameDraft((prev) => ({
+                                      ...prev,
+                                      [manager.id]: hasName ? displayName : '',
+                                    }));
                                     setGpsDraft((prev) => ({
                                       ...prev,
                                       [manager.id]:
@@ -1588,7 +1755,7 @@ export default function PharmacyNetworkPage() {
                                     }));
                                   }}
                                 >
-                                  <Pencil className="h-3 w-3" />
+                                  <Pencil className="h-3.5 w-3.5" />
                                 </button>
                               ) : null}
                             </div>
@@ -1614,6 +1781,16 @@ export default function PharmacyNetworkPage() {
                               <Plus className="h-4 w-4" />
                             </button>
                           )}
+                          {canAddMudir && !isKoordinatorOnly && (
+                            <button
+                              type="button"
+                              onClick={() => openAddStaff('xodim', manager.id)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                              title="Xodim qo‘shish"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          )}
                           {canAddTeam && (
                             <button
                               type="button"
@@ -1622,6 +1799,16 @@ export default function PharmacyNetworkPage() {
                               title="Xodim qo‘shish"
                             >
                               <Plus className="h-4 w-4" />
+                            </button>
+                          )}
+                          {canHardDelete && (
+                            <button
+                              type="button"
+                              onClick={() => openDeleteTarget(manager, fullTeam.length)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 shadow-sm hover:bg-rose-100"
+                              title="Filial va mudirni butunlay o‘chirish"
+                            >
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           )}
                           {(canEditShift || canEditStatus) && (
@@ -1788,6 +1975,16 @@ export default function PharmacyNetworkPage() {
                                             className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-primary"
                                           >
                                             <Pencil className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                        {canHardDelete && (
+                                          <button
+                                            type="button"
+                                            onClick={() => openDeleteTarget(ph)}
+                                            className="rounded p-0.5 text-rose-500 hover:bg-rose-50"
+                                            title="Butunlay o‘chirish"
+                                          >
+                                            <Trash2 className="h-3 w-3" />
                                           </button>
                                         )}
                                       </div>
@@ -2032,9 +2229,34 @@ export default function PharmacyNetworkPage() {
               </>
             )}
           </div>
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditTarget(null)}>Bekor qilish</Button>
-            <Button onClick={saveEditor} disabled={patchProfile.isPending}>Saqlash</Button>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            {canHardDelete && editTarget && editTarget.orgRole !== 'coordinator' ? (
+              <Button
+                type="button"
+                variant="outline"
+                className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50"
+                onClick={() => {
+                  const count =
+                    editTarget.orgRole === 'manager'
+                      ? (pharmacistsByManager.get(editTarget.id) ?? []).length
+                      : 0;
+                  openDeleteTarget(editTarget, count);
+                }}
+              >
+                <Trash2 className="h-4 w-4" />
+                Butunlay o‘chirish
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button variant="ghost" onClick={() => setEditTarget(null)}>
+                Bekor qilish
+              </Button>
+              <Button onClick={saveEditor} disabled={patchProfile.isPending}>
+                Saqlash
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2100,7 +2322,7 @@ export default function PharmacyNetworkPage() {
               </>
             ) : (
               <>
-                {isKoordinatorOnly ? (
+                {isKoordinatorOnly || (canPickFilialForStaff && !canAddTeam) ? (
                   <div className="space-y-1.5">
                     <Label>Filial</Label>
                     <Select value={addManagerId || undefined} onValueChange={setAddManagerId}>
@@ -2116,7 +2338,7 @@ export default function PharmacyNetworkPage() {
                       </SelectContent>
                     </Select>
                     <p className="text-[11px] text-muted-foreground">
-                      Faqat o‘z qo‘l ostidagi filiallar. Xodim shu mudir ostiga tushadi va Excelda chiqadi.
+                      Xodim shu mudir ostiga tushadi.
                     </p>
                   </div>
                 ) : null}
@@ -2232,6 +2454,48 @@ export default function PharmacyNetworkPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteTarget?.kind === 'filial' ? 'Filialni o‘chirish?' : 'Xodimni o‘chirish?'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2 text-sm text-slate-600">
+                <p>
+                  <span className="font-semibold text-slate-900">{deleteTarget?.fullName}</span>{' '}
+                  {deleteTarget?.kind === 'filial'
+                    ? 'filiali va mudiri tizimdan butunlay o‘chiriladi.'
+                    : 'tizimdan butunlay o‘chiriladi.'}
+                </p>
+                {deleteTarget?.kind === 'filial' && (deleteTarget.staffCount ?? 0) > 0 ? (
+                  <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">
+                    Shu filialdagi {deleteTarget.staffCount} ta farmasevt/stajyor ham o‘chadi.
+                  </p>
+                ) : null}
+                <p className="text-rose-700">
+                  Login, parol, davomat, Face ID va boshqa bog‘liq ma’lumotlar ham yo‘qoladi. Qaytarib
+                  bo‘lmaydi.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={hardDeleteStaff.isPending}>Bekor</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 hover:bg-rose-700"
+              disabled={hardDeleteStaff.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                confirmHardDelete();
+              }}
+            >
+              {hardDeleteStaff.isPending ? 'O‘chirilmoqda…' : 'Ha, o‘chirish'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

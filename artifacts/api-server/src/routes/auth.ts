@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, usersTable, departmentsTable } from "@workspace/db";
 import { setSessionCookie, clearSessionCookie } from "../lib/session";
 
@@ -50,7 +50,8 @@ function isDbDown(err: unknown): boolean {
 }
 
 router.post("/auth/login", async (req, res): Promise<void> => {
-  const { login, password } = req.body ?? {};
+  const login = String(req.body?.login ?? "").trim();
+  const password = String(req.body?.password ?? "").trim();
   if (!login || !password) {
     res.status(400).json({ error: "Login va parol kerak" });
     return;
@@ -60,9 +61,9 @@ router.post("/auth/login", async (req, res): Promise<void> => {
     const [user] = await db
       .select()
       .from(usersTable)
-      .where(eq(usersTable.login, login as string));
+      .where(sql`lower(${usersTable.login}) = lower(${login})`);
 
-    if (!user || user.password !== password) {
+    if (!user || String(user.password ?? "").trim() !== password) {
       res.status(401).json({ error: "Login yoki parol noto'g'ri" });
       return;
     }
@@ -114,6 +115,70 @@ router.get("/auth/me", async (req, res): Promise<void> => {
       return;
     }
     console.error("auth/me error:", err);
+    res.status(503).json({
+      error: isDbDown(err)
+        ? "Baza bilan aloqa yo‘q — birozdan keyin qayta urinib ko‘ring"
+        : "Server xatosi — qayta urinib ko‘ring",
+    });
+  }
+});
+
+/** O‘z profili: ism/familiya + parol (Excel export uchun bazada ochiq saqlanadi) */
+router.patch("/auth/profile", async (req, res): Promise<void> => {
+  const sessionCookie = req.cookies?.session;
+  if (!sessionCookie) {
+    res.status(401).json({ error: "Avtorizatsiya kerak" });
+    return;
+  }
+
+  let userId: number;
+  try {
+    const decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString());
+    userId = Number(decoded.userId);
+  } catch {
+    res.status(401).json({ error: "Noto‘g‘ri sessiya" });
+    return;
+  }
+  if (!Number.isFinite(userId)) {
+    res.status(401).json({ error: "Noto‘g‘ri sessiya" });
+    return;
+  }
+
+  const firstName = String(req.body?.firstName ?? "").trim();
+  const lastName = String(req.body?.lastName ?? "").trim();
+  const password = String(req.body?.password ?? "").trim();
+
+  if (!firstName || !lastName) {
+    res.status(400).json({ error: "Ism va familiyani kiriting" });
+    return;
+  }
+  if (!password) {
+    res.status(400).json({ error: "Yangi parolni kiriting" });
+    return;
+  }
+  if (password.length < 4) {
+    res.status(400).json({ error: "Parol kamida 4 belgi bo‘lsin" });
+    return;
+  }
+
+  const fullName = `${firstName} ${lastName}`.replace(/\s+/g, " ").trim();
+
+  try {
+    const [updated] = await db
+      .update(usersTable)
+      .set({ fullName, password })
+      .where(eq(usersTable.id, userId))
+      .returning({ id: usersTable.id });
+
+    if (!updated) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+
+    const user = await getUserWithDept(userId);
+    res.json({ user, message: "Profil yangilandi — parol bazaga saqlandi" });
+  } catch (err) {
+    console.error("auth/profile error:", err);
     res.status(503).json({
       error: isDbDown(err)
         ? "Baza bilan aloqa yo‘q — birozdan keyin qayta urinib ko‘ring"

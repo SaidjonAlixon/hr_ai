@@ -235,10 +235,15 @@ export function useSaveManagerLocation() {
     mutationFn: async (data: {
       employeeId: number;
       coordinates: string;
+      branchName?: string | null;
       keepLocation?: string | null;
     }) => {
-      const bad = gpsInputError(data.coordinates);
-      if (bad) throw new Error(bad);
+      const name = (data.branchName ?? data.keepLocation ?? "").trim();
+      // Nom + mavjud GPS: koordinata bo‘sh bo‘lishi mumkin
+      if (data.coordinates.trim()) {
+        const bad = gpsInputError(data.coordinates);
+        if (bad) throw new Error(bad);
+      }
 
       const tryPost = async (path: string) =>
         fetch(`/api${path}`, {
@@ -251,6 +256,7 @@ export function useSaveManagerLocation() {
           body: JSON.stringify({
             employeeId: data.employeeId,
             coordinates: data.coordinates,
+            branchName: name || null,
           }),
         });
 
@@ -261,11 +267,18 @@ export function useSaveManagerLocation() {
           const nested = await tryPost(`/pharmacy-network/managers/${data.employeeId}/location`);
           if (nested.ok) return (await nested.json()) as BranchGpsResult;
         }
-      } catch {
-        /* tarmoq xatosi — employees PATCH orqali saqlaymiz */
+        if (!first.ok) throw new Error(await readError(first));
+      } catch (err) {
+        if (err instanceof Error && err.message && !/fetch|network/i.test(err.message)) {
+          throw err;
+        }
       }
 
-      return saveViaEmployeesPatch(data.employeeId, data.coordinates, data.keepLocation);
+      return saveViaEmployeesPatch(
+        data.employeeId,
+        data.coordinates,
+        name || data.keepLocation,
+      );
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["/api/employees"] });
@@ -288,6 +301,44 @@ export function useCreatePharmacyStaff() {
       qc.invalidateQueries({ queryKey: ["/api/employees"] });
       qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
       qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+      qc.invalidateQueries({
+        predicate: (q) =>
+          JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
+}
+
+export type HardDeletePharmacyResult = {
+  ok: true;
+  kind: "filial" | "staff";
+  fullName: string;
+  deletedEmployees: number;
+  deletedUsers: number;
+  message: string;
+};
+
+export function useHardDeletePharmacyEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      employeeId: number;
+      userId?: number | null;
+      fullName?: string | null;
+    }) =>
+      apiFetch<HardDeletePharmacyResult>(`/pharmacy-network/hard-delete`, {
+        method: "POST",
+        body: JSON.stringify({
+          employeeId: data.employeeId,
+          userId: data.userId ?? null,
+          fullName: data.fullName ?? null,
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+      qc.invalidateQueries({ queryKey: ["/api/staffing/alerts"] });
       qc.invalidateQueries({
         predicate: (q) =>
           JSON.stringify(q.queryKey).toLowerCase().includes("employee"),

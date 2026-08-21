@@ -23,12 +23,14 @@ import {
   Network,
   Eye,
   ScanFace,
+  AlertTriangle,
   ChevronDown,
   Pin,
   Video,
   Trophy,
   BarChart3,
   Banknote,
+  MapPin,
 } from 'lucide-react';
 import {
   useLogout,
@@ -44,8 +46,26 @@ import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
+import { updateMyProfile } from '@/lib/face-id';
 import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+
+function splitFullName(full: string): { first: string; last: string } {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 1) return { first: parts[0] || '', last: '' };
+  return { first: parts[0]!, last: parts.slice(1).join(' ') };
+}
 
 type NavItem = {
   name: string;
@@ -108,7 +128,7 @@ const NAV_SECTIONS: {
     accent: 'bg-teal-400',
     line: 'border-teal-400/55',
     chip: 'text-teal-300',
-    paths: ['/davomat-face', '/davomat', '/checklist-holati'],
+    paths: ['/davomat-face', '/davomat', '/davomat-uzoq', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
@@ -124,7 +144,7 @@ const NAV_SECTIONS: {
     accent: 'bg-rose-400',
     line: 'border-rose-400/55',
     chip: 'text-rose-300',
-    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar'],
+    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/faces-similar'],
   },
 ];
 
@@ -173,6 +193,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/requests') || path.startsWith('/nazorat')) return '/requests';
   if (path.startsWith('/vacancies')) return '/vacancies';
   if (path.startsWith('/employees')) return '/employees';
+  if (path.startsWith('/davomat-face')) return '/davomat-face';
+  if (path.startsWith('/davomat-uzoq')) return '/davomat-uzoq';
   if (path.startsWith('/davomat')) return '/davomat';
   if (path.startsWith('/checklist-holati')) return '/checklist-holati';
   if (path.startsWith('/internships')) return '/internships';
@@ -188,6 +210,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/interviews')) return '/interviews';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/holat')) return '/admin/holat';
+  if (path.startsWith('/admin/faces-similar')) return '/admin/faces-similar';
+  if (path.startsWith('/admin/faces')) return '/admin/faces';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
   if (path.startsWith('/dashboard')) return '/dashboard';
@@ -251,6 +275,74 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
   });
   const markedPathsRef = useRef<Set<string>>(new Set());
+  const { toast } = useToast();
+  const [facePhotoUrl, setFacePhotoUrl] = React.useState<string | null>(null);
+  const [profileOpen, setProfileOpen] = React.useState(false);
+  const [profileFirst, setProfileFirst] = React.useState('');
+  const [profileLast, setProfileLast] = React.useState('');
+  const [profilePassword, setProfilePassword] = React.useState('');
+  const [profilePassword2, setProfilePassword2] = React.useState('');
+  const [profileSaving, setProfileSaving] = React.useState(false);
+
+  const onFaceStatusChange = React.useCallback(
+    (status: { registered: boolean; photoUrl?: string | null }) => {
+      setFacePhotoUrl(status.photoUrl ?? null);
+    },
+    [],
+  );
+
+  const openProfileEditor = () => {
+    const parts = splitFullName(user?.fullName || '');
+    setProfileFirst(parts.first);
+    setProfileLast(parts.last);
+    setProfilePassword('');
+    setProfilePassword2('');
+    setProfileOpen(true);
+  };
+
+  const saveProfile = async () => {
+    if (!profileFirst.trim() || !profileLast.trim()) {
+      toast({ title: 'Ism va familiyani kiriting', variant: 'destructive' });
+      return;
+    }
+    if (!profilePassword.trim()) {
+      toast({ title: 'Yangi parolni kiriting', variant: 'destructive' });
+      return;
+    }
+    if (profilePassword !== profilePassword2) {
+      toast({ title: 'Parollar mos kelmadi', variant: 'destructive' });
+      return;
+    }
+    setProfileSaving(true);
+    try {
+      const res = await updateMyProfile({
+        firstName: profileFirst.trim(),
+        lastName: profileLast.trim(),
+        password: profilePassword.trim(),
+      });
+      if (res.user && user) {
+        setUser({
+          ...user,
+          fullName: res.user.fullName,
+          id: res.user.id,
+          role: (res.user.role as typeof user.role) || user.role,
+        });
+      }
+      setProfileOpen(false);
+      toast({
+        title: 'Saqlandi',
+        description: 'Ism/familiya va yangi parol bazaga yozildi (Excelda ham shu chiqadi)',
+      });
+    } catch (err: unknown) {
+      toast({
+        title: 'Saqlanmadi',
+        description: err instanceof Error ? err.message : 'Xatolik',
+        variant: 'destructive',
+      });
+    } finally {
+      setProfileSaving(false);
+    }
+  };
 
   // Sahifa o‘zgaganda mobil menyuni yopish
   useEffect(() => {
@@ -286,20 +378,40 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const { data: unreadNotifications } = useGetNotifications(
     { unreadOnly: true },
-    { query: { enabled: !!user, refetchInterval: 30_000 } } as any,
+    {
+      query: {
+        enabled: !!user,
+        staleTime: 45_000,
+        refetchInterval: 90_000,
+        refetchOnWindowFocus: false,
+      },
+    } as any,
   );
 
+  // Badge uchun — og‘ir so‘rovlarni kam poll qilamiz (RealtimeSync yetarli)
   const { data: dashboardStats } = useGetDashboardStats({
-    query: { enabled: !!user, refetchInterval: 45_000 },
+    query: {
+      enabled: !!user,
+      staleTime: 60_000,
+      refetchInterval: 120_000,
+      refetchOnWindowFocus: false,
+    },
   } as any);
 
   const { data: staffingAlerts } = useStaffingAlerts('open', {
     enabled: !!user && isPharmacyStaff,
-    refetchInterval: 45_000,
+    staleTime: 60_000,
+    refetchInterval: 90_000,
+    refetchOnWindowFocus: false,
   });
 
   const { data: requests } = useGetRequests(undefined, {
-    query: { enabled: !!user && isHrLike, refetchInterval: 45_000 },
+    query: {
+      enabled: !!user && isHrLike,
+      staleTime: 60_000,
+      refetchInterval: 120_000,
+      refetchOnWindowFocus: false,
+    },
   } as any);
 
   const { data: draftVacancies } = useGetVacancies(
@@ -307,7 +419,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     {
       query: {
         enabled: !!user && (isRecruiter || isHrManager(user?.role)),
-        refetchInterval: 30_000,
+        staleTime: 60_000,
+        refetchInterval: 120_000,
+        refetchOnWindowFocus: false,
       },
     } as any,
   );
@@ -463,6 +577,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
   const kuzatuvNav = { name: 'Kuzatuv', path: '/kuzatuv', icon: Eye };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
+  const davomatFarNav = { name: 'Masofaviy', path: '/davomat-uzoq', icon: MapPin };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
 
@@ -488,6 +603,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFarNav,
       davomatFaceNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
@@ -510,6 +626,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
     { name: 'Xodimlar', path: '/employees', icon: Users },
     { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+    davomatFarNav,
     davomatFaceNav,
     { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
     { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
@@ -546,12 +663,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFarNav,
       davomatFaceNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
+      { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
+      { name: "O'xshash yuzlar", path: '/admin/faces-similar', icon: AlertTriangle },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -583,6 +703,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFarNav,
       davomatFaceNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
@@ -679,6 +800,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       chatNav,
       orgNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFarNav,
       davomatFaceNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },
@@ -691,6 +813,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       chatNav,
       orgNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFarNav,
       davomatFaceNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },
@@ -740,7 +863,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const renderNavItem = (
     item: NavItem,
-    opts: { collapsed: boolean; onNavigate?: () => void; nested?: boolean },
+    opts: { collapsed: boolean; onNavigate?: () => void; nested?: boolean; accentDot?: string },
   ) => {
     const count = badgeByPath[item.path] ?? 0;
     const active = pathIsActive(location, item.path);
@@ -751,18 +874,35 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           role="link"
           onClick={opts.onNavigate}
           className={cn(
-            'relative flex items-center rounded-lg hover:bg-white/10 cursor-pointer transition-colors',
-            opts.nested ? 'px-2.5 py-2' : 'px-3 py-3',
-            active && 'bg-white/15 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]',
+            'group relative flex items-center gap-3 rounded-xl cursor-pointer transition-all duration-200',
+            opts.nested ? 'px-3 py-2.5 md:py-2' : 'px-3 py-3',
+            active
+              ? 'bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]'
+              : 'text-white/75 hover:bg-white/[0.07] hover:text-white active:scale-[0.99]',
           )}
         >
+          {active ? (
+            <span
+              className={cn(
+                'absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full',
+                opts.accentDot || 'bg-sky-400',
+              )}
+            />
+          ) : null}
           <span className="relative shrink-0">
-            <item.icon className="w-5 h-5 min-w-[20px]" />
+            <item.icon
+              className={cn(
+                'h-5 w-5 min-w-[20px] transition-colors',
+                active ? 'text-white' : 'text-white/55 group-hover:text-white/90',
+              )}
+            />
             {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} />}
           </span>
           {!opts.collapsed && (
             <>
-              <span className="ml-3 font-medium text-sm min-w-0 break-words">{item.name}</span>
+              <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug break-words">
+                {item.name}
+              </span>
               <NavBadge count={count} pulse={pulse} />
             </>
           )}
@@ -771,20 +911,22 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     );
   };
 
-  const renderNavLinks = (opts: { collapsed: boolean; onNavigate?: () => void }) =>
+  const renderNavLinks = (opts: { collapsed: boolean; onNavigate?: () => void; mobile?: boolean }) =>
     navSections.map((section) => {
       const badgeSum = section.items.reduce((sum, item) => sum + (badgeByPath[item.path] ?? 0), 0);
       const hasActive = section.items.some((item) => pathIsActive(location, item.path));
       const pinned = pinnedSet.has(section.id);
-      const open = opts.collapsed || pinned || openSectionId === section.id;
+      const open = opts.collapsed || pinned || openSectionId === section.id || (opts.mobile && hasActive);
 
       if (opts.collapsed) {
         return (
-          <div key={section.id} className="flex flex-col gap-1">
+          <div key={section.id} className="flex flex-col gap-0.5">
             {section.id !== navSections[0]?.id ? (
-              <div className={cn('mx-2 my-1.5 h-0.5 rounded-full opacity-70', section.accent)} />
+              <div className={cn('mx-2.5 my-1.5 h-px rounded-full opacity-40', section.accent)} />
             ) : null}
-            {section.items.map((item) => renderNavItem(item, opts))}
+            {section.items.map((item) =>
+              renderNavItem(item, { ...opts, accentDot: section.accent }),
+            )}
           </div>
         );
       }
@@ -793,55 +935,61 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <div
           key={section.id}
           className={cn(
-            'mb-1 overflow-hidden rounded-xl transition-colors',
-            open ? 'bg-white/[0.05] ring-1 ring-white/10' : 'hover:bg-white/[0.03]',
+            'mb-1.5 overflow-hidden rounded-2xl transition-all duration-200',
+            open
+              ? 'bg-gradient-to-b from-white/[0.08] to-white/[0.03] ring-1 ring-white/10 shadow-[0_8px_24px_-16px_rgba(0,0,0,0.55)]'
+              : 'hover:bg-white/[0.04]',
           )}
         >
-          <div className="flex items-center gap-0.5 pr-1">
+          <div className="flex items-center gap-0.5 pr-1.5">
             <button
               type="button"
               onClick={() =>
                 setOpenSectionId((prev) => (prev === section.id && !pinned ? null : section.id))
               }
               className={cn(
-                'flex min-w-0 flex-1 items-center gap-2 rounded-lg px-2 py-2 text-left',
-                hasActive || open ? section.chip : 'text-white/50',
+                'flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left md:py-2',
+                hasActive || open ? section.chip : 'text-white/45',
               )}
             >
-              <span className={cn('h-4 w-1 shrink-0 rounded-full', section.accent)} />
-              <span className="min-w-0 flex-1 truncate text-[10px] font-semibold uppercase tracking-[0.14em]">
+              <span className={cn('h-5 w-1 shrink-0 rounded-full shadow-sm', section.accent)} />
+              <span className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-[0.16em]">
                 {section.label}
               </span>
               {badgeSum > 0 ? (
-                <span className="inline-flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-semibold leading-none text-white">
+                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm shadow-rose-900/40">
                   {badgeSum > 99 ? '99+' : badgeSum}
                 </span>
               ) : null}
               <ChevronDown
                 className={cn(
-                  'h-3.5 w-3.5 shrink-0 text-white/45 transition-transform',
+                  'h-3.5 w-3.5 shrink-0 text-white/40 transition-transform duration-200',
                   open && 'rotate-180',
                 )}
               />
             </button>
-            <button
-              type="button"
-              onClick={() => togglePin(section.id)}
-              title={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
-              aria-label={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
-              className={cn(
-                'shrink-0 rounded-md p-1.5 transition-colors',
-                pinned
-                  ? 'bg-amber-400/15 text-amber-300'
-                  : 'text-white/30 hover:bg-white/10 hover:text-white/70',
-              )}
-            >
-              <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
-            </button>
+            {!opts.mobile ? (
+              <button
+                type="button"
+                onClick={() => togglePin(section.id)}
+                title={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
+                aria-label={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
+                className={cn(
+                  'shrink-0 rounded-lg p-1.5 transition-colors',
+                  pinned
+                    ? 'bg-amber-400/20 text-amber-300'
+                    : 'text-white/25 hover:bg-white/10 hover:text-white/65',
+                )}
+              >
+                <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
+              </button>
+            ) : null}
           </div>
           {open ? (
-            <div className={cn('mb-1.5 ml-3 mr-1.5 flex flex-col gap-0.5 border-l-2 pl-2', section.line)}>
-              {section.items.map((item) => renderNavItem(item, { ...opts, nested: true }))}
+            <div className="mb-2 ml-3.5 mr-2 flex flex-col gap-0.5 border-l border-white/10 pl-2">
+              {section.items.map((item) =>
+                renderNavItem(item, { ...opts, nested: true, accentDot: section.accent }),
+              )}
             </div>
           ) : null}
         </div>
@@ -849,13 +997,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     });
 
   return (
-    <div className="flex h-[100dvh] bg-gray-50 overflow-hidden">
+    <div className="flex h-[100dvh] bg-[#f4f6f9] overflow-hidden">
       {/* Mobil: fon (overlay) */}
       {mobileOpen ? (
         <button
           type="button"
           aria-label="Menyuni yopish"
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
+          className="fixed inset-0 z-40 bg-[#06101c]/65 backdrop-blur-[2px] md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       ) : null}
@@ -863,71 +1011,202 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {/* Sidebar: mobilda drawer, desktopda doimiy */}
       <aside
         className={cn(
-          'text-sidebar-foreground flex flex-col transition-transform duration-300 ease-out',
-          'fixed inset-y-0 left-0 z-50 w-[min(18rem,88vw)]',
+          'text-sidebar-foreground flex flex-col transition-[transform,width] duration-300 ease-out',
+          'fixed inset-y-0 left-0 z-50 w-[min(19.5rem,92vw)]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
-          'md:static md:z-auto md:translate-x-0 md:transition-[width] md:duration-300',
-          desktopCollapsed ? 'md:w-20' : 'md:w-64',
+          'md:static md:z-auto md:translate-x-0',
+          desktopCollapsed ? 'md:w-[4.75rem]' : 'md:w-[16.5rem]',
+          'border-r border-white/[0.06] shadow-[8px_0_40px_-20px_rgba(0,0,0,0.55)]',
+          'rounded-none md:rounded-none',
+          mobileOpen && 'rounded-r-[1.35rem]',
         )}
-        style={{ backgroundColor: '#081323' }}
+        style={{
+          background:
+            'linear-gradient(180deg, #0a1728 0%, #081323 42%, #070f1c 100%)',
+        }}
       >
-        <div className="flex items-center justify-between gap-2 px-3 pt-[max(0.75rem,env(safe-area-inset-top))] pb-2 md:pt-3 shrink-0">
-          <div className={cn('min-w-0', desktopCollapsed && 'md:hidden')}>
-            <p className="text-sm font-semibold text-white truncate">VAKSINA MED</p>
-            <p className="text-[11px] text-sidebar-foreground/60 truncate">HR platforma</p>
+        <div className="relative shrink-0 overflow-hidden border-b border-white/[0.06] px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] pb-3.5 md:px-3 md:pt-4">
+          <div
+            className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-sky-500/15 blur-2xl"
+            aria-hidden
+          />
+          <div className="relative flex items-center justify-between gap-2">
+            <div className={cn('min-w-0', desktopCollapsed && 'md:hidden')}>
+              <p className="text-[15px] font-bold tracking-tight text-white">VAKSINA MED</p>
+              <p className="mt-0.5 text-[11px] font-medium tracking-wide text-sky-200/55">
+                HR platforma
+              </p>
+            </div>
+            {desktopCollapsed ? (
+              <div className="mx-auto hidden h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-[11px] font-bold text-sky-200 md:flex">
+                VM
+              </div>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => setMobileOpen(false)}
+              className="rounded-xl p-2 text-white/70 hover:bg-white/10 hover:text-white md:hidden"
+              aria-label="Yopish"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setMobileOpen(false)}
-            className="p-2 rounded-md text-sidebar-foreground/80 hover:bg-white/10 hover:text-white md:hidden"
-            aria-label="Yopish"
-          >
-            <X className="w-5 h-5" />
-          </button>
         </div>
 
-        <nav className="flex-1 py-2 flex flex-col gap-1 px-3 overflow-y-auto overscroll-contain">
-          {/* Mobil: har doim to‘liq matn */}
+        <nav className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-3 md:px-2.5">
+          {/* Mobil: kattaroq touch, pin yo‘q */}
           <div className="flex flex-col gap-1 md:hidden">
-            {renderNavLinks({ collapsed: false, onNavigate: () => setMobileOpen(false) })}
+            {renderNavLinks({
+              collapsed: false,
+              mobile: true,
+              onNavigate: () => setMobileOpen(false),
+            })}
           </div>
           {/* Desktop */}
-          <div className="hidden md:flex md:flex-col md:gap-1">
+          <div className="hidden md:flex md:flex-col md:gap-0.5">
             {renderNavLinks({ collapsed: desktopCollapsed })}
           </div>
         </nav>
 
-        <div className="p-4 border-t border-sidebar-border pb-[max(1rem,env(safe-area-inset-bottom))]">
-          <div className="flex items-center justify-between gap-2">
-            <div className={cn('flex flex-col min-w-0', desktopCollapsed && 'md:hidden')}>
-              <span className="text-sm font-semibold truncate">{user.fullName}</span>
-              <span className="text-xs text-sidebar-foreground/70 truncate">
-                {user.role.replace('_', ' ')}
-              </span>
-              <FaceIdEnroll compact />
+        <div className="shrink-0 border-t border-white/[0.07] bg-black/20 p-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] md:p-3">
+          <div
+            className={cn(
+              'flex items-center gap-2 rounded-2xl bg-white/[0.05] p-2.5 ring-1 ring-white/10',
+              desktopCollapsed && 'md:justify-center md:p-2',
+            )}
+          >
+            <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:flex-none')}>
+              <button
+                type="button"
+                onClick={openProfileEditor}
+                className={cn(
+                  'flex w-full min-w-0 items-center gap-2 rounded-xl text-left transition-colors hover:bg-white/[0.06]',
+                  desktopCollapsed && 'md:justify-center',
+                )}
+                title="Profilni tahrirlash"
+              >
+                <div
+                  className={cn(
+                    'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-sky-400/30 to-indigo-500/25 text-xs font-bold text-sky-100 ring-1 ring-white/15',
+                    desktopCollapsed && 'md:h-8 md:w-8',
+                  )}
+                >
+                  {facePhotoUrl ? (
+                    <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    (user.fullName || 'U').slice(0, 1).toUpperCase()
+                  )}
+                </div>
+                <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
+                  <span className="block truncate text-sm font-semibold text-white">{user.fullName}</span>
+                  <span className="block truncate text-[11px] capitalize text-white/45">
+                    {user.role.replace(/_/g, ' ')}
+                  </span>
+                </div>
+              </button>
+              <div className={cn(desktopCollapsed && 'md:hidden')}>
+                <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
+              </div>
             </div>
             <button
               onClick={handleLogout}
-              className="shrink-0 text-sidebar-foreground/70 hover:text-white transition-colors p-2 rounded-md hover:bg-white/10"
+              className="shrink-0 rounded-xl p-2 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
               title="Chiqish"
             >
-              <LogOut className="w-5 h-5" />
+              <LogOut className="h-[18px] w-[18px]" />
             </button>
           </div>
         </div>
       </aside>
 
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden w-full">
-        <header className="h-14 bg-white border-b flex items-center justify-between gap-2 px-3 shrink-0 z-10 sm:h-16 sm:px-5 safe-top">
-          <div className="flex items-center gap-2 min-w-0 flex-1">
+      <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
+        <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
+          <DialogHeader>
+            <DialogTitle>Profil va parol</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-1">
+            <div className="flex items-center gap-3 rounded-xl border bg-slate-50 p-3">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-200 text-lg font-bold text-slate-600">
+                {facePhotoUrl ? (
+                  <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  (user.fullName || 'U').slice(0, 1).toUpperCase()
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{user.fullName}</p>
+                <p className="truncate text-xs text-muted-foreground">{user.login}</p>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-first">Ism</Label>
+                <Input
+                  id="profile-first"
+                  value={profileFirst}
+                  onChange={(e) => setProfileFirst(e.target.value)}
+                  placeholder="Ism"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="profile-last">Familiya</Label>
+                <Input
+                  id="profile-last"
+                  value={profileLast}
+                  onChange={(e) => setProfileLast(e.target.value)}
+                  placeholder="Familiya"
+                />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-pass">Yangi parol</Label>
+              <Input
+                id="profile-pass"
+                type="text"
+                autoComplete="new-password"
+                value={profilePassword}
+                onChange={(e) => setProfilePassword(e.target.value)}
+                placeholder="Yangi parol"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="profile-pass2">Parolni tasdiqlang</Label>
+              <Input
+                id="profile-pass2"
+                type="text"
+                autoComplete="new-password"
+                value={profilePassword2}
+                onChange={(e) => setProfilePassword2(e.target.value)}
+                placeholder="Qayta yozing"
+              />
+            </div>
+            <p className="text-[11px] text-muted-foreground">
+              Saqlaganda ism/familiya va parol foydalanuvchilar bazasiga yoziladi. Excel eksportida yangi parol
+              chiqadi.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setProfileOpen(false)}>
+              Bekor
+            </Button>
+            <Button type="button" disabled={profileSaving} onClick={() => void saveProfile()}>
+              {profileSaving ? 'Saqlanmoqda…' : 'Parolni almashtirish'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden w-full">
+        <header className="safe-top z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200/80 bg-white/95 px-3 backdrop-blur-md sm:h-16 sm:px-5">
+          <div className="flex min-w-0 flex-1 items-center gap-2">
             <button
               type="button"
               onClick={toggleNav}
-              className="shrink-0 p-2 -ml-1 rounded-md text-gray-600 hover:bg-gray-100"
+              className="shrink-0 -ml-1 rounded-xl p-2 text-slate-600 transition-colors hover:bg-slate-100"
               aria-label="Menyu"
               aria-expanded={mobileOpen || !desktopCollapsed}
             >
-              <Menu className="w-6 h-6" />
+              <Menu className="h-6 w-6" />
             </button>
             <img
               src={`${import.meta.env.BASE_URL}logo3d.png`}
@@ -936,12 +1215,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             />
           </div>
 
-          <div className="flex items-center shrink-0">
+          <div className="flex shrink-0 items-center">
             <Link href="/notifications">
-              <div className="relative p-2 rounded-full text-gray-500 hover:bg-gray-100 cursor-pointer">
-                <Bell className="w-5 h-5" />
+              <div className="relative cursor-pointer rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100">
+                <Bell className="h-5 w-5" />
                 {totalUnread > 0 && (
-                  <span className="absolute top-0.5 right-0.5 min-w-[16px] h-4 px-1 rounded-full bg-destructive text-white text-[10px] font-semibold flex items-center justify-center leading-none">
+                  <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white">
                     {totalUnread > 99 ? '99+' : totalUnread}
                   </span>
                 )}
@@ -954,14 +1233,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
         <main
           className={cn(
-            'flex-1 min-h-0 min-w-0',
+            'min-h-0 min-w-0 flex-1',
             location === '/vazifalar' ||
               location === '/pipeline' ||
               location.startsWith('/chat') ||
               location.startsWith('/kirish') ||
               location.startsWith('/tashkiliy-tuzilma')
               ? 'overflow-hidden p-0'
-              : 'overflow-y-auto overflow-x-hidden p-3 sm:p-6',
+              : 'overflow-x-hidden overflow-y-auto p-3 sm:p-6',
           )}
         >
           <div
@@ -973,7 +1252,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
                 location.startsWith('/tashkiliy-tuzilma')
-                ? 'max-w-none h-full'
+                ? 'h-full max-w-none'
                 : location === '/pharmacy-network'
                   ? 'max-w-none'
                   : 'max-w-7xl',

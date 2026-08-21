@@ -134,11 +134,15 @@ async function createMiniToken(opts: {
   return token;
 }
 
-function miniAppEntryUrl(next?: string): string | null {
+function miniAppEntryUrl(opts?: { next?: string; token?: string }): string | null {
   const base = publicAppUrl();
   if (!base) return null;
-  if (next) return `${base}/tg?next=${encodeURIComponent(next)}`;
-  return `${base}/tg`;
+  const u = new URL(`${base}/tg`);
+  if (opts?.next) u.searchParams.set("next", opts.next);
+  if (opts?.token) u.searchParams.set("token", opts.token);
+  // Har safar yangi akkauntga o‘tish — eski sessiya cache bo‘lmasin
+  u.searchParams.set("fresh", "1");
+  return u.toString();
 }
 
 function formatUserCard(user: {
@@ -220,10 +224,17 @@ function helpText(): string {
 async function sendLoggedInCard(
   chatId: number | string,
   user: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>>,
-  _telegramUserId: string,
+  telegramUserId: string,
 ) {
-  const loginUrl = miniAppEntryUrl();
-  const davomatUrl = miniAppEntryUrl("davomat-face");
+  const tokenOpts = {
+    userId: user.id,
+    telegramUserId,
+    chatId: String(chatId),
+  };
+  const loginToken = await createMiniToken(tokenOpts);
+  const davomatToken = await createMiniToken(tokenOpts);
+  const loginUrl = miniAppEntryUrl({ token: loginToken });
+  const davomatUrl = miniAppEntryUrl({ next: "davomat-face", token: davomatToken });
 
   const rows: Array<Array<{ text: string; web_app?: { url: string }; callback_data?: string }>> = [];
   if (loginUrl) {
@@ -247,9 +258,14 @@ async function sendLoggedInCard(
 async function sendDavomatMiniApp(
   chatId: number | string,
   user: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>>,
-  _telegramUserId: string,
+  telegramUserId: string,
 ) {
-  const davomatUrl = miniAppEntryUrl("davomat-face");
+  const token = await createMiniToken({
+    userId: user.id,
+    telegramUserId,
+    chatId: String(chatId),
+  });
+  const davomatUrl = miniAppEntryUrl({ next: "davomat-face", token });
   if (!davomatUrl) {
     await sendMessage(chatId, "⚠️ PUBLIC_APP_URL sozlanmagan — Davomat Mini App ochilmaydi.");
     return;
@@ -277,12 +293,18 @@ async function handleStart(chatId: number, fromId: number, firstName?: string) {
 async function handleCredentials(
   chatId: number,
   fromId: number,
-  login: string,
-  password: string,
+  loginRaw: string,
+  passwordRaw: string,
 ) {
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.login, login)).limit(1);
+  const login = String(loginRaw || "").trim();
+  const password = String(passwordRaw || "").trim();
+  const [user] = await db
+    .select()
+    .from(usersTable)
+    .where(sql`lower(${usersTable.login}) = lower(${login})`)
+    .limit(1);
 
-  if (!user || user.password !== password) {
+  if (!user || String(user.password ?? "").trim() !== password) {
     await sendMessage(
       chatId,
       `❌ Login yoki parol noto‘g‘ri.\n\nNamuna:\n<code>farmasevt1 pass123</code>`,

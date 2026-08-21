@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { FaceScanDialog } from "@/components/FaceScanDialog";
 import { useToast } from "@/hooks/use-toast";
-import { isFaceIdSupported } from "@/lib/face-id";
+import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
 import {
   DAVOMAT_GEOFENCE_METERS,
   DAVOMAT_SITE_LABEL,
@@ -50,11 +50,9 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
-import { useIsMobile } from "@/hooks/use-mobile";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
-const PUNCH_GUIDE_KEY = "davomat-punch-guide-done";
 
 type Gps = { lat: number; lng: number; accuracy: number };
 type Verified = {
@@ -67,6 +65,17 @@ type Verified = {
   checkOutAt?: string | null;
   faceImage?: string;
 };
+
+type GuideStep = "enroll" | "permission" | "zone" | "face" | "keldim" | "ketdim" | "done";
+
+function tashkentHour(now: number): number {
+  const raw = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent",
+    hour: "numeric",
+    hour12: false,
+  }).format(new Date(now));
+  return Number(raw);
+}
 
 function formatElapsed(ms: number): string {
   if (ms < 0) ms = 0;
@@ -218,29 +227,226 @@ function sortDaysDesc(days: DavomatDayMetrics[]): DavomatDayMetrics[] {
 function MobileStepHint({
   step,
   label,
-  align = "center",
+  tone = "amber",
 }: {
   step: number;
   label: string;
-  align?: "left" | "center" | "right";
+  tone?: "amber" | "rose" | "emerald";
 }) {
   return (
     <div
       className={cn(
-        "mb-2 flex flex-col gap-0.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-amber-950 shadow-sm md:hidden",
-        align === "right" && "items-end text-right",
-        align === "left" && "items-start text-left",
-        align === "center" && "items-center text-center",
+        "mb-2 flex items-center gap-2 rounded-xl border px-3 py-2.5 shadow-sm",
+        tone === "amber" && "border-amber-300 bg-amber-50 text-amber-950",
+        tone === "rose" && "border-rose-300 bg-rose-50 text-rose-950",
+        tone === "emerald" && "border-emerald-300 bg-emerald-50 text-emerald-950",
       )}
     >
-      <span className="text-[10px] font-semibold uppercase tracking-wide text-amber-700">
-        {step}-qadam
+      <span
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
+          tone === "amber" && "bg-amber-600",
+          tone === "rose" && "bg-rose-600",
+          tone === "emerald" && "bg-emerald-600",
+        )}
+      >
+        {step}
       </span>
-      <div className="flex items-center gap-1.5 text-sm font-semibold">
-        <span>{label}</span>
-        <ArrowDown className="h-4 w-4 shrink-0 animate-bounce text-amber-600" aria-hidden />
+      <div className="min-w-0 flex-1">
+        <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{step}-qadam</p>
+        <p className="text-sm font-semibold leading-snug">{label}</p>
       </div>
+      <ArrowDown className="h-4 w-4 shrink-0 animate-bounce opacity-70" aria-hidden />
     </div>
+  );
+}
+
+function GuideBoard({
+  active,
+  faceRegistered,
+  inside,
+  hasGps,
+  hasIn,
+  afterSix,
+  done,
+}: {
+  active: GuideStep;
+  faceRegistered: boolean | null;
+  inside: boolean;
+  hasGps: boolean;
+  hasIn: boolean;
+  afterSix: boolean;
+  done: boolean;
+}) {
+  const items: Array<{
+    id: GuideStep;
+    n: number;
+    title: string;
+    detail: string;
+  }> = [
+    {
+      id: "enroll",
+      n: 0,
+      title: "Yuzni ro‘yxatdan o‘tkazing",
+      detail: "Davomatdan oldin Face ID bir marta ulanishi shart",
+    },
+    {
+      id: "permission",
+      n: 1,
+      title: "Ruxsat berish",
+      detail: "Lokatsiya ruxsatini yoqing",
+    },
+    {
+      id: "zone",
+      n: 1,
+      title: "Yashil hududga kiring",
+      detail: "Belgilangan zonaga kirmasangiz — kelmagan deb belgilanadi",
+    },
+    {
+      id: "face",
+      n: 2,
+      title: "Face ID ni bosing",
+      detail: "Yashil hududdasiz — yuzni tasdiqlang",
+    },
+    {
+      id: "keldim",
+      n: 3,
+      title: "Keldim ni bosing",
+      detail: "Yuz o‘tgach kelishni belgilang",
+    },
+    {
+      id: "ketdim",
+      n: 4,
+      title: "Ketdim ni bosing",
+      detail: "18:00 dan keyin ishdan chiqish",
+    },
+  ];
+
+  const visible = items.filter((it) => {
+    if (it.id === "enroll") return faceRegistered === false;
+    if (it.id === "zone") return faceRegistered !== false && hasGps && !inside && !hasIn && !done;
+    if (it.id === "permission") return faceRegistered !== false && (!hasGps || !inside) && !hasIn && !done;
+    if (it.id === "face") return faceRegistered !== false;
+    if (it.id === "keldim") return faceRegistered !== false;
+    if (it.id === "ketdim") return faceRegistered !== false && (hasIn || afterSix || done);
+    return true;
+  });
+
+  // Deduplicate permission/zone for board display as sequential unique steps
+  const board = (() => {
+    const out: typeof items = [];
+    const seen = new Set<number>();
+    for (const it of visible) {
+      if (it.id === "enroll") {
+        out.push(it);
+        continue;
+      }
+      if (it.id === "permission" || it.id === "zone") {
+        if (seen.has(1)) continue;
+        seen.add(1);
+        out.push(
+          !hasGps
+            ? items.find((x) => x.id === "permission")!
+            : inside
+              ? items.find((x) => x.id === "permission")!
+              : items.find((x) => x.id === "zone")!,
+        );
+        continue;
+      }
+      if (seen.has(it.n)) continue;
+      seen.add(it.n);
+      out.push(it);
+    }
+    return out;
+  })();
+
+  return (
+    <section className="rounded-[24px] border border-[#0b3a5c]/15 bg-white p-4 shadow-sm">
+      <div className="mb-3 flex items-start justify-between gap-2">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#0b3a5c]/70">
+            Yo‘riqnoma
+          </p>
+          <h2 className="mt-0.5 text-base font-bold text-[#0b3a5c]">Davomat qadamlari</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            Har kirganingizda shu tartibda boring — aniq va tartibli
+          </p>
+        </div>
+        {done ? (
+          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+            Bugun yakunlandi
+          </span>
+        ) : null}
+      </div>
+      <ol className="space-y-2">
+        {board.map((it) => {
+          const isActive =
+            active === it.id ||
+            (active === "zone" && it.id === "zone") ||
+            (active === "permission" && it.id === "permission");
+          const passed =
+            done ||
+            (it.id === "enroll" && faceRegistered) ||
+            (it.n === 1 && hasGps && inside) ||
+            (it.id === "face" && (Boolean(hasIn) || active === "keldim" || active === "ketdim")) ||
+            (it.id === "keldim" && hasIn) ||
+            (it.id === "ketdim" && done);
+
+          return (
+            <li
+              key={`${it.id}-${it.n}`}
+              className={cn(
+                "flex gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
+                isActive && !passed && "border-amber-300 bg-amber-50 shadow-sm",
+                passed && "border-emerald-200 bg-emerald-50/70",
+                !isActive && !passed && "border-slate-100 bg-slate-50/80",
+                it.id === "zone" && isActive && "border-rose-300 bg-rose-50",
+              )}
+            >
+              <span
+                className={cn(
+                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                  passed && "bg-emerald-600 text-white",
+                  isActive && !passed && it.id === "zone" && "bg-rose-600 text-white",
+                  isActive && !passed && it.id !== "zone" && "bg-amber-500 text-white",
+                  !isActive && !passed && "bg-slate-200 text-slate-600",
+                )}
+              >
+                {passed ? "✓" : it.n === 0 ? "!" : it.n}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-slate-900">
+                  {it.n === 0 ? "Avval" : `${it.n}-qadam`}: {it.title}
+                </p>
+                <p
+                  className={cn(
+                    "mt-0.5 text-xs leading-snug",
+                    it.id === "zone" && isActive ? "font-medium text-rose-700" : "text-slate-500",
+                  )}
+                >
+                  {it.detail}
+                </p>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {active === "zone" ? (
+        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm font-semibold text-rose-800">
+          Yashil hududga kirmasangiz — bugun kelmagan deb belgilanasiz
+        </p>
+      ) : null}
+      {active === "ketdim" && afterSix ? (
+        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm font-semibold text-rose-800">
+          4-qadam: endi «Ketdim» ni bosing
+        </p>
+      ) : null}
+      {hasIn && !done && !afterSix ? (
+        <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-xs text-slate-600">
+          Keldim belgilandi. «Ketdim» 18:00 dan keyin ochiladi
+        </p>
+      ) : null}
+    </section>
   );
 }
 
@@ -259,7 +465,6 @@ export default function DavomatFacePage() {
   const isTgMiniApp = useMemo(() => isTelegramMiniAppContext(), []);
   useTelegramMiniAppChrome();
   const { toast } = useToast();
-  const isMobile = useIsMobile();
   const canReport = canViewDavomat(user?.role);
   const [gps, setGps] = useState<Gps | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
@@ -273,13 +478,8 @@ export default function DavomatFacePage() {
   const [workplace, setWorkplace] = useState<WorkplaceInfo | null>(null);
   const [historyDays, setHistoryDays] = useState<DavomatDayMetrics[]>([]);
   const [historyRange, setHistoryRange] = useState<"day" | "week" | "month">("week");
-  const [guideDone, setGuideDone] = useState(() => {
-    try {
-      return localStorage.getItem(PUNCH_GUIDE_KEY) === "1";
-    } catch {
-      return false;
-    }
-  });
+  const [faceRegistered, setFaceRegistered] = useState<boolean | null>(null);
+  const [enrollOpen, setEnrollOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [verified, setVerified] = useState<Verified | null>(null);
   const [busy, setBusy] = useState(false);
@@ -302,14 +502,18 @@ export default function DavomatFacePage() {
     setHistoryDays(sortDaysDesc(emp.days));
   }, []);
 
-  const completeGuide = useCallback(() => {
-    setGuideDone(true);
-    try {
-      localStorage.setItem(PUNCH_GUIDE_KEY, "1");
-    } catch {
-      /* ignore */
+  const refreshFaceStatus = useCallback(async () => {
+    if (!isAuthenticated) {
+      setFaceRegistered(null);
+      return;
     }
-  }, []);
+    try {
+      const s = await fetchFaceIdStatus();
+      setFaceRegistered(s.registered);
+    } catch {
+      setFaceRegistered(null);
+    }
+  }, [isAuthenticated]);
 
   const loadWorkplace = useCallback(async () => {
     if (!isAuthenticated) {
@@ -361,6 +565,10 @@ export default function DavomatFacePage() {
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
+
+  useEffect(() => {
+    void refreshFaceStatus();
+  }, [refreshFaceStatus]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -481,29 +689,31 @@ export default function DavomatFacePage() {
     return haversineMeters(gps.lat, gps.lng, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
   }, [gps]);
 
-  const canOpenFace = Boolean(gps) && !gpsError && isFaceIdSupported() && (workplace ? workplace.employee.hasGps && inside : true);
+  const canOpenFace =
+    faceRegistered === true &&
+    Boolean(gps) &&
+    !gpsError &&
+    isFaceIdSupported() &&
+    (workplace ? workplace.employee.hasGps && inside : inside);
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   const done = nextAction === "done" || workplace?.today.complete;
   const hasIn = nextAction === "out" || done || Boolean(checkInAtIso);
+  const afterSix = tashkentHour(nowTick) >= 18;
 
-  const guideStep = useMemo((): "permission" | "face" | "keldim" | null => {
-    if (guideDone || done) return null;
-    if (!gps || !inside) return "permission";
+  const guideStep = useMemo((): GuideStep => {
+    if (done) return "done";
+    if (faceRegistered === false) return "enroll";
+    if (!gps || gpsError) return "permission";
+    if (!inside) return "zone";
     if (!verified) return "face";
     if (!hasIn) return "keldim";
-    return null;
-  }, [guideDone, done, gps, inside, verified, hasIn]);
+    if (afterSix) return "ketdim";
+    return "done";
+  }, [done, faceRegistered, gps, gpsError, inside, verified, hasIn, afterSix]);
 
-  const showGuide = isMobile && guideStep != null;
-
-  useEffect(() => {
-    if (guideDone) return;
-    const punchedBefore =
-      historyDays.some((d) => d.checkIn !== "—") ||
-      (workplace?.today.checkIn && workplace.today.checkIn !== "—");
-    if (punchedBefore) completeGuide();
-  }, [guideDone, historyDays, workplace?.today.checkIn, completeGuide]);
+  /** Mobil: doim aktiv qadamni ko‘rsat; desktopda ham panel ochiq */
+  const showGuide = guideStep !== "done";
 
   const todayStatus = done
     ? "complete"
@@ -531,30 +741,30 @@ export default function DavomatFacePage() {
               : "GPS kutilmoqda";
 
   const faceLockedReason = useMemo(() => {
+    if (faceRegistered === false) return "Avval yuzni ro‘yxatdan o‘tkazing";
     if (gpsError) return gpsError;
-    if (!gps) return "Avval «Ruxsat berish» ni bosing — brauzer lokatsiya so‘raydi";
+    if (!gps) return "1-qadam: «Ruxsat berish» ni bosing";
     if (!isFaceIdSupported()) return "Face ID bu brauzerda ishlamaydi (HTTPS/localhost kerak)";
     if (remain != null && remain > 0) {
-      return `Siz ${formatDistance(distance)} uzoqdasiz. Ruxsat ${allowedMeters} m. ${formatApproach(remain)}.`;
+      return `Yashil hududga kirmadingiz (${formatDistance(distance)}). Kelmagan deb belgilanasiz. ${formatApproach(remain)}.`;
     }
     return null;
-  }, [gps, gpsError, remain, distance, allowedMeters]);
+  }, [faceRegistered, gps, gpsError, remain, distance]);
 
   useEffect(() => {
     if (!isTgMiniApp || tgBootRef.current) return;
     tgBootRef.current = true;
-    completeGuide();
     void requestLocationPermission();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTgMiniApp]);
 
   useEffect(() => {
-    if (!isTgMiniApp || tgScanRef.current || done || verified) return;
+    if (!isTgMiniApp || tgScanRef.current || done || verified || faceRegistered === false) return;
     if (canOpenFace) {
       tgScanRef.current = true;
       setScanOpen(true);
     }
-  }, [isTgMiniApp, canOpenFace, done, verified]);
+  }, [isTgMiniApp, canOpenFace, done, verified, faceRegistered]);
 
   const geoPayload = () => {
     if (!gps) throw new Error("GPS yo‘q");
@@ -657,7 +867,9 @@ export default function DavomatFacePage() {
         title: action === "in" ? "Keldim" : "Ketdi",
         description: result.message,
       });
-      if (action === "in") completeGuide();
+      if (action === "in") {
+        /* guide stays live for Ketdim */
+      }
       applyHistory(result.employee);
       await loadWorkplace();
       await loadHistory();
@@ -753,9 +965,23 @@ export default function DavomatFacePage() {
       ? "ring-4 ring-rose-400/80"
       : "ring-4 ring-white/40";
 
-  const locationReady = Boolean(gps) && inside && !gpsError;
-  const showFaceStep = locationReady || Boolean(verified);
+  const locationReady = Boolean(gps) && inside && !gpsError && faceRegistered !== false;
+  const showFaceStep =
+    faceRegistered !== false &&
+    (locationReady || Boolean(verified) || Boolean(gps) || (hasIn && !done));
   const showPunchStep = Boolean(verified) && !done && !dayComplete;
+  const canPunchOut = hasIn && afterSix;
+
+  const onEnrollCaptured = async (descriptor: number[], snapshot?: string) => {
+    await enrollFace(descriptor, snapshot);
+    setFaceRegistered(true);
+    saveFaceImage(snapshot);
+    toast({
+      title: "Yuz ro‘yxatdan o‘tdi",
+      description: "Endi 1-qadamdan davomatni boshlang",
+    });
+    await refreshFaceStatus();
+  };
 
   return (
     <div className="min-h-[100dvh] bg-[linear-gradient(180deg,#e8f1f7_0%,#f8fafc_42%,#ffffff_100%)]">
@@ -843,6 +1069,51 @@ export default function DavomatFacePage() {
           </div>
         </section>
 
+        <div className="mt-4">
+          <GuideBoard
+            active={guideStep}
+            faceRegistered={faceRegistered}
+            inside={inside}
+            hasGps={Boolean(gps) && !gpsError}
+            hasIn={hasIn}
+            afterSix={afterSix}
+            done={Boolean(done)}
+          />
+        </div>
+
+        {faceRegistered === false ? (
+          <section className="mt-4 rounded-[24px] border border-amber-300 bg-amber-50 p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-600 text-[11px] font-bold text-white">
+                !
+              </span>
+              <h2 className="text-sm font-semibold text-amber-950">Avval yuzni ro‘yxatdan o‘tkazing</h2>
+            </div>
+            {showGuide && guideStep === "enroll" ? (
+              <MobileStepHint step={0} label="Face ID ni ulashni bosing" tone="amber" />
+            ) : null}
+            <p className="mb-3 text-sm text-amber-900/80">
+              Davomat qilishdan oldin bir marta Face ID ulashing. Keyin yo‘riqnoma 1–4 qadam bilan ochiladi.
+            </p>
+            <Button
+              type="button"
+              size="lg"
+              className={cn(
+                "h-14 w-full gap-2 rounded-2xl bg-[#0b3a5c] text-base hover:bg-[#0a314d]",
+                showGuide && guideStep === "enroll" && "ring-2 ring-amber-400 ring-offset-2",
+              )}
+              disabled={!isFaceIdSupported()}
+              onClick={() => setEnrollOpen(true)}
+            >
+              <ScanFace className="h-5 w-5" />
+              Face ID ni ulash
+            </Button>
+            {!isFaceIdSupported() ? (
+              <p className="mt-2 text-center text-xs text-amber-800">Kamera va HTTPS/localhost kerak</p>
+            ) : null}
+          </section>
+        ) : null}
+
         <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
           <div className="mb-3 flex items-center gap-2">
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
@@ -855,7 +1126,7 @@ export default function DavomatFacePage() {
               </div>
             <div className="relative shrink-0">
               {showGuide && guideStep === "permission" ? (
-                <MobileStepHint step={1} label="Ruxsat berish ni bosing" align="right" />
+                <MobileStepHint step={1} label="Ruxsat berish ni bosing" tone="amber" />
               ) : null}
               <Button
                 type="button"
@@ -865,7 +1136,7 @@ export default function DavomatFacePage() {
                   "h-9 gap-1.5 rounded-full border-[#0b3a5c]/20 text-[#0b3a5c]",
                   showGuide && guideStep === "permission" && "ring-2 ring-amber-400 ring-offset-2",
                 )}
-                disabled={gpsSharing}
+                disabled={gpsSharing || faceRegistered === false}
                 onClick={() => void requestLocationPermission()}
               >
                 {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
@@ -946,11 +1217,25 @@ export default function DavomatFacePage() {
                 <>
                   <XCircle className="mr-1 inline h-4 w-4" />
                   Siz {formatDistance(distance)} uzoqdasiz · {formatApproach(remain)}
+                  <span className="mt-1 block text-sm font-semibold text-rose-800">
+                    Yashil hududga kirmasangiz — kelmagan deb belgilanasiz
+                  </span>
                   <span className="mt-0.5 block text-xs font-normal text-rose-700">
-                    Davomat faqat {workplace?.site?.kind === "branch" ? "filial" : "asosiy ofis"}dan {allowedMeters} m ichida
+                    Davomat faqat {workplace?.site?.kind === "branch" ? "filial" : "asosiy ofis"}dan{" "}
+                    {allowedMeters} m ichida
                   </span>
                 </>
               )}
+            </div>
+          ) : null}
+
+          {showGuide && guideStep === "zone" ? (
+            <div className="mt-3">
+              <MobileStepHint
+                step={1}
+                label="Yashil hududga kiring — aks holda kelmagan"
+                tone="rose"
+              />
             </div>
           ) : null}
 
@@ -990,7 +1275,12 @@ export default function DavomatFacePage() {
             ) : (
               <div className="space-y-3">
                 {showGuide && guideStep === "face" ? (
-                  <MobileStepHint step={2} label="Face ID ni bosing" />
+                  <MobileStepHint step={2} label="Face ID ni bosing" tone="amber" />
+                ) : null}
+                {guideStep === "zone" || (gps && !inside) ? (
+                  <p className="rounded-2xl border border-rose-300 bg-rose-50 px-3 py-2.5 text-center text-sm font-semibold text-rose-800">
+                    2-qadam yopiq: avval yashil hududga kiring. Aks holda kelmagan deb belgilanasiz.
+                  </p>
                 ) : null}
                 <Button
                   type="button"
@@ -1011,7 +1301,7 @@ export default function DavomatFacePage() {
                   </p>
                 ) : (
                   <p className="text-center text-xs text-slate-500">
-                    Yuz tasdiqlangach Keldim / Ketdim ochiladi
+                    3-qadam: yuz tasdiqlangach «Keldim» ni bosing
                   </p>
                 )}
               </div>
@@ -1023,45 +1313,57 @@ export default function DavomatFacePage() {
           <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
             <div className="mb-3 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
-                3
+                {hasIn ? 4 : 3}
               </span>
-              <h2 className="text-sm font-semibold text-[#0b3a5c]">Keldim / Ketdim</h2>
+              <h2 className="text-sm font-semibold text-[#0b3a5c]">
+                {hasIn ? "Ketdim" : "Keldim"}
+              </h2>
             </div>
             {hasIn ? (
-              <Button
-                type="button"
-                size="lg"
-                className="h-14 w-full gap-2 rounded-2xl bg-red-600 text-base text-white hover:bg-red-700"
-                disabled={busy}
-                onClick={() => setConfirmOut(true)}
-              >
-                <LogOut className="h-5 w-5" />
-                Ketdim
-              </Button>
-            ) : (
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  {showGuide && guideStep === "keldim" ? (
-                    <MobileStepHint step={3} label="Keldim ni bosing" align="left" />
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="lg"
-                    className={cn(
-                      "h-14 w-full gap-2 rounded-2xl bg-emerald-600 text-base text-white hover:bg-emerald-700",
-                      showGuide && guideStep === "keldim" && "ring-2 ring-amber-400 ring-offset-2",
-                    )}
-                    disabled={busy}
-                    onClick={() => void punch("in")}
-                  >
-                    <LogIn className="h-5 w-5" />
-                    Keldim
-                  </Button>
-                </div>
-                <Button type="button" size="lg" className="h-14 w-full gap-2 rounded-2xl bg-red-600 text-base text-white" disabled>
+              <div className="space-y-3">
+                {showGuide && guideStep === "ketdim" ? (
+                  <MobileStepHint step={4} label="Ketdim ni bosing" tone="rose" />
+                ) : null}
+                {!afterSix ? (
+                  <p className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-sm text-slate-700">
+                    4-qadam 18:00 dan keyin ochiladi. Hozir ishda qoling.
+                  </p>
+                ) : null}
+                <Button
+                  type="button"
+                  size="lg"
+                  className={cn(
+                    "h-14 w-full gap-2 rounded-2xl bg-red-600 text-base text-white hover:bg-red-700",
+                    showGuide && guideStep === "ketdim" && "ring-2 ring-rose-400 ring-offset-2",
+                  )}
+                  disabled={busy || !canPunchOut}
+                  onClick={() => setConfirmOut(true)}
+                >
                   <LogOut className="h-5 w-5" />
                   Ketdim
                 </Button>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {showGuide && guideStep === "keldim" ? (
+                  <MobileStepHint step={3} label="Keldim ni bosing" tone="emerald" />
+                ) : null}
+                <Button
+                  type="button"
+                  size="lg"
+                  className={cn(
+                    "h-14 w-full gap-2 rounded-2xl bg-emerald-600 text-base text-white hover:bg-emerald-700",
+                    showGuide && guideStep === "keldim" && "ring-2 ring-amber-400 ring-offset-2",
+                  )}
+                  disabled={busy}
+                  onClick={() => void punch("in")}
+                >
+                  <LogIn className="h-5 w-5" />
+                  Keldim
+                </Button>
+                <p className="text-center text-xs text-slate-500">
+                  Keldim dan keyin 18:00 da «Ketdim» ochiladi
+                </p>
               </div>
             )}
           </section>
@@ -1389,11 +1691,20 @@ export default function DavomatFacePage() {
       </div>
 
       <FaceScanDialog
+        open={enrollOpen}
+        onOpenChange={setEnrollOpen}
+        mode="enroll"
+        title="Davomat · Yuzni ulash"
+        description="Kameraga to‘g‘ri qarang — bir marta ro‘yxatdan o‘ting"
+        onCaptured={onEnrollCaptured}
+      />
+
+      <FaceScanDialog
         open={scanOpen}
         onOpenChange={setScanOpen}
         mode="login"
         title="Davomat · Face ID"
-        description="Lokatsiya tasdiqlangan. Ko‘zni ochiq tuting, keyin sekin 2 marta yumib oching."
+        description="Lokatsiya tasdiqlangan. Yuzni oval ichiga tuting."
         onCaptured={onCaptured}
       />
 

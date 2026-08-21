@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db, employeesTable } from "@workspace/db";
 import { isHrRole } from "./roles";
-import { parseGpsText, withGpsSuffix } from "./geo-location";
+import { displayBranchName, parseGpsText, withGpsSuffix } from "./geo-location";
 
 export type BranchGpsOk = {
   ok: true;
@@ -18,6 +18,8 @@ export async function saveManagerBranchLocation(opts: {
   actorUserId: number;
   employeeId: number;
   coordinates: string;
+  /** Filialning ko‘rinadigan nomi (masalan: Novza, Olmos 2) */
+  branchName?: string | null;
 }): Promise<BranchGpsOk | BranchGpsErr> {
   const canSet =
     opts.actorRole === "koordinator" ||
@@ -50,53 +52,61 @@ export async function saveManagerBranchLocation(opts: {
     }
   }
 
-  const parsed = parseGpsText(opts.coordinates);
-  if (!parsed) {
+  const nameRaw = String(opts.branchName ?? "").trim();
+  const existingName = displayBranchName(manager.location);
+  const branchLabel =
+    nameRaw ||
+    (existingName && existingName !== "Filial" ? existingName : "") ||
+    "Filial";
+
+  let lat = manager.latitude;
+  let lng = manager.longitude;
+  const coordText = String(opts.coordinates || "").trim();
+  if (coordText) {
+    const parsed = parseGpsText(coordText);
+    if (!parsed) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Ikkala tomonni ham yozing: 41°18'23.3\"N 69°18'28.0\"E",
+      };
+    }
+    lat = parsed.lat;
+    lng = parsed.lng;
+  } else if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
     return {
       ok: false,
       status: 400,
-      error: "Ikkala tomonni ham yozing: 41°18'23.3\"N 69°18'28.0\"E",
+      error: "Avval koordinatani kiriting: 41°18'23.3\"N 69°18'28.0\"E",
     };
   }
 
-  try {
-    const [updated] = await db
-      .update(employeesTable)
-      .set({
-        latitude: parsed.lat,
-        longitude: parsed.lng,
-      })
-      .where(eq(employeesTable.id, manager.id))
-      .returning();
+  const encoded = withGpsSuffix(branchLabel, lat!, lng!);
 
-    await db
-      .update(employeesTable)
-      .set({
-        latitude: parsed.lat,
-        longitude: parsed.lng,
-      })
-      .where(eq(employeesTable.reportsToId, manager.id));
+  const [updated] = await db
+    .update(employeesTable)
+    .set({
+      location: encoded,
+      latitude: lat,
+      longitude: lng,
+    })
+    .where(eq(employeesTable.id, manager.id))
+    .returning();
 
-    return {
-      ok: true,
-      id: updated.id,
-      location: updated.location,
-      latitude: updated.latitude,
-      longitude: updated.longitude,
-    };
-  } catch {
-    const encoded = withGpsSuffix(manager.location, parsed.lat, parsed.lng);
-    const [updated] = await db
-      .update(employeesTable)
-      .set({ location: encoded })
-      .where(eq(employeesTable.id, manager.id))
-      .returning();
-    return {
-      ok: true,
-      id: updated.id,
-      location: updated.location,
-      latitude: parsed.lat,
-      longitude: parsed.lng,
-    };
-  }
+  await db
+    .update(employeesTable)
+    .set({
+      location: encoded,
+      latitude: lat,
+      longitude: lng,
+    })
+    .where(eq(employeesTable.reportsToId, manager.id));
+
+  return {
+    ok: true,
+    id: updated.id,
+    location: updated.location,
+    latitude: updated.latitude,
+    longitude: updated.longitude,
+  };
 }

@@ -1,4 +1,4 @@
-/** Kameradan Face ID — faqat jonli odam (rasm bilan ochilmaydi) */
+/** Face ID — faqat kamera orqali yuz vektori */
 
 const FACE_API_SRC = "https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js";
 const MODEL_URL = "https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights";
@@ -82,17 +82,14 @@ export type FaceAlignStatus =
   | "too_close"
   | "outside"
   | "ok"
-  | "hold_open"
-  | "blink_now"
-  | "blink_again"
-  | "blink_timeout"
-  | "photo";
+  | "hold_still"
+  | "low_quality"
+  | "turn_face";
 
 export type FaceDetectResult = {
   descriptor: number[] | null;
   status: FaceAlignStatus;
-  ear?: number;
-  noseX?: number;
+  score?: number;
 };
 
 export type FaceOvalFrame = {
@@ -101,42 +98,6 @@ export type FaceOvalFrame = {
   rx: number;
   ry: number;
 };
-
-function dist(a: Point, b: Point): number {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function eyeAspectRatio(pts: Point[]): number {
-  if (pts.length < 6) return 0.3;
-  return (dist(pts[1]!, pts[5]!) + dist(pts[2]!, pts[4]!)) / (2 * dist(pts[0]!, pts[3]!));
-}
-
-function averageEar(positions: Point[]): number {
-  return (eyeAspectRatio(positions.slice(36, 42)) + eyeAspectRatio(positions.slice(42, 48))) / 2;
-}
-
-function earFromLandmarks(landmarks: {
-  positions?: Point[];
-  getLeftEye?: () => Point[];
-  getRightEye?: () => Point[];
-  getNose?: () => Point[];
-}): { ear: number; noseX: number } {
-  const left = landmarks.getLeftEye?.();
-  const right = landmarks.getRightEye?.();
-  if (left && right && left.length >= 6 && right.length >= 6) {
-    const ear = (eyeAspectRatio(left) + eyeAspectRatio(right)) / 2;
-    const nose = landmarks.getNose?.();
-    const tip = nose?.[nose.length - 1] ?? nose?.[3];
-    return { ear, noseX: tip ? tip.x : 0.5 };
-  }
-  const positions = landmarks.positions ?? [];
-  if (positions.length >= 48) {
-    return { ear: averageEar(positions), noseX: positions[30]?.x ?? 0.5 };
-  }
-  return { ear: 0.28, noseX: 0.5 };
-}
 
 function mapVideoBoxToElement(
   video: HTMLVideoElement,
@@ -167,28 +128,32 @@ function ellipseNorm(px: number, py: number, frame: FaceOvalFrame): number {
   return dx * dx + dy * dy;
 }
 
-type DetectOpts = {
-  /** true = descriptor ham hisoblanadi (sekinroq). Liveness uchun false. */
-  withDescriptor?: boolean;
-};
+function noseOffsetRatio(landmarks: FaceLandmarksResult["landmarks"], box: { x: number; width: number }): number {
+  const nose = landmarks.getNose?.();
+  const tip = nose?.[nose.length - 1] ?? nose?.[3];
+  const positions = landmarks.positions;
+  const nx = tip?.x ?? positions?.[30]?.x;
+  if (nx == null || !box.width) return 0;
+  const mid = box.x + box.width / 2;
+  return Math.abs(nx - mid) / box.width;
+}
 
-async function detectFaceCore(
+/** Yuqori sifat: katta inputSize + qattiq score */
+const DETECT_OPTS = { inputSize: 512 as const, scoreThreshold: 0.55 };
+const MIN_DETECT_SCORE = 0.68;
+
+export async function detectFaceDescriptor(
   video: HTMLVideoElement,
-  frame: FaceOvalFrame | null | undefined,
-  mirrored: boolean,
-  opts: DetectOpts = {},
+  frame?: FaceOvalFrame | null,
+  mirrored = true,
 ): Promise<FaceDetectResult> {
-  const withDescriptor = opts.withDescriptor !== false;
   const faceapi = await ensureFaceModels();
-  const detection = faceapi.detectSingleFace(
-    video,
-    new faceapi.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.45 }),
-  );
-  const result = withDescriptor
-    ? await detection.withFaceLandmarks().withFaceDescriptor()
-    : await detection.withFaceLandmarks();
+  const result = await faceapi
+    .detectSingleFace(video, new faceapi.TinyFaceDetectorOptions(DETECT_OPTS))
+    .withFaceLandmarks()
+    .withFaceDescriptor();
 
-  if (!result || result.detection.score < 0.55) {
+  if (!result || result.detection.score < MIN_DETECT_SCORE) {
     return { descriptor: null, status: "no_face" };
   }
   if (!frame || frame.rx < 8 || frame.ry < 8) {
@@ -198,193 +163,43 @@ async function detectFaceCore(
   const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored);
   if (!mapped) return { descriptor: null, status: "no_face" };
 
-  if (ellipseNorm(mapped.cx, mapped.cy, frame) > 0.62) {
+  if (ellipseNorm(mapped.cx, mapped.cy, frame) > 0.48) {
     return { descriptor: null, status: "outside" };
   }
 
   const fillW = mapped.width / (frame.rx * 2);
   const fillH = mapped.height / (frame.ry * 2);
-  if (fillW < 0.38 || fillH < 0.36) return { descriptor: null, status: "too_far" };
-  if (fillW > 1.28 || fillH > 1.32) return { descriptor: null, status: "too_close" };
+  if (fillW < 0.48 || fillH < 0.46) return { descriptor: null, status: "too_far" };
+  if (fillW > 1.18 || fillH > 1.2) return { descriptor: null, status: "too_close" };
 
-  const { ear, noseX: noseRaw } = earFromLandmarks(result.landmarks);
-  const noseX = noseRaw > 1 ? noseRaw / Math.max(1, video.videoWidth) : noseRaw;
-  const descriptor =
-    withDescriptor && "descriptor" in result && result.descriptor
-      ? Array.from(result.descriptor as Float32Array)
-      : null;
+  // Yon tomonga burilgan yuz — descriptor sifatini pasaytiradi
+  if (noseOffsetRatio(result.landmarks, result.detection.box) > 0.18) {
+    return { descriptor: null, status: "turn_face", score: result.detection.score };
+  }
 
-  return { descriptor, status: "ok", ear, noseX };
+  if (!result.descriptor) {
+    return { descriptor: null, status: "low_quality", score: result.detection.score };
+  }
+
+  return {
+    descriptor: Array.from(result.descriptor),
+    status: "ok",
+    score: result.detection.score,
+  };
 }
 
-/** Tezroq: faqat landmark (ko‘z yumish). Descriptor yo‘q. */
-export async function detectFaceLiveness(
-  video: HTMLVideoElement,
-  frame?: FaceOvalFrame | null,
-  mirrored = true,
-): Promise<FaceDetectResult> {
-  return detectFaceCore(video, frame, mirrored, { withDescriptor: false });
+export function euclideanDescriptor(a: number[], b: number[]): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) {
+    const d = a[i]! - b[i]!;
+    s += d * d;
+  }
+  return Math.sqrt(s);
 }
 
-export async function detectFaceDescriptor(
-  video: HTMLVideoElement,
-  frame?: FaceOvalFrame | null,
-  mirrored = true,
-): Promise<FaceDetectResult> {
-  return detectFaceCore(video, frame, mirrored, { withDescriptor: true });
-}
-
-/**
- * Aktiv liveness: rasm egilishi bilan ochilmaydi.
- * Nisbiy EAR tushishi (baseline dan pastga) + ochilish — sekin kamerada ham ishlaydi.
- */
-export class LivenessTracker {
-  private phase: "warmup" | "challenge" | "done" = "warmup";
-  private earHistory: number[] = [];
-  private baselineEar = 0;
-  private openFrames = 0;
-  private sawClosedAfterChallenge = false;
-  private challengeAt = 0;
-  private blinkCount = 0;
-  private minDuringBlink = 1;
-
-  reset() {
-    this.phase = "warmup";
-    this.earHistory = [];
-    this.baselineEar = 0;
-    this.openFrames = 0;
-    this.sawClosedAfterChallenge = false;
-    this.challengeAt = 0;
-    this.blinkCount = 0;
-    this.minDuringBlink = 1;
-  }
-
-  get isLive() {
-    return this.phase === "done";
-  }
-
-  get phaseName() {
-    return this.phase;
-  }
-
-  /** Ochiq ko‘z EAR baseline (so‘nggi namunalar bo‘yicha). */
-  private refreshBaseline(ear: number, allowLow = false) {
-    // Challengeda yumilgan kadrlar baseline ni pastlatmasin
-    if (!allowLow && this.baselineEar > 0 && ear < this.baselineEar * 0.9) {
-      return;
-    }
-    this.earHistory.push(ear);
-    if (this.earHistory.length > 24) this.earHistory.shift();
-    if (this.earHistory.length < 3) {
-      this.baselineEar = Math.max(this.baselineEar, ear);
-      return;
-    }
-    const sorted = [...this.earHistory].sort((a, b) => a - b);
-    const hi = sorted[Math.floor(sorted.length * 0.7)]!;
-    if (this.baselineEar === 0) this.baselineEar = hi;
-    else this.baselineEar = this.baselineEar * 0.85 + hi * 0.15;
-  }
-
-  private isEyeClosed(ear: number, base: number): boolean {
-    const drop = base - ear;
-    if (drop >= 0.025) return true;
-    if (ear <= base * 0.86) return true;
-    if (base >= 0.2 && ear <= 0.175) return true;
-    if (base >= 0.24 && ear <= 0.2) return true;
-    return false;
-  }
-
-  private isEyeOpen(ear: number, base: number): boolean {
-    if (ear >= base * 0.88) return true;
-    if (ear >= base - 0.012) return true;
-    return ear >= Math.max(0.15, base * 0.84);
-  }
-
-  update(ear: number | undefined): FaceAlignStatus {
-    if (typeof ear !== "number" || !Number.isFinite(ear)) return "hold_open";
-
-    const baseBefore = Math.max(this.baselineEar || ear, 0.16);
-    this.refreshBaseline(ear, this.phase === "warmup");
-    const base = Math.max(this.baselineEar || baseBefore, 0.16);
-    const closed = this.isEyeClosed(ear, base);
-    const open = this.isEyeOpen(ear, base);
-
-    if (this.phase === "warmup") {
-      if (open && !closed) this.openFrames += 1;
-      else this.openFrames = Math.max(0, this.openFrames - 1);
-
-      if (this.openFrames >= 5) {
-        this.phase = "challenge";
-        this.challengeAt = Date.now();
-        this.sawClosedAfterChallenge = false;
-        this.minDuringBlink = ear;
-        return "blink_now";
-      }
-      return "hold_open";
-    }
-
-    if (this.phase === "challenge") {
-      if (Date.now() - this.challengeAt > 15000) {
-        this.phase = "warmup";
-        this.openFrames = 0;
-        this.sawClosedAfterChallenge = false;
-        this.minDuringBlink = 1;
-        return "blink_timeout";
-      }
-
-      if (!this.sawClosedAfterChallenge) {
-        this.minDuringBlink = Math.min(this.minDuringBlink, ear);
-        // Bitta kadr yetarli — sekin loop miltillashni o‘tkazib yubormasligi uchun
-        if (closed || this.minDuringBlink <= base - 0.025) {
-          this.sawClosedAfterChallenge = true;
-        }
-        return this.blinkCount > 0 ? "blink_again" : "blink_now";
-      }
-
-      if (open) {
-        this.blinkCount += 1;
-        if (this.blinkCount >= 2) {
-          this.phase = "done";
-          return "ok";
-        }
-        this.challengeAt = Date.now();
-        this.sawClosedAfterChallenge = false;
-        this.minDuringBlink = ear;
-        // Baseline ni biroz yangilab qo‘yamiz (ochiq holat)
-        this.baselineEar = Math.max(this.baselineEar, ear);
-        return "blink_again";
-      }
-      this.minDuringBlink = Math.min(this.minDuringBlink, ear);
-      return this.blinkCount > 0 ? "blink_again" : "blink_now";
-    }
-
-    return "ok";
-  }
-}
-
-export function faceAlignHint(status: FaceAlignStatus): string {
-  switch (status) {
-    case "ok":
-      return "Jonli yuz tasdiqlandi…";
-    case "hold_open":
-      return "Ko‘zingizni ochiq tuting…";
-    case "blink_now":
-      return "HOZIR: ko‘zni SEKIN yumib, keyin oching (1–2 sek)";
-    case "blink_again":
-      return "Yana SEKIN yumib oching!";
-    case "blink_timeout":
-      return "Vaqt tugadi — yana: ochiq tuting, keyin sekin yuming";
-    case "photo":
-      return "Rasm bilan ochilmaydi — jonli yuz kerak";
-    case "too_far":
-      return "Yuzingizni ramkaga yaqinroq tuting";
-    case "too_close":
-      return "Biroz orqaga turing";
-    case "outside":
-      return "Yuzni oval ramka ichiga joylashtiring";
-    default:
-      return "Yuzingizni ramka ichiga tuting";
-  }
+export function isStableSample(prev: number[] | null, next: number[], maxDist = 0.2): boolean {
+  if (!prev) return true;
+  return euclideanDescriptor(prev, next) <= maxDist;
 }
 
 export function averageDescriptors(list: number[][]): number[] {
@@ -395,6 +210,37 @@ export function averageDescriptors(list: number[][]): number[] {
   }
   for (let i = 0; i < n; i++) out[i] /= list.length;
   return out;
+}
+
+/** Chetki namunalarni tashlab o‘rtacha olish */
+export function averageDescriptorsRobust(list: number[][]): number[] {
+  if (list.length <= 2) return averageDescriptors(list);
+  const mean = averageDescriptors(list);
+  const scored = list.map((d) => ({ d, dist: euclideanDescriptor(d, mean) }));
+  scored.sort((a, b) => a.dist - b.dist);
+  const keep = scored.slice(0, Math.max(4, Math.ceil(scored.length * 0.65))).map((x) => x.d);
+  return averageDescriptors(keep.length ? keep : list);
+}
+
+export function faceAlignHint(status: FaceAlignStatus): string {
+  switch (status) {
+    case "ok":
+      return "Yuz aniq — harakatsiz turing…";
+    case "hold_still":
+      return "Biroz to‘xtang — aniqroq olinmoqda…";
+    case "low_quality":
+      return "Yuz aniq emas — yorug‘likni yaxshilang";
+    case "turn_face":
+      return "Kameraga to‘g‘ri qarang (yon tomonga emas)";
+    case "too_far":
+      return "Yuzingizni ramkaga yaqinroq tuting";
+    case "too_close":
+      return "Biroz orqaga turing";
+    case "outside":
+      return "Yuzni oval ramka ichiga joylashtiring";
+    default:
+      return "Yuzingizni ramka ichiga tuting";
+  }
 }
 
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -409,7 +255,15 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new Error((body as { error?: string }).error || "Face ID xatosi");
+    const err = new Error((body as { error?: string }).error || "Face ID xatosi") as Error & {
+      code?: string;
+      fullName?: string;
+      neighbors?: unknown;
+    };
+    err.code = (body as { code?: string }).code;
+    err.fullName = (body as { fullName?: string }).fullName;
+    err.neighbors = (body as { neighbors?: unknown }).neighbors;
+    throw err;
   }
   return body as T;
 }
@@ -425,16 +279,59 @@ export function isFaceIdSupported(): boolean {
 export type FaceIdStatus = {
   registered: boolean;
   count: number;
+  hasPhoto?: boolean;
+  photoUrl?: string | null;
+  createdAt?: string | null;
 };
 
 export async function fetchFaceIdStatus(): Promise<FaceIdStatus> {
   return apiJson<FaceIdStatus>("/auth/face/status");
 }
 
-export async function enrollFace(descriptor: number[]): Promise<void> {
+export async function updateMyProfile(input: {
+  firstName: string;
+  lastName: string;
+  password: string;
+}): Promise<{ user: { id: number; fullName: string; role: string; login?: string }; message?: string }> {
+  return apiJson("/auth/profile", {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function compressFaceSnapshotAsync(
+  dataUrl: string | undefined,
+  maxSide = 280,
+  quality = 0.7,
+): Promise<string | undefined> {
+  if (!dataUrl?.startsWith("data:image/")) return undefined;
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("image"));
+      el.src = dataUrl;
+    });
+    const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return undefined;
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/jpeg", quality);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function enrollFace(descriptor: number[], snapshot?: string): Promise<void> {
+  const photo = await compressFaceSnapshotAsync(snapshot);
   await apiJson("/auth/face/enroll", {
     method: "POST",
-    body: JSON.stringify({ descriptor }),
+    body: JSON.stringify({ descriptor, snapshot: photo }),
   });
 }
 
@@ -449,6 +346,83 @@ export async function loginWithFace<TUser>(
 
 export async function removeFaceId(): Promise<void> {
   await apiJson("/auth/face", { method: "DELETE" });
+}
+
+export type AdminFaceRow = {
+  id: number;
+  userId: number;
+  fullName: string;
+  login: string;
+  role: string;
+  roleLabel: string;
+  status: string;
+  phone: string | null;
+  departmentName: string | null;
+  photoUrl: string | null;
+  hasPhoto: boolean;
+  faceRegistered: boolean;
+  createdAt: string | null;
+  updatedAt: string | null;
+  lastUsedAt: string | null;
+  nearest: {
+    userId: number;
+    fullName: string;
+    login: string;
+    distance: number;
+  } | null;
+  similarRisk: "none" | "medium" | "high";
+};
+
+export type AdminFacesResponse = {
+  total: number;
+  registered: number;
+  notRegistered: number;
+  withPhoto: number;
+  similarPairs: number;
+  enrollBlockMax: number;
+  faces: AdminFaceRow[];
+  duplicates: Array<{
+    a: { userId: number; fullName: string; login: string };
+    b: { userId: number; fullName: string; login: string };
+    distance: number;
+  }>;
+};
+
+export async function fetchAdminFaces(): Promise<AdminFacesResponse> {
+  return apiJson<AdminFacesResponse>("/admin/faces");
+}
+
+export async function downloadAdminFacesExcel(params?: {
+  q?: string;
+  status?: "all" | "yes" | "no";
+  onlyRisk?: boolean;
+}): Promise<void> {
+  const sp = new URLSearchParams();
+  if (params?.q?.trim()) sp.set("q", params.q.trim());
+  if (params?.status && params.status !== "all") sp.set("status", params.status);
+  if (params?.onlyRisk) sp.set("onlyRisk", "1");
+  const qs = sp.toString();
+  const res = await fetch(`/api/admin/faces/export${qs ? `?${qs}` : ""}`, {
+    credentials: "include",
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  const stamp = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `face-id_${stamp}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function adminResetFace(userId: number): Promise<{ message: string }> {
+  return apiJson(`/admin/faces/${userId}`, { method: "DELETE" });
 }
 
 export function isFaceIdCancelled(err: unknown): boolean {

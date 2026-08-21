@@ -40,7 +40,6 @@ const ROLES = [
   { value: 'hr_direktor', label: 'HR Direktor' },
   { value: 'hr_auditor', label: 'HR Auditor' },
   { value: 'hr_menejer', label: 'HR Menejer' },
-  { value: 'hr', label: 'HR (eski)' },
   { value: 'recruiter', label: 'Rekruter' },
   { value: 'trainer', label: 'Trener' },
   { value: 'mentor', label: 'Mentor' },
@@ -170,7 +169,8 @@ export default function AdminUsersPage() {
   const openEdit = (u: User) => {
     setEditing(u);
     setFullName(u.fullName);
-    setRole(u.role);
+    // Eski «hr» roli ro‘yxatdan olib tashlangan — tahrirda HR Menejer
+    setRole(u.role === 'hr' ? 'hr_menejer' : u.role);
     setPhone(u.phone || '');
     setDepartmentId(u.departmentId != null ? String(u.departmentId) : 'none');
     setStatus(normalizeUserStatus(u.status));
@@ -440,7 +440,7 @@ export default function AdminUsersPage() {
           <SelectTrigger className="w-full sm:w-[200px]">
             <SelectValue placeholder="Rol" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent position="popper">
             <SelectItem value="all">Barcha rollar</SelectItem>
             {ROLES.map((r) => (
               <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
@@ -562,56 +562,59 @@ export default function AdminUsersPage() {
 
       {/* Create dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="border-b px-5 py-4 text-left">
             <DialogTitle>Yangi foydalanuvchi</DialogTitle>
             <DialogDescription>
               Ism-familiya va rolni tanlang — login va parol avtomatik beriladi.
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={onCreate} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Ism familiya *</Label>
-              <Input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Masalan: Aziza Karimova"
-                autoFocus
-              />
+          <form onSubmit={onCreate} className="flex max-h-[min(70vh,32rem)] flex-col">
+            <div className="space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="create-fullName">Ism familiya *</Label>
+                <Input
+                  id="create-fullName"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Masalan: Aziza Karimova"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Rol *</Label>
+                <Select value={role} onValueChange={setRole}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Rolni tanlang" />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="z-[100]">
+                    {ROLES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Telefon (ixtiyoriy)</Label>
+                <PhoneInput value={phone} onChange={setPhone} />
+                <p className="text-xs text-muted-foreground">{UZ_PHONE_HINT}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Bo‘lim (ixtiyoriy)</Label>
+                <Select value={departmentId} onValueChange={setDepartmentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Bo‘lim" />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="z-[100]">
+                    <SelectItem value="none">Belgilanmagan</SelectItem>
+                    {(departments ?? []).map((d) => (
+                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Rol *</Label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Rolni tanlang" />
-                </SelectTrigger>
-                <SelectContent className="z-[100]">
-                  {ROLES.map((r) => (
-                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Telefon (ixtiyoriy)</Label>
-              <PhoneInput value={phone} onChange={setPhone} />
-              <p className="text-xs text-muted-foreground">{UZ_PHONE_HINT}</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Bo‘lim (ixtiyoriy)</Label>
-              <Select value={departmentId} onValueChange={setDepartmentId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Bo‘lim" />
-                </SelectTrigger>
-                <SelectContent className="z-[100]">
-                  <SelectItem value="none">Belgilanmagan</SelectItem>
-                  {(departments ?? []).map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter className="gap-2 border-t bg-muted/30 px-5 py-3 sm:gap-2">
               <Button type="button" variant="ghost" onClick={() => setCreateOpen(false)}>
                 Bekor qilish
               </Button>
@@ -631,8 +634,8 @@ export default function AdminUsersPage() {
           if (!open) resetForm();
         }}
       >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className="border-b px-5 py-4 text-left">
             <DialogTitle>Foydalanuvchini tahrirlash</DialogTitle>
             <DialogDescription>
               {editing?.login ? (
@@ -644,62 +647,65 @@ export default function AdminUsersPage() {
               )}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={onUpdate} className="space-y-4">
-            <div className="space-y-2">
-              <Label>Ism familiya *</Label>
-              <Input
-                value={fullName}
-                onChange={(e) => setFullName(e.target.value)}
-                placeholder="Masalan: Aziza Karimova"
-                autoFocus
-              />
+          <form onSubmit={onUpdate} className="flex max-h-[min(70vh,36rem)] flex-col">
+            <div className="space-y-4 overflow-y-auto overscroll-contain px-5 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-fullName">Ism familiya *</Label>
+                <Input
+                  id="edit-fullName"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Masalan: Aziza Karimova"
+                  autoFocus
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Rol *</Label>
+                <Select value={role} onValueChange={setRole}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Rolni tanlang" />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="z-[100]">
+                    {ROLES.map((r) => (
+                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Telefon (ixtiyoriy)</Label>
+                <PhoneInput value={phone} onChange={setPhone} />
+                <p className="text-xs text-muted-foreground">{UZ_PHONE_HINT}</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Bo‘lim (ixtiyoriy)</Label>
+                <Select value={departmentId} onValueChange={setDepartmentId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Bo‘lim" />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="z-[100]">
+                    <SelectItem value="none">Belgilanmagan</SelectItem>
+                    {(departments ?? []).map((d) => (
+                      <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Holat</Label>
+                <Select value={status} onValueChange={setStatus}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Holat" />
+                  </SelectTrigger>
+                  <SelectContent position="popper" className="z-[100]">
+                    {STATUSES.map((s) => (
+                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Rol *</Label>
-              <Select value={role} onValueChange={setRole}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Rolni tanlang" />
-                </SelectTrigger>
-                <SelectContent className="z-[100]">
-                  {ROLES.map((r) => (
-                    <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Telefon (ixtiyoriy)</Label>
-              <PhoneInput value={phone} onChange={setPhone} />
-              <p className="text-xs text-muted-foreground">{UZ_PHONE_HINT}</p>
-            </div>
-            <div className="space-y-2">
-              <Label>Bo‘lim (ixtiyoriy)</Label>
-              <Select value={departmentId} onValueChange={setDepartmentId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Bo‘lim" />
-                </SelectTrigger>
-                <SelectContent className="z-[100]">
-                  <SelectItem value="none">Belgilanmagan</SelectItem>
-                  {(departments ?? []).map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label>Holat</Label>
-              <Select value={status} onValueChange={setStatus}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Holat" />
-                </SelectTrigger>
-                <SelectContent className="z-[100]">
-                  {STATUSES.map((s) => (
-                    <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter className="gap-2 border-t bg-muted/30 px-5 py-3 sm:gap-2">
               <Button type="button" variant="ghost" onClick={() => setEditOpen(false)}>
                 Bekor qilish
               </Button>

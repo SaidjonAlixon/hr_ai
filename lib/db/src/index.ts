@@ -50,10 +50,12 @@ export const pool = new Pool({
   // Hosted Postgres (Neon, Supabase, Vercel Postgres) usually needs TLS
   ssl: isLocal ? undefined : { rejectUnauthorized: false },
   // Serverless: keep pool small, but 1 leaked connect would block all logins
-  max: process.env.VERCEL ? 3 : 10,
-  connectionTimeoutMillis: process.env.VERCEL ? 10_000 : 15_000,
-  idleTimeoutMillis: process.env.VERCEL ? 5_000 : 30_000,
+  max: process.env.VERCEL ? 2 : 8,
+  connectionTimeoutMillis: process.env.VERCEL ? 8_000 : 12_000,
+  idleTimeoutMillis: process.env.VERCEL ? 4_000 : 20_000,
   allowExitOnIdle: true,
+  // Uzoq so‘rovlar pool ni qulflamasin
+  options: process.env.VERCEL ? "-c statement_timeout=12000" : "-c statement_timeout=30000",
 });
 
 export const db = drizzle(pool, { schema });

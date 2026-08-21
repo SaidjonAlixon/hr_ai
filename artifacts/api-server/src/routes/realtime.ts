@@ -13,13 +13,29 @@ import { requireAuth } from "../middlewares/auth";
 
 const router: IRouter = Router();
 
-async function buildSyncPayload(me: number, chatId: number | null, afterMsgId: number | null) {
+async function buildSyncPayload(
+  me: number,
+  chatId: number | null,
+  afterMsgId: number | null,
+  light: boolean,
+) {
   const [unreadRow] = await db
     .select({ c: sql<number>`count(*)::int` })
     .from(notificationsTable)
     .where(
       and(eq(notificationsTable.userId, me), eq(notificationsTable.isRead, false)),
     );
+
+  // Idle (chat ochiq emas) — faqat unread; chat/messages so‘rovlari 503/qotish sababi
+  if (light || !chatId) {
+    return {
+      serverTime: Date.now(),
+      unreadNotifications: unreadRow?.c ?? 0,
+      chatsVersion: "0",
+      messagesVersion: "0",
+      newMessages: [] as never[],
+    };
+  }
 
   const memberships = await db
     .select({ chatId: chatMembersTable.chatId })
@@ -211,12 +227,19 @@ router.get("/realtime/sync", requireAuth, async (req: AuthRequest, res): Promise
   const me = req.userId!;
   const chatId = req.query.chatId ? Number(req.query.chatId) : null;
   const afterMsgId = req.query.afterMsgId ? Number(req.query.afterMsgId) : null;
+  const light =
+    req.query.light === "1" ||
+    req.query.light === "true" ||
+    !chatId ||
+    !Number.isFinite(chatId);
   try {
     const payload = await buildSyncPayload(
       me,
       chatId && Number.isFinite(chatId) ? chatId : null,
       afterMsgId && Number.isFinite(afterMsgId) ? afterMsgId : null,
+      light,
     );
+    res.setHeader("Cache-Control", "no-store");
     res.json(payload);
   } catch (err) {
     console.error("realtime/sync", err);
@@ -254,10 +277,12 @@ router.get("/realtime/stream", requireAuth, async (req: AuthRequest, res): Promi
     try {
       const chatId = req.query.chatId ? Number(req.query.chatId) : null;
       const afterMsgId = req.query.afterMsgId ? Number(req.query.afterMsgId) : null;
+      const hasChat = !!(chatId && Number.isFinite(chatId));
       const payload = await buildSyncPayload(
         me,
-        chatId && Number.isFinite(chatId) ? chatId : null,
+        hasChat ? chatId : null,
         afterMsgId && Number.isFinite(afterMsgId) ? afterMsgId : null,
+        !hasChat,
       );
 
       const changed =

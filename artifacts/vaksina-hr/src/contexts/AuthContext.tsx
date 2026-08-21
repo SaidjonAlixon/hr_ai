@@ -16,10 +16,13 @@ const AuthContext = createContext<AuthContextType>({
   setUser: () => {},
 });
 
+const AUTH_LOAD_TIMEOUT_MS = 8_000;
+
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const queryClient = useQueryClient();
   /** Login/logout dan kelgan darhol holat; undefined = server javobiga tayanish */
   const [overrideUser, setOverrideUser] = useState<User | null | undefined>(undefined);
+  const [loadTimedOut, setLoadTimedOut] = useState(false);
 
   const { data, isPending, isFetching, isError, isSuccess, status } = useGetMe({
     query: {
@@ -29,10 +32,17 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         return count < 1;
       },
       retryDelay: 400,
-      staleTime: 30_000,
-      refetchOnWindowFocus: true,
+      staleTime: 60_000,
+      refetchOnWindowFocus: false,
     },
   });
+
+  // /auth/me osilib qolsa — doimiy "Yuklanmoqda" emas
+  useEffect(() => {
+    if (overrideUser !== undefined || isSuccess || isError) return;
+    const t = window.setTimeout(() => setLoadTimedOut(true), AUTH_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(t);
+  }, [overrideUser, isSuccess, isError]);
 
   // Serverdan kelgan user bilan sync (F5 / yangilash)
   useEffect(() => {
@@ -44,6 +54,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const setUser = useCallback(
     (next: User | null) => {
       setOverrideUser(next);
+      setLoadTimedOut(false);
       if (next) {
         queryClient.setQueryData(getGetMeQueryKey(), next);
       } else {
@@ -56,13 +67,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const user = useMemo(() => {
     if (overrideUser !== undefined) return overrideUser;
     if (isSuccess && data) return data;
-    if (isError) return null;
+    if (isError || loadTimedOut) return null;
     return null;
-  }, [overrideUser, isSuccess, data, isError]);
+  }, [overrideUser, isSuccess, data, isError, loadTimedOut]);
 
   // Hali /auth/me kutilmoqda yoki muvaffaqiyatli javob bor, lekin user hali bog'lanmagan
   const isLoading =
     overrideUser === undefined &&
+    !loadTimedOut &&
     (isPending || status === 'pending' || (isFetching && !data && !isError));
 
   const isAuthenticated = !!user;

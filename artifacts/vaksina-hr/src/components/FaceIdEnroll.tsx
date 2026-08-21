@@ -11,7 +11,13 @@ import {
 import { FaceScanDialog } from "@/components/FaceScanDialog";
 import { cn } from "@/lib/utils";
 
-export function FaceIdEnroll({ compact = false }: { compact?: boolean }) {
+export function FaceIdEnroll({
+  compact = false,
+  onStatusChange,
+}: {
+  compact?: boolean;
+  onStatusChange?: (status: { registered: boolean; photoUrl?: string | null }) => void;
+}) {
   const { toast } = useToast();
   const supported = isFaceIdSupported();
   const [registered, setRegistered] = useState(false);
@@ -23,7 +29,10 @@ export function FaceIdEnroll({ compact = false }: { compact?: boolean }) {
     let cancelled = false;
     fetchFaceIdStatus()
       .then((s) => {
-        if (!cancelled) setRegistered(s.registered);
+        if (!cancelled) {
+          setRegistered(s.registered);
+          onStatusChange?.({ registered: s.registered, photoUrl: s.photoUrl ?? null });
+        }
       })
       .catch(() => undefined)
       .finally(() => {
@@ -32,18 +41,35 @@ export function FaceIdEnroll({ compact = false }: { compact?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [onStatusChange]);
 
   const onCaptured = useCallback(
-    async (descriptor: number[]) => {
-      await enrollFace(descriptor);
-      setRegistered(true);
-      toast({
-        title: "Face ID ulandi",
-        description: "Keyingi safar faqat yuzingiz bilan kirasiz",
-      });
+    async (descriptor: number[], snapshot?: string) => {
+      try {
+        await enrollFace(descriptor, snapshot);
+        setRegistered(true);
+        const status = await fetchFaceIdStatus().catch(() => null);
+        onStatusChange?.({
+          registered: true,
+          photoUrl: status?.photoUrl ?? snapshot ?? null,
+        });
+        toast({
+          title: "Face ID ulandi",
+          description: "Yuzingiz faqat shu profilingizga biriktirildi",
+        });
+      } catch (err) {
+        const e = err as Error & { code?: string; fullName?: string };
+        if (e.code !== "face_already_taken") {
+          toast({
+            title: "Ulanmadi",
+            description: e.message,
+            variant: "destructive",
+          });
+        }
+        throw err;
+      }
     },
-    [toast],
+    [onStatusChange, toast],
   );
 
   const onRemove = async () => {
@@ -52,6 +78,7 @@ export function FaceIdEnroll({ compact = false }: { compact?: boolean }) {
     try {
       await removeFaceId();
       setRegistered(false);
+      onStatusChange?.({ registered: false, photoUrl: null });
       toast({ title: "Face ID o‘chirildi" });
     } catch (err) {
       toast({
@@ -71,20 +98,24 @@ export function FaceIdEnroll({ compact = false }: { compact?: boolean }) {
     <>
       <FaceScanDialog open={scanOpen} onOpenChange={setScanOpen} mode="enroll" onCaptured={onCaptured} />
       {compact ? (
-        <div className="mt-2 space-y-1">
+        <div className="mt-1.5 space-y-0.5">
           <button
             type="button"
-            onClick={() => (registered ? void onRemove() : setScanOpen(true))}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (registered) void onRemove();
+              else setScanOpen(true);
+            }}
             disabled={loading}
             className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] transition-colors",
+              "flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-[10px] font-medium transition-colors",
               registered
-                ? "text-emerald-300 hover:bg-white/10"
-                : "text-sidebar-foreground/80 hover:bg-white/10 hover:text-white",
+                ? "text-emerald-300/95 hover:bg-emerald-400/10"
+                : "text-sky-200/70 hover:bg-white/10 hover:text-sky-100",
             )}
             title={registered ? "Face ID o‘chirish" : "Face ID ulash"}
           >
-            {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ScanFace className="h-3.5 w-3.5" />}
+            {loading ? <Loader2 className="h-3 w-3 animate-spin" /> : <ScanFace className="h-3 w-3" />}
             <span className="truncate">{registered ? "Face ID ulangan" : "Face ID ni ulash"}</span>
           </button>
         </div>
@@ -97,8 +128,7 @@ export function FaceIdEnroll({ compact = false }: { compact?: boolean }) {
                 Face ID
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Kameraga qarang — yuzingiz faqat shu profilingizga birikadi. Boshqa xodim o‘sha yuzni
-                ishlata olmaydi.
+                Kameraga to‘g‘ri qarang — yuz aniq olinadi. Boshqa xodimga o‘xshasa tizim rad etadi.
               </p>
             </div>
             {registered ? (

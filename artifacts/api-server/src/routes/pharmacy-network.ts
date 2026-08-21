@@ -7,6 +7,10 @@ import { requireAuth } from "../middlewares/auth";
 import { parseGpsText, displayBranchName } from "../lib/geo-location";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
+import {
+  canHardDeletePharmacyNetwork,
+  hardDeletePharmacyEmployee,
+} from "../lib/delete-pharmacy-staff";
 
 const router: IRouter = Router();
 
@@ -742,6 +746,7 @@ async function handleSaveManagerLocation(
     actorUserId: actorId,
     employeeId,
     coordinates: String(req.body?.coordinates || "").trim(),
+    branchName: String(req.body?.branchName ?? req.body?.locationName ?? "").trim() || null,
   });
   if (!result.ok) {
     res.status(result.status).json({ error: result.error });
@@ -778,6 +783,81 @@ router.post(
       return;
     }
     await handleSaveManagerLocation(req, res, id);
+  },
+);
+
+/**
+ * Filial (mudir) yoki xodimni butunlay o‘chirish.
+ * Mudir o‘chirilsa — filial + ostidagi barcha xodimlar ham yo‘qoladi.
+ */
+async function handleHardDelete(req: AuthRequest, res: import("express").Response): Promise<void> {
+  if (!canHardDeletePharmacyNetwork(req.userRole ?? undefined)) {
+    res.status(403).json({ error: "Faqat admin/HR o‘chira oladi" });
+    return;
+  }
+  const body = (req.body ?? {}) as {
+    employeeId?: number | string;
+    userId?: number | string | null;
+    fullName?: string | null;
+  };
+  const fromParam = req.params.employeeId;
+  const employeeId = parseInt(
+    String(
+      body.employeeId ??
+        (Array.isArray(fromParam) ? fromParam[0] : fromParam) ??
+        "",
+    ),
+    10,
+  );
+  const userIdRaw = body.userId ?? req.query.userId;
+  const userId =
+    userIdRaw != null && String(userIdRaw).trim() !== ""
+      ? parseInt(String(userIdRaw), 10)
+      : null;
+  const fullName = String(body.fullName ?? req.query.fullName ?? "").trim() || null;
+
+  if (!Number.isFinite(employeeId) && !userId && !fullName) {
+    res.status(400).json({ error: "Noto‘g‘ri xodim" });
+    return;
+  }
+  try {
+    const result = await hardDeletePharmacyEmployee(
+      Number.isFinite(employeeId) ? employeeId : 0,
+      {
+        userId: userId != null && Number.isFinite(userId) ? userId : null,
+        fullName,
+      },
+    );
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json({
+      ok: true,
+      kind: result.kind,
+      fullName: result.fullName,
+      deletedEmployees: result.deletedEmployees,
+      deletedUsers: result.deletedUsers,
+      message:
+        result.kind === "filial"
+          ? `Filial va mudir «${result.fullName}» butunlay o‘chirildi (${result.deletedEmployees} yozuv)`
+          : `«${result.fullName}» butunlay o‘chirildi`,
+    });
+  } catch (err) {
+    console.error("pharmacy-network hard-delete error:", err);
+    res.status(503).json({ error: "O‘chirish amalga oshmadi" });
+  }
+}
+
+router.post("/pharmacy-network/hard-delete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  await handleHardDelete(req, res);
+});
+
+router.delete(
+  "/pharmacy-network/employees/:employeeId",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    await handleHardDelete(req, res);
   },
 );
 

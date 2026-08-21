@@ -74,7 +74,14 @@ export type DavomatReport = {
     presentList: string[];
     absentList: string[];
     lateList: string[];
-    farFromOffice?: Array<{ fullName: string; officeDistanceMeters: number }>;
+    farFromOffice?: Array<{
+      employeeId: number;
+      fullName: string;
+      position: string | null;
+      departmentName: string | null;
+      checkIn: string | null;
+      officeDistanceMeters: number;
+    }>;
   }>;
   employees: DavomatEmployee[];
 };

@@ -8,6 +8,8 @@ export const faceProfilesTable = pgTable(
     userId: integer("user_id").notNull(),
     /** JSON number[] — 128 o‘lchamli descriptor */
     descriptor: text("descriptor").notNull(),
+    /** Ro‘yxatdan o‘tishdagi yuz surati (data URL yoki blob URL) */
+    photoUrl: text("photo_url"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     lastUsedAt: timestamp("last_used_at", { withTimezone: true }),

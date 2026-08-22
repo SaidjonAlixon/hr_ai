@@ -142,6 +142,9 @@ CREATE TABLE IF NOT EXISTS tasks (
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS candidate_id INTEGER;
 ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pipeline_stage TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_note TEXT;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completion_attachments JSONB NOT NULL DEFAULT '[]'::jsonb;
 
 -- Staffing
 CREATE TABLE IF NOT EXISTS staffing_alerts (
@@ -358,6 +361,9 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS latitude DOUBLE PRECISION;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS created_by_id INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS fixed_salary INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS bonus_percent DOUBLE PRECISION NOT NULL DEFAULT 30;
+    ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
     UPDATE employees
     SET location = regexp_replace(location, '^(Азия|АЗИЯ)', 'ТАШСЕЛМАШ')
     WHERE location ~ '^(Азия|АЗИЯ)($|[[:space:]]|\|)';
@@ -487,6 +493,81 @@ export async function ensurePersistentSchema(): Promise<void> {
       ),
     ]);
     logger.info("Persistent DB schema ensured (CREATE IF NOT EXISTS only — no wipe)");
+    await client.query(`
+CREATE TABLE IF NOT EXISTS kpi_settings (
+  id SERIAL PRIMARY KEY,
+  attendance_weight INTEGER NOT NULL DEFAULT 40,
+  tasks_weight INTEGER NOT NULL DEFAULT 30,
+  checklist_weight INTEGER NOT NULL DEFAULT 30,
+  work_start_hm TEXT NOT NULL DEFAULT '09:00',
+  updated_by_id INTEGER,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO kpi_settings (id, attendance_weight, tasks_weight, checklist_weight)
+SELECT 1, 40, 30, 30
+WHERE NOT EXISTS (SELECT 1 FROM kpi_settings WHERE id = 1);
+ALTER TABLE kpi_settings ADD COLUMN IF NOT EXISTS work_start_hm TEXT NOT NULL DEFAULT '09:00';
+
+CREATE TABLE IF NOT EXISTS payroll_months (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  employee_id INTEGER,
+  month TEXT NOT NULL,
+  fixed_salary INTEGER NOT NULL DEFAULT 0,
+  bonus_percent DOUBLE PRECISION NOT NULL DEFAULT 30,
+  kpi_percent DOUBLE PRECISION NOT NULL DEFAULT 0,
+  max_bonus INTEGER NOT NULL DEFAULT 0,
+  bonus_amount INTEGER NOT NULL DEFAULT 0,
+  total_amount INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'draft',
+  snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  approved_by_id INTEGER,
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS payroll_months_user_month_uidx ON payroll_months (user_id, month);
+
+CREATE TABLE IF NOT EXISTS settlement_sheets (
+  id SERIAL PRIMARY KEY,
+  branch_name TEXT NOT NULL,
+  month TEXT NOT NULL,
+  plan_current DOUBLE PRECISION NOT NULL DEFAULT 0,
+  plan_prev DOUBLE PRECISION NOT NULL DEFAULT 0,
+  tax_net_rate DOUBLE PRECISION NOT NULL DEFAULT 0.88,
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_by_id INTEGER,
+  approved_by_id INTEGER,
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS settlement_sheets_branch_month_uidx ON settlement_sheets (branch_name, month);
+
+CREATE TABLE IF NOT EXISTS settlement_lines (
+  id SERIAL PRIMARY KEY,
+  sheet_id INTEGER NOT NULL,
+  employee_id INTEGER,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  sales DOUBLE PRECISION NOT NULL DEFAULT 0,
+  percent DOUBLE PRECISION NOT NULL DEFAULT 0.006,
+  fiksa DOUBLE PRECISION NOT NULL DEFAULT 0,
+  plan_bonus DOUBLE PRECISION NOT NULL DEFAULT 0,
+  avans DOUBLE PRECISION NOT NULL DEFAULT 0,
+  inventory_fine DOUBLE PRECISION NOT NULL DEFAULT 0,
+  time_fine DOUBLE PRECISION NOT NULL DEFAULT 0,
+  expiry_hold DOUBLE PRECISION NOT NULL DEFAULT 0,
+  card_amount DOUBLE PRECISION,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS fixed_salary INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE employees ADD COLUMN IF NOT EXISTS bonus_percent DOUBLE PRECISION NOT NULL DEFAULT 30;
+    `);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");
     throw err;
@@ -499,5 +580,11 @@ export async function ensurePersistentSchema(): Promise<void> {
     await syncFarmasevtDepartmentAssignments();
   } catch (err) {
     logger.warn({ err }, "Farmasevt department sync skipped");
+  }
+  try {
+    const { syncMoliyaDepartmentAssignments } = await import("./moliya-department");
+    await syncMoliyaDepartmentAssignments();
+  } catch (err) {
+    logger.warn({ err }, "Moliya department sync skipped");
   }
 }

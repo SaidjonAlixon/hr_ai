@@ -1,5 +1,7 @@
 /** Davomat API client */
 
+import { compressFaceSnapshotAsync } from "./face-id";
+
 export type DavomatDayMetrics = {
   date: string;
   status: string;
@@ -188,6 +190,7 @@ export async function faceVerifyDavomat(payload: {
   latitude: number;
   longitude: number;
   accuracy?: number;
+  snapshot?: string;
 }): Promise<{
   ok: boolean;
   fullName: string;
@@ -214,9 +217,12 @@ export async function faceVerifyDavomat(payload: {
   } | null;
   sessionSwitched?: boolean;
 }> {
+  const snapshot = payload.snapshot
+    ? await compressFaceSnapshotAsync(payload.snapshot)
+    : undefined;
   return apiJson("/davomat/face-verify", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, snapshot }),
   });
 }
 
@@ -226,6 +232,7 @@ export async function facePunchDavomat(payload: {
   longitude: number;
   accuracy?: number;
   action: "in" | "out";
+  snapshot?: string;
 }): Promise<{
   ok: boolean;
   action: "in" | "out";
@@ -252,9 +259,12 @@ export async function facePunchDavomat(payload: {
   } | null;
   sessionSwitched?: boolean;
 }> {
+  const snapshot = payload.snapshot
+    ? await compressFaceSnapshotAsync(payload.snapshot)
+    : undefined;
   return apiJson("/davomat/face-punch", {
     method: "POST",
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ ...payload, snapshot }),
   });
 }
 

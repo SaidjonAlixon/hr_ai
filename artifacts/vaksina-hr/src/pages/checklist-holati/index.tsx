@@ -2,9 +2,11 @@ import React, { useMemo, useState } from "react";
 import {
   ClipboardCheck,
   Download,
+  LayoutDashboard,
   MapPin,
   Search,
   Store,
+  Trophy,
   User,
   CalendarDays,
   Check,
@@ -358,17 +360,21 @@ export default function ChecklistHolatiPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="grid h-11 w-full grid-cols-2 sm:grid-cols-4 sm:max-w-2xl">
-          <TabsTrigger value="dashboard" className="text-[11px] sm:text-sm">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 sm:max-w-3xl">
+          <TabsTrigger value="dashboard" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
+            <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
             Dashboard
           </TabsTrigger>
-          <TabsTrigger value="reyting" className="text-[11px] sm:text-sm">
+          <TabsTrigger value="reyting" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
+            <Trophy className="h-3.5 w-3.5 shrink-0" />
             Reyting
           </TabsTrigger>
-          <TabsTrigger value="tashriflar" className="text-[11px] sm:text-sm">
+          <TabsTrigger value="tashriflar" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
+            <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
             Tashriflar
           </TabsTrigger>
-          <TabsTrigger value="qamrov" className="text-[11px] sm:text-sm">
+          <TabsTrigger value="qamrov" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
+            <Store className="h-3.5 w-3.5 shrink-0" />
             <span className="sm:hidden">Qamrov</span>
             <span className="hidden sm:inline">Filial qamrovi</span>
           </TabsTrigger>

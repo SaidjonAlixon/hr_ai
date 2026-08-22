@@ -31,6 +31,7 @@ const VIEW_ROLES = new Set([
   "mudir",
   "farmasevt",
   "stajyor",
+  "moliya",
 ]);
 const WRITE_ROLES = new Set(["koordinator", "admin"]);
 

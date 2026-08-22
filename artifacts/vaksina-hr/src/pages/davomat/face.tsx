@@ -14,6 +14,8 @@ import {
   XCircle,
   History,
   ArrowDown,
+  ArrowLeft,
+  Banknote,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -52,6 +54,7 @@ import type { User } from "@workspace/api-client-react";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
+import { formatSom, useOylikMe } from "@/lib/oylik-api";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
 
@@ -464,6 +467,7 @@ function isTelegramMiniAppContext(): boolean {
 export default function DavomatFacePage() {
   const { user, isAuthenticated, switchToUser } = useAuth();
   const [, setLocation] = useLocation();
+  const oylikMe = useOylikMe();
   const isTgMiniApp = useMemo(() => isTelegramMiniAppContext(), []);
   useTelegramMiniAppChrome();
   const { toast } = useToast();
@@ -803,6 +807,7 @@ export default function DavomatFacePage() {
     try {
       const result = await faceVerifyDavomat({
         descriptor,
+        snapshot,
         ...geoPayload(),
       });
       saveFaceImage(snapshot);
@@ -875,6 +880,7 @@ export default function DavomatFacePage() {
         descriptor: verified.descriptor,
         ...geoPayload(),
         action,
+        snapshot: verified.faceImage,
       });
       setVerified({
         ...verified,
@@ -1016,7 +1022,14 @@ export default function DavomatFacePage() {
             <div className="pointer-events-none absolute -bottom-10 -left-8 h-28 w-28 rounded-full bg-sky-300/10" />
 
             <div className="relative flex items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0">
+                <Link
+                  href={user?.role === "stajyor" ? "/kirish" : "/dashboard"}
+                  className="mb-2.5 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/25"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Chiqish
+                </Link>
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-200/90">
                   {isTgMiniApp ? "Telegram · Davomat" : "Davomat"}
                 </p>
@@ -1716,6 +1729,24 @@ export default function DavomatFacePage() {
             </>
           )}
         </section>
+
+        {isAuthenticated && oylikMe.data ? (
+          <Link href="/oylik">
+            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+              <div className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
+                <Banknote className="h-4 w-4" />
+                Mening oyligim · {oylikMe.data.monthLabel}
+              </div>
+              <p className="mt-1 text-[11px] text-slate-500">Faqat o‘zingizning KPI. Batafsil — Oylik.</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
+                <p>Fiks maosh: <span className="font-semibold">{formatSom(oylikMe.data.fixedSalary)}</span></p>
+                <p>KPI: <span className="font-semibold">{oylikMe.data.kpiPercent}%</span></p>
+                <p>Bonus: <span className="font-semibold">{formatSom(oylikMe.data.bonusAmount)}</span></p>
+                <p>Jami: <span className="font-bold text-[#0b3a5c]">{formatSom(oylikMe.data.totalAmount)}</span></p>
+              </div>
+            </div>
+          </Link>
+        ) : null}
 
         <div className="mt-5 flex justify-center gap-4 text-sm">
           {!isTgMiniApp ? (

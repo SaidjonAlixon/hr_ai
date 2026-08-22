@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { FileText, Link2, Plus, Trash2, Video } from "lucide-react";
+import { ArrowLeft, FileText, Link2, Plus, Trash2, Video } from "lucide-react";
+import { Link } from "wouter";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -152,41 +153,48 @@ export default function AdminKirishVideosPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold tracking-tight">Kirish materiallari</h1>
-        <p className="mt-1 text-muted-foreground">
-          Har bosqichga YouTube video, Google Drive PDF slayd va test savollarini qo‘shing. Drive
-          faylini «Havola orqali ko‘ra oladiganlar» qiling.
+    <div className="mx-auto max-w-3xl space-y-4 pb-10 sm:space-y-5">
+      <div className="overflow-hidden rounded-2xl bg-[#0b3a5c] px-4 py-4 text-white shadow-sm sm:px-6 sm:py-5">
+        <Link
+          href="/dashboard"
+          className="mb-3 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/25"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Chiqish
+        </Link>
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Kirish materiallari</h1>
+        <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-sky-100/85 sm:text-sm">
+          Bosqichga YouTube, Drive PDF va test qo‘shing. Drive faylini «Havola orqali ko‘ra
+          oladiganlar» qiling.
         </p>
       </div>
 
       {list.isLoading ? (
         <div className="space-y-4">
-          <Skeleton className="h-80 rounded-xl" />
-          <Skeleton className="h-80 rounded-xl" />
+          <Skeleton className="h-14 rounded-2xl" />
+          <Skeleton className="h-80 rounded-2xl" />
         </div>
       ) : list.isError ? (
         <p className="text-red-600">{(list.error as Error)?.message || "Yuklanmadi"}</p>
       ) : (
-        <div className="space-y-5">
-          <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+        <div className="space-y-4">
+          <div className="flex gap-1.5 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] sm:grid sm:grid-cols-8 sm:overflow-visible [&::-webkit-scrollbar]:hidden">
             {(list.data?.videos ?? []).map((item) => (
               <button
                 key={item.stage}
                 type="button"
                 onClick={() => setActiveStage(item.stage)}
                 className={cn(
-                  "rounded-2xl border px-2 py-2.5 text-center transition",
+                  "flex h-12 min-w-[3.35rem] shrink-0 flex-col items-center justify-center rounded-xl px-2 text-center transition sm:min-w-0 sm:w-full",
                   activeStage === item.stage
-                    ? "border-[#2AABEE] bg-[#2AABEE] text-white shadow-md shadow-[#2AABEE]/20"
-                    : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                    ? "bg-[#0b3a5c] text-white shadow-sm"
+                    : "border border-slate-200 bg-white text-slate-700 hover:border-[#0b3a5c]/30 hover:bg-slate-50",
                 )}
               >
-                <div className="text-[10px] font-semibold uppercase tracking-wide opacity-80">
+                <span className="text-[9px] font-semibold uppercase tracking-wide opacity-70">
                   Bosqich
-                </div>
-                <div className="mt-0.5 text-lg font-semibold tabular-nums">{item.stage}</div>
+                </span>
+                <span className="text-base font-bold tabular-nums leading-none">{item.stage}</span>
               </button>
             ))}
           </div>
@@ -203,32 +211,35 @@ export default function AdminKirishVideosPage() {
               (save.isPending && save.variables?.stage === v.stage) ||
               (clear.isPending && clear.variables === v.stage);
             return (
-              <Card key={v.stage}>
-                <CardHeader className="space-y-1">
-                  <CardTitle className="flex items-center gap-2 text-base">
-                    <Video className="h-4 w-4 text-[#2AABEE]" />
+              <Card key={v.stage} className="overflow-hidden border-slate-200/80 shadow-sm">
+                <CardHeader className="space-y-1 px-4 pb-3 pt-4 sm:px-6">
+                  <CardTitle className="flex items-center gap-2 text-base text-[#0b3a5c]">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#0b3a5c] text-white">
+                      <Video className="h-3.5 w-3.5" />
+                    </span>
                     {v.stage}-bosqich
                   </CardTitle>
                   <p className="text-sm font-medium text-slate-700">{v.title}</p>
                 </CardHeader>
-                <CardContent className="space-y-5">
+                <CardContent className="space-y-4 px-4 pb-5 sm:space-y-5 sm:px-6">
                   {previewId ? (
                     <img
                       src={`https://img.youtube.com/vi/${previewId}/hqdefault.jpg`}
                       alt={`${v.stage}-bosqich preview`}
-                      className="aspect-video max-w-md rounded-lg object-cover border"
+                      className="aspect-video w-full rounded-xl border object-cover"
                     />
                   ) : (
-                    <div className="flex aspect-video max-w-md items-center justify-center rounded-lg border border-dashed bg-slate-50 text-slate-400">
+                    <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-dashed bg-slate-50 text-slate-400">
                       <Link2 className="h-8 w-8" />
                     </div>
                   )}
 
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
                     <div className="space-y-1.5">
                       <Label htmlFor={`yt-${v.stage}`}>YouTube video</Label>
                       <Input
                         id={`yt-${v.stage}`}
+                        className="h-11 rounded-xl text-base md:h-9 md:text-sm"
                         placeholder="https://www.youtube.com/watch?v=..."
                         value={draft.youtube}
                         onChange={(e) => patch(v.stage, { youtube: e.target.value })}
@@ -241,6 +252,7 @@ export default function AdminKirishVideosPage() {
                       </Label>
                       <Input
                         id={`pdf-${v.stage}`}
+                        className="h-11 rounded-xl text-base md:h-9 md:text-sm"
                         placeholder="https://drive.google.com/file/d/..."
                         value={draft.pdf}
                         onChange={(e) => patch(v.stage, { pdf: e.target.value })}
@@ -249,18 +261,19 @@ export default function AdminKirishVideosPage() {
                   </div>
 
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
+                    <div className="flex items-center justify-between gap-2">
                       <Label>Test savollari</Label>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        className="h-9 rounded-xl border-[#0b3a5c]/20 text-[#0b3a5c]"
                         onClick={() =>
                           patch(v.stage, { questions: [...draft.questions, emptyQuestion()] })
                         }
                       >
                         <Plus className="mr-1 h-4 w-4" />
-                        Savol qo‘shish
+                        Savol
                       </Button>
                     </div>
                     {draft.questions.map((q, qi) => (
@@ -269,7 +282,7 @@ export default function AdminKirishVideosPage() {
                         className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3"
                       >
                         <div className="flex items-start gap-2">
-                          <span className="mt-2 text-xs font-semibold text-[#2AABEE]">{qi + 1}.</span>
+                          <span className="mt-2 text-xs font-semibold text-[#0b3a5c]">{qi + 1}.</span>
                           <Textarea
                             className="min-h-[64px] bg-white"
                             placeholder="Savol matni"
@@ -303,7 +316,7 @@ export default function AdminKirishVideosPage() {
                               <input
                                 type="radio"
                                 name={`correct-${v.stage}-${q.id}`}
-                                className="h-4 w-4 accent-[#2AABEE]"
+                                className="h-4 w-4 accent-[#0b3a5c]"
                                 checked={q.correctIndex === oi}
                                 onChange={() => {
                                   const questions = draft.questions.map((item, i) =>
@@ -313,7 +326,7 @@ export default function AdminKirishVideosPage() {
                                 }}
                               />
                               <Input
-                                className="bg-white"
+                                className="h-11 rounded-xl bg-white text-base md:h-9 md:text-sm"
                                 placeholder={`${oi + 1}-variant`}
                                 value={opt}
                                 onChange={(e) => {
@@ -333,9 +346,9 @@ export default function AdminKirishVideosPage() {
                     ))}
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="grid grid-cols-2 gap-2 sm:flex sm:max-w-md">
                     <Button
-                      className="bg-[#2AABEE] hover:bg-[#229ED9]"
+                      className="h-11 rounded-xl bg-[#0b3a5c] hover:bg-[#0a314d] sm:min-w-[8rem]"
                       disabled={busy}
                       onClick={() => onSave(v.stage)}
                     >
@@ -345,6 +358,7 @@ export default function AdminKirishVideosPage() {
                       <Button
                         type="button"
                         variant="outline"
+                        className="h-11 rounded-xl"
                         disabled={busy}
                         onClick={() => onClear(v.stage)}
                       >
@@ -362,3 +376,4 @@ export default function AdminKirishVideosPage() {
     </div>
   );
 }
+

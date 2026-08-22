@@ -73,6 +73,7 @@ const FULL_NETWORK_ROLES = new Set([
   "department_head",
   "sb",
   "sb_boshliq",
+  "moliya",
 ]);
 
 const ORG_ROLE_UZ: Record<string, string> = {

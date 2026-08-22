@@ -36,7 +36,8 @@ export function canViewDavomat(role?: string | null): boolean {
     role === "hr_direktor" ||
     role === "hr_menejer" ||
     role === "hr" ||
-    isSbRole(role)
+    isSbRole(role) ||
+    role === "moliya"
   );
 }
 
@@ -47,7 +48,8 @@ export function canViewChecklistStatus(role?: string | null): boolean {
     role === "director" ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
-    role === "hr"
+    role === "hr" ||
+    role === "moliya"
   );
 }
 
@@ -159,6 +161,7 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  moliya: "Moliyachi",
 };
 
 export function userRoleLabel(role?: string | null): string {

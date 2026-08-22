@@ -165,15 +165,17 @@ export function CoordinatorRankingBoard({
             {data ? ` ${formatDate(data.from)} — ${formatDate(data.to)}` : ""}
           </p>
         </div>
-        <div className="inline-flex rounded-xl bg-slate-100 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
           {(Object.keys(PERIOD_LABEL) as RankingPeriod[]).map((key) => (
             <button
               key={key}
               type="button"
               onClick={() => setPeriod(key)}
               className={cn(
-                "rounded-lg px-3 py-1.5 text-xs font-medium",
-                period === key ? "bg-white text-[#0b1a2e] shadow-sm" : "text-slate-600 hover:text-slate-900",
+                "h-9 rounded-lg px-2 text-xs font-semibold transition-colors",
+                period === key
+                  ? "bg-[#0b3a5c] text-white shadow-sm"
+                  : "text-slate-600 hover:bg-white/80 hover:text-slate-900",
               )}
             >
               {PERIOD_LABEL[key]}

@@ -30,6 +30,7 @@ import {
   Shield,
   Trophy,
   Banknote,
+  Calculator,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
@@ -84,6 +85,7 @@ const ROLE_LABELS: Record<string, string> = {
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: 'Farmasevt',
   stajyor: 'Stajyor',
+  moliya: 'Moliyachi',
 };
 
 type DashKind =
@@ -94,8 +96,9 @@ type DashKind =
   | 'pharmacy' // mudir, koordinator
   | 'pharmacy_staff' // farmasevt
   | 'ops' // texnik, ombor
-  | 'security' // sb, sb_boshliq
-  | 'intern'; // stajyor
+  | 'security'
+  | 'finance'
+  | 'intern';
 
 type DashDetailKey =
   | 'staffing'
@@ -141,6 +144,8 @@ function dashKindFor(role?: string | null): DashKind {
       return 'ops';
     case 'farmasevt':
       return 'pharmacy_staff';
+    case 'moliya':
+      return 'finance';
     case 'stajyor':
       return 'intern';
     default:
@@ -940,6 +945,61 @@ export default function Dashboard() {
               { href: '/vazifalar', title: 'Topshiriqlar', desc: 'So‘rovlar', icon: ListTodo },
               { href: '/tashkiliy-tuzilma', title: 'Tuzilma', desc: 'SB bo‘limi', icon: Users },
               { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Navbatchilik', icon: AlarmClock },
+            ]}
+          />
+          <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
+        </>
+      )}
+
+      {kind === 'finance' && (
+        <>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 shadow-sm">
+            <p className="text-sm font-semibold text-emerald-900">Moliya bo‘limi</p>
+            <p className="mt-0.5 text-xs text-emerald-800/80">
+              Fiks maosh, KPI, bonus va jami oylik — xodimlar kesimida. Davomat, topshiriq va checklist
+              avtomatik tortiladi.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            <DashTile
+              title="Hisob-kitob"
+              value="→"
+              icon={Calculator}
+              color="text-emerald-700"
+              accent="bg-emerald-50"
+              hint="Filial oyligi"
+              onClick={() => setLocation('/hisobkitob')}
+            />
+            <DashTile
+              title="Oylik / KPI"
+              value="→"
+              icon={Banknote}
+              color="text-[#0b3a5c]"
+              accent="bg-slate-100"
+              hint="Hisob-kitob"
+              onClick={() => setLocation('/oylik')}
+            />
+            <DashTile
+              title="Xodimlar"
+              value="→"
+              icon={Users}
+              color="text-sky-600"
+              accent="bg-sky-50"
+              hint="Fiks maosh"
+              onClick={() => setLocation('/employees')}
+            />
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
+          </div>
+          <DashActionBar
+            items={[
+              { href: '/hisobkitob', title: 'Hisob-kitob', desc: 'Filial oyligi', icon: Calculator },
+              { href: '/oylik', title: 'Oylik', desc: 'KPI va bonus', icon: Banknote },
+              { href: '/employees', title: 'Xodimlar', desc: 'Ro‘yxat', icon: Users },
+              { href: '/davomat', title: 'Davomat', desc: 'Hisobot', icon: ClipboardCheck },
+              { href: '/checklist-holati', title: 'Cheklist', desc: 'KPI manbai', icon: ClipboardList },
+              { href: '/tashkiliy-tuzilma', title: 'Tuzilma', desc: 'Bo‘limlar', icon: Users },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'KPI manbai', icon: ListTodo },
             ]}
           />
           <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />

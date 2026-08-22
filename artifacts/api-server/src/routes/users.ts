@@ -8,6 +8,7 @@ import {
   ensureFarmasevtDepartmentId,
   isFarmasevtDepartmentRole,
 } from "../lib/farmasevt-department";
+import { ensureMoliyaDepartmentId, isMoliyaRole } from "../lib/moliya-department";
 
 const router: IRouter = Router();
 
@@ -30,6 +31,7 @@ const ALLOWED_ROLES = [
   "sb_boshliq",
   "farmasevt",
   "stajyor",
+  "moliya",
 ] as const;
 
 const ALLOWED_STATUSES = ["active", "vacant", "terminated", "on_leave"] as const;
@@ -53,6 +55,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  moliya: "Moliyachi",
 };
 
 const STATUS_UZ: Record<string, string> = {
@@ -367,6 +370,8 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
     let resolvedDeptId = departmentId ? parseInt(String(departmentId), 10) : null;
     if (isFarmasevtDepartmentRole(role)) {
       resolvedDeptId = await ensureFarmasevtDepartmentId();
+    } else if (isMoliyaRole(role)) {
+      resolvedDeptId = await ensureMoliyaDepartmentId();
     }
 
     const [user] = await db
@@ -503,6 +508,8 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   const effectiveRole = (updates.role as string | undefined) || existing.role;
   if (isFarmasevtDepartmentRole(effectiveRole)) {
     updates.departmentId = await ensureFarmasevtDepartmentId();
+  } else if (isMoliyaRole(effectiveRole)) {
+    updates.departmentId = await ensureMoliyaDepartmentId();
   } else if (updates.departmentId !== undefined && updates.departmentId !== null) {
     updates.departmentId = parseInt(String(updates.departmentId), 10);
   }

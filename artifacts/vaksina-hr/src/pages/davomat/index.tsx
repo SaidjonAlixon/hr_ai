@@ -431,14 +431,18 @@ export default function DavomatPage() {
     );
   }
 
+  const fieldClass =
+    "h-11 rounded-xl border-slate-200 bg-white text-base shadow-none md:h-9 md:text-sm";
+
   const filters = (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
       {section === "schedule" && calMode === "range" ? (
         <>
           <div>
-            <Label className="text-xs text-slate-500">Sanadan</Label>
+            <Label className="text-[11px] font-medium text-slate-500">Sanadan</Label>
             <Input
               type="date"
+              className={fieldClass}
               value={rangeFrom}
               onChange={(e) => {
                 const v = e.target.value;
@@ -449,9 +453,10 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Sanagacha</Label>
+            <Label className="text-[11px] font-medium text-slate-500">Sanagacha</Label>
             <Input
               type="date"
+              className={fieldClass}
               value={rangeTo}
               onChange={(e) => {
                 const v = e.target.value;
@@ -470,15 +475,15 @@ export default function DavomatPage() {
         </>
       ) : section === "schedule" ? (
         <div className="sm:col-span-2">
-          <Label className="text-xs text-slate-500">
+          <Label className="text-[11px] font-medium text-slate-500">
             {calMode === "month" ? "Oy" : calMode === "week" ? "Hafta boshi" : "Sana"}
           </Label>
-          <div className="flex items-center gap-1.5">
+          <div className="flex items-center gap-1">
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="shrink-0"
+              className="h-11 w-11 shrink-0 rounded-xl border-slate-200 md:h-9 md:w-9"
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, -7);
@@ -504,6 +509,7 @@ export default function DavomatPage() {
             </Button>
             <Input
               type={calMode === "month" ? "month" : "date"}
+              className={cn(fieldClass, "min-w-0 flex-1 px-2")}
               value={
                 calMode === "week"
                   ? weekStart
@@ -530,7 +536,7 @@ export default function DavomatPage() {
               type="button"
               variant="outline"
               size="icon"
-              className="shrink-0"
+              className="h-11 w-11 shrink-0 rounded-xl border-slate-200 md:h-9 md:w-9"
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, 7);
@@ -569,22 +575,32 @@ export default function DavomatPage() {
       ) : (
         <>
           <div>
-            <Label className="text-xs text-slate-500">Sanadan</Label>
-            <Input type="date" value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
+            <Label className="text-[11px] font-medium text-slate-500">Sanadan</Label>
+            <Input
+              type="date"
+              className={fieldClass}
+              value={periodFrom}
+              onChange={(e) => setPeriodFrom(e.target.value)}
+            />
           </div>
           <div>
-            <Label className="text-xs text-slate-500">Sanagacha</Label>
-            <Input type="date" value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
+            <Label className="text-[11px] font-medium text-slate-500">Sanagacha</Label>
+            <Input
+              type="date"
+              className={fieldClass}
+              value={periodTo}
+              onChange={(e) => setPeriodTo(e.target.value)}
+            />
           </div>
         </>
       )}
       <div>
-        <Label className="text-xs text-slate-500">Bo‘lim</Label>
+        <Label className="text-[11px] font-medium text-slate-500">Bo‘lim</Label>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger>
+          <SelectTrigger className={cn(fieldClass, "px-3")}>
             <SelectValue placeholder="Barchasi" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent position="popper" className="z-[90]">
             <SelectItem value="all">Barcha bo‘limlar</SelectItem>
             {(departments ?? []).map((d) => (
               <SelectItem key={d.id} value={String(d.id)}>
@@ -595,11 +611,11 @@ export default function DavomatPage() {
         </Select>
       </div>
       <div>
-        <Label className="text-xs text-slate-500">Qidiruv</Label>
+        <Label className="text-[11px] font-medium text-slate-500">Qidiruv</Label>
         <div className="relative">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
           <Input
-            className="pl-8"
+            className={cn(fieldClass, "pl-9")}
             placeholder="Ism, lavozim…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -612,34 +628,34 @@ export default function DavomatPage() {
   return (
     <div className="w-full space-y-5 pb-10">
       <div className="overflow-hidden rounded-2xl border border-[#0b3a5c]/10 bg-gradient-to-br from-[#0b3a5c] to-[#0f4a73] text-white shadow-sm">
-        <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+        <div className="flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-6">
           <div className="min-w-0">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-200/80">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/80">
               Hisobot
             </p>
-            <h1 className="mt-1 text-2xl font-bold tracking-tight sm:text-[1.7rem]">Davomat</h1>
-            <p className="mt-1.5 text-sm text-sky-100/85">
+            <h1 className="mt-0.5 text-xl font-bold tracking-tight sm:text-[1.7rem]">Davomat</h1>
+            <p className="mt-1 text-xs text-sky-100/85 sm:text-sm">
               Ish vaqti norma: <span className="font-semibold text-white">09:00–18:00</span>
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <a href="/davomat-face">
+          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+            <a href="/davomat-face" className="min-w-0">
               <Button
                 type="button"
-                className="h-10 gap-2 rounded-xl bg-white text-[#0b3a5c] hover:bg-sky-50"
+                className="h-10 w-full gap-1.5 rounded-xl bg-white px-2.5 text-xs font-semibold text-[#0b3a5c] hover:bg-sky-50 sm:h-10 sm:w-auto sm:px-3 sm:text-sm"
               >
-                <UserCheck className="h-4 w-4" />
+                <UserCheck className="h-4 w-4 shrink-0" />
                 Keldim / Ketdim
               </Button>
             </a>
             {canViewChecklistStatus(user?.role) && (
-              <Link href="/checklist-holati">
+              <Link href="/checklist-holati" className="min-w-0">
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-10 gap-2 rounded-xl border-white/30 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+                  className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-white hover:bg-white/15 hover:text-white sm:w-auto sm:px-3 sm:text-sm"
                 >
-                  <ClipboardCheck className="h-4 w-4" />
+                  <ClipboardCheck className="h-4 w-4 shrink-0" />
                   Cheklist
                 </Button>
               </Link>
@@ -647,20 +663,20 @@ export default function DavomatPage() {
             <Button
               type="button"
               variant="outline"
-              className="h-10 gap-2 rounded-xl border-white/30 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+              className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-white hover:bg-white/15 hover:text-white sm:w-auto sm:px-3 sm:text-sm"
               onClick={() => void onAnnounce()}
               disabled={announcing || loading}
             >
-              {announcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
+              {announcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4 shrink-0" />}
               Xabar
             </Button>
             <Button
               type="button"
-              className="h-10 gap-2 rounded-xl bg-emerald-500 text-white hover:bg-emerald-400"
+              className="h-10 w-full gap-1.5 rounded-xl bg-emerald-500 px-2.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:w-auto sm:px-3 sm:text-sm"
               onClick={() => void onExport()}
               disabled={exporting || loading}
             >
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 shrink-0" />}
               Excel
             </Button>
           </div>
@@ -674,54 +690,57 @@ export default function DavomatPage() {
           setSelectedEmpId("all");
         }}
       >
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-slate-200/80 bg-white p-1.5 shadow-sm">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-slate-200/80 bg-white p-1 shadow-sm">
           <TabsTrigger
             value="schedule"
-            className="h-11 gap-2 rounded-xl text-sm font-semibold data-[state=active]:bg-[#0b3a5c] data-[state=active]:text-white data-[state=active]:shadow-sm"
+            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-[#0b3a5c] data-[state=active]:text-white data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
           >
-            <CalendarDays className="h-4 w-4" />
-            <span className="truncate">Jadval (kun / hafta / oy)</span>
+            <CalendarDays className="h-4 w-4 shrink-0" />
+            <span className="truncate sm:hidden">Jadval</span>
+            <span className="hidden truncate sm:inline">Jadval (kun / hafta / oy)</span>
           </TabsTrigger>
           <TabsTrigger
             value="totals"
-            className="h-11 gap-2 rounded-xl text-sm font-semibold data-[state=active]:bg-[#0b3a5c] data-[state=active]:text-white data-[state=active]:shadow-sm"
+            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-[#0b3a5c] data-[state=active]:text-white data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
           >
-            <Users className="h-4 w-4" />
-            <span className="truncate">Xodimlar jami</span>
+            <Users className="h-4 w-4 shrink-0" />
+            <span className="truncate sm:hidden">Jami</span>
+            <span className="hidden truncate sm:inline">Xodimlar jami</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="schedule" className="mt-4 space-y-4">
           <Card className="border-slate-200/80 shadow-sm">
-            <CardContent className="space-y-4 pt-5">
+            <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:space-y-4 sm:px-6 sm:pt-5">
               <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                   Davr turi
                 </p>
-                <div className="grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100/90 p-1.5 sm:grid-cols-4">
+                <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100/90 p-1">
                   {(
                     [
-                      { id: "day" as const, label: "Kunlik", hint: "1 kun" },
-                      { id: "week" as const, label: "Haftalik", hint: "7 kun" },
-                      { id: "month" as const, label: "Oylik", hint: "1 oy" },
-                      { id: "range" as const, label: "Sanadan–gacha", hint: "O‘zingiz tanlang" },
+                      { id: "day" as const, short: "Kun", label: "Kunlik", hint: "1 kun" },
+                      { id: "week" as const, short: "Hafta", label: "Haftalik", hint: "7 kun" },
+                      { id: "month" as const, short: "Oy", label: "Oylik", hint: "1 oy" },
+                      { id: "range" as const, short: "Davr", label: "Sanadan–gacha", hint: "O‘zingiz tanlang" },
                     ] as const
                   ).map((m) => (
                     <button
                       key={m.id}
                       type="button"
                       className={cn(
-                        "rounded-xl px-3 py-2.5 text-left transition-all",
+                        "rounded-lg px-1 py-2 text-center transition-all sm:px-3 sm:py-2.5 sm:text-left",
                         calMode === m.id
                           ? "bg-white text-[#0b3a5c] shadow-sm ring-1 ring-[#0b3a5c]/15"
                           : "text-slate-600 hover:bg-white/60 hover:text-slate-900",
                       )}
                       onClick={() => setCalModeSafe(m.id)}
                     >
-                      <span className="block text-sm font-semibold leading-none">{m.label}</span>
+                      <span className="block text-[11px] font-semibold leading-none sm:hidden">{m.short}</span>
+                      <span className="hidden text-sm font-semibold leading-none sm:block">{m.label}</span>
                       <span
                         className={cn(
-                          "mt-1 block text-[10px]",
+                          "mt-1 hidden text-[10px] sm:block",
                           calMode === m.id ? "text-[#0b3a5c]/65" : "text-slate-400",
                         )}
                       >

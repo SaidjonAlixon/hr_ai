@@ -18,3 +18,5 @@ export * from "./webauthn";
 export * from "./face-profiles";
 export * from "./attendance";
 export * from "./telegram";
+export * from "./payroll";
+export * from "./settlement";

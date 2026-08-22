@@ -36,7 +36,8 @@ export function canViewDavomat(role?: string | null): boolean {
     role === "hr_direktor" ||
     role === "hr_menejer" ||
     role === "hr" ||
-    isSbRole(role)
+    isSbRole(role) ||
+    role === "moliya"
   );
 }
 
@@ -47,7 +48,8 @@ export function canViewChecklistStatus(role?: string | null): boolean {
     role === "director" ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
-    role === "hr"
+    role === "hr" ||
+    role === "moliya"
   );
 }
 

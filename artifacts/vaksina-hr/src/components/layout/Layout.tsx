@@ -21,15 +21,14 @@ import {
   AlarmClock,
   MessageCircle,
   Network,
-  Eye,
   ScanFace,
-  AlertTriangle,
   ChevronDown,
   Pin,
   Video,
   Trophy,
   BarChart3,
   Banknote,
+  Calculator,
   MapPin,
 } from 'lucide-react';
 import {
@@ -96,7 +95,7 @@ const NAV_SECTIONS: {
     accent: 'bg-sky-400',
     line: 'border-sky-400/55',
     chip: 'text-sky-300',
-    paths: ['/dashboard', '/kirish', '/kuzatuv', '/chat', '/tashkiliy-tuzilma', '/oylik', '/reyting'],
+    paths: ['/dashboard', '/kirish', '/chat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting'],
   },
   {
     id: 'work',
@@ -144,7 +143,7 @@ const NAV_SECTIONS: {
     accent: 'bg-rose-400',
     line: 'border-rose-400/55',
     chip: 'text-rose-300',
-    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/faces-similar'],
+    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces'],
   },
 ];
 
@@ -200,7 +199,6 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
-  if (path.startsWith('/kuzatuv')) return '/kuzatuv';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
   if (path.startsWith('/pipeline')) return '/pipeline';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
@@ -210,7 +208,6 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/interviews')) return '/interviews';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/holat')) return '/admin/holat';
-  if (path.startsWith('/admin/faces-similar')) return '/admin/faces-similar';
   if (path.startsWith('/admin/faces')) return '/admin/faces';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
@@ -575,10 +572,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const chatNav = { name: 'Chat', path: '/chat', icon: MessageCircle };
   const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
-  const kuzatuvNav = { name: 'Kuzatuv', path: '/kuzatuv', icon: Eye };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const davomatFarNav = { name: 'Masofaviy', path: '/davomat-uzoq', icon: MapPin };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
+  const hisobNav = { name: 'Hisob-kitob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
 
   function injectCommonNav(items: NavItem[]): NavItem[] {
@@ -615,7 +612,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const hrDirektorNav: NavItem[] = [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-    kuzatuvNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     chatNav,
@@ -638,7 +634,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const hrAuditorNav: NavItem[] = [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-    kuzatuvNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     chatNav,
     orgNav,
@@ -652,7 +647,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const roleNavigation: Record<string, NavItem[]> = {
     admin: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      kuzatuvNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       chatNav,
@@ -662,6 +656,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
+      hisobNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFarNav,
       davomatFaceNav,
@@ -671,7 +666,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
-      { name: "O'xshash yuzlar", path: '/admin/faces-similar', icon: AlertTriangle },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -702,6 +696,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
+      hisobNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFarNav,
       davomatFaceNav,
@@ -827,6 +822,19 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       reytingNav,
       davomatFaceNav,
+    ],
+    moliya: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Oylik', path: '/oylik', icon: Banknote },
+      { name: 'Hisob-kitob', path: '/hisobkitob', icon: Calculator },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      orgNav,
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFaceNav,
+      { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      chatNav,
     ],
     stajyor: [
       { name: 'Kirish', path: '/kirish', icon: GraduationCap },
@@ -1249,6 +1257,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               location === '/pipeline' ||
                 location === '/vazifalar' ||
                 location === '/davomat' ||
+                location === '/oylik' ||
+                location === '/hisobkitob' ||
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
                 location.startsWith('/tashkiliy-tuzilma')

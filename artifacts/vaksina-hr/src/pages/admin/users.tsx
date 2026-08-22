@@ -53,6 +53,7 @@ const ROLES = [
   { value: 'sb_boshliq', label: "SB bo‘limi boshlig‘i" },
   { value: 'farmasevt', label: 'Farmasevt' },
   { value: 'stajyor', label: 'Stajyor' },
+  { value: 'moliya', label: 'Moliyachi' },
 ] as const;
 
 const STATUSES = [

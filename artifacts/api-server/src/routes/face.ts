@@ -19,6 +19,7 @@ import {
   parseFaceDescriptor,
 } from "../lib/face-match";
 import { ROLE_LABEL_UZ } from "../lib/telegram";
+import { readBlobUpload, readLocalUpload, storeUploadBuffer } from "../lib/blob-storage";
 
 const router: IRouter = Router();
 
@@ -55,6 +56,98 @@ function sanitizeSnapshot(raw: unknown): string | null {
   return s;
 }
 
+function decodeSnapshotBuffer(dataUrl: string): { buffer: Buffer; mime: string; ext: "jpg" | "png" } | null {
+  const m = /^data:image\/(jpeg|jpg|png);base64,([\s\S]+)$/i.exec(dataUrl.trim());
+  if (!m) return null;
+  const raw = m[1]!.toLowerCase();
+  const ext = raw === "png" ? "png" : "jpg";
+  const mime = ext === "png" ? "image/png" : "image/jpeg";
+  try {
+    const buffer = Buffer.from(m[2]!.replace(/\s/g, ""), "base64");
+    if (buffer.length < 80 || buffer.length > 1_800_000) return null;
+    return { buffer, mime, ext };
+  } catch {
+    return null;
+  }
+}
+
+async function persistFacePhoto(userId: number, dataUrl: string): Promise<string> {
+  const decoded = decodeSnapshotBuffer(dataUrl);
+  if (!decoded) throw new Error("Yuz rasmi yaroqsiz");
+  try {
+    const stored = await storeUploadBuffer({
+      buffer: decoded.buffer,
+      fileName: `face-${userId}.${decoded.ext}`,
+      mimeType: decoded.mime,
+    });
+    return stored.url;
+  } catch {
+    if (dataUrl.length <= MAX_SNAPSHOT_CHARS) return dataUrl;
+    throw new Error("Yuz rasmi saqlanmadi");
+  }
+}
+
+/** Rasm yo‘q profilga bir marta yozadi. Bor bo‘lsa tegilmaydi. */
+export async function maybeBackfillFacePhoto(profileId: number, snapshotRaw: unknown): Promise<boolean> {
+  const snapshot = sanitizeSnapshot(snapshotRaw);
+  if (!snapshot || !Number.isFinite(profileId)) return false;
+  const [row] = await db
+    .select({
+      id: faceProfilesTable.id,
+      userId: faceProfilesTable.userId,
+      photoUrl: faceProfilesTable.photoUrl,
+    })
+    .from(faceProfilesTable)
+    .where(eq(faceProfilesTable.id, profileId))
+    .limit(1);
+  if (!row || (row.photoUrl && row.photoUrl.trim())) return false;
+  try {
+    const photoUrl = await persistFacePhoto(row.userId, snapshot);
+    await db
+      .update(faceProfilesTable)
+      .set({ photoUrl, updatedAt: new Date() })
+      .where(eq(faceProfilesTable.id, row.id));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function loadFacePhotoBuffer(photoUrl: string | null | undefined): Promise<{ buffer: Buffer; contentType: string } | null> {
+  if (!photoUrl) return null;
+  const parsed = parsePhotoDataUrl(photoUrl);
+  if (parsed) {
+    return {
+      buffer: Buffer.from(parsed.base64, "base64"),
+      contentType: parsed.extension === "png" ? "image/png" : "image/jpeg",
+    };
+  }
+  const remote = /[?&]path=([^&]+)/.exec(photoUrl);
+  if (remote) {
+    const blob = await readBlobUpload(decodeURIComponent(remote[1]!));
+    if (blob) return { buffer: blob.buffer, contentType: blob.contentType || "image/jpeg" };
+  }
+  const local = /\/api\/uploads\/([^/?#]+)/.exec(photoUrl);
+  if (local) {
+    const buf = await readLocalUpload(decodeURIComponent(local[1]!));
+    if (buf) return { buffer: buf, contentType: "image/jpeg" };
+  }
+  return null;
+}
+
+function sendFacePhoto(
+  res: { setHeader: (k: string, v: string) => void; status: (n: number) => { json: (b: unknown) => void }; send: (b: Buffer) => void },
+  packed: { buffer: Buffer; contentType: string } | null,
+) {
+  if (!packed) {
+    res.status(404).json({ error: "Rasm yo‘q" });
+    return;
+  }
+  res.setHeader("Content-Type", packed.contentType);
+  res.setHeader("Cache-Control", "private, max-age=120");
+  res.send(packed.buffer);
+}
+
 function requireAdmin(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
   if (req.userRole !== "admin") {
     res.status(403).json({ error: "Faqat admin Face ID ro‘yxatini ko‘radi" });
@@ -69,18 +162,29 @@ router.get("/auth/face/status", requireAuth, async (req: AuthRequest, res): Prom
     .select({
       id: faceProfilesTable.id,
       createdAt: faceProfilesTable.createdAt,
+      updatedAt: faceProfilesTable.updatedAt,
       photoUrl: faceProfilesTable.photoUrl,
     })
     .from(faceProfilesTable)
     .where(eq(faceProfilesTable.userId, userId))
     .limit(1);
+  const stamp = row?.updatedAt ? new Date(row.updatedAt).getTime() : Date.now();
   res.json({
     registered: Boolean(row),
     count: row ? 1 : 0,
     hasPhoto: Boolean(row?.photoUrl),
-    photoUrl: row?.photoUrl ?? null,
+    photoUrl: row?.photoUrl ? `/api/auth/face/photo?t=${stamp}` : null,
     createdAt: row?.createdAt ?? null,
   });
+});
+
+router.get("/auth/face/photo", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const [row] = await db
+    .select({ photoUrl: faceProfilesTable.photoUrl })
+    .from(faceProfilesTable)
+    .where(eq(faceProfilesTable.userId, req.userId!))
+    .limit(1);
+  sendFacePhoto(res, await loadFacePhotoBuffer(row?.photoUrl));
 });
 
 router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -123,17 +227,25 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
   }
 
   const snapshot = sanitizeSnapshot(req.body?.snapshot ?? req.body?.photo);
-  const payload: {
-    userId: number;
-    descriptor: string;
-    updatedAt: Date;
-    photoUrl?: string | null;
-  } = {
+  if (!snapshot) {
+    res.status(400).json({ error: "Yuz rasmi olinmadi — kameraga qarab qayta urinib ko‘ring" });
+    return;
+  }
+
+  let photoUrl: string;
+  try {
+    photoUrl = await persistFacePhoto(userId, snapshot);
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message || "Yuz rasmi saqlanmadi" });
+    return;
+  }
+
+  const payload = {
     userId,
     descriptor: JSON.stringify(descriptor),
     updatedAt: new Date(),
+    photoUrl,
   };
-  if (snapshot) payload.photoUrl = snapshot;
 
   const [existing] = await db
     .select({ id: faceProfilesTable.id })
@@ -146,13 +258,15 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
       .set(payload)
       .where(eq(faceProfilesTable.id, existing.id));
   } else {
-    await db.insert(faceProfilesTable).values({
-      ...payload,
-      photoUrl: snapshot,
-    });
+    await db.insert(faceProfilesTable).values(payload);
   }
   invalidateFaceCache();
-  res.json({ ok: true, registered: true, hasPhoto: Boolean(snapshot) });
+  res.json({
+    ok: true,
+    registered: true,
+    hasPhoto: true,
+    photoUrl: `/api/auth/face/photo?t=${Date.now()}`,
+  });
 });
 
 router.post("/auth/face/login", async (req, res): Promise<void> => {
@@ -188,6 +302,8 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
     .update(faceProfilesTable)
     .set({ lastUsedAt: new Date() })
     .where(eq(faceProfilesTable.id, matched.id));
+
+  await maybeBackfillFacePhoto(matched.id, req.body?.snapshot ?? req.body?.photo);
 
   // Tanilgan yuz egasi — sessiya shu profilga o‘tadi (eski cookie yoziladi)
   setSessionCookie(res, user.id);
@@ -277,7 +393,7 @@ router.get("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<v
       status: row.status,
       phone: row.phone,
       departmentName: row.departmentName,
-      photoUrl: row.photoUrl,
+      photoUrl: registered && row.photoUrl ? `/api/admin/faces/${row.userId}/photo` : null,
       hasPhoto: Boolean(row.photoUrl),
       faceRegistered: registered,
       createdAt: row.createdAt,
@@ -577,6 +693,21 @@ router.get("/admin/faces/export", requireAuth, async (req: AuthRequest, res): Pr
   res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   res.setHeader("Content-Disposition", `attachment; filename="face-id_${stamp}.xlsx"`);
   res.send(buffer);
+});
+
+router.get("/admin/faces/:userId/photo", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const userId = parseInt(String(req.params.userId), 10);
+  if (!Number.isFinite(userId)) {
+    res.status(400).json({ error: "Noto‘g‘ri user id" });
+    return;
+  }
+  const [row] = await db
+    .select({ photoUrl: faceProfilesTable.photoUrl })
+    .from(faceProfilesTable)
+    .where(eq(faceProfilesTable.userId, userId))
+    .limit(1);
+  sendFacePhoto(res, await loadFacePhotoBuffer(row?.photoUrl));
 });
 
 /** Admin: xodim Face ID sini tozalash — qayta ro‘yxatdan o‘tishi uchun */

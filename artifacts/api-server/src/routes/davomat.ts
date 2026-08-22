@@ -13,6 +13,7 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
 import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
 import { matchFaceForAuth } from "../lib/face-match";
+import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
 
@@ -1424,6 +1425,7 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       res.status(resolved.status).json(resolved.body);
       return;
     }
+    await maybeBackfillFacePhoto(resolved.faceId, req.body?.snapshot ?? req.body?.photo);
     const workDate = todayTashkent();
     const [rec] = await db
       .select()
@@ -1499,6 +1501,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       res.status(resolved.status).json(resolved.body);
       return;
     }
+    await maybeBackfillFacePhoto(resolved.faceId, req.body?.snapshot ?? req.body?.photo);
 
     const punched = await applyFacePunch({
       emp: resolved.emp,

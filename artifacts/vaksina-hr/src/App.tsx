@@ -29,7 +29,6 @@ import InternshipPage from './pages/candidates/internship';
 import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import TashkiliyTuzilmaPage from './pages/tashkiliy-tuzilma/index';
-import KuzatuvPage from './pages/kuzatuv/index';
 import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
 import EslatmalarPage from './pages/eslatmalar/index';
@@ -39,13 +38,13 @@ import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
 import ChecklistHolatiPage from './pages/checklist-holati/index';
 import OylikPage from './pages/oylik/index';
+import HisobkitobPage from './pages/hisobkitob/index';
 import ReytingPage from './pages/reyting/index';
 import AdminHolatPage from './pages/admin/holat';
 import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
 import AdminKirishVideosPage from './pages/admin/kirish-videos';
 import AdminFacesPage from './pages/admin/faces';
-import AdminFacesSimilarPage from './pages/admin/faces-similar';
 import EmployeesPage from './pages/employees/index';
 import DavomatPage from './pages/davomat/index';
 import DavomatFacePage from './pages/davomat/face';
@@ -134,6 +133,7 @@ function Router() {
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       <ProtectedRoute path="/checklist-holati" component={ChecklistHolatiPage} />
       <ProtectedRoute path="/oylik" component={OylikPage} />
+      <ProtectedRoute path="/hisobkitob" component={HisobkitobPage} />
       <ProtectedRoute path="/reyting" component={ReytingPage} />
       
       <ProtectedRoute path="/employees" component={EmployeesPage} />
@@ -141,7 +141,6 @@ function Router() {
       <ProtectedRoute path="/davomat-uzoq" component={DavomatFarOfficePage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
-      <ProtectedRoute path="/kuzatuv" component={KuzatuvPage} />
       <ProtectedRoute path="/internships" component={InternshipsPlaceholder} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
@@ -149,7 +148,6 @@ function Router() {
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
       <ProtectedRoute path="/admin/faces" component={AdminFacesPage} />
-      <ProtectedRoute path="/admin/faces-similar" component={AdminFacesSimilarPage} />
       
       <Route component={NotFound} />
     </Switch>

@@ -63,6 +63,10 @@ export const employeesTable = pgTable("employees", {
   /** Kim qo‘shgan (users.id) — pharmacy-network / employees create */
   createdById: integer("created_by_id"),
   photoUrl: text("photo_url"),
+  /** Fiks maosh (so‘m, butun son) */
+  fixedSalary: integer("fixed_salary").notNull().default(0),
+  /** 100% KPI dagi bonus ulushi (%) */
+  bonusPercent: doublePrecision("bonus_percent").notNull().default(30),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

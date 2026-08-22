@@ -90,6 +90,7 @@ const ROLE_LABELS: Record<string, string> = {
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  moliya: "Moliyachi",
 };
 
 type ListFilter = "all" | "direct" | "group";

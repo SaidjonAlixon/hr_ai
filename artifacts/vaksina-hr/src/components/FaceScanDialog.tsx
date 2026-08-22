@@ -34,17 +34,21 @@ type Props = {
 function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
   if (!video || video.videoWidth < 8) return undefined;
   try {
-    const w = video.videoWidth;
-    const h = video.videoHeight;
+    const vw = video.videoWidth;
+    const vh = video.videoHeight;
+    const cropW = Math.round(Math.min(vw, vh * 0.78));
+    const cropH = Math.round(Math.min(vh, cropW * 1.25));
+    const sx = Math.max(0, Math.round((vw - cropW) / 2));
+    const sy = Math.max(0, Math.round((vh - cropH) * 0.28));
     const canvas = document.createElement("canvas");
-    canvas.width = w;
-    canvas.height = h;
+    canvas.width = cropW;
+    canvas.height = Math.min(cropH, vh - sy);
     const ctx = canvas.getContext("2d");
     if (!ctx) return undefined;
-    ctx.translate(w, 0);
+    ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, w, h);
-    return canvas.toDataURL("image/jpeg", 0.82);
+    ctx.drawImage(video, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.88);
   } catch {
     return undefined;
   }

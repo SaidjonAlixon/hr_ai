@@ -1,7 +1,6 @@
 import React, { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  AlertTriangle,
   Download,
   Loader2,
   RefreshCw,
@@ -11,7 +10,6 @@ import {
   UserRound,
   X,
 } from "lucide-react";
-import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -82,7 +80,6 @@ export default function AdminFacesPage() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "yes" | "no">("all");
-  const [onlyRisk, setOnlyRisk] = useState(false);
   const [preview, setPreview] = useState<AdminFaceRow | null>(null);
   const [exporting, setExporting] = useState(false);
 
@@ -110,7 +107,6 @@ export default function AdminFacesPage() {
       await downloadAdminFacesExcel({
         q,
         status: statusFilter,
-        onlyRisk,
       });
       toast({
         title: "Excel yuklandi",
@@ -133,7 +129,6 @@ export default function AdminFacesPage() {
     return list.filter((f) => {
       if (statusFilter === "yes" && !f.faceRegistered) return false;
       if (statusFilter === "no" && f.faceRegistered) return false;
-      if (onlyRisk && f.similarRisk === "none") return false;
       if (!needle) return true;
       return (
         f.fullName.toLowerCase().includes(needle) ||
@@ -142,7 +137,7 @@ export default function AdminFacesPage() {
         (f.roleLabel || "").toLowerCase().includes(needle)
       );
     });
-  }, [data?.faces, q, onlyRisk, statusFilter]);
+  }, [data?.faces, q, statusFilter]);
 
   if (!isAdmin) {
     return (
@@ -177,17 +172,6 @@ export default function AdminFacesPage() {
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Excel
           </Button>
-          <Link href="/admin/faces-similar">
-            <Button type="button" variant="outline" size="sm" className="gap-2">
-              <AlertTriangle className="h-4 w-4 text-amber-600" />
-              O‘xshash
-              {(data?.similarPairs ?? 0) > 0 ? (
-                <span className="rounded-full bg-amber-100 px-1.5 text-xs font-semibold text-amber-900">
-                  {data!.similarPairs}
-                </span>
-              ) : null}
-            </Button>
-          </Link>
           <Button
             type="button"
             variant="outline"
@@ -202,7 +186,7 @@ export default function AdminFacesPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
+      <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <div className="rounded-xl border bg-white p-3 shadow-sm">
           <p className="text-[10px] uppercase tracking-wide text-slate-500">Jami</p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums">{data?.total ?? "—"}</p>
@@ -219,20 +203,6 @@ export default function AdminFacesPage() {
             {data?.notRegistered ?? "—"}
           </p>
         </div>
-        <Link
-          href="/admin/faces-similar"
-          className="rounded-xl border bg-white p-3 shadow-sm transition hover:border-amber-300"
-        >
-          <p className="text-[10px] uppercase tracking-wide text-slate-500">O‘xshash</p>
-          <p
-            className={cn(
-              "mt-0.5 text-xl font-semibold tabular-nums",
-              (data?.similarPairs ?? 0) > 0 && "text-amber-700",
-            )}
-          >
-            {data?.similarPairs ?? "—"}
-          </p>
-        </Link>
       </div>
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -268,15 +238,6 @@ export default function AdminFacesPage() {
             </button>
           ))}
         </div>
-        <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600">
-          <input
-            type="checkbox"
-            checked={onlyRisk}
-            onChange={(e) => setOnlyRisk(e.target.checked)}
-            className="rounded border-slate-300"
-          />
-          Faqat o‘xshash xavfi
-        </label>
       </div>
 
       {isLoading ? (

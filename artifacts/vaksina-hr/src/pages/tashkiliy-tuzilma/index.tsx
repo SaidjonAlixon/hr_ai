@@ -169,7 +169,7 @@ const DEPT_META: Array<{
   staff: string;
 }> = [
   { id: "taminot", label: "Ta’minot", hint: "Logistika", tone: "taminot", icon: Truck, keys: ["taminot", "logistika"], head: "Ta’minot rahbari", staff: "Logistika" },
-  { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet, keys: ["moliya"], head: "Moliya rahbari", staff: "Hisob-kitob" },
+  { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet, keys: ["moliya", "moliyachi", "hisob"], head: "Moliya rahbari", staff: "Moliyachi" },
   { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, keys: ["hr", "kadr"], head: "HR rahbari", staff: "Kadrlar" },
   { id: "cb-it", label: "CB va IT", hint: "IT / texnika", tone: "cbit", icon: Cpu, keys: ["cb", "it"], head: "CB / IT rahbari", staff: "Texnika" },
   { id: "xavfsizlik", label: "Xavfsizlik (SB)", hint: "Ob’ekt / navbatchilik", tone: "sb", icon: ShieldCheck, keys: ["xavfsizlik", "sb", "security"], head: "SB bo‘limi boshlig‘i", staff: "SB operatori" },
@@ -191,6 +191,7 @@ const ALLOWED_ROLES = new Set([
   "stajyor",
   "sb",
   "sb_boshliq",
+  "moliya",
 ]);
 
 function isPharmacyOrg(e: Employee, usersById: Map<number, User>) {

@@ -301,8 +301,8 @@ export async function updateMyProfile(input: {
 
 export async function compressFaceSnapshotAsync(
   dataUrl: string | undefined,
-  maxSide = 280,
-  quality = 0.7,
+  maxSide = 480,
+  quality = 0.82,
 ): Promise<string | undefined> {
   if (!dataUrl?.startsWith("data:image/")) return undefined;
   try {
@@ -323,24 +323,30 @@ export async function compressFaceSnapshotAsync(
     ctx.drawImage(img, 0, 0, w, h);
     return canvas.toDataURL("image/jpeg", quality);
   } catch {
-    return undefined;
+    return dataUrl.startsWith("data:image/") ? dataUrl : undefined;
   }
 }
 
-export async function enrollFace(descriptor: number[], snapshot?: string): Promise<void> {
-  const photo = await compressFaceSnapshotAsync(snapshot);
-  await apiJson("/auth/face/enroll", {
+export async function enrollFace(descriptor: number[], snapshot?: string): Promise<{ photoUrl?: string | null }> {
+  if (!snapshot?.startsWith("data:image/")) {
+    throw new Error("Yuz rasmi olinmadi — qayta urinib ko‘ring");
+  }
+  const photo = (await compressFaceSnapshotAsync(snapshot)) || snapshot;
+  const res = await apiJson<{ photoUrl?: string | null }>("/auth/face/enroll", {
     method: "POST",
-    body: JSON.stringify({ descriptor, snapshot: photo }),
+    body: JSON.stringify({ descriptor, snapshot: photo, photo }),
   });
+  return res;
 }
 
 export async function loginWithFace<TUser>(
   descriptor: number[],
+  snapshot?: string,
 ): Promise<{ user: TUser; fullName?: string; message?: string }> {
+  const photo = snapshot ? await compressFaceSnapshotAsync(snapshot) : undefined;
   return apiJson<{ user: TUser; fullName?: string; message?: string }>("/auth/face/login", {
     method: "POST",
-    body: JSON.stringify({ descriptor }),
+    body: JSON.stringify({ descriptor, snapshot: photo }),
   });
 }
 

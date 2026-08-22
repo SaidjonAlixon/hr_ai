@@ -21,6 +21,7 @@ export function FaceIdEnroll({
   const { toast } = useToast();
   const supported = isFaceIdSupported();
   const [registered, setRegistered] = useState(false);
+  const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [scanOpen, setScanOpen] = useState(false);
@@ -31,6 +32,7 @@ export function FaceIdEnroll({
       .then((s) => {
         if (!cancelled) {
           setRegistered(s.registered);
+          setPhotoUrl(s.photoUrl ?? null);
           onStatusChange?.({ registered: s.registered, photoUrl: s.photoUrl ?? null });
         }
       })
@@ -46,12 +48,14 @@ export function FaceIdEnroll({
   const onCaptured = useCallback(
     async (descriptor: number[], snapshot?: string) => {
       try {
-        await enrollFace(descriptor, snapshot);
+        const saved = await enrollFace(descriptor, snapshot);
         setRegistered(true);
         const status = await fetchFaceIdStatus().catch(() => null);
+        const nextPhoto = status?.photoUrl ?? saved.photoUrl ?? snapshot ?? null;
+        setPhotoUrl(nextPhoto);
         onStatusChange?.({
           registered: true,
-          photoUrl: status?.photoUrl ?? snapshot ?? null,
+          photoUrl: nextPhoto,
         });
         toast({
           title: "Face ID ulandi",
@@ -78,6 +82,7 @@ export function FaceIdEnroll({
     try {
       await removeFaceId();
       setRegistered(false);
+      setPhotoUrl(null);
       onStatusChange?.({ registered: false, photoUrl: null });
       toast({ title: "Face ID o‘chirildi" });
     } catch (err) {
@@ -121,33 +126,41 @@ export function FaceIdEnroll({
         </div>
       ) : (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-start justify-between gap-3">
-            <div>
+          <div className="flex items-start gap-3">
+            <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200">
+              {photoUrl ? (
+                <img src={photoUrl} alt="Face ID" className="h-full w-full object-cover" />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center text-slate-400">
+                  <ScanFace className="h-8 w-8" />
+                </div>
+              )}
+            </div>
+            <div className="min-w-0 flex-1">
               <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-                <ScanFace className="h-4 w-4 text-[#0b3a5c]" />
                 Face ID
+                {registered ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                    <CheckCircle2 className="h-3 w-3" /> Ulangan
+                  </span>
+                ) : null}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 Kameraga to‘g‘ri qarang — yuz aniq olinadi. Boshqa xodimga o‘xshasa tizim rad etadi.
               </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Button type="button" size="sm" disabled={loading || !supported} onClick={() => setScanOpen(true)}>
+                  <ScanFace className="mr-1.5 h-3.5 w-3.5" />
+                  {registered ? "Qayta ulash" : "Face ID ni ulash"}
+                </Button>
+                {registered ? (
+                  <Button type="button" size="sm" variant="outline" disabled={loading} onClick={() => void onRemove()}>
+                    <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+                    O‘chirish
+                  </Button>
+                ) : null}
+              </div>
             </div>
-            {registered ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
-                <CheckCircle2 className="h-3 w-3" /> Ulangan
-              </span>
-            ) : null}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <Button type="button" size="sm" disabled={loading || !supported} onClick={() => setScanOpen(true)}>
-              <ScanFace className="mr-1.5 h-3.5 w-3.5" />
-              {registered ? "Qayta ulash" : "Face ID ni ulash"}
-            </Button>
-            {registered ? (
-              <Button type="button" size="sm" variant="outline" disabled={loading} onClick={() => void onRemove()}>
-                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
-                O‘chirish
-              </Button>
-            ) : null}
           </div>
           {!supported ? (
             <p className="mt-2 text-[11px] text-amber-700">

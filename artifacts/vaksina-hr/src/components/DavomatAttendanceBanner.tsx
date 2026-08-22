@@ -80,7 +80,7 @@ export function DavomatAttendanceBanner() {
         <Button
           asChild
           size="sm"
-          className="h-9 w-full gap-1.5 bg-[#0b3a5c] text-xs hover:bg-[#0a314d] sm:h-7 sm:w-auto sm:px-2.5"
+          className="h-8 w-full gap-1.5 rounded-lg bg-[#0b3a5c] text-xs hover:bg-[#0a314d] sm:h-7 sm:w-auto sm:px-2.5"
         >
           <Link href={status.linkUrl || "/davomat-face"}>
             <ScanFace className="h-3.5 w-3.5" />

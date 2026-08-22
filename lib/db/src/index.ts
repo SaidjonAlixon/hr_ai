@@ -61,7 +61,12 @@ function lookupWithDnsFallback(
   });
 }
 
-const poolConfig: pg.PoolConfig = {
+/** `pg` typings ba’zi versiyalarda `lookup` ni `PoolConfig`da ko‘rsatmaydi */
+type PoolConfigWithLookup = pg.PoolConfig & {
+  lookup?: typeof lookupWithDnsFallback;
+};
+
+const poolConfig: PoolConfigWithLookup = {
   connectionString,
   ssl: isLocal ? undefined : { rejectUnauthorized: false },
   max: process.env.VERCEL ? 2 : 8,

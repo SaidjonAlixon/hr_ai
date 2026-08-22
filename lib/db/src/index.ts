@@ -11,10 +11,27 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-const connectionString = process.env.DATABASE_URL;
+/** Neon `channel_binding=require` node-pg / Vercel’da FUNCTION_INVOCATION_FAILED beradi */
+function sanitizeDatabaseUrl(raw: string): string {
+  try {
+    const u = new URL(raw.replace(/^postgresql:/i, "http:"));
+    u.searchParams.delete("channel_binding");
+    if (!u.searchParams.get("sslmode")) u.searchParams.set("sslmode", "require");
+    const auth = u.username
+      ? `${encodeURIComponent(u.username)}:${encodeURIComponent(u.password)}@`
+      : "";
+    return `postgresql://${auth}${u.host}${u.pathname}${u.search}`;
+  } catch {
+    return raw.replace(/([?&])channel_binding=require&?/gi, "$1").replace(/\?&/, "?").replace(/\?$/, "");
+  }
+}
+
+const connectionString = sanitizeDatabaseUrl(process.env.DATABASE_URL);
 const isLocal =
   /localhost|127\.0\.0\.1/i.test(connectionString) ||
   connectionString.includes("sslmode=disable");
+const isRailway = /rlwy\.net|railway/i.test(connectionString);
+const isPooler = /pooler/i.test(connectionString);
 
 /** Router DNS sometimes cannot resolve Railway proxy hosts; Google/Cloudflare can. */
 const publicResolver = new dns.Resolver();
@@ -44,19 +61,26 @@ function lookupWithDnsFallback(
   });
 }
 
-export const pool = new Pool({
+const poolConfig: pg.PoolConfig = {
   connectionString,
-  lookup: lookupWithDnsFallback,
-  // Hosted Postgres (Neon, Supabase, Vercel Postgres) usually needs TLS
   ssl: isLocal ? undefined : { rejectUnauthorized: false },
-  // Serverless: keep pool small, but 1 leaked connect would block all logins
   max: process.env.VERCEL ? 2 : 8,
   connectionTimeoutMillis: process.env.VERCEL ? 8_000 : 12_000,
   idleTimeoutMillis: process.env.VERCEL ? 4_000 : 20_000,
   allowExitOnIdle: true,
-  // Uzoq so‘rovlar pool ni qulflamasin
-  options: process.env.VERCEL ? "-c statement_timeout=12000" : "-c statement_timeout=30000",
-});
+};
+
+// Railway proxy DNS fallback — Neon’da Vercel lookup hooki yiqilishi mumkin
+if (isRailway) {
+  poolConfig.lookup = lookupWithDnsFallback;
+}
+
+// PgBouncer (Neon pooler) startup `options` ni yoqtirmaydi
+if (!isPooler && !process.env.VERCEL) {
+  poolConfig.options = "-c statement_timeout=30000";
+}
+
+export const pool = new Pool(poolConfig);
 
 export const db = drizzle(pool, { schema });
 

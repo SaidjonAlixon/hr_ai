@@ -12,6 +12,11 @@ import { setSessionCookie } from "../lib/session";
 import {
   FACE_ENROLL_BLOCK_MAX,
   FACE_MATCH_MAX,
+  FACE_STORE_PHOTOS,
+  LIVENESS_THRESHOLD,
+  evaluateLiveness,
+  packDescriptors,
+  type LivenessProof,
   FACE_SIMILAR_WARN,
   distanceBetweenDescriptors,
   enrichFaceHits,
@@ -202,6 +207,12 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
     return;
   }
 
+  const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "enroll");
+  if (!live.ok) {
+    res.status(403).json({ error: live.error, code: live.code });
+    return;
+  }
+
   for (const descriptor of descriptors) {
     const nearest = await findNearestFaces(descriptor, {
       excludeUserId: userId,
@@ -241,7 +252,7 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
     return;
   }
 
-  let photoUrl: string;
+  let photoUrl = "";
   try {
     photoUrl = await persistFacePhoto(userId, snapshot);
   } catch (err) {
@@ -251,7 +262,7 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
 
   const payload = {
     userId,
-    descriptor: JSON.stringify(descriptors),
+    descriptor: packDescriptors(descriptors),
     updatedAt: new Date(),
     photoUrl,
   };
@@ -282,6 +293,12 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
   const descriptor = parseDescriptor(req.body?.descriptor);
   if (!descriptor) {
     res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
+    return;
+  }
+
+  const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "login");
+  if (!live.ok) {
+    res.status(403).json({ error: live.error, code: live.code });
     return;
   }
 
@@ -448,6 +465,8 @@ router.get("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<v
     withPhoto: faces.filter((r) => r.hasPhoto).length,
     similarPairs: duplicates.length,
     enrollBlockMax: FACE_ENROLL_BLOCK_MAX,
+    matchMax: FACE_MATCH_MAX,
+    livenessThreshold: LIVENESS_THRESHOLD,
     faces,
     duplicates,
   });

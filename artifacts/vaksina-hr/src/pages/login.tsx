@@ -179,8 +179,8 @@ export default function Login() {
                   open={faceOpen}
                   onOpenChange={setFaceOpen}
                   mode="login"
-                  onCaptured={async (descriptor, snapshot) => {
-                    const data = await loginWithFace<User>(descriptor, snapshot);
+                  onCaptured={async (descriptor, snapshot, liveness) => {
+                    const data = await loginWithFace<User>(descriptor, snapshot, liveness);
                     const fullName =
                       data.fullName ||
                       (data.user as User & { fullName?: string })?.fullName ||

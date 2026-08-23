@@ -12,7 +12,7 @@ import {
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
 import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
-import { matchFaceForAuth } from "../lib/face-match";
+import { evaluateLiveness, matchFaceForAuth, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
@@ -1411,6 +1411,11 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
       return;
     }
+    const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "login");
+    if (!live.ok) {
+      res.status(403).json({ error: live.error, code: live.code });
+      return;
+    }
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       res.status(400).json({ error: "GPS majburiy — lokatsiyaga ruxsat bering", code: "gps_required" });
       return;
@@ -1477,6 +1482,11 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
 
     if (!descriptor) {
       res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
+      return;
+    }
+    const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "login");
+    if (!live.ok) {
+      res.status(403).json({ error: live.error, code: live.code });
       return;
     }
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {

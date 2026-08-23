@@ -15,9 +15,11 @@ import {
   faceAlignHint,
   isFaceIdSupported,
   isStableSample,
+  livenessMotion,
   poseHint,
   poseMatchesWant,
   type FaceAlignStatus,
+  type FaceLivenessProof,
   type FaceOvalFrame,
   type FacePose,
 } from "@/lib/face-id";
@@ -29,21 +31,35 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "enroll" | "login";
-  onCaptured: (descriptor: number[] | number[][], snapshot?: string) => Promise<CaptureResult>;
+  onCaptured: (
+    descriptor: number[] | number[][],
+    snapshot?: string,
+    liveness?: FaceLivenessProof,
+  ) => Promise<CaptureResult>;
   title?: string;
   description?: string;
 };
 
-const ENROLL_POSES: { pose: FacePose; need: number }[] = [
-  { pose: "center", need: 3 },
-  { pose: "left", need: 2 },
-  { pose: "right", need: 2 },
-  { pose: "up", need: 1 },
-  { pose: "down", need: 1 },
+type Challenge = { key: string; pose?: FacePose; blink?: boolean; need: number };
+
+const ENROLL_STEPS: Challenge[] = [
+  { key: "center", pose: "center", need: 2 },
+  { key: "left", pose: "left", need: 2 },
+  { key: "right", pose: "right", need: 2 },
+  { key: "up", pose: "up", need: 1 },
 ];
-const LOGIN_STREAK = 3;
+const LOGIN_STEPS: Challenge[] = [
+  { key: "center", pose: "center", need: 1 },
+  { key: "left", pose: "left", need: 1 },
+];
+
 const MIN_SCORE_ENROLL = 0.62;
 const MIN_SCORE_LOGIN = 0.62;
+
+function stepHint(step: Challenge): string {
+  if (step.blink) return "Ko‘zlarni yumib oching";
+  return poseHint(step.pose ?? "center");
+}
 
 function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
   if (!video || video.videoWidth < 8) return undefined;
@@ -96,9 +112,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const [aligned, setAligned] = useState(false);
   const [poseIndex, setPoseIndex] = useState(0);
   const [poseFill, setPoseFill] = useState(0);
-  const [loginFill, setLoginFill] = useState(0);
 
-  const enrollPose = ENROLL_POSES[Math.min(poseIndex, ENROLL_POSES.length - 1)]!;
+  const steps = mode === "enroll" ? ENROLL_STEPS : LOGIN_STEPS;
+  const currentStep = steps[Math.min(poseIndex, steps.length - 1)]!;
 
   useEffect(() => {
     if (!open) {
@@ -107,17 +123,21 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setError(null);
       setPoseIndex(0);
       setPoseFill(0);
-      setLoginFill(0);
       return;
     }
 
     let cancelled = false;
-    const poseBuckets: number[][][] = ENROLL_POSES.map(() => []);
+    const steps = mode === "enroll" ? ENROLL_STEPS : LOGIN_STEPS;
+    const poseBuckets: number[][][] = steps.map(() => []);
     let poseI = 0;
-    let loginStreak = 0;
     let running = true;
-    let poseHold = 0;
     let lastDesc: number[] | null = null;
+    let lastPhoto: string | undefined;
+    let blinkClosed = false;
+    let blinkOpen = false;
+    let pitchRef: number | null = null;
+    let openEar = 0;
+    let lastBlinkDesc: number[] | null = null;
 
     const stopCamera = () => {
       running = false;
@@ -174,125 +194,135 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         if (!video) return;
         video.srcObject = stream;
         await video.play();
-        setHint(mode === "enroll" ? poseHint("center") : "Yuzni oval ichiga tuting");
+        setHint(stepHint(steps[0]!));
+
+        const finish = async (videoEl: HTMLVideoElement) => {
+          running = false;
+          setBusy(true);
+          setHint(mode === "enroll" ? "Yuz saqlanmoqda…" : "Yuz tekshirilmoqda…");
+          const samples = poseBuckets.flat();
+          const templates = poseBuckets
+            .filter((b) => b.length)
+            .map((b) => averageDescriptorsRobust(b));
+          const posesDone = steps.filter((s) => s.pose).map((s) => s.pose!) as string[];
+          const motion = livenessMotion(samples);
+          const liveness: FaceLivenessProof = {
+            blinked: false,
+            poses: posesDone,
+            motion,
+            score: (posesDone.length >= 3 ? 0.55 : 0.25) + (motion >= 0.05 ? 0.35 : 0.15),
+          };
+          const payload = mode === "enroll" ? templates : (templates[0] ?? samples[0]!);
+          try {
+            const captured = await onCapturedRef.current(
+              payload,
+              grabFaceSnapshot(videoEl) || lastPhoto,
+              liveness,
+            );
+            const name =
+              captured && typeof captured === "object" && captured.fullName ? captured.fullName.trim() : "";
+            if (name) {
+              setError(null);
+              setHint(`Xush kelibsiz, ${name}`);
+              await new Promise((r) => window.setTimeout(r, 700));
+            }
+            stopCamera();
+            onOpenChange(false);
+          } catch (err) {
+            setError((err as Error)?.message || "Tasdiqlanmadi");
+            setBusy(false);
+            poseI = 0;
+            poseBuckets.forEach((b) => {
+              b.length = 0;
+            });
+            setPoseIndex(0);
+            setPoseFill(0);
+            lastDesc = null;
+            blinkClosed = false;
+            blinkOpen = false;
+            running = true;
+          }
+        };
 
         const loop = async () => {
           if (!running || cancelled) return;
           const videoEl = videoRef.current;
           if (videoEl && videoEl.readyState >= 2) {
             try {
-              const want = ENROLL_POSES[poseI];
+              const want = steps[poseI];
+              if (!want) {
+                await finish(videoEl);
+                return;
+              }
               const result = await detectFaceDescriptor(videoEl, readFrame(), true, {
-                allowTurn: mode === "enroll" && want?.pose !== "center",
+                allowTurn: Boolean(want.pose && want.pose !== "center"),
+                allowBlink: Boolean(want.blink),
               });
               const alignStatus: FaceAlignStatus = result.status;
-              const poseOk =
-                mode === "login" ||
-                poseMatchesWant(want?.pose ?? "center", result.pose, result.yaw ?? 0, result.pitch ?? 0) ||
-                (mode === "enroll" && want?.pose !== "center" && poseHold >= 8);
+              const wantPose = want.pose ?? "center";
+              if (wantPose === "down" && result.pitch != null && pitchRef == null && result.descriptor) {
+                pitchRef = result.pitch;
+              }
+              const poseOk = want.blink
+                ? Boolean(result.descriptor)
+                : poseMatchesWant(wantPose, result.pose, result.yaw ?? 0, result.pitch ?? 0, pitchRef ?? undefined);
               const inFrame = Boolean(result.descriptor) && (alignStatus === "ok" || alignStatus === "turn_face");
               setAligned(Boolean(inFrame && poseOk));
               const minScore = mode === "enroll" ? MIN_SCORE_ENROLL : MIN_SCORE_LOGIN;
 
-              if (!result.descriptor || (result.score ?? 0) < minScore) {
-                loginStreak = 0;
-                if (mode === "login") setLoginFill(0);
+              if (!want.blink && (!result.descriptor || (result.score ?? 0) < minScore)) {
+                setPoseFill(0);
                 if (alignStatus !== "ok" && alignStatus !== "turn_face") setHint(faceAlignHint(alignStatus));
-                else if (mode === "enroll" && want) setHint(poseHint(want.pose));
-                else setHint(faceAlignHint(alignStatus));
-              } else if (mode === "enroll" && want) {
-                if (result.descriptor) poseHold += 1;
-                else poseHold = 0;
-                const poseOkNow =
-                  poseMatchesWant(want.pose, result.pose, result.yaw ?? 0, result.pitch ?? 0) ||
-                  (want.pose !== "center" && poseHold >= 8);
-                if (!poseOkNow) {
-                  lastDesc = null;
-                  setHint(poseHint(want.pose));
-                } else if (
-                  want.pose === "center" &&
-                  !isStableSample(lastDesc, result.descriptor, 0.28)
-                ) {
-                  lastDesc = result.descriptor;
-                  setHint("Bir soniya turing…");
-                } else {
-                  lastDesc = result.descriptor;
+                else setHint(stepHint(want));
+              } else if (want.blink) {
+                if (result.descriptor) lastBlinkDesc = result.descriptor;
+                const ear = result.ear;
+                if (ear != null && ear > 0.2) openEar = Math.max(openEar, ear);
+                const closeAt = Math.max(0.14, (openEar || 0.28) * 0.78);
+                const openAt = Math.max(closeAt + 0.03, (openEar || 0.26) * 0.88);
+                if (ear != null && ear < closeAt) {
+                  blinkClosed = true;
+                  setAligned(true);
+                  setHint("Yaxshi — endi ko‘zni oching");
+                } else if (blinkClosed && ear != null && ear > openAt) {
+                  blinkOpen = true;
                   const bucket = poseBuckets[poseI]!;
-                  bucket.push(result.descriptor);
-                  setPoseFill(bucket.length);
-                  setHint(`${poseHint(want.pose)}  ·  ${bucket.length}/${want.need}`);
-                  if (bucket.length >= want.need) {
-                    poseI += 1;
-                    setPoseIndex(poseI);
-                    setPoseFill(0);
-                    lastDesc = null;
-                    poseHold = 0;
-                    if (poseI >= ENROLL_POSES.length) {
-                      running = false;
-                      setBusy(true);
-                      setHint("Yuz saqlanmoqda…");
-                      const templates = poseBuckets.map((b) => averageDescriptorsRobust(b));
-                      try {
-                        await onCapturedRef.current(templates, grabFaceSnapshot(videoEl));
-                        stopCamera();
-                        onOpenChange(false);
-                        return;
-                      } catch (err) {
-                        setError((err as Error)?.message || "Saqlanmadi");
-                        setBusy(false);
-                        poseI = 0;
-                        poseBuckets.forEach((b) => {
-                          b.length = 0;
-                        });
-                        setPoseIndex(0);
-                        setPoseFill(0);
-                        lastDesc = null;
-                        poseHold = 0;
-                        running = true;
-                      }
-                    } else {
-                      setHint(poseHint(ENROLL_POSES[poseI]!.pose));
-                    }
+                  const vec = result.descriptor ?? lastBlinkDesc;
+                  if (vec) bucket.push(vec);
+                  poseI += 1;
+                  setPoseIndex(poseI);
+                  setPoseFill(0);
+                  lastDesc = null;
+                  setHint(poseI >= steps.length ? "Tasdiqlanmoqda…" : stepHint(steps[poseI]!));
+                  if (poseI >= steps.length) {
+                    await finish(videoEl);
+                    return;
                   }
-                }
-              } else if (mode === "login") {
-                if (!isStableSample(lastDesc, result.descriptor, 0.22)) {
-                  lastDesc = result.descriptor;
-                  loginStreak = 0;
-                  setLoginFill(0);
-                  setHint(faceAlignHint("hold_still"));
                 } else {
-                  lastDesc = result.descriptor;
-                  loginStreak += 1;
-                  setLoginFill(loginStreak);
-                  setHint(faceAlignHint("ok"));
-                  if (loginStreak >= LOGIN_STREAK) {
-                    running = false;
-                    setBusy(true);
-                    setHint("Yuz tekshirilmoqda…");
-                    try {
-                      const captured = await onCapturedRef.current(result.descriptor, grabFaceSnapshot(videoEl));
-                      const name =
-                        captured && typeof captured === "object" && captured.fullName
-                          ? captured.fullName.trim()
-                          : "";
-                      if (name) {
-                        setError(null);
-                        setHint(`Xush kelibsiz, ${name}`);
-                        await new Promise((r) => window.setTimeout(r, 800));
-                      }
-                      stopCamera();
-                      onOpenChange(false);
-                      return;
-                    } catch (err) {
-                      setError((err as Error)?.message || "Bu yuz aniqlanmadi.");
-                      setBusy(false);
-                      loginStreak = 0;
-                      setLoginFill(0);
-                      lastDesc = null;
-                      running = true;
-                    }
+                  setAligned(Boolean(result.descriptor));
+                  setHint(blinkClosed ? "Ko‘zni oching" : "Ko‘zlarni yumib oching");
+                }
+              } else if (!poseOk) {
+                lastDesc = null;
+                setHint(stepHint(want));
+              } else {
+                lastDesc = result.descriptor;
+                lastPhoto = grabFaceSnapshot(videoEl) || lastPhoto;
+                const bucket = poseBuckets[poseI]!;
+                bucket.push(result.descriptor);
+                setPoseFill(bucket.length);
+                setHint(`${stepHint(want)}  ·  ${bucket.length}/${want.need}`);
+                if (bucket.length >= want.need) {
+                  poseI += 1;
+                  setPoseIndex(poseI);
+                  setPoseFill(0);
+                  lastDesc = null;
+                  pitchRef = null;
+                  if (poseI >= steps.length) {
+                    await finish(videoEl);
+                    return;
                   }
+                  setHint(stepHint(steps[poseI]!));
                 }
               }
             } catch (err) {
@@ -330,7 +360,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       >
         <DialogHeader className="sr-only">
           <DialogTitle>{title || (mode === "enroll" ? "Face ID" : "Face ID kirish")}</DialogTitle>
-          <DialogDescription>{description || poseHint(enrollPose.pose)}</DialogDescription>
+          <DialogDescription>{description || stepHint(currentStep)}</DialogDescription>
         </DialogHeader>
 
         <div className="relative aspect-[4/5] w-full overflow-hidden bg-black">
@@ -342,13 +372,14 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             autoPlay
           />
           <div
-            className="pointer-events-none absolute inset-0"
+            className="pointer-events-none absolute inset-0 bg-black/50"
             style={{
-              background:
-                "radial-gradient(ellipse 42% 48% at 50% 44%, transparent 62%, rgba(0,0,0,0.62) 68%)",
+              WebkitMaskImage:
+                "radial-gradient(ellipse 29% 38% at 50% 48%, transparent 96%, #000 100%)",
+              maskImage: "radial-gradient(ellipse 29% 38% at 50% 48%, transparent 96%, #000 100%)",
             }}
           />
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-6">
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div
               ref={ovalRef}
               className={cn(
@@ -358,45 +389,34 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             />
           </div>
           <p className="absolute left-0 right-0 top-5 z-10 text-center text-[15px] font-semibold drop-shadow">
-            {mode === "enroll" ? poseHint(enrollPose.pose) : "Yuzni oval ichiga tuting"}
+            {stepHint(currentStep)}
           </p>
-          {mode === "enroll" && enrollPose.pose !== "center" ? (
+          {currentStep.pose && currentStep.pose !== "center" ? (
             <div className="absolute left-1/2 top-[18%] z-10 -translate-x-1/2">
-              <PoseArrow pose={enrollPose.pose} />
+              <PoseArrow pose={currentStep.pose} />
             </div>
           ) : null}
         </div>
 
         <div className="space-y-3 bg-zinc-950 px-5 pb-5 pt-4">
-          {mode === "enroll" ? (
-            <div className="flex justify-center gap-1.5">
-              {ENROLL_POSES.map((p, i) => (
-                <span
-                  key={p.pose}
-                  className={cn(
-                    "h-1.5 w-7 rounded-full",
-                    i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-white" : "bg-white/20",
-                  )}
-                  style={
-                    i === poseIndex && poseFill
-                      ? {
-                          background: `linear-gradient(90deg, rgb(52 211 153) ${(poseFill / p.need) * 100}%, rgba(255,255,255,0.95) ${(poseFill / p.need) * 100}%)`,
-                        }
-                      : undefined
-                  }
-                />
-              ))}
-            </div>
-          ) : (
-            <div className="flex justify-center gap-1.5">
-              {Array.from({ length: LOGIN_STREAK }).map((_, i) => (
-                <span
-                  key={i}
-                  className={cn("h-1.5 w-6 rounded-full", i < loginFill ? "bg-emerald-400" : "bg-white/20")}
-                />
-              ))}
-            </div>
-          )}
+          <div className="flex justify-center gap-1.5">
+            {steps.map((p, i) => (
+              <span
+                key={p.key}
+                className={cn(
+                  "h-1.5 w-6 rounded-full",
+                  i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-white" : "bg-white/20",
+                )}
+                style={
+                  i === poseIndex && poseFill
+                    ? {
+                        background: `linear-gradient(90deg, rgb(52 211 153) ${(poseFill / p.need) * 100}%, rgba(255,255,255,0.95) ${(poseFill / p.need) * 100}%)`,
+                      }
+                    : undefined
+                }
+              />
+            ))}
+          </div>
           <p className={cn("min-h-5 text-center text-sm", error ? "text-red-300" : "text-white/80")}>
             {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}
             {error || hint}

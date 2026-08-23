@@ -1,19 +1,79 @@
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from "crypto";
 import { eq, inArray } from "drizzle-orm";
 import { db, faceProfilesTable, usersTable } from "@workspace/db";
+import { logger } from "./logger";
+
+function envNum(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
 
 export const FACE_DESCRIPTOR_LEN = 128;
-/** Davomat / login: faqat deyarli o‘sha odam (boshqasi o‘xshamasin) */
-export const FACE_MATCH_MAX = 0.26;
-/** Cosine: shundan past — boshqa odam */
-export const FACE_MATCH_MIN_COSINE = 0.968;
-/** Eng yaqin va 2-yaqin orasidagi farq shundan kichik — noaniq */
-export const FACE_AMBIGUOUS_MARGIN = 0.1;
-/** Eng yaqin / 2-yaqin nisbati shundan katta — ikki profil aralashadi */
-export const FACE_AMBIGUOUS_RATIO = 0.62;
-/** Ro‘yxat: boshqa xodimga yaqin yuz bloklanadi */
-export const FACE_ENROLL_BLOCK_MAX = 0.28;
-/** Admin: o‘xshash juftlik ogohlantiruvi */
-export const FACE_SIMILAR_WARN = 0.36;
+/** Login: Euclidean yuqori chegara (kichikroq = qattiqroq). Env: FACE_MATCH_THRESHOLD */
+export const FACE_MATCH_MAX = envNum("FACE_MATCH_THRESHOLD", 0.26);
+/** Cosine past chegara. Env: FACE_MATCH_MIN_COSINE */
+export const FACE_MATCH_MIN_COSINE = envNum("FACE_MATCH_MIN_COSINE", 0.968);
+export const FACE_AMBIGUOUS_MARGIN = envNum("FACE_AMBIGUOUS_MARGIN", 0.1);
+export const FACE_AMBIGUOUS_RATIO = envNum("FACE_AMBIGUOUS_RATIO", 0.62);
+/** Ro‘yxat: boshqa xodimga yaqin yuz. Env: FACE_ENROLLMENT_THRESHOLD */
+export const FACE_ENROLL_BLOCK_MAX = envNum("FACE_ENROLLMENT_THRESHOLD", 0.28);
+export const FACE_SIMILAR_WARN = envNum("FACE_SIMILAR_WARN", 0.36);
+/** 0..1 liveness ball. Env: LIVENESS_THRESHOLD */
+export const LIVENESS_THRESHOLD = envNum("LIVENESS_THRESHOLD", 0.55);
+export const FACE_STORE_PHOTOS = process.env.FACE_STORE_PHOTOS !== "0" && process.env.FACE_STORE_PHOTOS !== "false";
+
+export type LivenessProof = {
+  blinked?: boolean;
+  poses?: string[];
+  motion?: number;
+  score?: number;
+};
+
+export function evaluateLiveness(
+  proof: LivenessProof | undefined,
+  mode: "enroll" | "login",
+): { ok: true; score: number } | { ok: false; error: string; code: string } {
+  const blinked = Boolean(proof?.blinked);
+  const poses = new Set((proof?.poses ?? []).filter(Boolean));
+  const motion = Number(proof?.motion ?? 0);
+  let score = Number(proof?.score ?? 0);
+  if (!Number.isFinite(score)) score = 0;
+  if (blinked) score = Math.max(score, score + 0);
+  const computed =
+    (mode === "enroll" ? (poses.size >= 3 ? 0.55 : poses.size >= 2 ? 0.25 : 0) : poses.size >= 2 ? 0.5 : poses.size >= 1 ? 0.2 : 0) +
+    (motion >= 0.05 ? 0.35 : motion >= 0.03 ? 0.2 : 0);
+  const finalScore = Math.max(score, computed);
+
+  if (finalScore < LIVENESS_THRESHOLD || (mode === "enroll" && poses.size < 3) || motion < 0.03) {
+    logger.warn({ mode, blinked, poses: [...poses], motion, finalScore }, "face liveness failed");
+    return {
+      ok: false,
+      error: "Yuzingiz tasdiqlanmadi. Kamera oldida haqiqiy odam ekanligingizni tasdiqlang.",
+      code: "liveness_failed",
+    };
+  }
+  logger.info({ mode, finalScore, motion, poses: poses.size }, "face liveness ok");
+  return { ok: true, score: finalScore };
+}
+
+function descriptorKey(): Buffer | null {
+  const s = process.env.FACE_DESCRIPTOR_KEY?.trim();
+  if (!s) return null;
+  return scryptSync(s, "hr-face-id-v1", 32);
+}
+
+export function packDescriptors(list: number[][]): string {
+  const json = JSON.stringify(list);
+  const key = descriptorKey();
+  if (!key) return json;
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", key, iv);
+  const enc = Buffer.concat([cipher.update(json, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return `enc:v1:${iv.toString("base64")}:${tag.toString("base64")}:${enc.toString("base64")}`;
+}
 
 export function parseFaceDescriptor(raw: unknown): number[] | null {
   if (!Array.isArray(raw) || raw.length !== FACE_DESCRIPTOR_LEN) return null;
@@ -105,7 +165,19 @@ export function invalidateFaceCache(): void {
 
 function parseStoredList(raw: string): number[][] {
   try {
-    const stored = JSON.parse(raw) as unknown;
+    let text = raw;
+    if (raw.startsWith("enc:v1:")) {
+      const key = descriptorKey();
+      if (!key) return [];
+      const parts = raw.split(":");
+      const iv = Buffer.from(parts[2] ?? "", "base64");
+      const tag = Buffer.from(parts[3] ?? "", "base64");
+      const data = Buffer.from(parts[4] ?? "", "base64");
+      const decipher = createDecipheriv("aes-256-gcm", key, iv);
+      decipher.setAuthTag(tag);
+      text = Buffer.concat([decipher.update(data), decipher.final()]).toString("utf8");
+    }
+    const stored = JSON.parse(text) as unknown;
     if (!Array.isArray(stored) || !stored.length) return [];
     if (typeof stored[0] === "number") {
       const one = parseFaceDescriptor(stored);

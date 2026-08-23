@@ -7,6 +7,7 @@ import {
   fetchFaceIdStatus,
   isFaceIdSupported,
   removeFaceId,
+  type FaceLivenessProof,
 } from "@/lib/face-id";
 import { FaceScanDialog } from "@/components/FaceScanDialog";
 import { cn } from "@/lib/utils";
@@ -46,9 +47,9 @@ export function FaceIdEnroll({
   }, [onStatusChange]);
 
   const onCaptured = useCallback(
-    async (descriptor: number[] | number[][], snapshot?: string) => {
+    async (descriptor: number[] | number[][], snapshot?: string, liveness?: FaceLivenessProof) => {
       try {
-        const saved = await enrollFace(descriptor, snapshot);
+        const saved = await enrollFace(descriptor, snapshot, liveness);
         setRegistered(true);
         const status = await fetchFaceIdStatus().catch(() => null);
         const nextPhoto = status?.photoUrl ?? saved.photoUrl ?? snapshot ?? null;
@@ -129,7 +130,12 @@ export function FaceIdEnroll({
           <div className="flex items-start gap-3">
             <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200">
               {photoUrl ? (
-                <img src={photoUrl} alt="Face ID" className="h-full w-full object-cover" />
+                <img
+                  src={photoUrl}
+                  alt="Face ID"
+                  className="h-full w-full object-cover"
+                  crossOrigin="use-credentials"
+                />
               ) : (
                 <div className="flex h-full w-full items-center justify-center text-slate-400">
                   <ScanFace className="h-8 w-8" />
@@ -146,7 +152,7 @@ export function FaceIdEnroll({
                 ) : null}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Kameraga qarab, boshni chap, o‘ng, tepaga va pastga burang.
+                Kameraga qarab, boshni chap, o‘ng va tepaga burang.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button type="button" size="sm" disabled={loading || !supported} onClick={() => setScanOpen(true)}>

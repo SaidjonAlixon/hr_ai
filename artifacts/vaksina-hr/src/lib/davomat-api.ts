@@ -191,6 +191,12 @@ export async function faceVerifyDavomat(payload: {
   longitude: number;
   accuracy?: number;
   snapshot?: string;
+  liveness?: {
+    blinked?: boolean;
+    poses?: string[];
+    motion?: number;
+    score?: number;
+  };
 }): Promise<{
   ok: boolean;
   fullName: string;

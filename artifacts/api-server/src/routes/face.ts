@@ -12,7 +12,6 @@ import { setSessionCookie } from "../lib/session";
 import {
   FACE_ENROLL_BLOCK_MAX,
   FACE_MATCH_MAX,
-  FACE_STORE_PHOTOS,
   LIVENESS_THRESHOLD,
   evaluateLiveness,
   packDescriptors,
@@ -29,7 +28,7 @@ import {
 } from "../lib/face-match";
 import { ROLE_LABEL_UZ } from "../lib/telegram";
 import { logger } from "../lib/logger";
-import { readBlobUpload, readLocalUpload, storeUploadBuffer } from "../lib/blob-storage";
+import { readBlobUpload, readLocalUpload } from "../lib/blob-storage";
 
 const router: IRouter = Router();
 
@@ -81,20 +80,13 @@ function decodeSnapshotBuffer(dataUrl: string): { buffer: Buffer; mime: string; 
   }
 }
 
-async function persistFacePhoto(userId: number, dataUrl: string): Promise<string> {
+/** Face ID rasmi Neon `face_profiles.photo_url` da (data URL). Blob/tmp ishlatilmaydi. */
+async function persistFacePhoto(_userId: number, dataUrl: string): Promise<string> {
   const decoded = decodeSnapshotBuffer(dataUrl);
   if (!decoded) throw new Error("Yuz rasmi yaroqsiz");
-  try {
-    const stored = await storeUploadBuffer({
-      buffer: decoded.buffer,
-      fileName: `face-${userId}.${decoded.ext}`,
-      mimeType: decoded.mime,
-    });
-    return stored.url;
-  } catch {
-    if (dataUrl.length <= MAX_SNAPSHOT_CHARS) return dataUrl;
-    throw new Error("Yuz rasmi saqlanmadi");
-  }
+  const stored = `data:${decoded.mime};base64,${decoded.buffer.toString("base64")}`;
+  if (stored.length > MAX_SNAPSHOT_CHARS) throw new Error("Yuz rasmi juda katta");
+  return stored;
 }
 
 /** Rasm yo‘q profilga bir marta yozadi. Bor bo‘lsa tegilmaydi. */

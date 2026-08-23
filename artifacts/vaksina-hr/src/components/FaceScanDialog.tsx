@@ -216,7 +216,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           try {
             const captured = await onCapturedRef.current(
               payload,
-              grabFaceSnapshot(videoEl) || lastPhoto,
+              lastPhoto || grabFaceSnapshot(videoEl),
               liveness,
             );
             const name =
@@ -307,7 +307,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                 setHint(stepHint(want));
               } else {
                 lastDesc = result.descriptor;
-                lastPhoto = grabFaceSnapshot(videoEl) || lastPhoto;
+                if (wantPose === "center") {
+                  lastPhoto = grabFaceSnapshot(videoEl) || lastPhoto;
+                }
                 const bucket = poseBuckets[poseI]!;
                 bucket.push(result.descriptor);
                 setPoseFill(bucket.length);

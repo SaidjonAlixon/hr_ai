@@ -19,6 +19,8 @@ import {
   type LivenessProof,
   FACE_SIMILAR_WARN,
   distanceBetweenDescriptors,
+  minDistanceBetweenVectors,
+  parseStoredVectors,
   enrichFaceHits,
   findNearestFaces,
   invalidateFaceCache,
@@ -26,6 +28,7 @@ import {
   parseFaceDescriptor,
 } from "../lib/face-match";
 import { ROLE_LABEL_UZ } from "../lib/telegram";
+import { logger } from "../lib/logger";
 import { readBlobUpload, readLocalUpload, storeUploadBuffer } from "../lib/blob-storage";
 
 const router: IRouter = Router();
@@ -356,120 +359,124 @@ router.get("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<v
   if (!requireAdmin(req, res)) return;
 
   try {
-    await db.execute(sql`ALTER TABLE face_profiles ADD COLUMN IF NOT EXISTS photo_url TEXT`);
-  } catch {
-    /* ignore */
-  }
+    const users = await db
+      .select({
+        userId: usersTable.id,
+        fullName: usersTable.fullName,
+        login: usersTable.login,
+        role: usersTable.role,
+        status: usersTable.status,
+        phone: usersTable.phone,
+        departmentName: departmentsTable.name,
+        faceId: faceProfilesTable.id,
+        descriptor: faceProfilesTable.descriptor,
+        hasPhotoFlag: sql<number>`CASE WHEN ${faceProfilesTable.photoUrl} IS NOT NULL AND length(${faceProfilesTable.photoUrl}) > 8 THEN 1 ELSE 0 END`,
+        createdAt: faceProfilesTable.createdAt,
+        updatedAt: faceProfilesTable.updatedAt,
+        lastUsedAt: faceProfilesTable.lastUsedAt,
+      })
+      .from(usersTable)
+      .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
+      .leftJoin(faceProfilesTable, eq(faceProfilesTable.userId, usersTable.id))
+      .orderBy(asc(usersTable.fullName));
 
-  const users = await db
-    .select({
-      userId: usersTable.id,
-      fullName: usersTable.fullName,
-      login: usersTable.login,
-      role: usersTable.role,
-      status: usersTable.status,
-      phone: usersTable.phone,
-      departmentName: departmentsTable.name,
-      faceId: faceProfilesTable.id,
-      descriptor: faceProfilesTable.descriptor,
-      photoUrl: faceProfilesTable.photoUrl,
-      createdAt: faceProfilesTable.createdAt,
-      updatedAt: faceProfilesTable.updatedAt,
-      lastUsedAt: faceProfilesTable.lastUsedAt,
-    })
-    .from(usersTable)
-    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
-    .leftJoin(faceProfilesTable, eq(faceProfilesTable.userId, usersTable.id))
-    .orderBy(asc(usersTable.fullName));
+    const parsed = users.map((row) => ({
+      ...row,
+      vectors: row.descriptor ? parseStoredVectors(row.descriptor) : [],
+      hasPhoto: Number(row.hasPhotoFlag) === 1,
+    }));
 
-  const withFace = users.filter((u) => u.faceId != null && u.descriptor);
+    const withFace = parsed.filter((u) => u.faceId != null && u.vectors.length > 0);
 
-  const faces = users.map((row) => {
-    const registered = Boolean(row.faceId && row.descriptor);
-    let nearest: {
-      userId: number;
-      fullName: string;
-      login: string;
-      distance: number;
-    } | null = null;
+    const faces = parsed.map((row) => {
+      const registered = Boolean(row.faceId && row.vectors.length);
+      let nearest: {
+        userId: number;
+        fullName: string;
+        login: string;
+        distance: number;
+      } | null = null;
 
-    if (registered && row.descriptor) {
-      for (const other of withFace) {
-        if (other.faceId === row.faceId || !other.descriptor) continue;
-        const dist = distanceBetweenDescriptors(row.descriptor, other.descriptor);
-        if (dist == null) continue;
-        if (!nearest || dist < nearest.distance) {
-          nearest = {
-            userId: other.userId,
-            fullName: other.fullName,
-            login: other.login,
-            distance: Number(dist.toFixed(4)),
-          };
+      if (registered) {
+        for (const other of withFace) {
+          if (other.faceId === row.faceId) continue;
+          const dist = minDistanceBetweenVectors(row.vectors, other.vectors);
+          if (dist == null) continue;
+          if (!nearest || dist < nearest.distance) {
+            nearest = {
+              userId: other.userId,
+              fullName: other.fullName,
+              login: other.login,
+              distance: Number(dist.toFixed(4)),
+            };
+          }
         }
       }
-    }
 
-    return {
-      id: row.faceId ?? row.userId,
-      userId: row.userId,
-      fullName: row.fullName,
-      login: row.login,
-      role: row.role,
-      roleLabel: ROLE_LABEL_UZ[row.role] || row.role,
-      status: row.status,
-      phone: row.phone,
-      departmentName: row.departmentName,
-      photoUrl: registered && row.photoUrl ? `/api/admin/faces/${row.userId}/photo` : null,
-      hasPhoto: Boolean(row.photoUrl),
-      faceRegistered: registered,
-      createdAt: row.createdAt,
-      updatedAt: row.updatedAt,
-      lastUsedAt: row.lastUsedAt,
-      nearest,
-      similarRisk:
-        nearest != null && nearest.distance <= FACE_SIMILAR_WARN
-          ? nearest.distance <= FACE_MATCH_MAX
-            ? "high"
-            : "medium"
-          : "none",
-    };
-  });
+      return {
+        id: row.faceId ?? row.userId,
+        userId: row.userId,
+        fullName: row.fullName,
+        login: row.login,
+        role: row.role,
+        roleLabel: ROLE_LABEL_UZ[row.role] || row.role,
+        status: row.status,
+        phone: row.phone,
+        departmentName: row.departmentName,
+        photoUrl: registered && row.hasPhoto ? `/api/admin/faces/${row.userId}/photo` : null,
+        hasPhoto: row.hasPhoto,
+        faceRegistered: registered,
+        createdAt: row.createdAt,
+        updatedAt: row.updatedAt,
+        lastUsedAt: row.lastUsedAt,
+        nearest,
+        similarRisk:
+          nearest != null && nearest.distance <= FACE_SIMILAR_WARN
+            ? nearest.distance <= FACE_MATCH_MAX
+              ? "high"
+              : "medium"
+            : "none",
+      };
+    });
 
-  const duplicates: Array<{
-    a: { userId: number; fullName: string; login: string };
-    b: { userId: number; fullName: string; login: string };
-    distance: number;
-  }> = [];
-  for (let i = 0; i < withFace.length; i++) {
-    for (let j = i + 1; j < withFace.length; j++) {
-      const a = withFace[i]!;
-      const b = withFace[j]!;
-      if (!a.descriptor || !b.descriptor) continue;
-      const dist = distanceBetweenDescriptors(a.descriptor, b.descriptor);
-      if (dist == null || dist > FACE_SIMILAR_WARN) continue;
-      duplicates.push({
-        a: { userId: a.userId, fullName: a.fullName, login: a.login },
-        b: { userId: b.userId, fullName: b.fullName, login: b.login },
-        distance: Number(dist.toFixed(4)),
-      });
+    const duplicates: Array<{
+      a: { userId: number; fullName: string; login: string };
+      b: { userId: number; fullName: string; login: string };
+      distance: number;
+    }> = [];
+    for (let i = 0; i < withFace.length; i++) {
+      for (let j = i + 1; j < withFace.length; j++) {
+        const a = withFace[i]!;
+        const b = withFace[j]!;
+        const dist = minDistanceBetweenVectors(a.vectors, b.vectors);
+        if (dist == null || dist > FACE_SIMILAR_WARN) continue;
+        duplicates.push({
+          a: { userId: a.userId, fullName: a.fullName, login: a.login },
+          b: { userId: b.userId, fullName: b.fullName, login: b.login },
+          distance: Number(dist.toFixed(4)),
+        });
+      }
     }
+    duplicates.sort((x, y) => x.distance - y.distance);
+
+    const registeredCount = faces.filter((f) => f.faceRegistered).length;
+
+    res.json({
+      total: faces.length,
+      registered: registeredCount,
+      notRegistered: faces.length - registeredCount,
+      withPhoto: faces.filter((r) => r.hasPhoto).length,
+      similarPairs: duplicates.length,
+      enrollBlockMax: FACE_ENROLL_BLOCK_MAX,
+      matchMax: FACE_MATCH_MAX,
+      livenessThreshold: LIVENESS_THRESHOLD,
+      faces,
+      duplicates,
+    });
+  } catch (err) {
+    logger.error({ err }, "GET /admin/faces failed");
+    res.status(503).json({ error: "Server xatosi" });
   }
-  duplicates.sort((x, y) => x.distance - y.distance);
-
-  const registeredCount = faces.filter((f) => f.faceRegistered).length;
-
-  res.json({
-    total: faces.length,
-    registered: registeredCount,
-    notRegistered: faces.length - registeredCount,
-    withPhoto: faces.filter((r) => r.hasPhoto).length,
-    similarPairs: duplicates.length,
-    enrollBlockMax: FACE_ENROLL_BLOCK_MAX,
-    matchMax: FACE_MATCH_MAX,
-    livenessThreshold: LIVENESS_THRESHOLD,
-    faces,
-    duplicates,
-  });
 });
 
 function parsePhotoDataUrl(photoUrl: string | null | undefined): {

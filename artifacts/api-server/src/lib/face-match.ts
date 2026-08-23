@@ -329,10 +329,22 @@ export async function matchFaceForAuth(
   return { ok: true, id: best.id, userId: best.userId, dist: best.dist };
 }
 
+export function parseStoredVectors(raw: string): number[][] {
+  return parseStoredList(raw);
+}
+
+export function minDistanceBetweenVectors(aList: number[][], bList: number[][]): number | null {
+  let best: number | null = null;
+  for (const a of aList) {
+    for (const b of bList) {
+      const d = faceDistance(a, b).dist;
+      if (best == null || d < best) best = d;
+    }
+  }
+  return best;
+}
+
 /** Ikki descriptor orasidagi masofa (admin jadval) */
 export function distanceBetweenDescriptors(aJson: string, bJson: string): number | null {
-  const a = parseStored(aJson);
-  const b = parseStored(bJson);
-  if (!a || !b) return null;
-  return faceDistance(a, b).dist;
+  return minDistanceBetweenVectors(parseStoredList(aJson), parseStoredList(bJson));
 }

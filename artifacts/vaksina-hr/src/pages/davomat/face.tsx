@@ -799,20 +799,21 @@ export default function DavomatFacePage() {
     [switchToUser, toast],
   );
 
-  const onCaptured = async (descriptor: number[], snapshot?: string) => {
+  const onCaptured = async (descriptor: number[] | number[][], snapshot?: string) => {
     if (!gps) throw new Error("GPS yo‘q");
     if (!inside) {
       throw new Error(`Hududdan tashqarida (${formatDistance(distance)}). Yana ${formatDistance(remain)} yaqinlashing.`);
     }
     try {
+      const vec = (Array.isArray(descriptor[0]) ? descriptor[0] : descriptor) as number[];
       const result = await faceVerifyDavomat({
-        descriptor,
+        descriptor: vec,
         snapshot,
         ...geoPayload(),
       });
       saveFaceImage(snapshot);
       setVerified({
-        descriptor,
+        descriptor: vec,
         fullName: result.fullName,
         nextAction: result.nextAction,
         checkIn: result.checkIn,
@@ -1002,7 +1003,7 @@ export default function DavomatFacePage() {
   const showPunchStep = Boolean(verified) && !done && !dayComplete;
   const canPunchOut = hasIn && afterSix;
 
-  const onEnrollCaptured = async (descriptor: number[], snapshot?: string) => {
+  const onEnrollCaptured = async (descriptor: number[] | number[][], snapshot?: string) => {
     await enrollFace(descriptor, snapshot);
     setFaceRegistered(true);
     saveFaceImage(snapshot);

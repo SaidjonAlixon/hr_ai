@@ -2,18 +2,18 @@ import { eq, inArray } from "drizzle-orm";
 import { db, faceProfilesTable, usersTable } from "@workspace/db";
 
 export const FACE_DESCRIPTOR_LEN = 128;
-/** Davomat / login: shu masofadan uzoq — boshqa odam (o‘xshash qizlar ~0.38–0.50) */
-export const FACE_MATCH_MAX = 0.33;
-/** Cosine (L2-norm): shundan past bo‘lsa mos emas */
-export const FACE_MATCH_MIN_COSINE = 0.945;
-/** Eng yaqin va 2-yaqin orasidagi farq shundan kichik bo‘lsa — noaniq */
-export const FACE_AMBIGUOUS_MARGIN = 0.18;
-/** Eng yaqin / 2-yaqin nisbati shundan katta bo‘lsa — ikki profil aralashadi */
-export const FACE_AMBIGUOUS_RATIO = 0.78;
-/** Ro‘yxat: faqat deyarli bir xil yuz (haqiqiy dublikat) bloklanadi */
-export const FACE_ENROLL_BLOCK_MAX = 0.33;
-/** Admin: o‘xshash juftlik ogohlantiruvi (blok emas) */
-export const FACE_SIMILAR_WARN = 0.42;
+/** Davomat / login: faqat deyarli o‘sha odam (boshqasi o‘xshamasin) */
+export const FACE_MATCH_MAX = 0.26;
+/** Cosine: shundan past — boshqa odam */
+export const FACE_MATCH_MIN_COSINE = 0.968;
+/** Eng yaqin va 2-yaqin orasidagi farq shundan kichik — noaniq */
+export const FACE_AMBIGUOUS_MARGIN = 0.1;
+/** Eng yaqin / 2-yaqin nisbati shundan katta — ikki profil aralashadi */
+export const FACE_AMBIGUOUS_RATIO = 0.62;
+/** Ro‘yxat: boshqa xodimga yaqin yuz bloklanadi */
+export const FACE_ENROLL_BLOCK_MAX = 0.28;
+/** Admin: o‘xshash juftlik ogohlantiruvi */
+export const FACE_SIMILAR_WARN = 0.36;
 
 export function parseFaceDescriptor(raw: unknown): number[] | null {
   if (!Array.isArray(raw) || raw.length !== FACE_DESCRIPTOR_LEN) return null;
@@ -89,9 +89,10 @@ async function loadFaceRows(): Promise<CachedFaceRow[]> {
 
   const rows: CachedFaceRow[] = [];
   for (const row of raw) {
-    const stored = parseStored(row.descriptor);
-    if (!stored) continue;
-    rows.push({ id: row.id, userId: row.userId, descriptor: stored });
+    const list = parseStoredList(row.descriptor);
+    for (const descriptor of list) {
+      rows.push({ id: row.id, userId: row.userId, descriptor });
+    }
   }
   faceCache = { at: now, rows };
   return rows;
@@ -102,13 +103,22 @@ export function invalidateFaceCache(): void {
   faceCache = null;
 }
 
-function parseStored(raw: string): number[] | null {
+function parseStoredList(raw: string): number[][] {
   try {
-    const stored = JSON.parse(raw) as number[];
-    if (!Array.isArray(stored) || stored.length !== FACE_DESCRIPTOR_LEN) return null;
-    return stored;
+    const stored = JSON.parse(raw) as unknown;
+    if (!Array.isArray(stored) || !stored.length) return [];
+    if (typeof stored[0] === "number") {
+      const one = parseFaceDescriptor(stored);
+      return one ? [one] : [];
+    }
+    const out: number[][] = [];
+    for (const item of stored) {
+      const d = parseFaceDescriptor(item);
+      if (d) out.push(d);
+    }
+    return out;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -197,15 +207,20 @@ export async function matchFaceForAuth(
   let best: FaceHit | null = null;
   let second: FaceHit | null = null;
   let bestCosine = 0;
+  let secondCosine = 0;
   for (const row of rows) {
     const { dist, cosine } = faceDistance(descriptor, row.descriptor);
     const hit = { id: row.id, userId: row.userId, dist };
     if (!best || dist < best.dist) {
-      second = best;
+      if (best && best.userId !== hit.userId) {
+        second = best;
+        secondCosine = bestCosine;
+      }
       best = hit;
       bestCosine = cosine;
-    } else if (!second || dist < second.dist) {
+    } else if (hit.userId !== best.userId && (!second || dist < second.dist)) {
       second = hit;
+      secondCosine = cosine;
     }
   }
 
@@ -217,12 +232,13 @@ export async function matchFaceForAuth(
     };
   }
 
-  const closeSecond =
+  const secondTooClose =
     Boolean(second) &&
-    (second!.dist - best.dist < FACE_AMBIGUOUS_MARGIN ||
-      best.dist / Math.max(second!.dist, 1e-6) > FACE_AMBIGUOUS_RATIO) &&
-    second!.dist <= FACE_MATCH_MAX + 0.08;
-  if (closeSecond && second) {
+    second!.dist <= FACE_MATCH_MAX + 0.04 &&
+    (isSamePerson(second!.dist, secondCosine, FACE_MATCH_MAX) ||
+      second!.dist - best.dist < FACE_AMBIGUOUS_MARGIN ||
+      best.dist / Math.max(second!.dist, 1e-6) > FACE_AMBIGUOUS_RATIO);
+  if (secondTooClose && second) {
     const neighbors = await enrichFaceHits([best, second]);
     const names = neighbors
       .map((n) => n.fullName)

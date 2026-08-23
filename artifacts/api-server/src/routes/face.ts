@@ -191,41 +191,48 @@ router.get("/auth/face/photo", requireAuth, async (req: AuthRequest, res): Promi
 
 router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const userId = req.userId!;
-  const descriptor = parseDescriptor(req.body?.descriptor);
-  if (!descriptor) {
+  const descriptors = Array.isArray(req.body?.descriptors)
+    ? (req.body.descriptors as unknown[]).map(parseDescriptor).filter((d): d is number[] => Boolean(d))
+    : (() => {
+        const one = parseDescriptor(req.body?.descriptor);
+        return one ? [one] : [];
+      })();
+  if (!descriptors.length) {
     res.status(400).json({ error: "Yuz aniq olinmadi — qayta urinib ko‘ring" });
     return;
   }
 
-  const nearest = await findNearestFaces(descriptor, {
-    excludeUserId: userId,
-    limit: 3,
-    maxDist: FACE_ENROLL_BLOCK_MAX,
-  });
-  if (nearest.length) {
-    const neighbors = await enrichFaceHits(nearest);
-    const top = neighbors[0]!;
-    const names = neighbors
-      .map((n) => n.fullName)
-      .filter(Boolean)
-      .slice(0, 2)
-      .join(", ");
-    res.status(409).json({
-      error: names
-        ? `Bu yuz allaqachon ro‘yxatdan o‘tgan — ${names}`
-        : "Bu yuz allaqachon ro‘yxatdan o‘tgan",
-      code: "face_already_taken",
-      fullName: top.fullName ?? undefined,
-      distance: Number(top.dist.toFixed(4)),
-      neighbors: neighbors.map((n) => ({
-        userId: n.userId,
-        fullName: n.fullName,
-        login: n.login,
-        role: n.role,
-        distance: Number(n.dist.toFixed(4)),
-      })),
+  for (const descriptor of descriptors) {
+    const nearest = await findNearestFaces(descriptor, {
+      excludeUserId: userId,
+      limit: 3,
+      maxDist: FACE_ENROLL_BLOCK_MAX,
     });
-    return;
+    if (nearest.length) {
+      const neighbors = await enrichFaceHits(nearest);
+      const top = neighbors[0]!;
+      const names = neighbors
+        .map((n) => n.fullName)
+        .filter(Boolean)
+        .slice(0, 2)
+        .join(", ");
+      res.status(409).json({
+        error: names
+          ? `Bu yuz allaqachon ro‘yxatdan o‘tgan — ${names}`
+          : "Bu yuz allaqachon ro‘yxatdan o‘tgan",
+        code: "face_already_taken",
+        fullName: top.fullName ?? undefined,
+        distance: Number(top.dist.toFixed(4)),
+        neighbors: neighbors.map((n) => ({
+          userId: n.userId,
+          fullName: n.fullName,
+          login: n.login,
+          role: n.role,
+          distance: Number(n.dist.toFixed(4)),
+        })),
+      });
+      return;
+    }
   }
 
   const snapshot = sanitizeSnapshot(req.body?.snapshot ?? req.body?.photo);
@@ -244,7 +251,7 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
 
   const payload = {
     userId,
-    descriptor: JSON.stringify(descriptor),
+    descriptor: JSON.stringify(descriptors),
     updatedAt: new Date(),
     photoUrl,
   };

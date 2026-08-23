@@ -86,10 +86,15 @@ export type FaceAlignStatus =
   | "low_quality"
   | "turn_face";
 
+export type FacePose = "center" | "left" | "right" | "up" | "down";
+
 export type FaceDetectResult = {
   descriptor: number[] | null;
   status: FaceAlignStatus;
   score?: number;
+  pose?: FacePose | "unknown";
+  yaw?: number;
+  pitch?: number;
 };
 
 export type FaceOvalFrame = {
@@ -138,6 +143,72 @@ function noseOffsetRatio(landmarks: FaceLandmarksResult["landmarks"], box: { x: 
   return Math.abs(nx - mid) / box.width;
 }
 
+function centroid(pts?: Point[]): Point | null {
+  if (!pts?.length) return null;
+  let x = 0;
+  let y = 0;
+  for (const p of pts) {
+    x += p.x;
+    y += p.y;
+  }
+  return { x: x / pts.length, y: y / pts.length };
+}
+
+function poseFromLandmarks(
+  landmarks: FaceLandmarksResult["landmarks"],
+  box: { x: number; y: number; width: number; height: number },
+  mirrored = true,
+): { yaw: number; pitch: number; pose: FacePose | "unknown" } {
+  const positions = landmarks.positions ?? [];
+  const nosePts = landmarks.getNose?.();
+  const nose = nosePts?.[nosePts.length - 1] ?? positions[30];
+  const left = centroid(landmarks.getLeftEye?.() ?? positions.slice(36, 42));
+  const right = centroid(landmarks.getRightEye?.() ?? positions.slice(42, 48));
+  if (!nose || !box.width || !box.height) return { yaw: 0, pitch: 0, pose: "unknown" };
+  let yaw = (nose.x - (box.x + box.width / 2)) / box.width;
+  if (mirrored) yaw = -yaw;
+  const eyeY = left && right ? (left.y + right.y) / 2 : box.y + box.height * 0.38;
+  // Selfie: iyagni ko‘tarib tepaga qaraganda burun rasmdа pastga ketadi (Y katta) → pitch > 0
+  const pitch = (nose.y - eyeY) / box.height - 0.18;
+  const ay = Math.abs(yaw);
+  const ap = Math.abs(pitch);
+  let pose: FacePose | "unknown" = "center";
+  if (ay >= 0.11 && ay >= ap) pose = yaw > 0 ? "right" : "left";
+  else if (ap >= 0.07) pose = pitch > 0 ? "up" : "down";
+  return { yaw, pitch, pose };
+}
+
+export function poseMatchesWant(
+  want: FacePose,
+  pose?: FacePose | "unknown",
+  yaw = 0,
+  pitch = 0,
+): boolean {
+  if (want === "center") {
+    return Math.abs(yaw) < 0.22 && Math.abs(pitch) < 0.14;
+  }
+  if (want === "up") return pitch > 0.03 || pose === "up";
+  if (want === "down") return pitch < 0.1 || pose === "down";
+  if (want === "left") return yaw < -0.08 || pose === "left";
+  if (want === "right") return yaw > 0.08 || pose === "right";
+  return pose === want;
+}
+
+export function poseHint(pose: FacePose): string {
+  switch (pose) {
+    case "center":
+      return "To‘g‘ri qarang";
+    case "left":
+      return "Boshni sekin chapga buring";
+    case "right":
+      return "Boshni sekin o‘ngga buring";
+    case "up":
+      return "Iyagni biroz ko‘taring — shiftga qarang";
+    case "down":
+      return "Iyakni biroz pastga tushiring";
+  }
+}
+
 function eyeWidthRatio(landmarks: FaceLandmarksResult["landmarks"]): number {
   const left = landmarks.getLeftEye?.();
   const right = landmarks.getRightEye?.();
@@ -157,13 +228,14 @@ function eyeWidthRatio(landmarks: FaceLandmarksResult["landmarks"]): number {
 }
 
 /** Yuqori sifat: katta inputSize + qattiq score */
-const DETECT_OPTS = { inputSize: 512 as const, scoreThreshold: 0.62 };
-const MIN_DETECT_SCORE = 0.76;
+const DETECT_OPTS = { inputSize: 416 as const, scoreThreshold: 0.5 };
+const MIN_DETECT_SCORE = 0.58;
 
 export async function detectFaceDescriptor(
   video: HTMLVideoElement,
   frame?: FaceOvalFrame | null,
   mirrored = true,
+  opts?: { allowTurn?: boolean },
 ): Promise<FaceDetectResult> {
   const faceapi = await ensureFaceModels();
   const result = await faceapi
@@ -171,7 +243,8 @@ export async function detectFaceDescriptor(
     .withFaceLandmarks()
     .withFaceDescriptor();
 
-  if (!result || result.detection.score < MIN_DETECT_SCORE) {
+  const minScore = opts?.allowTurn ? 0.4 : MIN_DETECT_SCORE;
+  if (!result || result.detection.score < minScore) {
     return { descriptor: null, status: "no_face" };
   }
   if (!frame || frame.rx < 8 || frame.ry < 8) {
@@ -181,25 +254,28 @@ export async function detectFaceDescriptor(
   const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored);
   if (!mapped) return { descriptor: null, status: "no_face" };
 
-  if (ellipseNorm(mapped.cx, mapped.cy, frame) > 0.48) {
+  if (ellipseNorm(mapped.cx, mapped.cy, frame) > (opts?.allowTurn ? 1.35 : 0.92)) {
     return { descriptor: null, status: "outside" };
   }
 
   const fillW = mapped.width / (frame.rx * 2);
   const fillH = mapped.height / (frame.ry * 2);
-  if (fillW < 0.55 || fillH < 0.52) return { descriptor: null, status: "too_far" };
-  if (fillW > 1.12 || fillH > 1.15) return { descriptor: null, status: "too_close" };
+  const minFill = opts?.allowTurn ? 0.22 : 0.38;
+  if (fillW < minFill || fillH < minFill - 0.05) return { descriptor: null, status: "too_far" };
+  if (fillW > 1.75 || fillH > 1.75) return { descriptor: null, status: "too_close" };
 
-  // Yon tomonga burilgan yuz — descriptor sifatini pasaytiradi, o‘xshash odamlarni aralashtiradi
-  if (noseOffsetRatio(result.landmarks, result.detection.box) > 0.12) {
-    return { descriptor: null, status: "turn_face", score: result.detection.score };
-  }
-  if (eyeWidthRatio(result.landmarks) < 0.74) {
-    return { descriptor: null, status: "turn_face", score: result.detection.score };
+  const head = poseFromLandmarks(result.landmarks, result.detection.box, mirrored);
+  if (!opts?.allowTurn) {
+    if (noseOffsetRatio(result.landmarks, result.detection.box) > 0.2) {
+      return { descriptor: null, status: "turn_face", score: result.detection.score, ...head };
+    }
+    if (eyeWidthRatio(result.landmarks) < 0.58) {
+      return { descriptor: null, status: "turn_face", score: result.detection.score, ...head };
+    }
   }
 
   if (!result.descriptor) {
-    return { descriptor: null, status: "low_quality", score: result.detection.score };
+    return { descriptor: null, status: "low_quality", score: result.detection.score, ...head };
   }
 
   const desc = Array.from(result.descriptor);
@@ -212,6 +288,7 @@ export async function detectFaceDescriptor(
     descriptor: desc,
     status: "ok",
     score: result.detection.score,
+    ...head,
   };
 }
 
@@ -354,26 +431,34 @@ export async function compressFaceSnapshotAsync(
   }
 }
 
-export async function enrollFace(descriptor: number[], snapshot?: string): Promise<{ photoUrl?: string | null }> {
+export async function enrollFace(
+  descriptor: number[] | number[][],
+  snapshot?: string,
+): Promise<{ photoUrl?: string | null }> {
   if (!snapshot?.startsWith("data:image/")) {
     throw new Error("Yuz rasmi olinmadi — qayta urinib ko‘ring");
   }
   const photo = (await compressFaceSnapshotAsync(snapshot)) || snapshot;
+  const body =
+    Array.isArray(descriptor[0])
+      ? { descriptors: descriptor, snapshot: photo, photo }
+      : { descriptor, snapshot: photo, photo };
   const res = await apiJson<{ photoUrl?: string | null }>("/auth/face/enroll", {
     method: "POST",
-    body: JSON.stringify({ descriptor, snapshot: photo, photo }),
+    body: JSON.stringify(body),
   });
   return res;
 }
 
 export async function loginWithFace<TUser>(
-  descriptor: number[],
+  descriptor: number[] | number[][],
   snapshot?: string,
 ): Promise<{ user: TUser; fullName?: string; message?: string }> {
+  const vec = (Array.isArray(descriptor[0]) ? descriptor[0] : descriptor) as number[];
   const photo = snapshot ? await compressFaceSnapshotAsync(snapshot) : undefined;
   return apiJson<{ user: TUser; fullName?: string; message?: string }>("/auth/face/login", {
     method: "POST",
-    body: JSON.stringify({ descriptor, snapshot: photo }),
+    body: JSON.stringify({ descriptor: vec, snapshot: photo }),
   });
 }
 

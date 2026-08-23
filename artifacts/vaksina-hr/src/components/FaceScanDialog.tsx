@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Loader2, ScanFace, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Loader2, ScanFace, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -15,8 +15,11 @@ import {
   faceAlignHint,
   isFaceIdSupported,
   isStableSample,
+  poseHint,
+  poseMatchesWant,
   type FaceAlignStatus,
   type FaceOvalFrame,
+  type FacePose,
 } from "@/lib/face-id";
 import { cn } from "@/lib/utils";
 
@@ -26,10 +29,21 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   mode: "enroll" | "login";
-  onCaptured: (descriptor: number[], snapshot?: string) => Promise<CaptureResult>;
+  onCaptured: (descriptor: number[] | number[][], snapshot?: string) => Promise<CaptureResult>;
   title?: string;
   description?: string;
 };
+
+const ENROLL_POSES: { pose: FacePose; need: number }[] = [
+  { pose: "center", need: 3 },
+  { pose: "left", need: 2 },
+  { pose: "right", need: 2 },
+  { pose: "up", need: 1 },
+  { pose: "down", need: 1 },
+];
+const LOGIN_STREAK = 3;
+const MIN_SCORE_ENROLL = 0.62;
+const MIN_SCORE_LOGIN = 0.62;
 
 function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
   if (!video || video.videoWidth < 8) return undefined;
@@ -54,10 +68,20 @@ function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
   }
 }
 
-const ENROLL_SAMPLES = 12;
-const LOGIN_STREAK = 5;
-const MIN_SCORE_ENROLL = 0.8;
-const MIN_SCORE_LOGIN = 0.74;
+function PoseArrow({ pose }: { pose: FacePose }) {
+  const Icon =
+    pose === "left" ? ArrowLeft : pose === "right" ? ArrowRight : pose === "up" ? ArrowUp : pose === "down" ? ArrowDown : ScanFace;
+  return (
+    <div
+      className={cn(
+        "flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white ring-1 ring-white/35 backdrop-blur-sm",
+        pose !== "center" && "animate-bounce",
+      )}
+    >
+      <Icon className="h-6 w-6" />
+    </div>
+  );
+}
 
 export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, description }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -70,21 +94,29 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aligned, setAligned] = useState(false);
-  const [progress, setProgress] = useState(0);
+  const [poseIndex, setPoseIndex] = useState(0);
+  const [poseFill, setPoseFill] = useState(0);
+  const [loginFill, setLoginFill] = useState(0);
+
+  const enrollPose = ENROLL_POSES[Math.min(poseIndex, ENROLL_POSES.length - 1)]!;
 
   useEffect(() => {
     if (!open) {
       setAligned(false);
-      setProgress(0);
       setBusy(false);
       setError(null);
+      setPoseIndex(0);
+      setPoseFill(0);
+      setLoginFill(0);
       return;
     }
 
     let cancelled = false;
-    const samples: number[][] = [];
+    const poseBuckets: number[][][] = ENROLL_POSES.map(() => []);
+    let poseI = 0;
     let loginStreak = 0;
     let running = true;
+    let poseHold = 0;
     let lastDesc: number[] | null = null;
 
     const stopCamera = () => {
@@ -112,9 +144,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setError(null);
       setBusy(false);
       setAligned(false);
-      setProgress(0);
       lastDesc = null;
-      samples.length = 0;
+      poseI = 0;
+      setPoseIndex(0);
+      setPoseFill(0);
       if (!isFaceIdSupported()) {
         setError("Kamera faqat localhost yoki HTTPS da ishlaydi");
         return;
@@ -141,79 +174,104 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         if (!video) return;
         video.srcObject = stream;
         await video.play();
-        setHint(
-          mode === "enroll"
-            ? "Yuzni oval ichiga joylashtiring — bir necha aniq kadr olinadi"
-            : "Yuzni oval ichiga tuting",
-        );
-
-        const minScore = mode === "enroll" ? MIN_SCORE_ENROLL : MIN_SCORE_LOGIN;
+        setHint(mode === "enroll" ? poseHint("center") : "Yuzni oval ichiga tuting");
 
         const loop = async () => {
           if (!running || cancelled) return;
           const videoEl = videoRef.current;
           if (videoEl && videoEl.readyState >= 2) {
             try {
-              const result = await detectFaceDescriptor(videoEl, readFrame(), true);
+              const want = ENROLL_POSES[poseI];
+              const result = await detectFaceDescriptor(videoEl, readFrame(), true, {
+                allowTurn: mode === "enroll" && want?.pose !== "center",
+              });
               const alignStatus: FaceAlignStatus = result.status;
-              const inFrame = alignStatus === "ok";
-              setAligned(inFrame);
+              const poseOk =
+                mode === "login" ||
+                poseMatchesWant(want?.pose ?? "center", result.pose, result.yaw ?? 0, result.pitch ?? 0) ||
+                (mode === "enroll" && want?.pose !== "center" && poseHold >= 8);
+              const inFrame = Boolean(result.descriptor) && (alignStatus === "ok" || alignStatus === "turn_face");
+              setAligned(Boolean(inFrame && poseOk));
+              const minScore = mode === "enroll" ? MIN_SCORE_ENROLL : MIN_SCORE_LOGIN;
 
-              if (!inFrame) {
+              if (!result.descriptor || (result.score ?? 0) < minScore) {
                 loginStreak = 0;
-                lastDesc = null;
-                if (mode === "enroll" && samples.length > 0) {
-                  samples.length = 0;
-                  setProgress(0);
-                }
-                setHint(faceAlignHint(alignStatus));
-              } else if (!result.descriptor || (result.score ?? 0) < minScore) {
-                setHint(faceAlignHint("low_quality"));
-                loginStreak = 0;
-              } else if (!isStableSample(lastDesc, result.descriptor)) {
-                lastDesc = result.descriptor;
-                loginStreak = 0;
-                setHint(faceAlignHint("hold_still"));
-              } else {
-                lastDesc = result.descriptor;
-                const desc = result.descriptor;
-
-                if (mode === "enroll") {
-                  samples.push(desc);
-                  setProgress(Math.min(samples.length, ENROLL_SAMPLES));
-                  setHint(`Aniq kadr ${Math.min(samples.length, ENROLL_SAMPLES)}/${ENROLL_SAMPLES}`);
-                  if (samples.length >= ENROLL_SAMPLES) {
-                    running = false;
-                    setBusy(true);
-                    setHint("Yuz saqlanmoqda…");
-                    try {
-                      await onCapturedRef.current(
-                        averageDescriptorsRobust(samples.slice(0, ENROLL_SAMPLES)),
-                        grabFaceSnapshot(videoEl),
-                      );
-                      stopCamera();
-                      onOpenChange(false);
-                    } catch (err) {
-                      setError((err as Error)?.message || "Saqlanmadi");
-                      setBusy(false);
-                      samples.length = 0;
-                      setProgress(0);
-                      lastDesc = null;
-                      running = true;
-                    }
-                    if (running && !cancelled) window.setTimeout(() => void loop(), 400);
-                    return;
-                  }
+                if (mode === "login") setLoginFill(0);
+                if (alignStatus !== "ok" && alignStatus !== "turn_face") setHint(faceAlignHint(alignStatus));
+                else if (mode === "enroll" && want) setHint(poseHint(want.pose));
+                else setHint(faceAlignHint(alignStatus));
+              } else if (mode === "enroll" && want) {
+                if (result.descriptor) poseHold += 1;
+                else poseHold = 0;
+                const poseOkNow =
+                  poseMatchesWant(want.pose, result.pose, result.yaw ?? 0, result.pitch ?? 0) ||
+                  (want.pose !== "center" && poseHold >= 8);
+                if (!poseOkNow) {
+                  lastDesc = null;
+                  setHint(poseHint(want.pose));
+                } else if (
+                  want.pose === "center" &&
+                  !isStableSample(lastDesc, result.descriptor, 0.28)
+                ) {
+                  lastDesc = result.descriptor;
+                  setHint("Bir soniya turing…");
                 } else {
+                  lastDesc = result.descriptor;
+                  const bucket = poseBuckets[poseI]!;
+                  bucket.push(result.descriptor);
+                  setPoseFill(bucket.length);
+                  setHint(`${poseHint(want.pose)}  ·  ${bucket.length}/${want.need}`);
+                  if (bucket.length >= want.need) {
+                    poseI += 1;
+                    setPoseIndex(poseI);
+                    setPoseFill(0);
+                    lastDesc = null;
+                    poseHold = 0;
+                    if (poseI >= ENROLL_POSES.length) {
+                      running = false;
+                      setBusy(true);
+                      setHint("Yuz saqlanmoqda…");
+                      const templates = poseBuckets.map((b) => averageDescriptorsRobust(b));
+                      try {
+                        await onCapturedRef.current(templates, grabFaceSnapshot(videoEl));
+                        stopCamera();
+                        onOpenChange(false);
+                        return;
+                      } catch (err) {
+                        setError((err as Error)?.message || "Saqlanmadi");
+                        setBusy(false);
+                        poseI = 0;
+                        poseBuckets.forEach((b) => {
+                          b.length = 0;
+                        });
+                        setPoseIndex(0);
+                        setPoseFill(0);
+                        lastDesc = null;
+                        poseHold = 0;
+                        running = true;
+                      }
+                    } else {
+                      setHint(poseHint(ENROLL_POSES[poseI]!.pose));
+                    }
+                  }
+                }
+              } else if (mode === "login") {
+                if (!isStableSample(lastDesc, result.descriptor, 0.22)) {
+                  lastDesc = result.descriptor;
+                  loginStreak = 0;
+                  setLoginFill(0);
+                  setHint(faceAlignHint("hold_still"));
+                } else {
+                  lastDesc = result.descriptor;
                   loginStreak += 1;
-                  setProgress(loginStreak);
+                  setLoginFill(loginStreak);
                   setHint(faceAlignHint("ok"));
                   if (loginStreak >= LOGIN_STREAK) {
                     running = false;
                     setBusy(true);
                     setHint("Yuz tekshirilmoqda…");
                     try {
-                      const captured = await onCapturedRef.current(desc, grabFaceSnapshot(videoEl));
+                      const captured = await onCapturedRef.current(result.descriptor, grabFaceSnapshot(videoEl));
                       const name =
                         captured && typeof captured === "object" && captured.fullName
                           ? captured.fullName.trim()
@@ -230,7 +288,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                       setError((err as Error)?.message || "Bu yuz aniqlanmadi.");
                       setBusy(false);
                       loginStreak = 0;
-                      setProgress(0);
+                      setLoginFill(0);
                       lastDesc = null;
                       running = true;
                     }
@@ -242,7 +300,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               return;
             }
           }
-          if (running && !cancelled) window.setTimeout(() => void loop(), 85);
+          if (running && !cancelled) window.setTimeout(() => void loop(), 70);
         };
 
         void loop();
@@ -264,28 +322,18 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     };
   }, [open, mode, onOpenChange]);
 
-  const steps = mode === "enroll" ? ENROLL_SAMPLES : LOGIN_STREAK;
-
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="w-[calc(100%-0.75rem)] max-w-md gap-3 overflow-hidden rounded-2xl p-3 sm:gap-4 sm:p-5 max-h-[100dvh]"
+        className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-white !max-h-[100dvh] !overflow-hidden"
       >
-        <DialogHeader className="space-y-1 text-left">
-          <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
-            <ScanFace className="h-5 w-5 text-[#0b3a5c]" />
-            {title || (mode === "enroll" ? "Face ID ni ulash" : "Face ID bilan kirish")}
-          </DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm">
-            {description ||
-              (mode === "enroll"
-                ? "Kameraga to‘g‘ri qarang — bir necha aniq kadr olinadi."
-                : "Kameraga qarang — yuzingiz aniqlanadi.")}
-          </DialogDescription>
+        <DialogHeader className="sr-only">
+          <DialogTitle>{title || (mode === "enroll" ? "Face ID" : "Face ID kirish")}</DialogTitle>
+          <DialogDescription>{description || poseHint(enrollPose.pose)}</DialogDescription>
         </DialogHeader>
 
-        <div className="relative mx-auto w-full overflow-hidden rounded-3xl bg-zinc-950 aspect-[3/4] max-h-[min(56dvh,420px)] sm:aspect-[4/3] sm:max-h-[min(48vh,360px)]">
+        <div className="relative aspect-[4/5] w-full overflow-hidden bg-black">
           <video
             ref={videoRef}
             className="absolute inset-0 h-full w-full object-cover -scale-x-100"
@@ -293,51 +341,76 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             muted
             autoPlay
           />
-          <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{
+              background:
+                "radial-gradient(ellipse 42% 48% at 50% 44%, transparent 62%, rgba(0,0,0,0.62) 68%)",
+            }}
+          />
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center pb-6">
             <div
               ref={ovalRef}
               className={cn(
-                "w-[68%] max-w-[230px] aspect-[3/4] rounded-full border-[3px] transition-all duration-200 sm:w-[52%] sm:max-w-[210px]",
-                aligned
-                  ? "border-emerald-400 shadow-[0_0_0_999px_rgba(0,0,0,0.58),0_0_28px_rgba(52,211,153,0.55)]"
-                  : "border-white/85 shadow-[0_0_0_999px_rgba(0,0,0,0.58)]",
+                "aspect-[3/4] w-[58%] max-w-[220px] rounded-full border-[2.5px] bg-transparent",
+                aligned ? "border-emerald-400" : "border-white",
               )}
             />
           </div>
-          {aligned ? (
-            <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2">
-              <span className="rounded-full bg-emerald-500/90 px-3 py-1 text-[11px] font-medium text-white">
-                Yuz aniq ✓
-              </span>
+          <p className="absolute left-0 right-0 top-5 z-10 text-center text-[15px] font-semibold drop-shadow">
+            {mode === "enroll" ? poseHint(enrollPose.pose) : "Yuzni oval ichiga tuting"}
+          </p>
+          {mode === "enroll" && enrollPose.pose !== "center" ? (
+            <div className="absolute left-1/2 top-[18%] z-10 -translate-x-1/2">
+              <PoseArrow pose={enrollPose.pose} />
             </div>
           ) : null}
         </div>
 
-        <div className="flex justify-center gap-1.5">
-          {Array.from({ length: steps }).map((_, i) => (
-            <span
-              key={i}
-              className={cn(
-                "h-1.5 w-6 rounded-full transition-colors",
-                i < progress ? "bg-emerald-500" : "bg-slate-200",
-              )}
-            />
-          ))}
-        </div>
-
-        <p
-          className={cn(
-            "min-h-5 text-center text-sm",
-            error ? "text-red-600" : aligned ? "text-emerald-700" : "text-slate-600",
+        <div className="space-y-3 bg-zinc-950 px-5 pb-5 pt-4">
+          {mode === "enroll" ? (
+            <div className="flex justify-center gap-1.5">
+              {ENROLL_POSES.map((p, i) => (
+                <span
+                  key={p.pose}
+                  className={cn(
+                    "h-1.5 w-7 rounded-full",
+                    i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-white" : "bg-white/20",
+                  )}
+                  style={
+                    i === poseIndex && poseFill
+                      ? {
+                          background: `linear-gradient(90deg, rgb(52 211 153) ${(poseFill / p.need) * 100}%, rgba(255,255,255,0.95) ${(poseFill / p.need) * 100}%)`,
+                        }
+                      : undefined
+                  }
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="flex justify-center gap-1.5">
+              {Array.from({ length: LOGIN_STREAK }).map((_, i) => (
+                <span
+                  key={i}
+                  className={cn("h-1.5 w-6 rounded-full", i < loginFill ? "bg-emerald-400" : "bg-white/20")}
+                />
+              ))}
+            </div>
           )}
-        >
-          {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}
-          {error || hint}
-        </p>
-        <Button type="button" variant="outline" className="w-full" onClick={() => onOpenChange(false)}>
-          <X className="mr-1.5 h-4 w-4" />
-          Bekor qilish
-        </Button>
+          <p className={cn("min-h-5 text-center text-sm", error ? "text-red-300" : "text-white/80")}>
+            {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}
+            {error || hint}
+          </p>
+          <Button
+            type="button"
+            variant="ghost"
+            className="w-full rounded-full text-white hover:bg-white/10 hover:text-white"
+            onClick={() => onOpenChange(false)}
+          >
+            <X className="mr-1.5 h-4 w-4" />
+            Bekor qilish
+          </Button>
+        </div>
       </DialogContent>
     </Dialog>
   );

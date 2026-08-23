@@ -46,7 +46,7 @@ export function FaceIdEnroll({
   }, [onStatusChange]);
 
   const onCaptured = useCallback(
-    async (descriptor: number[], snapshot?: string) => {
+    async (descriptor: number[] | number[][], snapshot?: string) => {
       try {
         const saved = await enrollFace(descriptor, snapshot);
         setRegistered(true);
@@ -146,7 +146,7 @@ export function FaceIdEnroll({
                 ) : null}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Kameraga to‘g‘ri qarang — yuz aniq olinadi. Boshqa xodimga o‘xshasa tizim rad etadi.
+                Kameraga qarab, boshni chap, o‘ng, tepaga va pastga burang.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button type="button" size="sm" disabled={loading || !supported} onClick={() => setScanOpen(true)}>

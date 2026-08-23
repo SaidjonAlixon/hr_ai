@@ -7,6 +7,7 @@ import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
 import { HR_ROLES, isHrManager } from "../lib/roles";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
+import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from "../lib/dedupe-employees";
 
 const router: IRouter = Router();
 
@@ -14,6 +15,7 @@ const VALID_EMP_STATUS = new Set([
   "working",
   "new",
   "dismissed",
+  "on_leave",
   "need_hire",
   "searching",
   "no_manager",
@@ -87,7 +89,8 @@ const ORG_ROLE_UZ: Record<string, string> = {
 const STATUS_UZ: Record<string, string> = {
   working: "Ishlayapti",
   new: "Yangi",
-  dismissed: "Bo‘shagan",
+  dismissed: "Bo‘shatilgan",
+  on_leave: "Ta’tilda",
   need_hire: "Yollash kerak",
   searching: "Qidiruvda",
   no_manager: "Mudir yo‘q",
@@ -426,6 +429,51 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
   } catch (err) {
     console.error("GET /employees/export error:", err);
     res.status(503).json({ error: "Excel yuklanmadi — birozdan keyin qayta urinib ko‘ring" });
+  }
+});
+
+router.get("/employees/duplicates", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const groups = await listDuplicateGroups();
+    res.json({
+      groups,
+      groupCount: groups.length,
+      extraCount: groups.reduce((n, g) => n + Math.max(0, g.members.length - 1), 0),
+    });
+  } catch (err) {
+    console.error("GET /employees/duplicates error:", err);
+    res.status(500).json({ error: "Dublikatlar yuklanmadi" });
+  }
+});
+
+router.post("/employees/cleanup-duplicates", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!isHrManager(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const keepId = Number(req.body?.keepId);
+    const dropId = Number(req.body?.dropId);
+    if (Number.isFinite(keepId) && Number.isFinite(dropId) && keepId > 0 && dropId > 0) {
+      const removed = await removeDuplicatePair(keepId, dropId);
+      res.json({ ok: true, groups: 1, kept: 1, removedCount: 1, removed: [removed] });
+      return;
+    }
+    const result = await dedupeSimilarEmployees();
+    res.json({
+      ok: true,
+      groups: result.groups,
+      kept: result.kept,
+      removedCount: result.removed.length,
+      removed: result.removed,
+    });
+  } catch (err) {
+    console.error("POST /employees/cleanup-duplicates error:", err);
+    res.status(500).json({ error: (err as Error).message || "Dublikatlarni tozalashda xatolik" });
   }
 });
 

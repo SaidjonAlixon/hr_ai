@@ -29,14 +29,19 @@ export const settlementLinesTable = pgTable("settlement_lines", {
   fullName: text("full_name").notNull(),
   phone: text("phone"),
   sales: doublePrecision("sales").notNull().default(0),
-  /** 0.003 = 0.3% */
-  percent: doublePrecision("percent").notNull().default(0.006),
+  position: text("position"),
+  planCurrent: doublePrecision("plan_current").notNull().default(0),
+  planPrev: doublePrecision("plan_prev").notNull().default(0),
+  /** 0.006 = 0.6% savdo ulushi; yangi qatorlarda 0, qo‘lda kiritiladi */
+  percent: doublePrecision("percent").notNull().default(0),
   fiksa: doublePrecision("fiksa").notNull().default(0),
   planBonus: doublePrecision("plan_bonus").notNull().default(0),
+  extraBonus: doublePrecision("extra_bonus").notNull().default(0),
   avans: doublePrecision("avans").notNull().default(0),
   inventoryFine: doublePrecision("inventory_fine").notNull().default(0),
   timeFine: doublePrecision("time_fine").notNull().default(0),
   expiryHold: doublePrecision("expiry_hold").notNull().default(0),
+  fineNote: text("fine_note"),
   /** null = kartaga = yakuniy oylik */
   cardAmount: doublePrecision("card_amount"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

@@ -771,6 +771,7 @@ export const EmployeeEmploymentStatus = {
   working: 'working',
   new: 'new',
   dismissed: 'dismissed',
+  on_leave: 'on_leave',
   need_hire: 'need_hire',
   searching: 'searching',
   no_manager: 'no_manager',

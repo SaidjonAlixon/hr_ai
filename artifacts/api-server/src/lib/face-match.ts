@@ -2,12 +2,18 @@ import { eq, inArray } from "drizzle-orm";
 import { db, faceProfilesTable, usersTable } from "@workspace/db";
 
 export const FACE_DESCRIPTOR_LEN = 128;
-/** Davomat / login: shu masofadan uzoq bo‘lsa — mos emas */
-export const FACE_MATCH_MAX = 0.38;
+/** Davomat / login: shu masofadan uzoq — boshqa odam (o‘xshash qizlar ~0.38–0.50) */
+export const FACE_MATCH_MAX = 0.33;
+/** Cosine (L2-norm): shundan past bo‘lsa mos emas */
+export const FACE_MATCH_MIN_COSINE = 0.945;
 /** Eng yaqin va 2-yaqin orasidagi farq shundan kichik bo‘lsa — noaniq */
-export const FACE_AMBIGUOUS_MARGIN = 0.12;
-/** Ro‘yxatdan o‘tish: boshqa xodimga shu masofadan yaqin bo‘lsa — taqiqlanadi */
-export const FACE_ENROLL_BLOCK_MAX = 0.45;
+export const FACE_AMBIGUOUS_MARGIN = 0.18;
+/** Eng yaqin / 2-yaqin nisbati shundan katta bo‘lsa — ikki profil aralashadi */
+export const FACE_AMBIGUOUS_RATIO = 0.78;
+/** Ro‘yxat: faqat deyarli bir xil yuz (haqiqiy dublikat) bloklanadi */
+export const FACE_ENROLL_BLOCK_MAX = 0.33;
+/** Admin: o‘xshash juftlik ogohlantiruvi (blok emas) */
+export const FACE_SIMILAR_WARN = 0.42;
 
 export function parseFaceDescriptor(raw: unknown): number[] | null {
   if (!Array.isArray(raw) || raw.length !== FACE_DESCRIPTOR_LEN) return null;
@@ -19,6 +25,19 @@ export function parseFaceDescriptor(raw: unknown): number[] | null {
   return out;
 }
 
+export function l2normalize(v: number[]): number[] {
+  let n = 0;
+  for (const x of v) n += x * x;
+  n = Math.sqrt(n) || 1;
+  return v.map((x) => x / n);
+}
+
+export function cosineSim(a: number[], b: number[]): number {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i]! * b[i]!;
+  return s;
+}
+
 export function euclidean(a: number[], b: number[]): number {
   let s = 0;
   for (let i = 0; i < a.length; i++) {
@@ -26,6 +45,16 @@ export function euclidean(a: number[], b: number[]): number {
     s += d * d;
   }
   return Math.sqrt(s);
+}
+
+function faceDistance(a: number[], b: number[]): { dist: number; cosine: number } {
+  const na = l2normalize(a);
+  const nb = l2normalize(b);
+  return { dist: euclidean(na, nb), cosine: cosineSim(na, nb) };
+}
+
+function isSamePerson(dist: number, cosine: number, maxDist: number): boolean {
+  return dist <= maxDist && cosine >= FACE_MATCH_MIN_COSINE;
 }
 
 export type FaceHit = { id: number; userId: number; dist: number };
@@ -93,10 +122,11 @@ export async function findClosestFace(
   let best: FaceHit | null = null;
   for (const row of rows) {
     if (opts?.excludeUserId != null && row.userId === opts.excludeUserId) continue;
-    const dist = euclidean(descriptor, row.descriptor);
+    const { dist, cosine } = faceDistance(descriptor, row.descriptor);
+    if (!isSamePerson(dist, cosine, maxDist)) continue;
     if (!best || dist < best.dist) best = { id: row.id, userId: row.userId, dist };
   }
-  if (!best || best.dist > maxDist) return null;
+  if (!best) return null;
   return best;
 }
 
@@ -111,8 +141,12 @@ export async function findNearestFaces(
   const hits: FaceHit[] = [];
   for (const row of rows) {
     if (opts?.excludeUserId != null && row.userId === opts.excludeUserId) continue;
-    const dist = euclidean(descriptor, row.descriptor);
-    if (dist > maxDist) continue;
+    const { dist, cosine } = faceDistance(descriptor, row.descriptor);
+    if (!Number.isFinite(maxDist)) {
+      hits.push({ id: row.id, userId: row.userId, dist });
+      continue;
+    }
+    if (!isSamePerson(dist, cosine, maxDist)) continue;
     hits.push({ id: row.id, userId: row.userId, dist });
   }
   hits.sort((a, b) => a.dist - b.dist);
@@ -162,18 +196,20 @@ export async function matchFaceForAuth(
   const rows = await loadFaceRows();
   let best: FaceHit | null = null;
   let second: FaceHit | null = null;
+  let bestCosine = 0;
   for (const row of rows) {
-    const dist = euclidean(descriptor, row.descriptor);
+    const { dist, cosine } = faceDistance(descriptor, row.descriptor);
     const hit = { id: row.id, userId: row.userId, dist };
     if (!best || dist < best.dist) {
       second = best;
       best = hit;
+      bestCosine = cosine;
     } else if (!second || dist < second.dist) {
       second = hit;
     }
   }
 
-  if (!best || best.dist > FACE_MATCH_MAX) {
+  if (!best || !isSamePerson(best.dist, bestCosine, FACE_MATCH_MAX)) {
     return {
       ok: false,
       error: "Bu yuz aniqlanmadi. Avval tizimga kirib Face ID ni ro‘yxatdan o‘tkazing.",
@@ -181,11 +217,12 @@ export async function matchFaceForAuth(
     };
   }
 
-  if (
-    second &&
-    second.dist - best.dist < FACE_AMBIGUOUS_MARGIN &&
-    second.dist <= FACE_MATCH_MAX + 0.04
-  ) {
+  const closeSecond =
+    Boolean(second) &&
+    (second!.dist - best.dist < FACE_AMBIGUOUS_MARGIN ||
+      best.dist / Math.max(second!.dist, 1e-6) > FACE_AMBIGUOUS_RATIO) &&
+    second!.dist <= FACE_MATCH_MAX + 0.08;
+  if (closeSecond && second) {
     const neighbors = await enrichFaceHits([best, second]);
     const names = neighbors
       .map((n) => n.fullName)
@@ -209,5 +246,5 @@ export function distanceBetweenDescriptors(aJson: string, bJson: string): number
   const a = parseStored(aJson);
   const b = parseStored(bJson);
   if (!a || !b) return null;
-  return euclidean(a, b);
+  return faceDistance(a, b).dist;
 }

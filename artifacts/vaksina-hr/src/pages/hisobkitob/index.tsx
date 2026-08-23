@@ -1,17 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
+  ArrowUpDown,
   Calculator,
   ChevronLeft,
   ChevronRight,
   Download,
   Lock,
-  Plus,
-  Trash2,
+  Search,
   Unlock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -26,11 +25,7 @@ import {
   useHisobSheets,
   type SettlementLine,
 } from "@/lib/hisobkitob-api";
-
-function numOrEmpty(v: string) {
-  const n = Number(String(v).replace(/\s/g, "").replace(",", "."));
-  return Number.isFinite(n) ? n : 0;
-}
+import { formatMoney, formatMoneyInput, parseMoney } from "@/lib/money-format";
 
 function CellInput({
   value,
@@ -45,40 +40,45 @@ function CellInput({
   percent?: boolean;
   onCommit: (n: number) => void;
 }) {
-  const [txt, setTxt] = useState(String(value ?? ""));
+  const show = (v: number | string) =>
+    percent ? String(Number(v) * 100) : formatMoney(Number(v) || 0);
+  const [txt, setTxt] = useState(show(value));
   useEffect(() => {
-    setTxt(percent ? String(Number(value) * 100) : String(value ?? ""));
+    setTxt(show(value));
   }, [value, percent]);
   return (
     <input
+      inputMode="decimal"
       disabled={disabled}
       value={txt}
-      onChange={(e) => setTxt(e.target.value)}
+      onChange={(e) => setTxt(percent ? e.target.value : formatMoneyInput(e.target.value))}
       onBlur={() => {
-        const n = numOrEmpty(txt);
+        const n = parseMoney(txt);
         onCommit(percent ? n / 100 : n);
+        setTxt(percent ? String(n) : formatMoney(n));
       }}
       className={cn(
-        "h-8 w-full rounded-md border-0 bg-transparent px-1.5 text-right text-[12px] tabular-nums outline-none focus:bg-white focus:ring-1 focus:ring-[#0b3a5c]/30 disabled:opacity-70",
+        "h-6 w-full rounded-sm border-0 bg-transparent px-1 text-right text-[11px] leading-none tabular-nums outline-none focus:bg-white focus:ring-1 focus:ring-[#0b3a5c]/30 disabled:opacity-70",
         className,
       )}
     />
   );
 }
 
+function roleLabel(p?: string | null) {
+  const s = (p || "").trim();
+  if (!s) return "";
+  return s.split("·")[0]!.trim();
+}
+
 function FormulaHint() {
   return (
     <div className="rounded-xl border bg-white p-3 text-[11px] leading-relaxed text-slate-600 shadow-sm">
-      <p className="font-semibold text-[#0b3a5c]">Hisoblash qoidasi</p>
-      <p className="mt-1">
-        <b>Oylik %</b> = shaxsiy savdo × bonus foizi (masalan 0.6% = 0.006). Jami savdo ishlatilmaydi.
-      </p>
-      <p>
-        <b>Jami</b> = Oylik % + Fiksa + Reja bonusi − Avans − Pereuchyot − Vaqt jarimasi − Muddat ushlovi.
-      </p>
-      <p>
-        <b>Gross</b> = Kartaga tushadigan / 0.88 (≈12% soliq). Farq = Jami − Karta (0 bo‘lishi kerak).
-      </p>
+      <p className="font-semibold text-[#0b3a5c]">Hisoblash (serverda, barcha lavozimlar)</p>
+      <p className="mt-1">Rejadan ortiq = max(0, savdo − joriy reja). Reja % = savdo / reja × 100.</p>
+      <p>Foiz summasi = savdo × savdo foizi. Reja bonusi faqat reja bajarilsa (aks holda 0).</p>
+      <p>Hisoblangan = fiks + foiz + reja bonusi + KPI. Qo‘lga = max(0, hisoblangan − avans − jarimalar).</p>
+      <p className="mt-1 text-[11px] text-slate-500">Fiks Oylikdan keladi va shu yerdan xodim kartochkasiga yoziladi. Savdo yo‘q lavozimda faqat fiks va KPI.</p>
     </div>
   );
 }
@@ -89,21 +89,34 @@ export default function HisobkitobPage() {
   const allowed = canViewHisobkitob(user?.role);
   const [month, setMonth] = useState("2026-08");
   const [sheetId, setSheetId] = useState<number | null>(null);
-  const [newBranch, setNewBranch] = useState("");
+  const [sortKey, setSortKey] = useState<"name" | "role">("name");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+  const [nameQuery, setNameQuery] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const [bulkFiks, setBulkFiks] = useState("0");
+  const [bulkBonus, setBulkBonus] = useState("0");
   const sheets = useHisobSheets(month);
   const detail = useHisobSheet(sheetId);
   const mut = useHisobMutations();
+  const creatingRef = React.useRef(false);
 
   useEffect(() => {
     const items = sheets.data?.items ?? [];
+    if (sheets.isLoading || sheets.isFetching) return;
     if (!items.length) {
       setSheetId(null);
+      if (!creatingRef.current && !mut.create.isPending) {
+        creatingRef.current = true;
+        mut.create.mutate(
+          { branchName: "Oylik hisob", month },
+          { onSettled: () => { creatingRef.current = false; } },
+        );
+      }
       return;
     }
-    if (!sheetId || !items.some((s) => s.id === sheetId)) {
-      setSheetId(items[0]!.id);
-    }
-  }, [sheets.data, sheetId]);
+    creatingRef.current = false;
+    if (!sheetId || !items.some((s) => s.id === sheetId)) setSheetId(items[0]!.id);
+  }, [sheets.data, sheets.isLoading, sheets.isFetching, sheetId, month, mut.create]);
 
   if (!allowed) {
     return (
@@ -117,6 +130,35 @@ export default function HisobkitobPage() {
   const d = detail.data;
   const edit = Boolean(d?.canEdit);
   const admin = Boolean(d?.canAdmin);
+  const roles = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of d?.lines ?? []) {
+      const p = roleLabel(r.position);
+      if (p) set.add(p);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "uz"));
+  }, [d?.lines]);
+  const rows = useMemo(() => {
+    const q = nameQuery.trim().toLowerCase();
+    let list = [...(d?.lines ?? [])];
+    if (q) list = list.filter((r) => r.fullName.toLowerCase().includes(q));
+    if (roleFilter) list = list.filter((r) => roleLabel(r.position) === roleFilter);
+    const dir = sortDir === "asc" ? 1 : -1;
+    list.sort((a, b) => {
+      const av = sortKey === "role" ? roleLabel(a.position) : a.fullName;
+      const bv = sortKey === "role" ? roleLabel(b.position) : b.fullName;
+      return dir * av.localeCompare(bv, "uz", { sensitivity: "base" });
+    });
+    return list;
+  }, [d?.lines, sortKey, sortDir, nameQuery, roleFilter]);
+
+  const toggleSort = (key: "name" | "role") => {
+    if (sortKey === key) setSortDir((x) => (x === "asc" ? "desc" : "asc"));
+    else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
 
   const saveLine = (id: number, body: Record<string, unknown>) => {
     mut.patchLine.mutate(
@@ -130,9 +172,9 @@ export default function HisobkitobPage() {
       <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#0b3a5c] px-4 py-3 text-white shadow">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold">
-            <Calculator className="h-5 w-5" /> Hisob-kitob
+            <Calculator className="h-5 w-5" /> Xodimlar oylik hisobi
           </h1>
-          <p className="text-xs text-white/70">Savdo, fiksa, bonus va jarimalar — Excel uslubida</p>
+          <p className="text-xs text-white/70">Savdo, reja, fiks, bonus va jarimalar — barcha lavozimlar. Oylik (KPI) bilan bog‘langan.</p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-white/10 p-0.5">
           <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
@@ -145,70 +187,25 @@ export default function HisobkitobPage() {
         </div>
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        {(sheets.data?.items ?? []).map((s) => (
-          <button
-            key={s.id}
-            type="button"
-            onClick={() => setSheetId(s.id)}
-            className={cn(
-              "rounded-lg px-3 py-1.5 text-xs font-semibold",
-              sheetId === s.id ? "bg-[#0b3a5c] text-white" : "bg-white text-slate-700 ring-1 ring-slate-200",
-            )}
-          >
-            {s.branchName}
-            {s.status === "approved" ? " ✓" : ""}
-          </button>
-        ))}
-        <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Input
-            value={newBranch}
-            onChange={(e) => setNewBranch(e.target.value)}
-            placeholder="Yangi varaq nomi"
-            className="h-8 w-40 text-xs"
-          />
-          <Button
-            type="button"
-            size="sm"
-            className="h-8 bg-[#0b3a5c]"
-            disabled={mut.create.isPending}
-            onClick={() =>
-              mut.create.mutate(
-                { branchName: newBranch || "Oylik", month },
-                {
-                  onSuccess: (row) => {
-                    setNewBranch("");
-                    setSheetId(row.id);
-                    toast({ title: "Varaq ochildi" });
-                  },
-                  onError: (e) => toast({ title: "Xato", description: (e as Error).message, variant: "destructive" }),
-                },
-              )
-            }
-          >
-            <Plus className="mr-1 h-3.5 w-3.5" /> Varaq
-          </Button>
-        </div>
-      </div>
-
-      {sheets.isLoading || detail.isLoading ? (
+      {sheets.isLoading || detail.isLoading || (!d && mut.create.isPending) ? (
         <Skeleton className="h-80 rounded-xl" />
       ) : detail.error ? (
         <p className="text-sm text-rose-700">{(detail.error as Error).message}</p>
       ) : !d ? (
         <p className="rounded-xl border bg-white px-4 py-10 text-center text-sm text-slate-500">
-          Bu oyda varaq yo‘q — nom yozib «Varaq» bosing.
+          {monthLabelUz(month)} uchun ma’lumot yo‘q.
         </p>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2 lg:grid-cols-7">
             {[
-              { l: "Avgust reja", v: formatSom(d.planCurrent) },
-              { l: "Iyul reja", v: formatSom(d.planPrev) },
+              { l: "Xodimlar", v: `${d.lines.length} ta` },
+              { l: `${monthLabelUz(d.month)} reja`, v: formatSom(d.planCurrent) },
+              { l: `${monthLabelUz(shiftMonthKey(d.month, -1))} reja`, v: formatSom(d.planPrev) },
               { l: "Bir oylik savdo", v: formatSom(d.totals.salesTotal) },
-              { l: "Iyuldan farq", v: formatSom(d.totals.overPrev) },
-              { l: "Iyulga %", v: `${d.totals.vsPrevPct}%` },
-              { l: "Jami karta", v: formatSom(d.totals.cardTotal) },
+              { l: "Rejadan ortiq", v: formatSom((d.totals as { overPlanTotal?: number }).overPlanTotal ?? d.totals.overPrev) },
+              { l: `${monthLabelUz(shiftMonthKey(d.month, -1))}ga %`, v: `${d.totals.vsPrevPct}%` },
+              { l: "Qo‘lga / karta", v: formatSom(d.totals.cardTotal) },
             ].map((c) => (
               <div key={c.l} className="rounded-xl border bg-white px-3 py-2 shadow-sm">
                 <p className="text-[10px] uppercase tracking-wide text-slate-500">{c.l}</p>
@@ -217,43 +214,70 @@ export default function HisobkitobPage() {
             ))}
           </div>
 
-          <div className="flex flex-wrap items-end gap-2 rounded-xl border bg-white p-3">
-            <label className="text-[11px] text-slate-500">
-              Varaq
-              <Input
-                className="mt-0.5 h-8 w-40"
-                defaultValue={d.branchName}
-                disabled={!edit}
-                onBlur={(e) => mut.patchSheet.mutate({ id: d.id, body: { branchName: e.target.value } })}
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-white px-3 py-2 shadow-sm">
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                value={nameQuery}
+                onChange={(e) => setNameQuery(e.target.value)}
+                placeholder="Ism familiya"
+                className="h-8 w-48 rounded-lg border border-slate-200 bg-white pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-[#0b3a5c]/30"
               />
-            </label>
-            <label className="text-[11px] text-slate-500">
-              Joriy reja
-              <Input
-                className="mt-0.5 h-8 w-36"
-                defaultValue={d.planCurrent}
-                disabled={!edit}
-                onBlur={(e) => mut.patchSheet.mutate({ id: d.id, body: { planCurrent: numOrEmpty(e.target.value) } })}
-              />
-            </label>
-            <label className="text-[11px] text-slate-500">
-              Oldingi oy reja
-              <Input
-                className="mt-0.5 h-8 w-36"
-                defaultValue={d.planPrev}
-                disabled={!edit}
-                onBlur={(e) => mut.patchSheet.mutate({ id: d.id, body: { planPrev: numOrEmpty(e.target.value) } })}
-              />
-            </label>
-            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-medium", d.status === "approved" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-900")}>
-              {d.status === "approved" ? "Tasdiqlangan" : "Qoralama"}
-            </span>
-            <div className="ml-auto flex flex-wrap gap-2">
-              {edit ? (
-                <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => mut.addLine.mutate({ sheetId: d.id, body: { fullName: "Yangi xodim" } })}>
-                  <Plus className="mr-1 h-3.5 w-3.5" /> Xodim
+            </div>
+            <select
+              className="h-8 max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 text-sm"
+              value={roleFilter}
+              onChange={(e) => setRoleFilter(e.target.value)}
+            >
+              <option value="">Barcha lavozimlar</option>
+              {roles.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            {edit ? (
+              <>
+                <span className="text-xs text-slate-500">Fiksa</span>
+                <input
+                  inputMode="numeric"
+                  value={bulkFiks}
+                  onChange={(e) => setBulkFiks(formatMoneyInput(e.target.value) || "0")}
+                  className="h-8 w-36 rounded-lg border border-slate-200 px-2 text-sm tabular-nums"
+                />
+                <span className="text-xs text-slate-500">Bonus %</span>
+                <input
+                  value={bulkBonus}
+                  onChange={(e) => setBulkBonus(e.target.value)}
+                  className="h-8 w-20 rounded-lg border border-slate-200 px-2 text-sm tabular-nums"
+                />
+                <Button
+                  type="button"
+                  size="sm"
+                  className="h-8 bg-[#0b3a5c]"
+                  disabled={mut.applyPosition.isPending || !roleFilter}
+                  onClick={() => {
+                    if (!roleFilter) {
+                      toast({ title: "Avval lavozim tanlang", variant: "destructive" });
+                      return;
+                    }
+                    mut.applyPosition.mutate(
+                      {
+                        id: d.id,
+                        position: roleFilter,
+                        fiksa: parseMoney(bulkFiks),
+                        bonusPercent: parseMoney(bulkBonus),
+                      },
+                      {
+                        onSuccess: () => toast({ title: `${roleFilter} uchun yozildi` }),
+                        onError: (e) => toast({ title: "Yozilmadi", description: (e as Error).message, variant: "destructive" }),
+                      },
+                    );
+                  }}
+                >
+                  Lavozimga yozish
                 </Button>
-              ) : null}
+              </>
+            ) : null}
+            <div className="ml-auto flex flex-wrap gap-2">
               <Button type="button" size="sm" className="h-8 bg-[#0b3a5c]" onClick={() => { window.location.href = `/api/hisobkitob/sheets/${d.id}/export`; }}>
                 <Download className="mr-1 h-3.5 w-3.5" /> Excel
               </Button>
@@ -266,124 +290,131 @@ export default function HisobkitobPage() {
                   <Unlock className="mr-1 h-3.5 w-3.5" /> Qayta ochish
                 </Button>
               ) : null}
-              {admin ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-8 text-rose-700"
-                  onClick={() => {
-                    if (window.confirm("Varaq o‘chirilsinmi?")) mut.delSheet.mutate(d.id, { onSuccess: () => setSheetId(null) });
-                  }}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              ) : null}
             </div>
           </div>
 
-          <div className="overflow-hidden rounded-xl border border-slate-300 bg-white shadow-sm">
+          <div className="rounded-xl border border-slate-300 bg-white shadow-sm">
             <div className="max-h-[min(72vh,760px)] overflow-auto">
-              <table className="w-full min-w-[1480px] border-collapse text-[12px]">
+              <table className="w-full min-w-[2100px] border-collapse text-[11px] leading-tight">
                 <thead className="sticky top-0 z-10">
                   <tr>
                     {[
-                      { t: "Xodim", a: "left" },
-                      { t: "Telefon", a: "left" },
-                      { t: "Savdo", a: "right" },
-                      { t: "Bonus %", a: "right" },
-                      { t: "Oylik %", a: "right" },
-                      { t: "Fiksa", a: "right" },
+                      { t: "№", a: "center", k: "num" },
+                      { t: "Xodim", a: "left", k: "name" },
+                      { t: "Lavozim", a: "left", k: "role" },
+                      { t: "Telefon", a: "left", k: "phone" },
+                      { t: "Joriy reja", a: "right" },
+                      { t: "Oldingi reja", a: "right" },
+                      { t: "Haqiqiy savdo", a: "right" },
+                      { t: "Rejadan ortiq", a: "right" },
+                      { t: "Reja %", a: "right" },
+                      { t: "Savdo foizi", a: "right" },
+                      { t: "Foiz summasi", a: "right" },
+                      { t: "Fiks maosh", a: "right" },
                       { t: "Reja bonusi", a: "right" },
+                      { t: "KPI bonus", a: "right" },
                       { t: "Avans", a: "right" },
-                      { t: "Pereuchyot", a: "right" },
+                      { t: "Qayta hisob", a: "right" },
                       { t: "Vaqt jarimasi", a: "right" },
-                      { t: "Muddat ushlovi", a: "right" },
-                      { t: "Jami", a: "right" },
-                      { t: "Karta", a: "right" },
-                      { t: "Farq", a: "right" },
-                      { t: "Gross", a: "right" },
-                      { t: "", a: "center" },
+                      { t: "Muddat jarimasi", a: "right" },
+                      { t: "Hisoblangan", a: "right" },
+                      { t: "Qo‘lga / karta", a: "right", k: "card" },
                     ].map((h) => (
                       <th
-                        key={h.t || "x"}
+                        key={h.k || h.t}
                         className={cn(
-                          "border border-slate-400 bg-[#f4c430] px-2 py-2 text-[11px] font-bold leading-tight text-slate-900",
+                          "whitespace-nowrap border border-slate-400 bg-[#0b3a5c] px-1.5 py-1 text-[10px] font-semibold leading-tight text-white",
                           h.a === "right" ? "text-right" : h.a === "center" ? "text-center" : "text-left",
                         )}
                       >
-                        {h.t}
+                        {h.k === "name" || h.k === "role" ? (
+                          <button type="button" className="inline-flex items-center gap-1" onClick={() => toggleSort(h.k as "name" | "role")}>
+                            {h.t}
+                            <ArrowUpDown className={cn("h-3 w-3 opacity-70", sortKey === h.k && "opacity-100")} />
+                          </button>
+                        ) : (
+                          h.t
+                        )}
                       </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {d.lines.map((row: SettlementLine) => (
+                  {rows.map((row: SettlementLine, idx) => (
                     <tr key={row.id} className="hover:bg-sky-50/60">
-                      <td className="border border-slate-300 px-1 py-0.5">
+                      <td className="sticky left-0 z-[1] w-8 border border-slate-300 bg-slate-50 px-0.5 py-0 text-center text-[10px] tabular-nums text-slate-500">
+                        {idx + 1}
+                      </td>
+                      <td className="sticky left-8 z-[1] min-w-[220px] whitespace-nowrap border border-slate-300 bg-white px-1 py-0">
                         {edit ? (
                           <input
                             defaultValue={row.fullName}
-                            className="h-8 w-full min-w-[160px] bg-transparent px-1.5 text-left text-[12px] font-semibold outline-none focus:bg-white"
+                            className="h-6 w-full min-w-[200px] bg-transparent px-1 text-left text-[11px] font-semibold leading-none outline-none focus:bg-white"
                             onBlur={(e) => saveLine(row.id, { fullName: e.target.value })}
                           />
                         ) : (
-                          <span className="block px-1.5 py-1.5 font-semibold">{row.fullName}</span>
+                          <span className="block px-1 py-0 font-semibold whitespace-nowrap">{row.fullName}</span>
                         )}
                       </td>
-                      <td className="border border-slate-300 px-1 py-0.5">
+                      <td className="min-w-[140px] whitespace-nowrap border border-slate-300 px-1 py-0">
+                        {edit ? (
+                          <input
+                            defaultValue={roleLabel(row.position)}
+                            className="h-6 w-full min-w-[120px] bg-transparent px-1 text-[11px] leading-none outline-none focus:bg-white"
+                            onBlur={(e) => saveLine(row.id, { position: e.target.value })}
+                          />
+                        ) : (
+                          <span className="block px-1 py-0 text-slate-700 whitespace-nowrap">{roleLabel(row.position) || "—"}</span>
+                        )}
+                      </td>
+                      <td className="border border-slate-300 px-1 py-0">
                         {edit ? (
                           <input
                             defaultValue={row.phone || ""}
-                            className="h-8 w-28 bg-transparent px-1.5 text-[12px] outline-none focus:bg-white"
+                            className="h-6 w-28 bg-transparent px-1 text-[11px] leading-none outline-none focus:bg-white"
                             onBlur={(e) => saveLine(row.id, { phone: e.target.value })}
                           />
                         ) : (
-                          <span className="px-1.5 text-slate-600">{row.phone || "—"}</span>
+                          <span className="px-1 text-slate-600">{row.phone || "—"}</span>
                         )}
                       </td>
-                      <td className="border border-slate-300 px-1 py-0.5"><CellInput value={row.sales} disabled={!edit} onCommit={(n) => saveLine(row.id, { sales: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0.5" title="0.6 yozing = 0.6%">
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.planCurrent ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { planCurrent: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.planPrev ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { planPrev: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.sales} disabled={!edit} onCommit={(n) => saveLine(row.id, { sales: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0 text-right tabular-nums text-emerald-800">{formatSom(row.overPlan ?? 0)}</td>
+                      <td className="border border-slate-300 px-1 py-0 text-right tabular-nums">{row.planPct ?? 0}%</td>
+                      <td className="border border-slate-300 px-1 py-0" title="0 = foiz yo‘q; 0.6 = 0.6%">
                         <CellInput value={row.percent} percent disabled={!edit} onCommit={(n) => saveLine(row.id, { percent: n })} />
                       </td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-right font-medium tabular-nums text-emerald-800">{formatSom(row.oylikPct)}</td>
-                      <td className="border border-slate-300 px-1 py-0.5"><CellInput value={row.fiksa} disabled={!edit} onCommit={(n) => saveLine(row.id, { fiksa: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0.5"><CellInput value={row.planBonus} disabled={!edit} onCommit={(n) => saveLine(row.id, { planBonus: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0.5"><CellInput value={row.avans} disabled={!edit} onCommit={(n) => saveLine(row.id, { avans: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0.5"><CellInput value={row.inventoryFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { inventoryFine: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0.5"><CellInput value={row.timeFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { timeFine: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0.5"><CellInput value={row.expiryHold} disabled={!edit} onCommit={(n) => saveLine(row.id, { expiryHold: n })} /></td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-right font-bold tabular-nums text-[#0b3a5c]">{formatSom(row.net)}</td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums">{formatSom(row.card)}</td>
-                      <td className={cn("border border-slate-300 px-2 py-1.5 text-right tabular-nums", row.diff === 0 ? "text-emerald-700" : "text-rose-700")}>{formatSom(row.diff)}</td>
-                      <td className="border border-slate-300 px-2 py-1.5 text-right tabular-nums text-slate-600">{formatSom(row.gross)}</td>
-                      <td className="border border-slate-300 px-1 text-center">
-                        {edit ? (
-                          <button type="button" className="rounded p-1 text-rose-600 hover:bg-rose-50" onClick={() => mut.delLine.mutate(row.id)}>
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        ) : null}
-                      </td>
+                      <td className="border border-slate-300 px-1 py-0 text-right font-medium tabular-nums text-emerald-800">{formatSom(row.oylikPct)}</td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.fiksa} disabled={!edit} onCommit={(n) => saveLine(row.id, { fiksa: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.planBonus} disabled={!edit} onCommit={(n) => saveLine(row.id, { planBonus: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.extraBonus ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { extraBonus: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.avans} disabled={!edit} onCommit={(n) => saveLine(row.id, { avans: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.inventoryFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { inventoryFine: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.timeFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { timeFine: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.expiryHold} disabled={!edit} onCommit={(n) => saveLine(row.id, { expiryHold: n })} /></td>
+                      <td className="border border-slate-300 px-1 py-0 text-right font-bold tabular-nums text-[#0b3a5c]">{formatSom(row.grossPay ?? row.net)}</td>
+                      <td className="border border-slate-300 px-1 py-0 text-right font-bold tabular-nums">{formatSom(row.card)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="sticky bottom-0">
-                  <tr className="bg-orange-100 font-semibold">
-                    <td className="border border-slate-400 px-2 py-1.5">Jami</td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-[11px] text-slate-600">{d.lines.length} xodim</td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-right tabular-nums">{formatSom(d.totals.salesTotal)}</td>
+                  <tr className="bg-slate-100 font-semibold">
+                    <td className="border border-slate-400 px-1 py-0 text-center">—</td>
+                    <td className="border border-slate-400 px-1 py-0">Jami</td>
+                    <td className="border border-slate-400 px-1 py-0 text-[11px] text-slate-600">{rows.length} / {d.lines.length} xodim</td>
                     <td className="border border-slate-400" />
-                    <td className="border border-slate-400 px-2 py-1.5 text-right tabular-nums">{formatSom(d.totals.oylikPctTotal)}</td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-[11px] text-slate-600" colSpan={6}>
-                      Oldingi rejaga {d.totals.vsPrevPct}% · joriy rejaga {d.totals.vsCurrentPct}%
-                    </td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-right tabular-nums">{formatSom(d.totals.netTotal)}</td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-right tabular-nums">{formatSom(d.totals.cardTotal)}</td>
-                    <td className={cn("border border-slate-400 px-2 py-1.5 text-right tabular-nums", d.totals.diffTotal === 0 ? "text-emerald-700" : "text-rose-700")}>
-                      {formatSom(d.totals.diffTotal)}
-                    </td>
-                    <td className="border border-slate-400 px-2 py-1.5 text-right tabular-nums">{formatSom(d.totals.grossTotal)}</td>
                     <td className="border border-slate-400" />
+                    <td className="border border-slate-400" />
+                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom(d.totals.salesTotal)}</td>
+                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom((d.totals as { overPlanTotal?: number }).overPlanTotal ?? 0)}</td>
+                    <td className="border border-slate-400 px-1 py-0 text-right">{d.totals.vsCurrentPct}%</td>
+                    <td className="border border-slate-400" />
+                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom(d.totals.oylikPctTotal)}</td>
+                    <td className="border border-slate-400" colSpan={7} />
+                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom((d.totals as { grossPayTotal?: number }).grossPayTotal ?? d.totals.netTotal)}</td>
+                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom(d.totals.cardTotal)}</td>
                   </tr>
                 </tfoot>
               </table>

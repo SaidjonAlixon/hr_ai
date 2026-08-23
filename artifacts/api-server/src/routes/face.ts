@@ -11,6 +11,8 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { setSessionCookie } from "../lib/session";
 import {
   FACE_ENROLL_BLOCK_MAX,
+  FACE_MATCH_MAX,
+  FACE_SIMILAR_WARN,
   distanceBetweenDescriptors,
   enrichFaceHits,
   findNearestFaces,
@@ -401,8 +403,8 @@ router.get("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<v
       lastUsedAt: row.lastUsedAt,
       nearest,
       similarRisk:
-        nearest != null && nearest.distance <= FACE_ENROLL_BLOCK_MAX
-          ? nearest.distance <= 0.38
+        nearest != null && nearest.distance <= FACE_SIMILAR_WARN
+          ? nearest.distance <= FACE_MATCH_MAX
             ? "high"
             : "medium"
           : "none",
@@ -420,7 +422,7 @@ router.get("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<v
       const b = withFace[j]!;
       if (!a.descriptor || !b.descriptor) continue;
       const dist = distanceBetweenDescriptors(a.descriptor, b.descriptor);
-      if (dist == null || dist > FACE_ENROLL_BLOCK_MAX) continue;
+      if (dist == null || dist > FACE_SIMILAR_WARN) continue;
       duplicates.push({
         a: { userId: a.userId, fullName: a.fullName, login: a.login },
         b: { userId: b.userId, fullName: b.fullName, login: b.login },
@@ -525,8 +527,8 @@ router.get("/admin/faces/export", requireAuth, async (req: AuthRequest, res): Pr
       }
     }
     const similarRisk: ExportRow["similarRisk"] =
-      nearestDist != null && nearestDist <= FACE_ENROLL_BLOCK_MAX
-        ? nearestDist <= 0.38
+      nearestDist != null && nearestDist <= FACE_SIMILAR_WARN
+        ? nearestDist <= FACE_MATCH_MAX
           ? "high"
           : "medium"
         : "none";

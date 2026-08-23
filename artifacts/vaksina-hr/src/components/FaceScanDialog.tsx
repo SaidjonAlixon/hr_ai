@@ -54,10 +54,10 @@ function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
   }
 }
 
-const ENROLL_SAMPLES = 9;
-const LOGIN_STREAK = 4;
-const MIN_SCORE_ENROLL = 0.7;
-const MIN_SCORE_LOGIN = 0.65;
+const ENROLL_SAMPLES = 12;
+const LOGIN_STREAK = 5;
+const MIN_SCORE_ENROLL = 0.8;
+const MIN_SCORE_LOGIN = 0.74;
 
 export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, description }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);

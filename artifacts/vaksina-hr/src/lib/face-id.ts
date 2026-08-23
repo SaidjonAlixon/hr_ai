@@ -138,9 +138,27 @@ function noseOffsetRatio(landmarks: FaceLandmarksResult["landmarks"], box: { x: 
   return Math.abs(nx - mid) / box.width;
 }
 
+function eyeWidthRatio(landmarks: FaceLandmarksResult["landmarks"]): number {
+  const left = landmarks.getLeftEye?.();
+  const right = landmarks.getRightEye?.();
+  if (!left?.length || !right?.length) return 1;
+  const span = (pts: Point[]) => {
+    let minX = pts[0]!.x;
+    let maxX = pts[0]!.x;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+    }
+    return Math.max(1, maxX - minX);
+  };
+  const lw = span(left);
+  const rw = span(right);
+  return Math.min(lw, rw) / Math.max(lw, rw);
+}
+
 /** Yuqori sifat: katta inputSize + qattiq score */
-const DETECT_OPTS = { inputSize: 512 as const, scoreThreshold: 0.55 };
-const MIN_DETECT_SCORE = 0.68;
+const DETECT_OPTS = { inputSize: 512 as const, scoreThreshold: 0.62 };
+const MIN_DETECT_SCORE = 0.76;
 
 export async function detectFaceDescriptor(
   video: HTMLVideoElement,
@@ -169,11 +187,14 @@ export async function detectFaceDescriptor(
 
   const fillW = mapped.width / (frame.rx * 2);
   const fillH = mapped.height / (frame.ry * 2);
-  if (fillW < 0.48 || fillH < 0.46) return { descriptor: null, status: "too_far" };
-  if (fillW > 1.18 || fillH > 1.2) return { descriptor: null, status: "too_close" };
+  if (fillW < 0.55 || fillH < 0.52) return { descriptor: null, status: "too_far" };
+  if (fillW > 1.12 || fillH > 1.15) return { descriptor: null, status: "too_close" };
 
-  // Yon tomonga burilgan yuz — descriptor sifatini pasaytiradi
-  if (noseOffsetRatio(result.landmarks, result.detection.box) > 0.18) {
+  // Yon tomonga burilgan yuz — descriptor sifatini pasaytiradi, o‘xshash odamlarni aralashtiradi
+  if (noseOffsetRatio(result.landmarks, result.detection.box) > 0.12) {
+    return { descriptor: null, status: "turn_face", score: result.detection.score };
+  }
+  if (eyeWidthRatio(result.landmarks) < 0.74) {
     return { descriptor: null, status: "turn_face", score: result.detection.score };
   }
 
@@ -181,8 +202,14 @@ export async function detectFaceDescriptor(
     return { descriptor: null, status: "low_quality", score: result.detection.score };
   }
 
+  const desc = Array.from(result.descriptor);
+  let norm = 0;
+  for (const x of desc) norm += x * x;
+  norm = Math.sqrt(norm) || 1;
+  for (let i = 0; i < desc.length; i++) desc[i] = desc[i]! / norm;
+
   return {
-    descriptor: Array.from(result.descriptor),
+    descriptor: desc,
     status: "ok",
     score: result.detection.score,
   };
@@ -197,7 +224,7 @@ export function euclideanDescriptor(a: number[], b: number[]): number {
   return Math.sqrt(s);
 }
 
-export function isStableSample(prev: number[] | null, next: number[], maxDist = 0.2): boolean {
+export function isStableSample(prev: number[] | null, next: number[], maxDist = 0.11): boolean {
   if (!prev) return true;
   return euclideanDescriptor(prev, next) <= maxDist;
 }

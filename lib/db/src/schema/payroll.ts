@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, doublePrecision, jsonb, uniqueIndex } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, doublePrecision, jsonb, uniqueIndex, boolean } from "drizzle-orm/pg-core";
 
 /** Global KPI og‘irliklari (bitta qator, id=1) */
 export const kpiSettingsTable = pgTable("kpi_settings", {
@@ -37,3 +37,11 @@ export const payrollMonthsTable = pgTable(
   },
   (t) => [uniqueIndex("payroll_months_user_month_uidx").on(t.userId, t.month)],
 );
+
+/** Ish / dam kunlari — default: Du–Sha ish, Ya dam. Qator faqat o‘zgartirilgan sanalar. */
+export const workCalendarDaysTable = pgTable("work_calendar_days", {
+  day: text("day").primaryKey(),
+  isWork: boolean("is_work").notNull(),
+  updatedById: integer("updated_by_id"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});

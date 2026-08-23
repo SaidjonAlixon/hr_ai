@@ -46,6 +46,7 @@ import AdminDepartmentsPage from './pages/admin/departments';
 import AdminKirishVideosPage from './pages/admin/kirish-videos';
 import AdminFacesPage from './pages/admin/faces';
 import EmployeesPage from './pages/employees/index';
+import EmployeeDuplicatesPage from './pages/employees/duplicates';
 import DavomatPage from './pages/davomat/index';
 import DavomatFacePage from './pages/davomat/face';
 import DavomatFarOfficePage from './pages/davomat/far-office';
@@ -136,6 +137,7 @@ function Router() {
       <ProtectedRoute path="/hisobkitob" component={HisobkitobPage} />
       <ProtectedRoute path="/reyting" component={ReytingPage} />
       
+      <ProtectedRoute path="/employees/duplicates" component={EmployeeDuplicatesPage} />
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/davomat-uzoq" component={DavomatFarOfficePage} />

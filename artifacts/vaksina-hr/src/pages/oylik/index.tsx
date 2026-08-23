@@ -6,6 +6,8 @@ import {
   RefreshCw,
   Settings2,
   Users,
+  Lock,
+  CalendarDays,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +19,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { userRoleLabel } from "@/lib/roles";
 import { useToast } from "@/hooks/use-toast";
+import { formatMoney, MoneyInput, parseMoney } from "@/lib/money";
 import {
   canApprovePayroll,
   canEditKpiSettings,
@@ -33,7 +36,10 @@ import {
   useRecalculateOylik,
   useSaveOylikSettings,
   useSaveSalary,
+  useSaveSalaryBulk,
+  useToggleWorkDay,
   downloadOylikExcel,
+  payrollRowKey,
   type PayrollReport,
   type PayrollRow,
 } from "@/lib/oylik-api";
@@ -55,6 +61,95 @@ function MonthNav({ month, onChange }: { month: string; onChange: (m: string) =>
 function pct(available: boolean, value: number) {
   if (!available) return <span className="text-slate-400">—</span>;
   return <span className="tabular-nums">{value}%</span>;
+}
+
+function pctAtt(row: PayrollRow) {
+  const closed = row.closedWorkDays ?? 0;
+  const expected = row.expectedWorkDays ?? 0;
+  if (!row.attendanceAvailable) {
+    return (
+      <span className="text-[11px] text-amber-700" title="Barcha ish kunlari yopilgach aniq foiz chiqadi">
+        yopilmagan {closed}/{expected}
+      </span>
+    );
+  }
+  return <span className="tabular-nums">{row.attendance}%</span>;
+}
+
+function WorkCalendar({
+  month,
+  workDays,
+  canEdit,
+  onToggle,
+  pending,
+}: {
+  month: string;
+  workDays: string[];
+  canEdit: boolean;
+  onToggle: (day: string, isWork: boolean) => void;
+  pending: boolean;
+}) {
+  const set = new Set(workDays);
+  const [y, m] = month.split("-").map(Number);
+  const last = new Date(y!, m!, 0).getDate();
+  const first = new Date(`${month}-01T12:00:00+05:00`);
+  const pad = (first.getDay() + 6) % 7;
+  const cells: Array<{ d: number | null; iso: string | null }> = [];
+  for (let i = 0; i < pad; i++) cells.push({ d: null, iso: null });
+  for (let d = 1; d <= last; d++) {
+    const iso = `${month}-${String(d).padStart(2, "0")}`;
+    cells.push({ d, iso });
+  }
+  const labels = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"];
+  return (
+    <div className="rounded-xl border bg-white p-3 shadow-sm">
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-sm font-semibold text-[#0b3a5c]">
+          <CalendarDays className="h-4 w-4" /> Ish kunlari kalendari
+        </p>
+        <p className="text-xs text-slate-500">
+          {workDays.length} ish kuni
+          {canEdit ? " · bosing: ish ↔ dam" : " · yakshanba dam"}
+        </p>
+      </div>
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-slate-500">
+        {labels.map((l) => (
+          <div key={l}>{l}</div>
+        ))}
+      </div>
+      <div className="mt-1 grid grid-cols-7 gap-1">
+        {cells.map((c, i) => {
+          if (!c.d || !c.iso) return <div key={`e-${i}`} />;
+          const work = set.has(c.iso);
+          const cls = cn(
+            "flex h-8 items-center justify-center rounded-md text-[12px] font-semibold tabular-nums",
+            work ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400",
+            canEdit && "cursor-pointer hover:ring-2 hover:ring-[#0b3a5c]/40",
+            pending && "opacity-70",
+          );
+          if (!canEdit) {
+            return (
+              <div key={c.iso} className={cls} title={work ? "Ish kuni" : "Dam"}>
+                {c.d}
+              </div>
+            );
+          }
+          return (
+            <button
+              key={c.iso}
+              type="button"
+              disabled={pending}
+              className={cls}
+              title={work ? "Ish kuni — bosing: dam qilish" : "Dam — bosing: ish kuni qilish"}
+              onClick={() => onToggle(c.iso!, !work)}
+            >
+              {c.d}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
 
 function KpiRow({
@@ -141,11 +236,18 @@ function ReportCard({
         />
         <div className="mt-1 flex items-center justify-between border-t px-2 pt-2">
           <span className="text-sm font-semibold">Umumiy KPI</span>
-          <span className="text-base font-bold tabular-nums text-[#0b3a5c]">{data.kpiPercent}%</span>
+          <span className="text-base font-bold tabular-nums text-[#0b3a5c]">
+            {data.attendance?.available ? `${data.kpiPercent}%` : "aniq emas"}
+          </span>
         </div>
         {detail === "att" ? (
           <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-slate-50 p-2 text-xs">
-            <p className="mb-1 font-semibold">Davomat: {data.attendance?.points ?? 0} ball / {data.attendance?.countedDays ?? 0} kun</p>
+            <p className="mb-1 font-semibold">
+              Davomat: {data.attendance?.points ?? 0} ball
+              {data.attendance?.complete
+                ? ` · ${data.attendance.percent}%`
+                : ` · aniq foiz yo‘q (yopilgan ${data.attendance?.closedDays ?? 0}/${data.attendance?.expectedDays ?? 0} ish kuni)`}
+            </p>
             {(data.attendance?.days ?? []).map((d) => (
               <p key={d.date} className="flex justify-between gap-2 py-0.5">
                 <span>{d.date}</span>
@@ -209,6 +311,23 @@ function TeamTable({
   approve: ReturnType<typeof useApproveOylik>;
   toast: ReturnType<typeof useToast>["toast"];
 }) {
+  const live = React.useRef({ fix: parseMoney(fix), bp: parseMoney(bp) });
+  live.current.fix = parseMoney(fix);
+  live.current.bp = parseMoney(bp);
+
+  const persist = (row: PayrollRow, nextFix?: number, nextBp?: number) => {
+    const fixedSalary = nextFix ?? live.current.fix;
+    const bonusPercent = nextBp ?? live.current.bp;
+    live.current = { fix: fixedSalary, bp: bonusPercent };
+    saveSal.mutate({
+      userId: row.userId || 0,
+      employeeId: row.employeeId,
+      month,
+      fixedSalary,
+      bonusPercent,
+    });
+  };
+
   const totals = useMemo(() => {
     return rows.reduce(
       (a, r) => {
@@ -268,12 +387,13 @@ function TeamTable({
           </thead>
           <tbody>
             {rows.map((row) => {
-              const open = openId === row.userId;
+              const rid = payrollRowKey(row);
+              const open = openId === rid;
               return (
-                <React.Fragment key={row.userId}>
+                <React.Fragment key={rid}>
                   <tr
                     className={cn("cursor-pointer border-b border-slate-100 hover:bg-slate-50", open && "bg-sky-50/70")}
-                    onClick={() => setOpenId(open ? null : row.userId)}
+                    onClick={() => setOpenId(open ? null : rid)}
                   >
                     <td className="px-3 py-1.5">
                       <p className="font-semibold text-slate-900">{row.fullName}</p>
@@ -283,10 +403,12 @@ function TeamTable({
                       {row.position || "—"}
                       {row.branch ? <span className="block truncate text-[11px] text-slate-400">{row.branch}</span> : null}
                     </td>
-                    <td className="px-2 py-1.5 text-right">{pct(row.attendanceAvailable, row.attendance)}</td>
+                    <td className="px-2 py-1.5 text-right">{pctAtt(row)}</td>
                     <td className="px-2 py-1.5 text-right">{pct(row.tasksAvailable, row.tasks)}</td>
                     <td className="px-2 py-1.5 text-right">{pct(row.checklistAvailable, row.checklist)}</td>
-                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-[#0b3a5c]">{row.kpiPercent}%</td>
+                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-[#0b3a5c]">
+                      {row.attendanceAvailable ? `${row.kpiPercent}%` : "—"}
+                    </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{formatSom(row.fixedSalary)}</td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{row.bonusPercent}%</td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">{formatSom(row.bonusAmount)}</td>
@@ -304,20 +426,50 @@ function TeamTable({
                           <div className="mb-3 flex flex-wrap items-end gap-2">
                             <div>
                               <Label className="text-[11px]">Fiks maosh (so‘m)</Label>
-                              <Input className="h-8 w-40 rounded-lg text-sm" value={fix} onChange={(e) => setFix(e.target.value)} />
+                              <MoneyInput
+                                className="h-8 w-44 rounded-lg border border-slate-200 text-sm"
+                                value={parseMoney(fix)}
+                                onLive={(n) => {
+                                  live.current.fix = n;
+                                  setFix(formatMoney(n));
+                                }}
+                                onCommit={(n) => {
+                                  live.current.fix = n;
+                                  setFix(formatMoney(n));
+                                  persist(row, n, live.current.bp);
+                                }}
+                              />
                             </div>
                             <div>
                               <Label className="text-[11px]">Bonus foizi</Label>
-                              <Input className="h-8 w-24 rounded-lg text-sm" value={bp} onChange={(e) => setBp(e.target.value)} />
+                              <MoneyInput
+                                grouped={false}
+                                className="h-8 w-24 rounded-lg border border-slate-200 text-sm"
+                                value={parseMoney(bp)}
+                                onLive={(n) => {
+                                  live.current.bp = n;
+                                  setBp(String(n));
+                                }}
+                                onCommit={(n) => {
+                                  live.current.bp = n;
+                                  setBp(String(n));
+                                  persist(row, live.current.fix, n);
+                                }}
+                              />
                             </div>
                             <Button
                               type="button"
                               size="sm"
                               className="h-8 rounded-lg bg-[#0b3a5c]"
-                              disabled={saveSal.isPending}
                               onClick={() =>
                                 saveSal.mutate(
-                                  { userId: row.userId, month, fixedSalary: Number(fix), bonusPercent: Number(bp) },
+                                  {
+                                    userId: row.userId || 0,
+                                    employeeId: row.employeeId,
+                                    month,
+                                    fixedSalary: live.current.fix,
+                                    bonusPercent: live.current.bp,
+                                  },
                                   { onSuccess: () => toast({ title: "Saqlandi" }) },
                                 )
                               }
@@ -331,7 +483,13 @@ function TeamTable({
                                 size="sm"
                                 className="h-8 rounded-lg"
                                 disabled={approve.isPending}
-                                onClick={() => approve.mutate({ userId: row.userId, month }, { onSuccess: () => toast({ title: "Tasdiqlandi" }) })}
+                                onClick={() => {
+                                  if (!row.userId) {
+                                    toast({ title: "Tasdiqlanmadi", description: "Bu xodimda login yo‘q", variant: "destructive" });
+                                    return;
+                                  }
+                                  approve.mutate({ userId: row.userId, month }, { onSuccess: () => toast({ title: "Tasdiqlandi" }) });
+                                }}
                               >
                                 Tasdiqlash
                               </Button>
@@ -344,14 +502,20 @@ function TeamTable({
                             size="sm"
                             className="mb-3 h-8 rounded-lg"
                             disabled={approve.isPending}
-                            onClick={() => approve.mutate({ userId: row.userId, month }, { onSuccess: () => toast({ title: "Tasdiqlandi" }) })}
+                                onClick={() => {
+                                  if (!row.userId) {
+                                    toast({ title: "Tasdiqlanmadi", description: "Bu xodimda login yo‘q", variant: "destructive" });
+                                    return;
+                                  }
+                                  approve.mutate({ userId: row.userId, month }, { onSuccess: () => toast({ title: "Tasdiqlandi" }) });
+                                }}
                           >
                             Tasdiqlash
                           </Button>
                         ) : null}
-                        {one.isLoading && one.data?.userId !== row.userId ? (
+                        {one.isLoading && payrollRowKey(one.data ?? {}) !== rid ? (
                           <Skeleton className="h-32 rounded-xl" />
-                        ) : one.data?.userId === row.userId ? (
+                        ) : payrollRowKey(one.data ?? {}) === rid ? (
                           <ReportCard data={one.data} detail={detail} setDetail={setDetail} />
                         ) : one.error ? (
                           <p className="text-sm text-rose-700">{(one.error as Error).message}</p>
@@ -382,18 +546,39 @@ export default function OylikPage() {
   const [openId, setOpenId] = useState<number | null>(null);
   const me = useOylikMe(month);
   const list = useOylikEmployees(month, q, manage);
-  const one = useOylikEmployee(openId, month);
   const settings = useOylikSettings(manage);
   const saveW = useSaveOylikSettings();
   const saveSal = useSaveSalary();
+  const saveBulk = useSaveSalaryBulk();
   const recalc = useRecalculateOylik();
   const approve = useApproveOylik();
+  const toggleDay = useToggleWorkDay();
   const [wAtt, setWAtt] = useState<string>("");
   const [wTask, setWTask] = useState<string>("");
   const [wCheck, setWCheck] = useState<string>("");
   const [fix, setFix] = useState("");
   const [bp, setBp] = useState("");
   const [exporting, setExporting] = useState(false);
+  const [posFilter, setPosFilter] = useState("");
+  const [bulkFix, setBulkFix] = useState("");
+  const [bulkBp, setBulkBp] = useState("");
+
+  const positions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of list.data?.items ?? []) {
+      const p = (r.position || "").trim();
+      if (p) set.add(p);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b, "uz"));
+  }, [list.data?.items]);
+
+  const filteredRows = useMemo(() => {
+    const items = list.data?.items ?? [];
+    if (!posFilter) return items;
+    return items.filter((r) => (r.position || "").trim() === posFilter);
+  }, [list.data?.items, posFilter]);
+  const openRow = filteredRows.find((r) => payrollRowKey(r) === openId) ?? null;
+  const one = useOylikEmployee(openRow?.userId ?? null, month);
 
   React.useEffect(() => {
     if (!settings.data) return;
@@ -404,7 +589,9 @@ export default function OylikPage() {
 
   React.useEffect(() => {
     if (!one.data) return;
-    setFix(String(one.data.fixedSalary));
+    const el = document.activeElement as HTMLElement | null;
+    if (el && el.tagName === "INPUT" && el.closest("table")) return;
+    setFix(formatMoney(one.data.fixedSalary));
     setBp(String(one.data.bonusPercent));
   }, [one.data]);
 
@@ -440,11 +627,37 @@ export default function OylikPage() {
                   variant="outline"
                   className="h-9 rounded-lg"
                   disabled={recalc.isPending}
-                  onClick={() => recalc.mutate({ month }, { onSuccess: () => toast({ title: "Qayta hisoblandi" }) })}
+                  onClick={() => {
+                    if (!window.confirm("Barcha fiks maosh, bonus va oylik 0 qilinsinmi?")) return;
+                    recalc.mutate({ month }, { onSuccess: () => toast({ title: "Hammasi 0 qilindi" }) });
+                  }}
                 >
                   <RefreshCw className={cn("mr-1 h-4 w-4", recalc.isPending && "animate-spin")} />
                   Qayta hisoblash
                 </Button>
+                {canApprovePayroll(user?.role) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 rounded-lg"
+                    disabled={approve.isPending}
+                    onClick={() => {
+                      if (posFilter) {
+                        if (!window.confirm(`Faqat «${posFilter}» lavozimidagilar tasdiqlansinmi?`)) return;
+                        approve.mutate(
+                          { month, all: true, position: posFilter },
+                          { onSuccess: () => toast({ title: `${posFilter} tasdiqlandi` }) },
+                        );
+                        return;
+                      }
+                      if (!window.confirm("Shu oydagi barcha xodimlar tasdiqlansinmi?")) return;
+                      approve.mutate({ month, all: true }, { onSuccess: () => toast({ title: "Hammasi tasdiqlandi" }) });
+                    }}
+                  >
+                    <Lock className={cn("mr-1 h-4 w-4", approve.isPending && "animate-spin")} />
+                    Tasdiqlash
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   className="h-9 rounded-lg bg-[#0b3a5c]"
@@ -463,6 +676,57 @@ export default function OylikPage() {
                 >
                   <Download className="mr-1 h-4 w-4" /> Excel
                 </Button>
+                <select
+                  className="h-9 max-w-[200px] rounded-lg border border-slate-200 bg-white px-2 text-sm"
+                  value={posFilter}
+                  onChange={(e) => setPosFilter(e.target.value)}
+                >
+                  <option value="">Barcha lavozimlar</option>
+                  {positions.map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+                {canEditKpiSettings(user?.role) ? (
+                  <>
+                    <span className="text-xs text-slate-500">Fiksa</span>
+                    <MoneyInput
+                      className="h-9 w-36 rounded-lg border border-slate-200 text-sm"
+                      value={parseMoney(bulkFix)}
+                      onLive={(n) => setBulkFix(formatMoney(n))}
+                      onCommit={(n) => setBulkFix(formatMoney(n))}
+                    />
+                    <span className="text-xs text-slate-500">Bonus %</span>
+                    <MoneyInput
+                      grouped={false}
+                      className="h-9 w-24 rounded-lg border border-slate-200 text-sm"
+                      value={parseMoney(bulkBp)}
+                      onLive={(n) => setBulkBp(String(n))}
+                      onCommit={(n) => setBulkBp(String(n))}
+                    />
+                    <Button
+                      type="button"
+                      className="h-9 rounded-lg bg-[#0b3a5c]"
+                      disabled={saveBulk.isPending || !posFilter}
+                      onClick={() => {
+                        if (!posFilter) {
+                          toast({ title: "Avval lavozim tanlang", variant: "destructive" });
+                          return;
+                        }
+                        saveBulk.mutate(
+                          {
+                            month,
+                            position: posFilter,
+                            fixedSalary: parseMoney(bulkFix),
+                            bonusPercent: parseMoney(bulkBp),
+                          },
+                          { onSuccess: () => toast({ title: `${posFilter} uchun yozildi` }) },
+                        );
+                      }}
+                    >
+                      Lavozimga yozish
+                    </Button>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>
@@ -475,8 +739,28 @@ export default function OylikPage() {
             ) : list.error ? (
               <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{(list.error as Error).message}</p>
             ) : (
-              <TeamTable
-                rows={list.data?.items ?? []}
+              <div className="space-y-3">
+                <WorkCalendar
+                  month={month}
+                  workDays={list.data?.workDays ?? []}
+                  canEdit={canEditKpiSettings(user?.role)}
+                  pending={toggleDay.isPending}
+                  onToggle={(day, isWork) => {
+                    toggleDay.mutate(
+                      { day, isWork },
+                      {
+                        onSuccess: () =>
+                          toast({
+                            title: isWork ? `${day} — ish kuni` : `${day} — dam olish`,
+                          }),
+                        onError: (e) =>
+                          toast({ title: "Kalendar", description: (e as Error).message, variant: "destructive" }),
+                      },
+                    );
+                  }}
+                />
+                <TeamTable
+                rows={filteredRows}
                 openId={openId}
                 setOpenId={setOpenId}
                 one={one}
@@ -492,6 +776,7 @@ export default function OylikPage() {
                 approve={approve}
                 toast={toast}
               />
+              </div>
             )}
           </TabsContent>
           <TabsContent value="set" className="mt-3">

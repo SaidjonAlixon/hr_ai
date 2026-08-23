@@ -529,6 +529,13 @@ CREATE TABLE IF NOT EXISTS payroll_months (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS payroll_months_user_month_uidx ON payroll_months (user_id, month);
 
+CREATE TABLE IF NOT EXISTS work_calendar_days (
+  day TEXT PRIMARY KEY,
+  is_work BOOLEAN NOT NULL,
+  updated_by_id INTEGER,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE TABLE IF NOT EXISTS settlement_sheets (
   id SERIAL PRIMARY KEY,
   branch_name TEXT NOT NULL,
@@ -553,7 +560,7 @@ CREATE TABLE IF NOT EXISTS settlement_lines (
   full_name TEXT NOT NULL,
   phone TEXT,
   sales DOUBLE PRECISION NOT NULL DEFAULT 0,
-  percent DOUBLE PRECISION NOT NULL DEFAULT 0.006,
+  percent DOUBLE PRECISION NOT NULL DEFAULT 0,
   fiksa DOUBLE PRECISION NOT NULL DEFAULT 0,
   plan_bonus DOUBLE PRECISION NOT NULL DEFAULT 0,
   avans DOUBLE PRECISION NOT NULL DEFAULT 0,
@@ -567,6 +574,13 @@ CREATE TABLE IF NOT EXISTS settlement_lines (
 
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS fixed_salary INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE employees ADD COLUMN IF NOT EXISTS bonus_percent DOUBLE PRECISION NOT NULL DEFAULT 30;
+ALTER TABLE settlement_lines ADD COLUMN IF NOT EXISTS position TEXT;
+ALTER TABLE settlement_lines ADD COLUMN IF NOT EXISTS plan_current DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE settlement_lines ADD COLUMN IF NOT EXISTS plan_prev DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE settlement_lines ADD COLUMN IF NOT EXISTS extra_bonus DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE settlement_lines ADD COLUMN IF NOT EXISTS fine_note TEXT;
+ALTER TABLE settlement_lines ALTER COLUMN percent SET DEFAULT 0;
+UPDATE settlement_lines SET percent = 0 WHERE ABS(percent - 0.006) < 0.0000001;
     `);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");

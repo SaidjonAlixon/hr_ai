@@ -575,7 +575,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const davomatFarNav = { name: 'Masofaviy', path: '/davomat-uzoq', icon: MapPin };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
-  const hisobNav = { name: 'Hisob-kitob', path: '/hisobkitob', icon: Calculator };
+  const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
 
   function injectCommonNav(items: NavItem[]): NavItem[] {
@@ -826,7 +826,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     moliya: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Oylik', path: '/oylik', icon: Banknote },
-      { name: 'Hisob-kitob', path: '/hisobkitob', icon: Calculator },
+      { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       orgNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
@@ -1259,6 +1259,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location === '/davomat' ||
                 location === '/oylik' ||
                 location === '/hisobkitob' ||
+                location.startsWith('/employees') ||
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
                 location.startsWith('/tashkiliy-tuzilma')

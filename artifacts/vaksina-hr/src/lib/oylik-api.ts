@@ -16,11 +16,14 @@ export type PayrollReport = {
   bonusPercent: number;
   attendance: {
     available: boolean;
+    complete?: boolean;
     percent: number;
     baseWeight: number;
     effectiveWeight: number;
     points: number;
     countedDays: number;
+    expectedDays?: number;
+    closedDays?: number;
     days: Array<{ date: string; status: string; lateMinutes: number | null; counted: boolean; points: number; note: string }>;
   };
   tasks: {
@@ -47,7 +50,8 @@ export type PayrollReport = {
 };
 
 export type PayrollRow = {
-  userId: number;
+  employeeId?: number;
+  userId: number | null;
   fullName: string;
   roleLabel: string;
   position: string | null;
@@ -62,9 +66,16 @@ export type PayrollRow = {
   tasks: number;
   checklist: number;
   attendanceAvailable: boolean;
+  attendanceComplete?: boolean;
+  expectedWorkDays?: number;
+  closedWorkDays?: number;
   tasksAvailable: boolean;
   checklistAvailable: boolean;
 };
+
+export function payrollRowKey(r: { employeeId?: number | null; userId?: number | null }) {
+  return r.employeeId || r.userId || 0;
+}
 
 function emptyPart() {
   return {
@@ -172,7 +183,7 @@ export function useOylikEmployees(month: string, q: string, enabled: boolean) {
   if (q.trim()) qs.set("q", q.trim());
   return useQuery({
     queryKey: ["oylik", "employees", month, q],
-    queryFn: () => json<{ month: string; items: PayrollRow[] }>(`/api/oylik/employees?${qs}`),
+    queryFn: () => json<{ month: string; workDays?: string[]; items: PayrollRow[] }>(`/api/oylik/employees?${qs}`),
     enabled,
     staleTime: 20_000,
   });
@@ -205,11 +216,36 @@ export function useSaveOylikSettings() {
 export function useSaveSalary() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (p: { userId: number; month: string; fixedSalary?: number; bonusPercent?: number }) =>
-      json(`/api/oylik/salary/${p.userId}?month=${encodeURIComponent(p.month)}`, {
+    mutationFn: (p: { userId: number; employeeId?: number; month: string; fixedSalary?: number; bonusPercent?: number }) =>
+      json(`/api/oylik/salary/${p.userId || p.employeeId || 0}?month=${encodeURIComponent(p.month)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fixedSalary: p.fixedSalary, bonusPercent: p.bonusPercent }),
+        body: JSON.stringify({
+          employeeId: p.employeeId,
+          fixedSalary: p.fixedSalary,
+          bonusPercent: p.bonusPercent,
+        }),
+      }),
+    onSuccess: (_data, p) => {
+      void qc.invalidateQueries({ queryKey: ["oylik", "employees"], exact: false });
+      void qc.invalidateQueries({ queryKey: ["oylik", "employee", p.userId, p.month] });
+    },
+  });
+}
+
+export function useSaveSalaryBulk() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (p: { month: string; position: string; fixedSalary?: number; bonusPercent?: number }) =>
+      json("/api/oylik/salary-bulk", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          month: p.month,
+          position: p.position,
+          fixedSalary: p.fixedSalary,
+          bonusPercent: p.bonusPercent,
+        }),
       }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ["oylik"] });
@@ -232,10 +268,25 @@ export function useRecalculateOylik() {
   });
 }
 
+export function useToggleWorkDay() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (p: { day: string; isWork: boolean }) =>
+      json<{ ok: boolean; day: string; isWork: boolean; workDays: string[] }>("/api/oylik/calendar", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["oylik"] });
+    },
+  });
+}
+
 export function useApproveOylik() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (p: { userId: number; month: string }) =>
+    mutationFn: (p: { userId?: number; month: string; all?: boolean; position?: string }) =>
       json("/api/oylik/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -267,9 +318,7 @@ export async function downloadOylikExcel(month: string): Promise<void> {
   URL.revokeObjectURL(url);
 }
 
-export function formatSom(n: number) {
-  return `${Math.round(n).toLocaleString("ru-RU")} so‘m`;
-}
+export { formatSom } from "@/lib/money";
 
 export function monthLabelUz(ym: string) {
   const names = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];

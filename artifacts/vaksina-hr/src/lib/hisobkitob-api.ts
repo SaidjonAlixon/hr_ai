@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { formatMoney } from "./money-format";
 
 export function canViewHisobkitob(role?: string | null) {
   return role === "admin" || role === "director" || role === "moliya";
@@ -53,6 +54,17 @@ export type SettlementLine = {
   card: number;
   diff: number;
   gross: number;
+  extraBonus?: number;
+  position?: string | null;
+  planCurrent?: number;
+  planPrev?: number;
+  overPlan?: number;
+  planPct?: number;
+  earnedPlanBonus?: number;
+  extraBonus?: number;
+  grossPay?: number;
+  finesTotal?: number;
+  fineNote?: string | null;
 };
 
 export type SheetDetail = {
@@ -151,11 +163,20 @@ export function useHisobMutations() {
       mutationFn: (id: number) => json(`/api/hisobkitob/sheets/${id}/unlock`, { method: "POST" }),
       onSuccess: inv,
     }),
+    applyPosition: useMutation({
+      mutationFn: (p: { id: number; position: string; fiksa: number; bonusPercent: number }) =>
+        json(`/api/hisobkitob/sheets/${p.id}/apply-position`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ position: p.position, fiksa: p.fiksa, bonusPercent: p.bonusPercent }),
+        }),
+      onSuccess: inv,
+    }),
   };
 }
 
 export function formatSom(n: number) {
-  return Math.round(n).toLocaleString("ru-RU");
+  return formatMoney(n);
 }
 
 export function currentMonthKey() {

@@ -4,6 +4,7 @@ import {
   attendanceRecordsTable,
   branchAuditsTable,
   employeesTable,
+  workCalendarDaysTable,
   kpiSettingsTable,
   payrollMonthsTable,
   tasksTable,
@@ -61,11 +62,14 @@ export type PayrollCompute = {
   bonusPercent: number;
   attendance: {
     available: boolean;
+    complete: boolean;
     percent: number;
     baseWeight: number;
     effectiveWeight: number;
     points: number;
     countedDays: number;
+    expectedDays: number;
+    closedDays: number;
     days: AttendanceDayDetail[];
   };
   tasks: {
@@ -146,6 +150,65 @@ export function monthBounds(ym: string) {
   const lastDay = new Date(y!, m!, 0).getDate();
   const to = `${raw}-${String(lastDay).padStart(2, "0")}`;
   return { month: raw, from, to, monthLabel: `${MONTH_NAMES[m! - 1]} ${y}` };
+}
+
+export function tashkentToday() {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date());
+}
+
+function nextIsoDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const next = new Date(y!, m! - 1, d! + 1);
+  return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, "0")}-${String(next.getDate()).padStart(2, "0")}`;
+}
+
+export function defaultIsWorkDay(iso: string): boolean {
+  return new Date(`${iso}T12:00:00+05:00`).getDay() !== 0;
+}
+
+export function eachDate(from: string, to: string): string[] {
+  const days: string[] = [];
+  if (!from || !to || from > to) return days;
+  let cur = from;
+  while (cur <= to) {
+    days.push(cur);
+    cur = nextIsoDate(cur);
+  }
+  return days;
+}
+
+export function isWorkDay(iso: string, overrides?: Map<string, boolean>): boolean {
+  if (overrides?.has(iso)) return overrides.get(iso)!;
+  return defaultIsWorkDay(iso);
+}
+
+/** Default: yakshanba dam. Override kalendar orqali. */
+export function workdaysBetween(from: string, to: string, overrides?: Map<string, boolean>): string[] {
+  return eachDate(from, to).filter((d) => isWorkDay(d, overrides));
+}
+
+export function expectedWorkdays(from: string, to: string, month: string, overrides?: Map<string, boolean>) {
+  const today = tashkentToday();
+  const closeTo = month === currentMonthKey() && today < to ? today : to;
+  return workdaysBetween(from, closeTo, overrides);
+}
+
+export async function loadWorkDayOverrides(): Promise<Map<string, boolean>> {
+  const map = new Map<string, boolean>();
+  try {
+    const rows = await db
+      .select({ day: workCalendarDaysTable.day, isWork: workCalendarDaysTable.isWork })
+      .from(workCalendarDaysTable);
+    for (const r of rows) map.set(r.day, Boolean(r.isWork));
+  } catch (err) {
+    console.error("loadWorkDayOverrides", err);
+  }
+  return map;
 }
 
 function round1(n: number) {
@@ -255,6 +318,7 @@ function effectiveWeights(
 export async function computePayroll(userId: number, monthKey: string): Promise<PayrollCompute | null> {
   const { month, from, to, monthLabel } = monthBounds(monthKey);
   const weights = await loadKpiWeights();
+  const workOverrides = await loadWorkDayOverrides();
 
   const [user] = await db
     .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role })
@@ -333,10 +397,26 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
       console.error("computePayroll attendance", userId, err);
     }
   }
-  const countedAtt = attDays.filter((d) => d.counted);
+  const expected = expectedWorkdays(from, to, month, workOverrides);
+  const recorded = new Set(attDays.map((d) => d.date));
+  const complete = expected.length > 0 && expected.every((d) => recorded.has(d));
+  const closedDays = expected.filter((d) => recorded.has(d)).length;
+  for (const date of expected) {
+    if (!recorded.has(date)) {
+      attDays.push({
+        date,
+        status: "missing",
+        lateMinutes: null,
+        counted: true,
+        points: 0,
+        note: "Yopilmagan kun",
+      });
+    }
+  }
+  const countedAtt = attDays.filter((d) => expected.includes(d.date) && d.counted);
   const attPoints = countedAtt.reduce((s, d) => s + d.points, 0);
-  const attAvailable = countedAtt.length > 0;
-  const attPercent = attAvailable ? (attPoints / countedAtt.length) * 100 : 0;
+  const attAvailable = complete && countedAtt.length > 0;
+  const attPercent = countedAtt.length > 0 ? (attPoints / countedAtt.length) * 100 : 0;
 
   const fromDt = new Date(`${from}T00:00:00+05:00`);
   const toDt = new Date(`${to}T23:59:59+05:00`);
@@ -471,11 +551,14 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
     bonusPercent,
     attendance: {
       available: attAvailable,
+      complete,
       percent: round1(attPercent),
       baseWeight: weights.attendance,
       effectiveWeight: round1(eff.attendance),
       points: round1(attPoints),
       countedDays: countedAtt.length,
+      expectedDays: expected.length,
+      closedDays,
       days: attDays.sort((a, b) => b.date.localeCompare(a.date)),
     },
     tasks: {
@@ -502,7 +585,8 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
 }
 
 export type PayrollListRow = {
-  userId: number;
+  employeeId: number;
+  userId: number | null;
   fullName: string;
   roleLabel: string;
   position: string | null;
@@ -517,6 +601,9 @@ export type PayrollListRow = {
   tasks: number;
   checklist: number;
   attendanceAvailable: boolean;
+  attendanceComplete: boolean;
+  expectedWorkDays: number;
+  closedWorkDays: number;
   tasksAvailable: boolean;
   checklistAvailable: boolean;
 };
@@ -556,10 +643,15 @@ function kpiFromParts(
 function scoreAttendanceDays(
   records: Array<{ status: string; checkInAt: Date | null; workDate: string }>,
   workStartHm: string,
+  expected: string[],
 ) {
+  const recorded = new Set(records.map((r) => r.workDate));
+  const complete = expected.length > 0 && expected.every((d) => recorded.has(d));
+  const closedDays = expected.filter((d) => recorded.has(d)).length;
   let points = 0;
   let counted = 0;
   for (const r of records) {
+    if (!expected.includes(r.workDate)) continue;
     const late = r.checkInAt != null ? lateMinutes(r.workDate, r.checkInAt, workStartHm) : null;
     const scored = attendancePoints(r.status, late);
     if (scored.counted) {
@@ -567,8 +659,14 @@ function scoreAttendanceDays(
       points += scored.points;
     }
   }
-  const available = counted > 0;
-  return { available, percent: available ? (points / counted) * 100 : 0 };
+  const available = complete && counted > 0;
+  return {
+    available,
+    complete,
+    percent: counted > 0 ? (points / counted) * 100 : 0,
+    expectedDays: expected.length,
+    closedDays,
+  };
 }
 
 function scoreTaskRows(rows: Array<{ status: string; dueAt: Date | null; completedAt: Date | null }>) {
@@ -590,74 +688,47 @@ function scoreTaskRows(rows: Array<{ status: string; dueAt: Date | null; complet
 export async function computePayrollList(
   monthKey: string,
   q = "",
-): Promise<{ month: string; monthLabel: string; items: PayrollListRow[] }> {
+): Promise<{ month: string; monthLabel: string; workDays: string[]; items: PayrollListRow[] }> {
   const { month, from, to, monthLabel } = monthBounds(monthKey);
+  const workOverrides = await loadWorkDayOverrides();
+  const workDays = workdaysBetween(from, to, workOverrides);
+  const expected = expectedWorkdays(from, to, month, workOverrides);
   const weights = await loadKpiWeights();
   const fromDt = new Date(`${from}T00:00:00+05:00`);
   const toDt = new Date(`${to}T23:59:59+05:00`);
   const needle = q.trim();
-  const seen = new Set<number>();
+  const seenEmp = new Set<number>();
 
-  let people: Array<{
-    id: number;
-    fullName: string;
-    role: string;
-    status: string;
-    login: string;
-    empId: number | null;
-    position: string | null;
-    location: string | null;
-    fixedSalary: number | null;
-    bonusPercent: number | null;
-  }> = [];
-  try {
-    people = await db
-      .select({
-        id: usersTable.id,
-        fullName: usersTable.fullName,
-        role: usersTable.role,
-        status: usersTable.status,
-        login: usersTable.login,
-        empId: employeesTable.id,
-        position: employeesTable.position,
-        location: employeesTable.location,
-        fixedSalary: employeesTable.fixedSalary,
-        bonusPercent: employeesTable.bonusPercent,
-      })
-      .from(usersTable)
-      .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id));
-  } catch (err) {
-    console.error("payroll list people join", err);
-    const only = await db
-      .select({
-        id: usersTable.id,
-        fullName: usersTable.fullName,
-        role: usersTable.role,
-        status: usersTable.status,
-        login: usersTable.login,
-      })
-      .from(usersTable);
-    people = only.map((u) => ({
-      ...u,
-      empId: null,
-      position: null,
-      location: null,
-      fixedSalary: 0,
-      bonusPercent: 30,
-    }));
-  }
+  const staffRows = await db
+    .select({
+      empId: employeesTable.id,
+      fullName: employeesTable.fullName,
+      position: employeesTable.position,
+      location: employeesTable.location,
+      orgRole: employeesTable.orgRole,
+      employmentStatus: employeesTable.employmentStatus,
+      userId: employeesTable.userId,
+      fixedSalary: employeesTable.fixedSalary,
+      bonusPercent: employeesTable.bonusPercent,
+      userRole: usersTable.role,
+      userStatus: usersTable.status,
+      login: usersTable.login,
+    })
+    .from(employeesTable)
+    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId));
 
-  const users = people.filter((u) => {
-    if (seen.has(u.id)) return false;
-    seen.add(u.id);
-    if (u.status === "terminated") return false;
+  const users = staffRows.filter((u) => {
+    if (seenEmp.has(u.empId)) return false;
+    seenEmp.add(u.empId);
+    const st = u.employmentStatus || "working";
+    if (st !== "working" && st !== "new") return false;
     if (!needle) return true;
-    const hay = `${u.fullName} ${u.login || ""}`.toLowerCase();
+    const hay = `${u.fullName} ${u.login || ""} ${u.position || ""} ${u.location || ""}`.toLowerCase();
     return hay.includes(needle.toLowerCase());
   });
 
-  const empIds = users.map((u) => u.empId).filter((id): id is number => id != null);
-  const userIds = users.map((u) => u.id);
+  const empIds = users.map((u) => u.empId);
+  const userIds = users.map((u) => u.userId).filter((id): id is number => id != null);
 
   const attByEmp = new Map<number, Array<{ status: string; checkInAt: Date | null; workDate: string }>>();
   if (empIds.length) {
@@ -765,14 +836,13 @@ export async function computePayrollList(
   const items: PayrollListRow[] = users.map((u) => {
     const fixedSalary = Math.max(0, Math.round(Number(u.fixedSalary ?? 0)));
     const bonusPercent = Math.max(0, Number(u.bonusPercent ?? 30));
-    const att = u.empId
-      ? scoreAttendanceDays(attByEmp.get(u.empId) ?? [], weights.workStartHm)
-      : { available: false, percent: 0 };
-    const mergedTasks = [...(taskByUser.get(u.id) ?? []), ...(u.empId ? taskByEmp.get(u.empId) ?? [] : [])];
+    const uid = u.userId;
+    const att = scoreAttendanceDays(attByEmp.get(u.empId) ?? [], weights.workStartHm, expected);
+    const mergedTasks = [...(uid != null ? taskByUser.get(uid) ?? [] : []), ...(taskByEmp.get(u.empId) ?? [])];
     const tasks = scoreTaskRows(mergedTasks);
     const checkMap = new Map<number, number>([
-      ...(checkByUser.get(u.id) ?? []),
-      ...(u.empId ? checkByEmp.get(u.empId) ?? [] : []),
+      ...(uid != null ? checkByUser.get(uid) ?? [] : []),
+      ...(checkByEmp.get(u.empId) ?? []),
     ]);
     const checkPercents = [...checkMap.values()];
     const checklistAvailable = checkPercents.length > 0;
@@ -790,10 +860,12 @@ export async function computePayrollList(
       fixedSalary,
       bonusPercent,
     );
+    const roleKey = u.userRole || u.orgRole || "";
     return {
-      userId: u.id,
+      employeeId: u.empId,
+      userId: uid,
       fullName: u.fullName,
-      roleLabel: ROLE_LABELS[u.role] || u.role,
+      roleLabel: ROLE_LABELS[roleKey] || roleKey,
       position: u.position ?? null,
       branch: u.location ?? null,
       fixedSalary,
@@ -801,18 +873,21 @@ export async function computePayrollList(
       kpiPercent: money.kpiPercent,
       bonusAmount: money.bonusAmount,
       totalAmount: money.totalAmount,
-      status: statusByUser.get(u.id) || "draft",
+      status: (uid != null ? statusByUser.get(uid) : undefined) || "draft",
       attendance: money.attendance,
       tasks: money.tasks,
       checklist: money.checklist,
       attendanceAvailable: att.available,
+      attendanceComplete: att.complete,
+      expectedWorkDays: att.expectedDays,
+      closedWorkDays: att.closedDays,
       tasksAvailable: tasks.available,
       checklistAvailable,
     };
   });
 
   items.sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
-  return { month, monthLabel, items };
+  return { month, monthLabel, workDays, items };
 }
 
 export async function upsertPayrollDraft(report: PayrollCompute, status?: string) {

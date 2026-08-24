@@ -1484,11 +1484,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
       return;
     }
-    const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "login");
-    if (!live.ok) {
-      res.status(403).json({ error: live.error, code: live.code });
-      return;
-    }
+    // Liveness — faqat kamera skanida (face-verify). Keldim/Ketdim tugmasi qayta bosh burishni talab qilmaydi.
     if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
       res.status(400).json({
         error: "GPS majburiy — lokatsiyaga ruxsat bering",

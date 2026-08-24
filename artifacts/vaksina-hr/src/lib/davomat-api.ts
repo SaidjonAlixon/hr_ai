@@ -239,6 +239,12 @@ export async function facePunchDavomat(payload: {
   accuracy?: number;
   action: "in" | "out";
   snapshot?: string;
+  liveness?: {
+    blinked?: boolean;
+    poses?: string[];
+    motion?: number;
+    score?: number;
+  };
 }): Promise<{
   ok: boolean;
   action: "in" | "out";

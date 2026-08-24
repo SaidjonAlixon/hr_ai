@@ -68,6 +68,7 @@ type Verified = {
   checkInAt: string | null;
   checkOutAt?: string | null;
   faceImage?: string;
+  liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number };
 };
 
 type GuideStep = "enroll" | "permission" | "zone" | "face" | "keldim" | "ketdim" | "done";
@@ -826,6 +827,7 @@ export default function DavomatFacePage() {
         checkInAt: result.checkInAt,
         checkOutAt: result.checkOutAt,
         faceImage: snapshot,
+        liveness,
       });
       applyHistory(result.employee);
       if (result.user) {
@@ -887,6 +889,7 @@ export default function DavomatFacePage() {
         ...geoPayload(),
         action,
         snapshot: verified.faceImage,
+        liveness: verified.liveness,
       });
       setVerified({
         ...verified,

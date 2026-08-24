@@ -311,6 +311,14 @@ export type WorkplaceInfo = {
     complete: boolean;
     nextAction: "in" | "out" | "done";
   };
+  shift?: {
+    type: "one" | "two";
+    label: string;
+    start: string;
+    end: string;
+    warnHm: string;
+    warnText: string;
+  } | null;
 };
 
 export async function fetchMyWorkplace(): Promise<WorkplaceInfo> {

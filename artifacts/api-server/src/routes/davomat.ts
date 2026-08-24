@@ -16,6 +16,7 @@ import { evaluateLiveness, matchFaceForAuthWithAi, type LivenessProof } from "..
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
+import { hoursForStaff, isPharmacyShiftStaff, shiftWindow } from "../lib/shift-hours";
 
 const router: IRouter = Router();
 
@@ -154,9 +155,10 @@ function computeMetrics(
   checkInAt: Date | null | undefined,
   checkOutAt: Date | null | undefined,
   forcedStatus?: string | null,
+  hours?: { start: string; end: string },
 ): Metrics {
-  const start = atTashkent(workDate, WORK_START);
-  const end = atTashkent(workDate, WORK_END);
+  const start = atTashkent(workDate, hours?.start ?? WORK_START);
+  const end = atTashkent(workDate, hours?.end ?? WORK_END);
   let earlyArrivalMin = 0;
   let lateArrivalMin = 0;
   let earlyLeaveMin = 0;
@@ -219,6 +221,7 @@ async function loadActiveEmployees(filters: {
       employmentStatus: employeesTable.employmentStatus,
       userId: employeesTable.userId,
       orgRole: employeesTable.orgRole,
+      shiftType: employeesTable.shiftType,
     })
     .from(employeesTable)
     .leftJoin(departmentsTable, eq(employeesTable.departmentId, departmentsTable.id));
@@ -316,7 +319,7 @@ function buildReport(
         leave += 1;
         continue;
       }
-      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status);
+      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType));
       if (m.status === "late") {
         late += 1;
         lateList.push(e.fullName);
@@ -394,7 +397,7 @@ function buildReport(
             recordId: rec.id,
           };
         }
-        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status);
+        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType));
         return {
           date,
           ...m,
@@ -650,6 +653,8 @@ type WorkplaceEmp = {
   longitude: number | null;
   orgRole: string | null;
   reportsToId: number | null;
+  assignedBranchId: number | null;
+  shiftType: string | null;
 };
 
 const BRANCH_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
@@ -709,7 +714,9 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
   let latLng = coordsFromEmp(emp);
   let label = displayBranchName(emp.location) || emp.location || emp.fullName;
 
-  if (emp.orgRole !== "manager" && emp.reportsToId) {
+  const branchId =
+    emp.assignedBranchId || (emp.orgRole === "manager" ? emp.id : emp.reportsToId);
+  if (branchId && (emp.assignedBranchId || emp.orgRole !== "manager")) {
     const [mgr] = await db
       .select({
         latitude: employeesTable.latitude,
@@ -718,7 +725,7 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
         fullName: employeesTable.fullName,
       })
       .from(employeesTable)
-      .where(eq(employeesTable.id, emp.reportsToId))
+      .where(eq(employeesTable.id, branchId))
       .limit(1);
     if (mgr) {
       const fromMgr = coordsFromEmp(mgr);
@@ -789,6 +796,8 @@ async function findEmployeeByUserId(userId: number): Promise<WorkplaceEmp | null
       longitude: employeesTable.longitude,
       orgRole: employeesTable.orgRole,
       reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+      shiftType: employeesTable.shiftType,
     })
     .from(employeesTable)
     .where(eq(employeesTable.userId, userId))
@@ -821,6 +830,8 @@ async function ensureEmployeeForUser(user: {
       longitude: employeesTable.longitude,
       orgRole: employeesTable.orgRole,
       reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+      shiftType: employeesTable.shiftType,
       employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable);
@@ -852,6 +863,8 @@ async function ensureEmployeeForUser(user: {
       longitude: byName.longitude,
       orgRole: orgRole,
       reportsToId: byName.reportsToId,
+      assignedBranchId: byName.assignedBranchId,
+      shiftType: byName.shiftType,
     };
   }
 
@@ -890,6 +903,8 @@ async function ensureEmployeeForUser(user: {
       longitude: employeesTable.longitude,
       orgRole: employeesTable.orgRole,
       reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+      shiftType: employeesTable.shiftType,
     });
 
   if (!created) throw new Error("Xodim yaratilmadi");
@@ -1010,6 +1025,7 @@ async function applyFacePunch(opts: {
   | PunchFail
 > {
   const { emp, latitude, longitude, distanceMeters, faceProfileId, action } = opts;
+  const hours = hoursForStaff(emp.orgRole, emp.shiftType);
   const workDate = todayTashkent();
   const now = new Date();
   const dateFilter = and(
@@ -1058,7 +1074,7 @@ async function applyFacePunch(opts: {
 
       if (action === "in") {
         checkInAt = now;
-        const status = computeMetrics(workDate, checkInAt, null).status;
+        const status = computeMetrics(workDate, checkInAt, null, null, hours).status;
         if (existing) {
           await tx
             .update(attendanceRecordsTable)
@@ -1078,7 +1094,7 @@ async function applyFacePunch(opts: {
       } else {
         checkOutAt = now;
         checkInAt = existing!.checkInAt;
-        const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt).status;
+        const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt, null, hours).status;
         await tx
           .update(attendanceRecordsTable)
           .set({ ...geoFields, checkOutAt, status })
@@ -1090,7 +1106,7 @@ async function applyFacePunch(opts: {
         .set({ lastUsedAt: now })
         .where(eq(faceProfilesTable.id, faceProfileId));
 
-      const metrics = computeMetrics(workDate, checkInAt, checkOutAt);
+      const metrics = computeMetrics(workDate, checkInAt, checkOutAt, null, hours);
       return {
         ok: true as const,
         payload: {
@@ -1247,6 +1263,20 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       gpsReady: resolved.ok,
       gpsError: resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q"),
       workDate,
+      shift: (() => {
+        const w = shiftWindow(emp.shiftType);
+        const pharmacy = isPharmacyShiftStaff(user.role, emp.orgRole);
+        return pharmacy
+          ? {
+              type: w.key,
+              label: w.label,
+              start: w.start,
+              end: w.end,
+              warnHm: w.warnHm,
+              warnText: w.warnText,
+            }
+          : null;
+      })(),
       employee: {
         id: emp.id,
         fullName: emp.fullName,

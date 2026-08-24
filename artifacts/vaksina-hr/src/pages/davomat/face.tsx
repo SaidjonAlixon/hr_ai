@@ -1234,8 +1234,13 @@ export default function DavomatFacePage() {
                 <p className="text-slate-500">«Ruxsat berish» ni bosing — lokatsiya so‘raladi</p>
               )}
               <p className="mt-0.5 text-xs text-slate-500">
-                {workplace?.site?.kind === "branch" ? "O‘z filiali" : "Asosiy ofis"} · ruxsat {allowedMeters} m
+                {workplace?.site?.kind === "branch" ? "Belgilangan filial" : "Asosiy ofis"} · ruxsat {allowedMeters} m
               </p>
+              {workplace?.shift ? (
+                <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-950">
+                  {workplace.shift.label}: {workplace.shift.start}–{workplace.shift.end}. Kechikish — jarima.
+                </p>
+              ) : null}
               {site.label ? (
                 <p className="mt-0.5 truncate text-[11px] text-slate-400">{site.label}</p>
               ) : null}

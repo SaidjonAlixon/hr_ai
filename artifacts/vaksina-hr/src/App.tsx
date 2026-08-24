@@ -50,6 +50,7 @@ import EmployeeDuplicatesPage from './pages/employees/duplicates';
 import DavomatPage from './pages/davomat/index';
 import DavomatFacePage from './pages/davomat/face';
 import DavomatFarOfficePage from './pages/davomat/far-office';
+import SmenaFilialPage from './pages/smena-filial/index';
 import NotificationsPage from './pages/notifications/index';
 import TgEntryPage from './pages/tg-entry';
 import NotFound from './pages/not-found';
@@ -141,6 +142,7 @@ function Router() {
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/davomat-uzoq" component={DavomatFarOfficePage} />
+      <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/internships" component={InternshipsPlaceholder} />

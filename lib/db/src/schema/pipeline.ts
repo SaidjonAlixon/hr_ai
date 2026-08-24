@@ -54,6 +54,8 @@ export const employeesTable = pgTable("employees", {
   longitude: doublePrecision("longitude"),
   /** one | two | custom */
   shiftType: text("shift_type").default("one"),
+  /** Davomat GPS olinadigan filial mudiri (employees.id) */
+  assignedBranchId: integer("assigned_branch_id"),
   /** Mudir belgilagan maxsus holat matni */
   shiftLabel: text("shift_label"),
   /** working | new | dismissed | need_hire | searching | no_manager */

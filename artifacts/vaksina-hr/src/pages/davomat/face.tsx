@@ -683,20 +683,23 @@ export default function DavomatFacePage() {
     return haversineMeters(gps.lat, gps.lng, site.latitude, site.longitude);
   }, [gps, site.latitude, site.longitude]);
 
-  const allowedMeters = DAVOMAT_GEOFENCE_METERS;
+  const allowedMeters = workplace?.allowedMeters || site.allowedMeters || DAVOMAT_GEOFENCE_METERS;
   const remain = distance != null ? Math.max(0, distance - allowedMeters) : null;
-  const inside = distance != null ? distance <= allowedMeters : false;
-  const officeDistance = useMemo(() => {
-    if (!gps) return null;
-    return haversineMeters(gps.lat, gps.lng, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
-  }, [gps]);
+  /** Filial GPS yo‘q bo‘lsa ofis nuqtasiga tushib «Hududdasiz» deb yolg‘on yashil ko‘rsatilmasin */
+  const workplaceGpsMissing = workplace?.employee.hasGps === false;
+  const inside =
+    !workplaceGpsMissing && distance != null ? distance <= allowedMeters : false;
 
+  /**
+   * Face ID skani login talab qilmaydi (yuz → profil).
+   * faceRegistered === true kutish — login yo‘q / status 401 bo‘lsa tugma abadiy yopiq qolardi.
+   */
   const canOpenFace =
-    faceRegistered === true &&
+    faceRegistered !== false &&
     Boolean(gps) &&
     !gpsError &&
     isFaceIdSupported() &&
-    (workplace ? workplace.employee.hasGps && inside : inside);
+    inside;
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   const done = nextAction === "done" || workplace?.today.complete;
@@ -746,11 +749,17 @@ export default function DavomatFacePage() {
     if (gpsError) return gpsError;
     if (!gps) return "1-qadam: «Ruxsat berish» ni bosing";
     if (!isFaceIdSupported()) return "Face ID bu brauzerda ishlamaydi (HTTPS/localhost kerak)";
+    if (workplaceGpsMissing) {
+      return (
+        workplace?.gpsError ||
+        "Filial lokatsiyasi kiritilmagan. Koordinator avval GPS kiritsin."
+      );
+    }
     if (remain != null && remain > 0) {
       return `Yashil hududga kirmadingiz (${formatDistance(distance)}). Kelmagan deb belgilanasiz. ${formatApproach(remain)}.`;
     }
     return null;
-  }, [faceRegistered, gps, gpsError, remain, distance]);
+  }, [faceRegistered, gps, gpsError, remain, distance, workplaceGpsMissing, workplace?.gpsError]);
 
   useEffect(() => {
     if (!isTgMiniApp || tgBootRef.current) return;
@@ -1285,14 +1294,6 @@ export default function DavomatFacePage() {
             </div>
           ) : null}
 
-          {officeDistance != null && officeDistance > 1000 ? (
-            <div className="mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-800">
-              <p className="font-semibold">
-                Asosiy ofisdan {formatDistance(officeDistance)} · {1} kishi
-              </p>
-              <p className="mt-1 text-slate-700">{displayName}</p>
-            </div>
-          ) : null}
           {gpsError ? <p className="mt-2 text-sm text-rose-600">{gpsError}</p> : null}
           {locationReady ? (
             <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-700">

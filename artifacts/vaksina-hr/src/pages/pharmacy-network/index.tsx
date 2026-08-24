@@ -1572,6 +1572,25 @@ export default function PharmacyNetworkPage() {
                 const noMudir = isNoManagerStatus(empStatus(manager));
                 const branchClosed = empStatus(manager) === 'closed';
                 const alert = branchHasAlert(manager.id);
+                const branch = manager as BranchEmployee;
+                const fromField = gpsFromLocationField(manager.location);
+                const gpsSaved = savedGps[manager.id];
+                const lat =
+                  typeof branch.latitude === 'number'
+                    ? branch.latitude
+                    : gpsSaved?.lat ?? fromField?.lat;
+                const lng =
+                  typeof branch.longitude === 'number'
+                    ? branch.longitude
+                    : gpsSaved?.lng ?? fromField?.lng;
+                const hasGps = typeof lat === 'number' && typeof lng === 'number';
+                const displayName = displayBranchName(manager.location).trim();
+                const hasName = Boolean(displayName);
+                const locationLabel = hasName
+                  ? displayName
+                  : hasGps
+                    ? 'Nomsiz lokatsiya'
+                    : 'Lokatsiya yo‘q';
                 const accent = alert
                   ? 'border-t-red-500'
                   : branchClosed
@@ -1605,27 +1624,13 @@ export default function PharmacyNetworkPage() {
                     )}
                   >
                     <div className="flex flex-1 flex-col gap-3 p-3.5 sm:p-4">
-                      <div className="flex items-start justify-between gap-2">
+                      <div className="flex flex-col gap-2">
                         {(() => {
-                          const branch = manager as BranchEmployee;
-                          const fromField = gpsFromLocationField(manager.location);
-                          const gps = savedGps[manager.id];
-                          const lat =
-                            typeof branch.latitude === 'number'
-                              ? branch.latitude
-                              : gps?.lat ?? fromField?.lat;
-                          const lng =
-                            typeof branch.longitude === 'number'
-                              ? branch.longitude
-                              : gps?.lng ?? fromField?.lng;
-                          const hasGps = typeof lat === 'number' && typeof lng === 'number';
-                          const displayName = displayBranchName(manager.location);
-                          const hasName = Boolean(displayName && displayName !== 'Filial');
                           const editing =
                             gpsEditingId === manager.id || (canSetBranchGps && !hasGps && !hasName);
                           if (canSetBranchGps && editing) {
                             return (
-                              <div className="min-w-0 flex-1 space-y-2">
+                              <div className="min-w-0 w-full space-y-2">
                                 <div className="space-y-1">
                                   <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
                                     Filial nomi
@@ -1700,13 +1705,8 @@ export default function PharmacyNetworkPage() {
                               </div>
                             );
                           }
-                          const label = hasName
-                            ? displayName
-                            : hasGps
-                              ? 'Nomsiz lokatsiya'
-                              : 'Lokatsiya yo‘q';
                           return (
-                            <div className="flex min-w-0 flex-1 items-center gap-2">
+                            <div className="flex w-full min-w-0 items-start gap-2">
                               {hasGps ? (
                                 <a
                                   href={googleMapsUrl(lat, lng)}
@@ -1715,25 +1715,25 @@ export default function PharmacyNetworkPage() {
                                   title="Xaritada ochish"
                                   onClick={(e) => e.stopPropagation()}
                                   className={cn(
-                                    'inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-2 transition-colors hover:bg-sky-50 hover:text-sky-800',
-                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
+                                    'inline-flex min-w-0 flex-1 items-start gap-2 rounded-xl px-2.5 py-2 transition-colors hover:bg-sky-50 hover:text-sky-800',
+                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800',
                                   )}
                                 >
-                                  <MapPin className="h-4 w-4 shrink-0 opacity-80" />
-                                  <span className="min-w-0 truncate text-[12px] font-semibold leading-snug underline decoration-slate-300 underline-offset-2">
-                                    {label}
+                                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
+                                  <span className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug">
+                                    {locationLabel}
                                   </span>
                                 </a>
                               ) : (
                                 <div
                                   className={cn(
-                                    'inline-flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2.5 py-2',
-                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-700',
+                                    'inline-flex min-w-0 flex-1 items-start gap-2 rounded-xl px-2.5 py-2',
+                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800',
                                   )}
                                 >
-                                  <MapPin className="h-4 w-4 shrink-0 opacity-80" />
-                                  <span className="min-w-0 truncate text-[12px] font-semibold leading-snug">
-                                    {label}
+                                  <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
+                                  <span className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug">
+                                    {locationLabel}
                                   </span>
                                 </div>
                               )}
@@ -1761,7 +1761,7 @@ export default function PharmacyNetworkPage() {
                             </div>
                           );
                         })()}
-                        <div className="flex shrink-0 items-center gap-1">
+                        <div className="flex flex-wrap items-center justify-end gap-1">
                           <span
                             className={cn(
                               'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
@@ -1839,6 +1839,10 @@ export default function PharmacyNetworkPage() {
                           </p>
                           <p className="mt-0.5 text-[11px] text-slate-500">
                             {noMudir ? 'Mudir yo‘q' : 'Mudir (zav.aptek)'}
+                          </p>
+                          <p className="mt-1 flex items-start gap-1 text-xs font-semibold leading-snug text-sky-900">
+                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700" />
+                            <span className="min-w-0 break-words">{locationLabel}</span>
                           </p>
                           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
                             <span
@@ -2023,8 +2027,8 @@ export default function PharmacyNetworkPage() {
                     <div className="flex items-start justify-between gap-2">
                       <div className="inline-flex min-w-0 items-start gap-1.5 rounded-lg bg-amber-100 px-2 py-1 text-amber-900">
                         <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
-                        <span className="text-[11px] font-semibold leading-snug tracking-wide">
-                          {displayBranchName(group.location) || group.location}
+                        <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] font-semibold leading-snug">
+                          {displayBranchName(group.location) || group.location || 'Filial'}
                         </span>
                       </div>
                       <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-800">

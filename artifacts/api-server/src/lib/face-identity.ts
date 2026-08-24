@@ -216,27 +216,23 @@ export function bestPerUser(probes: number[][], rows: StoredFace[]): FaceHit[] {
   return [...byUser.values()].sort((a, b) => a.dist - b.dist);
 }
 
+/** Login identifikasiya — faqat 1-kadr (markaz). Yonbosh kadr boshqa odamga o‘xshab ketmasin. */
+export function identityProbes(probes: number[][]): number[][] {
+  return probes[0] ? [probes[0]] : [];
+}
+
 export function pickAuthMatch(
   probes: number[][],
   rows: StoredFace[],
 ):
   | { ok: true; id: number; userId: number; dist: number; cosine: number }
   | { ok: false; code: "face_not_registered" | "face_ambiguous"; best?: FaceHit; second?: FaceHit } {
-  const ranked = bestPerUser(probes, rows);
+  const ranked = bestPerUser(identityProbes(probes), rows);
   const best = ranked[0];
-  const second = ranked[1];
   if (!best || !isSamePerson(best.dist, best.cosine, FACE_MATCH_MAX)) {
     return { ok: false, code: "face_not_registered", best };
   }
-  const secondTooClose =
-    Boolean(second) &&
-    second!.dist <= FACE_MATCH_MAX + 0.06 &&
-    (isSamePerson(second!.dist, second!.cosine, FACE_MATCH_MAX) ||
-      second!.dist - best.dist < FACE_AMBIGUOUS_MARGIN ||
-      best.dist / Math.max(second!.dist, 1e-6) > FACE_AMBIGUOUS_RATIO);
-  if (secondTooClose && second) {
-    return { ok: false, code: "face_ambiguous", best, second };
-  }
+  /** Eng yaqin yagona egasi — o‘chirish yo‘q, boshqa xodim ham yopilmaydi. */
   return { ok: true, id: best.id, userId: best.userId, dist: best.dist, cosine: best.cosine };
 }
 

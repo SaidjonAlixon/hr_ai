@@ -75,6 +75,45 @@ describe("face identity", () => {
     if (picked.ok) assert.equal(picked.userId, 1);
   });
 
+  it("lookalike coworker does not block the registered owner (PASS)", () => {
+    const owner = embedding(21);
+    const coworker = noise(owner, 0.22);
+    const rows: StoredFace[] = [
+      { id: 1, userId: 1, descriptor: owner },
+      { id: 2, userId: 2, descriptor: coworker },
+    ];
+    const probe = noise(owner, 0.04);
+    const picked = pickAuthMatch([probe], rows);
+    assert.equal(picked.ok, true, "owner must still log in when a similar face exists");
+    if (picked.ok) assert.equal(picked.userId, 1);
+  });
+
+  it("closest registered owner wins — login is not blocked (PASS)", () => {
+    const face = embedding(31);
+    const rows: StoredFace[] = [
+      { id: 1, userId: 1, descriptor: face },
+      { id: 2, userId: 2, descriptor: noise(face, 0.01) },
+    ];
+    const probe = noise(face, 0.005);
+    const picked = pickAuthMatch([probe], rows);
+    assert.equal(picked.ok, true);
+    if (picked.ok) assert.equal(picked.userId, 1);
+  });
+
+  it("side-angle probe is ignored so another person is not opened (PASS)", () => {
+    const ownerCenter = embedding(41);
+    const other = embedding(77);
+    const rows: StoredFace[] = [
+      { id: 1, userId: 1, descriptor: ownerCenter },
+      { id: 2, userId: 2, descriptor: other },
+    ];
+    const center = noise(ownerCenter, 0.03);
+    const misleadingSide = noise(other, 0.02);
+    const picked = pickAuthMatch([center, misleadingSide], rows);
+    assert.equal(picked.ok, true);
+    if (picked.ok) assert.equal(picked.userId, 1);
+  });
+
   it("cannot re-enroll same face on another account (FAIL)", () => {
     const faceA = embedding(11);
     const rows: StoredFace[] = [{ id: 1, userId: 1, descriptor: faceA }];

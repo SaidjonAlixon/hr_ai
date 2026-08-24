@@ -235,9 +235,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           const payload =
             mode === "enroll"
               ? identityTemplates
-              : identityTemplates.length
-                ? identityTemplates
-                : (templates[0] ?? samples[0]!);
+              : identityTemplates[0]
+                ? [identityTemplates[0]]
+                : templates[0]
+                  ? [templates[0]]
+                  : samples[0]
+                    ? [samples[0]]
+                    : [];
           try {
             const captured = await onCapturedRef.current(
               payload,

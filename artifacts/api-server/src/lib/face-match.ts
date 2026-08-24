@@ -251,7 +251,7 @@ export async function matchFaceForAuth(
     ]);
     return {
       ok: false,
-      error: "Bu yuz bir nechta profilga o‘xshaydi — Face ID faqat bitta xodimga birikadi.",
+      error: "Yuz aniq o‘qilmadi. Kameraga tik qarang — yuz oval ichida bo‘lsin.",
       code: "face_ambiguous",
       neighbors,
     };

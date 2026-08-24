@@ -236,6 +236,18 @@ export function pickAuthMatch(
   return { ok: true, id: best.id, userId: best.userId, dist: best.dist, cosine: best.cosine };
 }
 
+/** AI solishtirish uchun yaqin nomzodlar (o‘xshash yuzni noto‘g‘ri ochmaslik). */
+export function listAuthCandidates(
+  probes: number[][],
+  rows: StoredFace[],
+  limit = 3,
+): FaceHit[] {
+  const maxDist = FACE_MATCH_MAX + 0.14;
+  return bestPerUser(identityProbes(probes), rows)
+    .filter((h) => h.dist <= maxDist)
+    .slice(0, limit);
+}
+
 export function findEnrollConflicts(
   probes: number[][],
   rows: StoredFace[],

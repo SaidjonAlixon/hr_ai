@@ -14,6 +14,7 @@ import {
   findEnrollConflicts,
   parseFaceDescriptor,
   pickAuthMatch,
+  listAuthCandidates,
   type FaceHit as CoreHit,
   type LivenessProof,
   type StoredFace,
@@ -260,6 +261,51 @@ export async function matchFaceForAuth(
     ok: false,
     error: "Bu yuz aniqlanmadi. Avval tizimga kirib Face ID ni ro‘yxatdan o‘tkazing.",
     code: "face_not_registered",
+  };
+}
+
+export async function matchFaceForAuthWithAi(
+  descriptor: number[] | number[][],
+  liveSnapshot?: unknown,
+): Promise<
+  | { ok: true; id: number; userId: number; dist: number; cosine: number }
+  | { ok: false; error: string; code: string; neighbors?: FaceNeighbor[] }
+> {
+  const { isFaceAiEnabled, resolveLoginIdentityWithAi } = await import("./face-ai-verify");
+  if (!isFaceAiEnabled()) return matchFaceForAuth(descriptor);
+  const probes = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
+  const rows = await loadFaceRows();
+  const candidates = listAuthCandidates(probes, rows);
+  if (!candidates.length) {
+    return {
+      ok: false,
+      error: "Bu yuz aniqlanmadi. Avval Face ID ni ro‘yxatdan o‘tkazing.",
+      code: "face_not_registered",
+    };
+  }
+  const resolved = await resolveLoginIdentityWithAi({
+    liveSnapshot,
+    candidates: candidates.map((c) => ({ id: c.id, userId: c.userId, dist: c.dist, cosine: c.cosine })),
+  });
+  if (!resolved.ok) {
+    return { ok: false, error: resolved.error, code: resolved.code };
+  }
+  logger.info(
+    {
+      event: "face_verify_ai",
+      ok: true,
+      userId: resolved.userId,
+      dist: Number(resolved.dist.toFixed(4)),
+      confidence: resolved.confidence,
+    },
+    "face AI identity ok",
+  );
+  return {
+    ok: true,
+    id: resolved.id,
+    userId: resolved.userId,
+    dist: resolved.dist,
+    cosine: resolved.cosine,
   };
 }
 

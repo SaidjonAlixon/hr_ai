@@ -11,6 +11,7 @@ import {
   isSamePerson,
   parseFaceDescriptor,
   pickAuthMatch,
+  listAuthCandidates,
   type StoredFace,
 } from "./face-identity.ts";
 
@@ -73,6 +74,18 @@ describe("face identity", () => {
     const picked = pickAuthMatch([probe], rows);
     assert.equal(picked.ok, true);
     if (picked.ok) assert.equal(picked.userId, 1);
+  });
+
+  it("AI candidate list includes lookalikes so the closest embedding is not auto-opened", () => {
+    const owner = embedding(51);
+    const lookalike = noise(owner, 0.2);
+    const rows: StoredFace[] = [
+      { id: 1, userId: 1, descriptor: owner },
+      { id: 2, userId: 2, descriptor: lookalike },
+    ];
+    const cands = listAuthCandidates([noise(owner, 0.03)], rows);
+    assert.ok(cands.length >= 1);
+    assert.equal(cands[0]?.userId, 1);
   });
 
   it("lookalike coworker does not block the registered owner (PASS)", () => {

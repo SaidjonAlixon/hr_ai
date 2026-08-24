@@ -12,7 +12,7 @@ import {
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
 import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
-import { evaluateLiveness, matchFaceForAuth, type LivenessProof } from "../lib/face-match";
+import { evaluateLiveness, matchFaceForAuthWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
@@ -916,10 +916,14 @@ async function ensureAllActiveUsersLinked(): Promise<number> {
 
 async function matchFaceUserId(
   descriptor: number[] | number[][],
-): Promise<{ ok: true; userId: number; faceId: number } | { ok: false; error: string; code: string }> {
-  const matched = await matchFaceForAuth(descriptor);
+  snapshot?: unknown,
+): Promise<
+  | { ok: true; userId: number; faceId: number; dist: number; cosine: number }
+  | { ok: false; error: string; code: string }
+> {
+  const matched = await matchFaceForAuthWithAi(descriptor, snapshot);
   if (!matched.ok) return { ok: false, error: matched.error, code: matched.code };
-  return { ok: true, userId: matched.userId, faceId: matched.id };
+  return { ok: true, userId: matched.userId, faceId: matched.id, dist: matched.dist, cosine: matched.cosine };
 }
 
 async function geoGate(
@@ -1126,6 +1130,7 @@ async function resolveFaceAtSite(opts: {
   latitude: number;
   longitude: number;
   accuracy?: number;
+  snapshot?: unknown;
 }): Promise<
   | {
       ok: true;
@@ -1136,7 +1141,7 @@ async function resolveFaceAtSite(opts: {
     }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
-  const matched = await matchFaceUserId(opts.descriptor);
+  const matched = await matchFaceUserId(opts.descriptor, opts.snapshot);
   if (!matched.ok) {
     return { ok: false, status: 401, body: { error: matched.error, code: matched.code } };
   }
@@ -1430,6 +1435,7 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       latitude,
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
+      snapshot: req.body?.snapshot ?? req.body?.photo,
     });
     if (!resolved.ok) {
       res.status(resolved.status).json(resolved.body);
@@ -1507,6 +1513,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       latitude,
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
+      snapshot: req.body?.snapshot ?? req.body?.photo,
     });
     if (!resolved.ok) {
       res.status(resolved.status).json(resolved.body);

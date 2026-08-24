@@ -21,10 +21,12 @@ import {
   minDistanceBetweenVectors,
   parseStoredVectors,
   findDuplicateEnrollHits,
+  findNearestFaces,
   invalidateFaceCache,
-  matchFaceForAuth,
+  matchFaceForAuthWithAi,
   parseFaceDescriptor,
 } from "../lib/face-match";
+import { inspectEnrollFaceWithAi, rejectIfFaceTakenByAi } from "../lib/face-ai-verify";
 import { issueFaceChallenge } from "../lib/face-identity";
 import { clientKey, rateLimitAllow } from "../lib/rate-limit";
 import { ROLE_LABEL_UZ } from "../lib/telegram";
@@ -228,6 +230,19 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
     return;
   }
 
+  const snapshot = sanitizeSnapshot(req.body?.snapshot ?? req.body?.photo);
+  if (!snapshot) {
+    res.status(400).json({ error: "Yuz rasmi olinmadi — kameraga qarab qayta urinib ko‘ring" });
+    return;
+  }
+
+  const inspected = await inspectEnrollFaceWithAi(snapshot);
+  if (!inspected.ok) {
+    logger.info({ event: "face_enroll", ok: false, code: inspected.code, userId }, "face enroll AI inspect");
+    res.status(400).json({ error: inspected.error, code: inspected.code });
+    return;
+  }
+
   const nearest = await findDuplicateEnrollHits(descriptors.slice(0, 1), userId);
   if (nearest.length) {
     logger.info(
@@ -248,9 +263,17 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
     return;
   }
 
-  const snapshot = sanitizeSnapshot(req.body?.snapshot ?? req.body?.photo);
-  if (!snapshot) {
-    res.status(400).json({ error: "Yuz rasmi olinmadi — kameraga qarab qayta urinib ko‘ring" });
+  const similar = await findNearestFaces(descriptors[0]!, {
+    excludeUserId: userId,
+    limit: 3,
+  });
+  const taken = await rejectIfFaceTakenByAi({
+    liveSnapshot: snapshot,
+    neighborProfileIds: similar.map((h) => h.id),
+  });
+  if (!taken.ok) {
+    logger.info({ event: "face_enroll", ok: false, code: taken.code, userId }, "face enroll AI duplicate");
+    res.status(409).json({ error: taken.error, code: taken.code });
     return;
   }
 
@@ -311,7 +334,7 @@ router.post("/auth/face/login", async (req, res): Promise<void> => {
     return;
   }
 
-  const matched = await matchFaceForAuth(descriptors);
+  const matched = await matchFaceForAuthWithAi(descriptors, req.body?.snapshot ?? req.body?.photo);
   if (!matched.ok) {
     res.status(401).json({
       error: matched.error,

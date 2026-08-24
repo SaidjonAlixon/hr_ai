@@ -8,7 +8,7 @@
     "build": "node ./build.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test:face": "node --experimental-strip-types --test src/lib/face-identity.test.ts"
+    "test:face": "node --experimental-strip-types --test src/lib/face-identity.test.ts src/lib/face-ai-verify.test.ts"
   },
   "dependencies": {
     "@simplewebauthn/server": "^13.3.2",

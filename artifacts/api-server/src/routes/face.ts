@@ -20,15 +20,24 @@ import {
   distanceBetweenDescriptors,
   minDistanceBetweenVectors,
   parseStoredVectors,
-  enrichFaceHits,
-  findNearestFaces,
+  findDuplicateEnrollHits,
   invalidateFaceCache,
   matchFaceForAuth,
   parseFaceDescriptor,
 } from "../lib/face-match";
+import { issueFaceChallenge } from "../lib/face-identity";
+import { clientKey, rateLimitAllow } from "../lib/rate-limit";
 import { ROLE_LABEL_UZ } from "../lib/telegram";
 import { logger } from "../lib/logger";
 import { readBlobUpload, readLocalUpload } from "../lib/blob-storage";
+
+function parseDescriptorList(body: { descriptors?: unknown; descriptor?: unknown }): number[][] {
+  if (Array.isArray(body?.descriptors)) {
+    return (body.descriptors as unknown[]).map(parseFaceDescriptor).filter((d): d is number[] => Boolean(d));
+  }
+  const one = parseFaceDescriptor(body?.descriptor);
+  return one ? [one] : [];
+}
 
 const router: IRouter = Router();
 
@@ -189,56 +198,54 @@ router.get("/auth/face/photo", requireAuth, async (req: AuthRequest, res): Promi
   sendFacePhoto(res, await loadFacePhotoBuffer(row?.photoUrl));
 });
 
+router.get("/auth/face/challenge", async (req, res): Promise<void> => {
+  const ip = clientKey(req);
+  if (!rateLimitAllow(`face-challenge:${ip}`, 30, 10 * 60_000)) {
+    res.status(429).json({ error: "Ko‘p urinish — birozdan keyin qayta urinib ko‘ring" });
+    return;
+  }
+  const mode = String(req.query.mode || "login") === "enroll" ? "enroll" : "login";
+  const issued = issueFaceChallenge(mode);
+  res.json({ token: issued.token, steps: issued.steps, mode });
+});
+
 router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const userId = req.userId!;
-  const descriptors = Array.isArray(req.body?.descriptors)
-    ? (req.body.descriptors as unknown[]).map(parseDescriptor).filter((d): d is number[] => Boolean(d))
-    : (() => {
-        const one = parseDescriptor(req.body?.descriptor);
-        return one ? [one] : [];
-      })();
-  if (!descriptors.length) {
-    res.status(400).json({ error: "Yuz aniq olinmadi — qayta urinib ko‘ring" });
+  if (!rateLimitAllow(`face-enroll:${userId}`, 12, 10 * 60_000)) {
+    res.status(429).json({ error: "Ko‘p urinish — birozdan keyin qayta urinib ko‘ring" });
+    return;
+  }
+  const descriptors = parseDescriptorList(req.body ?? {});
+  if (descriptors.length < 3) {
+    res.status(400).json({ error: "Yuz bir necha burchakdan olinishi shart — qayta urinib ko‘ring" });
     return;
   }
 
   const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "enroll");
   if (!live.ok) {
+    logger.info({ event: "face_enroll", ok: false, code: live.code, userId }, "face enroll liveness");
     res.status(403).json({ error: live.error, code: live.code });
     return;
   }
 
-  for (const descriptor of descriptors) {
-    const nearest = await findNearestFaces(descriptor, {
-      excludeUserId: userId,
-      limit: 3,
-      maxDist: FACE_ENROLL_BLOCK_MAX,
-    });
-    if (nearest.length) {
-      const neighbors = await enrichFaceHits(nearest);
-      const top = neighbors[0]!;
-      const names = neighbors
-        .map((n) => n.fullName)
-        .filter(Boolean)
-        .slice(0, 2)
-        .join(", ");
-      res.status(409).json({
-        error: names
-          ? `Bu yuz allaqachon ro‘yxatdan o‘tgan — ${names}`
-          : "Bu yuz allaqachon ro‘yxatdan o‘tgan",
+  const nearest = await findDuplicateEnrollHits(descriptors.slice(0, 1), userId);
+  if (nearest.length) {
+    logger.info(
+      {
+        event: "face_enroll",
+        ok: false,
         code: "face_already_taken",
-        fullName: top.fullName ?? undefined,
-        distance: Number(top.dist.toFixed(4)),
-        neighbors: neighbors.map((n) => ({
-          userId: n.userId,
-          fullName: n.fullName,
-          login: n.login,
-          role: n.role,
-          distance: Number(n.dist.toFixed(4)),
-        })),
-      });
-      return;
-    }
+        userId,
+        dist: Number(nearest[0]!.dist.toFixed(4)),
+        threshold: FACE_ENROLL_BLOCK_MAX,
+      },
+      "face enroll blocked duplicate",
+    );
+    res.status(409).json({
+      error: "Bu yuz allaqachon boshqa accountga biriktirilgan",
+      code: "face_already_taken",
+    });
+    return;
   }
 
   const snapshot = sanitizeSnapshot(req.body?.snapshot ?? req.body?.photo);
@@ -276,6 +283,7 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
     await db.insert(faceProfilesTable).values(payload);
   }
   invalidateFaceCache();
+  logger.info({ event: "face_enroll", ok: true, userId, templates: descriptors.length }, "face enrolled");
   res.json({
     ok: true,
     registered: true,
@@ -285,24 +293,29 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
 });
 
 router.post("/auth/face/login", async (req, res): Promise<void> => {
-  const descriptor = parseDescriptor(req.body?.descriptor);
-  if (!descriptor) {
+  const ip = clientKey(req);
+  if (!rateLimitAllow(`face-login:${ip}`, 12, 10 * 60_000)) {
+    res.status(429).json({ error: "Ko‘p urinish — birozdan keyin qayta urinib ko‘ring" });
+    return;
+  }
+  const descriptors = parseDescriptorList(req.body ?? {});
+  if (!descriptors.length) {
     res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
     return;
   }
 
   const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "login");
   if (!live.ok) {
+    logger.info({ event: "face_login", ok: false, code: live.code, liveness: false }, "face login liveness");
     res.status(403).json({ error: live.error, code: live.code });
     return;
   }
 
-  const matched = await matchFaceForAuth(descriptor);
+  const matched = await matchFaceForAuth(descriptors);
   if (!matched.ok) {
     res.status(401).json({
       error: matched.error,
       code: matched.code,
-      neighbors: matched.neighbors,
     });
     return;
   }
@@ -735,6 +748,21 @@ router.get("/admin/faces/:userId/photo", requireAuth, async (req: AuthRequest, r
     .where(eq(faceProfilesTable.userId, userId))
     .limit(1);
   sendFacePhoto(res, await loadFacePhotoBuffer(row?.photoUrl));
+});
+
+/** Admin: barcha Face ID larni tozalash */
+router.delete("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdmin(req, res)) return;
+  const deleted = await db.delete(faceProfilesTable).returning({ id: faceProfilesTable.id });
+  invalidateFaceCache();
+  logger.info({ event: "face_clear_all", adminId: req.userId, removed: deleted.length }, "all face ids cleared");
+  res.json({
+    ok: true,
+    removed: deleted.length,
+    message: deleted.length
+      ? `${deleted.length} ta Face ID tozalandi — xodimlar qayta ro‘yxatdan o‘tishi kerak`
+      : "Tozalash uchun Face ID yo‘q edi",
+  });
 });
 
 /** Admin: xodim Face ID sini tozalash — qayta ro‘yxatdan o‘tishi uchun */

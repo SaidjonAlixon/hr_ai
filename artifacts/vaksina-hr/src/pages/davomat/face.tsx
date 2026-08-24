@@ -323,7 +323,7 @@ function GuideBoard({
       id: "ketdim",
       n: 4,
       title: "Ketdim ni bosing",
-      detail: "18:00 dan keyin ishdan chiqish",
+      detail: "Ishdan chiqishni belgilang (tasdiq so‘raladi)",
     },
   ];
 
@@ -441,14 +441,9 @@ function GuideBoard({
           Yashil hududga kirmasangiz — bugun kelmagan deb belgilanasiz
         </p>
       ) : null}
-      {active === "ketdim" && afterSix ? (
+      {active === "ketdim" ? (
         <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm font-semibold text-rose-800">
-          4-qadam: endi «Ketdim» ni bosing
-        </p>
-      ) : null}
-      {hasIn && !done && !afterSix ? (
-        <p className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-center text-xs text-slate-600">
-          Keldim belgilandi. «Ketdim» 18:00 dan keyin ochiladi
+          4-qadam: «Ketdim» ni bosing — tasdiqlang
         </p>
       ) : null}
     </section>
@@ -715,9 +710,8 @@ export default function DavomatFacePage() {
     if (!inside) return "zone";
     if (!verified) return "face";
     if (!hasIn) return "keldim";
-    if (afterSix) return "ketdim";
-    return "done";
-  }, [done, faceRegistered, gps, gpsError, inside, verified, hasIn, afterSix]);
+    return "ketdim";
+  }, [done, faceRegistered, gps, gpsError, inside, verified, hasIn]);
 
   /** Mobil: doim aktiv qadamni ko‘rsat; desktopda ham panel ochiq */
   const showGuide = guideStep !== "done";
@@ -810,9 +804,11 @@ export default function DavomatFacePage() {
       throw new Error(`Hududdan tashqarida (${formatDistance(distance)}). Yana ${formatDistance(remain)} yaqinlashing.`);
     }
     try {
-      const vec = (Array.isArray(descriptor[0]) ? descriptor[0] : descriptor) as number[];
+      const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
+      const vec = list[0]!;
       const result = await faceVerifyDavomat({
         descriptor: vec,
+        descriptors: list,
         snapshot,
         liveness,
         ...geoPayload(),
@@ -1009,7 +1005,7 @@ export default function DavomatFacePage() {
     faceRegistered !== false &&
     (locationReady || Boolean(verified) || Boolean(gps) || (hasIn && !done));
   const showPunchStep = Boolean(verified) && !done && !dayComplete;
-  const canPunchOut = hasIn && afterSix;
+  const canPunchOut = hasIn && !done;
 
   const onEnrollCaptured = async (
     descriptor: number[] | number[][],
@@ -1391,11 +1387,6 @@ export default function DavomatFacePage() {
                 {showGuide && guideStep === "ketdim" ? (
                   <MobileStepHint step={4} label="Ketdim ni bosing" tone="rose" />
                 ) : null}
-                {!afterSix ? (
-                  <p className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-center text-sm text-slate-700">
-                    4-qadam 18:00 dan keyin ochiladi. Hozir ishda qoling.
-                  </p>
-                ) : null}
                 <Button
                   type="button"
                   size="lg"
@@ -1409,6 +1400,9 @@ export default function DavomatFacePage() {
                   <LogOut className="h-5 w-5" />
                   Ketdim
                 </Button>
+                <p className="text-center text-xs text-slate-500">
+                  Bosilganda ketishni tasdiqlash so‘raladi. 18:00 dan oldin ham chiqish mumkin.
+                </p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1429,7 +1423,7 @@ export default function DavomatFacePage() {
                   Keldim
                 </Button>
                 <p className="text-center text-xs text-slate-500">
-                  Keldim dan keyin 18:00 da «Ketdim» ochiladi
+                  Keldim dan keyin «Ketdim» ochiladi — tasdiqlab chiqishingiz mumkin
                 </p>
               </div>
             )}
@@ -1796,9 +1790,11 @@ export default function DavomatFacePage() {
       <AlertDialog open={confirmOut} onOpenChange={setConfirmOut}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Ketdim ni tasdiqlaysizmi?</AlertDialogTitle>
+            <AlertDialogTitle>Ketishni tasdiqlaysizmi?</AlertDialogTitle>
             <AlertDialogDescription>
-              {elapsedLabel} ishladingiz. Ha desangiz, bugungi ketish vaqti yoziladi.
+              {afterSix
+                ? `${elapsedLabel} ishladingiz. Ha desangiz, bugungi ketish vaqti yoziladi.`
+                : `Hozir 18:00 dan oldin. ${elapsedLabel} ishladingiz. Ha desangiz, erta ketish sifatida yoziladi.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

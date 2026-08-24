@@ -186,7 +186,8 @@ export async function saveDavomatManual(payload: {
 }
 
 export async function faceVerifyDavomat(payload: {
-  descriptor: number[];
+  descriptor?: number[];
+  descriptors?: number[][];
   latitude: number;
   longitude: number;
   accuracy?: number;
@@ -194,8 +195,10 @@ export async function faceVerifyDavomat(payload: {
   liveness?: {
     blinked?: boolean;
     poses?: string[];
+    steps?: string[];
     motion?: number;
     score?: number;
+    challenge?: string;
   };
 }): Promise<{
   ok: boolean;

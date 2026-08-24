@@ -248,6 +248,38 @@ function eyeEar(pts?: Point[]): number | null {
   return (d(pts[1]!, pts[5]!) + d(pts[2]!, pts[4]!)) / (2 * h);
 }
 
+function frameSharpness(video: HTMLVideoElement): number {
+  try {
+    const w = 48;
+    const h = 36;
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx) return 40;
+    ctx.drawImage(video, 0, 0, w, h);
+    const data = ctx.getImageData(0, 0, w, h).data;
+    const g: number[] = [];
+    for (let i = 0; i < data.length; i += 4) {
+      g.push((data[i]! + data[i + 1]! + data[i + 2]!) / 3);
+    }
+    let acc = 0;
+    let n = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = y * w + x;
+        const lap =
+          -4 * g[i]! + g[i - 1]! + g[i + 1]! + g[i - w]! + g[i + w]!;
+        acc += lap * lap;
+        n += 1;
+      }
+    }
+    return n ? acc / n : 0;
+  } catch {
+    return 40;
+  }
+}
+
 function frameBrightness(video: HTMLVideoElement): number {
   try {
     const c = document.createElement("canvas");
@@ -284,6 +316,9 @@ export async function detectFaceDescriptor(
   const brightness = frameBrightness(video);
   if (brightness < 42) {
     return { descriptor: null, status: "dark" };
+  }
+  if (!opts?.allowTurn && !opts?.allowBlink && frameSharpness(video) < 22) {
+    return { descriptor: null, status: "low_quality" };
   }
 
   let many: Array<{ detection: { score: number } }> = [];
@@ -511,9 +546,25 @@ export async function compressFaceSnapshotAsync(
 export type FaceLivenessProof = {
   blinked: boolean;
   poses: string[];
+  steps?: string[];
   motion: number;
   score: number;
+  challenge?: string;
 };
+
+export type FaceChallengeStep = {
+  key: string;
+  pose?: FacePose;
+  blink?: boolean;
+  need: number;
+};
+
+export async function fetchFaceChallenge(mode: "enroll" | "login"): Promise<{
+  token: string;
+  steps: FaceChallengeStep[];
+}> {
+  return apiJson(`/auth/face/challenge?mode=${mode}`);
+}
 
 export function livenessMotion(samples: number[][]): number {
   if (samples.length < 2) return 0;
@@ -550,11 +601,11 @@ export async function loginWithFace<TUser>(
   snapshot?: string,
   liveness?: FaceLivenessProof,
 ): Promise<{ user: TUser; fullName?: string; message?: string }> {
-  const vec = (Array.isArray(descriptor[0]) ? descriptor[0] : descriptor) as number[];
+  const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
   const photo = snapshot ? await compressFaceSnapshotAsync(snapshot) : undefined;
   return apiJson<{ user: TUser; fullName?: string; message?: string }>("/auth/face/login", {
     method: "POST",
-    body: JSON.stringify({ descriptor: vec, snapshot: photo, liveness }),
+    body: JSON.stringify({ descriptors: list, snapshot: photo, liveness }),
   });
 }
 
@@ -637,6 +688,10 @@ export async function downloadAdminFacesExcel(params?: {
 
 export async function adminResetFace(userId: number): Promise<{ message: string }> {
   return apiJson(`/admin/faces/${userId}`, { method: "DELETE" });
+}
+
+export async function adminResetAllFaces(): Promise<{ message: string; removed: number }> {
+  return apiJson(`/admin/faces`, { method: "DELETE" });
 }
 
 export function isFaceIdCancelled(err: unknown): boolean {

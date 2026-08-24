@@ -915,10 +915,10 @@ async function ensureAllActiveUsersLinked(): Promise<number> {
 }
 
 async function matchFaceUserId(
-  descriptor: number[],
+  descriptor: number[] | number[][],
 ): Promise<{ ok: true; userId: number; faceId: number } | { ok: false; error: string; code: string }> {
   const matched = await matchFaceForAuth(descriptor);
-  if (!matched.ok) return matched;
+  if (!matched.ok) return { ok: false, error: matched.error, code: matched.code };
   return { ok: true, userId: matched.userId, faceId: matched.id };
 }
 
@@ -1122,7 +1122,7 @@ async function applyFacePunch(opts: {
 }
 
 async function resolveFaceAtSite(opts: {
-  descriptor: number[];
+  descriptor: number[] | number[][];
   latitude: number;
   longitude: number;
   accuracy?: number;
@@ -1403,11 +1403,16 @@ router.get("/davomat/me", requireAuth, async (req: AuthRequest, res): Promise<vo
 /** Face ID tasdiq — hali Keldim/Ketdim yozilmaydi */
 router.post("/davomat/face-verify", async (req, res): Promise<void> => {
   try {
-    const descriptor = parseFaceDescriptor(req.body?.descriptor);
+    const descriptors = Array.isArray(req.body?.descriptors)
+      ? (req.body.descriptors as unknown[]).map(parseFaceDescriptor).filter((d): d is number[] => Boolean(d))
+      : (() => {
+          const one = parseFaceDescriptor(req.body?.descriptor);
+          return one ? [one] : [];
+        })();
     const latitude = Number(req.body?.latitude);
     const longitude = Number(req.body?.longitude);
     const accuracy = Number(req.body?.accuracy);
-    if (!descriptor) {
+    if (!descriptors.length) {
       res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
       return;
     }
@@ -1421,7 +1426,7 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       return;
     }
     const resolved = await resolveFaceAtSite({
-      descriptor,
+      descriptor: descriptors,
       latitude,
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : undefined,

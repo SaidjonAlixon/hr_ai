@@ -13,12 +13,14 @@ import {
   detectFaceDescriptor,
   ensureFaceModels,
   faceAlignHint,
+  fetchFaceChallenge,
   isFaceIdSupported,
   isStableSample,
   livenessMotion,
   poseHint,
   poseMatchesWant,
   type FaceAlignStatus,
+  type FaceChallengeStep,
   type FaceLivenessProof,
   type FaceOvalFrame,
   type FacePose,
@@ -40,15 +42,15 @@ type Props = {
   description?: string;
 };
 
-type Challenge = { key: string; pose?: FacePose; blink?: boolean; need: number };
+type Challenge = FaceChallengeStep;
 
-const ENROLL_STEPS: Challenge[] = [
+const FALLBACK_ENROLL: Challenge[] = [
   { key: "center", pose: "center", need: 2 },
-  { key: "left", pose: "left", need: 2 },
-  { key: "right", pose: "right", need: 2 },
+  { key: "left", pose: "left", need: 1 },
+  { key: "right", pose: "right", need: 1 },
   { key: "up", pose: "up", need: 1 },
 ];
-const LOGIN_STEPS: Challenge[] = [
+const FALLBACK_LOGIN: Challenge[] = [
   { key: "center", pose: "center", need: 1 },
   { key: "left", pose: "left", need: 1 },
 ];
@@ -112,8 +114,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const [aligned, setAligned] = useState(false);
   const [poseIndex, setPoseIndex] = useState(0);
   const [poseFill, setPoseFill] = useState(0);
+  const [liveSteps, setLiveSteps] = useState<Challenge[]>(mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN);
 
-  const steps = mode === "enroll" ? ENROLL_STEPS : LOGIN_STEPS;
+  const steps = liveSteps;
   const currentStep = steps[Math.min(poseIndex, steps.length - 1)]!;
 
   useEffect(() => {
@@ -123,12 +126,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setError(null);
       setPoseIndex(0);
       setPoseFill(0);
+      setLiveSteps(mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN);
       return;
     }
 
     let cancelled = false;
-    const steps = mode === "enroll" ? ENROLL_STEPS : LOGIN_STEPS;
-    const poseBuckets: number[][][] = steps.map(() => []);
+    let steps = mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN;
+    let poseBuckets: number[][][] = steps.map(() => []);
     let poseI = 0;
     let running = true;
     let lastDesc: number[] | null = null;
@@ -138,6 +142,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     let pitchRef: number | null = null;
     let openEar = 0;
     let lastBlinkDesc: number[] | null = null;
+    let challengeToken = "";
 
     const stopCamera = () => {
       running = false;
@@ -194,6 +199,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         if (!video) return;
         video.srcObject = stream;
         await video.play();
+        setHint("Tasdiq tayyorlanmoqda…");
+        const issued = await fetchFaceChallenge(mode);
+        if (cancelled) return;
+        steps = issued.steps?.length ? issued.steps : steps;
+        challengeToken = issued.token;
+        poseBuckets = steps.map(() => []);
+        setLiveSteps(steps);
         setHint(stepHint(steps[0]!));
 
         const finish = async (videoEl: HTMLVideoElement) => {
@@ -204,15 +216,28 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           const templates = poseBuckets
             .filter((b) => b.length)
             .map((b) => averageDescriptorsRobust(b));
-          const posesDone = steps.filter((s) => s.pose).map((s) => s.pose!) as string[];
+          const posesDone = steps.filter((s, i) => poseBuckets[i]?.length).map((s) => s.pose ?? s.key);
+          const stepKeys = steps.filter((s, i) => poseBuckets[i]?.length).map((s) => s.key);
+          const blinked = steps.some((s, i) => s.blink && (poseBuckets[i]?.length ?? 0) > 0);
           const motion = livenessMotion(samples);
           const liveness: FaceLivenessProof = {
-            blinked: false,
+            blinked,
             poses: posesDone,
+            steps: stepKeys,
             motion,
-            score: (posesDone.length >= 3 ? 0.55 : 0.25) + (motion >= 0.05 ? 0.35 : 0.15),
+            score: 0,
+            challenge: challengeToken,
           };
-          const payload = mode === "enroll" ? templates : (templates[0] ?? samples[0]!);
+          const identityTemplates = poseBuckets
+            .map((b, i) => ({ b, s: steps[i] }))
+            .filter((x) => x.b.length && !x.s?.blink)
+            .map((x) => averageDescriptorsRobust(x.b));
+          const payload =
+            mode === "enroll"
+              ? identityTemplates
+              : identityTemplates.length
+                ? identityTemplates
+                : (templates[0] ?? samples[0]!);
           try {
             const captured = await onCapturedRef.current(
               payload,
@@ -277,9 +302,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               } else if (want.blink) {
                 if (result.descriptor) lastBlinkDesc = result.descriptor;
                 const ear = result.ear;
-                if (ear != null && ear > 0.2) openEar = Math.max(openEar, ear);
-                const closeAt = Math.max(0.14, (openEar || 0.28) * 0.78);
-                const openAt = Math.max(closeAt + 0.03, (openEar || 0.26) * 0.88);
+                if (ear != null && ear > 0.18) openEar = Math.max(openEar, ear);
+                const closeAt = Math.max(0.11, (openEar || 0.26) * 0.72);
+                const openAt = closeAt + 0.02;
                 if (ear != null && ear < closeAt) {
                   blinkClosed = true;
                   setAligned(true);

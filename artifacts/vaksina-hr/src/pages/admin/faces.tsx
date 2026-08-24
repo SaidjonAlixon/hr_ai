@@ -14,6 +14,16 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -21,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import {
+  adminResetAllFaces,
   adminResetFace,
   downloadAdminFacesExcel,
   fetchAdminFaces,
@@ -82,6 +93,7 @@ export default function AdminFacesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "yes" | "no">("all");
   const [preview, setPreview] = useState<AdminFaceRow | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [confirmClearAll, setConfirmClearAll] = useState(false);
 
   const { data, isLoading, isFetching, refetch, error } = useQuery({
     queryKey: ["admin-faces"],
@@ -97,6 +109,18 @@ export default function AdminFacesPage() {
     },
     onError: (err: Error) => {
       toast({ title: "O‘chirilmadi", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const clearAllMut = useMutation({
+    mutationFn: () => adminResetAllFaces(),
+    onSuccess: (res) => {
+      setConfirmClearAll(false);
+      toast({ title: "Face ID tozalandi", description: res.message });
+      void qc.invalidateQueries({ queryKey: ["admin-faces"] });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Tozalanmadi", description: err.message, variant: "destructive" });
     },
   });
 
@@ -171,6 +195,17 @@ export default function AdminFacesPage() {
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Excel
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-2 border-red-200 text-red-700 hover:bg-red-50"
+            disabled={clearAllMut.isPending || isLoading || !(data?.registered)}
+            onClick={() => setConfirmClearAll(true)}
+          >
+            {clearAllMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+            Hammasini tozalash
           </Button>
           <Button
             type="button"
@@ -329,6 +364,31 @@ export default function AdminFacesPage() {
           </div>
         </div>
       )}
+
+      <AlertDialog open={confirmClearAll} onOpenChange={setConfirmClearAll}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Barcha Face ID ni tozalaysizmi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Face ID dan o‘tgan barcha xodimlarning yuz shabloni va rasmi o‘chiriladi. Ular qayta
+              ro‘yxatdan o‘tishi kerak. Bu amalni qaytarib bo‘lmaydi.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={clearAllMut.isPending}>Bekor qilish</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              disabled={clearAllMut.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                clearAllMut.mutate();
+              }}
+            >
+              {clearAllMut.isPending ? "Tozalanmoqda…" : "Ha, hammasini o‘chirish"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={Boolean(preview)} onOpenChange={(o) => !o && setPreview(null)}>
         <DialogContent className="max-w-sm gap-3 p-4 sm:max-w-md">

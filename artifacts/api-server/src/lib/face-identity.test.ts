@@ -51,16 +51,17 @@ describe("face identity", () => {
     assert.equal(isSamePerson(dist, cosine), false, `other dist=${dist.toFixed(3)} cos=${cosine.toFixed(3)}`);
   });
 
-  it("lookalike closer than enroll block is rejected for second account (FAIL)", () => {
+  it("near-identical face still blocks second account; different face does not", () => {
     const a = embedding(4);
-    const lookalike = noise(a, 0.18);
-    const dist = faceDistance(a, lookalike).dist;
-    assert.ok(isEnrollConflict(dist, faceDistance(a, lookalike).cosine) || dist > FACE_ENROLL_BLOCK_MAX);
+    const twin = noise(a, 0.03);
+    const other = embedding(99);
+    const twinHit = faceDistance(a, twin);
+    const otherHit = faceDistance(a, other);
+    assert.equal(isEnrollConflict(twinHit.dist, twinHit.cosine), true);
+    assert.equal(isEnrollConflict(otherHit.dist, otherHit.cosine), false);
     const rows: StoredFace[] = [{ id: 1, userId: 10, descriptor: a }];
-    const hits = findEnrollConflicts([lookalike], rows, 20);
-    if (dist <= FACE_ENROLL_BLOCK_MAX) {
-      assert.equal(hits.length > 0, true);
-    }
+    assert.ok(findEnrollConflicts([twin], rows, 20).length >= 1);
+    assert.equal(findEnrollConflicts([other], rows, 20).length, 0);
   });
 
   it("login match is unique owner (PASS)", () => {
@@ -179,6 +180,6 @@ describe("face identity", () => {
 
   it("calibrated thresholds stay in face-api range", () => {
     assert.ok(FACE_MATCH_MAX <= 0.4);
-    assert.ok(FACE_ENROLL_BLOCK_MAX > FACE_MATCH_MAX);
+    assert.ok(FACE_ENROLL_BLOCK_MAX < FACE_MATCH_MAX);
   });
 });

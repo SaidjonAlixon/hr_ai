@@ -24,7 +24,8 @@ export const FACE_MATCH_MAX = envNum("FACE_MATCH_THRESHOLD", 0.34);
 export const FACE_MATCH_MIN_COSINE = envNum("FACE_MATCH_MIN_COSINE", 0.942);
 export const FACE_AMBIGUOUS_MARGIN = envNum("FACE_AMBIGUOUS_MARGIN", 0.08);
 export const FACE_AMBIGUOUS_RATIO = envNum("FACE_AMBIGUOUS_RATIO", 0.72);
-export const FACE_ENROLL_BLOCK_MAX = envNum("FACE_ENROLLMENT_THRESHOLD", 0.36);
+/** Faqat deyarli bir xil vektor — hijob/o‘xshash yuzni yangi akkauntga yozishni to‘xtatmasin. */
+export const FACE_ENROLL_BLOCK_MAX = envNum("FACE_ENROLLMENT_THRESHOLD", 0.22);
 export const FACE_SIMILAR_WARN = envNum("FACE_SIMILAR_WARN", 0.5);
 export const LIVENESS_THRESHOLD = envNum("LIVENESS_THRESHOLD", 0.55);
 export const FACE_CHALLENGE_TTL_MS = 120_000;
@@ -91,7 +92,7 @@ export function isSamePerson(dist: number, cosine: number, maxDist = FACE_MATCH_
 }
 
 export function isEnrollConflict(dist: number, cosine = 1): boolean {
-  return dist <= FACE_ENROLL_BLOCK_MAX && cosine >= FACE_MATCH_MIN_COSINE;
+  return dist <= FACE_ENROLL_BLOCK_MAX && cosine >= 0.97;
 }
 
 export function buildFaceChallengeSteps(mode: "enroll" | "login"): FaceChallengeStep[] {

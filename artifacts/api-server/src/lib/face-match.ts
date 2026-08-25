@@ -259,7 +259,7 @@ export async function matchFaceForAuth(
   }
   return {
     ok: false,
-    error: "Bu yuz aniqlanmadi. Avval tizimga kirib Face ID ni ro‘yxatdan o‘tkazing.",
+    error: "Bu yuz tizimda ro‘yxatdan o‘tmagan. Avval tizimga kirib Face ID ni ulashing.",
     code: "face_not_registered",
   };
 }
@@ -279,7 +279,7 @@ export async function matchFaceForAuthWithAi(
   if (!candidates.length) {
     return {
       ok: false,
-      error: "Bu yuz aniqlanmadi. Avval Face ID ni ro‘yxatdan o‘tkazing.",
+      error: "Bu yuz tizimda ro‘yxatdan o‘tmagan.",
       code: "face_not_registered",
     };
   }

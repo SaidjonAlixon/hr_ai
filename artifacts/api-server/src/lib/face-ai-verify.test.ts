@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
   decideFaceAiGate,
+  loginFailFromScores,
   parseFaceAiIdentify,
   parseFaceAiInspect,
   parseFaceAiPayload,
@@ -37,6 +38,18 @@ describe("face AI verify", () => {
     assert.equal(parseFaceAiIdentify({ matchId: 7 }, [1, 7, 9]), 7);
     assert.equal(parseFaceAiIdentify({ matchId: 3 }, [1, 7, 9]), null);
     assert.equal(parseFaceAiIdentify({ matchId: null }, [1, 7]), null);
+  });
+
+  it("explains unregistered vs lookalike vs ambiguous", () => {
+    const far = loginFailFromScores({ ambiguous: false, closestDist: 0.7, lookalikeMaxDist: 0.46 });
+    assert.equal(far.code, "face_not_registered");
+    assert.match(far.error, /ro‘yxatdan o‘tmagan/);
+    const near = loginFailFromScores({ ambiguous: false, closestDist: 0.3, lookalikeMaxDist: 0.46 });
+    assert.equal(near.code, "face_ai_mismatch");
+    assert.match(near.error, /o‘xshash/);
+    const two = loginFailFromScores({ ambiguous: true, closestDist: 0.2, lookalikeMaxDist: 0.46 });
+    assert.equal(two.code, "face_ai_low_confidence");
+    assert.match(two.error, /bir nechta/);
   });
 
   it("picks unique same-person identity and rejects a tie", () => {

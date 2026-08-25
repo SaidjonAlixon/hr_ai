@@ -266,6 +266,7 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
   const similar = await findNearestFaces(descriptors[0]!, {
     excludeUserId: userId,
     limit: 3,
+    maxDist: FACE_ENROLL_BLOCK_MAX + 0.1,
   });
   const taken = await rejectIfFaceTakenByAi({
     liveSnapshot: snapshot,

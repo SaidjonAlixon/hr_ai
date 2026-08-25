@@ -11,7 +11,6 @@ import {
   parseFaceAiInspect,
   parseFaceAiPayload,
   pickAiIdentityWinner,
-  FACE_LOGIN_MSG_LOOKALIKE,
   FACE_LOGIN_MSG_NOT_ENROLLED,
   type FaceAiCandidateScore,
   type FaceAiCompareResult,
@@ -167,7 +166,6 @@ function isCertainEnrollDuplicate(ai: FaceAiCompareResult): boolean {
 }
 
 const GALLERY_MAX = 10;
-const LOOKALIKE_MAX_DIST = FACE_MATCH_MAX + 0.12;
 
 async function callOpenAiFaceIdentify(
   liveDataUrl: string,
@@ -196,7 +194,8 @@ async function callOpenAiFaceIdentify(
         role: "system",
         content:
           "You identify one person from a gallery of enrolled workplace photos. " +
-          "Use full-face identity (eyes, nose, jaw, moles), not clothing or background. " +
+          "Ignore hijab, glasses, clothing, background. Use eyes, nose, jaw, moles. " +
+          "Return null unless you are certain. Never pick a lookalike. " +
           "matchId must be one of the labeled ids or null.",
       },
       { role: "user", content },
@@ -353,29 +352,23 @@ export async function resolveLoginIdentityWithAi(opts: {
     if (matchId != null) {
       const enrolled = photos.get(matchId);
       const local = opts.candidates.find((c) => c.id === matchId);
-      if (!enrolled || !local) {
-        return { ok: false, error: FACE_LOGIN_MSG_NOT_ENROLLED, code: "face_not_registered" };
+      if (enrolled && local) {
+        const confirm = await callOpenAiFaceCompare(enrolled.dataUrl, live);
+        if (confirm.samePerson) {
+          logger.info(
+            { event: "face_ai_login", userId: local.userId, matchId, gallery: gallery.length },
+            "face AI gallery identity",
+          );
+          return {
+            ok: true,
+            id: local.id,
+            userId: local.userId,
+            dist: local.dist,
+            cosine: local.cosine,
+            confidence: confirm.confidence,
+          };
+        }
       }
-      const confirm = await callOpenAiFaceCompare(enrolled.dataUrl, live);
-      if (!confirm.samePerson) {
-        return {
-          ok: false,
-          error: FACE_LOGIN_MSG_LOOKALIKE,
-          code: "face_ai_mismatch",
-        };
-      }
-      logger.info(
-        { event: "face_ai_login", userId: local.userId, matchId, gallery: gallery.length },
-        "face AI gallery identity",
-      );
-      return {
-        ok: true,
-        id: local.id,
-        userId: local.userId,
-        dist: local.dist,
-        cosine: local.cosine,
-        confidence: confirm.confidence,
-      };
     }
 
     const scores: FaceAiCandidateScore[] = [];
@@ -396,7 +389,7 @@ export async function resolveLoginIdentityWithAi(opts: {
       const fail = loginFailFromScores({
         ambiguous: winner.code === "face_ai_low_confidence",
         closestDist: opts.candidates[0]?.dist,
-        lookalikeMaxDist: LOOKALIKE_MAX_DIST,
+        ownerMaxDist: FACE_MATCH_MAX,
       });
       return { ok: false, error: fail.error, code: fail.code };
     }

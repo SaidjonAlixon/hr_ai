@@ -40,14 +40,14 @@ describe("face AI verify", () => {
     assert.equal(parseFaceAiIdentify({ matchId: null }, [1, 7]), null);
   });
 
-  it("explains unregistered vs lookalike vs ambiguous", () => {
-    const far = loginFailFromScores({ ambiguous: false, closestDist: 0.7, lookalikeMaxDist: 0.46 });
+  it("explains unregistered vs retry vs ambiguous", () => {
+    const far = loginFailFromScores({ ambiguous: false, closestDist: 0.7, ownerMaxDist: 0.34 });
     assert.equal(far.code, "face_not_registered");
     assert.match(far.error, /ro‘yxatdan o‘tmagan/);
-    const near = loginFailFromScores({ ambiguous: false, closestDist: 0.3, lookalikeMaxDist: 0.46 });
+    const near = loginFailFromScores({ ambiguous: false, closestDist: 0.3, ownerMaxDist: 0.34 });
     assert.equal(near.code, "face_ai_mismatch");
-    assert.match(near.error, /o‘xshash/);
-    const two = loginFailFromScores({ ambiguous: true, closestDist: 0.2, lookalikeMaxDist: 0.46 });
+    assert.match(near.error, /Kameraga tik/);
+    const two = loginFailFromScores({ ambiguous: true, closestDist: 0.2, ownerMaxDist: 0.34 });
     assert.equal(two.code, "face_ai_low_confidence");
     assert.match(two.error, /bir nechta/);
   });

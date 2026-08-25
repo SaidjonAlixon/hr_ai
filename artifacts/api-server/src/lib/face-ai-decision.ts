@@ -1,22 +1,22 @@
 export const FACE_AI_WIN_MARGIN_DEFAULT = 0.12;
 
 export const FACE_LOGIN_MSG_NOT_ENROLLED = "Bu yuz tizimda ro‘yxatdan o‘tmagan.";
-export const FACE_LOGIN_MSG_LOOKALIKE =
-  "Bu yuz tizimdagi boshqa xodim yuziga o‘xshash — mos kelmadi.";
 export const FACE_LOGIN_MSG_AMBIGUOUS = "Bu yuz bir nechta xodimga o‘xshash — ochilmadi.";
+export const FACE_LOGIN_MSG_RETRY =
+  "Yuz tasdiqlanmadi. Kameraga tik qarang, yuzni oval ichiga oling.";
 
-/** Embedding yaqin, lekin AI “shu odam” demasa — o‘xshash; uzoq bo‘lsa — tizimda yo‘q. */
+/** AI hech kimni tanimasa: yaqin vektor — qayta urinish; uzoq — tizimda yo‘q. */
 export function loginFailFromScores(opts: {
   ambiguous: boolean;
   closestDist: number | undefined;
-  lookalikeMaxDist: number;
+  ownerMaxDist: number;
 }): { error: string; code: "face_ai_mismatch" | "face_ai_low_confidence" | "face_not_registered" } {
   if (opts.ambiguous) {
     return { error: FACE_LOGIN_MSG_AMBIGUOUS, code: "face_ai_low_confidence" };
   }
   const dist = opts.closestDist;
-  if (dist != null && Number.isFinite(dist) && dist <= opts.lookalikeMaxDist) {
-    return { error: FACE_LOGIN_MSG_LOOKALIKE, code: "face_ai_mismatch" };
+  if (dist != null && Number.isFinite(dist) && dist <= opts.ownerMaxDist) {
+    return { error: FACE_LOGIN_MSG_RETRY, code: "face_ai_mismatch" };
   }
   return { error: FACE_LOGIN_MSG_NOT_ENROLLED, code: "face_not_registered" };
 }
@@ -65,7 +65,7 @@ export function decideFaceAiGate(ai: FaceAiCompareResult): FaceAiGate {
   if (!ai.samePerson) {
     return {
       ok: false,
-      error: FACE_LOGIN_MSG_LOOKALIKE,
+      error: FACE_LOGIN_MSG_RETRY,
       code: "face_ai_mismatch",
       confidence: ai.confidence,
     };

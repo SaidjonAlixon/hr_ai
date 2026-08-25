@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { canManageSettings } from "@/lib/roles";
 import {
   useClearKirishVideo,
   useKirishAdminVideos,
@@ -61,7 +62,7 @@ type Draft = { youtube: string; pdf: string; questions: KirishAdminQuestion[] };
 export default function AdminKirishVideosPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = canManageSettings(user?.role);
   const list = useKirishAdminVideos(isAdmin);
   const save = useSaveKirishVideo();
   const clear = useClearKirishVideo();
@@ -85,7 +86,7 @@ export default function AdminKirishVideosPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
         <h1 className="text-2xl font-bold">Kirish materiallari</h1>
-        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin uchun.</p>
+        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin va direktor uchun.</p>
       </div>
     );
   }

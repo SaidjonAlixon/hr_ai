@@ -39,6 +39,9 @@ import ChecklistPage from './pages/checklist/index';
 import ChecklistHolatiPage from './pages/checklist-holati/index';
 import OylikPage from './pages/oylik/index';
 import HisobkitobPage from './pages/hisobkitob/index';
+import ReviziyaPage from './pages/reviziya/index';
+import ReviziyaDocPage from './pages/reviziya/show';
+import OpsDeptPage from './pages/ops-dept/index';
 import ReytingPage from './pages/reyting/index';
 import AdminHolatPage from './pages/admin/holat';
 import AdminUsersPage from './pages/admin/users';
@@ -136,6 +139,10 @@ function Router() {
       <ProtectedRoute path="/checklist-holati" component={ChecklistHolatiPage} />
       <ProtectedRoute path="/oylik" component={OylikPage} />
       <ProtectedRoute path="/hisobkitob" component={HisobkitobPage} />
+      <ProtectedRoute path="/reviziya/hujjat/:id" component={ReviziyaDocPage} />
+      <ProtectedRoute path="/reviziya" component={ReviziyaPage} />
+      <ProtectedRoute path="/it" component={() => <OpsDeptPage dept="it" />} />
+      <ProtectedRoute path="/texnik" component={() => <OpsDeptPage dept="texnik" />} />
       <ProtectedRoute path="/reyting" component={ReytingPage} />
       
       <ProtectedRoute path="/employees/duplicates" component={EmployeeDuplicatesPage} />

@@ -88,6 +88,9 @@ const ASSIGNER_ROLES = new Set([
   "koordinator",
   "sb",
   "sb_boshliq",
+  "reviziya_rahbar",
+  "it_rahbar",
+  "texnik_rahbar",
 ]);
 
 const COLUMNS: {

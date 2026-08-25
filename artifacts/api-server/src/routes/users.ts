@@ -9,6 +9,11 @@ import {
   isFarmasevtDepartmentRole,
 } from "../lib/farmasevt-department";
 import { ensureMoliyaDepartmentId, isMoliyaRole } from "../lib/moliya-department";
+import { ensureReviziyaDepartmentId, isReviziyaDeptRole } from "../lib/reviziya-department";
+import { ensureItDepartmentId, isItDeptRole } from "../lib/it-department";
+import { ensureTexnikDepartmentId, isTexnikDeptRole } from "../lib/texnik-department";
+import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
+import { canManageSettings } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -26,12 +31,17 @@ const ALLOWED_ROLES = [
   "mudir",
   "koordinator",
   "texnik",
+  "texnik_rahbar",
+  "it",
+  "it_rahbar",
   "ombor",
   "sb",
   "sb_boshliq",
   "farmasevt",
   "stajyor",
   "moliya",
+  "revizor",
+  "reviziya_rahbar",
 ] as const;
 
 const ALLOWED_STATUSES = ["active", "vacant", "terminated", "on_leave"] as const;
@@ -50,12 +60,17 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   mudir: "Mudir",
   koordinator: "Koordinator",
   texnik: "Texnik",
+  texnik_rahbar: "Texnik bo‘limi rahbari",
+  it: "IT mutaxassisi",
+  it_rahbar: "IT bo‘limi rahbari",
   ombor: "Ombor",
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
   moliya: "Moliyachi",
+  revizor: "Revizor-yig‘uvchi",
+  reviziya_rahbar: "Reviziya bo‘limi rahbari",
 };
 
 const STATUS_UZ: Record<string, string> = {
@@ -68,8 +83,8 @@ const STATUS_UZ: Record<string, string> = {
 };
 
 function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
-  if (req.userRole !== "admin") {
-    res.status(403).json({ error: "Faqat admin foydalanuvchi yaratishi mumkin" });
+  if (!canManageSettings(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin yoki direktor foydalanuvchi boshqarishi mumkin" });
     return false;
   }
   return true;
@@ -172,8 +187,8 @@ router.get("/users", async (req, res): Promise<void> => {
 
 /** Admin — barcha foydalanuvchilar + login/parol Excel */
 router.get("/users/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (req.userRole !== "admin") {
-    res.status(403).json({ error: "Faqat admin Excel yuklab olishi mumkin" });
+  if (!canManageSettings(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin yoki direktor Excel yuklab olishi mumkin" });
     return;
   }
 
@@ -372,6 +387,12 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
       resolvedDeptId = await ensureFarmasevtDepartmentId();
     } else if (isMoliyaRole(role)) {
       resolvedDeptId = await ensureMoliyaDepartmentId();
+    } else if (isReviziyaDeptRole(role)) {
+      resolvedDeptId = await ensureReviziyaDepartmentId();
+    } else if (isItDeptRole(role)) {
+      resolvedDeptId = await ensureItDepartmentId();
+    } else if (isTexnikDeptRole(role)) {
+      resolvedDeptId = await ensureTexnikDepartmentId();
     }
 
     const [user] = await db
@@ -386,6 +407,13 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
         status: status ?? "active",
       })
       .returning();
+
+    await ensureEmployeeForNewUser({
+      id: user.id,
+      fullName: user.fullName,
+      role: user.role,
+      departmentId: user.departmentId,
+    });
 
     let departmentName: string | null = null;
     if (user.departmentId) {
@@ -510,6 +538,12 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     updates.departmentId = await ensureFarmasevtDepartmentId();
   } else if (isMoliyaRole(effectiveRole)) {
     updates.departmentId = await ensureMoliyaDepartmentId();
+  } else if (isReviziyaDeptRole(effectiveRole)) {
+    updates.departmentId = await ensureReviziyaDepartmentId();
+  } else if (isItDeptRole(effectiveRole)) {
+    updates.departmentId = await ensureItDepartmentId();
+  } else if (isTexnikDeptRole(effectiveRole)) {
+    updates.departmentId = await ensureTexnikDepartmentId();
   } else if (updates.departmentId !== undefined && updates.departmentId !== null) {
     updates.departmentId = parseInt(String(updates.departmentId), 10);
   }
@@ -537,6 +571,7 @@ router.delete("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<
     res.status(400).json({ error: "O'zingizni o'chira olmaysiz" });
     return;
   }
+  await removeEmployeesForUser(id);
   await db.delete(usersTable).where(eq(usersTable.id, id));
   res.sendStatus(204);
 });

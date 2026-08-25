@@ -34,9 +34,15 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   mudir: "Mudir",
   koordinator: "Koordinator",
   texnik: "Texnik",
+  texnik_rahbar: "Texnik bo‘limi rahbari",
+  it: "IT mutaxassisi",
+  it_rahbar: "IT bo‘limi rahbari",
   ombor: "Ombor",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  moliya: "Moliyachi",
+  revizor: "Revizor-yig‘uvchi",
+  reviziya_rahbar: "Reviziya bo‘limi rahbari",
 };
 
 const EMP_STATUS_UZ: Record<string, string> = {

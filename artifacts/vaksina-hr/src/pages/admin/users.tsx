@@ -33,7 +33,7 @@ import {
   normalizeUzPhone,
   UZ_PHONE_HINT,
 } from '../../lib/phone';
-import { userRoleLabel } from '../../lib/roles';
+import { userRoleLabel, canManageSettings } from '../../lib/roles';
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -48,12 +48,17 @@ const ROLES = [
   { value: 'mudir', label: 'Mudir' },
   { value: 'koordinator', label: 'Koordinator' },
   { value: 'texnik', label: 'Texnik' },
+  { value: 'texnik_rahbar', label: 'Texnik bo‘limi rahbari' },
+  { value: 'it', label: 'IT mutaxassisi' },
+  { value: 'it_rahbar', label: 'IT bo‘limi rahbari' },
   { value: 'ombor', label: 'Ombor' },
   { value: 'sb', label: 'SB operatori' },
   { value: 'sb_boshliq', label: "SB bo‘limi boshlig‘i" },
   { value: 'farmasevt', label: 'Farmasevt' },
   { value: 'stajyor', label: 'Stajyor' },
   { value: 'moliya', label: 'Moliyachi' },
+  { value: 'revizor', label: 'Revizor-yig‘uvchi (Reviziya)' },
+  { value: 'reviziya_rahbar', label: 'Reviziya bo‘limi rahbari' },
 ] as const;
 
 const STATUSES = [
@@ -121,7 +126,7 @@ export default function AdminUsersPage() {
   const updateMutation = useUpdateUser();
   const deleteMutation = useDeleteUser();
 
-  const isAdmin = me?.role === 'admin';
+  const isAdmin = canManageSettings(me?.role);
 
   const sorted = useMemo(() => {
     return [...(users ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz'));
@@ -185,7 +190,7 @@ export default function AdminUsersPage() {
   const onCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) {
-      toast({ title: 'Ruxsat yo‘q', description: 'Faqat admin yaratishi mumkin', variant: 'destructive' });
+      toast({ title: 'Ruxsat yo‘q', description: 'Faqat admin yoki direktor yaratishi mumkin', variant: 'destructive' });
       return;
     }
     if (!fullName.trim() || fullName.trim().split(/\s+/).length < 2) {
@@ -391,7 +396,7 @@ export default function AdminUsersPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
         <h1 className="text-2xl font-bold">Foydalanuvchilar</h1>
-        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin uchun.</p>
+        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin va direktor uchun.</p>
       </div>
     );
   }

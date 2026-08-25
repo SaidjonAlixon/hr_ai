@@ -9,7 +9,7 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { canAccessKirish } from "../lib/roles";
+import { canAccessKirish, canManageSettings } from "../lib/roles";
 import {
   KIRISH_STAGE_COUNT,
   getStage,
@@ -178,8 +178,8 @@ function publicStagesWithVideos(
 }
 
 function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
-  if (req.userRole !== "admin") {
-    res.status(403).json({ error: "Faqat admin" });
+  if (!canManageSettings(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin yoki direktor" });
     return false;
   }
   return true;

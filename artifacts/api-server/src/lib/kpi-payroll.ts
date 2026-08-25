@@ -114,11 +114,16 @@ export const ROLE_LABELS: Record<string, string> = {
   mudir: "Mudir",
   koordinator: "Koordinator",
   texnik: "Texnik",
+  texnik_rahbar: "Texnik bo‘limi rahbari",
+  it: "IT mutaxassisi",
+  it_rahbar: "IT bo‘limi rahbari",
   ombor: "Ombor",
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  revizor: "Revizor-yig‘uvchi",
+  reviziya_rahbar: "Reviziya bo‘limi rahbari",
 };
 
 export function canManagePayroll(role?: string | null) {

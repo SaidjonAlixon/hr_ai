@@ -23,9 +23,39 @@ export function isSbRole(role?: string | null): boolean {
   return role === "sb" || role === "sb_boshliq";
 }
 
-/** HR + admin — boshqaruv huquqi */
+export const REVIZIYA_ROLES = ["revizor", "reviziya_rahbar"] as const;
+
+export function isReviziyaRole(role?: string | null): boolean {
+  return role === "revizor" || role === "reviziya_rahbar";
+}
+
+export function isItRole(role?: string | null): boolean {
+  return role === "it" || role === "it_rahbar";
+}
+
+export function isTexnikRole(role?: string | null): boolean {
+  return role === "texnik" || role === "texnik_rahbar";
+}
+
+export function canViewReviziya(role?: string | null): boolean {
+  return (
+    isReviziyaRole(role) ||
+    role === "admin" ||
+    role === "director" ||
+    role === "moliya" ||
+    role === "sb" ||
+    role === "sb_boshliq" ||
+    role === "mudir"
+  );
+}
+
 export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || role === "admin";
+}
+
+/** Sozlamalar: foydalanuvchilar, Face ID, kirish materiallari */
+export function canManageSettings(role?: string | null): boolean {
+  return role === "admin" || role === "director";
 }
 
 /** Davomat: direktor, HR direktor, HR menejer (+ admin) */
@@ -156,12 +186,17 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   mudir: "Mudir",
   koordinator: "Koordinator",
   texnik: "Texnik",
+  texnik_rahbar: "Texnik bo‘limi rahbari",
+  it: "IT mutaxassisi",
+  it_rahbar: "IT bo‘limi rahbari",
   ombor: "Ombor",
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
   moliya: "Moliyachi",
+  revizor: "Revizor-yig‘uvchi",
+  reviziya_rahbar: "Reviziya bo‘limi rahbari",
 };
 
 export function userRoleLabel(role?: string | null): string {

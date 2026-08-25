@@ -31,6 +31,8 @@ import {
   Trophy,
   Banknote,
   Calculator,
+  Cpu,
+  Wrench,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
@@ -49,7 +51,7 @@ import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { useChatList } from '../lib/chat-api';
 import { cn } from '../lib/utils';
-import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, isHrRole, isSbRole } from '../lib/roles';
+import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole } from '../lib/roles';
 import { useHolat } from '../lib/holat-api';
 import {
   BranchListRows,
@@ -80,12 +82,17 @@ const ROLE_LABELS: Record<string, string> = {
   mudir: 'Mudir',
   koordinator: 'Koordinator',
   texnik: 'Texnik',
+  texnik_rahbar: 'Texnik bo‘limi rahbari',
+  it: 'IT mutaxassisi',
+  it_rahbar: 'IT bo‘limi rahbari',
   ombor: 'Ombor',
   sb: 'SB operatori',
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: 'Farmasevt',
   stajyor: 'Stajyor',
   moliya: 'Moliyachi',
+  revizor: 'Revizor-yig‘uvchi',
+  reviziya_rahbar: 'Reviziya bo‘limi rahbari',
 };
 
 type DashKind =
@@ -98,6 +105,9 @@ type DashKind =
   | 'ops' // texnik, ombor
   | 'security'
   | 'finance'
+  | 'revision'
+  | 'it'
+  | 'tech'
   | 'intern';
 
 type DashDetailKey =
@@ -125,6 +135,9 @@ type DashDetailKey =
 function dashKindFor(role?: string | null): DashKind {
   if (isHrRole(role)) return 'recruitment';
   if (isSbRole(role)) return 'security';
+  if (isReviziyaRole(role)) return 'revision';
+  if (isItRole(role)) return 'it';
+  if (isTexnikRole(role)) return 'tech';
   switch (role) {
     case 'admin':
     case 'director':
@@ -140,8 +153,11 @@ function dashKindFor(role?: string | null): DashKind {
     case 'koordinator':
       return 'pharmacy';
     case 'texnik':
-    case 'ombor':
-      return 'ops';
+    case 'texnik_rahbar':
+      return 'tech';
+    case 'it':
+    case 'it_rahbar':
+      return 'it';
     case 'farmasevt':
       return 'pharmacy_staff';
     case 'moliya':
@@ -999,9 +1015,67 @@ export default function Dashboard() {
               { href: '/davomat', title: 'Davomat', desc: 'Hisobot', icon: ClipboardCheck },
               { href: '/checklist-holati', title: 'Cheklist', desc: 'KPI manbai', icon: ClipboardList },
               { href: '/tashkiliy-tuzilma', title: 'Tuzilma', desc: 'Bo‘limlar', icon: Users },
+              { href: '/reviziya', title: 'Reviziya', desc: 'Tasdiq / yo‘ldagi pul', icon: ClipboardCheck },
               { href: '/vazifalar', title: 'Topshiriqlar', desc: 'KPI manbai', icon: ListTodo },
             ]}
           />
+          <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
+        </>
+      )}
+
+      {kind === 'revision' && (
+        <>
+          <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-3.5 shadow-sm">
+            <p className="text-sm font-semibold text-violet-900">Reviziya bo‘limi</p>
+            <p className="mt-0.5 text-xs text-violet-800/80">
+              Filial qoldig‘i, inventarizatsiya, kassa, yo‘ldagi pul. Narx/vozvrat/qo‘lda qoldiq/o‘chirish taqiqlangan.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <DashTile title="Reviziya" value="→" icon={ClipboardCheck} color="text-violet-700" accent="bg-violet-50" onClick={() => setLocation('/reviziya')} />
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
+          </div>
+          <DashActionBar
+            items={[
+              { href: '/reviziya', title: 'Reviziya', desc: 'Hujjatlar va pul', icon: ClipboardCheck },
+              { href: '/pharmacy-network', title: 'Filiallar', desc: 'Tarmoq', icon: Store },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Reja', icon: ListTodo },
+              { href: '/tashkiliy-tuzilma', title: 'Tuzilma', desc: 'Bo‘lim', icon: Users },
+            ]}
+          />
+          <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
+        </>
+      )}
+
+      {kind === 'it' && (
+        <>
+          <div className="rounded-xl border border-cyan-200 bg-cyan-50/70 p-3.5 shadow-sm">
+            <p className="text-sm font-semibold text-cyan-950">IT bo‘limi</p>
+            <p className="mt-0.5 text-xs text-cyan-800/80">POS, tarmoq, kamera, kirish huquqi va 1C — arizalar shu yerda.</p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <DashTile title="IT ishlar" value="→" icon={Cpu} color="text-cyan-700" accent="bg-cyan-50" onClick={() => setLocation('/it')} />
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
+          </div>
+          <DashActionBar items={[{ href: '/it', title: 'IT', desc: 'Arizalar', icon: Cpu }, { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Reja', icon: ListTodo }]} />
+          <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
+        </>
+      )}
+
+      {kind === 'tech' && (
+        <>
+          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 shadow-sm">
+            <p className="text-sm font-semibold text-amber-950">Texnik bo‘limi</p>
+            <p className="mt-0.5 text-xs text-amber-800/80">Filial jihozlari, sovitgich, elektr va ta’mir arizalari.</p>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            <DashTile title="Texnik" value="→" icon={Wrench} color="text-amber-700" accent="bg-amber-50" onClick={() => setLocation('/texnik')} />
+            <DashTile title="Ehtiyoj" value={pendingNeeds} icon={ClipboardList} loading={needsLoading} color="text-orange-600" accent="bg-orange-50" onClick={() => openDetail('needs')} active={detail === 'needs'} />
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+          </div>
+          <DashActionBar items={[{ href: '/texnik', title: 'Texnik', desc: 'Ta’mir', icon: Wrench }, { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'Filial', icon: ClipboardList }]} />
           <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
         </>
       )}

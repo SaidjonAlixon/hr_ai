@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { canManageSettings } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -86,7 +87,7 @@ function FaceThumb({
 
 export default function AdminFacesPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = canManageSettings(user?.role);
   const { toast } = useToast();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
@@ -167,7 +168,7 @@ export default function AdminFacesPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
         <h1 className="text-2xl font-bold">Face ID ro‘yxati</h1>
-        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin uchun.</p>
+        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin va direktor uchun.</p>
       </div>
     );
   }

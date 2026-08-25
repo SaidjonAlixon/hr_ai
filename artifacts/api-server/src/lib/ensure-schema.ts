@@ -582,6 +582,102 @@ ALTER TABLE settlement_lines ADD COLUMN IF NOT EXISTS extra_bonus DOUBLE PRECISI
 ALTER TABLE settlement_lines ADD COLUMN IF NOT EXISTS fine_note TEXT;
 ALTER TABLE settlement_lines ALTER COLUMN percent SET DEFAULT 0;
 UPDATE settlement_lines SET percent = 0 WHERE ABS(percent - 0.006) < 0.0000001;
+
+CREATE TABLE IF NOT EXISTS revision_documents (
+  id SERIAL PRIMARY KEY,
+  doc_no TEXT NOT NULL,
+  doc_type TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'planned',
+  branch_name TEXT,
+  planned_date TEXT,
+  started_at TIMESTAMPTZ,
+  signed_at TIMESTAMPTZ,
+  closed_at TIMESTAMPTZ,
+  created_by_id INTEGER,
+  revizor_id INTEGER,
+  responsible_name TEXT,
+  parent_id INTEGER,
+  storno_of_id INTEGER,
+  check_lat DOUBLE PRECISION,
+  check_lng DOUBLE PRECISION,
+  otp_code TEXT,
+  signed_by_reviziya_head_id INTEGER,
+  signed_by_accountant_id INTEGER,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  lines JSONB NOT NULL DEFAULT '[]'::jsonb,
+  denoms JSONB NOT NULL DEFAULT '[]'::jsonb,
+  photos JSONB NOT NULL DEFAULT '[]'::jsonb,
+  shortage_amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS revision_documents_type_idx ON revision_documents (doc_type);
+CREATE INDEX IF NOT EXISTS revision_documents_status_idx ON revision_documents (status);
+CREATE INDEX IF NOT EXISTS revision_documents_branch_idx ON revision_documents (branch_name);
+
+CREATE TABLE IF NOT EXISTS revision_in_transit (
+  id SERIAL PRIMARY KEY,
+  receipt_doc_id INTEGER NOT NULL,
+  handover_doc_id INTEGER,
+  revizor_id INTEGER NOT NULL,
+  branch_name TEXT,
+  amount DOUBLE PRECISION NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'UZS',
+  accepted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  handed_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'open',
+  route_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS revision_in_transit_status_idx ON revision_in_transit (status);
+
+CREATE TABLE IF NOT EXISTS revision_dicts (
+  id SERIAL PRIMARY KEY,
+  kind TEXT NOT NULL,
+  code TEXT NOT NULL,
+  label TEXT NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS revision_watchlist (
+  id SERIAL PRIMARY KEY,
+  branch_name TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  consecutive_count INTEGER NOT NULL DEFAULT 2,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS revision_audit_log (
+  id SERIAL PRIMARY KEY,
+  document_id INTEGER,
+  user_id INTEGER,
+  user_name TEXT,
+  action TEXT NOT NULL,
+  detail TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS revision_audit_log_doc_idx ON revision_audit_log (document_id);
+
+CREATE TABLE IF NOT EXISTS ops_tickets (
+  id SERIAL PRIMARY KEY,
+  ticket_no TEXT NOT NULL,
+  dept TEXT NOT NULL,
+  category TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT,
+  branch_name TEXT,
+  priority TEXT NOT NULL DEFAULT 'normal',
+  status TEXT NOT NULL DEFAULT 'new',
+  created_by_id INTEGER,
+  assignee_id INTEGER,
+  closed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS ops_tickets_dept_idx ON ops_tickets (dept);
+CREATE INDEX IF NOT EXISTS ops_tickets_status_idx ON ops_tickets (status);
     `);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");
@@ -601,5 +697,23 @@ UPDATE settlement_lines SET percent = 0 WHERE ABS(percent - 0.006) < 0.0000001;
     await syncMoliyaDepartmentAssignments();
   } catch (err) {
     logger.warn({ err }, "Moliya department sync skipped");
+  }
+  try {
+    const { syncReviziyaDepartmentAssignments } = await import("./reviziya-department");
+    await syncReviziyaDepartmentAssignments();
+  } catch (err) {
+    logger.warn({ err }, "Reviziya department sync skipped");
+  }
+  try {
+    const { syncItDepartmentAssignments } = await import("./it-department");
+    await syncItDepartmentAssignments();
+  } catch (err) {
+    logger.warn({ err }, "IT department sync skipped");
+  }
+  try {
+    const { syncTexnikDepartmentAssignments } = await import("./texnik-department");
+    await syncTexnikDepartmentAssignments();
+  } catch (err) {
+    logger.warn({ err }, "Texnik department sync skipped");
   }
 }

@@ -198,9 +198,7 @@ async function loadEmployees(): Promise<EmpRow[]> {
 
 async function overlayUserIdentity(rows: EmpRow[]): Promise<EmpRow[]> {
   const userIds = [...new Set(rows.map((r) => r.userId).filter((id): id is number => id != null))];
-  if (!userIds.length) {
-    return rows.map((r) => ({ ...r, login: r.login ?? null, phone: r.phone ?? null }));
-  }
+  if (!userIds.length) return [];
   const users = await db
     .select({
       id: usersTable.id,
@@ -211,16 +209,26 @@ async function overlayUserIdentity(rows: EmpRow[]): Promise<EmpRow[]> {
     .from(usersTable)
     .where(inArray(usersTable.id, userIds));
   const byId = new Map(users.map((u) => [u.id, u]));
-  return rows.map((r) => {
-    const u = r.userId != null ? byId.get(r.userId) : undefined;
-    const name = u?.fullName?.trim();
-    return {
+  const rank = (org: string | null) =>
+    ({ manager: 5, coordinator: 4, pharmacist: 3, supervisor: 2, intern: 1 }[org || ""] ?? 0);
+  const linked = rows
+    .filter((r) => r.userId != null && byId.has(r.userId))
+    .sort((a, b) => rank(b.orgRole) - rank(a.orgRole) || a.id - b.id);
+  const seen = new Set<number>();
+  const out: EmpRow[] = [];
+  for (const r of linked) {
+    const uid = r.userId!;
+    if (seen.has(uid)) continue;
+    seen.add(uid);
+    const u = byId.get(uid)!;
+    out.push({
       ...r,
-      fullName: name || r.fullName,
-      login: u?.login ?? null,
-      phone: u?.phone ?? null,
-    };
-  });
+      fullName: u.fullName.trim() || r.fullName,
+      login: u.login ?? null,
+      phone: u.phone ?? null,
+    });
+  }
+  return out;
 }
 
 async function enrichMany(rows: EmpRow[]): Promise<EmpEnriched[]> {

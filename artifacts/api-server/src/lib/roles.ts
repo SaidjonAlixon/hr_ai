@@ -23,9 +23,26 @@ export function isSbRole(role?: string | null): boolean {
   return role === "sb" || role === "sb_boshliq";
 }
 
-/** HR + admin — boshqaruv huquqi (ariza, nomzod, vakansiya va h.k.) */
+export const REVIZIYA_ROLES = ["revizor", "reviziya_rahbar"] as const;
+
+export function isReviziyaRole(role?: string | null): boolean {
+  return role === "revizor" || role === "reviziya_rahbar";
+}
+
+export function isItRole(role?: string | null): boolean {
+  return role === "it" || role === "it_rahbar";
+}
+
+export function isTexnikRole(role?: string | null): boolean {
+  return role === "texnik" || role === "texnik_rahbar";
+}
+
 export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || role === "admin";
+}
+
+export function canManageSettings(role?: string | null): boolean {
+  return role === "admin" || role === "director";
 }
 
 /** Davomat: direktor, HR direktor, HR menejer (+ admin) */

@@ -3,13 +3,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AlertTriangle, ArrowLeft, Loader2, RefreshCw, ScanFace } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
+import { canManageSettings } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { adminResetFace, fetchAdminFaces } from "@/lib/face-id";
 
 export default function AdminFacesSimilarPage() {
   const { user } = useAuth();
-  const isAdmin = user?.role === "admin";
+  const isAdmin = canManageSettings(user?.role);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -34,7 +35,7 @@ export default function AdminFacesSimilarPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
         <h1 className="text-2xl font-bold">O‘xshash yuzlar</h1>
-        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin uchun.</p>
+        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin va direktor uchun.</p>
       </div>
     );
   }

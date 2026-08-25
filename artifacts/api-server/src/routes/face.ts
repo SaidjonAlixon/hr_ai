@@ -8,6 +8,7 @@ import {
   faceProfilesTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
+import { canManageSettings } from "../lib/roles";
 import { setSessionCookie } from "../lib/session";
 import {
   FACE_ENROLL_BLOCK_MAX,
@@ -162,8 +163,8 @@ function sendFacePhoto(
 }
 
 function requireAdmin(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
-  if (req.userRole !== "admin") {
-    res.status(403).json({ error: "Faqat admin Face ID ro‘yxatini ko‘radi" });
+  if (!canManageSettings(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin yoki direktor Face ID ro‘yxatini ko‘radi" });
     return false;
   }
   return true;

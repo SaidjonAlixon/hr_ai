@@ -30,6 +30,8 @@ import {
   Banknote,
   Calculator,
   MapPin,
+  Cpu,
+  Wrench,
 } from 'lucide-react';
 import {
   useLogout,
@@ -46,7 +48,7 @@ import { cn } from '@/lib/utils';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath } from '@/lib/roles';
+import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -95,7 +97,7 @@ const NAV_SECTIONS: {
     accent: 'bg-sky-400',
     line: 'border-sky-400/55',
     chip: 'text-sky-300',
-    paths: ['/dashboard', '/kirish', '/chat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting'],
+    paths: ['/dashboard', '/kirish', '/chat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it', '/texnik'],
   },
   {
     id: 'work',
@@ -579,6 +581,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
+  const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
+  const itNav = { name: 'IT', path: '/it', icon: Cpu };
+  const texnikNav = { name: 'Texnik', path: '/texnik', icon: Wrench };
 
   function injectCommonNav(items: NavItem[]): NavItem[] {
     let next = [...items];
@@ -586,6 +591,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
       const at = dashIdx >= 0 ? dashIdx + 1 : 0;
       next = [...next.slice(0, at), oylikNav, ...next.slice(at)];
+    }
+    if (canViewReviziya(user.role) && !next.some((i) => i.path === '/reviziya')) {
+      const orgIdx = next.findIndex((i) => i.path === '/tashkiliy-tuzilma');
+      const at = orgIdx >= 0 ? orgIdx + 1 : next.length;
+      next = [...next.slice(0, at), reviziyaNav, ...next.slice(at)];
+    }
+    if ((user.role === 'admin' || user.role === 'director' || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
+      next = [...next, itNav, texnikNav];
     }
     return next;
   }
@@ -660,6 +673,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       hisobNav,
+      { name: 'IT', path: '/it', icon: Cpu },
+      { name: 'Texnik', path: '/texnik', icon: Wrench },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFarNav,
       davomatFaceNav,
@@ -708,7 +723,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
+      { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
+      { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+      { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Pipeline', path: '/pipeline', icon: Kanban },
@@ -781,14 +800,51 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     texnik: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Texnik', path: '/texnik', icon: Wrench },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       chatNav,
+      orgNav,
       davomatFaceNav,
       smenaNav,
-      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    texnik_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Texnik', path: '/texnik', icon: Wrench },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      chatNav,
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    it: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'IT', path: '/it', icon: Cpu },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      chatNav,
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    it_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'IT', path: '/it', icon: Cpu },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      chatNav,
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     ombor: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -843,6 +899,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Oylik', path: '/oylik', icon: Banknote },
       { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator },
+      { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       orgNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
@@ -858,6 +915,29 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       reytingNav,
       davomatFaceNav,
       smenaNav,
+    ],
+    revizor: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      chatNav,
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    reviziya_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      chatNav,
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
   };
 

@@ -20,3 +20,5 @@ export * from "./attendance";
 export * from "./telegram";
 export * from "./payroll";
 export * from "./settlement";
+export * from "./revision";
+export * from "./ops-tickets";

@@ -23,6 +23,7 @@ import {
   Wallet,
   Users,
   Cpu,
+  Wrench,
   ClipboardCheck,
   Warehouse,
   ChevronDown,
@@ -90,6 +91,13 @@ const TONES = {
     chip: "bg-cyan-100 text-cyan-800",
     lane: "bg-cyan-50/80 ring-cyan-200/80",
   },
+  texnikDept: {
+    ink: "#C2410C",
+    fill: "from-[#C2410C] to-[#FB923C]",
+    soft: "bg-orange-50 text-orange-900",
+    chip: "bg-orange-100 text-orange-800",
+    lane: "bg-orange-50/80 ring-orange-200/80",
+  },
   reviziya: {
     ink: "#6D28D9",
     fill: "from-[#6D28D9] to-[#A78BFA]",
@@ -155,8 +163,8 @@ const TONES = {
   },
 } as const;
 
-const DEPT_TONES = new Set<ToneKey>(["taminot", "moliya", "hrDept", "cbit", "sb", "reviziya", "axogpp"]);
-const DEPT_IDS = new Set(["taminot", "moliya", "hr-bolimi", "cb-it", "xavfsizlik", "reviziya", "axo-gpp"]);
+const DEPT_TONES = new Set<ToneKey>(["taminot", "moliya", "hrDept", "cbit", "texnikDept", "sb", "reviziya", "axogpp"]);
+const DEPT_IDS = new Set(["taminot", "moliya", "hr-bolimi", "cb-it", "texnik", "xavfsizlik", "reviziya", "axo-gpp"]);
 
 const DEPT_META: Array<{
   id: string;
@@ -171,9 +179,10 @@ const DEPT_META: Array<{
   { id: "taminot", label: "Ta’minot", hint: "Logistika", tone: "taminot", icon: Truck, keys: ["taminot", "logistika"], head: "Ta’minot rahbari", staff: "Logistika" },
   { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet, keys: ["moliya", "moliyachi", "hisob"], head: "Moliya rahbari", staff: "Moliyachi" },
   { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, keys: ["hr", "kadr"], head: "HR rahbari", staff: "Kadrlar" },
-  { id: "cb-it", label: "CB va IT", hint: "IT / texnika", tone: "cbit", icon: Cpu, keys: ["cb", "it"], head: "CB / IT rahbari", staff: "Texnika" },
+  { id: "cb-it", label: "IT", hint: "IT bo‘limi", tone: "cbit", icon: Cpu, keys: ["it", "cb"], head: "IT rahbari", staff: "IT mutaxassisi" },
+  { id: "texnik", label: "Texnik", hint: "Servis / ta’mir", tone: "texnikDept", icon: Wrench, keys: ["texnik", "texnika"], head: "Texnik rahbari", staff: "Texnik" },
   { id: "xavfsizlik", label: "Xavfsizlik (SB)", hint: "Ob’ekt / navbatchilik", tone: "sb", icon: ShieldCheck, keys: ["xavfsizlik", "sb", "security"], head: "SB bo‘limi boshlig‘i", staff: "SB operatori" },
-  { id: "reviziya", label: "Reviziya", hint: "Ichki audit", tone: "reviziya", icon: ClipboardCheck, keys: ["reviziya", "audit"], head: "Reviziya rahbari", staff: "Ichki auditor" },
+  { id: "reviziya", label: "Reviziya", hint: "Ichki audit / yig‘uv", tone: "reviziya", icon: ClipboardCheck, keys: ["reviziya", "audit"], head: "Reviziya rahbari", staff: "Revizor-yig‘uvchi" },
   { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse, keys: ["axo", "gpp", "mamuriyat"], head: "AXO / GPP rahbari", staff: "Ma’muriyat" },
 ];
 
@@ -192,6 +201,12 @@ const ALLOWED_ROLES = new Set([
   "sb",
   "sb_boshliq",
   "moliya",
+  "revizor",
+  "reviziya_rahbar",
+  "it",
+  "it_rahbar",
+  "texnik",
+  "texnik_rahbar",
 ]);
 
 function isPharmacyOrg(e: Employee, usersById: Map<number, User>) {
@@ -215,6 +230,9 @@ function officePeopleForDept(
       if (isPharmacyOrg(e, usersById)) return false;
       const u = e.userId != null ? usersById.get(e.userId) : undefined;
       if (keys.includes("sb") && (u?.role === "sb" || u?.role === "sb_boshliq")) return true;
+      if (keys.includes("reviziya") && (u?.role === "revizor" || u?.role === "reviziya_rahbar")) return true;
+      if (keys.includes("it") && (u?.role === "it" || u?.role === "it_rahbar")) return true;
+      if (keys.includes("texnik") && (u?.role === "texnik" || u?.role === "texnik_rahbar")) return true;
       const name = normDept(String(e.departmentName || ""));
       return keys.some((k) => name.includes(k));
     })
@@ -527,6 +545,60 @@ function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode
                 hint: u.role === "sb_boshliq" ? "SB bo‘limi boshlig‘i" : "SB operatori",
                 tone: d.tone,
                 icon: ShieldCheck,
+              }));
+            kids = [...kids, ...extra];
+          }
+          if (d.id === "reviziya") {
+            const linked = new Set(
+              people.filter((e) => e.userId != null).map((e) => e.userId as number),
+            );
+            const extra = (users ?? [])
+              .filter(
+                (u) =>
+                  (u.role === "revizor" || u.role === "reviziya_rahbar") &&
+                  (u.status === "active" || u.status === "on_leave"),
+              )
+              .filter((u) => !linked.has(u.id))
+              .sort((a, b) => {
+                if (a.role !== b.role) return a.role === "reviziya_rahbar" ? -1 : 1;
+                return a.fullName.localeCompare(b.fullName, "uz");
+              })
+              .map((u) => ({
+                id: `user-${u.id}`,
+                label: u.fullName,
+                hint: u.role === "reviziya_rahbar" ? "Reviziya bo‘limi rahbari" : "Revizor-yig‘uvchi",
+                tone: d.tone,
+                icon: ClipboardCheck,
+              }));
+            kids = [...kids, ...extra];
+          }
+          if (d.id === "cb-it") {
+            const linked = new Set(people.filter((e) => e.userId != null).map((e) => e.userId as number));
+            const extra = (users ?? [])
+              .filter((u) => (u.role === "it" || u.role === "it_rahbar") && (u.status === "active" || u.status === "on_leave"))
+              .filter((u) => !linked.has(u.id))
+              .sort((a, b) => (a.role === b.role ? a.fullName.localeCompare(b.fullName, "uz") : a.role === "it_rahbar" ? -1 : 1))
+              .map((u) => ({
+                id: `user-${u.id}`,
+                label: u.fullName,
+                hint: u.role === "it_rahbar" ? "IT bo‘limi rahbari" : "IT mutaxassisi",
+                tone: d.tone,
+                icon: Cpu,
+              }));
+            kids = [...kids, ...extra];
+          }
+          if (d.id === "texnik") {
+            const linked = new Set(people.filter((e) => e.userId != null).map((e) => e.userId as number));
+            const extra = (users ?? [])
+              .filter((u) => (u.role === "texnik" || u.role === "texnik_rahbar") && (u.status === "active" || u.status === "on_leave"))
+              .filter((u) => !linked.has(u.id))
+              .sort((a, b) => (a.role === b.role ? a.fullName.localeCompare(b.fullName, "uz") : a.role === "texnik_rahbar" ? -1 : 1))
+              .map((u) => ({
+                id: `user-${u.id}`,
+                label: u.fullName,
+                hint: u.role === "texnik_rahbar" ? "Texnik bo‘limi rahbari" : "Texnik",
+                tone: d.tone,
+                icon: Wrench,
               }));
             kids = [...kids, ...extra];
           }
@@ -1012,7 +1084,8 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
   { label: "Ta’minot", tone: "taminot" },
   { label: "Moliya", tone: "moliya" },
   { label: "HR bo‘limi", tone: "hrDept" },
-  { label: "CB va IT", tone: "cbit" },
+  { label: "IT", tone: "cbit" },
+  { label: "Texnik", tone: "texnikDept" },
   { label: "Xavfsizlik (SB)", tone: "sb" },
   { label: "Reviziya", tone: "reviziya" },
   { label: "AXO va GPP", tone: "axogpp" },

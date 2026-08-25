@@ -61,7 +61,11 @@ const STATUS_STYLE: Record<string, string> = {
   closed: "border-slate-200 bg-slate-100 text-slate-600",
 };
 
-function canCleanupDuplicates(role?: string | null) {
+type StaffRow = Employee & { phone?: string | null; login?: string | null };
+
+function staffContact(e: Employee): StaffRow {
+  return e as StaffRow;
+}
   return ["admin", "hr", "hr_direktor", "hr_menejer", "hr_auditor"].includes(role || "");
 }
 
@@ -182,6 +186,8 @@ export default function EmployeesPage() {
           e.location,
           e.mentorName,
           e.orgRole && ORG_ROLE_UZ[e.orgRole],
+          staffContact(e).phone,
+          staffContact(e).login,
         ]
           .filter(Boolean)
           .join(" ")
@@ -389,7 +395,12 @@ export default function EmployeesPage() {
                         )}
                       >
                         <td className="px-3 py-2.5 text-xs text-slate-500">{i + 1}</td>
-                        <td className="px-3 py-2.5 font-medium text-slate-900">{e.fullName}</td>
+                        <td className="px-3 py-2.5 font-medium text-slate-900">
+                          <div>{e.fullName}</div>
+                          {staffContact(e).phone ? (
+                            <div className="text-xs font-normal text-slate-500">{staffContact(e).phone}</div>
+                          ) : null}
+                        </td>
                         <td className="px-3 py-2.5 text-slate-700">{e.position}</td>
                         <td className="px-3 py-2.5 text-slate-600">
                           {(e.orgRole && ORG_ROLE_UZ[e.orgRole]) || e.orgRole || "—"}
@@ -414,6 +425,9 @@ export default function EmployeesPage() {
                       <div className="min-w-0">
                         <p className="text-[11px] text-slate-400">#{i + 1}</p>
                         <p className="truncate font-semibold text-slate-900">{e.fullName}</p>
+                        {staffContact(e).phone ? (
+                          <p className="text-xs text-slate-500">{staffContact(e).phone}</p>
+                        ) : null}
                         <p className="text-xs text-slate-600">{e.position}</p>
                       </div>
                       <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />

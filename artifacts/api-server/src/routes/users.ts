@@ -1,7 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq, and, ilike, asc } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { db, usersTable, departmentsTable } from "@workspace/db";
+import { db, usersTable, departmentsTable, employeesTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import {
@@ -520,6 +520,12 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     .where(eq(usersTable.id, id))
     .returning();
   if (!updated) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (typeof updates.fullName === "string" && String(updates.fullName).trim()) {
+    await db
+      .update(employeesTable)
+      .set({ fullName: String(updates.fullName).trim() })
+      .where(eq(employeesTable.userId, id));
+  }
   res.json(publicUser(updated));
 });
 

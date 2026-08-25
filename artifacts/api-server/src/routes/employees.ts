@@ -121,6 +121,8 @@ type EmpRow = {
   employmentStatus: string | null;
   userId: number | null;
   photoUrl: string | null;
+  login: string | null;
+  phone: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -188,8 +190,37 @@ async function loadEmployees(): Promise<EmpRow[]> {
       employmentStatus: "working",
       userId: null,
       photoUrl: null,
+      login: null,
+      phone: null,
     }));
   }
+}
+
+async function overlayUserIdentity(rows: EmpRow[]): Promise<EmpRow[]> {
+  const userIds = [...new Set(rows.map((r) => r.userId).filter((id): id is number => id != null))];
+  if (!userIds.length) {
+    return rows.map((r) => ({ ...r, login: r.login ?? null, phone: r.phone ?? null }));
+  }
+  const users = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      phone: usersTable.phone,
+      login: usersTable.login,
+    })
+    .from(usersTable)
+    .where(inArray(usersTable.id, userIds));
+  const byId = new Map(users.map((u) => [u.id, u]));
+  return rows.map((r) => {
+    const u = r.userId != null ? byId.get(r.userId) : undefined;
+    const name = u?.fullName?.trim();
+    return {
+      ...r,
+      fullName: name || r.fullName,
+      login: u?.login ?? null,
+      phone: u?.phone ?? null,
+    };
+  });
 }
 
 async function enrichMany(rows: EmpRow[]): Promise<EmpEnriched[]> {
@@ -223,7 +254,8 @@ async function enrichMany(rows: EmpRow[]): Promise<EmpEnriched[]> {
 }
 
 async function enrichEmployee(r: EmpRow | typeof employeesTable.$inferSelect) {
-  const [enriched] = await enrichMany([r as EmpRow]);
+  const [withUser] = await overlayUserIdentity([r as EmpRow]);
+  const [enriched] = await enrichMany([withUser ?? (r as EmpRow)]);
   return enriched;
 }
 
@@ -279,7 +311,7 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
     const role = req.userRole ?? "";
     const userId = req.userId;
 
-    const rows = await loadEmployees();
+    const rows = await overlayUserIdentity(await loadEmployees());
     const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
     res.json(await enrichMany(filtered));
   } catch (err) {
@@ -295,7 +327,7 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
   const userId = req.userId;
   const { departmentId, mentorId, search } = req.query as Record<string, string>;
 
-  const rows = await loadEmployees();
+  const rows = await overlayUserIdentity(await loadEmployees());
   const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
   const enriched = await enrichMany(filtered);
 
@@ -388,7 +420,7 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
       status: STATUS_UZ[e.employmentStatus || ""] || e.employmentStatus || "—",
       shift,
       hiredAt: e.hiredAt || "—",
-      phone: linked?.phone || "—",
+      phone: e.phone || linked?.phone || "—",
     });
     const zebra = idx % 2 === 0 ? "FFF7FAFC" : "FFFFFFFF";
     row.eachCell((cell, colNumber) => {

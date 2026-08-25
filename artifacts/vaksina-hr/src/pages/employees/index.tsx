@@ -66,6 +66,8 @@ type StaffRow = Employee & { phone?: string | null; login?: string | null };
 function staffContact(e: Employee): StaffRow {
   return e as StaffRow;
 }
+
+function canCleanupDuplicates(role?: string | null) {
   return ["admin", "hr", "hr_direktor", "hr_menejer", "hr_auditor"].includes(role || "");
 }
 

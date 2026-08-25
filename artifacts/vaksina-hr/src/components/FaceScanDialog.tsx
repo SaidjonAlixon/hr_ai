@@ -44,19 +44,11 @@ type Props = {
 
 type Challenge = FaceChallengeStep;
 
-const FALLBACK_ENROLL: Challenge[] = [
-  { key: "center", pose: "center", need: 2 },
-  { key: "left", pose: "left", need: 1 },
-  { key: "right", pose: "right", need: 1 },
-  { key: "up", pose: "up", need: 1 },
-];
-const FALLBACK_LOGIN: Challenge[] = [
-  { key: "center", pose: "center", need: 1 },
-  { key: "left", pose: "left", need: 1 },
-];
+const FALLBACK_ENROLL: Challenge[] = [{ key: "center", pose: "center", need: 2 }];
+const FALLBACK_LOGIN: Challenge[] = [{ key: "center", pose: "center", need: 1 }];
 
-const MIN_SCORE_ENROLL = 0.62;
-const MIN_SCORE_LOGIN = 0.62;
+const MIN_SCORE_ENROLL = 0.48;
+const MIN_SCORE_LOGIN = 0.48;
 
 function stepHint(step: Challenge): string {
   if (step.blink) return "Ko‘zlarni yumib oching";
@@ -80,7 +72,7 @@ function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.88);
+    return canvas.toDataURL("image/jpeg", 0.92);
   } catch {
     return undefined;
   }
@@ -211,7 +203,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         const finish = async (videoEl: HTMLVideoElement) => {
           running = false;
           setBusy(true);
-          setHint(mode === "enroll" ? "Yuz saqlanmoqda…" : "Yuz tekshirilmoqda…");
+          setHint(mode === "enroll" ? "Bir oz kuting yuzingiz saqlanmoqda" : "Yuz tekshirilmoqda…");
           const samples = poseBuckets.flat();
           const templates = poseBuckets
             .filter((b) => b.length)

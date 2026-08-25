@@ -5,8 +5,8 @@
  */
 import { logger } from "./logger";
 import {
-  FACE_AI_MIN_CONFIDENCE_DEFAULT,
   decideFaceAiGate,
+  parseFaceAiIdentify,
   parseFaceAiInspect,
   parseFaceAiPayload,
   pickAiIdentityWinner,
@@ -16,15 +16,15 @@ import {
 } from "./face-ai-decision";
 
 export {
-  FACE_AI_MIN_CONFIDENCE_DEFAULT as FACE_AI_MIN_CONFIDENCE,
   decideFaceAiGate,
+  parseFaceAiIdentify,
   parseFaceAiPayload,
   pickAiIdentityWinner,
   type FaceAiCompareResult,
   type FaceAiGate,
 };
 
-export const FACE_AI_TIMEOUT_MS = envNum("FACE_AI_TIMEOUT_MS", 12_000);
+export const FACE_AI_TIMEOUT_MS = envNum("FACE_AI_TIMEOUT_MS", 20_000);
 
 function envNum(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
@@ -46,15 +46,11 @@ export function isFaceAiEnabled(): boolean {
   return Boolean(process.env.OPENAI_API_KEY?.trim());
 }
 
-function minConfidence(): number {
-  return envNum("FACE_AI_MIN_CONFIDENCE", FACE_AI_MIN_CONFIDENCE_DEFAULT);
-}
-
 function toDataUrl(raw: string | null | undefined): string | null {
   if (!raw || typeof raw !== "string") return null;
   const s = raw.trim();
   if (!s.startsWith("data:image/")) return null;
-  if (s.length < 80 || s.length > 900_000) return null;
+  if (s.length < 80 || s.length > 1_200_000) return null;
   return s;
 }
 
@@ -112,10 +108,10 @@ async function callOpenAiFaceCompare(
       {
         role: "system",
         content:
-          "You are a strict biometric face verifier for workplace attendance. " +
-          "Compare two face photos. Ignore hijab, glasses frames, clothing, background, makeup. " +
-          "Use eyes, eyelid shape, nose bridge, philtrum, jaw, moles. " +
-          "If it might be a different person, samePerson=false. Never guess yes. " +
+          "You are a strict biometric matcher. Compare two full face photos of real people. " +
+          "Ignore hijab, glasses frames, clothing, background, lighting, makeup, hair. " +
+          "Match identity from eyes, eyelids, nose, philtrum, mouth, jaw, moles, ear shape. " +
+          "samePerson=true only if it is the same human. A lookalike must be false. Never guess yes. " +
           'JSON: {"samePerson":boolean,"confidence":0-1,"similarity":0-1}.',
       },
       {
@@ -130,6 +126,48 @@ async function callOpenAiFaceCompare(
   );
   if (!parsed) throw new Error("openai_bad_json");
   return parsed;
+}
+
+const GALLERY_MAX = 10;
+
+async function callOpenAiFaceIdentify(
+  liveDataUrl: string,
+  gallery: Array<{ id: number; dataUrl: string }>,
+): Promise<number | null> {
+  const content: Array<Record<string, unknown>> = [
+    {
+      type: "text",
+      text:
+        "LIVE is the unlabeled camera photo. ENROLLED photos are labeled with numeric id. " +
+        "Return matchId of the enrolled photo that is the SAME human as LIVE, or null. " +
+        "Do not pick the closest lookalike. If two enrolled faces could match, return null. " +
+        `Allowed ids: ${gallery.map((g) => g.id).join(", ")}. ` +
+        'JSON: {"matchId":number|null}.',
+    },
+    { type: "text", text: "LIVE:" },
+    { type: "image_url", image_url: { url: liveDataUrl, detail: "high" } },
+  ];
+  for (const g of gallery) {
+    content.push({ type: "text", text: `ENROLLED id=${g.id}:` });
+    content.push({ type: "image_url", image_url: { url: g.dataUrl, detail: "high" } });
+  }
+  const raw = await openaiJson(
+    [
+      {
+        role: "system",
+        content:
+          "You identify one person from a gallery of enrolled workplace photos. " +
+          "Use full-face identity (eyes, nose, jaw, moles), not clothing or background. " +
+          "matchId must be one of the labeled ids or null.",
+      },
+      { role: "user", content },
+    ],
+    80,
+  );
+  return parseFaceAiIdentify(
+    raw,
+    gallery.map((g) => g.id),
+  );
 }
 
 export async function inspectEnrollFaceWithAi(
@@ -147,14 +185,15 @@ export async function inspectEnrollFaceWithAi(
           {
             role: "system",
             content:
-              "You inspect a live selfie for Face ID enrollment. " +
-              "Require exactly one real human face, mostly frontal, eyes visible, not a screenshot of another person. " +
-              'JSON: {"ok":boolean,"faceCount":number,"quality":0-1,"reason":string}.',
+              "You check a workplace selfie before saving it as the Face ID photo. " +
+              "Accept if there is exactly one real human face (glasses, hijab, slight head turn, indoor light are OK). " +
+              "Do not reject for uncertain eye openness or gaze. Reject only if no face, many faces, or a printed photo/screen. " +
+              'JSON: {"ok":boolean,"faceCount":number,"quality":0-1,"reason":string}. reason must be empty when ok is true.',
           },
           {
             role: "user",
             content: [
-              { type: "text", text: "Is this a clear, single, frontal live face suitable for Face ID?" },
+              { type: "text", text: "Save this as the enrolled Face ID photo? One live human face is enough." },
               { type: "image_url", image_url: { url: live, detail: "high" } },
             ],
           },
@@ -162,17 +201,22 @@ export async function inspectEnrollFaceWithAi(
         180,
       ),
     );
-    if (!inspect || !inspect.ok || inspect.faceCount !== 1 || inspect.quality < 0.75) {
+    if (!inspect) {
       return {
         ok: false,
-        error:
-          inspect?.reason ||
-          "AI yuzni aniq o‘qiy olmadi. Yuzni oval ichiga oling, yorug‘ joyda qayta ro‘yxatdan o‘ting.",
+        error: "Yuzni oval ichiga oling va yorug‘ joyda qayta urinib ko‘ring.",
         code: "face_ai_enroll_quality",
       };
     }
-    logger.info({ event: "face_ai_enroll_inspect", quality: inspect.quality }, "face AI enroll inspect ok");
-    return { ok: true, quality: inspect.quality };
+    if (inspect.faceCount === 1) {
+      logger.info({ event: "face_ai_enroll_inspect", quality: inspect.quality }, "face AI enroll inspect ok");
+      return { ok: true, quality: Math.max(inspect.quality, 0.75) };
+    }
+    const error =
+      inspect.faceCount > 1
+        ? "Kadrda faqat siz bo‘ling — boshqa odam ko‘rinmasin."
+        : "Yuz topilmadi. Kameraga qarab, yuzni oval ichiga tuting.";
+    return { ok: false, error, code: "face_ai_enroll_quality" };
   } catch (err) {
     logger.warn({ event: "face_ai_enroll_inspect", err: err instanceof Error ? err.message : "error" }, "face AI enroll inspect failed");
     return {
@@ -214,11 +258,11 @@ export async function rejectIfFaceTakenByAi(opts: {
   if (!isFaceAiEnabled() || !opts.neighborProfileIds.length) return { ok: true };
   const live = toDataUrl(typeof opts.liveSnapshot === "string" ? opts.liveSnapshot : null);
   if (!live) return { ok: true };
-  const photos = await loadFacePhotos(opts.neighborProfileIds.slice(0, 3));
+  const photos = await loadFacePhotos(opts.neighborProfileIds.slice(0, 8));
   for (const [id, photo] of photos) {
     try {
       const ai = await callOpenAiFaceCompare(photo.dataUrl, live);
-      if (ai.samePerson && ai.confidence >= minConfidence()) {
+      if (ai.samePerson) {
         logger.info({ event: "face_ai_enroll_dup", profileId: id, confidence: ai.confidence }, "face AI enroll duplicate");
         return {
           ok: false,
@@ -266,12 +310,45 @@ export async function resolveLoginIdentityWithAi(opts: {
       code: "face_ai_no_enrolled_photo",
     };
   }
-  const scores: FaceAiCandidateScore[] = [];
+  const gallery = opts.candidates
+    .filter((c) => photos.has(c.id))
+    .slice(0, GALLERY_MAX)
+    .map((c) => ({ id: c.id, dataUrl: photos.get(c.id)!.dataUrl }));
   try {
-    for (const c of opts.candidates) {
-      const photo = photos.get(c.id);
-      if (!photo) continue;
-      const ai = await callOpenAiFaceCompare(photo.dataUrl, live);
+    const matchId = await callOpenAiFaceIdentify(live, gallery);
+    if (matchId != null) {
+      const enrolled = photos.get(matchId);
+      const local = opts.candidates.find((c) => c.id === matchId);
+      if (!enrolled || !local) {
+        return { ok: false, error: "Yuz mos kelmadi", code: "face_ai_mismatch" };
+      }
+      const confirm = await callOpenAiFaceCompare(enrolled.dataUrl, live);
+      if (!confirm.samePerson) {
+        return {
+          ok: false,
+          error: "Yuz mos kelmadi — bu boshqa odamga o‘xshaydi.",
+          code: "face_ai_mismatch",
+        };
+      }
+      logger.info(
+        { event: "face_ai_login", userId: local.userId, matchId, gallery: gallery.length },
+        "face AI gallery identity",
+      );
+      return {
+        ok: true,
+        id: local.id,
+        userId: local.userId,
+        dist: local.dist,
+        cosine: local.cosine,
+        confidence: confirm.confidence,
+      };
+    }
+
+    const scores: FaceAiCandidateScore[] = [];
+    for (const g of gallery) {
+      const c = opts.candidates.find((x) => x.id === g.id);
+      if (!c) continue;
+      const ai = await callOpenAiFaceCompare(g.dataUrl, live);
       scores.push({
         faceProfileId: c.id,
         userId: c.userId,
@@ -280,6 +357,30 @@ export async function resolveLoginIdentityWithAi(opts: {
         similarity: ai.similarity,
       });
     }
+    const winner = pickAiIdentityWinner(scores);
+    if (!winner.ok) {
+      return {
+        ok: false,
+        error:
+          winner.code === "face_ai_low_confidence"
+            ? "Yuz bir nechta xodimga o‘xshaydi. Kameraga tik qarang."
+            : "Yuz mos kelmadi — bu boshqa odamga o‘xshaydi.",
+        code: winner.code,
+      };
+    }
+    const local = opts.candidates.find((c) => c.id === winner.faceProfileId)!;
+    logger.info(
+      { event: "face_ai_login", userId: winner.userId, confidence: winner.confidence, mode: "pairwise" },
+      "face AI pairwise identity",
+    );
+    return {
+      ok: true,
+      id: winner.faceProfileId,
+      userId: winner.userId,
+      dist: local.dist,
+      cosine: local.cosine,
+      confidence: winner.confidence,
+    };
   } catch (err) {
     logger.warn({ event: "face_ai_login", err: err instanceof Error ? err.message : "error" }, "face AI login failed");
     return {
@@ -288,40 +389,6 @@ export async function resolveLoginIdentityWithAi(opts: {
       code: "face_ai_unavailable",
     };
   }
-  const winner = pickAiIdentityWinner(scores, minConfidence());
-  if (!winner.ok) {
-    const gate = decideFaceAiGate(
-      scores[0]
-        ? { samePerson: scores[0].samePerson, confidence: scores[0].confidence, similarity: scores[0].similarity }
-        : { samePerson: false, confidence: 0, similarity: 0 },
-      minConfidence(),
-    );
-    return {
-      ok: false,
-      error: gate.ok
-        ? "Yuz bir nechta xodimga o‘xshaydi. Kameraga tik qarang."
-        : gate.error,
-      code: winner.code,
-    };
-  }
-  const local = opts.candidates.find((c) => c.id === winner.faceProfileId) ?? opts.candidates[0]!;
-  logger.info(
-    {
-      event: "face_ai_login",
-      userId: winner.userId,
-      confidence: winner.confidence,
-      candidates: scores.length,
-    },
-    "face AI login identity",
-  );
-  return {
-    ok: true,
-    id: winner.faceProfileId,
-    userId: winner.userId,
-    dist: local.dist,
-    cosine: local.cosine,
-    confidence: winner.confidence,
-  };
 }
 
 /** Eski yo‘l: bitta profil. Yangi login resolveLoginIdentityWithAi ishlatadi. */

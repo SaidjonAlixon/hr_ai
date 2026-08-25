@@ -1,5 +1,4 @@
-export const FACE_AI_MIN_CONFIDENCE_DEFAULT = 0.9;
-export const FACE_AI_WIN_MARGIN_DEFAULT = 0.08;
+export const FACE_AI_WIN_MARGIN_DEFAULT = 0.12;
 
 export type FaceAiCompareResult = {
   samePerson: boolean;
@@ -29,23 +28,24 @@ export function parseFaceAiPayload(raw: unknown): FaceAiCompareResult | null {
   return { samePerson: same, confidence, similarity };
 }
 
-export function decideFaceAiGate(
-  ai: FaceAiCompareResult,
-  minConfidence = FACE_AI_MIN_CONFIDENCE_DEFAULT,
-): FaceAiGate {
+/** Galereyadan faqat ruxsat etilgan id — o‘xshash begona id qabul qilinmaydi. */
+export function parseFaceAiIdentify(raw: unknown, allowedIds: number[]): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const allowed = new Set(allowedIds);
+  const rawId = o.matchId ?? o.faceProfileId ?? o.id ?? o.winnerId;
+  if (rawId === null || rawId === undefined || rawId === "" || rawId === "null") return null;
+  const id = Number(rawId);
+  if (!Number.isFinite(id) || !allowed.has(id)) return null;
+  return id;
+}
+
+export function decideFaceAiGate(ai: FaceAiCompareResult): FaceAiGate {
   if (!ai.samePerson) {
     return {
       ok: false,
       error: "Yuz mos kelmadi — bu boshqa odamga o‘xshaydi.",
       code: "face_ai_mismatch",
-      confidence: ai.confidence,
-    };
-  }
-  if (ai.confidence < minConfidence || ai.similarity < minConfidence) {
-    return {
-      ok: false,
-      error: "Yuz aniq tasdiqlanmadi. Kameraga tik qarang, yorug‘ joyda qayta urinib ko‘ring.",
-      code: "face_ai_low_confidence",
       confidence: ai.confidence,
     };
   }
@@ -82,25 +82,16 @@ export type FaceAiCandidateScore = {
   similarity: number;
 };
 
+/** Faqat bitta samePerson=true. Ikki kishi “ha” desa hech kim ochilmaydi. */
 export function pickAiIdentityWinner(
   scores: FaceAiCandidateScore[],
-  minConfidence = FACE_AI_MIN_CONFIDENCE_DEFAULT,
-  margin = FACE_AI_WIN_MARGIN_DEFAULT,
 ):
   | { ok: true; faceProfileId: number; userId: number; confidence: number; similarity: number }
   | { ok: false; code: "face_ai_mismatch" | "face_ai_low_confidence" } {
-  const hits = scores
-    .filter((s) => s.samePerson && s.confidence >= minConfidence && s.similarity >= minConfidence)
-    .sort((a, b) => b.confidence - a.confidence || b.similarity - a.similarity);
-  const best = hits[0];
-  const second = hits[1];
-  if (!best) {
-    const almost = scores.some((s) => s.samePerson);
-    return { ok: false, code: almost ? "face_ai_low_confidence" : "face_ai_mismatch" };
-  }
-  if (second && best.confidence - second.confidence < margin) {
-    return { ok: false, code: "face_ai_low_confidence" };
-  }
+  const hits = scores.filter((s) => s.samePerson);
+  if (hits.length === 0) return { ok: false, code: "face_ai_mismatch" };
+  if (hits.length > 1) return { ok: false, code: "face_ai_low_confidence" };
+  const best = hits[0]!;
   return {
     ok: true,
     faceProfileId: best.faceProfileId,

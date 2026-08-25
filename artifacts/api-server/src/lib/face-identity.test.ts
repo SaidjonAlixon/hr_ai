@@ -145,10 +145,7 @@ describe("face identity", () => {
     const noTok = evaluateLiveness({ poses: ["center"], motion: 1, score: 1 }, "login");
     assert.equal(noTok.ok, false);
     const { token, steps } = issueFaceChallenge("login");
-    const incomplete = evaluateLiveness(
-      { challenge: token, steps: ["center"], poses: ["center"], motion: 0.2 },
-      "login",
-    );
+    const incomplete = evaluateLiveness({ challenge: token, steps: [], poses: [], motion: 0.2 }, "login");
     assert.equal(incomplete.ok, false);
     const done = evaluateLiveness(
       {
@@ -163,20 +160,17 @@ describe("face identity", () => {
     assert.equal(done.ok, true, "completed random challenge should pass");
   });
 
-  it("enroll liveness needs full random challenge (FAIL if skipped)", () => {
+  it("enroll liveness is a single center hold", () => {
     const { token, steps } = issueFaceChallenge("enroll");
-    const half = evaluateLiveness(
-      { challenge: token, steps: ["center"], poses: ["center"], motion: 0.2 },
-      "enroll",
-    );
-    assert.equal(half.ok, false);
+    assert.equal(steps.length, 1);
+    const skipped = evaluateLiveness({ challenge: token, steps: [], poses: [], motion: 0.2 }, "enroll");
+    assert.equal(skipped.ok, false);
     const all = evaluateLiveness(
       {
         challenge: token,
         steps: steps.map((s) => s.key),
         poses: steps.map((s) => s.pose ?? s.key),
-        blinked: true,
-        motion: 0.08,
+        motion: 0.02,
       },
       "enroll",
     );

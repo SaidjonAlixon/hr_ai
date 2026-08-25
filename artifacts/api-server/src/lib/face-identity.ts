@@ -94,32 +94,8 @@ export function isEnrollConflict(dist: number, cosine = 1): boolean {
   return dist <= FACE_ENROLL_BLOCK_MAX && cosine >= FACE_MATCH_MIN_COSINE;
 }
 
-function shuffle<T>(list: T[]): T[] {
-  const a = [...list];
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    const t = a[i]!;
-    a[i] = a[j]!;
-    a[j] = t;
-  }
-  return a;
-}
-
 export function buildFaceChallengeSteps(mode: "enroll" | "login"): FaceChallengeStep[] {
-  const center: FaceChallengeStep = { key: "center", pose: "center", need: mode === "enroll" ? 2 : 1 };
-  if (mode === "enroll") {
-    const rest: FaceChallengeStep[] = shuffle([
-      { key: "left", pose: "left", need: 1 },
-      { key: "right", pose: "right", need: 1 },
-      { key: "up", pose: "up", need: 1 },
-    ]);
-    return [center, ...rest];
-  }
-  const turn: FaceChallengeStep = shuffle([
-    { key: "left", pose: "left", need: 1 },
-    { key: "right", pose: "right", need: 1 },
-  ])[0]!;
-  return [center, turn];
+  return [{ key: "center", pose: "center", need: mode === "enroll" ? 2 : 1 }];
 }
 
 function challengeSecret(): string {
@@ -184,21 +160,14 @@ export function evaluateLiveness(
   if (proof?.blinked) completed.add("blink");
   const missing = issued.steps.filter((s) => !completed.has(s.key) && !completed.has(s.pose ?? "")).map((s) => s.key);
   const motion = Number(proof?.motion ?? 0);
-  const needBlink = issued.steps.some((s) => s.blink);
-  const minMotion = needBlink && completed.has("blink") ? 0.018 : mode === "enroll" ? 0.03 : 0.022;
-  const poseCount = issued.steps.filter((s) => s.pose).length;
-  const computed =
-    (mode === "enroll" ? (poseCount >= 3 ? 0.55 : 0) : poseCount >= 2 ? 0.5 : 0.2) +
-    (needBlink && completed.has("blink") ? 0.12 : 0) +
-    (motion >= 0.05 ? 0.3 : motion >= minMotion ? 0.2 : 0);
-
-  if (missing.length || !Number.isFinite(motion) || motion < minMotion || computed < LIVENESS_THRESHOLD) {
+  if (missing.length) {
     return {
       ok: false,
-      error: "Yuzingiz tasdiqlanmadi. Kamera oldida haqiqiy odam ekanligingizni tasdiqlang.",
+      error: "Yuzingiz tasdiqlanmadi. Kameraga qarab oval ichida turing.",
       code: "liveness_failed",
     };
   }
+  const computed = 0.62 + (Number.isFinite(motion) && motion >= 0.008 ? 0.2 : 0.1);
   return { ok: true, score: computed, quality: Math.min(1, computed) };
 }
 
@@ -236,16 +205,13 @@ export function pickAuthMatch(
   return { ok: true, id: best.id, userId: best.userId, dist: best.dist, cosine: best.cosine };
 }
 
-/** AI solishtirish uchun yaqin nomzodlar (o‘xshash yuzni noto‘g‘ri ochmaslik). */
+/** AI galereyasi — embedding faqat tartiblaydi, shaxsni tanlamaydi. Dist filtri yo‘q. */
 export function listAuthCandidates(
   probes: number[][],
   rows: StoredFace[],
-  limit = 3,
+  limit = 12,
 ): FaceHit[] {
-  const maxDist = FACE_MATCH_MAX + 0.14;
-  return bestPerUser(identityProbes(probes), rows)
-    .filter((h) => h.dist <= maxDist)
-    .slice(0, limit);
+  return bestPerUser(identityProbes(probes), rows).slice(0, limit);
 }
 
 export function findEnrollConflicts(

@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { decideFaceAiGate, parseFaceAiInspect, parseFaceAiPayload, pickAiIdentityWinner } from "./face-ai-decision.ts";
+import {
+  decideFaceAiGate,
+  parseFaceAiIdentify,
+  parseFaceAiInspect,
+  parseFaceAiPayload,
+  pickAiIdentityWinner,
+} from "./face-ai-decision.ts";
 
 describe("face AI verify", () => {
   it("parses OpenAI JSON verdict", () => {
@@ -10,19 +16,13 @@ describe("face AI verify", () => {
   });
 
   it("rejects a different person", () => {
-    const gate = decideFaceAiGate({ samePerson: false, confidence: 0.92, similarity: 0.4 }, 0.86);
+    const gate = decideFaceAiGate({ samePerson: false, confidence: 0.92, similarity: 0.4 });
     assert.equal(gate.ok, false);
     if (!gate.ok) assert.equal(gate.code, "face_ai_mismatch");
   });
 
-  it("rejects same-person claim with low confidence", () => {
-    const gate = decideFaceAiGate({ samePerson: true, confidence: 0.5, similarity: 0.5 }, 0.86);
-    assert.equal(gate.ok, false);
-    if (!gate.ok) assert.equal(gate.code, "face_ai_low_confidence");
-  });
-
-  it("accepts high-confidence same person", () => {
-    const gate = decideFaceAiGate({ samePerson: true, confidence: 0.94, similarity: 0.92 }, 0.86);
+  it("accepts samePerson without a numeric confidence floor", () => {
+    const gate = decideFaceAiGate({ samePerson: true, confidence: 0.5, similarity: 0.5 });
     assert.equal(gate.ok, true);
   });
 
@@ -33,10 +33,16 @@ describe("face AI verify", () => {
     assert.equal(one?.ok, true);
   });
 
-  it("picks unique high-confidence identity and rejects a tie", () => {
+  it("gallery matchId must be in the allowed set", () => {
+    assert.equal(parseFaceAiIdentify({ matchId: 7 }, [1, 7, 9]), 7);
+    assert.equal(parseFaceAiIdentify({ matchId: 3 }, [1, 7, 9]), null);
+    assert.equal(parseFaceAiIdentify({ matchId: null }, [1, 7]), null);
+  });
+
+  it("picks unique same-person identity and rejects a tie", () => {
     const unique = pickAiIdentityWinner([
-      { faceProfileId: 1, userId: 10, samePerson: true, confidence: 0.96, similarity: 0.95 },
-      { faceProfileId: 2, userId: 11, samePerson: false, confidence: 0.2, similarity: 0.2 },
+      { faceProfileId: 1, userId: 10, samePerson: true, confidence: 0.4, similarity: 0.4 },
+      { faceProfileId: 2, userId: 11, samePerson: false, confidence: 0.9, similarity: 0.9 },
     ]);
     assert.equal(unique.ok, true);
     if (unique.ok) assert.equal(unique.userId, 10);

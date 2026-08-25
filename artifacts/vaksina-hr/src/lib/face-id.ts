@@ -370,7 +370,7 @@ export async function detectFaceDescriptor(
     if (eyeWidthRatio(result.landmarks) < 0.58) {
       return { descriptor: null, status: "turn_face", score: result.detection.score, ear, eyesOpen, ...head };
     }
-    if (ear != null && ear < 0.13) {
+    if (ear != null && ear < 0.08) {
       return { descriptor: null, status: "covered", score: result.detection.score, ear, eyesOpen, ...head };
     }
   }
@@ -517,8 +517,8 @@ export async function updateMyProfile(input: {
 
 export async function compressFaceSnapshotAsync(
   dataUrl: string | undefined,
-  maxSide = 480,
-  quality = 0.82,
+  maxSide = 720,
+  quality = 0.9,
 ): Promise<string | undefined> {
   if (!dataUrl?.startsWith("data:image/")) return undefined;
   try {

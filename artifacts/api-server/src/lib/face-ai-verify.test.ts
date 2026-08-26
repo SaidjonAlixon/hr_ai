@@ -66,4 +66,29 @@ describe("face AI verify", () => {
     ]);
     assert.equal(tie.ok, false);
   });
+
+  it("skips AI when local identity is clear", () => {
+    // Pure rule (FACE_AI_CLEAR_MARGIN=0.08, samePerson thresholds)
+    const clear = (cands: Array<{ dist: number; cosine: number }>) => {
+      const best = cands[0];
+      const second = cands[1];
+      if (!best || best.dist > 0.34 || best.cosine < 0.942) return false;
+      if (!second) return true;
+      return second.dist - best.dist >= 0.08;
+    };
+    assert.equal(
+      clear([
+        { dist: 0.12, cosine: 0.98 },
+        { dist: 0.28, cosine: 0.9 },
+      ]),
+      true,
+    );
+    assert.equal(
+      clear([
+        { dist: 0.2, cosine: 0.96 },
+        { dist: 0.22, cosine: 0.95 },
+      ]),
+      false,
+    );
+  });
 });

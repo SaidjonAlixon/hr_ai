@@ -271,11 +271,11 @@ export async function matchFaceForAuthWithAi(
   | { ok: true; id: number; userId: number; dist: number; cosine: number }
   | { ok: false; error: string; code: string; neighbors?: FaceNeighbor[] }
 > {
-  const { isFaceAiEnabled, resolveLoginIdentityWithAi } = await import("./face-ai-verify");
+  const { FACE_AI_GALLERY_MAX, isFaceAiEnabled, resolveLoginIdentityWithAi } = await import("./face-ai-verify");
   if (!isFaceAiEnabled()) return matchFaceForAuth(descriptor);
   const probes = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
   const rows = await loadFaceRows();
-  const candidates = listAuthCandidates(probes, rows);
+  const candidates = listAuthCandidates(probes, rows, FACE_AI_GALLERY_MAX);
   if (!candidates.length) {
     return {
       ok: false,

@@ -9,13 +9,15 @@ import {
   type User,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Copy, Check, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2, Pencil, KeyRound } from 'lucide-react';
+import { Plus, Search, Copy, Check, ChevronDown, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2, Pencil, KeyRound } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
+import { Checkbox } from '../../components/ui/checkbox';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
 import {
   Dialog,
   DialogContent,
@@ -68,9 +70,11 @@ const STATUSES = [
   { value: 'on_leave', label: 'Tatilda' },
 ] as const;
 
+type UserStatusValue = (typeof STATUSES)[number]['value'];
+
 function normalizeUserStatus(status?: string | null) {
   if (status === 'inactive' || status === 'blocked') return 'vacant';
-  if (STATUSES.some((s) => s.value === status)) return status as (typeof STATUSES)[number]['value'];
+  if (STATUSES.some((s) => s.value === status)) return status as UserStatusValue;
   return 'active';
 }
 
@@ -101,6 +105,8 @@ export default function AdminUsersPage() {
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+  /** Bo‘sh = barcha holatlar; belgilanganlar = faqat shular */
+  const [statusFilter, setStatusFilter] = useState<UserStatusValue[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
@@ -129,8 +135,33 @@ export default function AdminUsersPage() {
   const isAdmin = canManageSettings(me?.role);
 
   const sorted = useMemo(() => {
-    return [...(users ?? [])].sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz'));
-  }, [users]);
+    let list = [...(users ?? [])];
+    if (statusFilter.length > 0) {
+      const allowed = new Set(statusFilter);
+      list = list.filter((u) => allowed.has(normalizeUserStatus(u.status)));
+    }
+    return list.sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz'));
+  }, [users, statusFilter]);
+
+  const statusFilterLabel = useMemo(() => {
+    if (statusFilter.length === 0 || statusFilter.length === STATUSES.length) {
+      return 'Barcha holatlar';
+    }
+    if (statusFilter.length === 1) {
+      return STATUSES.find((s) => s.value === statusFilter[0])?.label ?? 'Holat';
+    }
+    return `${statusFilter.length} holat`;
+  }, [statusFilter]);
+
+  const toggleStatusFilter = (value: UserStatusValue, checked: boolean) => {
+    setStatusFilter((prev) => {
+      if (checked) {
+        if (prev.includes(value)) return prev;
+        return [...prev, value];
+      }
+      return prev.filter((s) => s !== value);
+    });
+  };
 
   const onExportExcel = async () => {
     if (!isAdmin || exporting) return;
@@ -432,8 +463,8 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-sm sm:flex-row">
-        <div className="relative flex-1">
+      <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap">
+        <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
@@ -453,6 +484,55 @@ export default function AdminUsersPage() {
             ))}
           </SelectContent>
         </Select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button
+              type="button"
+              variant="outline"
+              className={cn(
+                'w-full justify-between font-normal sm:w-[200px]',
+                statusFilter.length > 0 && statusFilter.length < STATUSES.length && 'border-primary/40 bg-primary/5',
+              )}
+            >
+              <span className="truncate">{statusFilterLabel}</span>
+              <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent align="end" className="w-[220px] p-3">
+            <div className="mb-2 flex items-center justify-between gap-2">
+              <p className="text-xs font-medium text-muted-foreground">Holat bo‘yicha</p>
+              {statusFilter.length > 0 && (
+                <button
+                  type="button"
+                  className="text-xs text-primary hover:underline"
+                  onClick={() => setStatusFilter([])}
+                >
+                  Tozalash
+                </button>
+              )}
+            </div>
+            <div className="space-y-2">
+              {STATUSES.map((s) => {
+                const checked = statusFilter.includes(s.value);
+                return (
+                  <label
+                    key={s.value}
+                    className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1.5 hover:bg-muted/60"
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={(v) => toggleStatusFilter(s.value, v === true)}
+                    />
+                    <span className="text-sm">{s.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+              Belgilangan holatlar ko‘rsatiladi. Hech narsa belgilanmasa — barchasi.
+            </p>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <Card>

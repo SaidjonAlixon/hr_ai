@@ -335,6 +335,8 @@ export async function fetchMyDavomat(): Promise<{
 }
 
 export const DAVOMAT_GEOFENCE_METERS = 35;
+/** Asosiy ofis — 100 m atrofida ham qabul qilinadi */
+export const DAVOMAT_OFFICE_GEOFENCE_METERS = 100;
 /** 41°13'09.3"N 69°16'22.9"E */
 export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600;
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600;
@@ -361,18 +363,23 @@ export type DavomatSite = {
   label: string;
   latitude: number;
   longitude: number;
+  kind?: "branch" | "office";
 };
 
 export async function fetchDavomatSite(): Promise<DavomatSite> {
   try {
     const site = await apiJson<DavomatSite>("/davomat/site");
-    return { ...site, allowedMeters: DAVOMAT_GEOFENCE_METERS };
+    return {
+      ...site,
+      allowedMeters: site.allowedMeters || DAVOMAT_OFFICE_GEOFENCE_METERS,
+    };
   } catch {
     return {
-      allowedMeters: DAVOMAT_GEOFENCE_METERS,
+      allowedMeters: DAVOMAT_OFFICE_GEOFENCE_METERS,
       label: DAVOMAT_SITE_LABEL,
       latitude: DAVOMAT_SITE_LAT,
       longitude: DAVOMAT_SITE_LNG,
+      kind: "office",
     };
   }
 }

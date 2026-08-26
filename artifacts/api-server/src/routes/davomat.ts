@@ -23,13 +23,19 @@ const router: IRouter = Router();
 const WORK_START = "09:00";
 const WORK_END = "18:00";
 const TZ_OFFSET = "+05:00"; // Asia/Tashkent
-/** Davomat Face ID faqat shu radiusda (metr) */
+/** Filial davomati Face ID radius (metr) */
 export const DAVOMAT_GEOFENCE_METERS = 35;
+/** Asosiy ofis — kengroq zona */
+export const DAVOMAT_OFFICE_GEOFENCE_METERS = 100;
 /** Belgilangan ish joyi: 41°13'09.3"N 69°16'22.9"E */
 export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600; // 41.21925
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600; // ≈ 69.273028
 export const DAVOMAT_SITE_LABEL = "41°13'09.3\"N 69°16'22.9\"E";
 const FACE_DESCRIPTOR_LEN = 128;
+
+function geofenceMetersForKind(kind: "branch" | "office"): number {
+  return kind === "office" ? DAVOMAT_OFFICE_GEOFENCE_METERS : DAVOMAT_GEOFENCE_METERS;
+}
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -959,7 +965,7 @@ async function geoGate(
   if (!resolved.ok) return resolved;
   const point = resolved.point;
   const distanceMeters = haversineMeters(latitude, longitude, point.latitude, point.longitude);
-  const effectiveRadius = DAVOMAT_GEOFENCE_METERS;
+  const effectiveRadius = geofenceMetersForKind(point.kind);
 
   if (distanceMeters > effectiveRadius) {
     const remainMeters = distanceMeters - effectiveRadius;
@@ -1018,13 +1024,14 @@ async function applyFacePunch(opts: {
   latitude: number;
   longitude: number;
   distanceMeters: number;
+  allowedMeters: number;
   faceProfileId: number;
   action: "in" | "out";
 }): Promise<
   | { ok: true; payload: Record<string, unknown> }
   | PunchFail
 > {
-  const { emp, latitude, longitude, distanceMeters, faceProfileId, action } = opts;
+  const { emp, latitude, longitude, distanceMeters, allowedMeters, faceProfileId, action } = opts;
   const hours = hoursForStaff(emp.orgRole, emp.shiftType);
   const workDate = todayTashkent();
   const now = new Date();
@@ -1116,7 +1123,7 @@ async function applyFacePunch(opts: {
           fullName: emp.fullName,
           location: emp.location,
           distanceMeters,
-          allowedMeters: DAVOMAT_GEOFENCE_METERS,
+          allowedMeters,
           checkInAt: checkInAt ? checkInAt.toISOString() : null,
           checkOutAt: checkOutAt ? checkOutAt.toISOString() : null,
           message:
@@ -1253,7 +1260,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       .limit(1);
 
     res.json({
-      allowedMeters: DAVOMAT_GEOFENCE_METERS,
+      allowedMeters: geofenceMetersForKind(point.kind),
       site: {
         label: point.label,
         latitude: point.latitude,
@@ -1314,10 +1321,11 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
 /** Belgilangan davomat nuqtasi — login shart emas */
 router.get("/davomat/site", async (_req, res): Promise<void> => {
   res.json({
-    allowedMeters: DAVOMAT_GEOFENCE_METERS,
+    allowedMeters: DAVOMAT_OFFICE_GEOFENCE_METERS,
     label: DAVOMAT_SITE_LABEL,
     latitude: DAVOMAT_SITE_LAT,
     longitude: DAVOMAT_SITE_LNG,
+    kind: "office",
   });
 });
 
@@ -1362,15 +1370,21 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
     }
 
     const messages: Record<string, string> = {
-      in: `Bugun hali kelish belgilanmagan — Face ID bilan davomatdan o‘ting (${DAVOMAT_GEOFENCE_METERS} m hudud).`,
+      in: `Bugun hali kelish belgilanmagan — Face ID bilan davomatdan o‘ting (filial ${DAVOMAT_GEOFENCE_METERS} m / ofis ${DAVOMAT_OFFICE_GEOFENCE_METERS} m).`,
       out: "Kelish belgilandi. Ketishni ham Face ID bilan belgilang.",
       done: "Bugungi davomat yopilgan (kelish va ketish).",
       unlinked: "Davomat Face ID orqali majburiy.",
     };
 
+    let allowedMeters = DAVOMAT_OFFICE_GEOFENCE_METERS;
+    if (emp && user) {
+      const resolved = await resolveDavomatPoint(emp, user.role);
+      if (resolved.ok) allowedMeters = geofenceMetersForKind(resolved.point.kind);
+    }
+
     res.json({
       workDate,
-      allowedMeters: DAVOMAT_GEOFENCE_METERS,
+      allowedMeters,
       siteLabel: DAVOMAT_SITE_LABEL,
       fullName,
       nextAction,
@@ -1556,6 +1570,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       latitude,
       longitude,
       distanceMeters: resolved.gate.distanceMeters,
+      allowedMeters: resolved.gate.effectiveRadius,
       faceProfileId: resolved.faceId,
       action,
     });

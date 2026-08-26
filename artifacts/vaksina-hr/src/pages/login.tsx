@@ -173,7 +173,7 @@ export default function Login() {
                   Davomat
                 </Button>
                 <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  Davomat: farmasevt, mudir va stajyor — o‘z filiali GPS ({DAVOMAT_GEOFENCE_METERS} m). Qolganlar — asosiy ofis.
+                  Davomat: farmasevt, mudir va stajyor — o‘z filiali GPS ({DAVOMAT_GEOFENCE_METERS} m). Qolganlar — asosiy ofis (100 m).
                 </p>
                 <FaceScanDialog
                   open={faceOpen}

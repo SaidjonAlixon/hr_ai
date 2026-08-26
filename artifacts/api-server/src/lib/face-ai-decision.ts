@@ -103,21 +103,48 @@ export type FaceAiCandidateScore = {
   similarity: number;
 };
 
-/** Faqat bitta samePerson=true. Ikki kishi “ha” desa hech kim ochilmaydi. */
+/** Faqat samePerson=true lar. Bir nechta bo‘lsa — eng ishonchlisi (yaqin bo‘lsa lokal eng yaxshi). */
 export function pickAiIdentityWinner(
   scores: FaceAiCandidateScore[],
+  opts?: { preferProfileId?: number },
 ):
   | { ok: true; faceProfileId: number; userId: number; confidence: number; similarity: number }
   | { ok: false; code: "face_ai_mismatch" | "face_ai_low_confidence" } {
-  const hits = scores.filter((s) => s.samePerson);
+  const hits = scores
+    .filter((s) => s.samePerson)
+    .sort((a, b) => b.confidence - a.confidence || b.similarity - a.similarity);
   if (hits.length === 0) return { ok: false, code: "face_ai_mismatch" };
-  if (hits.length > 1) return { ok: false, code: "face_ai_low_confidence" };
-  const best = hits[0]!;
+  if (hits.length === 1) {
+    const best = hits[0]!;
+    return {
+      ok: true,
+      faceProfileId: best.faceProfileId,
+      userId: best.userId,
+      confidence: best.confidence,
+      similarity: best.similarity,
+    };
+  }
+  const a = hits[0]!;
+  const b = hits[1]!;
+  if (a.confidence - b.confidence >= FACE_AI_WIN_MARGIN_DEFAULT) {
+    return {
+      ok: true,
+      faceProfileId: a.faceProfileId,
+      userId: a.userId,
+      confidence: a.confidence,
+      similarity: a.similarity,
+    };
+  }
+  const preferred =
+    opts?.preferProfileId != null
+      ? hits.find((h) => h.faceProfileId === opts.preferProfileId)
+      : undefined;
+  const chosen = preferred ?? a;
   return {
     ok: true,
-    faceProfileId: best.faceProfileId,
-    userId: best.userId,
-    confidence: best.confidence,
-    similarity: best.similarity,
+    faceProfileId: chosen.faceProfileId,
+    userId: chosen.userId,
+    confidence: chosen.confidence,
+    similarity: chosen.similarity,
   };
 }

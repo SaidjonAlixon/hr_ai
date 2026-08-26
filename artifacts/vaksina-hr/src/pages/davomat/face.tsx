@@ -33,6 +33,7 @@ import { useToast } from "@/hooks/use-toast";
 import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
 import {
   DAVOMAT_GEOFENCE_METERS,
+  DAVOMAT_OFFICE_GEOFENCE_METERS,
   DAVOMAT_SITE_LABEL,
   DAVOMAT_SITE_LAT,
   DAVOMAT_SITE_LNG,
@@ -472,10 +473,11 @@ export default function DavomatFacePage() {
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsSharing, setGpsSharing] = useState(false);
   const [site, setSite] = useState<DavomatSite>({
-    allowedMeters: DAVOMAT_GEOFENCE_METERS,
+    allowedMeters: DAVOMAT_OFFICE_GEOFENCE_METERS,
     label: DAVOMAT_SITE_LABEL,
     latitude: DAVOMAT_SITE_LAT,
     longitude: DAVOMAT_SITE_LNG,
+    kind: "office",
   });
   const [workplace, setWorkplace] = useState<WorkplaceInfo | null>(null);
   const [historyDays, setHistoryDays] = useState<DavomatDayMetrics[]>([]);

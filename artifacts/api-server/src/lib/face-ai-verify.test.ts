@@ -63,18 +63,26 @@ describe("face AI verify", () => {
     const tie = pickAiIdentityWinner([
       { faceProfileId: 1, userId: 10, samePerson: true, confidence: 0.94, similarity: 0.94 },
       { faceProfileId: 2, userId: 11, samePerson: true, confidence: 0.93, similarity: 0.93 },
-    ]);
-    assert.equal(tie.ok, false);
+    ], { preferProfileId: 1 });
+    assert.equal(tie.ok, true);
+    if (tie.ok) assert.equal(tie.userId, 10);
   });
 
   it("skips AI when local identity is clear", () => {
-    // Pure rule (FACE_AI_CLEAR_MARGIN=0.08, samePerson thresholds)
+    // Pure rule (FACE_AI_CLEAR_MARGIN=0.06, samePerson thresholds)
     const clear = (cands: Array<{ dist: number; cosine: number }>) => {
       const best = cands[0];
       const second = cands[1];
       if (!best || best.dist > 0.34 || best.cosine < 0.942) return false;
       if (!second) return true;
-      return second.dist - best.dist >= 0.08;
+      return second.dist - best.dist >= 0.06;
+    };
+    const needsAi = (cands: Array<{ dist: number; cosine: number }>) => {
+      const best = cands[0];
+      const second = cands[1];
+      if (!best || best.dist > 0.34 || best.cosine < 0.942) return false;
+      if (!second) return false;
+      return second.dist - best.dist < 0.06;
     };
     assert.equal(
       clear([
@@ -84,9 +92,16 @@ describe("face AI verify", () => {
       true,
     );
     assert.equal(
-      clear([
+      needsAi([
         { dist: 0.2, cosine: 0.96 },
         { dist: 0.22, cosine: 0.95 },
+      ]),
+      true,
+    );
+    assert.equal(
+      needsAi([
+        { dist: 0.5, cosine: 0.7 },
+        { dist: 0.55, cosine: 0.65 },
       ]),
       false,
     );

@@ -50,14 +50,27 @@ export const FACE_AI_IMAGE_DETAIL = (process.env.FACE_AI_IMAGE_DETAIL?.trim() ||
   | "low"
   | "high"
   | "auto";
-export const FACE_AI_GALLERY_MAX = Math.max(1, Math.min(6, envNum("FACE_AI_GALLERY_MAX", 3)));
-/** 0 = pairwise fallback o‘chirilgan (tavsiya). */
-export const FACE_AI_PAIRWISE_MAX = Math.max(0, Math.min(5, envNum("FACE_AI_PAIRWISE_MAX", 0)));
-export const FACE_AI_DUP_MAX = Math.max(0, Math.min(3, envNum("FACE_AI_DUP_MAX", 1)));
+/** Shubhali login: faqat top-2. */
+export const FACE_AI_GALLERY_MAX = Math.max(1, Math.min(4, envNum("FACE_AI_GALLERY_MAX", 2)));
+/** 0 = pairwise o‘chirilgan. Shubhada default 2 (top-2 taqqoslash). */
+export const FACE_AI_PAIRWISE_MAX = Math.max(0, Math.min(5, envNum("FACE_AI_PAIRWISE_MAX", 2)));
+/** Enroll duplicate AI — baza rasmi bilan solishtirish, default 2. */
+export const FACE_AI_DUP_MAX = Math.max(0, Math.min(3, envNum("FACE_AI_DUP_MAX", 2)));
+/** Enroll sifat AI — default yoqilgan (baza rasmi sifatli bo‘lsin). */
+export const FACE_AI_ENROLL_INSPECT = envFlag("FACE_AI_ENROLL_INSPECT", true);
+/** Gallery match dan keyin qo‘shimcha confirm — default o‘chirilgan. */
+export const FACE_AI_CONFIRM = envFlag("FACE_AI_CONFIRM", false);
 /** Aniq lokal match bo‘lsa AI chaqirilmasin. */
 export const FACE_AI_SKIP_IF_CLEAR = envFlag("FACE_AI_SKIP_IF_CLEAR", true);
 /** Eng yaqin va 2-o‘rin orasidagi minimal farq (dist). */
-export const FACE_AI_CLEAR_MARGIN = envNum("FACE_AI_CLEAR_MARGIN", 0.08);
+export const FACE_AI_CLEAR_MARGIN = envNum("FACE_AI_CLEAR_MARGIN", 0.06);
+/** Data URL uzunligi shundan katta bo‘lsa AI o‘tkazilmaydi (lokal). */
+export const FACE_AI_MAX_IMAGE_CHARS = envNum("FACE_AI_MAX_IMAGE_CHARS", 180_000);
+/**
+ * Lokal embedding shu dist gacha bo‘lsa ham baza rasmi bilan AI solishtiriladi.
+ * (Thresholddan pastroq bo‘lsa ham rasm bor — «tizimdan o‘tmagan» deb yopilmasin.)
+ */
+export const FACE_AI_SOFT_DIST = envNum("FACE_AI_SOFT_DIST", 0.55);
 
 export function isFaceAiEnabled(): boolean {
   if (!envFlag("FACE_AI_VERIFY", true)) return false;
@@ -82,13 +95,27 @@ function toDataUrl(raw: string | null | undefined): string | null {
   return s;
 }
 
+/** Live kadr AI uchun: juda katta bo‘lsa null (lokal yo‘l). */
+function toAiLiveDataUrl(raw: string | null | undefined): string | null {
+  const s = toDataUrl(raw);
+  if (!s) return null;
+  if (s.length > FACE_AI_MAX_IMAGE_CHARS) {
+    logger.info(
+      { event: "face_ai_image_too_large", chars: s.length, max: FACE_AI_MAX_IMAGE_CHARS },
+      "face AI skip oversized live image",
+    );
+    return null;
+  }
+  return s;
+}
+
 async function openaiJson(
   messages: unknown[],
   maxTokens = 220,
 ): Promise<unknown> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) throw new Error("OPENAI_API_KEY missing");
-  const model = process.env.OPENAI_FACE_MODEL?.trim() || "gpt-4o";
+  const model = process.env.OPENAI_FACE_MODEL?.trim() || "gpt-4.1-mini";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FACE_AI_TIMEOUT_MS);
   try {
@@ -243,11 +270,22 @@ export function isClearLocalIdentity(
   return second.dist - best.dist >= FACE_AI_CLEAR_MARGIN;
 }
 
+/** Eng yaxshi lokal match bor, lekin 2-o‘rin yaqin — faqat shunda AI. */
+export function needsAmbiguousAi(
+  candidates: Array<{ dist: number; cosine: number }>,
+): boolean {
+  const best = candidates[0];
+  const second = candidates[1];
+  if (!best || !isSamePerson(best.dist, best.cosine, FACE_MATCH_MAX)) return false;
+  if (!second) return false;
+  return second.dist - best.dist < FACE_AI_CLEAR_MARGIN;
+}
+
 export async function inspectEnrollFaceWithAi(
   liveSnapshot?: unknown,
 ): Promise<{ ok: true; quality: number } | { ok: false; error: string; code: string }> {
-  if (!isFaceAiEnabled()) return { ok: true, quality: 1 };
-  const live = toDataUrl(typeof liveSnapshot === "string" ? liveSnapshot : null);
+  if (!isFaceAiEnabled() || !FACE_AI_ENROLL_INSPECT) return { ok: true, quality: 1 };
+  const live = toAiLiveDataUrl(typeof liveSnapshot === "string" ? liveSnapshot : null);
   if (!live) {
     return { ok: false, error: "Yuz rasmi olinmadi — kameraga tik qarab qayta urinib ko‘ring", code: "face_ai_no_photo" };
   }
@@ -329,7 +367,7 @@ export async function rejectIfFaceTakenByAi(opts: {
   neighborProfileIds: number[];
 }): Promise<{ ok: true } | { ok: false; error: string; code: string }> {
   if (!isFaceAiEnabled() || !opts.neighborProfileIds.length || FACE_AI_DUP_MAX <= 0) return { ok: true };
-  const live = toDataUrl(typeof opts.liveSnapshot === "string" ? opts.liveSnapshot : null);
+  const live = toAiLiveDataUrl(typeof opts.liveSnapshot === "string" ? opts.liveSnapshot : null);
   if (!live) return { ok: true };
   const photos = await loadFacePhotos(opts.neighborProfileIds.slice(0, FACE_AI_DUP_MAX));
   for (const [id, photo] of photos) {
@@ -363,10 +401,13 @@ export async function resolveLoginIdentityWithAi(opts: {
   }
 
   if (!isFaceAiEnabled()) {
+    if (!isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX)) {
+      return { ok: false, error: FACE_LOGIN_MSG_NOT_ENROLLED, code: "face_not_registered" };
+    }
     return { ok: true, id: top.id, userId: top.userId, dist: top.dist, cosine: top.cosine, confidence: top.cosine };
   }
 
-  /** Aniq lokal egasi — OpenAI chaqirilmaydi (asosiy tejam). */
+  /** Aniq lokal egasi — OpenAI chaqirilmaydi. */
   if (isClearLocalIdentity(opts.candidates)) {
     logger.info(
       {
@@ -388,61 +429,69 @@ export async function resolveLoginIdentityWithAi(opts: {
     };
   }
 
-  const live = toDataUrl(typeof opts.liveSnapshot === "string" ? opts.liveSnapshot : null);
+  const live = toAiLiveDataUrl(typeof opts.liveSnapshot === "string" ? opts.liveSnapshot : null);
+  const softOk = Number.isFinite(top.dist) && top.dist <= FACE_AI_SOFT_DIST;
+  const photoIds = opts.candidates.slice(0, Math.max(FACE_AI_GALLERY_MAX, 3)).map((c) => c.id);
+  const photos = await loadFacePhotos(photoIds);
+  const hasDbPhoto = photos.size > 0;
+
+  /**
+   * Baza rasmi bor → AI bilan solishtirish (lokal «o‘xshamaydi» desa ham).
+   * Rasm yo‘q va lokal ham uzoq → ro‘yxatdan o‘tmagan.
+   */
+  if (!hasDbPhoto) {
+    if (isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX) && !needsAmbiguousAi(opts.candidates)) {
+      return {
+        ok: true,
+        id: top.id,
+        userId: top.userId,
+        dist: top.dist,
+        cosine: top.cosine,
+        confidence: top.cosine,
+      };
+    }
+    const fail = loginFailFromScores({
+      ambiguous: false,
+      closestDist: top.dist,
+      ownerMaxDist: FACE_MATCH_MAX,
+    });
+    logger.info(
+      { event: "face_ai_login", mode: "no_db_photo", dist: Number(top.dist.toFixed(4)), code: fail.code },
+      "face no enrolled photo — local only",
+    );
+    return { ok: false, error: fail.error, code: fail.code };
+  }
+
   if (!live) {
     return {
       ok: false,
-      error: "Jonli yuz rasmi yo‘q. Kameraga qarab Face ID ni qayta urinib ko‘ring.",
+      error: "Jonli yuz rasmi olinmadi. Kameraga tik qarab qayta urinib ko‘ring.",
       code: "face_ai_no_photo",
     };
   }
-  const photos = await loadFacePhotos(opts.candidates.map((c) => c.id).slice(0, FACE_AI_GALLERY_MAX));
-  if (!photos.size) {
-    return {
-      ok: false,
-      error: FACE_LOGIN_MSG_NOT_ENROLLED,
-      code: "face_ai_no_enrolled_photo",
-    };
+
+  if (!softOk && !isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX)) {
+    const fail = loginFailFromScores({
+      ambiguous: false,
+      closestDist: top.dist,
+      ownerMaxDist: FACE_MATCH_MAX,
+    });
+    logger.info(
+      { event: "face_ai_login", mode: "too_far_for_ai", dist: Number(top.dist.toFixed(4)) },
+      "face too far — skip OpenAI",
+    );
+    return { ok: false, error: fail.error, code: fail.code };
   }
+
   const gallery = opts.candidates
     .filter((c) => photos.has(c.id))
-    .slice(0, FACE_AI_GALLERY_MAX)
+    .slice(0, Math.max(FACE_AI_GALLERY_MAX, 2))
     .map((c) => ({ id: c.id, dataUrl: photos.get(c.id)!.dataUrl }));
+
   try {
-    const matchId = await callOpenAiFaceIdentify(live, gallery);
-    if (matchId != null) {
-      const enrolled = photos.get(matchId);
-      const local = opts.candidates.find((c) => c.id === matchId);
-      if (enrolled && local) {
-        const confirm = await callOpenAiFaceCompare(enrolled.dataUrl, live);
-        if (confirm.samePerson) {
-          logger.info(
-            { event: "face_ai_login", userId: local.userId, matchId, gallery: gallery.length, detail: imageDetail() },
-            "face AI gallery identity",
-          );
-          return {
-            ok: true,
-            id: local.id,
-            userId: local.userId,
-            dist: local.dist,
-            cosine: local.cosine,
-            confidence: confirm.confidence,
-          };
-        }
-      }
-    }
-
-    if (FACE_AI_PAIRWISE_MAX <= 0) {
-      const fail = loginFailFromScores({
-        ambiguous: gallery.length > 1,
-        closestDist: top.dist,
-        ownerMaxDist: FACE_MATCH_MAX,
-      });
-      return { ok: false, error: fail.error, code: fail.code };
-    }
-
+    const pairLimit = Math.max(FACE_AI_PAIRWISE_MAX, 1);
     const scores: FaceAiCandidateScore[] = [];
-    for (const g of gallery.slice(0, FACE_AI_PAIRWISE_MAX)) {
+    for (const g of gallery.slice(0, pairLimit)) {
       const c = opts.candidates.find((x) => x.id === g.id);
       if (!c) continue;
       const ai = await callOpenAiFaceCompare(g.dataUrl, live);
@@ -453,20 +502,44 @@ export async function resolveLoginIdentityWithAi(opts: {
         confidence: ai.confidence,
         similarity: ai.similarity,
       });
+      logger.info(
+        {
+          event: "face_ai_photo_compare",
+          profileId: c.id,
+          userId: c.userId,
+          samePerson: ai.samePerson,
+          confidence: ai.confidence,
+          localDist: Number(c.dist.toFixed(4)),
+        },
+        "face AI vs DB photo",
+      );
     }
-    const winner = pickAiIdentityWinner(scores);
+    const winner = pickAiIdentityWinner(scores, { preferProfileId: top.id });
     if (!winner.ok) {
       const fail = loginFailFromScores({
-        ambiguous: winner.code === "face_ai_low_confidence",
+        ambiguous: false,
         closestDist: top.dist,
         ownerMaxDist: FACE_MATCH_MAX,
       });
-      return { ok: false, error: fail.error, code: fail.code };
+      return {
+        ok: false,
+        error: winner.code === "face_ai_mismatch"
+          ? "Bazadagi rasm bilan mos kelmadi. Kameraga tik qarab, yorug‘ joyda qayta urinib ko‘ring."
+          : fail.error,
+        code: winner.code === "face_ai_mismatch" ? "face_ai_mismatch" : fail.code,
+      };
     }
     const local = opts.candidates.find((c) => c.id === winner.faceProfileId)!;
     logger.info(
-      { event: "face_ai_login", userId: winner.userId, confidence: winner.confidence, mode: "pairwise" },
-      "face AI pairwise identity",
+      {
+        event: "face_ai_login",
+        userId: winner.userId,
+        confidence: winner.confidence,
+        mode: "db_photo_match",
+        detail: imageDetail(),
+        model: process.env.OPENAI_FACE_MODEL?.trim() || "gpt-4.1-mini",
+      },
+      "face AI matched DB photo",
     );
     return {
       ok: true,
@@ -478,9 +551,19 @@ export async function resolveLoginIdentityWithAi(opts: {
     };
   } catch (err) {
     logger.warn({ event: "face_ai_login", err: err instanceof Error ? err.message : "error" }, "face AI login failed");
+    if (isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX)) {
+      return {
+        ok: true,
+        id: top.id,
+        userId: top.userId,
+        dist: top.dist,
+        cosine: top.cosine,
+        confidence: top.cosine,
+      };
+    }
     return {
       ok: false,
-      error: "AI yuzni tasdiqlay olmadi. Qayta urinib ko‘ring — boshqa odam ochilmaydi.",
+      error: "AI yuzni bazadagi rasm bilan solishtira olmadi. Qayta urinib ko‘ring.",
       code: "face_ai_unavailable",
     };
   }

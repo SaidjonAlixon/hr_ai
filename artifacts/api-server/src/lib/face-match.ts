@@ -12,6 +12,7 @@ import {
   evaluateLiveness,
   faceDistance,
   findEnrollConflicts,
+  isSamePerson,
   parseFaceDescriptor,
   pickAuthMatch,
   listAuthCandidates,
@@ -317,6 +318,187 @@ export async function matchFaceForAuthWithAi(
     dist: resolved.dist,
     cosine: resolved.cosine,
   };
+}
+
+/**
+ * Login/parol bilan kirilgan akkaunt — live yuz faqat shu user Face ID si bilan.
+ * Boshqa odam → «Siz {ism} emassiz».
+ * Haqiqiy egasi yorug‘lik farqi bilan rad etilmasin (yumshoq lokal + AI).
+ */
+export async function matchFaceForOwnerWithAi(
+  userId: number,
+  descriptor: number[] | number[][],
+  liveSnapshot?: unknown,
+  ownerFullName?: string,
+): Promise<
+  | { ok: true; id: number; userId: number; dist: number; cosine: number }
+  | { ok: false; error: string; code: string; fullName?: string }
+> {
+  const name = (ownerFullName || "").trim() || "shu akkaunt egasi";
+  const notOwner = {
+    ok: false as const,
+    error: `Siz ${name} emassiz. Bu yuz login/parol bilan kirilgan akkauntga tegishli emas.`,
+    code: "face_not_owner",
+    fullName: name,
+  };
+  /** Owner 1:1 — gallery dan yumshoqroq (yorug‘lik/burchak). */
+  const OWNER_DIST_OK = Math.max(FACE_MATCH_MAX, envNum("FACE_OWNER_MATCH_MAX", 0.48));
+  const OWNER_COS_OK = Math.min(FACE_MATCH_MIN_COSINE, envNum("FACE_OWNER_MIN_COSINE", 0.88));
+
+  const [profile] = await db
+    .select({
+      id: faceProfilesTable.id,
+      userId: faceProfilesTable.userId,
+      descriptor: faceProfilesTable.descriptor,
+    })
+    .from(faceProfilesTable)
+    .where(eq(faceProfilesTable.userId, userId))
+    .limit(1);
+
+  if (!profile) {
+    return {
+      ok: false,
+      error: `${name} akkauntida Face ID ulanmagan. Avval yuzni ro‘yxatdan o‘tkazing.`,
+      code: "face_not_registered",
+      fullName: name,
+    };
+  }
+
+  const probes = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
+  const stored = parseStoredList(profile.descriptor);
+  if (!stored.length || !probes[0]) {
+    return {
+      ok: false,
+      error: "Face ID shabloni buzilgan — qayta ulashing.",
+      code: "face_not_registered",
+      fullName: name,
+    };
+  }
+
+  let bestDist = Number.POSITIVE_INFINITY;
+  let bestCosine = 0;
+  for (const probe of probes) {
+    for (const row of stored) {
+      const { dist, cosine } = faceDistance(probe, row);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestCosine = cosine;
+      }
+    }
+  }
+
+  const localOk =
+    Number.isFinite(bestDist) &&
+    bestDist <= OWNER_DIST_OK &&
+    bestCosine >= OWNER_COS_OK;
+
+  const {
+    confirmOwnerFaceWithAi,
+    inspectLiveAntiSpoof,
+    isFaceAiEnabled,
+  } = await import("./face-ai-verify");
+
+  if (!isFaceAiEnabled()) {
+    if (!localOk) {
+      logger.info(
+        { event: "face_owner_verify", ok: false, userId, dist: Number(bestDist.toFixed(4)) },
+        "face owner local mismatch",
+      );
+      return notOwner;
+    }
+    return {
+      ok: true,
+      id: profile.id,
+      userId: profile.userId,
+      dist: bestDist,
+      cosine: bestCosine,
+    };
+  }
+
+  const anti = await inspectLiveAntiSpoof(liveSnapshot, "login");
+  if (!anti.ok) {
+    /** Spoof aniq — rad. Lokal juda yaxshi bo‘lsa ham telefon rasm bo‘lishi mumkin. */
+    return { ok: false, error: anti.error, code: anti.code, fullName: name };
+  }
+
+  const ai = await confirmOwnerFaceWithAi({
+    faceProfileId: profile.id,
+    liveSnapshot,
+    localDist: bestDist,
+    localCosine: bestCosine,
+  });
+
+  if (ai.ok) {
+    logger.info(
+      {
+        event: "face_owner_verify",
+        ok: true,
+        userId,
+        mode: "ai",
+        dist: Number(bestDist.toFixed(4)),
+        confidence: ai.confidence,
+      },
+      "face owner AI ok",
+    );
+    return {
+      ok: true,
+      id: profile.id,
+      userId: profile.userId,
+      dist: bestDist,
+      cosine: bestCosine,
+    };
+  }
+
+  /** AI rad etdi, lekin lokal aniq mos — egasi (yorug‘lik farqi). */
+  if (localOk && ai.code !== "face_ai_spoof") {
+    logger.info(
+      {
+        event: "face_owner_verify",
+        ok: true,
+        userId,
+        mode: "local_fallback",
+        dist: Number(bestDist.toFixed(4)),
+        aiCode: ai.code,
+      },
+      "face owner local ok after AI uncertain",
+    );
+    return {
+      ok: true,
+      id: profile.id,
+      userId: profile.userId,
+      dist: bestDist,
+      cosine: bestCosine,
+    };
+  }
+
+  /** AI «boshqa odam» deb aniq aytdi yoki lokal ham uzoq. */
+  if (ai.code === "face_ai_mismatch" || !localOk) {
+    logger.info(
+      {
+        event: "face_owner_verify",
+        ok: false,
+        userId,
+        code: ai.code,
+        dist: Number(bestDist.toFixed(4)),
+      },
+      "face owner mismatch",
+    );
+    return notOwner;
+  }
+
+  return {
+    ok: false,
+    error: ai.error || "Yuzni qayta tekshiring — yorug‘ joyda kameraga tik qarang.",
+    code: ai.code || "face_ai_mismatch",
+    fullName: name,
+  };
+}
+
+function envNum(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : fallback;
 }
 
 export function parseStoredVectors(raw: string): number[][] {

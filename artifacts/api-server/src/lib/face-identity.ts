@@ -29,7 +29,7 @@ export const FACE_ENROLL_BLOCK_MAX = envNum("FACE_ENROLLMENT_THRESHOLD", 0.22);
 export const FACE_SIMILAR_WARN = envNum("FACE_SIMILAR_WARN", 0.5);
 export const LIVENESS_THRESHOLD = envNum("LIVENESS_THRESHOLD", 0.55);
 /** Telefon/print: deyarli harakatsiz kadr — rad. */
-export const LIVENESS_MIN_MOTION = envNum("LIVENESS_MIN_MOTION", 0.012);
+export const LIVENESS_MIN_MOTION = envNum("LIVENESS_MIN_MOTION", 0.006);
 export const FACE_CHALLENGE_TTL_MS = 120_000;
 
 export type FaceHit = { id: number; userId: number; dist: number; cosine: number };
@@ -98,11 +98,11 @@ export function isEnrollConflict(dist: number, cosine = 1): boolean {
 }
 
 export function buildFaceChallengeSteps(mode: "enroll" | "login"): FaceChallengeStep[] {
-  /** Markaz + ko‘z yumish — jonsiz rasm/video replay qiyinlashadi. */
-  return [
-    { key: "center", pose: "center", need: mode === "enroll" ? 2 : 1 },
-    { key: "blink", blink: true, need: 1 },
-  ];
+  /**
+   * Faqat markazda ushlash. Ko‘z yumish (EAR) telefonlarda ishonchsiz —
+   * jonsizlikni AI anti-spoof + motion ushlaydi.
+   */
+  return [{ key: "center", pose: "center", need: mode === "enroll" ? 3 : 2 }];
 }
 
 function challengeSecret(): string {
@@ -170,7 +170,7 @@ export function evaluateLiveness(
   if (missing.length) {
     return {
       ok: false,
-      error: "Yuzingiz tasdiqlanmadi. Kameraga qarab oval ichida turing, ko‘zingizni yumib oching.",
+      error: "Yuzingiz tasdiqlanmadi. Kameraga qarab oval ichida turing.",
       code: "liveness_failed",
     };
   }
@@ -181,15 +181,7 @@ export function evaluateLiveness(
       code: "liveness_failed",
     };
   }
-  const needBlink = issued.steps.some((s) => s.blink);
-  if (needBlink && !proof?.blinked && !completed.has("blink")) {
-    return {
-      ok: false,
-      error: "Ko‘zingizni yumib oching — jonsiz rasm qabul qilinmaydi.",
-      code: "liveness_failed",
-    };
-  }
-  const computed = 0.62 + (motion >= 0.02 ? 0.25 : 0.15);
+  const computed = 0.62 + (motion >= 0.015 ? 0.25 : 0.15);
   return { ok: true, score: computed, quality: Math.min(1, computed) };
 }
 

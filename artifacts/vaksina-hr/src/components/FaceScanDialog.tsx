@@ -44,20 +44,14 @@ type Props = {
 
 type Challenge = FaceChallengeStep;
 
-const FALLBACK_ENROLL: Challenge[] = [
-  { key: "center", pose: "center", need: 2 },
-  { key: "blink", blink: true, need: 1 },
-];
-const FALLBACK_LOGIN: Challenge[] = [
-  { key: "center", pose: "center", need: 1 },
-  { key: "blink", blink: true, need: 1 },
-];
+const FALLBACK_ENROLL: Challenge[] = [{ key: "center", pose: "center", need: 3 }];
+const FALLBACK_LOGIN: Challenge[] = [{ key: "center", pose: "center", need: 2 }];
 
-const MIN_SCORE_ENROLL = 0.48;
-const MIN_SCORE_LOGIN = 0.48;
+const MIN_SCORE_ENROLL = 0.5;
+const MIN_SCORE_LOGIN = 0.45;
 
 function stepHint(step: Challenge): string {
-  if (step.blink) return "Ko‘zni yumib 1 soniya ushlab, keyin oching";
+  if (step.blink) return "Ko‘zni yumib oching";
   return poseHint(step.pose ?? "center");
 }
 

@@ -164,17 +164,17 @@ describe("face identity", () => {
         challenge: token,
         steps: steps.map((s) => s.key),
         poses: steps.map((s) => s.pose ?? s.key),
-        blinked: steps.some((s) => s.blink),
         motion: 0.08,
       },
       "login",
     );
-    assert.equal(done.ok, true, "completed random challenge should pass");
+    assert.equal(done.ok, true, "completed challenge should pass");
   });
 
-  it("enroll liveness requires center hold plus blink", () => {
+  it("enroll liveness is center hold without blink", () => {
     const { token, steps } = issueFaceChallenge("enroll");
-    assert.ok(steps.some((s) => s.blink));
+    assert.equal(steps.some((s) => s.blink), false);
+    assert.ok((steps.find((s) => s.pose === "center")?.need ?? 0) >= 2);
     const skipped = evaluateLiveness({ challenge: token, steps: [], poses: [], motion: 0.2 }, "enroll");
     assert.equal(skipped.ok, false);
     const all = evaluateLiveness(
@@ -182,7 +182,6 @@ describe("face identity", () => {
         challenge: token,
         steps: steps.map((s) => s.key),
         poses: steps.map((s) => s.pose ?? s.key),
-        blinked: true,
         motion: 0.02,
       },
       "enroll",

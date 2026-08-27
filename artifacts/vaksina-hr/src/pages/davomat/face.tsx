@@ -838,10 +838,18 @@ export default function DavomatFacePage() {
       });
       applyHistory(result.employee);
       if (result.user) {
-        adoptRecognizedProfile(result.user as User, result.fullName);
-        // Yangi sessiya uchun ish joyi / tarix
-        void loadWorkplace();
-        void loadHistory();
+        if (result.ownerVerified) {
+          toast({
+            title: result.fullName,
+            description: "Yuz tasdiqlandi — bu sizning akkauntingiz",
+          });
+          void loadWorkplace();
+          void loadHistory();
+        } else {
+          adoptRecognizedProfile(result.user as User, result.fullName);
+          void loadWorkplace();
+          void loadHistory();
+        }
       } else {
         toast({
           title: result.fullName,
@@ -855,6 +863,13 @@ export default function DavomatFacePage() {
       }
       return { fullName: result.fullName };
     } catch (err) {
+      if (err instanceof DavomatApiError && err.code === "face_not_owner") {
+        const msg =
+          err.message ||
+          (err.fullName ? `Siz ${err.fullName} emassiz` : "Bu yuz kirgan akkauntga tegishli emas");
+        toast({ title: "Boshqa odam", description: msg, variant: "destructive" });
+        throw new Error(msg);
+      }
       if (err instanceof DavomatApiError && err.code === "outside_geofence") {
         if (
           err.workplace &&

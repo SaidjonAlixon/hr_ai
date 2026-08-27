@@ -2,13 +2,12 @@ import React, { useState } from 'react';
 import { useLogin } from '@workspace/api-client-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'wouter';
-import { Eye, EyeOff, ScanFace } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
 import { useToast } from '../hooks/use-toast';
-import { DAVOMAT_GEOFENCE_METERS } from '../lib/davomat-api';
 import type { User } from '@workspace/api-client-react';
 import { compactCredential } from '../lib/utils';
 
@@ -140,29 +139,6 @@ export default function Login() {
                 {isPending ? 'Kirilmoqda...' : 'Kirish'}
               </Button>
             </form>
-            <div className="mt-4">
-              <div className="relative mb-4">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-white px-2 text-muted-foreground">davomat</span>
-                </div>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                className="w-full gap-2"
-                onClick={() => setLocation("/davomat-face")}
-              >
-                <ScanFace className="h-4 w-4" />
-                Davomat (Face ID)
-              </Button>
-              <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                Face ID faqat davomat uchun — tizimga kirish login/parol bilan.
-                Farmasevt, mudir va stajyor: filial GPS ({DAVOMAT_GEOFENCE_METERS} m). Qolganlar: ofis (100 m).
-              </p>
-            </div>
           </CardContent>
           
           {import.meta.env.DEV && (

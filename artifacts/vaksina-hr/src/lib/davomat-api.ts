@@ -148,7 +148,24 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new DavomatApiError(body as { error?: string; code?: string });
+    throw new DavomatApiError(body as {
+      error?: string;
+      code?: string;
+      distanceMeters?: number;
+      remainMeters?: number;
+      allowedMeters?: number;
+      fullName?: string;
+      checkIn?: string;
+      checkOut?: string;
+      checkInAt?: string | null;
+      checkOutAt?: string | null;
+      workplace?: {
+        location?: string;
+        latitude?: number;
+        longitude?: number;
+        kind?: "branch" | "office";
+      };
+    });
   }
   return body as T;
 }
@@ -225,6 +242,7 @@ export async function faceVerifyDavomat(payload: {
     createdAt?: string;
   } | null;
   sessionSwitched?: boolean;
+  ownerVerified?: boolean;
 }> {
   const snapshot = payload.snapshot
     ? await compressFaceSnapshotAsync(payload.snapshot)

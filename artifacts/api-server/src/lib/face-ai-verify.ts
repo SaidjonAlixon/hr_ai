@@ -13,6 +13,7 @@ import {
   parseFaceAiPayload,
   pickAiIdentityWinner,
   FACE_LOGIN_MSG_NOT_ENROLLED,
+  FACE_LOGIN_MSG_RETRY,
   type FaceAiCandidateScore,
   type FaceAiCompareResult,
   type FaceAiGate,
@@ -343,17 +344,18 @@ export async function inspectLiveAntiSpoof(
         code: "face_ai_enroll_quality",
       };
     }
-    if (inspect.spoof || !inspect.liveHuman) {
-      logger.info({ event: "face_ai_antispoof", mode, spoof: inspect.spoof }, "face AI rejected spoof");
+    if (inspect.spoof) {
+      logger.info({ event: "face_ai_antispoof", mode, spoof: true }, "face AI rejected spoof");
       return {
         ok: false,
         error: "Telefon yoki bosma rasm qabul qilinmaydi. Kameraga o‘zingiz qarang.",
         code: "face_ai_spoof",
       };
     }
-    if (inspect.ok && inspect.faceCount === 1) {
+    /** liveHuman maydoni yo‘q/false bo‘lsa ham bitta yuz + spoof emas → qabul (false positive kamayadi). */
+    if (inspect.faceCount === 1 && (inspect.liveHuman || inspect.ok || inspect.quality >= 0.55)) {
       logger.info({ event: "face_ai_antispoof", mode, quality: inspect.quality }, "face AI live ok");
-      return { ok: true, quality: Math.max(inspect.quality, 0.75) };
+      return { ok: true, quality: Math.max(inspect.quality, 0.7) };
     }
     const error =
       inspect.faceCount > 1
@@ -425,6 +427,8 @@ export async function resolveLoginIdentityWithAi(opts: {
   candidates: Array<{ id: number; userId: number; dist: number; cosine: number }>;
   /** true = anti-spoof allaqachon o‘tgan (matchFaceForAuthWithAi). */
   skipAntiSpoof?: boolean;
+  /** Owner verify: lokal uzoq bo‘lsa ham baza rasmi bilan AI majburiy. */
+  forceCompare?: boolean;
 }): Promise<
   | { ok: true; id: number; userId: number; dist: number; cosine: number; confidence: number }
   | { ok: false; error: string; code: string }
@@ -511,7 +515,7 @@ export async function resolveLoginIdentityWithAi(opts: {
     };
   }
 
-  if (!softOk && !isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX)) {
+  if (!opts.forceCompare && !softOk && !isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX)) {
     const fail = loginFailFromScores({
       ambiguous: false,
       closestDist: top.dist,
@@ -633,4 +637,92 @@ export async function verifyFaceWithAi(opts: {
     confidence: resolved.confidence,
     similarity: resolved.confidence,
   };
+}
+
+/**
+ * Davomat owner 1:1 — yumshoqroq ishonch (yorug‘lik/burchak).
+ * Gallery identifikatsiyadan yumshoq.
+ */
+export async function confirmOwnerFaceWithAi(opts: {
+  faceProfileId: number;
+  liveSnapshot?: unknown;
+  localDist: number;
+  localCosine: number;
+}): Promise<
+  | { ok: true; confidence: number; similarity: number }
+  | { ok: false; error: string; code: string }
+> {
+  if (!isFaceAiEnabled()) {
+    if (isSamePerson(opts.localDist, opts.localCosine, FACE_MATCH_MAX)) {
+      return { ok: true, confidence: opts.localCosine, similarity: opts.localCosine };
+    }
+    return { ok: false, error: FACE_LOGIN_MSG_RETRY, code: "face_ai_mismatch" };
+  }
+
+  const live = toAiLiveDataUrl(typeof opts.liveSnapshot === "string" ? opts.liveSnapshot : null);
+  if (!live) {
+    if (isSamePerson(opts.localDist, opts.localCosine, FACE_MATCH_MAX)) {
+      return { ok: true, confidence: opts.localCosine, similarity: opts.localCosine };
+    }
+    return {
+      ok: false,
+      error: "Jonli yuz rasmi olinmadi. Kameraga tik qarab qayta urinib ko‘ring.",
+      code: "face_ai_no_photo",
+    };
+  }
+
+  const photos = await loadFacePhotos([opts.faceProfileId]);
+  const enrolled = photos.get(opts.faceProfileId)?.dataUrl;
+  if (!enrolled) {
+    /** Rasm yo‘q — lokal yetarli bo‘lsa OK. */
+    if (opts.localDist <= Math.max(FACE_MATCH_MAX, FACE_AI_SOFT_DIST) && opts.localCosine >= 0.88) {
+      return { ok: true, confidence: opts.localCosine, similarity: opts.localCosine };
+    }
+    return {
+      ok: false,
+      error: "Bazada yuz rasmi yo‘q. Face ID ni qayta ulashing.",
+      code: "face_not_registered",
+    };
+  }
+
+  const minConf = envNum("FACE_OWNER_AI_MIN_CONFIDENCE", 0.72);
+  const minSim = envNum("FACE_OWNER_AI_MIN_SIMILARITY", 0.68);
+
+  try {
+    const ai = await callOpenAiFaceCompare(enrolled, live);
+    logger.info(
+      {
+        event: "face_owner_ai_compare",
+        profileId: opts.faceProfileId,
+        samePerson: ai.samePerson,
+        confidence: ai.confidence,
+        similarity: ai.similarity,
+        localDist: Number(opts.localDist.toFixed(4)),
+      },
+      "face owner AI compare",
+    );
+    if (ai.samePerson && ai.confidence >= minConf && ai.similarity >= minSim) {
+      return { ok: true, confidence: ai.confidence, similarity: ai.similarity };
+    }
+    /** Aniq «boshqa odam» */
+    if (!ai.samePerson && ai.confidence >= 0.8) {
+      return { ok: false, error: FACE_LOGIN_MSG_RETRY, code: "face_ai_mismatch" };
+    }
+    /** Shubhali — lokal yaxshi bo‘lsa caller local_fallback qiladi */
+    return {
+      ok: false,
+      error: FACE_LOGIN_MSG_RETRY,
+      code: "face_ai_low_confidence",
+    };
+  } catch (err) {
+    logger.warn(
+      { event: "face_owner_ai_compare", err: err instanceof Error ? err.message : "error" },
+      "face owner AI failed",
+    );
+    return {
+      ok: false,
+      error: "AI yuzni solishtira olmadi. Qayta urinib ko‘ring.",
+      code: "face_ai_unavailable",
+    };
+  }
 }

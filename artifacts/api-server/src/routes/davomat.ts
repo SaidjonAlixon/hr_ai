@@ -12,7 +12,7 @@ import {
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
 import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
-import { evaluateLiveness, matchFaceForAuthWithAi, type LivenessProof } from "../lib/face-match";
+import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
@@ -938,13 +938,44 @@ async function ensureAllActiveUsersLinked(): Promise<number> {
 async function matchFaceUserId(
   descriptor: number[] | number[][],
   snapshot?: unknown,
+  expected?: { userId: number; fullName: string },
 ): Promise<
   | { ok: true; userId: number; faceId: number; dist: number; cosine: number }
-  | { ok: false; error: string; code: string }
+  | { ok: false; error: string; code: string; fullName?: string }
 > {
+  if (expected?.userId) {
+    const matched = await matchFaceForOwnerWithAi(
+      expected.userId,
+      descriptor,
+      snapshot,
+      expected.fullName,
+    );
+    if (!matched.ok) {
+      return {
+        ok: false,
+        error: matched.error,
+        code: matched.code,
+        fullName: matched.fullName ?? expected.fullName,
+      };
+    }
+    return { ok: true, userId: matched.userId, faceId: matched.id, dist: matched.dist, cosine: matched.cosine };
+  }
   const matched = await matchFaceForAuthWithAi(descriptor, snapshot);
   if (!matched.ok) return { ok: false, error: matched.error, code: matched.code };
   return { ok: true, userId: matched.userId, faceId: matched.id, dist: matched.dist, cosine: matched.cosine };
+}
+
+/** Cookie sessiyasi — login/parol bilan kirgan user (majburiy emas). */
+function readSessionUserId(req: { cookies?: Record<string, unknown> }): number | null {
+  const sessionCookie = req.cookies?.session;
+  if (!sessionCookie || typeof sessionCookie !== "string") return null;
+  try {
+    const decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString()) as { userId?: number };
+    const id = Number(decoded?.userId);
+    return Number.isFinite(id) && id > 0 ? id : null;
+  } catch {
+    return null;
+  }
 }
 
 async function geoGate(
@@ -1154,6 +1185,9 @@ async function resolveFaceAtSite(opts: {
   longitude: number;
   accuracy?: number;
   snapshot?: unknown;
+  /** Login/parol sessiya — faqat shu user Face ID si. */
+  expectedUserId?: number;
+  expectedFullName?: string;
 }): Promise<
   | {
       ok: true;
@@ -1164,9 +1198,24 @@ async function resolveFaceAtSite(opts: {
     }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
-  const matched = await matchFaceUserId(opts.descriptor, opts.snapshot);
+  const matched = await matchFaceUserId(
+    opts.descriptor,
+    opts.snapshot,
+    opts.expectedUserId
+      ? { userId: opts.expectedUserId, fullName: opts.expectedFullName || "" }
+      : undefined,
+  );
   if (!matched.ok) {
-    return { ok: false, status: 401, body: { error: matched.error, code: matched.code } };
+    const status = matched.code === "face_not_owner" ? 403 : 401;
+    return {
+      ok: false,
+      status,
+      body: {
+        error: matched.error,
+        code: matched.code,
+        fullName: matched.fullName,
+      },
+    };
   }
 
   const [user] = await db
@@ -1449,7 +1498,7 @@ router.get("/davomat/me", requireAuth, async (req: AuthRequest, res): Promise<vo
   }
 });
 
-/** Face ID tasdiq — hali Keldim/Ketdim yozilmaydi */
+/** Face ID tasdiq — login/parol sessiyasi bo‘lsa faqat shu akkaunt yuzi. */
 router.post("/davomat/face-verify", async (req, res): Promise<void> => {
   try {
     const descriptors = Array.isArray(req.body?.descriptors)
@@ -1474,12 +1523,30 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       res.status(400).json({ error: "GPS majburiy — lokatsiyaga ruxsat bering", code: "gps_required" });
       return;
     }
+
+    const sessionUserId = readSessionUserId(req);
+    let expectedUserId: number | undefined;
+    let expectedFullName: string | undefined;
+    if (sessionUserId) {
+      const [sess] = await db
+        .select({ id: usersTable.id, fullName: usersTable.fullName, status: usersTable.status })
+        .from(usersTable)
+        .where(eq(usersTable.id, sessionUserId))
+        .limit(1);
+      if (sess && (sess.status === "active" || sess.status === "on_leave")) {
+        expectedUserId = sess.id;
+        expectedFullName = sess.fullName;
+      }
+    }
+
     const resolved = await resolveFaceAtSite({
       descriptor: descriptors,
       latitude,
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
       snapshot: req.body?.snapshot ?? req.body?.photo,
+      expectedUserId,
+      expectedFullName,
     });
     if (!resolved.ok) {
       res.status(resolved.status).json(resolved.body);
@@ -1514,7 +1581,8 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       checkOutAt: rec?.checkOutAt ? rec.checkOutAt.toISOString() : null,
       employee: own.employee,
       user: sessionUser,
-      sessionSwitched: true,
+      sessionSwitched: !expectedUserId || expectedUserId !== resolved.user.id,
+      ownerVerified: Boolean(expectedUserId),
     });
   } catch (err) {
     console.error("POST /davomat/face-verify error:", err);
@@ -1523,8 +1591,8 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
 });
 
 /**
- * Face ID davomat — login shart emas.
- * Yuz → user → avto xodim bog‘lash → GPS hududi → Keldim / Ketdim.
+ * Face ID davomat punch.
+ * Sessiya bo‘lsa — faqat shu akkaunt yuzi (boshqa odam ochilmaydi).
  */
 router.post("/davomat/face-punch", async (req, res): Promise<void> => {
   try {
@@ -1552,12 +1620,29 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       return;
     }
 
+    const sessionUserId = readSessionUserId(req);
+    let expectedUserId: number | undefined;
+    let expectedFullName: string | undefined;
+    if (sessionUserId) {
+      const [sess] = await db
+        .select({ id: usersTable.id, fullName: usersTable.fullName, status: usersTable.status })
+        .from(usersTable)
+        .where(eq(usersTable.id, sessionUserId))
+        .limit(1);
+      if (sess && (sess.status === "active" || sess.status === "on_leave")) {
+        expectedUserId = sess.id;
+        expectedFullName = sess.fullName;
+      }
+    }
+
     const resolved = await resolveFaceAtSite({
       descriptor,
       latitude,
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
       snapshot: req.body?.snapshot ?? req.body?.photo,
+      expectedUserId,
+      expectedFullName,
     });
     if (!resolved.ok) {
       res.status(resolved.status).json(resolved.body);
@@ -1584,7 +1669,8 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       ...punched.payload,
       employee: own.employee,
       user: sessionUser,
-      sessionSwitched: true,
+      sessionSwitched: !expectedUserId || expectedUserId !== resolved.user.id,
+      ownerVerified: Boolean(expectedUserId),
     });
   } catch (err) {
     console.error("POST /davomat/face-punch error:", err);

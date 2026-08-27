@@ -299,6 +299,8 @@ function frameBrightness(video: HTMLVideoElement): number {
 
 /** Yuqori sifat: katta inputSize + qattiq score */
 const DETECT_OPTS = { inputSize: 416 as const, scoreThreshold: 0.5 };
+/** Blink: tezroq kadr — yumishni o‘tkazib yubormaslik. */
+const DETECT_OPTS_BLINK = { inputSize: 320 as const, scoreThreshold: 0.35 };
 const MIN_DETECT_SCORE = 0.58;
 
 export async function detectFaceDescriptor(
@@ -308,7 +310,9 @@ export async function detectFaceDescriptor(
   opts?: { allowTurn?: boolean; allowBlink?: boolean },
 ): Promise<FaceDetectResult> {
   const faceapi = await ensureFaceModels();
-  const detector = new faceapi.TinyFaceDetectorOptions(DETECT_OPTS);
+  const detector = new faceapi.TinyFaceDetectorOptions(
+    opts?.allowBlink ? DETECT_OPTS_BLINK : DETECT_OPTS,
+  );
 
   if (video.videoWidth > 0 && video.videoWidth < 420) {
     return { descriptor: null, status: "low_camera" };
@@ -333,7 +337,7 @@ export async function detectFaceDescriptor(
 
   const result = await faceapi.detectSingleFace(video, detector).withFaceLandmarks().withFaceDescriptor();
 
-  const minScore = opts?.allowTurn || opts?.allowBlink ? 0.38 : MIN_DETECT_SCORE;
+  const minScore = opts?.allowTurn || opts?.allowBlink ? 0.32 : MIN_DETECT_SCORE;
   if (!result || result.detection.score < minScore) {
     return { descriptor: null, status: "no_face" };
   }
@@ -344,13 +348,13 @@ export async function detectFaceDescriptor(
   const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored);
   if (!mapped) return { descriptor: null, status: "no_face" };
 
-  if (ellipseNorm(mapped.cx, mapped.cy, frame) > (opts?.allowTurn ? 1.35 : 0.92)) {
+  if (ellipseNorm(mapped.cx, mapped.cy, frame) > (opts?.allowTurn || opts?.allowBlink ? 1.35 : 0.92)) {
     return { descriptor: null, status: "outside" };
   }
 
   const fillW = mapped.width / (frame.rx * 2);
   const fillH = mapped.height / (frame.ry * 2);
-  const minFill = opts?.allowTurn ? 0.22 : 0.38;
+  const minFill = opts?.allowTurn || opts?.allowBlink ? 0.22 : 0.38;
   if (fillW < minFill || fillH < minFill - 0.05) return { descriptor: null, status: "too_far" };
   if (fillW > 1.75 || fillH > 1.75) return { descriptor: null, status: "too_close" };
 
@@ -361,7 +365,7 @@ export async function detectFaceDescriptor(
   const rightEar = eyeEar(rightEye);
   const ear =
     leftEar != null && rightEar != null ? (leftEar + rightEar) / 2 : leftEar ?? rightEar ?? undefined;
-  const eyesOpen = ear == null ? undefined : ear >= 0.19;
+  const eyesOpen = ear == null ? undefined : ear >= 0.16;
   const head = poseFromLandmarks(result.landmarks, result.detection.box, mirrored);
   if (!opts?.allowTurn && !opts?.allowBlink) {
     if (noseOffsetRatio(result.landmarks, result.detection.box) > 0.2) {

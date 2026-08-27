@@ -22,16 +22,30 @@ describe("face AI verify", () => {
     if (!gate.ok) assert.equal(gate.code, "face_ai_mismatch");
   });
 
-  it("accepts samePerson without a numeric confidence floor", () => {
+  it("rejects samePerson with low confidence", () => {
     const gate = decideFaceAiGate({ samePerson: true, confidence: 0.5, similarity: 0.5 });
+    assert.equal(gate.ok, false);
+  });
+
+  it("accepts high-confidence same person", () => {
+    const gate = decideFaceAiGate({ samePerson: true, confidence: 0.95, similarity: 0.92 });
     assert.equal(gate.ok, true);
   });
 
-  it("inspect requires one clear face", () => {
-    const two = parseFaceAiInspect({ ok: true, faceCount: 2, quality: 0.9 });
-    assert.equal(two?.faceCount, 2);
-    const one = parseFaceAiInspect({ ok: true, faceCount: 1, quality: 0.88 });
+  it("inspect requires one live face and rejects spoof", () => {
+    const two = parseFaceAiInspect({ ok: true, faceCount: 2, quality: 0.9, liveHuman: true });
+    assert.equal(two?.ok, false);
+    const one = parseFaceAiInspect({ ok: true, faceCount: 1, quality: 0.88, liveHuman: true });
     assert.equal(one?.ok, true);
+    const spoof = parseFaceAiInspect({
+      ok: true,
+      faceCount: 1,
+      quality: 0.95,
+      spoof: true,
+      liveHuman: false,
+    });
+    assert.equal(spoof?.spoof, true);
+    assert.equal(spoof?.ok, false);
   });
 
   it("gallery matchId must be in the allowed set", () => {
@@ -54,56 +68,21 @@ describe("face AI verify", () => {
 
   it("picks unique same-person identity and rejects a tie", () => {
     const unique = pickAiIdentityWinner([
-      { faceProfileId: 1, userId: 10, samePerson: true, confidence: 0.4, similarity: 0.4 },
+      { faceProfileId: 1, userId: 10, samePerson: true, confidence: 0.95, similarity: 0.93 },
       { faceProfileId: 2, userId: 11, samePerson: false, confidence: 0.9, similarity: 0.9 },
     ]);
     assert.equal(unique.ok, true);
     if (unique.ok) assert.equal(unique.userId, 10);
 
+    const weak = pickAiIdentityWinner([
+      { faceProfileId: 1, userId: 10, samePerson: true, confidence: 0.4, similarity: 0.4 },
+    ]);
+    assert.equal(weak.ok, false);
+
     const tie = pickAiIdentityWinner([
       { faceProfileId: 1, userId: 10, samePerson: true, confidence: 0.94, similarity: 0.94 },
       { faceProfileId: 2, userId: 11, samePerson: true, confidence: 0.93, similarity: 0.93 },
-    ], { preferProfileId: 1 });
-    assert.equal(tie.ok, true);
-    if (tie.ok) assert.equal(tie.userId, 10);
-  });
-
-  it("skips AI when local identity is clear", () => {
-    // Pure rule (FACE_AI_CLEAR_MARGIN=0.06, samePerson thresholds)
-    const clear = (cands: Array<{ dist: number; cosine: number }>) => {
-      const best = cands[0];
-      const second = cands[1];
-      if (!best || best.dist > 0.34 || best.cosine < 0.942) return false;
-      if (!second) return true;
-      return second.dist - best.dist >= 0.06;
-    };
-    const needsAi = (cands: Array<{ dist: number; cosine: number }>) => {
-      const best = cands[0];
-      const second = cands[1];
-      if (!best || best.dist > 0.34 || best.cosine < 0.942) return false;
-      if (!second) return false;
-      return second.dist - best.dist < 0.06;
-    };
-    assert.equal(
-      clear([
-        { dist: 0.12, cosine: 0.98 },
-        { dist: 0.28, cosine: 0.9 },
-      ]),
-      true,
-    );
-    assert.equal(
-      needsAi([
-        { dist: 0.2, cosine: 0.96 },
-        { dist: 0.22, cosine: 0.95 },
-      ]),
-      true,
-    );
-    assert.equal(
-      needsAi([
-        { dist: 0.5, cosine: 0.7 },
-        { dist: 0.55, cosine: 0.65 },
-      ]),
-      false,
-    );
+    ]);
+    assert.equal(tie.ok, false, "close AI tie must not open either account");
   });
 });

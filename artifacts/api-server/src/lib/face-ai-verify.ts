@@ -1,7 +1,7 @@
 /**
  * OpenAI Vision — Face ID enroll + login tasdiq.
- * Lokal 128-d embedding birinchi filtr. AI faqat shubhada / tasdiqda.
- * Xarajat: detail=low, kichik gallery, pairwise default o‘chirilgan.
+ * Lokal 128-d embedding tartiblaydi; AI baza rasmi bilan shaxsni tanlaydi.
+ * Anti-spoof: telefon/print/ekran rad. detail=low (xarajat).
  * Kalit faqat process.env (backend .env).
  */
 import { logger } from "./logger";
@@ -50,27 +50,29 @@ export const FACE_AI_IMAGE_DETAIL = (process.env.FACE_AI_IMAGE_DETAIL?.trim() ||
   | "low"
   | "high"
   | "auto";
-/** Shubhali login: faqat top-2. */
-export const FACE_AI_GALLERY_MAX = Math.max(1, Math.min(4, envNum("FACE_AI_GALLERY_MAX", 2)));
-/** 0 = pairwise o‘chirilgan. Shubhada default 2 (top-2 taqqoslash). */
-export const FACE_AI_PAIRWISE_MAX = Math.max(0, Math.min(5, envNum("FACE_AI_PAIRWISE_MAX", 2)));
-/** Enroll duplicate AI — baza rasmi bilan solishtirish, default 2. */
+/** Shubhali login: top-3 (noto‘g‘ri lokal tartibda ham to‘g‘ri odam chiqsin). */
+export const FACE_AI_GALLERY_MAX = Math.max(1, Math.min(4, envNum("FACE_AI_GALLERY_MAX", 3)));
+/** Pairwise taqqoslash (top-N). */
+export const FACE_AI_PAIRWISE_MAX = Math.max(1, Math.min(5, envNum("FACE_AI_PAIRWISE_MAX", 3)));
+/** Enroll duplicate AI — baza rasmi bilan solishtirish. */
 export const FACE_AI_DUP_MAX = Math.max(0, Math.min(3, envNum("FACE_AI_DUP_MAX", 2)));
-/** Enroll sifat AI — default yoqilgan (baza rasmi sifatli bo‘lsin). */
+/** Enroll sifat + anti-spoof AI. */
 export const FACE_AI_ENROLL_INSPECT = envFlag("FACE_AI_ENROLL_INSPECT", true);
+/** Login oldidan jonsiz rasm (telefon/print) tekshiruvi. */
+export const FACE_AI_ANTISPOOF = envFlag("FACE_AI_ANTISPOOF", true);
 /** Gallery match dan keyin qo‘shimcha confirm — default o‘chirilgan. */
 export const FACE_AI_CONFIRM = envFlag("FACE_AI_CONFIRM", false);
-/** Aniq lokal match bo‘lsa AI chaqirilmasin. */
-export const FACE_AI_SKIP_IF_CLEAR = envFlag("FACE_AI_SKIP_IF_CLEAR", true);
-/** Eng yaqin va 2-o‘rin orasidagi minimal farq (dist). */
-export const FACE_AI_CLEAR_MARGIN = envNum("FACE_AI_CLEAR_MARGIN", 0.06);
-/** Data URL uzunligi shundan katta bo‘lsa AI o‘tkazilmaydi (lokal). */
-export const FACE_AI_MAX_IMAGE_CHARS = envNum("FACE_AI_MAX_IMAGE_CHARS", 180_000);
 /**
- * Lokal embedding shu dist gacha bo‘lsa ham baza rasmi bilan AI solishtiriladi.
- * (Thresholddan pastroq bo‘lsa ham rasm bor — «tizimdan o‘tmagan» deb yopilmasin.)
+ * Aniq lokal match bo‘lsa ham baza rasmi bilan AI tasdiq majburiy (noto‘g‘ri odam ochilmasin).
+ * 1 = faqat lokal (tavsiya etilmaydi).
  */
-export const FACE_AI_SOFT_DIST = envNum("FACE_AI_SOFT_DIST", 0.55);
+export const FACE_AI_SKIP_IF_CLEAR = envFlag("FACE_AI_SKIP_IF_CLEAR", false);
+export const FACE_AI_CLEAR_MARGIN = envNum("FACE_AI_CLEAR_MARGIN", 0.08);
+export const FACE_AI_MAX_IMAGE_CHARS = envNum("FACE_AI_MAX_IMAGE_CHARS", 180_000);
+export const FACE_AI_SOFT_DIST = envNum("FACE_AI_SOFT_DIST", 0.48);
+/** AI samePerson uchun minimal ishonch. */
+export const FACE_AI_MIN_CONFIDENCE = envNum("FACE_AI_MIN_CONFIDENCE", 0.9);
+export const FACE_AI_MIN_SIMILARITY = envNum("FACE_AI_MIN_SIMILARITY", 0.88);
 
 export function isFaceAiEnabled(): boolean {
   if (!envFlag("FACE_AI_VERIFY", true)) return false;
@@ -115,7 +117,7 @@ async function openaiJson(
 ): Promise<unknown> {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) throw new Error("OPENAI_API_KEY missing");
-  const model = process.env.OPENAI_FACE_MODEL?.trim() || "gpt-4.1-mini";
+  const model = process.env.OPENAI_FACE_MODEL?.trim() || "gpt-4o";
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), FACE_AI_TIMEOUT_MS);
   try {
@@ -166,7 +168,9 @@ async function callOpenAiFaceCompare(
           "You are a strict biometric matcher. Compare two full face photos of real people. " +
           "Ignore hijab, glasses frames, clothing, background, lighting, makeup, hair. " +
           "Match identity from eyes, eyelids, nose, philtrum, mouth, jaw, moles, ear shape. " +
-          "samePerson=true only if it is the same human. A lookalike must be false. Never guess yes. " +
+          "samePerson=true ONLY if it is the identical human with high certainty. " +
+          "Lookalikes, siblings, similar features → samePerson=false. Never guess yes. " +
+          "If unsure, samePerson=false and confidence below 0.5. " +
           'JSON: {"samePerson":boolean,"confidence":0-1,"similarity":0-1}.',
       },
       {
@@ -285,6 +289,16 @@ export async function inspectEnrollFaceWithAi(
   liveSnapshot?: unknown,
 ): Promise<{ ok: true; quality: number } | { ok: false; error: string; code: string }> {
   if (!isFaceAiEnabled() || !FACE_AI_ENROLL_INSPECT) return { ok: true, quality: 1 };
+  return inspectLiveAntiSpoof(liveSnapshot, "enroll");
+}
+
+/** Telefon/print/ekran rasmi — jonsiz. Login va enroll oldidan. */
+export async function inspectLiveAntiSpoof(
+  liveSnapshot?: unknown,
+  mode: "enroll" | "login" = "login",
+): Promise<{ ok: true; quality: number } | { ok: false; error: string; code: string }> {
+  if (!isFaceAiEnabled()) return { ok: true, quality: 1 };
+  if (mode === "login" && !FACE_AI_ANTISPOOF) return { ok: true, quality: 1 };
   const live = toAiLiveDataUrl(typeof liveSnapshot === "string" ? liveSnapshot : null);
   if (!live) {
     return { ok: false, error: "Yuz rasmi olinmadi — kameraga tik qarab qayta urinib ko‘ring", code: "face_ai_no_photo" };
@@ -296,20 +310,30 @@ export async function inspectEnrollFaceWithAi(
           {
             role: "system",
             content:
-              "You check a workplace selfie before saving it as the Face ID photo. " +
-              "Accept if there is exactly one real human face (glasses, hijab, slight head turn, indoor light are OK). " +
-              "Do not reject for uncertain eye openness or gaze. Reject only if no face, many faces, or a printed photo/screen. " +
-              'JSON: {"ok":boolean,"faceCount":number,"quality":0-1,"reason":string}. reason must be empty when ok is true.',
+              "You are a strict liveness / anti-spoof checker for workplace Face ID. " +
+              "ACCEPT only a LIVE real human face in front of a camera (glasses, hijab, indoor light OK). " +
+              "REJECT spoof: phone/tablet screen showing a face, printed paper photo, video replay, " +
+              "photo-of-photo, flat screen glare, device bezels, moire/pixel grid, handheld phone edges. " +
+              "If you see a rectangular device frame or screen reflections → spoof=true. " +
+              "liveHuman=true only for a 3D live person. Never accept a photo held up to the camera. " +
+              'JSON: {"ok":boolean,"liveHuman":boolean,"spoof":boolean,"faceCount":number,"quality":0-1,"reason":string}. ' +
+              "reason empty when ok is true; otherwise short Uzbek or English reason.",
           },
           {
             role: "user",
             content: [
-              { type: "text", text: "Save this as the enrolled Face ID photo? One live human face is enough." },
+              {
+                type: "text",
+                text:
+                  mode === "enroll"
+                    ? "Is this a LIVE person suitable to save as Face ID? Reject phone/printed photos."
+                    : "Is this a LIVE person for Face ID login? Reject phone/printed/screen photos.",
+              },
               imgPart(live),
             ],
           },
         ],
-        180,
+        200,
       ),
     );
     if (!inspect) {
@@ -319,17 +343,25 @@ export async function inspectEnrollFaceWithAi(
         code: "face_ai_enroll_quality",
       };
     }
-    if (inspect.faceCount === 1) {
-      logger.info({ event: "face_ai_enroll_inspect", quality: inspect.quality }, "face AI enroll inspect ok");
+    if (inspect.spoof || !inspect.liveHuman) {
+      logger.info({ event: "face_ai_antispoof", mode, spoof: inspect.spoof }, "face AI rejected spoof");
+      return {
+        ok: false,
+        error: "Telefon yoki bosma rasm qabul qilinmaydi. Kameraga o‘zingiz qarang.",
+        code: "face_ai_spoof",
+      };
+    }
+    if (inspect.ok && inspect.faceCount === 1) {
+      logger.info({ event: "face_ai_antispoof", mode, quality: inspect.quality }, "face AI live ok");
       return { ok: true, quality: Math.max(inspect.quality, 0.75) };
     }
     const error =
       inspect.faceCount > 1
         ? "Kadrda faqat siz bo‘ling — boshqa odam ko‘rinmasin."
-        : "Yuz topilmadi. Kameraga qarab, yuzni oval ichiga tuting.";
+        : inspect.reason || "Yuz topilmadi. Kameraga qarab, yuzni oval ichiga tuting.";
     return { ok: false, error, code: "face_ai_enroll_quality" };
   } catch (err) {
-    logger.warn({ event: "face_ai_enroll_inspect", err: err instanceof Error ? err.message : "error" }, "face AI enroll inspect failed");
+    logger.warn({ event: "face_ai_antispoof", err: err instanceof Error ? err.message : "error" }, "face AI antispoof failed");
     return {
       ok: false,
       error: "AI yuzni tasdiqlay olmadi. Internetingizni tekshirib, qayta urinib ko‘ring.",
@@ -391,6 +423,8 @@ export async function rejectIfFaceTakenByAi(opts: {
 export async function resolveLoginIdentityWithAi(opts: {
   liveSnapshot?: unknown;
   candidates: Array<{ id: number; userId: number; dist: number; cosine: number }>;
+  /** true = anti-spoof allaqachon o‘tgan (matchFaceForAuthWithAi). */
+  skipAntiSpoof?: boolean;
 }): Promise<
   | { ok: true; id: number; userId: number; dist: number; cosine: number; confidence: number }
   | { ok: false; error: string; code: string }
@@ -407,7 +441,12 @@ export async function resolveLoginIdentityWithAi(opts: {
     return { ok: true, id: top.id, userId: top.userId, dist: top.dist, cosine: top.cosine, confidence: top.cosine };
   }
 
-  /** Aniq lokal egasi — OpenAI chaqirilmaydi. */
+  if (!opts.skipAntiSpoof) {
+    const anti = await inspectLiveAntiSpoof(opts.liveSnapshot, "login");
+    if (!anti.ok) return anti;
+  }
+
+  /** Faqat aniq lokal + SKIP yoqilgan bo‘lsa AI o‘tkaziladi (default: o‘chirilgan). */
   if (isClearLocalIdentity(opts.candidates)) {
     logger.info(
       {
@@ -415,7 +454,6 @@ export async function resolveLoginIdentityWithAi(opts: {
         userId: top.userId,
         mode: "local_clear",
         dist: Number(top.dist.toFixed(4)),
-        margin: opts.candidates[1] ? Number((opts.candidates[1].dist - top.dist).toFixed(4)) : null,
       },
       "face local clear — skip OpenAI",
     );
@@ -436,11 +474,14 @@ export async function resolveLoginIdentityWithAi(opts: {
   const hasDbPhoto = photos.size > 0;
 
   /**
-   * Baza rasmi bor → AI bilan solishtirish (lokal «o‘xshamaydi» desa ham).
-   * Rasm yo‘q va lokal ham uzoq → ro‘yxatdan o‘tmagan.
+   * Baza rasmi bor → AI majburiy (noto‘g‘ri odam ochilmasin).
+   * Rasm yo‘q: faqat aniq yagona lokal match; shubhada rad.
    */
   if (!hasDbPhoto) {
-    if (isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX) && !needsAmbiguousAi(opts.candidates)) {
+    if (
+      isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX) &&
+      !needsAmbiguousAi(opts.candidates)
+    ) {
       return {
         ok: true,
         id: top.id,
@@ -451,13 +492,13 @@ export async function resolveLoginIdentityWithAi(opts: {
       };
     }
     const fail = loginFailFromScores({
-      ambiguous: false,
+      ambiguous: needsAmbiguousAi(opts.candidates),
       closestDist: top.dist,
       ownerMaxDist: FACE_MATCH_MAX,
     });
     logger.info(
       { event: "face_ai_login", mode: "no_db_photo", dist: Number(top.dist.toFixed(4)), code: fail.code },
-      "face no enrolled photo — local only",
+      "face no enrolled photo — reject ambiguous",
     );
     return { ok: false, error: fail.error, code: fail.code };
   }
@@ -485,7 +526,7 @@ export async function resolveLoginIdentityWithAi(opts: {
 
   const gallery = opts.candidates
     .filter((c) => photos.has(c.id))
-    .slice(0, Math.max(FACE_AI_GALLERY_MAX, 2))
+    .slice(0, Math.max(FACE_AI_GALLERY_MAX, FACE_AI_PAIRWISE_MAX))
     .map((c) => ({ id: c.id, dataUrl: photos.get(c.id)!.dataUrl }));
 
   try {
@@ -514,19 +555,24 @@ export async function resolveLoginIdentityWithAi(opts: {
         "face AI vs DB photo",
       );
     }
-    const winner = pickAiIdentityWinner(scores, { preferProfileId: top.id });
+    /** preferProfileId yo‘q — lokal 1-o‘rin AI ni buzmasin; faqat yagona yuqori ishonch. */
+    const winner = pickAiIdentityWinner(scores, {
+      minConfidence: FACE_AI_MIN_CONFIDENCE,
+      minSimilarity: FACE_AI_MIN_SIMILARITY,
+    });
     if (!winner.ok) {
       const fail = loginFailFromScores({
-        ambiguous: false,
+        ambiguous: winner.code === "face_ai_low_confidence",
         closestDist: top.dist,
         ownerMaxDist: FACE_MATCH_MAX,
       });
       return {
         ok: false,
-        error: winner.code === "face_ai_mismatch"
-          ? "Bazadagi rasm bilan mos kelmadi. Kameraga tik qarab, yorug‘ joyda qayta urinib ko‘ring."
-          : fail.error,
-        code: winner.code === "face_ai_mismatch" ? "face_ai_mismatch" : fail.code,
+        error:
+          winner.code === "face_ai_low_confidence"
+            ? fail.error
+            : "Bazadagi rasm bilan mos kelmadi. Kameraga tik qarab, yorug‘ joyda qayta urinib ko‘ring.",
+        code: winner.code === "face_ai_low_confidence" ? fail.code : "face_ai_mismatch",
       };
     }
     const local = opts.candidates.find((c) => c.id === winner.faceProfileId)!;
@@ -537,7 +583,7 @@ export async function resolveLoginIdentityWithAi(opts: {
         confidence: winner.confidence,
         mode: "db_photo_match",
         detail: imageDetail(),
-        model: process.env.OPENAI_FACE_MODEL?.trim() || "gpt-4.1-mini",
+        model: process.env.OPENAI_FACE_MODEL?.trim() || "gpt-4o",
       },
       "face AI matched DB photo",
     );
@@ -551,16 +597,7 @@ export async function resolveLoginIdentityWithAi(opts: {
     };
   } catch (err) {
     logger.warn({ event: "face_ai_login", err: err instanceof Error ? err.message : "error" }, "face AI login failed");
-    if (isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX)) {
-      return {
-        ok: true,
-        id: top.id,
-        userId: top.userId,
-        dist: top.dist,
-        cosine: top.cosine,
-        confidence: top.cosine,
-      };
-    }
+    /** Lokal fallback yo‘q — AI ishlamasa noto‘g‘ri odam ochilmasin. */
     return {
       ok: false,
       error: "AI yuzni bazadagi rasm bilan solishtira olmadi. Qayta urinib ko‘ring.",

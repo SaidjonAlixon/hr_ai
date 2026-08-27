@@ -28,6 +28,8 @@ export const FACE_AMBIGUOUS_RATIO = envNum("FACE_AMBIGUOUS_RATIO", 0.72);
 export const FACE_ENROLL_BLOCK_MAX = envNum("FACE_ENROLLMENT_THRESHOLD", 0.22);
 export const FACE_SIMILAR_WARN = envNum("FACE_SIMILAR_WARN", 0.5);
 export const LIVENESS_THRESHOLD = envNum("LIVENESS_THRESHOLD", 0.55);
+/** Telefon/print: deyarli harakatsiz kadr — rad. */
+export const LIVENESS_MIN_MOTION = envNum("LIVENESS_MIN_MOTION", 0.012);
 export const FACE_CHALLENGE_TTL_MS = 120_000;
 
 export type FaceHit = { id: number; userId: number; dist: number; cosine: number };
@@ -96,7 +98,11 @@ export function isEnrollConflict(dist: number, cosine = 1): boolean {
 }
 
 export function buildFaceChallengeSteps(mode: "enroll" | "login"): FaceChallengeStep[] {
-  return [{ key: "center", pose: "center", need: mode === "enroll" ? 2 : 1 }];
+  /** Markaz + ko‘z yumish — jonsiz rasm/video replay qiyinlashadi. */
+  return [
+    { key: "center", pose: "center", need: mode === "enroll" ? 2 : 1 },
+    { key: "blink", blink: true, need: 1 },
+  ];
 }
 
 function challengeSecret(): string {
@@ -164,11 +170,26 @@ export function evaluateLiveness(
   if (missing.length) {
     return {
       ok: false,
-      error: "Yuzingiz tasdiqlanmadi. Kameraga qarab oval ichida turing.",
+      error: "Yuzingiz tasdiqlanmadi. Kameraga qarab oval ichida turing, ko‘zingizni yumib oching.",
       code: "liveness_failed",
     };
   }
-  const computed = 0.62 + (Number.isFinite(motion) && motion >= 0.008 ? 0.2 : 0.1);
+  if (!Number.isFinite(motion) || motion < LIVENESS_MIN_MOTION) {
+    return {
+      ok: false,
+      error: "Jonli yuz kerak. Telefon yoki bosma rasm qabul qilinmaydi — kameraga o‘zingiz qarang.",
+      code: "liveness_failed",
+    };
+  }
+  const needBlink = issued.steps.some((s) => s.blink);
+  if (needBlink && !proof?.blinked && !completed.has("blink")) {
+    return {
+      ok: false,
+      error: "Ko‘zingizni yumib oching — jonsiz rasm qabul qilinmaydi.",
+      code: "liveness_failed",
+    };
+  }
+  const computed = 0.62 + (motion >= 0.02 ? 0.25 : 0.15);
   return { ok: true, score: computed, quality: Math.min(1, computed) };
 }
 

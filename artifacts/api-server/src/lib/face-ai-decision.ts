@@ -62,7 +62,7 @@ export function parseFaceAiIdentify(raw: unknown, allowedIds: number[]): number 
 }
 
 export function decideFaceAiGate(ai: FaceAiCompareResult): FaceAiGate {
-  if (!ai.samePerson) {
+  if (!ai.samePerson || ai.confidence < 0.9 || ai.similarity < 0.88) {
     return {
       ok: false,
       error: FACE_LOGIN_MSG_RETRY,
@@ -83,6 +83,8 @@ export type FaceAiInspectResult = {
   faceCount: number;
   quality: number;
   reason: string;
+  liveHuman: boolean;
+  spoof: boolean;
 };
 
 export function parseFaceAiInspect(raw: unknown): FaceAiInspectResult | null {
@@ -90,9 +92,21 @@ export function parseFaceAiInspect(raw: unknown): FaceAiInspectResult | null {
   const o = raw as Record<string, unknown>;
   const faceCount = Math.max(0, Math.round(Number(o.faceCount ?? o.faces ?? 0)));
   const quality = clamp01(Number(o.quality ?? o.score ?? 0));
-  const ok = o.ok === true || (faceCount === 1 && quality >= 0.75);
+  const spoof =
+    o.spoof === true ||
+    o.isSpoof === true ||
+    o.photoOfPhoto === true ||
+    o.screen === true ||
+    String(o.spoof ?? "").toLowerCase() === "true";
+  const liveHuman =
+    !spoof &&
+    (o.liveHuman === true ||
+      o.live === true ||
+      o.realPerson === true ||
+      (o.liveHuman !== false && o.ok === true && faceCount === 1));
+  const ok = o.ok === true && faceCount === 1 && liveHuman && !spoof && quality >= 0.7;
   const reason = String(o.reason ?? o.error ?? "").trim();
-  return { ok, faceCount, quality, reason };
+  return { ok, faceCount, quality, reason, liveHuman, spoof };
 }
 
 export type FaceAiCandidateScore = {
@@ -103,48 +117,33 @@ export type FaceAiCandidateScore = {
   similarity: number;
 };
 
-/** Faqat samePerson=true lar. Bir nechta bo‘lsa — eng ishonchlisi (yaqin bo‘lsa lokal eng yaxshi). */
+/** Faqat bitta samePerson=true va yuqori ishonch. Ikki kishi “ha” yoki yaqin ishonch — hech kim ochilmaydi. */
 export function pickAiIdentityWinner(
   scores: FaceAiCandidateScore[],
-  opts?: { preferProfileId?: number },
+  opts?: { minConfidence?: number; minSimilarity?: number },
 ):
   | { ok: true; faceProfileId: number; userId: number; confidence: number; similarity: number }
   | { ok: false; code: "face_ai_mismatch" | "face_ai_low_confidence" } {
+  const minConf = opts?.minConfidence ?? 0.9;
+  const minSim = opts?.minSimilarity ?? 0.88;
   const hits = scores
-    .filter((s) => s.samePerson)
+    .filter((s) => s.samePerson && s.confidence >= minConf && s.similarity >= minSim)
     .sort((a, b) => b.confidence - a.confidence || b.similarity - a.similarity);
   if (hits.length === 0) return { ok: false, code: "face_ai_mismatch" };
-  if (hits.length === 1) {
-    const best = hits[0]!;
-    return {
-      ok: true,
-      faceProfileId: best.faceProfileId,
-      userId: best.userId,
-      confidence: best.confidence,
-      similarity: best.similarity,
-    };
+  if (hits.length > 1) {
+    const a = hits[0]!;
+    const b = hits[1]!;
+    /** Ikki xodim ham “shu odam” — xavfsiz rad (noto‘g‘ri akkaunt ochilmasin). */
+    if (a.confidence - b.confidence < FACE_AI_WIN_MARGIN_DEFAULT) {
+      return { ok: false, code: "face_ai_low_confidence" };
+    }
   }
-  const a = hits[0]!;
-  const b = hits[1]!;
-  if (a.confidence - b.confidence >= FACE_AI_WIN_MARGIN_DEFAULT) {
-    return {
-      ok: true,
-      faceProfileId: a.faceProfileId,
-      userId: a.userId,
-      confidence: a.confidence,
-      similarity: a.similarity,
-    };
-  }
-  const preferred =
-    opts?.preferProfileId != null
-      ? hits.find((h) => h.faceProfileId === opts.preferProfileId)
-      : undefined;
-  const chosen = preferred ?? a;
+  const best = hits[0]!;
   return {
     ok: true,
-    faceProfileId: chosen.faceProfileId,
-    userId: chosen.userId,
-    confidence: chosen.confidence,
-    similarity: chosen.similarity,
+    faceProfileId: best.faceProfileId,
+    userId: best.userId,
+    confidence: best.confidence,
+    similarity: best.similarity,
   };
 }

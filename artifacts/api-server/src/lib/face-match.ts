@@ -271,11 +271,20 @@ export async function matchFaceForAuthWithAi(
   | { ok: true; id: number; userId: number; dist: number; cosine: number }
   | { ok: false; error: string; code: string; neighbors?: FaceNeighbor[] }
 > {
-  const { FACE_AI_GALLERY_MAX, isFaceAiEnabled, resolveLoginIdentityWithAi } = await import("./face-ai-verify");
+  const {
+    FACE_AI_GALLERY_MAX,
+    inspectLiveAntiSpoof,
+    isFaceAiEnabled,
+    resolveLoginIdentityWithAi,
+  } = await import("./face-ai-verify");
   if (!isFaceAiEnabled()) return matchFaceForAuth(descriptor);
+
+  const anti = await inspectLiveAntiSpoof(liveSnapshot, "login");
+  if (!anti.ok) return { ok: false, error: anti.error, code: anti.code };
+
   const probes = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
   const rows = await loadFaceRows();
-  const candidates = listAuthCandidates(probes, rows, FACE_AI_GALLERY_MAX);
+  const candidates = listAuthCandidates(probes, rows, Math.max(FACE_AI_GALLERY_MAX, 3));
   if (!candidates.length) {
     return {
       ok: false,
@@ -285,6 +294,7 @@ export async function matchFaceForAuthWithAi(
   }
   const resolved = await resolveLoginIdentityWithAi({
     liveSnapshot,
+    skipAntiSpoof: true,
     candidates: candidates.map((c) => ({ id: c.id, userId: c.userId, dist: c.dist, cosine: c.cosine })),
   });
   if (!resolved.ok) {

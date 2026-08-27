@@ -44,14 +44,20 @@ type Props = {
 
 type Challenge = FaceChallengeStep;
 
-const FALLBACK_ENROLL: Challenge[] = [{ key: "center", pose: "center", need: 2 }];
-const FALLBACK_LOGIN: Challenge[] = [{ key: "center", pose: "center", need: 1 }];
+const FALLBACK_ENROLL: Challenge[] = [
+  { key: "center", pose: "center", need: 2 },
+  { key: "blink", blink: true, need: 1 },
+];
+const FALLBACK_LOGIN: Challenge[] = [
+  { key: "center", pose: "center", need: 1 },
+  { key: "blink", blink: true, need: 1 },
+];
 
 const MIN_SCORE_ENROLL = 0.48;
 const MIN_SCORE_LOGIN = 0.48;
 
 function stepHint(step: Challenge): string {
-  if (step.blink) return "Ko‘zlarni yumib oching";
+  if (step.blink) return "Ko‘zni yumib 1 soniya ushlab, keyin oching";
   return poseHint(step.pose ?? "center");
 }
 
@@ -133,6 +139,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     let blinkOpen = false;
     let pitchRef: number | null = null;
     let openEar = 0;
+    let closedFrames = 0;
+    let openFrames = 0;
+    let sawOpenEyes = false;
     let lastBlinkDesc: number[] | null = null;
     let challengeToken = "";
 
@@ -261,6 +270,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             lastDesc = null;
             blinkClosed = false;
             blinkOpen = false;
+            closedFrames = 0;
+            openFrames = 0;
+            openEar = 0;
+            sawOpenEyes = false;
             running = true;
           }
         };
@@ -268,9 +281,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         const loop = async () => {
           if (!running || cancelled) return;
           const videoEl = videoRef.current;
+          const want = steps[poseI];
           if (videoEl && videoEl.readyState >= 2) {
             try {
-              const want = steps[poseI];
               if (!want) {
                 await finish(videoEl);
                 return;
@@ -298,54 +311,93 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               } else if (want.blink) {
                 if (result.descriptor) lastBlinkDesc = result.descriptor;
                 const ear = result.ear;
-                if (ear != null && ear > 0.18) openEar = Math.max(openEar, ear);
-                const closeAt = Math.max(0.11, (openEar || 0.26) * 0.72);
-                const openAt = closeAt + 0.02;
-                if (ear != null && ear < closeAt) {
-                  blinkClosed = true;
-                  setAligned(true);
-                  setHint("Yaxshi — endi ko‘zni oching");
-                } else if (blinkClosed && ear != null && ear > openAt) {
-                  blinkOpen = true;
-                  const bucket = poseBuckets[poseI]!;
-                  const vec = result.descriptor ?? lastBlinkDesc;
-                  if (vec) bucket.push(vec);
-                  poseI += 1;
-                  setPoseIndex(poseI);
-                  setPoseFill(0);
-                  lastDesc = null;
-                  setHint(poseI >= steps.length ? "Tasdiqlanmoqda…" : stepHint(steps[poseI]!));
-                  if (poseI >= steps.length) {
-                    await finish(videoEl);
-                    return;
+                const lostFace =
+                  !result.descriptor &&
+                  (alignStatus === "no_face" || alignStatus === "outside" || alignStatus === "covered");
+                if (ear != null && ear >= 0.14) {
+                  openEar = openEar > 0 ? openEar * 0.85 + ear * 0.15 : ear;
+                  sawOpenEyes = true;
+                }
+                const baseline = openEar > 0.12 ? openEar : 0.2;
+                /** Nisbiy pasayish — kichik ko‘zlar / past EAR ham o‘tadi. */
+                const closeAt = Math.max(0.09, baseline * 0.85);
+                const openAt = Math.max(closeAt + 0.01, baseline * 0.92);
+                const isClosed =
+                  (ear != null && ear < closeAt) || (sawOpenEyes && lostFace);
+                if (isClosed) {
+                  closedFrames += 1;
+                  openFrames = 0;
+                  if (closedFrames >= 1) {
+                    blinkClosed = true;
+                    setAligned(true);
+                    setHint("Yaxshi — endi ko‘zni oching");
+                  }
+                } else if (
+                  blinkClosed &&
+                  ((ear != null && ear > openAt) || (sawOpenEyes && result.descriptor && ear != null && ear >= closeAt))
+                ) {
+                  openFrames += 1;
+                  if (openFrames >= 1) {
+                    blinkOpen = true;
+                    const bucket = poseBuckets[poseI]!;
+                    const vec = result.descriptor ?? lastBlinkDesc;
+                    if (vec) bucket.push(vec);
+                    poseI += 1;
+                    setPoseIndex(poseI);
+                    setPoseFill(0);
+                    lastDesc = null;
+                    blinkClosed = false;
+                    closedFrames = 0;
+                    openFrames = 0;
+                    setHint(poseI >= steps.length ? "Tasdiqlanmoqda…" : stepHint(steps[poseI]!));
+                    if (poseI >= steps.length) {
+                      await finish(videoEl);
+                      return;
+                    }
                   }
                 } else {
-                  setAligned(Boolean(result.descriptor));
-                  setHint(blinkClosed ? "Ko‘zni oching" : "Ko‘zlarni yumib oching");
+                  if (!isClosed) closedFrames = 0;
+                  setAligned(Boolean(result.descriptor) || blinkClosed);
+                  setHint(
+                    blinkClosed
+                      ? "Ko‘zni oching"
+                      : "Ko‘zni yumib 1 soniya ushlab, keyin oching",
+                  );
                 }
               } else if (!poseOk) {
                 lastDesc = null;
                 setHint(stepHint(want));
               } else {
-                lastDesc = result.descriptor;
-                if (wantPose === "center") {
-                  lastPhoto = grabFaceSnapshot(videoEl) || lastPhoto;
-                }
-                const bucket = poseBuckets[poseI]!;
-                bucket.push(result.descriptor);
-                setPoseFill(bucket.length);
-                setHint(`${stepHint(want)}  ·  ${bucket.length}/${want.need}`);
-                if (bucket.length >= want.need) {
-                  poseI += 1;
-                  setPoseIndex(poseI);
-                  setPoseFill(0);
-                  lastDesc = null;
-                  pitchRef = null;
-                  if (poseI >= steps.length) {
-                    await finish(videoEl);
-                    return;
+                const vec = result.descriptor;
+                if (!vec) {
+                  setHint(stepHint(want));
+                } else {
+                  lastDesc = vec;
+                  if (wantPose === "center") {
+                    lastPhoto = grabFaceSnapshot(videoEl) || lastPhoto;
                   }
-                  setHint(stepHint(steps[poseI]!));
+                  const bucket = poseBuckets[poseI]!;
+                  bucket.push(vec);
+                  setPoseFill(bucket.length);
+                  setHint(`${stepHint(want)}  ·  ${bucket.length}/${want.need}`);
+                  if (bucket.length >= want.need) {
+                    poseI += 1;
+                    setPoseIndex(poseI);
+                    setPoseFill(0);
+                    lastDesc = null;
+                    pitchRef = null;
+                    blinkClosed = false;
+                    blinkOpen = false;
+                    closedFrames = 0;
+                    openFrames = 0;
+                    openEar = 0;
+                    sawOpenEyes = false;
+                    if (poseI >= steps.length) {
+                      await finish(videoEl);
+                      return;
+                    }
+                    setHint(stepHint(steps[poseI]!));
+                  }
                 }
               }
             } catch (err) {
@@ -353,7 +405,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               return;
             }
           }
-          if (running && !cancelled) window.setTimeout(() => void loop(), 70);
+          if (running && !cancelled) {
+            const delay = want?.blink ? 20 : 70;
+            window.setTimeout(() => void loop(), delay);
+          }
         };
 
         void loop();

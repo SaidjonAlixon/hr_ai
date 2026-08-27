@@ -148,6 +148,17 @@ describe("face identity", () => {
     const { token, steps } = issueFaceChallenge("login");
     const incomplete = evaluateLiveness({ challenge: token, steps: [], poses: [], motion: 0.2 }, "login");
     assert.equal(incomplete.ok, false);
+    const staticPhoto = evaluateLiveness(
+      {
+        challenge: token,
+        steps: steps.map((s) => s.key),
+        poses: steps.map((s) => s.pose ?? s.key),
+        blinked: true,
+        motion: 0.001,
+      },
+      "login",
+    );
+    assert.equal(staticPhoto.ok, false, "near-zero motion (phone photo) must fail");
     const done = evaluateLiveness(
       {
         challenge: token,
@@ -161,9 +172,9 @@ describe("face identity", () => {
     assert.equal(done.ok, true, "completed random challenge should pass");
   });
 
-  it("enroll liveness is a single center hold", () => {
+  it("enroll liveness requires center hold plus blink", () => {
     const { token, steps } = issueFaceChallenge("enroll");
-    assert.equal(steps.length, 1);
+    assert.ok(steps.some((s) => s.blink));
     const skipped = evaluateLiveness({ challenge: token, steps: [], poses: [], motion: 0.2 }, "enroll");
     assert.equal(skipped.ok, false);
     const all = evaluateLiveness(
@@ -171,6 +182,7 @@ describe("face identity", () => {
         challenge: token,
         steps: steps.map((s) => s.key),
         poses: steps.map((s) => s.pose ?? s.key),
+        blinked: true,
         motion: 0.02,
       },
       "enroll",

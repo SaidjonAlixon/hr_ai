@@ -600,19 +600,6 @@ export async function enrollFace(
   return res;
 }
 
-export async function loginWithFace<TUser>(
-  descriptor: number[] | number[][],
-  snapshot?: string,
-  liveness?: FaceLivenessProof,
-): Promise<{ user: TUser; fullName?: string; message?: string }> {
-  const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
-  const photo = snapshot ? await compressFaceSnapshotAsync(snapshot) : undefined;
-  return apiJson<{ user: TUser; fullName?: string; message?: string }>("/auth/face/login", {
-    method: "POST",
-    body: JSON.stringify({ descriptors: list, snapshot: photo, liveness }),
-  });
-}
-
 export async function removeFaceId(): Promise<void> {
   await apiJson("/auth/face", { method: "DELETE" });
 }

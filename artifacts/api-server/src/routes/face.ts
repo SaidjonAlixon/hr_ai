@@ -9,7 +9,6 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canManageSettings } from "../lib/roles";
-import { setSessionCookie } from "../lib/session";
 import {
   FACE_ENROLL_BLOCK_MAX,
   FACE_MATCH_MAX,
@@ -24,7 +23,6 @@ import {
   findDuplicateEnrollHits,
   findNearestFaces,
   invalidateFaceCache,
-  matchFaceForAuthWithAi,
   parseFaceDescriptor,
 } from "../lib/face-match";
 import { inspectEnrollFaceWithAi, rejectIfFaceTakenByAi } from "../lib/face-ai-verify";
@@ -45,25 +43,6 @@ function parseDescriptorList(body: { descriptors?: unknown; descriptor?: unknown
 const router: IRouter = Router();
 
 const MAX_SNAPSHOT_CHARS = 700_000;
-
-async function getUserWithDept(userId: number) {
-  const [user] = await db
-    .select({
-      id: usersTable.id,
-      fullName: usersTable.fullName,
-      role: usersTable.role,
-      departmentId: usersTable.departmentId,
-      departmentName: departmentsTable.name,
-      login: usersTable.login,
-      phone: usersTable.phone,
-      status: usersTable.status,
-      createdAt: usersTable.createdAt,
-    })
-    .from(usersTable)
-    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
-    .where(eq(usersTable.id, userId));
-  return user ?? null;
-}
 
 function parseDescriptor(raw: unknown): number[] | null {
   return parseFaceDescriptor(raw);
@@ -318,62 +297,10 @@ router.post("/auth/face/enroll", requireAuth, async (req: AuthRequest, res): Pro
 });
 
 router.post("/auth/face/login", async (req, res): Promise<void> => {
-  const ip = clientKey(req);
-  if (!rateLimitAllow(`face-login:${ip}`, 12, 10 * 60_000)) {
-    res.status(429).json({ error: "Ko‘p urinish — birozdan keyin qayta urinib ko‘ring" });
-    return;
-  }
-  const descriptors = parseDescriptorList(req.body ?? {});
-  if (!descriptors.length) {
-    res.status(400).json({ error: "Yuz aniq olinmadi — kameraga qarab turing" });
-    return;
-  }
-
-  const live = evaluateLiveness(req.body?.liveness as LivenessProof | undefined, "login");
-  if (!live.ok) {
-    logger.info({ event: "face_login", ok: false, code: live.code, liveness: false }, "face login liveness");
-    res.status(403).json({ error: live.error, code: live.code });
-    return;
-  }
-
-  const matched = await matchFaceForAuthWithAi(descriptors, req.body?.snapshot ?? req.body?.photo);
-  if (!matched.ok) {
-    res.status(401).json({
-      error: matched.error,
-      code: matched.code,
-    });
-    return;
-  }
-
-  const [user] = await db.select().from(usersTable).where(eq(usersTable.id, matched.userId));
-  if (!user || (user.status !== "active" && user.status !== "on_leave")) {
-    res.status(403).json({
-      error: user?.fullName
-        ? `${user.fullName}: profil faol emas`
-        : "Foydalanuvchi faol emas",
-      code: "user_inactive",
-      fullName: user?.fullName ?? undefined,
-    });
-    return;
-  }
-
-  await db
-    .update(faceProfilesTable)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(faceProfilesTable.id, matched.id));
-
-  await maybeBackfillFacePhoto(matched.id, req.body?.snapshot ?? req.body?.photo);
-
-  // Tanilgan yuz egasi — sessiya shu profilga o‘tadi (eski cookie yoziladi)
-  setSessionCookie(res, user.id);
-  const fullUser = await getUserWithDept(user.id);
-  const fullName = fullUser?.fullName ?? user.fullName;
-  res.json({
-    ok: true,
-    user: fullUser,
-    fullName,
-    message: fullName,
-    sessionUserId: user.id,
+  /** Face ID tizimga kirish uchun o‘chirilgan — faqat davomat (`/davomat/face-verify`). */
+  res.status(410).json({
+    error: "Face ID bilan kirish o‘chirilgan. Tizimga login/parol bilan kiring. Face ID faqat davomat uchun.",
+    code: "face_login_disabled",
   });
 });
 

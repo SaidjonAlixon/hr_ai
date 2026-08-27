@@ -437,7 +437,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-white !max-h-[100dvh] !overflow-hidden"
       >
         <DialogHeader className="sr-only">
-          <DialogTitle>{title || (mode === "enroll" ? "Face ID" : "Face ID kirish")}</DialogTitle>
+          <DialogTitle>{title || (mode === "enroll" ? "Face ID · ulash" : "Davomat · Face ID")}</DialogTitle>
           <DialogDescription>{description || stepHint(currentStep)}</DialogDescription>
         </DialogHeader>
 

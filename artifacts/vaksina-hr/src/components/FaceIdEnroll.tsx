@@ -78,7 +78,7 @@ export function FaceIdEnroll({
   );
 
   const onRemove = async () => {
-    if (!window.confirm("Face ID ni o‘chirasizmi? Keyin login/parol bilan kirasiz.")) return;
+    if (!window.confirm("Face ID ni o‘chirasizmi? Keyin davomatda yuz bilan tasdiqlay olmaysiz.")) return;
     setLoading(true);
     try {
       await removeFaceId();
@@ -152,7 +152,7 @@ export function FaceIdEnroll({
                 ) : null}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                Kameraga qarab, boshni chap, o‘ng va tepaga burang.
+                Face ID faqat davomatda sizni tasdiqlash uchun. Tizimga login/parol bilan kirasiz.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">
                 <Button type="button" size="sm" disabled={loading || !supported} onClick={() => setScanOpen(true)}>

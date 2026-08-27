@@ -693,8 +693,8 @@ export default function DavomatFacePage() {
     !workplaceGpsMissing && distance != null ? distance <= allowedMeters : false;
 
   /**
-   * Face ID skani login talab qilmaydi (yuz → profil).
-   * faceRegistered === true kutish — login yo‘q / status 401 bo‘lsa tugma abadiy yopiq qolardi.
+   * Face ID skani davomat profilini aniqlaydi (tizim login emas).
+   * faceRegistered === false kutish — status 401 bo‘lsa tugma abadiy yopiq qolardi.
    */
   const canOpenFace =
     faceRegistered !== false &&

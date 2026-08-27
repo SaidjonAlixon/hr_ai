@@ -8,9 +8,7 @@ import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '../components/ui/card';
 import { useToast } from '../hooks/use-toast';
-import { isFaceIdSupported, loginWithFace } from '../lib/face-id';
 import { DAVOMAT_GEOFENCE_METERS } from '../lib/davomat-api';
-import { FaceScanDialog } from '../components/FaceScanDialog';
 import type { User } from '@workspace/api-client-react';
 import { compactCredential } from '../lib/utils';
 
@@ -18,7 +16,6 @@ export default function Login() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [faceOpen, setFaceOpen] = useState(false);
   const { mutate, isPending } = useLogin();
   const { switchToUser } = useAuth();
   const [, setLocation] = useLocation();
@@ -139,70 +136,33 @@ export default function Login() {
                   </button>
                 </div>
               </div>
-              <Button type="submit" className="w-full" disabled={isPending || faceOpen}>
+              <Button type="submit" className="w-full" disabled={isPending}>
                 {isPending ? 'Kirilmoqda...' : 'Kirish'}
               </Button>
             </form>
-            {isFaceIdSupported() ? (
-              <div className="mt-4">
-                <div className="relative mb-4">
-                  <div className="absolute inset-0 flex items-center">
-                    <span className="w-full border-t" />
-                  </div>
-                  <div className="relative flex justify-center text-xs uppercase">
-                    <span className="bg-white px-2 text-muted-foreground">yoki</span>
-                  </div>
+            <div className="mt-4">
+              <div className="relative mb-4">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t" />
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="w-full gap-2"
-                  disabled={isPending || faceOpen}
-                  onClick={() => setFaceOpen(true)}
-                >
-                  <ScanFace className="h-4 w-4" />
-                  Face ID bilan kirish
-                </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  className="mt-2 w-full gap-2"
-                  onClick={() => setLocation("/davomat-face")}
-                >
-                  <ScanFace className="h-4 w-4" />
-                  Davomat
-                </Button>
-                <p className="mt-2 text-center text-[11px] text-muted-foreground">
-                  Davomat: farmasevt, mudir va stajyor — o‘z filiali GPS ({DAVOMAT_GEOFENCE_METERS} m). Qolganlar — asosiy ofis (100 m).
-                </p>
-                <FaceScanDialog
-                  open={faceOpen}
-                  onOpenChange={setFaceOpen}
-                  mode="login"
-                  onCaptured={async (descriptor, snapshot, liveness) => {
-                    const data = await loginWithFace<User>(descriptor, snapshot, liveness);
-                    const fullName =
-                      data.fullName ||
-                      (data.user as User & { fullName?: string })?.fullName ||
-                      "";
-                    if (data.user) {
-                      switchToUser(data.user);
-                    }
-                    // Dialog ismni ko‘rsatishi uchun biroz kutamiz
-                    window.setTimeout(() => {
-                      toast({
-                        title: fullName ? `Xush kelibsiz, ${fullName}` : "Face ID",
-                        description: fullName
-                          ? "Yuz aniqlandi — shu profilga kirdingiz"
-                          : "Tizimga kirdingiz",
-                      });
-                      if (data.user) goAfterLogin(data.user);
-                    }, 900);
-                    return { fullName };
-                  }}
-                />
+                <div className="relative flex justify-center text-xs uppercase">
+                  <span className="bg-white px-2 text-muted-foreground">davomat</span>
+                </div>
               </div>
-            ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                className="w-full gap-2"
+                onClick={() => setLocation("/davomat-face")}
+              >
+                <ScanFace className="h-4 w-4" />
+                Davomat (Face ID)
+              </Button>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                Face ID faqat davomat uchun — tizimga kirish login/parol bilan.
+                Farmasevt, mudir va stajyor: filial GPS ({DAVOMAT_GEOFENCE_METERS} m). Qolganlar: ofis (100 m).
+              </p>
+            </div>
           </CardContent>
           
           {import.meta.env.DEV && (

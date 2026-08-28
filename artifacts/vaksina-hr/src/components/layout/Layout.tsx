@@ -46,6 +46,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
+import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { updateMyProfile } from '@/lib/face-id';
 import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees } from '@/lib/roles';
@@ -590,6 +591,17 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   function injectCommonNav(items: NavItem[]): NavItem[] {
     let next = [...items];
+    if (!next.some((i) => i.path === '/vazifalar')) {
+      const dashIdx = next.findIndex((i) => i.path === '/dashboard');
+      const kirishIdx = next.findIndex((i) => i.path === '/kirish');
+      const anchor = dashIdx >= 0 ? dashIdx : kirishIdx;
+      const at = anchor >= 0 ? anchor + 1 : 0;
+      next = [
+        ...next.slice(0, at),
+        { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+        ...next.slice(at),
+      ];
+    }
     if (!next.some((i) => i.path === '/oylik')) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
       const at = dashIdx >= 0 ? dashIdx + 1 : 0;
@@ -1343,6 +1355,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <main
           className={cn(
             'min-h-0 min-w-0 flex-1',
+            'pb-[calc(4.85rem+env(safe-area-inset-bottom))] md:pb-0',
             location === '/vazifalar' ||
               location === '/pipeline' ||
               location.startsWith('/chat') ||
@@ -1373,6 +1386,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             {children}
           </div>
         </main>
+
+        <MobileBottomNav
+          role={user.role}
+          location={location}
+          navItems={navItems}
+          hidden={mobileOpen}
+        />
       </div>
     </div>
   );

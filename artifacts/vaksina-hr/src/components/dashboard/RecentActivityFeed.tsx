@@ -100,7 +100,7 @@ export function RecentActivityFeed({
 
         return (
           <Link key={`${activity.type}-${activity.id}`} href={href}>
-            <div className="group flex items-start gap-3 rounded-xl border bg-white p-3 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer">
+            <div className="group flex items-start gap-3 rounded-xl border bg-card p-3 hover:border-primary/30 hover:shadow-sm transition-all cursor-pointer">
               <div className={cn('w-10 h-10 rounded-xl border flex items-center justify-center shrink-0', meta.soft)}>
                 <Icon className={cn('w-4.5 h-4.5 w-4 h-4', meta.color)} />
               </div>

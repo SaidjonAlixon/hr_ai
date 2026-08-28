@@ -78,7 +78,7 @@ export default function CandidatesList() {
       offline_interview: { label: 'Offline suhbat', color: 'bg-orange-100 text-orange-800' },
       final_decision: { label: 'Yakuniy qaror', color: 'bg-amber-100 text-amber-800' },
       offer: { label: 'Job Offer', color: 'bg-teal-100 text-teal-800' },
-      documents: { label: 'Hujjatlar', color: 'bg-slate-100 text-slate-800' },
+      documents: { label: 'Hujjatlar', color: 'bg-slate-100 text-foreground' },
       internship: { label: 'Stajirovka', color: 'bg-cyan-100 text-cyan-800' },
       hired: { label: 'Ishga qabul', color: 'bg-emerald-100 text-emerald-800' },
     };
@@ -111,19 +111,19 @@ export default function CandidatesList() {
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-center bg-white p-4 rounded-lg border shadow-sm">
+      <div className="flex flex-col sm:flex-row gap-4 items-center bg-card p-4 rounded-lg border shadow-sm">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
             placeholder="Ism, raqam bo'yicha qidirish..." 
-            className="pl-9 bg-gray-50 border-transparent focus-visible:bg-white"
+            className="pl-9 bg-background border-transparent focus-visible:bg-card"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <div className="flex gap-2 w-full sm:w-auto shrink-0 flex-wrap">
           <Select value={statusFilter} onValueChange={updateStatus}>
-            <SelectTrigger className="w-full sm:w-[180px] bg-gray-50 border-transparent">
+            <SelectTrigger className="w-full sm:w-[180px] bg-background border-transparent">
               <Filter className="w-4 h-4 mr-2" />
               <SelectValue placeholder="Holat" />
             </SelectTrigger>
@@ -135,7 +135,7 @@ export default function CandidatesList() {
             </SelectContent>
           </Select>
           <Select value={stageFilter} onValueChange={updateStage}>
-            <SelectTrigger className="w-full sm:w-[200px] bg-gray-50 border-transparent">
+            <SelectTrigger className="w-full sm:w-[200px] bg-background border-transparent">
               <SelectValue placeholder="Bosqich" />
             </SelectTrigger>
             <SelectContent>
@@ -154,7 +154,7 @@ export default function CandidatesList() {
         </div>
       </div>
 
-      <div className="bg-white border rounded-lg overflow-hidden shadow-sm">
+      <div className="bg-card border rounded-lg overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
             <thead className="bg-muted/50 text-muted-foreground border-b">

@@ -10,6 +10,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter }
 import { useToast } from '../hooks/use-toast';
 import type { User } from '@workspace/api-client-react';
 import { compactCredential } from '../lib/utils';
+import { ThemeToggle } from '../components/theme-toggle';
 
 export default function Login() {
   const [login, setLogin] = useState('');
@@ -68,7 +69,10 @@ export default function Login() {
   ];
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+    <div className="relative min-h-screen flex items-center justify-center bg-background p-4">
+      <div className="absolute right-4 top-4 safe-top">
+        <ThemeToggle />
+      </div>
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img
@@ -142,7 +146,7 @@ export default function Login() {
           </CardContent>
           
           {import.meta.env.DEV && (
-            <CardFooter className="flex flex-col items-stretch pt-0 border-t mt-6 bg-gray-50/50">
+            <CardFooter className="flex flex-col items-stretch pt-0 border-t mt-6 bg-background/50">
               <div className="text-sm font-medium text-center text-gray-500 py-4">
                 Demo akkauntlar (tanlang):
               </div>

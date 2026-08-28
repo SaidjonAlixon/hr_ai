@@ -38,7 +38,7 @@ export default function ReviziyaDocPage() {
   const [reason, setReason] = useState("");
 
   if (!canViewReviziya(user?.role)) {
-    return <div className="p-8 text-slate-500">Ruxsat yo‘q</div>;
+    return <div className="p-8 text-muted-foreground">Ruxsat yo‘q</div>;
   }
   const row = doc.data;
   if (doc.isLoading) {
@@ -49,7 +49,7 @@ export default function ReviziyaDocPage() {
       </div>
     );
   }
-  if (!row) return <div className="p-8 text-slate-500">Topilmadi</div>;
+  if (!row) return <div className="p-8 text-muted-foreground">Topilmadi</div>;
 
   const typeLabel = meta.data?.docTypes?.find((t: { value: string }) => t.value === row.docType)?.label || row.docType;
   const perms = meta.data?.permissions || {};
@@ -66,10 +66,10 @@ export default function ReviziyaDocPage() {
 
   return (
     <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
-      <div className="bg-gradient-to-br from-[#2e1065] to-[#0b3a5c] px-4 py-5 text-white md:px-6">
+      <div className="bg-gradient-to-br from-[#2e1065] to-[#0b3a5c] px-4 py-5 text-foreground dark:text-white md:px-6">
         <div className="mx-auto max-w-3xl">
           <Link href="/reviziya">
-            <span className="inline-flex items-center text-sm text-violet-200 hover:text-white">
+            <span className="inline-flex items-center text-sm text-violet-200 hover:text-foreground dark:text-white">
               <ArrowLeft className="mr-1 h-4 w-4" /> Reviziya
             </span>
           </Link>
@@ -89,41 +89,41 @@ export default function ReviziyaDocPage() {
       </div>
 
       <div className="mx-auto max-w-3xl space-y-4 px-4 py-5 md:px-6">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Asosiy oqim</p>
+        <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Asosiy oqim</p>
           <div className="flex flex-wrap gap-1.5">
             {FLOW.map((s, i) => (
               <span
                 key={s}
                 className={cn(
                   "rounded-full px-2.5 py-1 text-[11px] font-medium",
-                  i <= flowIdx ? "bg-violet-700 text-white" : "bg-slate-100 text-slate-500",
+                  i <= flowIdx ? "bg-violet-700 text-foreground dark:text-white" : "bg-slate-100 text-muted-foreground",
                 )}
               >
                 {STATUS_UZ[s]}
               </span>
             ))}
           </div>
-          <p className="mt-3 text-xs text-slate-500">Kamomad: tushuntirish → SB → undirish</p>
+          <p className="mt-3 text-xs text-muted-foreground">Kamomad: tushuntirish → SB → undirish</p>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-3">
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <p className="text-[11px] text-slate-500">Kamomad / summa</p>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <p className="text-[11px] text-muted-foreground">Kamomad / summa</p>
             <p className="text-xl font-semibold tabular-nums">{Math.round(row.shortageAmount || 0)}</p>
           </div>
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <p className="text-[11px] text-slate-500">Pozitsiyalar</p>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <p className="text-[11px] text-muted-foreground">Pozitsiyalar</p>
             <p className="text-xl font-semibold">{row.lines?.length || 0}</p>
           </div>
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
-            <p className="text-[11px] text-slate-500">Tahrir</p>
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
+            <p className="text-[11px] text-muted-foreground">Tahrir</p>
             <p className="text-sm font-medium">{row.status === "closed" || row.status === "storno" ? "Yopiq" : "Ochiq"}</p>
           </div>
         </div>
 
         {(row.lines || []).length ? (
-          <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+          <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
             <div className="border-b px-4 py-3 text-sm font-semibold">Inventarizatsiya qatorlari</div>
             {(row.lines as Array<Record<string, unknown>>).slice(0, 30).map((l, i) => (
               <div key={i} className="flex flex-wrap justify-between gap-2 border-b px-4 py-2.5 text-xs last:border-0">
@@ -136,7 +136,7 @@ export default function ReviziyaDocPage() {
           </div>
         ) : null}
 
-        <div className="flex flex-wrap gap-2 rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap gap-2 rounded-2xl border bg-card p-4 shadow-sm">
           <Button size="sm" onClick={() => act(() => mut.advance.mutateAsync({ id }), "Holat yangilandi")}>
             Keyingi holat
           </Button>
@@ -156,7 +156,7 @@ export default function ReviziyaDocPage() {
           ) : null}
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border bg-card p-4 shadow-sm">
           <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
             <Smartphone className="h-4 w-4 text-violet-600" /> SMS-OTP tasdiq
           </p>
@@ -171,18 +171,18 @@ export default function ReviziyaDocPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border bg-card p-4 shadow-sm">
           <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
             <Shield className="h-4 w-4 text-violet-600" /> Audit log
           </p>
           {(row.audit || []).length ? (
             (row.audit || []).map((a) => (
-              <p key={a.id} className="border-t py-1.5 text-xs text-slate-600 first:border-0">
+              <p key={a.id} className="border-t py-1.5 text-xs text-muted-foreground first:border-0">
                 {new Date(a.createdAt).toLocaleString("uz-UZ")} · {a.action} · {a.detail || ""}
               </p>
             ))
           ) : (
-            <p className="text-xs text-slate-400">Hali yozuv yo‘q</p>
+            <p className="text-xs text-muted-foreground">Hali yozuv yo‘q</p>
           )}
         </div>
       </div>

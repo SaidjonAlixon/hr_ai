@@ -79,7 +79,7 @@ function FaceThumb({
     );
   }
   return (
-    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-slate-400 ring-1 ring-slate-200">
+    <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-slate-100 text-muted-foreground ring-1 ring-slate-200">
       <UserRound className="h-6 w-6" />
     </div>
   );
@@ -223,8 +223,8 @@ export default function AdminFacesPage() {
       </div>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
-        <div className="rounded-xl border bg-white p-3 shadow-sm">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500">Jami</p>
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jami</p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums">{data?.total ?? "—"}</p>
         </div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
@@ -243,7 +243,7 @@ export default function AdminFacesPage() {
 
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -266,8 +266,8 @@ export default function AdminFacesPage() {
               className={cn(
                 "rounded-lg px-2.5 py-1.5 text-[11px] font-medium transition-colors",
                 statusFilter === f.id
-                  ? "bg-[#0b3a5c] text-white"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-slate-100 text-muted-foreground hover:bg-slate-200",
               )}
             >
               {f.label}
@@ -277,17 +277,17 @@ export default function AdminFacesPage() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center gap-2 py-14 text-slate-500">
+        <div className="flex items-center justify-center gap-2 py-14 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
           Yuklanmoqda…
         </div>
       ) : error ? (
         <p className="text-sm text-red-600">{(error as Error).message}</p>
       ) : (
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full min-w-[780px] text-left text-sm">
-              <thead className="border-b bg-slate-50 text-[10px] uppercase tracking-wide text-slate-500">
+              <thead className="border-b bg-muted text-[10px] uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-3 py-2.5 font-medium">Yuz</th>
                   <th className="px-3 py-2.5 font-medium">Xodim</th>
@@ -299,21 +299,21 @@ export default function AdminFacesPage() {
               </thead>
               <tbody>
                 {filtered.map((row) => (
-                  <tr key={`${row.userId}-${row.id}`} className="border-b last:border-0 hover:bg-slate-50/80">
+                  <tr key={`${row.userId}-${row.id}`} className="border-b last:border-0 hover:bg-muted/80">
                     <td className="px-3 py-2.5">
                       <FaceThumb row={row} onOpen={setPreview} />
                     </td>
                     <td className="px-3 py-2.5">
-                      <p className="font-medium text-slate-900">{row.fullName}</p>
-                      <p className="text-xs text-slate-500">{row.login}</p>
+                      <p className="font-medium text-foreground">{row.fullName}</p>
+                      <p className="text-xs text-muted-foreground">{row.login}</p>
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-600">
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">
                       <p>{row.roleLabel}</p>
-                      <p className="text-slate-400">{row.departmentName || "—"}</p>
+                      <p className="text-muted-foreground">{row.departmentName || "—"}</p>
                     </td>
                     <td className="px-3 py-2.5">
                       {row.faceRegistered ? (
-                        <span className="inline-flex rounded-md bg-emerald-500 px-2.5 py-1 text-[11px] font-semibold text-white">
+                        <span className="inline-flex rounded-md bg-emerald-500 px-2.5 py-1 text-[11px] font-semibold text-foreground dark:text-white">
                           O‘tdi
                         </span>
                       ) : (
@@ -322,14 +322,14 @@ export default function AdminFacesPage() {
                         </span>
                       )}
                     </td>
-                    <td className="px-3 py-2.5 text-xs text-slate-600">
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">
                       {row.faceRegistered ? (
                         <>
                           <p>{fmtDate(row.createdAt)}</p>
-                          <p className="text-slate-400">oxirgi: {fmtDate(row.lastUsedAt)}</p>
+                          <p className="text-muted-foreground">oxirgi: {fmtDate(row.lastUsedAt)}</p>
                         </>
                       ) : (
-                        <span className="text-slate-400">—</span>
+                        <span className="text-muted-foreground">—</span>
                       )}
                     </td>
                     <td className="px-3 py-2.5 text-right">
@@ -355,7 +355,7 @@ export default function AdminFacesPage() {
                 ))}
                 {!filtered.length ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-10 text-center text-slate-500">
+                    <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
                       Natija yo‘q
                     </td>
                   </tr>
@@ -403,7 +403,7 @@ export default function AdminFacesPage() {
               className="mx-auto max-h-[70vh] w-full rounded-2xl object-contain bg-slate-100"
             />
           ) : null}
-          <p className="text-center text-xs text-slate-500">{preview?.login}</p>
+          <p className="text-center text-xs text-muted-foreground">{preview?.login}</p>
           <Button type="button" variant="outline" className="w-full gap-1.5" onClick={() => setPreview(null)}>
             <X className="h-4 w-4" />
             Yopish

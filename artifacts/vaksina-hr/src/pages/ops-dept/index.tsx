@@ -32,7 +32,6 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   const { toast } = useToast();
   const allowed =
     user?.role === "admin" ||
-    user?.role === "director" ||
     user?.role === "mudir" ||
     user?.role === "koordinator" ||
     (dept === "it" ? isItRole(user?.role) : isTexnikRole(user?.role));
@@ -59,7 +58,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
     : "Filial jihozlari: sovitgich, elektr, konditsioner, santexnika. Rahbar: Texnik rahbari.";
 
   if (!allowed) {
-    return <div className="p-8 text-center text-slate-500">Bu bo‘lim uchun ruxsat yo‘q.</div>;
+    return <div className="p-8 text-center text-muted-foreground">Bu bo‘lim uchun ruxsat yo‘q.</div>;
   }
 
   const submit = async () => {
@@ -87,7 +86,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
     <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
       <div
         className={cn(
-          "relative overflow-hidden px-4 py-6 text-white md:px-6",
+          "relative overflow-hidden px-4 py-6 text-foreground dark:text-white md:px-6",
           isIt ? "bg-gradient-to-br from-cyan-900 via-teal-800 to-[#0b3a5c]" : "bg-gradient-to-br from-amber-900 via-orange-800 to-[#0b3a5c]",
         )}
       >
@@ -108,14 +107,14 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
               <button
                 type="button"
                 onClick={() => setTab("board")}
-                className={cn("rounded-xl px-3 py-2 text-sm font-medium", tab === "board" ? "bg-white text-slate-900" : "bg-white/15")}
+                className={cn("rounded-xl px-3 py-2 text-sm font-medium", tab === "board" ? "bg-card text-foreground" : "bg-white/15")}
               >
                 Ishlar
               </button>
               <button
                 type="button"
                 onClick={() => setTab("new")}
-                className={cn("rounded-xl px-3 py-2 text-sm font-medium", tab === "new" ? "bg-white text-slate-900" : "bg-white/15")}
+                className={cn("rounded-xl px-3 py-2 text-sm font-medium", tab === "new" ? "bg-card text-foreground" : "bg-white/15")}
               >
                 Yangi ariza
               </button>
@@ -133,7 +132,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
         </div>
 
         {tab === "new" ? (
-          <div className="rounded-2xl border bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border bg-card p-5 shadow-sm">
             <p className="mb-4 font-semibold">Yangi ish / ariza</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="sm:col-span-2">
@@ -188,7 +187,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
           <div className="space-y-3">
             <div className="flex flex-wrap gap-2">
               {cats.map((c) => (
-                <span key={c.value} className="rounded-full border bg-white px-3 py-1 text-xs text-slate-600 shadow-sm">
+                <span key={c.value} className="rounded-full border bg-card px-3 py-1 text-xs text-muted-foreground shadow-sm">
                   {c.label}
                   {d?.byCat?.[c.value] ? ` · ${d.byCat[c.value]}` : ""}
                 </span>
@@ -198,11 +197,11 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
               <Skeleton className="h-32" />
             ) : (
               (tickets.data || []).map((t) => (
-                <div key={t.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-4 shadow-sm">
+                <div key={t.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-card p-4 shadow-sm">
                   <div>
-                    <p className="text-xs font-mono text-slate-400">{t.ticketNo}</p>
-                    <p className="font-semibold text-slate-900">{t.title}</p>
-                    <p className="text-xs text-slate-500">
+                    <p className="text-xs font-mono text-muted-foreground">{t.ticketNo}</p>
+                    <p className="font-semibold text-foreground">{t.title}</p>
+                    <p className="text-xs text-muted-foreground">
                       {cats.find((c) => c.value === t.category)?.label || t.category} · {t.branchName || "Filial"} · {PRIO[t.priority]}
                     </p>
                   </div>
@@ -224,7 +223,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
               ))
             )}
             {!tickets.data?.length && !tickets.isLoading ? (
-              <p className="rounded-2xl border bg-white p-10 text-center text-sm text-slate-500">Hali ariza yo‘q. «Yangi ariza»dan boshlang.</p>
+              <p className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">Hali ariza yo‘q. «Yangi ariza»dan boshlang.</p>
             ) : null}
           </div>
         )}
@@ -245,9 +244,9 @@ function Kpi({
   warn?: boolean;
 }) {
   return (
-    <div className={cn("rounded-2xl border bg-white p-4 shadow-sm", warn && "border-amber-300")}>
-      <Icon className="h-4 w-4 text-slate-400" />
-      <p className="mt-2 text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
+    <div className={cn("rounded-2xl border bg-card p-4 shadow-sm", warn && "border-amber-300")}>
+      <Icon className="h-4 w-4 text-muted-foreground" />
+      <p className="mt-2 text-[11px] uppercase tracking-wide text-muted-foreground">{label}</p>
       <p className="text-xl font-semibold tabular-nums">{value}</p>
     </div>
   );

@@ -100,12 +100,12 @@ function NeedTimeline({ n }: { n: BranchNeed }) {
   ];
 
   return (
-    <ul className="mt-2 space-y-1 border-l border-slate-200 pl-3">
+    <ul className="mt-2 space-y-1 border-l border-border pl-3">
       {rows.map((r) => (
         <li key={r.label} className="text-[11px] leading-snug">
-          <span className={r.at ? 'font-medium text-slate-700' : 'text-slate-400'}>{r.label}:</span>{' '}
-          <span className={r.at ? 'text-slate-800' : 'text-slate-400'}>{formatNeedDt(r.at)}</span>
-          {r.detail && r.at ? <span className="text-slate-500"> · {r.detail}</span> : null}
+          <span className={r.at ? 'font-medium text-foreground' : 'text-muted-foreground'}>{r.label}:</span>{' '}
+          <span className={r.at ? 'text-foreground' : 'text-muted-foreground'}>{formatNeedDt(r.at)}</span>
+          {r.detail && r.at ? <span className="text-muted-foreground"> · {r.detail}</span> : null}
         </li>
       ))}
     </ul>
@@ -329,7 +329,7 @@ export default function EhtiyojPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           <ClipboardList className="h-7 w-7 text-primary" />
           Ehtiyoj
         </h1>
@@ -345,12 +345,12 @@ export default function EhtiyojPage() {
       </div>
 
       {canWrite && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4">
-          <p className="mb-1 text-sm font-semibold text-slate-800">
+        <div className="rounded-xl border border-border bg-card p-4">
+          <p className="mb-1 text-sm font-semibold text-foreground">
             {isKoordinator ? 'Ehtiyoj belgilash' : 'Yangi ehtiyoj'}
           </p>
           {isKoordinator ? (
-            <p className="mb-3 text-xs text-slate-500">
+            <p className="mb-3 text-xs text-muted-foreground">
               Filial + ijrochi tanlang — darhol topshiriq ochiladi
             </p>
           ) : (
@@ -358,7 +358,7 @@ export default function EhtiyojPage() {
           )}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="space-y-1.5 sm:col-span-2">
-              <p className="text-xs font-medium text-slate-500">Ehtiyoj</p>
+              <p className="text-xs font-medium text-muted-foreground">Ehtiyoj</p>
               <Input
                 value={needTitle}
                 onChange={(e) => setNeedTitle(e.target.value)}
@@ -368,7 +368,7 @@ export default function EhtiyojPage() {
             </div>
             {!isMudir && (
               <div className="space-y-1.5">
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-xs font-medium text-muted-foreground">
                   Filial / mudir{isKoordinator ? ' *' : ''}
                 </p>
                 <Select
@@ -401,7 +401,7 @@ export default function EhtiyojPage() {
             )}
             {!isMudir && !isKoordinator && (
               <div className="space-y-1.5">
-                <p className="text-xs font-medium text-slate-500">Filial nomi (ixtiyoriy)</p>
+                <p className="text-xs font-medium text-muted-foreground">Filial nomi (ixtiyoriy)</p>
                 <Input
                   value={branchLocation}
                   onChange={(e) => setBranchLocation(e.target.value)}
@@ -411,7 +411,7 @@ export default function EhtiyojPage() {
             )}
             {canConfirm && (
               <div className={`space-y-1.5 ${isKoordinator ? 'sm:col-span-1' : 'sm:col-span-2'}`}>
-                <p className="text-xs font-medium text-slate-500">
+                <p className="text-xs font-medium text-muted-foreground">
                   {isKoordinator
                     ? 'Ijrochi *'
                     : 'Ijrochi (ixtiyoriy — tanlasangiz darhol topshiriq ketadi)'}
@@ -461,7 +461,7 @@ export default function EhtiyojPage() {
               </div>
             )}
             <div className="space-y-1.5 sm:col-span-2">
-              <p className="text-xs font-medium text-slate-500">Izoh</p>
+              <p className="text-xs font-medium text-muted-foreground">Izoh</p>
               <Textarea
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -519,7 +519,7 @@ export default function EhtiyojPage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Qidirish..."
-              className="bg-white"
+              className="bg-card"
             />
 
             {isLoading ? (
@@ -531,7 +531,7 @@ export default function EhtiyojPage() {
                 {openNeeds.map((n) => (
                   <div
                     key={n.id}
-                    className="flex flex-col gap-2 rounded-lg border border-sky-200 bg-white px-3 py-2.5"
+                    className="flex flex-col gap-2 rounded-lg border border-sky-200 bg-card px-3 py-2.5"
                   >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
@@ -541,11 +541,11 @@ export default function EhtiyojPage() {
                           </Badge>
                           {statusBadge(n.status)}
                         </div>
-                        <p className="mt-1 truncate text-sm font-semibold text-slate-900">
+                        <p className="mt-1 truncate text-sm font-semibold text-foreground">
                           {n.branchLocation || 'Filial'}
                           {n.managerName ? ` — ${n.managerName}` : ''}
                         </p>
-                        {n.note && <p className="mt-0.5 text-xs text-slate-600">{n.note}</p>}
+                        {n.note && <p className="mt-0.5 text-xs text-muted-foreground">{n.note}</p>}
                         {n.taskId ? (
                           <p className="mt-1 text-[11px] text-sky-800">
                             <Link href="/vazifalar" className="underline">
@@ -625,7 +625,7 @@ export default function EhtiyojPage() {
         )}
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 sm:p-4">
+      <div className="rounded-xl border border-border bg-muted/80 p-3 sm:p-4">
         <button
           type="button"
           onClick={() => setHistoryOpen((o) => !o)}
@@ -633,15 +633,15 @@ export default function EhtiyojPage() {
         >
           <div className="flex items-center gap-2">
             {historyOpen ? (
-              <ChevronUp className="h-4 w-4 text-slate-600" />
+              <ChevronUp className="h-4 w-4 text-muted-foreground" />
             ) : (
-              <ChevronDown className="h-4 w-4 text-slate-600" />
+              <ChevronDown className="h-4 w-4 text-muted-foreground" />
             )}
-            <h2 className="text-sm font-semibold text-slate-800">
+            <h2 className="text-sm font-semibold text-foreground">
               Tarix (baza) ({(history ?? []).length})
             </h2>
           </div>
-          <span className="text-[11px] font-medium text-slate-500">
+          <span className="text-[11px] font-medium text-muted-foreground">
             {historyOpen ? 'Yig‘ish' : 'Ochish'}
           </span>
         </button>
@@ -650,19 +650,19 @@ export default function EhtiyojPage() {
             {historyLoading ? (
               <Skeleton className="h-16 w-full" />
             ) : !(history ?? []).length ? (
-              <p className="text-sm text-slate-500">Hali yakunlangan yozuv yoʻq.</p>
+              <p className="text-sm text-muted-foreground">Hali yakunlangan yozuv yoʻq.</p>
             ) : (
               <div className="max-h-[min(45vh,400px)] space-y-2 overflow-y-auto pr-1">
                 {(history ?? []).map((n) => (
                   <div
                     key={n.id}
-                    className="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
+                    className="rounded-lg border border-border bg-card px-3 py-2.5"
                   >
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge variant="secondary">{needLabel(n.needType)}</Badge>
                       {statusBadge(n.status)}
                     </div>
-                    <p className="mt-1 text-sm font-medium text-slate-900">
+                    <p className="mt-1 text-sm font-medium text-foreground">
                       {n.branchLocation || 'Filial'}
                       {n.managerName ? ` — ${n.managerName}` : ''}
                     </p>
@@ -689,7 +689,7 @@ export default function EhtiyojPage() {
             <DialogTitle>Ehtiyojni tasdiqlash</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
-            <p className="text-sm text-slate-700">
+            <p className="text-sm text-foreground">
               <span className="font-semibold">
                 {confirmTarget ? needLabel(confirmTarget.needType) : ''}
               </span>
@@ -717,7 +717,7 @@ export default function EhtiyojPage() {
                   className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset ${
                     assigneeFilter === key
                       ? 'bg-primary text-primary-foreground ring-primary'
-                      : 'bg-white text-slate-700 ring-slate-200'
+                      : 'bg-card text-foreground ring-slate-200'
                   }`}
                 >
                   {label}

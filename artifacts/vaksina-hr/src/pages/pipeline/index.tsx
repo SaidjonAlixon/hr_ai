@@ -204,7 +204,7 @@ function CandidateCard({
       onDragStart={() => canDrag && onDragStart(candidate.id)}
       onDragEnd={onDragEnd}
       className={cn(
-        'relative rounded-xl border border-slate-200/90 bg-white p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
+        'relative rounded-xl border border-slate-200/90 bg-card p-4 shadow-[0_1px_2px_rgba(15,23,42,0.04)]',
         'transition-[box-shadow,transform,opacity] duration-150',
         'hover:shadow-[0_8px_20px_rgba(15,23,42,0.08)]',
         canDrag && 'cursor-grab active:cursor-grabbing',
@@ -218,7 +218,7 @@ function CandidateCard({
       )}
 
       <div className="flex gap-3 pr-6">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-[12px] font-semibold text-white">
+        <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-slate-700 to-slate-900 text-[12px] font-semibold text-foreground dark:text-white">
           {candidate.photoUrl ? (
             <img src={candidate.photoUrl} alt="" className="h-full w-full object-cover" />
           ) : (
@@ -227,15 +227,15 @@ function CandidateCard({
         </div>
         <div className="min-w-0 flex-1 space-y-1">
           <Link href={`/candidates/${candidate.id}`}>
-            <h3 className="truncate text-[14px] font-semibold leading-snug text-slate-900 hover:text-slate-700">
+            <h3 className="truncate text-[14px] font-semibold leading-snug text-foreground hover:text-foreground">
               {candidate.fullName}
             </h3>
           </Link>
-          <p className="truncate text-[12px] leading-snug text-slate-500">
+          <p className="truncate text-[12px] leading-snug text-muted-foreground">
             {candidate.vacancyTitle || 'Lavozim belgilanmagan'}
           </p>
           {meta && (
-            <p className="truncate text-[11px] leading-relaxed text-slate-400">{meta}</p>
+            <p className="truncate text-[11px] leading-relaxed text-muted-foreground">{meta}</p>
           )}
           {candidate.recruiterName && (
             <p className="truncate pt-0.5 text-[12px] font-medium leading-snug text-violet-700">
@@ -246,7 +246,7 @@ function CandidateCard({
       </div>
 
       <div className="mt-3.5 flex items-center justify-between gap-2 border-t border-slate-100 pt-3">
-        <span className="inline-flex max-w-[60%] truncate rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-slate-600">
+        <span className="inline-flex max-w-[60%] truncate rounded-md bg-slate-100 px-2 py-1 text-[10px] font-semibold text-muted-foreground">
           {STAGE_LABELS[candidate.stage] || candidate.stage}
         </span>
         <Link
@@ -262,7 +262,7 @@ function CandidateCard({
       {candidate.phone && (
         <a
           href={`tel:${candidate.phone}`}
-          className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] leading-none text-slate-400 hover:text-slate-600"
+          className="mt-2.5 inline-flex items-center gap-1.5 text-[11px] leading-none text-muted-foreground hover:text-muted-foreground"
           onClick={(e) => e.stopPropagation()}
           title={candidate.phone}
         >
@@ -399,24 +399,24 @@ export default function PipelineBoardPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-900">Pipeline</h1>
-            <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-white">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">Pipeline</h1>
+            <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground dark:text-white">
               {activeCount}
             </span>
           </div>
-          <p className="mt-1 text-sm text-slate-500">
+          <p className="mt-1 text-sm text-muted-foreground">
             Qadamlar ketma-ket: yakunlangach keyingi ustunga o‘tadi
           </p>
         </div>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <div className="inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
+          <div className="inline-flex rounded-xl border border-border bg-card p-1 shadow-sm">
             <button
               type="button"
               onClick={() => setTab('pipeline')}
               className={cn(
                 'rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors',
-                tab === 'pipeline' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50',
+                tab === 'pipeline' ? 'bg-slate-900 text-foreground dark:text-white' : 'text-muted-foreground hover:bg-muted',
               )}
             >
               Pipeline
@@ -426,7 +426,7 @@ export default function PipelineBoardPage() {
               onClick={() => setTab('archive')}
               className={cn(
                 'rounded-lg px-3.5 py-1.5 text-sm font-semibold transition-colors',
-                tab === 'archive' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50',
+                tab === 'archive' ? 'bg-slate-900 text-foreground dark:text-white' : 'text-muted-foreground hover:bg-muted',
               )}
             >
               Baza / Arxiv
@@ -438,20 +438,20 @@ export default function PipelineBoardPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-2 rounded-2xl border border-slate-200/80 bg-white/90 p-2.5 shadow-sm backdrop-blur sm:flex-row sm:items-center">
+      <div className="flex flex-col gap-2 rounded-2xl border border-border bg-white/90 p-2.5 shadow-sm backdrop-blur sm:flex-row sm:items-center">
         <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Ism, lavozim, telefon bo‘yicha qidirish"
-            className="h-10 border-0 bg-slate-50 pl-9 shadow-none focus-visible:bg-white focus-visible:ring-1"
+            className="h-10 border-0 bg-muted pl-9 shadow-none focus-visible:bg-card focus-visible:ring-1"
           />
         </div>
         {!recruiterOnly && (
           <Select value={assignee} onValueChange={setAssignee}>
-            <SelectTrigger className="h-10 w-full border-0 bg-slate-50 shadow-none sm:w-[220px]">
-              <User className="mr-2 h-4 w-4 text-slate-400" />
+            <SelectTrigger className="h-10 w-full border-0 bg-muted shadow-none sm:w-[220px]">
+              <User className="mr-2 h-4 w-4 text-muted-foreground" />
               <SelectValue placeholder="Mas'ul" />
             </SelectTrigger>
             <SelectContent>
@@ -465,17 +465,17 @@ export default function PipelineBoardPage() {
           </Select>
         )}
         {recruiterOnly && (
-          <div className="flex h-10 items-center gap-2 rounded-md bg-slate-50 px-3 text-sm text-slate-600 sm:min-w-[200px]">
-            <User className="h-4 w-4 text-slate-400" />
+          <div className="flex h-10 items-center gap-2 rounded-md bg-muted px-3 text-sm text-muted-foreground sm:min-w-[200px]">
+            <User className="h-4 w-4 text-muted-foreground" />
             Faqat mening ishlarim
           </div>
         )}
       </div>
 
       {tab === 'archive' ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
           {archived.length === 0 ? (
-            <p className="py-16 text-center text-sm text-slate-400">Rad etilgan nomzodlar yo‘q</p>
+            <p className="py-16 text-center text-sm text-muted-foreground">Rad etilgan nomzodlar yo‘q</p>
           ) : (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
               {archived.map((c) => (
@@ -486,8 +486,8 @@ export default function PipelineBoardPage() {
                         {initials(c.fullName)}
                       </div>
                       <div className="min-w-0">
-                        <p className="truncate font-semibold text-slate-900">{c.fullName}</p>
-                        <p className="truncate text-xs text-slate-500">{c.vacancyTitle || '—'}</p>
+                        <p className="truncate font-semibold text-foreground">{c.fullName}</p>
+                        <p className="truncate text-xs text-muted-foreground">{c.vacancyTitle || '—'}</p>
                       </div>
                     </div>
                     <Badge className="mt-3 bg-rose-100 text-rose-800 hover:bg-rose-100">Rad etilgan</Badge>
@@ -528,7 +528,7 @@ export default function PipelineBoardPage() {
                   <div className={cn('h-1 w-full', col.top)} />
                   <header className="sticky top-0 z-[1] border-b border-slate-200/60 bg-[#f7f8fa] px-3.5 py-3 backdrop-blur">
                     <div className="flex items-center justify-between gap-2">
-                      <h2 className="text-[11px] font-bold uppercase tracking-[0.06em] text-slate-700">
+                      <h2 className="text-[11px] font-bold uppercase tracking-[0.06em] text-foreground">
                         {col.label}
                       </h2>
                       <span
@@ -540,7 +540,7 @@ export default function PipelineBoardPage() {
                         {items.length}
                       </span>
                     </div>
-                    <p className="mt-1 text-[10px] leading-normal text-slate-400">{col.hint}</p>
+                    <p className="mt-1 text-[10px] leading-normal text-muted-foreground">{col.hint}</p>
                   </header>
 
                   <div className="flex max-h-[calc(100vh-270px)] min-h-[180px] flex-1 flex-col gap-3 overflow-y-auto p-3">
@@ -553,11 +553,11 @@ export default function PipelineBoardPage() {
                     ) : items.length === 0 ? (
                       <div
                         className={cn(
-                          'flex flex-1 items-center justify-center rounded-xl border border-dashed border-slate-200 bg-white/40 px-3 py-10',
+                          'flex flex-1 items-center justify-center rounded-xl border border-dashed border-border bg-white/40 px-3 py-10',
                           isOver && 'border-sky-300 bg-sky-50/50',
                         )}
                       >
-                        <p className="text-center text-[11px] text-slate-400">Bo‘sh</p>
+                        <p className="text-center text-[11px] text-muted-foreground">Bo‘sh</p>
                       </div>
                     ) : (
                       <CardStack

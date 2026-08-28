@@ -150,7 +150,7 @@ const COLUMNS: {
 ];
 
 const PRIORITY: Record<string, { label: string; className: string }> = {
-  low: { label: "Past", className: "bg-slate-100 text-slate-700" },
+  low: { label: "Past", className: "bg-slate-100 text-foreground" },
   normal: { label: "Oddiy", className: "bg-blue-50 text-blue-700" },
   high: { label: "Yuqori", className: "bg-orange-100 text-orange-800" },
   urgent: { label: "Shoshilinch", className: "bg-red-100 text-red-800" },
@@ -556,16 +556,16 @@ export default function VazifalarPage() {
 
   return (
     <div className="h-full flex flex-col min-h-0 bg-gradient-to-br from-slate-50 via-white to-sky-50/40">
-      <div className="shrink-0 px-6 pt-6 pb-4 border-b border-slate-200/80 bg-white/70 backdrop-blur">
+      <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border bg-white/70 backdrop-blur">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-sky-700/80 mb-1">
               Ish boshqaruvi
             </p>
-            <h1 className="text-2xl font-semibold text-slate-900 tracking-tight">
+            <h1 className="text-2xl font-semibold text-foreground tracking-tight">
               Topshiriqlar
             </h1>
-            <p className="text-sm text-slate-500 mt-1 max-w-xl">
+            <p className="text-sm text-muted-foreground mt-1 max-w-xl">
               Belgilagan va olgan tomonlar ko‘radi. Ijrochi faqat natija
               (matn/rasm/fayl) qo‘shib tasdiqlaydi yoki muddat so‘raydi.
             </p>
@@ -582,19 +582,19 @@ export default function VazifalarPage() {
         </div>
 
         <div className="mt-4 relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Qidiruv: sarlavha, ijrochi..."
-            className="pl-9 bg-white"
+            className="pl-9 bg-card"
           />
         </div>
       </div>
 
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-4 md:p-6">
         {isLoading ? (
-          <div className="h-full flex items-center justify-center text-slate-500">
+          <div className="h-full flex items-center justify-center text-muted-foreground">
             Yuklanmoqda...
           </div>
         ) : (
@@ -602,16 +602,16 @@ export default function VazifalarPage() {
             {COLUMNS.map((col) => (
               <section
                 key={col.id}
-                className="w-[280px] md:w-[300px] flex flex-col rounded-2xl bg-slate-100/80 border border-slate-200/80 overflow-hidden shadow-sm"
+                className="w-[280px] md:w-[300px] flex flex-col rounded-2xl bg-slate-100/80 border border-border overflow-hidden shadow-sm"
               >
                 <header className="shrink-0">
                   <div className={cn("h-1.5", col.top)} />
                   <div className="px-3 py-3 flex items-start justify-between gap-2">
                     <div>
-                      <h2 className="font-semibold text-slate-800 text-[15px]">
+                      <h2 className="font-semibold text-foreground text-[15px]">
                         {col.label}
                       </h2>
-                      <p className="text-xs text-slate-500">{col.hint}</p>
+                      <p className="text-xs text-muted-foreground">{col.hint}</p>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span
@@ -626,7 +626,7 @@ export default function VazifalarPage() {
                         <button
                           type="button"
                           onClick={() => openCreate(col.id)}
-                          className="p-1 rounded-md text-slate-500 hover:bg-white hover:text-slate-800 transition"
+                          className="p-1 rounded-md text-muted-foreground hover:bg-card hover:text-foreground transition"
                           title="Ushbu ustunga qo'shish"
                         >
                           <Plus className="h-4 w-4" />
@@ -638,7 +638,7 @@ export default function VazifalarPage() {
 
                 <div className="flex-1 overflow-y-auto px-2.5 pb-3 space-y-2.5">
                   {byColumn[col.id].length === 0 ? (
-                    <div className="mx-0.5 mt-1 rounded-xl border border-dashed border-slate-300 bg-white/50 px-3 py-8 text-center text-sm text-slate-400">
+                    <div className="mx-0.5 mt-1 rounded-xl border border-dashed border-slate-300 bg-white/50 px-3 py-8 text-center text-sm text-muted-foreground">
                       {col.empty}
                     </div>
                   ) : (
@@ -687,9 +687,9 @@ export default function VazifalarPage() {
 
           <div className="space-y-4 py-1">
             {editing && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50/80 p-3 space-y-2">
+              <div className="rounded-xl border border-border bg-muted/80 p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
+                  <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
                     Kuzatuv
                   </p>
                   <span
@@ -703,7 +703,7 @@ export default function VazifalarPage() {
                       editing.status === "verified" &&
                         "bg-violet-100 text-violet-800",
                       editing.status === "cancelled" &&
-                        "bg-slate-200 text-slate-600",
+                        "bg-slate-200 text-muted-foreground",
                     )}
                   >
                     {editing.status === "todo"
@@ -719,8 +719,8 @@ export default function VazifalarPage() {
                               : editing.status}
                   </span>
                 </div>
-                <div className="text-sm text-slate-600">
-                  <span className="text-slate-500">Qabul qilingan: </span>
+                <div className="text-sm text-muted-foreground">
+                  <span className="text-muted-foreground">Qabul qilingan: </span>
                   {editing.acceptedAt ? (
                     <span className="font-medium text-sky-800">
                       {formatDate(editing.acceptedAt)}
@@ -781,7 +781,7 @@ export default function VazifalarPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-xs text-slate-500">
+                  <p className="text-xs text-muted-foreground">
                     Eskalatsiya: SB operatori → SB boshlig‘i → Direktor. Boshqa bo‘limlarga (IT, Ombor, Logistika, AXO, HR, Reviziya) ijrochi sifatida yuboring.
                   </p>
                 </div>
@@ -964,13 +964,13 @@ export default function VazifalarPage() {
           </DialogHeader>
           {activeTask && (
             <div className="space-y-3 text-sm">
-              <p className="text-slate-600 whitespace-pre-wrap">
+              <p className="text-muted-foreground whitespace-pre-wrap">
                 {activeTask.description || "Tavsif yo'q"}
               </p>
-              <p className="text-slate-500">
+              <p className="text-muted-foreground">
                 Belgilagan: {activeTask.createdByName || "—"}
               </p>
-              <p className="text-slate-500">
+              <p className="text-muted-foreground">
                 Muddat: {formatDate(activeTask.dueAt)}
               </p>
               <AttachmentList items={activeTask.attachments || []} readOnly />
@@ -1044,7 +1044,7 @@ export default function VazifalarPage() {
           <DialogHeader>
             <DialogTitle>Vazifani bajarish</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             «{activeTask?.title}» — matn, rasm yoki fayl qo‘shing va
             yuboring. Belgilagan odamga qaytadi.
           </p>
@@ -1099,7 +1099,7 @@ export default function VazifalarPage() {
           <DialogHeader>
             <DialogTitle>Muddatni surish so‘rovi</DialogTitle>
           </DialogHeader>
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-muted-foreground">
             Yangi muddat belgilovchi tasdiqlasa qo‘llanadi.
           </p>
           <div className="space-y-3">
@@ -1197,13 +1197,13 @@ function FileDropzone({
           !uploading &&
             !success &&
             !dragging &&
-            "border-slate-300 bg-slate-50/80 hover:border-primary/50 hover:bg-slate-50",
+            "border-slate-300 bg-muted/80 hover:border-primary/50 hover:bg-muted",
         )}
       >
         <span
           className={cn(
-            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-white",
-            success ? "bg-emerald-600" : uploading ? "bg-sky-600" : "bg-slate-800",
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-foreground dark:text-white",
+            success ? "bg-emerald-600" : uploading ? "bg-sky-600" : "bg-muted dark:bg-slate-800",
           )}
         >
           {success ? (
@@ -1216,7 +1216,7 @@ function FileDropzone({
           <span
             className={cn(
               "block text-sm font-semibold",
-              success ? "text-emerald-800" : "text-slate-700",
+              success ? "text-emerald-800" : "text-foreground",
             )}
           >
             {uploading
@@ -1228,7 +1228,7 @@ function FileDropzone({
           <span
             className={cn(
               "mt-0.5 block text-xs",
-              success ? "text-emerald-700" : "text-slate-500",
+              success ? "text-emerald-700" : "text-muted-foreground",
             )}
           >
             {uploading
@@ -1289,7 +1289,7 @@ function AttachmentList({
               />
             </a>
           ) : (
-            <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
           )}
           <span className="truncate flex-1" title={a.name}>
             {a.name}
@@ -1299,14 +1299,14 @@ function AttachmentList({
             download={a.name}
             target="_blank"
             rel="noreferrer"
-            className="shrink-0 rounded-md border bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100"
+            className="shrink-0 rounded-md border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
           >
             Yuklab olish
           </a>
           {!readOnly && onRemove && (
             <button
               type="button"
-              className="p-1 text-slate-400 hover:text-red-600"
+              className="p-1 text-muted-foreground hover:text-red-600"
               onClick={() => onRemove(a.id)}
             >
               <X className="h-3.5 w-3.5" />
@@ -1360,7 +1360,7 @@ function TaskCard({
   return (
     <article
       className={cn(
-        "group rounded-lg border bg-white p-2.5 shadow-sm hover:shadow transition cursor-pointer",
+        "group rounded-lg border bg-card p-2.5 shadow-sm hover:shadow transition cursor-pointer",
         overdue && !hideCountdown && "border-rose-200 ring-1 ring-rose-100",
         needsAccept && isAssignee && "border-sky-300 ring-1 ring-sky-100",
         isAccepted && "border-blue-200 bg-blue-50/20",
@@ -1398,7 +1398,7 @@ function TaskCard({
             needsAccept && "bg-sky-100 text-sky-800",
             isAccepted && "bg-amber-100 text-amber-900",
             isVerified && "bg-violet-100 text-violet-800",
-            task.status === "cancelled" && "bg-slate-200 text-slate-600",
+            task.status === "cancelled" && "bg-slate-200 text-muted-foreground",
           )}
         >
           {awaitingReview
@@ -1415,7 +1415,7 @@ function TaskCard({
         </span>
       </div>
 
-      <h3 className="text-[13px] font-semibold text-slate-900 leading-snug mb-1">
+      <h3 className="text-[13px] font-semibold text-foreground leading-snug mb-1">
         {task.title}
       </h3>
 
@@ -1440,7 +1440,7 @@ function TaskCard({
       )}
 
       {task.description && (
-        <p className="text-[11px] text-slate-500 line-clamp-2 mb-1.5">
+        <p className="text-[11px] text-muted-foreground line-clamp-2 mb-1.5">
           {task.description}
         </p>
       )}
@@ -1458,13 +1458,13 @@ function TaskCard({
         </div>
       )}
 
-      <div className="flex flex-col gap-0.5 text-[10px] text-slate-500 mb-1.5">
+      <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground mb-1.5">
         <div className="flex items-center gap-1.5">
           <User className="h-2.5 w-2.5 shrink-0" />
           <span className="truncate">{task.assigneeName || "—"}</span>
         </div>
         {task.createdByName && (
-          <div className="truncate pl-4 text-slate-400">
+          <div className="truncate pl-4 text-muted-foreground">
             Bergan: {task.createdByName}
           </div>
         )}
@@ -1485,12 +1485,12 @@ function TaskCard({
           </div>
         </div>
       ) : task.dueAt ? (
-        <div className="mb-1.5 text-[10px] text-slate-500 flex items-center gap-1">
+        <div className="mb-1.5 text-[10px] text-muted-foreground flex items-center gap-1">
           <Calendar className="h-3 w-3 shrink-0" />
           <span>{formatDate(task.dueAt)}</span>
         </div>
       ) : (
-        <div className="flex items-center gap-1 text-[10px] text-slate-400 mb-1.5">
+        <div className="flex items-center gap-1 text-[10px] text-muted-foreground mb-1.5">
           <Calendar className="h-3 w-3" />
           Muddat yo‘q
         </div>
@@ -1514,7 +1514,7 @@ function TaskCard({
       )}
 
       {(images.length > 0 || files.length > 0) && !hideCountdown && (
-        <div className="flex items-center gap-2 text-slate-400 mb-1">
+        <div className="flex items-center gap-2 text-muted-foreground mb-1">
           {images.length > 0 && (
             <span className="inline-flex items-center gap-0.5 text-[10px]">
               <ImageIcon className="h-3 w-3" />
@@ -1537,7 +1537,7 @@ function TaskCard({
         {isAssignee && needsAccept && (
           <button
             type="button"
-            className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-sky-600 text-white hover:bg-sky-700"
+            className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-sky-600 text-foreground dark:text-white hover:bg-sky-700"
             onClick={onAccept}
           >
             Qabul qilish
@@ -1567,7 +1567,7 @@ function TaskCard({
           <>
             <button
               type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
+              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-emerald-600 text-foreground dark:text-white hover:bg-emerald-700"
               onClick={onVerify}
             >
               <CheckCircle2 className="h-3.5 w-3.5" />

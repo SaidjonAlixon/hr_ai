@@ -85,10 +85,10 @@ export default function ReytingPage() {
 
   if (!pharmacyView) {
     return (
-      <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
-        <Info className="mx-auto h-10 w-10 text-slate-400" />
+      <div className="rounded-2xl border bg-card p-8 text-center shadow-sm">
+        <Info className="mx-auto h-10 w-10 text-muted-foreground" />
         <h2 className="mt-3 text-lg font-semibold">Reyting mavjud emas</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           Filial reytingi mudir, farmasevt va stajyorlar uchun ko‘rsatiladi.
         </p>
       </div>
@@ -103,15 +103,15 @@ export default function ReytingPage() {
       />
 
       <div className="grid grid-cols-3 gap-3">
-        <div className="rounded-xl border bg-white p-3 shadow-sm">
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
           <p className="text-[11px] text-muted-foreground">Filial</p>
           <p className="mt-1 truncate text-sm font-semibold">{stats.branch || "—"}</p>
         </div>
-        <div className="rounded-xl border bg-white p-3 shadow-sm">
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
           <p className="text-[11px] text-muted-foreground">Tashriflar</p>
           <p className="mt-1 text-2xl font-bold tabular-nums">{stats.visits}</p>
         </div>
-        <div className="rounded-xl border bg-white p-3 shadow-sm">
+        <div className="rounded-xl border bg-card p-3 shadow-sm">
           <p className="text-[11px] text-muted-foreground">O‘rtacha ball</p>
           <p className={cn("mt-1 text-2xl font-bold tabular-nums", scoreTone(stats.avg))}>
             {stats.avg}%
@@ -128,7 +128,7 @@ export default function ReytingPage() {
               key={a.id}
               type="button"
               onClick={() => setViewing(a)}
-              className="flex w-full items-center justify-between gap-3 rounded-xl border bg-white px-4 py-3 text-left transition hover:border-[#0b3a5c]/30 hover:shadow-sm"
+              className="flex w-full items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 text-left transition hover:border-[#0b3a5c]/30 hover:shadow-sm"
             >
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{a.visitName || "Cheklist tashrifi"}</p>
@@ -144,9 +144,9 @@ export default function ReytingPage() {
           ))}
         </div>
       ) : (
-        <div className="rounded-xl border border-dashed bg-slate-50 p-8 text-center">
-          <ClipboardCheck className="mx-auto h-8 w-8 text-slate-400" />
-          <p className="mt-2 text-sm font-medium text-slate-700">Hali tashrif natijasi yo‘q</p>
+        <div className="rounded-xl border border-dashed bg-muted p-8 text-center">
+          <ClipboardCheck className="mx-auto h-8 w-8 text-muted-foreground" />
+          <p className="mt-2 text-sm font-medium text-foreground">Hali tashrif natijasi yo‘q</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Koordinator filialga cheklist topshirgach, ball shu yerda ko‘rinadi.
           </p>
@@ -179,7 +179,7 @@ export default function ReytingPage() {
                 </a>
               ) : null}
               {viewing.generalNote ? (
-                <p className="rounded-lg bg-slate-50 p-3 text-slate-700">{viewing.generalNote}</p>
+                <p className="rounded-lg bg-muted p-3 text-foreground">{viewing.generalNote}</p>
               ) : null}
               <p className="text-xs text-muted-foreground">
                 Ha: {viewing.yesCount} · Yo‘q: {viewing.noCount} · Jami: {viewing.totalCount}
@@ -194,7 +194,7 @@ export default function ReytingPage() {
 
 function Header({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-5 py-6 text-white shadow-lg">
+    <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-5 py-6 text-foreground dark:text-white shadow-lg">
       <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-cyan-400/10 blur-2xl" />
       <div className="relative">
         <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
@@ -202,7 +202,7 @@ function Header({ title, subtitle }: { title: string; subtitle: string }) {
           Reyting
         </div>
         <h1 className="text-xl font-bold sm:text-2xl">{title}</h1>
-        <p className="mt-1 text-sm text-slate-300">{subtitle}</p>
+        <p className="mt-1 text-sm text-muted-foreground">{subtitle}</p>
       </div>
     </div>
   );

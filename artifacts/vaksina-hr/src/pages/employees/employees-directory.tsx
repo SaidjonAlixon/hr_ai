@@ -60,14 +60,14 @@ const STATUS_UZ: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  working: "border-emerald-200 bg-emerald-50 text-emerald-800",
-  new: "border-sky-200 bg-sky-50 text-sky-800",
-  dismissed: "border-rose-200 bg-rose-50 text-rose-800",
-  on_leave: "border-amber-200 bg-amber-50 text-amber-900",
-  need_hire: "border-amber-200 bg-amber-50 text-amber-800",
-  searching: "border-violet-200 bg-violet-50 text-violet-800",
-  no_manager: "border-amber-300 bg-amber-50 text-amber-900",
-  closed: "border-slate-200 bg-slate-100 text-slate-600",
+  working: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
+  new: "border-sky-200 bg-sky-50 text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-300",
+  dismissed: "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-300",
+  on_leave: "border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  need_hire: "border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  searching: "border-violet-200 bg-violet-50 text-violet-800 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-300",
+  no_manager: "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300",
+  closed: "border-border bg-muted text-muted-foreground",
 };
 
 type StaffRow = Employee & { phone?: string | null; login?: string | null };
@@ -94,12 +94,12 @@ function StaffAvatar({ employee }: { employee: Employee }) {
   const avatar = (
     <Avatar
       className={cn(
-        "h-10 w-10 shrink-0 border border-slate-200 bg-white",
-        hasPhoto && "cursor-zoom-in transition hover:ring-2 hover:ring-[#0b3a5c]/25",
+        "h-10 w-10 shrink-0 border border-border bg-card",
+        hasPhoto && "cursor-zoom-in transition hover:ring-2 hover:ring-primary/25",
       )}
     >
       {photoUrl ? <AvatarImage src={photoUrl} alt={name} className="object-cover" /> : null}
-      <AvatarFallback className="bg-[#0b3a5c]/10 text-xs font-semibold text-[#0b3a5c]">
+      <AvatarFallback className="bg-primary/10 text-xs font-semibold text-primary">
         {initials(name)}
       </AvatarFallback>
     </Avatar>
@@ -111,7 +111,7 @@ function StaffAvatar({ employee }: { employee: Employee }) {
     <>
       <button
         type="button"
-        className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-[#0b3a5c]/40"
+        className="rounded-full focus:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
         aria-label={`${name} rasmini kattalashtirish`}
         onClick={() => setOpen(true)}
       >
@@ -128,9 +128,9 @@ function StaffAvatar({ employee }: { employee: Employee }) {
             alt={name}
             className="max-h-[75vh] w-full bg-slate-950 object-contain"
           />
-          <div className="border-t bg-white px-4 py-3 text-center">
-            <p className="font-semibold text-slate-900">{name}</p>
-            {employee.position ? <p className="text-sm text-slate-500">{employee.position}</p> : null}
+          <div className="border-t bg-card px-4 py-3 text-center">
+            <p className="font-semibold text-foreground">{name}</p>
+            {employee.position ? <p className="text-sm text-muted-foreground">{employee.position}</p> : null}
           </div>
         </DialogContent>
       </Dialog>
@@ -183,7 +183,7 @@ function StatusControl({
       <span
         className={cn(
           "inline-flex rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
-          STATUS_STYLE[st] || "border-slate-200 bg-slate-50 text-slate-700",
+          STATUS_STYLE[st] || "border-border bg-muted text-foreground",
         )}
       >
         {STATUS_UZ[st] || st}
@@ -199,7 +199,7 @@ function StatusControl({
       <SelectTrigger
         className={cn(
           "h-8 w-[148px] rounded-full border text-[11px] font-semibold shadow-none",
-          STATUS_STYLE[st] || "border-slate-200",
+          STATUS_STYLE[st] || "border-border",
         )}
       >
         <SelectValue />
@@ -365,13 +365,13 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
 
   return (
     <div className="w-full space-y-4">
-      <div className="flex flex-col gap-4 rounded-2xl bg-[#0b3a5c] px-4 py-4 text-white shadow-md sm:flex-row sm:items-center sm:justify-between sm:px-6">
+      <div className="surface-brand flex flex-col gap-4 rounded-2xl px-4 py-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:px-6">
         <div>
-          <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl">
+          <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight sm:text-2xl">
             <Users className="h-6 w-6 opacity-90" />
             {meta.title}
           </h1>
-          <p className="mt-1 text-sm text-white/70">
+          <p className="surface-brand-subtle mt-1 text-sm">
             {meta.subtitle} · {isLoading ? "…" : `${list.length} ta ko‘rsatilmoqda`}
           </p>
         </div>
@@ -380,7 +380,8 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           <Button
             type="button"
             size="sm"
-            className="gap-1.5 bg-white text-[#0b3a5c] hover:bg-white/90"
+            variant="secondary"
+            className="gap-1.5 bg-card text-primary hover:bg-card/90"
             disabled={exporting || isLoading || list.length === 0}
             onClick={() => void onExportExcel()}
           >
@@ -393,40 +394,32 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       {group === "active" ? (
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {[
-            { l: "Jami", n: counts.total, cls: "bg-white text-[#0b3a5c]" },
-            { l: "Ishlayapti", n: counts.working, cls: "bg-emerald-50 text-emerald-800" },
-            { l: "Ta’tilda", n: counts.on_leave, cls: "bg-amber-50 text-amber-900" },
-            { l: "Bo‘shatilgan", n: counts.dismissed, cls: "bg-rose-50 text-rose-800" },
+            { l: "Jami", n: counts.total, filter: "all", accent: "border-l-primary" },
+            { l: "Ishlayapti", n: counts.working, filter: "working", accent: "border-l-emerald-500" },
+            { l: "Ta’tilda", n: counts.on_leave, filter: "on_leave", accent: "border-l-amber-500" },
+            { l: "Bo‘shatilgan", n: counts.dismissed, filter: "dismissed", accent: "border-l-rose-500" },
           ].map((c) => (
             <button
               key={c.l}
               type="button"
-              onClick={() =>
-                setStatusFilter(
-                  c.l === "Jami"
-                    ? "all"
-                    : c.l === "Ishlayapti"
-                      ? "working"
-                      : c.l === "Ta’tilda"
-                        ? "on_leave"
-                        : "dismissed",
-                )
-              }
+              onClick={() => setStatusFilter(c.filter)}
               className={cn(
-                "rounded-xl border px-3 py-2.5 text-left shadow-sm transition hover:ring-2 hover:ring-[#0b3a5c]/20",
-                c.cls,
+                "rounded-xl border border-border bg-card px-3 py-2.5 text-left shadow-sm transition hover:bg-muted/50",
+                "border-l-[3px]",
+                c.accent,
+                statusFilter === c.filter && "ring-1 ring-primary/20",
               )}
             >
-              <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{c.l}</p>
-              <p className="text-xl font-bold tabular-nums">{isLoading ? "…" : c.n}</p>
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{c.l}</p>
+              <p className="text-xl font-semibold tabular-nums text-foreground">{isLoading ? "…" : c.n}</p>
             </button>
           ))}
         </div>
       ) : null}
 
-      <Card className="overflow-hidden rounded-2xl border-slate-200 shadow-sm">
-        <CardHeader className="space-y-3 border-b bg-slate-50/80 px-3 py-3 sm:px-5">
-          <CardTitle className="text-sm font-semibold text-slate-800">Ro‘yxat</CardTitle>
+      <Card className="overflow-hidden rounded-2xl border-border shadow-sm">
+        <CardHeader className="space-y-3 border-b bg-muted/40 px-3 py-3 sm:px-5">
+          <CardTitle className="text-sm font-medium text-foreground">Ro‘yxat</CardTitle>
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
@@ -434,7 +427,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Ism, lavozim, filial…"
-                className="h-9 pl-8 text-sm"
+                className="h-9 border-border bg-background pl-8 text-sm"
               />
             </div>
             <Select value={deptFilter} onValueChange={setDeptFilter}>
@@ -489,7 +482,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full min-w-[1150px] text-left text-sm">
                   <thead>
-                    <tr className="border-b bg-[#0b3a5c] text-[11px] uppercase tracking-wide text-white">
+                    <tr className="surface-brand border-b text-[11px] uppercase tracking-wide">
                       <th className="w-10 px-3 py-3 font-medium">№</th>
                       <th className="w-14 px-2 py-3 font-medium">Rasm</th>
                       <th className="px-3 py-3 font-medium">F.I.Sh.</th>
@@ -507,31 +500,31 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                       <tr
                         key={`${e.userId ?? e.id}`}
                         className={cn(
-                          "border-b border-slate-100 transition hover:bg-sky-50/70",
-                          i % 2 === 0 ? "bg-white" : "bg-slate-50/70",
+                          "border-b border-border transition hover:bg-muted/60",
+                          i % 2 === 0 ? "bg-card" : "bg-muted/30",
                         )}
                       >
-                        <td className="px-3 py-2.5 text-xs text-slate-500">{i + 1}</td>
+                        <td className="px-3 py-2.5 text-xs text-muted-foreground">{i + 1}</td>
                         <td className="px-2 py-2">
                           <StaffAvatar employee={e} />
                         </td>
-                        <td className="px-3 py-2.5 font-medium text-slate-900">
+                        <td className="px-3 py-2.5 font-medium text-foreground">
                           <div>{formatPersonName(e.fullName)}</div>
                           {staffContact(e).phone ? (
-                            <div className="text-xs font-normal text-slate-500">{staffContact(e).phone}</div>
+                            <div className="text-xs font-normal text-muted-foreground">{staffContact(e).phone}</div>
                           ) : null}
                         </td>
-                        <td className="px-3 py-2.5 text-slate-700">{e.position}</td>
-                        <td className="px-3 py-2.5 text-slate-600">
+                        <td className="px-3 py-2.5 text-foreground">{e.position}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">
                           {(e.orgRole && ORG_ROLE_UZ[e.orgRole]) || e.orgRole || "—"}
                         </td>
-                        <td className="px-3 py-2.5 text-slate-600">{e.departmentName || "—"}</td>
-                        <td className="max-w-[180px] truncate px-3 py-2.5 text-slate-600">{e.location || "—"}</td>
+                        <td className="px-3 py-2.5 text-muted-foreground">{e.departmentName || "—"}</td>
+                        <td className="max-w-[180px] truncate px-3 py-2.5 text-muted-foreground">{e.location || "—"}</td>
                         <td className="px-3 py-2">
                           <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{shiftLabel(e)}</td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-slate-600">{formatHired(e.hiredAt)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{shiftLabel(e)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{formatHired(e.hiredAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -545,16 +538,16 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
-                          <p className="text-[11px] text-slate-400">#{i + 1}</p>
-                          <p className="truncate font-semibold text-slate-900">{formatPersonName(e.fullName)}</p>
+                          <p className="text-[11px] text-muted-foreground">#{i + 1}</p>
+                          <p className="truncate font-semibold text-foreground">{formatPersonName(e.fullName)}</p>
                           {staffContact(e).phone ? (
-                            <p className="text-xs text-slate-500">{staffContact(e).phone}</p>
+                            <p className="text-xs text-muted-foreground">{staffContact(e).phone}</p>
                           ) : null}
-                          <p className="text-xs text-slate-600">{e.position}</p>
+                          <p className="text-xs text-muted-foreground">{e.position}</p>
                         </div>
                         <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
                       </div>
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-slate-600">
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
                         <span>Rol: {(e.orgRole && ORG_ROLE_UZ[e.orgRole]) || "—"}</span>
                         <span>Smena: {shiftLabel(e)}</span>
                         <span className="truncate">Bo‘lim: {e.departmentName || "—"}</span>

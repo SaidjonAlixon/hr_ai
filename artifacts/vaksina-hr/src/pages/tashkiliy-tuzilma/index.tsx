@@ -115,9 +115,9 @@ const TONES = {
   sb: {
     ink: "#1E3A5F",
     fill: "from-[#1E3A5F] to-[#334155]",
-    soft: "bg-slate-100 text-slate-800",
-    chip: "bg-slate-200 text-slate-800",
-    lane: "bg-slate-50/80 ring-slate-200/80",
+    soft: "bg-slate-100 text-foreground",
+    chip: "bg-slate-200 text-foreground",
+    lane: "bg-muted/80 ring-slate-200/80",
   },
   manager: {
     ink: "#1D4E89",
@@ -750,7 +750,7 @@ function NodeCard({
       {exec ? (
         <div
           className={cn(
-            "relative overflow-hidden rounded-[22px] bg-gradient-to-br px-4 py-3.5 text-white shadow-[0_18px_40px_-18px_rgba(7,30,51,0.7)]",
+            "relative overflow-hidden rounded-[22px] bg-gradient-to-br px-4 py-3.5 text-foreground dark:text-white shadow-[0_18px_40px_-18px_rgba(7,30,51,0.7)]",
             tone.fill,
           )}
         >
@@ -780,11 +780,11 @@ function NodeCard({
               <Icon className="h-5 w-5" />
             </span>
             <span className="min-w-0">
-              <span className="block text-[8px] font-semibold uppercase tracking-[0.16em] text-slate-400">Bo‘lim</span>
-              <span className="block text-[14px] font-semibold leading-tight text-slate-900">{node.label}</span>
-              {node.hint ? <span className="mt-0.5 block text-[11px] text-slate-500">{node.hint}</span> : null}
+              <span className="block text-[8px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">Bo‘lim</span>
+              <span className="block text-[14px] font-semibold leading-tight text-foreground">{node.label}</span>
+              {node.hint ? <span className="mt-0.5 block text-[11px] text-muted-foreground">{node.hint}</span> : null}
               {node.expandable ? (
-                <span className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                <span className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-white/80 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
                   {expanded ? "Yig‘ish" : "Struktura · bosing"}
                   <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
                 </span>
@@ -793,21 +793,21 @@ function NodeCard({
           </div>
         </div>
       ) : (
-        <div className="relative overflow-hidden rounded-[16px] bg-white shadow-[0_8px_24px_-16px_rgba(15,58,92,0.38)] ring-1 ring-slate-200/70 transition-shadow group-hover:shadow-[0_14px_30px_-16px_rgba(15,58,92,0.42)]">
+        <div className="relative overflow-hidden rounded-[16px] bg-card shadow-[0_8px_24px_-16px_rgba(15,58,92,0.38)] ring-1 ring-slate-200/70 transition-shadow group-hover:shadow-[0_14px_30px_-16px_rgba(15,58,92,0.42)]">
           <span className={cn("absolute inset-y-0 left-0 w-[3px] bg-gradient-to-b", tone.fill)} />
           <div className="flex items-center gap-2.5 py-2.5 pl-3.5 pr-3">
             <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", tone.chip)}>
               <Icon className="h-4 w-4" />
             </span>
             <span className="min-w-0">
-              <span className="block text-[13px] font-semibold leading-tight tracking-tight text-slate-900">
+              <span className="block text-[13px] font-semibold leading-tight tracking-tight text-foreground">
                 {node.label}
               </span>
               {node.hint ? (
-                <span className="mt-0.5 block text-[11px] leading-tight text-slate-500">{node.hint}</span>
+                <span className="mt-0.5 block text-[11px] leading-tight text-muted-foreground">{node.hint}</span>
               ) : null}
               {node.expandable ? (
-                <span className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-slate-600">
+                <span className="mt-1 inline-flex items-center gap-0.5 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
                   {expanded ? "Yig‘ish" : node.expandHint || `${node.count} ta · bosing`}
                   <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
                 </span>
@@ -1008,26 +1008,26 @@ function TeamCard({
       type="button"
       onClick={() => onOpen(node.id)}
       className={cn(
-        "flex w-full items-center gap-3 rounded-2xl border bg-white p-3.5 text-left shadow-sm transition",
+        "flex w-full items-center gap-3 rounded-2xl border bg-card p-3.5 text-left shadow-sm transition",
         "hover:border-slate-300 hover:shadow-md",
-        selected ? "border-[#0b3a5c]/40 ring-2 ring-[#0b3a5c]/15" : "border-slate-200/80",
+        selected ? "border-[#0b3a5c]/40 ring-2 ring-[#0b3a5c]/15" : "border-border",
       )}
     >
       <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", tone.chip)}>
         <Icon className="h-5 w-5" />
       </span>
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-[14px] font-semibold leading-tight text-slate-900">{node.label}</span>
+        <span className="block truncate text-[14px] font-semibold leading-tight text-foreground">{node.label}</span>
         {node.hint ? (
-          <span className="mt-0.5 block truncate text-[12px] text-slate-500">{node.hint}</span>
+          <span className="mt-0.5 block truncate text-[12px] text-muted-foreground">{node.hint}</span>
         ) : null}
         {deeper ? (
-          <span className="mt-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+          <span className="mt-1 inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
             {node.expandHint || `${node.count} ta`}
           </span>
         ) : null}
       </span>
-      {deeper ? <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" /> : null}
+      {deeper ? <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" /> : null}
     </button>
   );
 }
@@ -1065,18 +1065,18 @@ function TeamPanel({
           <ArrowLeft className="h-4 w-4" />
         </Button>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1 text-[11px] text-slate-400">
+          <div className="flex flex-wrap items-center gap-1 text-[11px] text-muted-foreground">
             {crumbs.map((c, i) => (
               <span key={c.id} className="inline-flex items-center gap-1">
                 {i > 0 ? <ChevronRight className="h-3 w-3" /> : null}
-                <button type="button" className="max-w-[9rem] truncate hover:text-slate-700" onClick={() => onCrumb(c.id)}>
+                <button type="button" className="max-w-[9rem] truncate hover:text-foreground" onClick={() => onCrumb(c.id)}>
                   {c.label}
                 </button>
               </span>
             ))}
           </div>
-          <p className="mt-1 truncate text-[16px] font-semibold leading-tight text-slate-900">{title}</p>
-          {hint ? <p className="truncate text-[12px] text-slate-500">{hint}</p> : null}
+          <p className="mt-1 truncate text-[16px] font-semibold leading-tight text-foreground">{title}</p>
+          {hint ? <p className="truncate text-[12px] text-muted-foreground">{hint}</p> : null}
           <p className="mt-1 text-[11px] font-semibold uppercase tracking-wide text-[#0b3a5c]">{countLabel}</p>
         </div>
         <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={onClose} aria-label="Yopish">
@@ -1089,7 +1089,7 @@ function TeamPanel({
             <TeamCard key={item.id} node={item} selected={selectedId === item.id} onOpen={onOpen} />
           ))
         ) : (
-          <p className="px-2 py-8 text-center text-sm text-slate-400">Hali xodim biriktirilmagan</p>
+          <p className="px-2 py-8 text-center text-sm text-muted-foreground">Hali xodim biriktirilmagan</p>
         )}
       </div>
     </aside>
@@ -1322,7 +1322,7 @@ export default function TashkiliyTuzilmaPage() {
 
   if (!user || !allowed) {
     return (
-      <div className="flex h-full items-center justify-center p-8 text-slate-500">Ruxsat yo‘q…</div>
+      <div className="flex h-full items-center justify-center p-8 text-muted-foreground">Ruxsat yo‘q…</div>
     );
   }
 
@@ -1336,17 +1336,17 @@ export default function TashkiliyTuzilmaPage() {
 
   return (
     <div className="flex h-full min-h-[calc(100vh-4rem)] flex-col bg-[#E8EEF4]">
-      <div className="shrink-0 border-b border-slate-200/80 bg-white/95 px-4 py-3 sm:px-6">
-        <div className="mb-2 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-400">
+      <div className="shrink-0 border-b border-border bg-white/95 px-4 py-3 sm:px-6">
+        <div className="mb-2 inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
           <Network className="h-3.5 w-3.5 text-[#0b3a5c]" />
           VAKSINA MED
         </div>
         <h1 className="text-xl font-semibold tracking-tight text-[#0b3a5c] sm:text-2xl">Tashkiliy tuzilma</h1>
         <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 text-[12px] font-medium sm:text-[13px]">
-          <span className="shrink-0 rounded-full bg-[#071E33] px-2.5 py-1 text-white">Ta’sischi</span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
-          <span className="shrink-0 rounded-full bg-[#0B3A5C] px-2.5 py-1 text-white">Direktor</span>
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
+          <span className="shrink-0 rounded-full bg-[#071E33] px-2.5 py-1 text-foreground dark:text-white">Ta’sischi</span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 rounded-full bg-[#0B3A5C] px-2.5 py-1 text-foreground dark:text-white">Direktor</span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           {LEGEND.map((item) => (
             <span
               key={item.label}
@@ -1359,8 +1359,8 @@ export default function TashkiliyTuzilmaPage() {
               {item.label}
             </span>
           ))}
-          <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />
-          <span className="shrink-0 rounded-full bg-[#0b3a5c] px-2.5 py-1 text-white">HR Menejer</span>
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <span className="shrink-0 rounded-full bg-primary px-2.5 py-1 text-primary-foreground">HR Menejer</span>
         </div>
       </div>
 
@@ -1487,7 +1487,7 @@ export default function TashkiliyTuzilmaPage() {
             >
               <ZoomOut className="h-4 w-4" />
             </Button>
-            <span className="min-w-[3.25rem] text-center text-xs font-semibold tabular-nums text-slate-600">
+            <span className="min-w-[3.25rem] text-center text-xs font-semibold tabular-nums text-muted-foreground">
               {Math.round(zoom * 100)}%
             </span>
             <Button

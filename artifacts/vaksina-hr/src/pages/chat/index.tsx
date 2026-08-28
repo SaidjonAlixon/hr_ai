@@ -141,7 +141,7 @@ function AvatarBubble({
   return (
     <div
       className={cn(
-        "shrink-0 rounded-full flex items-center justify-center font-semibold text-white shadow-sm",
+        "shrink-0 rounded-full flex items-center justify-center font-semibold text-foreground dark:text-white shadow-sm",
         dim,
       )}
       style={{ background: tint || "#2AABEE" }}
@@ -156,7 +156,7 @@ function GroupAvatar({ size = "md" }: { size?: "sm" | "md" }) {
   return (
     <div
       className={cn(
-        "shrink-0 rounded-full flex items-center justify-center text-white shadow-sm",
+        "shrink-0 rounded-full flex items-center justify-center text-foreground dark:text-white shadow-sm",
         "bg-gradient-to-br from-[#6C5CE7] to-[#A29BFE]",
         dim,
       )}
@@ -779,7 +779,7 @@ export default function ChatPage() {
   const groupCount = chats.filter((c) => c.type === "group").length;
 
   return (
-    <div className="h-full min-h-0 flex bg-[#0e1621] text-white overflow-hidden rounded-none sm:rounded-xl border border-[#1c2733]">
+    <div className="h-full min-h-0 flex bg-[#0e1621] text-foreground dark:text-white overflow-hidden rounded-none sm:rounded-xl border border-[#1c2733]">
       {/* Chat list */}
       <aside
         className={cn(
@@ -795,7 +795,7 @@ export default function ChatPage() {
             </h1>
             <Button
               size="sm"
-              className="bg-[#2AABEE] hover:bg-[#229ED9] text-white h-9 gap-1"
+              className="bg-[#2AABEE] hover:bg-[#229ED9] text-foreground dark:text-white h-9 gap-1"
               onClick={() => {
                 setNewMode("direct");
                 setPicked([]);
@@ -824,9 +824,9 @@ export default function ChatPage() {
                   "flex-1 rounded-lg px-2 py-1.5 text-xs font-medium transition-colors",
                   listFilter === tab.id
                     ? tab.id === "group"
-                      ? "bg-[#6C5CE7] text-white"
-                      : "bg-[#2AABEE] text-white"
-                    : "bg-[#242f3d] text-[#8b9aab] hover:text-white",
+                      ? "bg-[#6C5CE7] text-foreground dark:text-white"
+                      : "bg-[#2AABEE] text-foreground dark:text-white"
+                    : "bg-[#242f3d] text-[#8b9aab] hover:text-foreground dark:text-white",
                 )}
               >
                 {tab.label}
@@ -841,7 +841,7 @@ export default function ChatPage() {
               value={listQuery}
               onChange={(e) => setListQuery(e.target.value)}
               placeholder="Qidirish..."
-              className="pl-9 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
+              className="pl-9 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
             />
           </div>
         </div>
@@ -991,7 +991,7 @@ export default function ChatPage() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </AlertDialogTrigger>
-                    <AlertDialogContent className="bg-[#17212b] text-white border-[#1c2733]">
+                    <AlertDialogContent className="bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
                       <AlertDialogHeader>
                         <AlertDialogTitle>Guruhni o‘chirish?</AlertDialogTitle>
                         <AlertDialogDescription className="text-[#8b9aab]">
@@ -999,7 +999,7 @@ export default function ChatPage() {
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
-                        <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]">
+                        <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]">
                           Bekor
                         </AlertDialogCancel>
                         <AlertDialogAction
@@ -1173,7 +1173,7 @@ export default function ChatPage() {
                         >
                           <button
                             type="button"
-                            className="h-6 w-6 rounded-full bg-[#242f3d] border border-[#1c2733] flex items-center justify-center text-[#8b9aab] hover:text-white"
+                            className="h-6 w-6 rounded-full bg-[#242f3d] border border-[#1c2733] flex items-center justify-center text-[#8b9aab] hover:text-foreground dark:text-white"
                             title="Javob"
                             onClick={() => {
                               setReplyTo(m);
@@ -1187,7 +1187,7 @@ export default function ChatPage() {
                             <>
                               <button
                                 type="button"
-                                className="h-6 w-6 rounded-full bg-[#242f3d] border border-[#1c2733] flex items-center justify-center text-[#8b9aab] hover:text-white"
+                                className="h-6 w-6 rounded-full bg-[#242f3d] border border-[#1c2733] flex items-center justify-center text-[#8b9aab] hover:text-foreground dark:text-white"
                                 title="Tahrirlash"
                                 onClick={() => startEdit(m)}
                               >
@@ -1227,7 +1227,7 @@ export default function ChatPage() {
                   </div>
                   <button
                     type="button"
-                    className="p-1.5 rounded-md text-[#8b9aab] hover:text-white hover:bg-[#242f3d]"
+                    className="p-1.5 rounded-md text-[#8b9aab] hover:text-foreground dark:text-white hover:bg-[#242f3d]"
                     onClick={() => {
                       if (editingId) cancelEdit();
                       else setReplyTo(null);
@@ -1342,7 +1342,7 @@ export default function ChatPage() {
                       type="button"
                       variant="ghost"
                       disabled={uploadingFile || pendingFiles.length >= 5}
-                      className="h-11 w-11 shrink-0 rounded-full text-[#8b9aab] hover:bg-[#242f3d] hover:text-white p-0"
+                      className="h-11 w-11 shrink-0 rounded-full text-[#8b9aab] hover:bg-[#242f3d] hover:text-foreground dark:text-white p-0"
                       title="Rasm yoki fayl (matnsiz ham, 10 MB)"
                       onClick={() => fileInputRef.current?.click()}
                     >
@@ -1352,7 +1352,7 @@ export default function ChatPage() {
                       type="button"
                       variant="ghost"
                       disabled={uploadingFile}
-                      className="h-11 w-11 shrink-0 rounded-full text-[#8b9aab] hover:bg-[#242f3d] hover:text-white p-0"
+                      className="h-11 w-11 shrink-0 rounded-full text-[#8b9aab] hover:bg-[#242f3d] hover:text-foreground dark:text-white p-0"
                       title="Dumaloq video (Telegram uslubida)"
                       onClick={() => void startRecording("video_note")}
                     >
@@ -1372,7 +1372,7 @@ export default function ChatPage() {
                           ? "Fayl yuklanmoqda..."
                           : "Xabar yoki fayl..."
                   }
-                  className="min-h-11 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
+                  className="min-h-11 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
@@ -1420,7 +1420,7 @@ export default function ChatPage() {
 
       {/* New chat dialog */}
       <Dialog open={newOpen} onOpenChange={setNewOpen}>
-        <DialogContent className="sm:max-w-md bg-[#17212b] text-white border-[#1c2733]">
+        <DialogContent className="sm:max-w-md bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
           <DialogHeader>
             <DialogTitle>Yangi chat</DialogTitle>
           </DialogHeader>
@@ -1432,7 +1432,7 @@ export default function ChatPage() {
                 "flex-1 gap-1.5",
                 newMode === "direct"
                   ? "bg-[#2AABEE] hover:bg-[#229ED9]"
-                  : "border border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]",
+                  : "border border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]",
               )}
               onClick={() => {
                 setNewMode("direct");
@@ -1448,7 +1448,7 @@ export default function ChatPage() {
                 "flex-1 gap-1.5",
                 newMode === "group"
                   ? "bg-[#6C5CE7] hover:bg-[#5A4BD1]"
-                  : "border border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]",
+                  : "border border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]",
               )}
               onClick={() => setNewMode("group")}
             >
@@ -1468,7 +1468,7 @@ export default function ChatPage() {
               value={groupTitle}
               onChange={(e) => setGroupTitle(e.target.value)}
               placeholder="Guruh nomi *"
-              className="mb-3 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89]"
+              className="mb-3 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89]"
             />
           )}
 
@@ -1480,7 +1480,7 @@ export default function ChatPage() {
               placeholder={
                 newMode === "direct" ? "Xodim tanlang..." : "A’zolarni tanlang..."
               }
-              className="pl-9 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89]"
+              className="pl-9 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89]"
             />
           </div>
 
@@ -1537,7 +1537,7 @@ export default function ChatPage() {
             <Button
               type="button"
               variant="outline"
-              className="border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]"
+              className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]"
               onClick={() => setNewOpen(false)}
             >
               Bekor
@@ -1568,7 +1568,7 @@ export default function ChatPage() {
 
       {/* Add members to group */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
-        <DialogContent className="sm:max-w-md bg-[#17212b] text-white border-[#1c2733]">
+        <DialogContent className="sm:max-w-md bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
           <DialogHeader>
             <DialogTitle>Guruhga a’zo qo‘shish</DialogTitle>
           </DialogHeader>
@@ -1581,7 +1581,7 @@ export default function ChatPage() {
               value={addQuery}
               onChange={(e) => setAddQuery(e.target.value)}
               placeholder="Xodim qidirish..."
-              className="pl-9 bg-[#242f3d] border-transparent text-white placeholder:text-[#6c7a89]"
+              className="pl-9 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89]"
             />
           </div>
           {addPicked.length > 0 && (
@@ -1632,7 +1632,7 @@ export default function ChatPage() {
             <Button
               type="button"
               variant="outline"
-              className="border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]"
+              className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]"
               onClick={() => setAddOpen(false)}
             >
               Bekor
@@ -1651,7 +1651,7 @@ export default function ChatPage() {
 
       {/* Members list */}
       <Dialog open={membersOpen} onOpenChange={setMembersOpen}>
-        <DialogContent className="sm:max-w-sm bg-[#17212b] text-white border-[#1c2733]">
+        <DialogContent className="sm:max-w-sm bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
           <DialogHeader>
             <DialogTitle>Guruh a’zolari</DialogTitle>
           </DialogHeader>
@@ -1698,7 +1698,7 @@ export default function ChatPage() {
                   Guruhni to‘liq o‘chirish
                 </Button>
               </AlertDialogTrigger>
-              <AlertDialogContent className="bg-[#17212b] text-white border-[#1c2733]">
+              <AlertDialogContent className="bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
                 <AlertDialogHeader>
                   <AlertDialogTitle>Guruhni o‘chirish?</AlertDialogTitle>
                   <AlertDialogDescription className="text-[#8b9aab]">
@@ -1706,7 +1706,7 @@ export default function ChatPage() {
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-white hover:bg-[#242f3d]">
+                  <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]">
                     Bekor
                   </AlertDialogCancel>
                   <AlertDialogAction

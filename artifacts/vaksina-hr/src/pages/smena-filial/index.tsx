@@ -32,14 +32,14 @@ function SearchBox({
 }) {
   return (
     <div className="relative">
-      <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+      <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
       <Input value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} className="h-9 pl-8" />
     </div>
   );
 }
 
 function CompactList({ children }: { children: React.ReactNode }) {
-  return <div className="max-h-44 overflow-y-auto rounded-lg border border-slate-200 bg-white">{children}</div>;
+  return <div className="max-h-44 overflow-y-auto rounded-lg border border-border bg-card">{children}</div>;
 }
 
 export default function SmenaFilialPage() {
@@ -128,23 +128,23 @@ export default function SmenaFilialPage() {
         onClick={() => setPickedBranchId(b.id)}
         className={cn(
           "flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-1.5 text-left last:border-0",
-          on ? "bg-sky-50" : "hover:bg-slate-50",
+          on ? "bg-sky-50" : "hover:bg-muted",
         )}
       >
-        <span className="min-w-0 truncate text-sm text-slate-800">{b.name}</span>
+        <span className="min-w-0 truncate text-sm text-foreground">{b.name}</span>
         {on ? <Check className="h-4 w-4 shrink-0 text-sky-600" /> : null}
       </button>
     );
   }
 
-  if (q.isLoading) return <p className="p-6 text-sm text-slate-500">Yuklanmoqda…</p>;
+  if (q.isLoading) return <p className="p-6 text-sm text-muted-foreground">Yuklanmoqda…</p>;
   if (!data) return <p className="p-6 text-sm text-rose-600">Ma’lumot yuklanmadi</p>;
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4 pb-28">
       <div>
-        <h1 className="text-xl font-semibold text-slate-900">Smena va filial</h1>
-        <p className="mt-1 text-sm text-slate-600">Xodimni tanlang, pastdan filial va smenani belgilang, Saqlash.</p>
+        <h1 className="text-xl font-semibold text-foreground">Smena va filial</h1>
+        <p className="mt-1 text-sm text-muted-foreground">Xodimni tanlang, pastdan filial va smenani belgilang, Saqlash.</p>
       </div>
 
       {data.canPickShift ? (
@@ -196,12 +196,12 @@ export default function SmenaFilialPage() {
                     onClick={() => pickPerson(p)}
                     className={cn(
                       "flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-2 text-left last:border-0",
-                      on ? "bg-sky-50" : "hover:bg-slate-50",
+                      on ? "bg-sky-50" : "hover:bg-muted",
                     )}
                   >
                     <span className="min-w-0">
-                      <span className="block truncate text-sm font-medium text-slate-900">{p.fullName}</span>
-                      <span className="text-[11px] text-slate-500">
+                      <span className="block truncate text-sm font-medium text-foreground">{p.fullName}</span>
+                      <span className="text-[11px] text-muted-foreground">
                         {orgLabel(p.orgRole)} · {p.shiftType === "two" ? "2-smena" : "1-smena"} ·{" "}
                         {p.assignedBranchName || "filial yo‘q"}
                       </span>
@@ -210,20 +210,20 @@ export default function SmenaFilialPage() {
                   </button>
                 );
               })}
-              {people.length === 0 ? <p className="px-3 py-4 text-center text-sm text-slate-400">Xodim topilmadi</p> : null}
+              {people.length === 0 ? <p className="px-3 py-4 text-center text-sm text-muted-foreground">Xodim topilmadi</p> : null}
             </CompactList>
 
             {picked ? (
-              <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <div className="space-y-3 rounded-xl border border-border bg-muted p-3">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-slate-900">{picked.fullName}</p>
-                    <p className="text-[11px] text-slate-500">{orgLabel(picked.orgRole)}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{picked.fullName}</p>
+                    <p className="text-[11px] text-muted-foreground">{orgLabel(picked.orgRole)}</p>
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <p className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+                  <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                     <MapPin className="h-3.5 w-3.5" />
                     Filial {pickedBranch ? `· ${pickedBranch.name}` : ""}
                   </p>
@@ -231,7 +231,7 @@ export default function SmenaFilialPage() {
                   <CompactList>
                     {branches.map(renderBranchRow)}
                     {branches.length === 0 ? (
-                      <p className="px-3 py-3 text-center text-xs text-slate-400">Filial topilmadi</p>
+                      <p className="px-3 py-3 text-center text-xs text-muted-foreground">Filial topilmadi</p>
                     ) : null}
                   </CompactList>
                 </div>
@@ -256,7 +256,7 @@ export default function SmenaFilialPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-center text-xs text-slate-400">Xodimni bosing — pastda filial ochiladi</p>
+              <p className="text-center text-xs text-muted-foreground">Xodimni bosing — pastda filial ochiladi</p>
             )}
           </CardContent>
         </Card>
@@ -269,8 +269,8 @@ export default function SmenaFilialPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
-            <p className="text-xs text-slate-500">
-              Face ID: <b className="text-slate-800">{data.employee?.assignedBranchName || "—"}</b>
+            <p className="text-xs text-muted-foreground">
+              Face ID: <b className="text-foreground">{data.employee?.assignedBranchName || "—"}</b>
             </p>
             <SearchBox value={branchQ} onChange={setBranchQ} placeholder="Filial qidirish…" />
             <CompactList>{branches.map(renderBranchRow)}</CompactList>
@@ -288,7 +288,7 @@ export default function SmenaFilialPage() {
           </CardContent>
         </Card>
       ) : (
-        <p className="text-sm text-slate-500">
+        <p className="text-sm text-muted-foreground">
           Filialingiz: <b>{data.employee?.assignedBranchName || "belgilanmagan"}</b>
         </p>
       )}

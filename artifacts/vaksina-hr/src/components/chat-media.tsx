@@ -92,7 +92,7 @@ export function VoiceBubble({
       <button
         type="button"
         onClick={toggle}
-        className="h-9 w-9 shrink-0 rounded-full bg-[#2AABEE] text-white flex items-center justify-center"
+        className="h-9 w-9 shrink-0 rounded-full bg-[#2AABEE] text-foreground dark:text-white flex items-center justify-center"
         aria-label={playing ? "Pauza" : "Play"}
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 ml-0.5" />}
@@ -148,12 +148,12 @@ export function VideoNoteBubble({ attachment }: { attachment: ChatAttachment }) 
       {!playing && (
         <span className="absolute inset-0 flex items-center justify-center bg-black/25">
           <span className="h-12 w-12 rounded-full bg-black/50 flex items-center justify-center">
-            <Play className="h-6 w-6 text-white ml-0.5" />
+            <Play className="h-6 w-6 text-foreground dark:text-white ml-0.5" />
           </span>
         </span>
       )}
       {attachment.durationSec != null && attachment.durationSec > 0 && (
-        <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] text-white">
+        <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-black/55 px-2 py-0.5 text-[10px] text-foreground dark:text-white">
           {formatRecSec(attachment.durationSec)}
         </span>
       )}

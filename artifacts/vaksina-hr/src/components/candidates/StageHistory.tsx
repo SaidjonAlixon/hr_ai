@@ -128,9 +128,9 @@ export function StageHistory({ candidateId, stages, selectedStage, onSelectStage
         <span
           className={cn(
             'w-7 h-7 rounded-full border flex items-center justify-center text-xs font-bold shrink-0',
-            stage?.status === 'completed' && 'bg-emerald-500 text-white border-emerald-500',
-            stage?.status === 'in_progress' && 'bg-amber-400 text-white border-amber-400',
-            stage?.status === 'failed' && 'bg-destructive text-white border-destructive',
+            stage?.status === 'completed' && 'bg-emerald-500 text-foreground dark:text-white border-emerald-500',
+            stage?.status === 'in_progress' && 'bg-amber-400 text-foreground dark:text-white border-amber-400',
+            stage?.status === 'failed' && 'bg-destructive text-foreground dark:text-white border-destructive',
             (!stage || stage.status === 'pending') && 'bg-muted text-muted-foreground',
           )}
         >
@@ -155,7 +155,7 @@ export function StageHistory({ candidateId, stages, selectedStage, onSelectStage
       collapsible
       value={openValue ?? undefined}
       onValueChange={(v) => onSelectStage?.(v)}
-      className="border rounded-lg px-4 bg-white"
+      className="border rounded-lg px-4 bg-card"
     >
       <AccordionItem value="phone_interview">
         <AccordionTrigger>{header('phone_interview', 'Tanishuv')}</AccordionTrigger>

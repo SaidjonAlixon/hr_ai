@@ -90,11 +90,11 @@ function ChartTip({
 }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-lg border bg-white px-2.5 py-1.5 text-xs shadow-md">
-      {label ? <p className="mb-0.5 font-semibold text-slate-800">{label}</p> : null}
+    <div className="rounded-lg border bg-card px-2.5 py-1.5 text-xs shadow-md">
+      {label ? <p className="mb-0.5 font-semibold text-foreground">{label}</p> : null}
       {payload.map((p) => (
-        <p key={p.name} className="tabular-nums text-slate-600">
-          {p.name}: <span className="font-semibold text-slate-900">{p.value}</span>
+        <p key={p.name} className="tabular-nums text-muted-foreground">
+          {p.name}: <span className="font-semibold text-foreground">{p.value}</span>
         </p>
       ))}
     </div>
@@ -238,7 +238,7 @@ export function ChecklistDashboard({
 
   if (isLoading) {
     return (
-      <div className="rounded-2xl border bg-white px-4 py-16 text-center text-sm text-slate-500">
+      <div className="rounded-2xl border bg-card px-4 py-16 text-center text-sm text-muted-foreground">
         Dashboard yuklanmoqda…
       </div>
     );
@@ -249,8 +249,8 @@ export function ChecklistDashboard({
       <div className="flex flex-col gap-3">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h2 className="text-base font-semibold text-slate-900 sm:text-lg">Umumiy holat</h2>
-            <p className="text-xs text-slate-500 sm:text-sm">
+            <h2 className="text-base font-semibold text-foreground sm:text-lg">Umumiy holat</h2>
+            <p className="text-xs text-muted-foreground sm:text-sm">
               Tashriflar, ball, qamrov, GPS va cheklist jarayonlari — bir joyda.
             </p>
           </div>
@@ -262,7 +262,7 @@ export function ChecklistDashboard({
                 onClick={() => setRange(key)}
                 className={cn(
                   "flex-1 rounded-lg px-2.5 py-1.5 text-xs font-medium sm:px-3 lg:flex-none",
-                  range === key ? "bg-white text-[#0b1a2e] shadow-sm" : "text-slate-600 hover:text-slate-900",
+                  range === key ? "bg-card text-[#0b1a2e] shadow-sm" : "text-muted-foreground hover:text-foreground",
                 )}
               >
                 {RANGE_LABEL[key]}
@@ -272,7 +272,7 @@ export function ChecklistDashboard({
         </div>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-1">
-            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               Koordinator
             </Label>
             <Select
@@ -282,7 +282,7 @@ export function ChecklistDashboard({
                 setBranchKey("all");
               }}
             >
-              <SelectTrigger className="h-11 w-full bg-white">
+              <SelectTrigger className="h-11 w-full bg-card">
                 <SelectValue placeholder="Koordinator" />
               </SelectTrigger>
               <SelectContent>
@@ -296,9 +296,9 @@ export function ChecklistDashboard({
             </Select>
           </div>
           <div className="flex min-w-0 flex-col gap-1">
-            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Filial</Label>
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Filial</Label>
             <Select value={branchKey} onValueChange={setBranchKey}>
-              <SelectTrigger className="h-11 w-full bg-white">
+              <SelectTrigger className="h-11 w-full bg-card">
                 <SelectValue placeholder="Filial" />
               </SelectTrigger>
               <SelectContent>
@@ -424,7 +424,7 @@ export function ChecklistDashboard({
               label: "GPS yo‘q",
               value: dash.visits - dash.withGps,
               color: "bg-slate-400",
-              text: "text-slate-600",
+              text: "text-muted-foreground",
               onClick: () => goVisits({ gps: "no" }),
             },
             {
@@ -440,14 +440,14 @@ export function ChecklistDashboard({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-5">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm lg:col-span-3">
+        <div className="rounded-2xl border bg-card p-4 shadow-sm lg:col-span-3">
           <div className="mb-3 flex items-center justify-between">
             <div>
               <h3 className="text-sm font-semibold">Kunlik tashriflar</h3>
-              <p className="text-[11px] text-slate-500">Oxirgi 14 kun · nechta cheklist</p>
+              <p className="text-[11px] text-muted-foreground">Oxirgi 14 kun · nechta cheklist</p>
             </div>
             <CalendarDays
-              className="h-4 w-4 cursor-pointer text-slate-400 hover:text-sky-600"
+              className="h-4 w-4 cursor-pointer text-muted-foreground hover:text-sky-600"
               onClick={() => goVisits()}
             />
           </div>
@@ -478,9 +478,9 @@ export function ChecklistDashboard({
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-white p-4 shadow-sm lg:col-span-2">
+        <div className="rounded-2xl border bg-card p-4 shadow-sm lg:col-span-2">
           <h3 className="text-sm font-semibold">Ball taqsimoti</h3>
-          <p className="mb-2 text-[11px] text-slate-500">Tashriflar qanday baholangan</p>
+          <p className="mb-2 text-[11px] text-muted-foreground">Tashriflar qanday baholangan</p>
           <div className="h-52">
             {dash.visits === 0 ? (
               <EmptyChart />
@@ -516,7 +516,7 @@ export function ChecklistDashboard({
                 key={p.name}
                 type="button"
                 onClick={() => goVisits({ scoreBand: p.key })}
-                className="inline-flex items-center gap-1.5 text-slate-600 hover:text-slate-900"
+                className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-foreground"
               >
                 <span className="h-2 w-2 rounded-full" style={{ background: p.color }} />
                 {p.name} · {p.value}
@@ -537,31 +537,31 @@ export function ChecklistDashboard({
           }
         />
 
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
             <h3 className="text-sm font-semibold">Cheklist jarayonlari</h3>
-            <p className="text-[11px] text-slate-500">Bo‘limlar bo‘yicha “Ha” ulushi</p>
+            <p className="text-[11px] text-muted-foreground">Bo‘limlar bo‘yicha “Ha” ulushi</p>
           </div>
           <ul className="divide-y">
             {dash.categories.length === 0 ? (
-              <li className="px-4 py-8 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
+              <li className="px-4 py-8 text-center text-sm text-muted-foreground">Ma’lumot yo‘q</li>
             ) : (
               dash.categories.map((cat) => (
                 <li key={cat.title}>
                   <button
                     type="button"
                     onClick={() => goVisits()}
-                    className="w-full px-4 py-3 text-left hover:bg-slate-50"
+                    className="w-full px-4 py-3 text-left hover:bg-muted"
                   >
                     <div className="mb-1.5 flex items-center justify-between gap-2">
                       <p className="min-w-0 truncate text-sm font-medium">{cat.title}</p>
                       <p className={cn("inline-flex shrink-0 items-center gap-1 text-xs font-semibold tabular-nums", scoreTone(cat.pct))}>
                         {cat.pct}%
-                        <ChevronRight className="h-3.5 w-3.5 font-normal text-slate-400" />
+                        <ChevronRight className="h-3.5 w-3.5 font-normal text-muted-foreground" />
                       </p>
                     </div>
                     <Progress value={cat.pct} className="h-2" />
-                    <p className="mt-1 text-[11px] text-slate-500">
+                    <p className="mt-1 text-[11px] text-muted-foreground">
                       Ha {cat.yes} · Yo‘q {cat.no}
                     </p>
                   </button>
@@ -573,25 +573,25 @@ export function ChecklistDashboard({
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
             <h3 className="text-sm font-semibold">Eng past ball — filiallar</h3>
-            <p className="text-[11px] text-slate-500">Nazorat kerak bo‘lgan joylar</p>
+            <p className="text-[11px] text-muted-foreground">Nazorat kerak bo‘lgan joylar</p>
           </div>
           <ul className="divide-y">
             {dash.weakBranches.length === 0 ? (
-              <li className="px-4 py-8 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
+              <li className="px-4 py-8 text-center text-sm text-muted-foreground">Ma’lumot yo‘q</li>
             ) : (
               dash.weakBranches.map((b) => (
                 <li key={b.id}>
                   <button
                     type="button"
                     onClick={() => goVisits({ branchKey: b.id })}
-                    className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50"
+                    className="flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-muted"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{b.name}</p>
-                      <p className="truncate text-[11px] text-slate-500">
+                      <p className="truncate text-[11px] text-muted-foreground">
                         {b.visits} tashrif · {b.manager}
                       </p>
                     </div>
@@ -616,25 +616,25 @@ export function ChecklistDashboard({
           </ul>
         </div>
 
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
             <h3 className="text-sm font-semibold">Oxirgi tashriflar</h3>
-            <p className="text-[11px] text-slate-500">Eng yangi cheklistlar</p>
+            <p className="text-[11px] text-muted-foreground">Eng yangi cheklistlar</p>
           </div>
           <ul className="divide-y">
             {dash.recent.length === 0 ? (
-              <li className="px-4 py-8 text-center text-sm text-slate-400">Hali tashrif yo‘q</li>
+              <li className="px-4 py-8 text-center text-sm text-muted-foreground">Hali tashrif yo‘q</li>
             ) : (
               dash.recent.map((a) => (
                 <li key={a.id}>
                   <button
                     type="button"
                     onClick={() => onOpenVisit(a)}
-                    className="flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50"
+                    className="flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left hover:bg-muted"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{a.branchLocation || "Filial"}</p>
-                      <p className="truncate text-[11px] text-slate-500">
+                      <p className="truncate text-[11px] text-muted-foreground">
                         {a.coordinatorName || "Koordinator"} · {formatShort(a.visitDate)} · {a.visitName}
                       </p>
                     </div>
@@ -642,10 +642,10 @@ export function ChecklistDashboard({
                       {a.checkLatitude != null ? (
                         <MapPin className="h-3 w-3 text-sky-500" />
                       ) : (
-                        <XCircle className="h-3 w-3 text-slate-300" />
+                        <XCircle className="h-3 w-3 text-muted-foreground" />
                       )}
                       <span className={cn("font-bold tabular-nums", scoreTone(a.scorePercent))}>{a.scorePercent}%</span>
-                      <ChevronRight className="h-3.5 w-3.5 text-slate-400" />
+                      <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
                     </span>
                   </button>
                 </li>
@@ -806,14 +806,14 @@ function Kpi({
     <button
       type="button"
       onClick={onClick}
-      className="rounded-2xl border bg-white p-3 text-left shadow-sm transition hover:border-sky-200 hover:shadow-md"
+      className="rounded-2xl border bg-card p-3 text-left shadow-sm transition hover:border-sky-200 hover:shadow-md"
     >
       <div className={cn("mb-2 inline-flex rounded-lg p-1.5", tone)}>
         <Icon className="h-3.5 w-3.5" />
       </div>
-      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-slate-900 sm:text-2xl", valueClass)}>{value}</p>
-      {hint ? <p className="text-[10px] text-slate-400">{hint}</p> : null}
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-foreground sm:text-2xl", valueClass)}>{value}</p>
+      {hint ? <p className="text-[10px] text-muted-foreground">{hint}</p> : null}
     </button>
   );
 }
@@ -828,7 +828,7 @@ function StatusCard({
   total: number;
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border bg-card p-4 shadow-sm">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
       <div className="mb-3 flex h-2 overflow-hidden rounded-full bg-slate-100">
         {items.map((it) =>
@@ -852,13 +852,13 @@ function StatusCard({
               onClick={it.onClick}
               className="flex w-full items-center justify-between text-xs hover:opacity-80"
             >
-              <span className="inline-flex items-center gap-2 text-slate-600">
+              <span className="inline-flex items-center gap-2 text-muted-foreground">
                 <span className={cn("h-2 w-2 rounded-full", it.color)} />
                 {it.label}
               </span>
               <span className={cn("inline-flex items-center gap-0.5 font-semibold tabular-nums", it.text)}>
                 {it.value}
-                <ChevronRight className="h-3 w-3 text-slate-400" />
+                <ChevronRight className="h-3 w-3 text-muted-foreground" />
               </span>
             </button>
           </li>
@@ -870,6 +870,6 @@ function StatusCard({
 
 function EmptyChart() {
   return (
-    <div className="flex h-full items-center justify-center text-sm text-slate-400">Hali ma’lumot yo‘q</div>
+    <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Hali ma’lumot yo‘q</div>
   );
 }

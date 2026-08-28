@@ -78,7 +78,7 @@ export function MoneyInput({
         if (e.key === "Enter") e.currentTarget.blur();
       }}
       className={cn(
-        "h-8 w-full bg-transparent px-1.5 text-right text-[12px] tabular-nums outline-none focus:bg-white disabled:opacity-70",
+        "h-8 w-full bg-transparent px-1.5 text-right text-[12px] tabular-nums outline-none focus:bg-card disabled:opacity-70",
         className,
       )}
     />

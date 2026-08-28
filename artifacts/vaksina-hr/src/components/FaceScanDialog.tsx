@@ -84,7 +84,7 @@ function PoseArrow({ pose }: { pose: FacePose }) {
   return (
     <div
       className={cn(
-        "flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-white ring-1 ring-white/35 backdrop-blur-sm",
+        "flex h-11 w-11 items-center justify-center rounded-full bg-black/40 text-foreground dark:text-white ring-1 ring-white/35 backdrop-blur-sm",
         pose !== "center" && "animate-bounce",
       )}
     >
@@ -428,7 +428,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         hideClose
-        className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-white !max-h-[100dvh] !overflow-hidden"
+        className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-foreground dark:text-white !max-h-[100dvh] !overflow-hidden"
       >
         <DialogHeader className="sr-only">
           <DialogTitle>{title || (mode === "enroll" ? "Face ID · ulash" : "Davomat · Face ID")}</DialogTitle>
@@ -477,7 +477,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                 key={p.key}
                 className={cn(
                   "h-1.5 w-6 rounded-full",
-                  i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-white" : "bg-white/20",
+                  i < poseIndex ? "bg-emerald-400" : i === poseIndex ? "bg-card" : "bg-white/20",
                 )}
                 style={
                   i === poseIndex && poseFill
@@ -496,7 +496,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           <Button
             type="button"
             variant="ghost"
-            className="w-full rounded-full text-white hover:bg-white/10 hover:text-white"
+            className="w-full rounded-full text-foreground dark:text-white hover:bg-white/10 hover:text-foreground dark:text-white"
             onClick={() => onOpenChange(false)}
           >
             <X className="mr-1.5 h-4 w-4" />

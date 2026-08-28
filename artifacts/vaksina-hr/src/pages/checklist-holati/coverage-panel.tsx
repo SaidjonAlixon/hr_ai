@@ -251,7 +251,7 @@ export function CoveragePanel({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <p className="text-sm text-slate-600">
+        <p className="text-sm text-muted-foreground">
           Har bir koordinatorning barcha filiallari: cheklist kiritilgan va kiritilmagan.
         </p>
         {canExport ? (
@@ -282,10 +282,10 @@ export function CoveragePanel({
         />
       </div>
 
-      <div className="rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
+      <div className="rounded-2xl border bg-card p-3 shadow-sm sm:p-4">
         <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex min-w-0 flex-col gap-1">
-            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               Koordinator
             </Label>
             <Select value={coordKey} onValueChange={setCoordKey}>
@@ -308,11 +308,11 @@ export function CoveragePanel({
             </Select>
           </div>
           <div className="flex min-w-0 flex-col gap-1">
-            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               Qidiruv
             </Label>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -323,36 +323,36 @@ export function CoveragePanel({
             </div>
           </div>
           <div className="flex min-w-0 flex-col gap-1">
-            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Dan</Label>
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Dan</Label>
             <Input type="date" className="h-11" value={from} onChange={(e) => setFrom(e.target.value)} />
           </div>
           <div className="flex min-w-0 flex-col gap-1">
-            <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Gacha</Label>
+            <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Gacha</Label>
             <Input type="date" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
           </div>
         </div>
-        <p className="mt-2 text-[11px] text-slate-400">
+        <p className="mt-2 text-[11px] text-muted-foreground">
           Sana bo‘sh — barcha vaqt. Sana qo‘ysangiz, shu davrdagi cheklist hisoblanadi.
         </p>
       </div>
 
       {isLoading ? (
-        <p className="rounded-2xl border bg-white px-4 py-10 text-center text-sm text-slate-500">
+        <p className="rounded-2xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           Yuklanmoqda…
         </p>
       ) : coordKey === "all" ? (
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <ul className="divide-y">
             {(data?.coordinators ?? []).map((c) => (
               <li key={c.employeeId}>
                 <button
                   type="button"
                   onClick={() => setCoordKey(String(c.employeeId))}
-                  className="flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-slate-50 sm:flex-row sm:items-center sm:justify-between"
+                  className="flex w-full flex-col gap-2 px-4 py-3 text-left hover:bg-muted sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0">
-                    <p className="truncate font-semibold text-slate-900">{c.name}</p>
-                    <p className="text-[11px] text-slate-500">
+                    <p className="truncate font-semibold text-foreground">{c.name}</p>
+                    <p className="text-[11px] text-muted-foreground">
                       {c.total} filial · kiritilgan {c.filled} · kiritilmagan {c.missing}
                     </p>
                   </div>
@@ -389,11 +389,11 @@ export function CoveragePanel({
         </div>
       ) : selected ? (
         <div className="space-y-4">
-          <div className="rounded-2xl border bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border bg-card p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <h3 className="text-lg font-bold">{selected.name}</h3>
-                <p className="text-sm text-slate-500">
+                <p className="text-sm text-muted-foreground">
                   {selected.total} filialdan {selected.filled} tasiga kiritilgan, {selected.missing} tasiga
                   kiritilmagan
                 </p>
@@ -420,7 +420,7 @@ export function CoveragePanel({
           </div>
         </div>
       ) : (
-        <p className="rounded-2xl border bg-white px-4 py-10 text-center text-sm text-slate-400">
+        <p className="rounded-2xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           Koordinator topilmadi
         </p>
       )}
@@ -438,9 +438,9 @@ function MiniStat({
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-xl border bg-white px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-4 sm:py-3">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:text-xs">{label}</p>
-      <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-slate-900 sm:text-2xl", valueClass)}>
+    <div className="rounded-xl border bg-card px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-4 sm:py-3">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">{label}</p>
+      <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-foreground sm:text-2xl", valueClass)}>
         {value}
       </p>
     </div>
@@ -459,7 +459,7 @@ function BranchColumn({
   items: CoverageBranch[];
 }) {
   return (
-    <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+    <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
       <div
         className={cn(
           "flex items-center justify-between border-b px-4 py-3",
@@ -480,17 +480,17 @@ function BranchColumn({
       </div>
       <ul className="max-h-[28rem] divide-y overflow-y-auto">
         {items.length === 0 ? (
-          <li className="px-4 py-8 text-center text-sm text-slate-400">Ro‘yxat bo‘sh</li>
+          <li className="px-4 py-8 text-center text-sm text-muted-foreground">Ro‘yxat bo‘sh</li>
         ) : (
           items.map((b) => (
             <li key={b.managerEmployeeId} className="px-4 py-2.5">
               <p className="flex items-center gap-1.5 text-sm font-medium">
-                <Store className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                <Store className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 {b.branchLocation}
               </p>
-              <p className="mt-0.5 text-[11px] text-slate-500">Mudir: {b.managerName}</p>
+              <p className="mt-0.5 text-[11px] text-muted-foreground">Mudir: {b.managerName}</p>
               {b.filled ? (
-                <p className="mt-0.5 text-[11px] text-slate-500">
+                <p className="mt-0.5 text-[11px] text-muted-foreground">
                   {b.visitCount} tashrif · oxirgi {formatDate(b.lastVisitDate)}
                   {b.lastScore != null ? ` · ${b.lastScore}%` : ""}
                 </p>

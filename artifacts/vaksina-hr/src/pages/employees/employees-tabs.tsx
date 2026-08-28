@@ -10,7 +10,7 @@ export function EmployeesTabs() {
     { href: "/employees/duplicates", label: "Dublikatlar" },
   ];
   return (
-    <div className="flex flex-wrap gap-1 rounded-xl bg-white/10 p-1">
+    <div className="flex flex-wrap gap-1 rounded-xl bg-primary-foreground/10 p-1">
       {items.map((it) => {
         const active =
           it.href === "/employees"
@@ -21,8 +21,10 @@ export function EmployeesTabs() {
             key={it.href}
             href={it.href}
             className={cn(
-              "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-              active ? "bg-white text-[#0b3a5c]" : "text-white/80 hover:bg-white/10 hover:text-white",
+              "rounded-lg px-3 py-1.5 text-xs font-medium transition",
+              active
+                ? "bg-card text-primary shadow-sm"
+                : "text-primary-foreground/85 hover:bg-primary-foreground/10 hover:text-primary-foreground",
             )}
           >
             {it.label}

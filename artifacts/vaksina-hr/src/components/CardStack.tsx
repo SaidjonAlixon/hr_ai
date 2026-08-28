@@ -63,7 +63,7 @@ export function CardStack<T>({
                 onClick={() =>
                   setExpanded((prev) => ({ ...prev, [groupKey]: false }))
                 }
-                className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white/70 py-1 text-[10px] font-semibold text-slate-500 hover:bg-white hover:text-slate-700"
+                className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-slate-300 bg-white/70 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-card hover:text-foreground"
               >
                 <Layers className="h-3 w-3" />
                 Yig‘ish ({group.length})
@@ -97,7 +97,7 @@ export function CardStack<T>({
                 <div
                   key={`peek-${i}`}
                   aria-hidden
-                  className="pointer-events-none absolute left-1 right-1 rounded-xl border border-slate-200 bg-white shadow-sm"
+                  className="pointer-events-none absolute left-1 right-1 rounded-xl border border-border bg-card shadow-sm"
                   style={{
                     top: depth * 6,
                     bottom: 0,
@@ -114,7 +114,7 @@ export function CardStack<T>({
               {renderCard(group[0], { inStack: true, isTop: true })}
             </div>
 
-            <span className="pointer-events-none absolute bottom-0 right-2 z-30 inline-flex items-center gap-0.5 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-white shadow-md">
+            <span className="pointer-events-none absolute bottom-0 right-2 z-30 inline-flex items-center gap-0.5 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-foreground dark:text-white shadow-md">
               <ChevronDown className="h-3 w-3" />
               {group.length}
             </span>

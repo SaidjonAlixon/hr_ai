@@ -86,7 +86,7 @@ export default function VacanciesList() {
         );
       case 'closed':
         return (
-          <Badge variant="secondary" className="bg-slate-800 text-white gap-1">
+          <Badge variant="secondary" className="bg-muted dark:bg-slate-800 text-foreground dark:text-white gap-1">
             <CheckCircle2 className="w-3 h-3" /> Bajarildi
           </Badge>
         );
@@ -156,19 +156,19 @@ export default function VacanciesList() {
         )}
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-center bg-white p-4 rounded-lg border shadow-sm">
+      <div className="flex flex-col sm:flex-row gap-4 items-center bg-card p-4 rounded-lg border shadow-sm">
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
             placeholder="Ish o'rni nomini qidiring..."
-            className="pl-9 bg-gray-50 border-transparent focus-visible:bg-white"
+            className="pl-9 bg-background border-transparent focus-visible:bg-card"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
         <div className="flex gap-2 w-full sm:w-auto shrink-0">
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-full sm:w-[180px] bg-gray-50 border-transparent">
+            <SelectTrigger className="w-full sm:w-[180px] bg-background border-transparent">
               <Filter className="w-4 h-4 mr-2" />
               <SelectValue placeholder="Status" />
             </SelectTrigger>
@@ -263,7 +263,7 @@ export default function VacanciesList() {
                         {vacancy.channels.map((ch, i) => (
                           <div
                             key={i}
-                            className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm"
+                            className="w-8 h-8 rounded-full bg-card border border-gray-200 flex items-center justify-center shadow-sm"
                             title={ch.channelName}
                           >
                             {getChannelIcon(ch.channelName)}
@@ -297,7 +297,7 @@ export default function VacanciesList() {
                           type="button"
                           variant="outline"
                           size="sm"
-                          className="w-full gap-2 border-slate-300 text-slate-800 hover:bg-slate-900 hover:text-white"
+                          className="w-full gap-2 border-slate-300 text-foreground hover:bg-slate-900 hover:text-foreground dark:text-white"
                           disabled={closingId === vacancy.id && closeMutation.isPending}
                         >
                           <CheckCircle2 className="w-4 h-4" />
@@ -329,7 +329,7 @@ export default function VacanciesList() {
           ))}
         </div>
       ) : (
-        <div className="text-center py-16 bg-white rounded-lg border">
+        <div className="text-center py-16 bg-card rounded-lg border">
           <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Briefcase className="w-8 h-8 text-gray-400" />
           </div>

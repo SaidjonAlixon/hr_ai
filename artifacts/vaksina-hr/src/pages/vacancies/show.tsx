@@ -316,7 +316,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                     ? 'bg-emerald-100 text-emerald-800'
                     : vacancy.status === 'draft'
                       ? 'bg-amber-100 text-amber-800'
-                      : 'bg-slate-800 text-white gap-1'
+                      : 'bg-muted dark:bg-slate-800 text-foreground dark:text-white gap-1'
                 }
               >
                 {vacancy.status === 'published' ? (
@@ -545,8 +545,8 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
               ))}
             </div>
           ) : list.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-10 text-center">
-              <p className="text-sm text-slate-500">Bu ish o‘rni uchun hali nomzod yo‘q</p>
+            <div className="rounded-xl border border-dashed border-border bg-muted/60 px-4 py-10 text-center">
+              <p className="text-sm text-muted-foreground">Bu ish o‘rni uchun hali nomzod yo‘q</p>
               {vacancy.status !== 'closed' && (
                 <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
                   <Button className="mt-3" size="sm">Nomzod qo‘shish</Button>
@@ -558,7 +558,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
               {list.map((c) => (
                 <div
                   key={c.id}
-                  className="grid grid-cols-1 gap-3 rounded-xl border border-slate-200 bg-white p-4 shadow-sm sm:grid-cols-[1fr_auto]"
+                  className="grid grid-cols-1 gap-3 rounded-xl border border-border bg-card p-4 shadow-sm sm:grid-cols-[1fr_auto]"
                 >
                   <div className="min-w-0 space-y-3">
                     <div className="flex min-h-[28px] flex-wrap items-center gap-2">
@@ -578,47 +578,47 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                             ? 'shrink-0 bg-emerald-50 text-emerald-800'
                             : c.status === 'rejected'
                               ? 'shrink-0 bg-red-50 text-red-700'
-                              : 'shrink-0 bg-slate-100 text-slate-700'
+                              : 'shrink-0 bg-slate-100 text-foreground'
                         }
                       >
                         {STATUS_LABELS[c.status || ''] || c.status || 'Faol'}
                       </Badge>
                     </div>
 
-                    <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm text-slate-600 sm:grid-cols-2">
+                    <div className="grid grid-cols-1 gap-x-6 gap-y-2 text-sm text-muted-foreground sm:grid-cols-2">
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
-                        <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{c.phone || '—'}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
-                        <GraduationCap className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <GraduationCap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{c.education || 'Taʼlim kiritilmagan'}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
-                        <Briefcase className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <Briefcase className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{c.experience || 'Tajriba kiritilmagan'}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
-                        <MapPin className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{c.address || 'Manzil kiritilmagan'}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
-                        <DollarSign className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                        <DollarSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                         <span className="truncate">{c.expectedSalary || 'Maosh kiritilmagan'}</span>
                       </p>
-                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-slate-400">
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-muted-foreground">
                         Tug‘ilgan: {c.birthDate || '—'}
                       </p>
-                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-slate-400">
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-muted-foreground">
                         Qo‘shilgan: {formatMaybeDate(c.createdAt)}
                       </p>
-                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-slate-400">
+                      <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-muted-foreground">
                         Rekruter: {c.recruiterName || vacancy.recruiterName || '—'}
                       </p>
                     </div>
 
-                    <div className="min-h-[52px] rounded-lg bg-slate-50 px-3 py-2">
-                      <p className="line-clamp-2 text-sm text-slate-600">
+                    <div className="min-h-[52px] rounded-lg bg-muted px-3 py-2">
+                      <p className="line-clamp-2 text-sm text-muted-foreground">
                         {c.notes?.trim() || 'Izoh yo‘q'}
                       </p>
                     </div>

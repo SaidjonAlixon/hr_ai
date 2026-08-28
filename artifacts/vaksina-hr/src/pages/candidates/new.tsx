@@ -84,7 +84,7 @@ export default function NewCandidate() {
 
   if (!canAdd) {
     return (
-      <div className="max-w-lg mx-auto rounded-xl border bg-white p-8 text-center">
+      <div className="max-w-lg mx-auto rounded-xl border bg-card p-8 text-center">
         <h1 className="text-lg font-semibold">Ruxsat yoʻq</h1>
         <p className="mt-2 text-sm text-muted-foreground">
           Nomzod qoʻshish faqat rekruter, HR va direktor uchun.

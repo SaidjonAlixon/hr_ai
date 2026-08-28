@@ -112,7 +112,7 @@ export default function KirishPage() {
 
   if (!canAccessKirish(user?.role)) {
     return (
-      <div className="h-full flex items-center justify-center p-8 text-slate-500">
+      <div className="h-full flex items-center justify-center p-8 text-muted-foreground">
         Bu bo‘lim faqat stajyor uchun.
       </div>
     );
@@ -120,7 +120,7 @@ export default function KirishPage() {
 
   if (me.isLoading) {
     return (
-      <div className="h-full flex items-center justify-center text-slate-500">
+      <div className="h-full flex items-center justify-center text-muted-foreground">
         Yuklanmoqda...
       </div>
     );
@@ -189,23 +189,23 @@ export default function KirishPage() {
           <div
             ref={failAlertRef}
             role="alert"
-            className="rounded-2xl border border-red-400 bg-red-600 px-4 py-3 text-center text-sm font-semibold text-white shadow-sm sm:text-base"
+            className="rounded-2xl border border-red-400 bg-red-600 px-4 py-3 text-center text-sm font-semibold text-foreground dark:text-white shadow-sm sm:text-base"
           >
             Test o‘tilmadi: {correctCountText(lastResult.correct, lastResult.total)}.
             Kamida 50% kerak — videoni qayta ko‘ring.
           </div>
         ) : null}
         {finished || report ? (
-          <section className="rounded-3xl border border-emerald-200 bg-white p-6 sm:p-8 shadow-sm">
+          <section className="rounded-3xl border border-emerald-200 bg-card p-6 sm:p-8 shadow-sm">
             <div className="flex items-start gap-3">
               <div className="h-12 w-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center">
                 <Award className="h-6 w-6" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-slate-900">
+                <h2 className="text-xl font-semibold text-foreground">
                   {(report || { statusLabel: "Ishga qabulga tayyor" }).statusLabel}
                 </h2>
-                <p className="text-sm text-slate-600 mt-1 max-w-2xl">
+                <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
                   {report?.message ||
                     "Barcha bosqichlar yakunlangan. HR/admin ishga olishni ko‘rib chiqishi mumkin."}
                 </p>
@@ -221,13 +221,13 @@ export default function KirishPage() {
                 }))).map((row) => (
                 <div
                   key={row.stage}
-                  className="rounded-2xl bg-slate-50 border border-slate-100 p-4"
+                  className="rounded-2xl bg-muted border border-slate-100 p-4"
                 >
-                  <div className="text-xs text-slate-500">Bosqich {row.stage}</div>
-                  <div className="text-2xl font-semibold text-slate-900 mt-1">
+                  <div className="text-xs text-muted-foreground">Bosqich {row.stage}</div>
+                  <div className="text-2xl font-semibold text-foreground mt-1">
                     {row.score ?? "—"}%
                   </div>
-                  <div className="text-xs text-slate-500 mt-1">
+                  <div className="text-xs text-muted-foreground mt-1">
                     Urinishlar: {row.attempts}
                   </div>
                 </div>
@@ -256,15 +256,15 @@ export default function KirishPage() {
                     onClick={() => setViewStage(n)}
                     className={cn(
                       "rounded-xl py-2 text-sm font-semibold tabular-nums transition",
-                      isCurrent && "bg-[#2AABEE] text-white shadow-sm",
+                      isCurrent && "bg-[#2AABEE] text-foreground dark:text-white shadow-sm",
                       !isCurrent &&
                         passed &&
                         "border border-emerald-200 bg-emerald-50 text-emerald-700",
                       !isCurrent &&
                         !passed &&
                         !isLocked &&
-                        "border border-slate-200 bg-white text-slate-700 hover:border-slate-300",
-                      isLocked && "cursor-not-allowed bg-slate-100 text-slate-400",
+                        "border border-border bg-card text-foreground hover:border-slate-300",
+                      isLocked && "cursor-not-allowed bg-slate-100 text-muted-foreground",
                     )}
                   >
                     {n}
@@ -273,27 +273,27 @@ export default function KirishPage() {
               })}
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-slate-900">{stageContent.title}</h2>
-              <p className="text-sm text-slate-500">{stageContent.subtitle}</p>
+              <h2 className="text-lg font-semibold text-foreground">{stageContent.title}</h2>
+              <p className="text-sm text-muted-foreground">{stageContent.subtitle}</p>
             </div>
 
             <section
               ref={videoRef}
-              className="rounded-3xl border border-slate-200/80 bg-white shadow-sm overflow-hidden"
+              className="rounded-3xl border border-border bg-card shadow-sm overflow-hidden"
             >
               <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
                 <Video className="h-4 w-4 text-[#2AABEE]" />
-                <h3 className="text-sm font-semibold text-slate-900">Video</h3>
+                <h3 className="text-sm font-semibold text-foreground">Video</h3>
                 {sessionWatched || st.passed ? (
                   <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-500" />
                 ) : (
-                  <span className="ml-auto text-xs font-medium tabular-nums text-slate-500">
+                  <span className="ml-auto text-xs font-medium tabular-nums text-muted-foreground">
                     {watchPercent}%
                   </span>
                 )}
               </div>
               <div className="p-4 sm:p-5">
-                <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-slate-200 bg-slate-900">
+                <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-border bg-slate-900">
                   {stageContent.youtubeId ? (
                     <RestrictedVideoPlayer
                       key={`${stageContent.youtubeId}-${playerKey}`}
@@ -312,15 +312,15 @@ export default function KirishPage() {
                       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10 ring-2 ring-[#2AABEE]/40">
                         <Play className="h-7 w-7 text-[#F1C40F]" />
                       </div>
-                      <p className="font-medium text-white">{stageContent.videoPosterHint}</p>
-                      <p className="mt-2 max-w-sm text-sm text-slate-300">
+                      <p className="font-medium text-foreground dark:text-white">{stageContent.videoPosterHint}</p>
+                      <p className="mt-2 max-w-sm text-sm text-muted-foreground">
                         Video hali biriktirilmagan. Admin YouTube havolasini qo‘shgach shu yerda ochiladi.
                       </p>
                     </div>
                   )}
                 </div>
                 {stageContent.youtubeId ? (
-                  <p className="mt-3 text-xs text-slate-500">
+                  <p className="mt-3 text-xs text-muted-foreground">
                     Play / pauza va orqaga qaytish mumkin. Oldinga o‘tkazish o‘chiq.
                     {sessionWatched
                       ? " Video tugadi — pastda test ochildi. Videoni qayta ko‘rishingiz mumkin."
@@ -330,18 +330,18 @@ export default function KirishPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-slate-200/80 bg-white shadow-sm overflow-hidden">
+            <section className="rounded-3xl border border-border bg-card shadow-sm overflow-hidden">
               <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
                 <Presentation className="h-4 w-4 text-[#2AABEE]" />
-                <h3 className="text-sm font-semibold text-slate-900">Slaydlar</h3>
+                <h3 className="text-sm font-semibold text-foreground">Slaydlar</h3>
               </div>
               <div className="p-4 sm:p-5">
                 {stageContent.driveFileId ? (
                   <DrivePdfViewer fileId={stageContent.driveFileId} />
                 ) : (
-                  <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-dashed bg-slate-50 px-4 py-8 text-center text-slate-500">
-                    <Presentation className="mb-2 h-8 w-8 text-slate-400" />
-                    <p className="text-sm font-medium text-slate-700">PDF hali biriktirilmagan</p>
+                  <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted px-4 py-8 text-center text-muted-foreground">
+                    <Presentation className="mb-2 h-8 w-8 text-muted-foreground" />
+                    <p className="text-sm font-medium text-foreground">PDF hali biriktirilmagan</p>
                     <p className="mt-1 max-w-sm text-xs">
                       Admin Google Drive havolasini qo‘shgach slayd shu yerda ochiladi.
                     </p>
@@ -353,15 +353,15 @@ export default function KirishPage() {
             {testVisible ? (
             <section
               ref={testRef}
-              className="relative flex max-h-[min(70vh,40rem)] flex-col overflow-hidden rounded-3xl border border-slate-200/80 bg-white shadow-sm"
+              className="relative flex max-h-[min(70vh,40rem)] flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-sm"
             >
               <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-5 py-3">
                 <ClipboardList className="h-4 w-4 text-[#2AABEE]" />
-                <h3 className="text-sm font-semibold text-slate-900">Test</h3>
+                <h3 className="text-sm font-semibold text-foreground">Test</h3>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
                 {(lastResult || st.passed) && (
-                  <div className="mb-5 rounded-2xl border border-slate-100 bg-slate-50 p-5 text-center">
+                  <div className="mb-5 rounded-2xl border border-slate-100 bg-muted p-5 text-center">
                     <div
                       className={cn(
                         "mx-auto flex h-20 w-20 items-center justify-center rounded-full text-xl font-bold tabular-nums",
@@ -374,20 +374,20 @@ export default function KirishPage() {
                         ? `${lastResult.correct}/${lastResult.total}`
                         : `${lastResult?.score ?? st.score ?? 0}%`}
                     </div>
-                    <p className="mt-3 text-base font-semibold text-slate-900">
+                    <p className="mt-3 text-base font-semibold text-foreground">
                       {lastResult
                         ? correctCountText(lastResult.correct, lastResult.total)
                         : `${st.score ?? 0}%`}
                     </p>
                     {lastResult ? (
-                      <p className="mt-1 text-sm text-slate-500">{lastResult.score}%</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{lastResult.score}%</p>
                     ) : null}
-                    <h3 className="mt-3 text-lg font-semibold text-slate-900">
+                    <h3 className="mt-3 text-lg font-semibold text-foreground">
                       {(lastResult?.passed ?? st.passed)
                         ? "Tabriklaymiz — bosqich o‘tildi!"
                         : "Test o‘tilmadi — videoni qayta ko‘ring"}
                     </h3>
-                    <p className="mt-1 text-sm text-slate-500">
+                    <p className="mt-1 text-sm text-muted-foreground">
                       {(lastResult?.passed ?? st.passed)
                         ? viewStage < (progress?.stageCount ?? 8)
                           ? "Keyingi bosqich ochildi."
@@ -398,7 +398,7 @@ export default function KirishPage() {
                       {(lastResult?.passed ?? st.passed) &&
                         viewStage < (progress?.stageCount ?? 8) && (
                           <Button
-                            className="rounded-full bg-[#0B1B2B] hover:bg-slate-800"
+                            className="rounded-full bg-[#0B1B2B] hover:bg-muted dark:bg-slate-800"
                             onClick={() => setViewStage(viewStage + 1)}
                           >
                             Keyingi bosqich
@@ -413,9 +413,9 @@ export default function KirishPage() {
                     {stageContent.questions.map((q, qi) => (
                       <div
                         key={q.id}
-                        className="rounded-2xl border border-slate-200 p-4 sm:p-5"
+                        className="rounded-2xl border border-border p-4 sm:p-5"
                       >
-                        <p className="font-medium text-slate-900">
+                        <p className="font-medium text-foreground">
                           <span className="mr-2 text-[#2AABEE]">{qi + 1}.</span>
                           {q.text}
                         </p>
@@ -432,8 +432,8 @@ export default function KirishPage() {
                                 className={cn(
                                   "rounded-xl border px-3 py-2.5 text-left text-sm transition",
                                   selected
-                                    ? "border-[#2AABEE] bg-[#2AABEE]/10 text-slate-900"
-                                    : "border-slate-200 text-slate-700 hover:border-slate-300",
+                                    ? "border-[#2AABEE] bg-[#2AABEE]/10 text-foreground"
+                                    : "border-border text-foreground hover:border-slate-300",
                                 )}
                               >
                                 {opt}
@@ -463,7 +463,7 @@ export default function KirishPage() {
         ) : null}
 
         {!finished && locked && (
-          <div className="rounded-3xl border border-dashed border-slate-300 bg-white/70 p-10 text-center text-slate-500">
+          <div className="rounded-3xl border border-dashed border-slate-300 bg-white/70 p-10 text-center text-muted-foreground">
             <Lock className="mx-auto mb-3 h-8 w-8 opacity-50" />
             Avval {viewStage - 1}-bosqichni kamida 50% natija bilan yakunlang.
           </div>
@@ -472,8 +472,8 @@ export default function KirishPage() {
         {!finished && canFinish && (
           <div className="flex flex-col items-center justify-between gap-4 rounded-3xl border border-[#2AABEE]/30 bg-gradient-to-r from-[#e8f6fd] to-white p-6 sm:flex-row">
             <div>
-              <h3 className="font-semibold text-slate-900">Barcha bosqichlar yakunlandi</h3>
-              <p className="text-sm text-slate-600">
+              <h3 className="font-semibold text-foreground">Barcha bosqichlar yakunlandi</h3>
+              <p className="text-sm text-muted-foreground">
                 «Tugatish» — to‘liq holatni tizimga chiqaradi (ishga qabulga tayyor).
               </p>
             </div>

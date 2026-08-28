@@ -106,7 +106,7 @@ function FilterField({
 }) {
   return (
     <div className="flex min-w-0 flex-col justify-end gap-1">
-      <Label className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+      <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
         {label}
       </Label>
       {children}
@@ -299,10 +299,10 @@ export default function ChecklistHolatiPage() {
 
   if (!allowedFull && !allowedRanking) {
     return (
-      <div className="rounded-2xl border bg-white p-8 text-center shadow-sm">
-        <Info className="mx-auto h-10 w-10 text-slate-400" />
+      <div className="rounded-2xl border bg-card p-8 text-center shadow-sm">
+        <Info className="mx-auto h-10 w-10 text-muted-foreground" />
         <h2 className="mt-3 text-lg font-semibold">Ruxsat yo‘q</h2>
-        <p className="mt-1 text-sm text-slate-500">
+        <p className="mt-1 text-sm text-muted-foreground">
           Cheklist holatini admin, direktor, HR direktor va HR menejer ko‘radi.
         </p>
       </div>
@@ -312,7 +312,7 @@ export default function ChecklistHolatiPage() {
   if (isCoordOnly) {
     return (
       <div className="mx-auto max-w-3xl space-y-4 pb-10 sm:space-y-6">
-        <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-white shadow-lg sm:px-6 sm:py-7">
+        <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-foreground dark:text-white shadow-lg sm:px-6 sm:py-7">
           <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
           <div className="relative">
             <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
@@ -320,7 +320,7 @@ export default function ChecklistHolatiPage() {
               Koordinatorlar
             </div>
             <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Reyting</h1>
-            <p className="mt-1.5 max-w-xl text-xs text-slate-300 sm:text-sm">
+            <p className="mt-1.5 max-w-xl text-xs text-muted-foreground sm:text-sm">
               Kunlik, haftalik va oylik natija — tashrif, ball, qamrov va GPS asosida.
             </p>
           </div>
@@ -332,7 +332,7 @@ export default function ChecklistHolatiPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 pb-10 sm:space-y-6">
-      <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-white shadow-lg sm:px-6 sm:py-7">
+      <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-foreground dark:text-white shadow-lg sm:px-6 sm:py-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
@@ -341,14 +341,14 @@ export default function ChecklistHolatiPage() {
               Nazorat · Tashriflar
             </div>
             <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Cheklist holati</h1>
-            <p className="mt-1.5 max-w-xl text-xs text-slate-300 sm:text-sm">
+            <p className="mt-1.5 max-w-xl text-xs text-muted-foreground sm:text-sm">
               Dashboard, tashriflar, reyting va har bir koordinatorning filial qamrovi.
             </p>
           </div>
           {tab === "tashriflar" && canExportChecklistStatus(user?.role) && (
             <Button
               variant="secondary"
-              className="w-full bg-white/10 text-white hover:bg-white/20 sm:w-auto"
+              className="w-full bg-white/10 text-foreground dark:text-white hover:bg-white/20 sm:w-auto"
               onClick={() => void handleExcel()}
               disabled={exporting || filtered.length === 0}
             >
@@ -405,15 +405,15 @@ export default function ChecklistHolatiPage() {
         <Stat label="O‘rtacha ball" value={`${stats.avg}%`} valueClass={scoreTone(stats.avg)} />
       </div>
 
-      <div className="rounded-2xl border bg-white p-3 shadow-sm sm:p-4">
-        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+      <div className="rounded-2xl border bg-card p-3 shadow-sm sm:p-4">
+        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <Filter className="h-3.5 w-3.5" />
           Filter
         </div>
         <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
           <FilterField label="Qidiruv">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
@@ -493,14 +493,14 @@ export default function ChecklistHolatiPage() {
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Koordinatorlar bo‘yicha</h2>
-            <p className="text-[11px] text-slate-500">Tashrif soni · o‘rtacha ball</p>
+            <p className="text-[11px] text-muted-foreground">Tashrif soni · o‘rtacha ball</p>
           </div>
           <ul className="max-h-64 divide-y overflow-y-auto">
             {byCoordinator.length === 0 ? (
-              <li className="px-4 py-6 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
+              <li className="px-4 py-6 text-center text-sm text-muted-foreground">Ma’lumot yo‘q</li>
             ) : (
               byCoordinator.map((c) => (
                 <li key={c.id}>
@@ -511,13 +511,13 @@ export default function ChecklistHolatiPage() {
                       setBranchKey("all");
                     }}
                     className={cn(
-                      "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-slate-50",
+                      "flex w-full items-center justify-between gap-2 px-4 py-2.5 text-left hover:bg-muted",
                       coordinatorId === c.id && "bg-cyan-50",
                     )}
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-medium">{c.name}</p>
-                      <p className="text-[11px] text-slate-500">Oxirgi: {formatWhen(c.last)}</p>
+                      <p className="text-[11px] text-muted-foreground">Oxirgi: {formatWhen(c.last)}</p>
                     </div>
                     <div className="shrink-0 text-right">
                       <p className="text-sm font-bold tabular-nums">{visitLabel(c.visits)}</p>
@@ -529,14 +529,14 @@ export default function ChecklistHolatiPage() {
             )}
           </ul>
         </div>
-        <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Filiallar bo‘yicha</h2>
-            <p className="text-[11px] text-slate-500">Tashrif soni va sanalar</p>
+            <p className="text-[11px] text-muted-foreground">Tashrif soni va sanalar</p>
           </div>
           <ul className="max-h-64 divide-y overflow-y-auto">
             {byBranch.length === 0 ? (
-              <li className="px-4 py-6 text-center text-sm text-slate-400">Ma’lumot yo‘q</li>
+              <li className="px-4 py-6 text-center text-sm text-muted-foreground">Ma’lumot yo‘q</li>
             ) : (
               byBranch.map((b) => (
                 <li key={b.id}>
@@ -544,14 +544,14 @@ export default function ChecklistHolatiPage() {
                     type="button"
                     onClick={() => setBranchKey(b.id)}
                     className={cn(
-                      "w-full px-4 py-2.5 text-left hover:bg-slate-50",
+                      "w-full px-4 py-2.5 text-left hover:bg-muted",
                       branchKey === b.id && "bg-cyan-50",
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium">{b.name}</p>
-                        <p className="truncate text-[11px] text-slate-500">{b.manager}</p>
+                        <p className="truncate text-[11px] text-muted-foreground">{b.manager}</p>
                       </div>
                       <p className="shrink-0 text-sm font-bold tabular-nums">{visitLabel(b.visits)}</p>
                     </div>
@@ -568,7 +568,7 @@ export default function ChecklistHolatiPage() {
                         </span>
                       ))}
                       {b.stamps.length > 8 ? (
-                        <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-500">
+                        <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-muted-foreground">
                           +{b.stamps.length - 8}
                         </span>
                       ) : null}
@@ -581,14 +581,14 @@ export default function ChecklistHolatiPage() {
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="border-b px-4 py-3">
           <h2 className="text-sm font-semibold sm:text-base">Barcha tashriflar</h2>
         </div>
         {isLoading ? (
-          <p className="px-4 py-10 text-center text-sm text-slate-500">Yuklanmoqda…</p>
+          <p className="px-4 py-10 text-center text-sm text-muted-foreground">Yuklanmoqda…</p>
         ) : filtered.length === 0 ? (
-          <p className="px-4 py-10 text-center text-sm text-slate-400">Hali cheklist yo‘q</p>
+          <p className="px-4 py-10 text-center text-sm text-muted-foreground">Hali cheklist yo‘q</p>
         ) : (
           <ul className="divide-y">
             {filtered.map((a) => {
@@ -598,12 +598,12 @@ export default function ChecklistHolatiPage() {
                   <button
                     type="button"
                     onClick={() => setViewing(a)}
-                    className="w-full rounded-xl text-left transition hover:bg-slate-50"
+                    className="w-full rounded-xl text-left transition hover:bg-muted"
                   >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-slate-900">
+                          <p className="font-semibold text-foreground">
                             {a.branchLocation || "Filial"}
                           </p>
                           <Badge className={cn("font-bold", scoreBadge(a.scorePercent))}>
@@ -613,7 +613,7 @@ export default function ChecklistHolatiPage() {
                             {a.visitName}
                           </Badge>
                         </div>
-                        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                           <span className="inline-flex items-center gap-1">
                             <CalendarDays className="h-3.5 w-3.5" />
                             {formatWhen(a.visitDate, a.createdAt)}
@@ -643,11 +643,11 @@ export default function ChecklistHolatiPage() {
                               {a.distanceMeters != null ? ` · ${a.distanceMeters} m` : ""}
                             </a>
                           ) : (
-                            <span className="text-slate-400">GPS yo‘q</span>
+                            <span className="text-muted-foreground">GPS yo‘q</span>
                           )}
                         </p>
                       </div>
-                      <span className="text-xs font-medium text-slate-400 sm:pt-1">Batafsil →</span>
+                      <span className="text-xs font-medium text-muted-foreground sm:pt-1">Batafsil →</span>
                     </div>
                   </button>
                 </li>
@@ -672,24 +672,24 @@ export default function ChecklistHolatiPage() {
           {viewing && (
             <div className="space-y-4 text-sm">
               <Progress value={viewing.scorePercent} className="h-2" />
-              <div className="grid gap-2 rounded-xl border bg-slate-50 p-3 text-xs text-slate-600 sm:grid-cols-2">
+              <div className="grid gap-2 rounded-xl border bg-muted p-3 text-xs text-muted-foreground sm:grid-cols-2">
                 <p>
-                  <span className="font-semibold text-slate-800">Sana / vaqt:</span>{" "}
+                  <span className="font-semibold text-foreground">Sana / vaqt:</span>{" "}
                   {formatWhen(viewing.visitDate, viewing.createdAt)}
                 </p>
                 <p>
-                  <span className="font-semibold text-slate-800">Tashrif:</span> {viewing.visitName}
+                  <span className="font-semibold text-foreground">Tashrif:</span> {viewing.visitName}
                 </p>
                 <p>
-                  <span className="font-semibold text-slate-800">Mudir:</span> {viewing.managerName}
+                  <span className="font-semibold text-foreground">Mudir:</span> {viewing.managerName}
                 </p>
                 <p>
-                  <span className="font-semibold text-slate-800">Koordinator:</span>{" "}
+                  <span className="font-semibold text-foreground">Koordinator:</span>{" "}
                   {viewing.coordinatorName}
                 </p>
                 {viewing.checkLatitude != null && viewing.checkLongitude != null ? (
                   <p className="sm:col-span-2">
-                    <span className="font-semibold text-slate-800">Lokatsiya:</span>{" "}
+                    <span className="font-semibold text-foreground">Lokatsiya:</span>{" "}
                     <a
                       href={mapsUrl(viewing.checkLatitude, viewing.checkLongitude)!}
                       target="_blank"
@@ -707,7 +707,7 @@ export default function ChecklistHolatiPage() {
               ) : null}
               {viewing.categories?.map((cat) => (
                 <div key={cat.id}>
-                  <p className="mb-1.5 font-semibold text-slate-800">{cat.title}</p>
+                  <p className="mb-1.5 font-semibold text-foreground">{cat.title}</p>
                   <ul className="space-y-1.5">
                     {cat.items.map((it) => (
                       <li
@@ -717,7 +717,7 @@ export default function ChecklistHolatiPage() {
                         <span className="min-w-0 leading-snug">
                           {it.label}
                           {it.note ? (
-                            <span className="mt-0.5 block text-[11px] text-slate-500">{it.note}</span>
+                            <span className="mt-0.5 block text-[11px] text-muted-foreground">{it.note}</span>
                           ) : null}
                         </span>
                         <Badge
@@ -765,11 +765,11 @@ function Stat({
   valueClass?: string;
 }) {
   return (
-    <div className="rounded-xl border bg-white px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-4 sm:py-3">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-slate-500 sm:text-xs">
+    <div className="rounded-xl border bg-card px-3 py-2.5 shadow-sm sm:rounded-2xl sm:px-4 sm:py-3">
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground sm:text-xs">
         {label}
       </p>
-      <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-slate-900 sm:text-2xl", valueClass)}>
+      <p className={cn("mt-0.5 text-xl font-bold tabular-nums text-foreground sm:text-2xl", valueClass)}>
         {value}
       </p>
     </div>

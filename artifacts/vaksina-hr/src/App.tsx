@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ThemeProvider } from './components/theme-provider';
 import { Toaster } from './components/ui/toaster';
 import { TooltipProvider } from './components/ui/tooltip';
 import { Route, Switch, Router as WouterRouter } from 'wouter';
@@ -52,6 +53,7 @@ import EmployeesPage from './pages/employees/index';
 import EmployeesOtherPage from './pages/employees/other';
 import EmployeeDuplicatesPage from './pages/employees/duplicates';
 import DavomatPage from './pages/davomat/index';
+import DavomatAnalyticsPage from './pages/davomat/analytics';
 import DavomatFacePage from './pages/davomat/face';
 import DavomatFarOfficePage from './pages/davomat/far-office';
 import SmenaFilialPage from './pages/smena-filial/index';
@@ -149,6 +151,7 @@ function Router() {
       <ProtectedRoute path="/employees/duplicates" component={EmployeeDuplicatesPage} />
       <ProtectedRoute path="/employees/other" component={EmployeesOtherPage} />
       <ProtectedRoute path="/employees" component={EmployeesPage} />
+      <ProtectedRoute path="/davomat/analytics" component={DavomatAnalyticsPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/davomat-uzoq" component={DavomatFarOfficePage} />
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
@@ -169,17 +172,19 @@ function Router() {
 
 function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <AuthProvider>
-        <RealtimeSync />
-        <TooltipProvider>
-          <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
-            <Router />
-          </WouterRouter>
-          <Toaster />
-        </TooltipProvider>
-      </AuthProvider>
-    </QueryClientProvider>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <AuthProvider>
+          <RealtimeSync />
+          <TooltipProvider>
+            <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
+              <Router />
+            </WouterRouter>
+            <Toaster />
+          </TooltipProvider>
+        </AuthProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 

@@ -237,7 +237,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                   onValueChange={handleReassign}
                   disabled={isReassigning}
                 >
-                  <SelectTrigger className="h-11 bg-white border-primary/30">
+                  <SelectTrigger className="h-11 bg-card border-primary/30">
                     <SelectValue placeholder="Mas'ulni tanlang" />
                   </SelectTrigger>
                   <SelectContent className="z-[100]">
@@ -259,7 +259,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
         <CardHeader className="bg-muted/30 pb-4">
           <CardTitle className="flex justify-between items-center gap-3 flex-wrap">
             <span>Tanlov bosqichlari</span>
-            <Badge variant="outline" className="font-normal text-xs bg-white">
+            <Badge variant="outline" className="font-normal text-xs bg-card">
               Joriy: {pipeline?.currentStage || candidate.stage} ({(pipeline?.stages.findIndex((s) => s.key === (pipeline?.currentStage || candidate.stage)) ?? 0) + 1}/9)
             </Badge>
           </CardTitle>
@@ -364,7 +364,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                   <Briefcase className="w-4 h-4 text-primary" />
                   Ish tajribasi
                 </div>
-                <div className="rounded-md bg-white border p-3 text-sm whitespace-pre-wrap min-h-[80px]">
+                <div className="rounded-md bg-card border p-3 text-sm whitespace-pre-wrap min-h-[80px]">
                   {candidate.experience?.trim() || 'Kiritilmagan'}
                 </div>
               </div>
@@ -373,7 +373,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                   <GraduationCap className="w-4 h-4 text-primary" />
                   Ma'lumoti
                 </div>
-                <div className="rounded-md bg-white border p-3 text-sm whitespace-pre-wrap min-h-[80px]">
+                <div className="rounded-md bg-card border p-3 text-sm whitespace-pre-wrap min-h-[80px]">
                   {candidate.education?.trim() || 'Kiritilmagan'}
                 </div>
               </div>

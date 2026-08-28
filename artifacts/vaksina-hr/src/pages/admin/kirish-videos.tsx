@@ -155,10 +155,10 @@ export default function AdminKirishVideosPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 pb-10 sm:space-y-5">
-      <div className="overflow-hidden rounded-2xl bg-[#0b3a5c] px-4 py-4 text-white shadow-sm sm:px-6 sm:py-5">
+      <div className="surface-brand shadow-sm sm:px-6 sm:py-5">
         <Link
           href="/dashboard"
-          className="mb-3 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/25"
+          className="mb-3 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-foreground dark:text-white ring-1 ring-white/20 hover:bg-white/25"
         >
           <ArrowLeft className="h-4 w-4" />
           Chiqish
@@ -188,8 +188,8 @@ export default function AdminKirishVideosPage() {
                 className={cn(
                   "flex h-12 min-w-[3.35rem] shrink-0 flex-col items-center justify-center rounded-xl px-2 text-center transition sm:min-w-0 sm:w-full",
                   activeStage === item.stage
-                    ? "bg-[#0b3a5c] text-white shadow-sm"
-                    : "border border-slate-200 bg-white text-slate-700 hover:border-[#0b3a5c]/30 hover:bg-slate-50",
+                    ? "bg-primary text-primary-foreground shadow-sm"
+                    : "border border-border bg-card text-foreground hover:border-[#0b3a5c]/30 hover:bg-muted",
                 )}
               >
                 <span className="text-[9px] font-semibold uppercase tracking-wide opacity-70">
@@ -212,15 +212,15 @@ export default function AdminKirishVideosPage() {
               (save.isPending && save.variables?.stage === v.stage) ||
               (clear.isPending && clear.variables === v.stage);
             return (
-              <Card key={v.stage} className="overflow-hidden border-slate-200/80 shadow-sm">
+              <Card key={v.stage} className="overflow-hidden border-border shadow-sm">
                 <CardHeader className="space-y-1 px-4 pb-3 pt-4 sm:px-6">
                   <CardTitle className="flex items-center gap-2 text-base text-[#0b3a5c]">
-                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#0b3a5c] text-white">
+                    <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                       <Video className="h-3.5 w-3.5" />
                     </span>
                     {v.stage}-bosqich
                   </CardTitle>
-                  <p className="text-sm font-medium text-slate-700">{v.title}</p>
+                  <p className="text-sm font-medium text-foreground">{v.title}</p>
                 </CardHeader>
                 <CardContent className="space-y-4 px-4 pb-5 sm:space-y-5 sm:px-6">
                   {previewId ? (
@@ -230,7 +230,7 @@ export default function AdminKirishVideosPage() {
                       className="aspect-video w-full rounded-xl border object-cover"
                     />
                   ) : (
-                    <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-dashed bg-slate-50 text-slate-400">
+                    <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-dashed bg-muted text-muted-foreground">
                       <Link2 className="h-8 w-8" />
                     </div>
                   )}
@@ -280,12 +280,12 @@ export default function AdminKirishVideosPage() {
                     {draft.questions.map((q, qi) => (
                       <div
                         key={q.id}
-                        className="space-y-2 rounded-xl border border-slate-200 bg-slate-50/80 p-3"
+                        className="space-y-2 rounded-xl border border-border bg-muted/80 p-3"
                       >
                         <div className="flex items-start gap-2">
                           <span className="mt-2 text-xs font-semibold text-[#0b3a5c]">{qi + 1}.</span>
                           <Textarea
-                            className="min-h-[64px] bg-white"
+                            className="min-h-[64px] bg-card"
                             placeholder="Savol matni"
                             value={q.text}
                             onChange={(e) => {
@@ -299,7 +299,7 @@ export default function AdminKirishVideosPage() {
                             type="button"
                             variant="ghost"
                             size="icon"
-                            className="shrink-0 text-slate-500"
+                            className="shrink-0 text-muted-foreground"
                             disabled={draft.questions.length <= 1}
                             onClick={() =>
                               patch(v.stage, {
@@ -310,7 +310,7 @@ export default function AdminKirishVideosPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                        <p className="text-[11px] text-slate-500">To‘g‘ri javobni belgilang</p>
+                        <p className="text-[11px] text-muted-foreground">To‘g‘ri javobni belgilang</p>
                         <div className="grid gap-2">
                           {q.options.map((opt, oi) => (
                             <div key={oi} className="flex items-center gap-2">
@@ -327,7 +327,7 @@ export default function AdminKirishVideosPage() {
                                 }}
                               />
                               <Input
-                                className="h-11 rounded-xl bg-white text-base md:h-9 md:text-sm"
+                                className="h-11 rounded-xl bg-card text-base md:h-9 md:text-sm"
                                 placeholder={`${oi + 1}-variant`}
                                 value={opt}
                                 onChange={(e) => {

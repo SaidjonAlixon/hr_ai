@@ -51,7 +51,8 @@ import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { useChatList } from '../lib/chat-api';
 import { cn } from '../lib/utils';
-import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole } from '../lib/roles';
+import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole } from '../lib/roles';
+import { DavomatAnalyticsDashboard } from '../pages/davomat/analytics';
 import { useHolat } from '../lib/holat-api';
 import {
   BranchListRows,
@@ -96,7 +97,8 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 type DashKind =
-  | 'recruitment' // admin, hr, director, recruiter
+  | 'recruitment' // admin, hr, recruiter
+  | 'director' // direktor — davomat analitikasi
   | 'department' // department_head
   | 'trainer'
   | 'mentor'
@@ -140,9 +142,10 @@ function dashKindFor(role?: string | null): DashKind {
   if (isTexnikRole(role)) return 'tech';
   switch (role) {
     case 'admin':
-    case 'director':
     case 'recruiter':
       return 'recruitment';
+    case 'director':
+      return 'director';
     case 'department_head':
       return 'department';
     case 'trainer':
@@ -172,7 +175,7 @@ function dashKindFor(role?: string | null): DashKind {
 function requestStatusBadge(status: RequestStatus | string) {
   switch (status) {
     case 'submitted':
-      return <Badge className="bg-gray-100 text-gray-800 hover:bg-gray-100">Yangi</Badge>;
+      return <Badge className="bg-gray-100 text-gray-800 hover:bg-muted">Yangi</Badge>;
     case 'reviewing':
       return <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Ko'rib chiqilmoqda</Badge>;
     case 'accepted':
@@ -180,7 +183,7 @@ function requestStatusBadge(status: RequestStatus | string) {
     case 'announced':
       return <Badge className="bg-violet-100 text-violet-800 hover:bg-violet-100">E'lon qilingan</Badge>;
     case 'closed':
-      return <Badge className="bg-gray-800 text-white hover:bg-gray-800">Yopilgan</Badge>;
+      return <Badge className="bg-gray-800 text-foreground dark:text-white hover:bg-gray-800">Yopilgan</Badge>;
     default:
       return <Badge>{status}</Badge>;
   }
@@ -199,18 +202,20 @@ export default function Dashboard() {
     if (kind === 'intern') setLocation('/kirish');
   }, [kind, setLocation]);
 
+  const isDirector = kind === 'director';
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';
   const isPharmacyStaff = kind === 'pharmacy_staff';
-  const canWatchRequests = role === 'director' || isHrRole(role) || role === 'admin';
-  const canSeePipeline = role === 'admin' || isHrRole(role) || role === 'recruiter' || role === 'director';
+  const canWatchRequests = (role === 'director' || isHrRole(role) || role === 'admin') && !isDirector;
+  const canSeeRecruitment = canSeeHrRecruitment(role);
+  const canSeePipeline = canSeeRecruitment && (role === 'admin' || isHrRole(role) || role === 'recruiter');
   const canSeeRecruiterTasks = role === 'admin' || isHrRole(role) || role === 'recruiter';
   const canFetchVacancies =
-    role === 'admin' ||
-    role === 'director' ||
-    role === 'recruiter' ||
-    isHrRole(role) ||
-    role === 'department_head';
+    canSeeRecruitment &&
+    (role === 'admin' ||
+      role === 'recruiter' ||
+      isHrRole(role) ||
+      role === 'department_head');
 
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats({
     query: { enabled: isRecruitment || kind === 'department' || kind === 'trainer' },
@@ -246,7 +251,7 @@ export default function Dashboard() {
     query: { enabled: kind !== 'intern' },
   });
   const { data: chats } = useChatList({ enabled: kind !== 'intern' } as any);
-  const holatOn = canViewHolat(role);
+  const holatOn = canViewHolat(role) && !isDirector;
   const { data: holat, isLoading: holatLoading } = useHolat(holatOn);
 
   const deadlineVacancies = useMemo(() => {
@@ -257,7 +262,7 @@ export default function Dashboard() {
       seen.add(v.id);
       if (!(v.status === 'published' || v.status === 'draft')) return false;
       if (!(v as any).deadline) return false;
-      if (role === 'admin' || role === 'director') return true;
+      if (role === 'admin') return true;
       if (role === 'recruiter') return (v as any).recruiterId === uid;
       return (v as any).requestCreatedById === uid;
     });
@@ -265,7 +270,7 @@ export default function Dashboard() {
   }, [vacancies, user?.id, role]);
 
   const canSeeDeadlineVacancies =
-    role === 'admin' || role === 'director' || role === 'recruiter' || deadlineVacancies.length > 0;
+    canSeeRecruitment && (role === 'admin' || role === 'recruiter' || deadlineVacancies.length > 0);
 
   const openRequests = useMemo(
     () =>
@@ -495,6 +500,14 @@ export default function Dashboard() {
     </DashDetailDialog>
   );
 
+  if (isDirector) {
+    return (
+      <div className="-mx-3 space-y-4 sm:-mx-6">
+        <DavomatAnalyticsDashboard embedded />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap rounded-2xl border bg-gradient-to-br from-white to-slate-50/80 p-4 sm:p-5">
@@ -514,11 +527,11 @@ export default function Dashboard() {
 
       <FaceIdEnroll />
 
-      {/* ===== RECRUITMENT (admin / hr / director / recruiter) ===== */}
+      {/* ===== RECRUITMENT (admin / hr / recruiter) ===== */}
       {isRecruitment && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
-            {(role === 'admin' || isHrRole(role) || role === 'director') && (
+            {(role === 'admin' || isHrRole(role)) && (
               <DashTile
                 title="Ochiq arizalar"
                 value={stats?.openRequests}
@@ -530,6 +543,8 @@ export default function Dashboard() {
                 active={detail === 'open_requests'}
               />
             )}
+            {canSeeRecruitment && (
+              <>
             <DashTile
               title="Faol ish o'rinlari"
               value={stats?.activeVacancies}
@@ -560,6 +575,8 @@ export default function Dashboard() {
               onClick={() => openDetail('hired')}
               active={detail === 'hired'}
             />
+              </>
+            )}
             <DashTile
               title="Topshiriqlar"
               value={openTaskCount}
@@ -585,7 +602,7 @@ export default function Dashboard() {
           {canViewHolatFull(role) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-0.5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Tarmoq holati</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tarmoq holati</p>
                 <Link href="/admin/holat" className="text-xs font-medium text-[#0b3a5c] hover:underline">
                   Holat →
                 </Link>
@@ -936,14 +953,14 @@ export default function Dashboard() {
       {/* ===== SECURITY (SB) ===== */}
       {kind === 'security' && (
         <>
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm">
+          <div className="rounded-xl border border-border bg-card p-3.5 shadow-sm">
             <div className="flex items-start gap-3">
-              <span className="rounded-lg bg-slate-100 p-2 text-slate-700">
+              <span className="rounded-lg bg-slate-100 p-2 text-foreground">
                 <Shield className="h-4 w-4" />
               </span>
               <div>
-                <p className="text-sm font-semibold text-slate-900">Xavfsizlik (SB)</p>
-                <p className="mt-0.5 text-xs text-slate-600">
+                <p className="text-sm font-semibold text-foreground">Xavfsizlik (SB)</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   Eskalatsiya: operator → boshliq → direktor
                 </p>
               </div>
@@ -1159,10 +1176,10 @@ function DeadlineBlock({
         <div className="max-h-[min(55vh,420px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
           {items.map((v) => (
             <Link key={v.id} href={`/vacancies/${v.id}`}>
-              <div className="flex flex-col gap-2 rounded-lg border border-amber-200/80 bg-white px-3 py-2.5 transition hover:border-amber-400 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex flex-col gap-2 rounded-lg border border-amber-200/80 bg-card px-3 py-2.5 transition hover:border-amber-400 hover:shadow-sm sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="truncate text-sm font-semibold text-slate-900">{v.title}</p>
+                    <p className="truncate text-sm font-semibold text-foreground">{v.title}</p>
                     <Badge
                       variant="secondary"
                       className={
@@ -1216,7 +1233,7 @@ function RequestsBlock({
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className="bg-gray-50">Yangi: {statusCounts.submitted}</Badge>
+          <Badge variant="outline" className="bg-background">Yangi: {statusCounts.submitted}</Badge>
           <Badge variant="outline" className="bg-blue-50 text-blue-800 border-blue-200">
             Ko'rib chiqilmoqda: {statusCounts.reviewing}
           </Badge>

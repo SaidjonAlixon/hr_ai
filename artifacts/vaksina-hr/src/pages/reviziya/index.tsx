@@ -79,13 +79,13 @@ const STATUS_UZ: Record<string, string> = {
 };
 
 const STATUS_TONE: Record<string, string> = {
-  planned: "bg-slate-100 text-slate-700",
+  planned: "bg-slate-100 text-foreground",
   en_route: "bg-sky-100 text-sky-800",
   inspecting: "bg-indigo-100 text-indigo-800",
   reconciling: "bg-violet-100 text-violet-800",
   signed: "bg-emerald-100 text-emerald-800",
   accounting_approved: "bg-teal-100 text-teal-800",
-  closed: "bg-slate-800 text-white",
+  closed: "bg-muted dark:bg-slate-800 text-foreground dark:text-white",
   awaiting_explanation: "bg-amber-100 text-amber-900",
   sb_review: "bg-rose-100 text-rose-800",
   recovery: "bg-orange-100 text-orange-900",
@@ -163,10 +163,10 @@ export default function ReviziyaPage() {
   if (!allowed) {
     return (
       <div className="flex min-h-[50vh] items-center justify-center p-8">
-        <div className="max-w-sm rounded-2xl border bg-white p-8 text-center shadow-sm">
-          <Lock className="mx-auto h-8 w-8 text-slate-400" />
-          <p className="mt-3 font-semibold text-slate-900">Kirish cheklangan</p>
-          <p className="mt-1 text-sm text-slate-500">Reviziya bo‘limi faqat tegishli rollar uchun.</p>
+        <div className="max-w-sm rounded-2xl border bg-card p-8 text-center shadow-sm">
+          <Lock className="mx-auto h-8 w-8 text-muted-foreground" />
+          <p className="mt-3 font-semibold text-foreground">Kirish cheklangan</p>
+          <p className="mt-1 text-sm text-muted-foreground">Reviziya bo‘limi faqat tegishli rollar uchun.</p>
         </div>
       </div>
     );
@@ -225,7 +225,7 @@ export default function ReviziyaPage() {
 
   return (
     <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
-      <div className="relative overflow-hidden bg-gradient-to-br from-[#2e1065] via-[#4c1d95] to-[#0b3a5c] px-4 py-6 text-white md:px-6 md:py-8">
+      <div className="relative overflow-hidden bg-gradient-to-br from-[#2e1065] via-[#4c1d95] to-[#0b3a5c] px-4 py-6 text-foreground dark:text-white md:px-6 md:py-8">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-20 left-1/3 h-40 w-40 rounded-full bg-fuchsia-400/20 blur-2xl" />
         <div className="relative mx-auto max-w-6xl">
@@ -262,7 +262,7 @@ export default function ReviziyaPage() {
                 className={cn(
                   "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-medium transition",
                   tab === t.id
-                    ? "bg-white text-violet-900 shadow-lg shadow-black/10"
+                    ? "bg-card text-violet-900 shadow-lg shadow-black/10"
                     : "bg-white/10 text-white/85 hover:bg-white/20",
                 )}
               >
@@ -344,7 +344,7 @@ export default function ReviziyaPage() {
                               </span>
                               {r.branch}
                             </span>
-                            <span className="tabular-nums font-semibold text-slate-800">{money(r.shortage)}</span>
+                            <span className="tabular-nums font-semibold text-foreground">{money(r.shortage)}</span>
                           </div>
                           <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
                             <div
@@ -366,14 +366,14 @@ export default function ReviziyaPage() {
                 ) : (d?.revizorLoad || []).length ? (
                   <div className="space-y-3">
                     {(d.revizorLoad as Array<{ id: number; name: string; count: number }>).map((r) => (
-                      <div key={r.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2.5">
+                      <div key={r.id} className="flex items-center justify-between rounded-xl bg-muted px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white">
+                          <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-foreground dark:text-white">
                             {r.name.slice(0, 1)}
                           </span>
                           <span className="text-sm font-medium">{r.name}</span>
                         </div>
-                        <span className="rounded-full bg-white px-2.5 py-0.5 text-xs font-semibold shadow-sm">{r.count} ta</span>
+                        <span className="rounded-full bg-card px-2.5 py-0.5 text-xs font-semibold shadow-sm">{r.count} ta</span>
                       </div>
                     ))}
                   </div>
@@ -402,29 +402,29 @@ export default function ReviziyaPage() {
             </Panel>
 
             <div className="rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50 to-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-800">Status oqimi</p>
+              <p className="text-sm font-semibold text-foreground">Status oqimi</p>
               <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
                 {["Rejalashtirilgan", "Yo‘lda", "Tekshiruvda", "Solishtirish", "Imzolangan", "Buxgalteriya", "Yopilgan"].map((s, i) => (
                   <React.Fragment key={s}>
-                    {i > 0 ? <ArrowRight className="h-3 w-3 text-slate-400" /> : null}
-                    <span className="rounded-full bg-white px-2.5 py-1 font-medium text-slate-700 shadow-sm">{s}</span>
+                    {i > 0 ? <ArrowRight className="h-3 w-3 text-muted-foreground" /> : null}
+                    <span className="rounded-full bg-card px-2.5 py-1 font-medium text-foreground shadow-sm">{s}</span>
                   </React.Fragment>
                 ))}
               </div>
-              <p className="mt-3 text-xs text-slate-500">Kamomad: Tushuntirish kutilmoqda → SB tekshiruvi → Undirish / hisobdan chiqarish</p>
+              <p className="mt-3 text-xs text-muted-foreground">Kamomad: Tushuntirish kutilmoqda → SB tekshiruvi → Undirish / hisobdan chiqarish</p>
             </div>
           </div>
         )}
 
         {tab === "docs" && (
           <div className="space-y-4">
-            <div className="flex flex-wrap gap-2 rounded-2xl border bg-white p-3 shadow-sm">
+            <div className="flex flex-wrap gap-2 rounded-2xl border bg-card p-3 shadow-sm">
               <div className="relative min-w-[200px] flex-1">
-                <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                <Input className="border-slate-200 pl-9" placeholder="Raqam, filial, mas’ul…" value={q} onChange={(e) => setQ(e.target.value)} />
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input className="border-border pl-9" placeholder="Raqam, filial, mas’ul…" value={q} onChange={(e) => setQ(e.target.value)} />
               </div>
               <select
-                className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm"
+                className="rounded-lg border border-border bg-card px-3 py-2 text-sm"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
               >
@@ -444,14 +444,14 @@ export default function ReviziyaPage() {
                 const Icon = DOC_ICONS[row.docType] || FileText;
                 return (
                   <Link key={row.id} href={`/reviziya/hujjat/${row.id}`}>
-                    <div className="group flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md">
+                    <div className="group flex cursor-pointer items-center justify-between gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-violet-300 hover:shadow-md">
                       <div className="flex min-w-0 items-center gap-3">
                         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-700">
                           <Icon className="h-5 w-5" />
                         </span>
                         <div className="min-w-0">
-                          <p className="font-semibold text-slate-900">{row.docNo}</p>
-                          <p className="truncate text-xs text-slate-500">
+                          <p className="font-semibold text-foreground">{row.docNo}</p>
+                          <p className="truncate text-xs text-muted-foreground">
                             {meta.data?.docTypes?.find((t: { value: string }) => t.value === row.docType)?.label || row.docType}
                             {" · "}
                             {row.branchName || "Filial belgilanmagan"}
@@ -479,7 +479,7 @@ export default function ReviziyaPage() {
 
         {tab === "new" && (
           <div className="space-y-4">
-            <p className="text-sm text-slate-600">Hujjat turini tanlang — har biri alohida forma.</p>
+            <p className="text-sm text-muted-foreground">Hujjat turini tanlang — har biri alohida forma.</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
               {(meta.data?.docTypes || []).map((t: { value: string; label: string }) => {
                 const Icon = DOC_ICONS[t.value] || FileText;
@@ -493,19 +493,19 @@ export default function ReviziyaPage() {
                       "rounded-2xl border p-3 text-left transition",
                       active
                         ? "border-violet-500 bg-violet-50 shadow-md ring-1 ring-violet-200"
-                        : "border-slate-200 bg-white hover:border-violet-200 hover:shadow-sm",
+                        : "border-border bg-card hover:border-violet-200 hover:shadow-sm",
                     )}
                   >
-                    <Icon className={cn("h-5 w-5", active ? "text-violet-700" : "text-slate-400")} />
-                    <p className="mt-2 text-[13px] font-semibold leading-snug text-slate-900">{t.label}</p>
-                    <p className="mt-0.5 text-[11px] text-slate-500">{DOC_HINT[t.value]}</p>
+                    <Icon className={cn("h-5 w-5", active ? "text-violet-700" : "text-muted-foreground")} />
+                    <p className="mt-2 text-[13px] font-semibold leading-snug text-foreground">{t.label}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{DOC_HINT[t.value]}</p>
                   </button>
                 );
               })}
             </div>
 
-            <div className="rounded-2xl border bg-white p-5 shadow-sm">
-              <p className="mb-4 text-sm font-semibold text-slate-900">Asosiy maydonlar</p>
+            <div className="rounded-2xl border bg-card p-5 shadow-sm">
+              <p className="mb-4 text-sm font-semibold text-foreground">Asosiy maydonlar</p>
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Filial">
                   <select
@@ -569,7 +569,7 @@ export default function ReviziyaPage() {
                         ))}
                       </select>
                     </Field>
-                    <div className="rounded-xl bg-slate-50 p-3 text-sm sm:col-span-2">
+                    <div className="rounded-xl bg-muted p-3 text-sm sm:col-span-2">
                       Farq: <b>{invDiff}</b> dona · summa (sotuv):{" "}
                       <b>{money(invDiff * (Number(form.salePrice) || 0))}</b> · tan:{" "}
                       <b>{money(invDiff * (Number(form.costPrice) || 0))}</b>
@@ -584,7 +584,7 @@ export default function ReviziyaPage() {
                     <Field label="Kassadagi naqd">
                       <Input value={form.actualCash} onChange={(e) => setForm({ ...form, actualCash: e.target.value })} />
                     </Field>
-                    <div className="rounded-xl bg-slate-50 p-3 text-sm sm:col-span-2">
+                    <div className="rounded-xl bg-muted p-3 text-sm sm:col-span-2">
                       Kassa farqi: <b className={cashDiff < 0 ? "text-rose-600" : "text-emerald-700"}>{money(cashDiff)}</b> so‘m
                     </div>
                   </>
@@ -615,7 +615,7 @@ export default function ReviziyaPage() {
                 </Field>
               </div>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-slate-500">Yopilgandan keyin tahrir imkonsiz. O‘chirish o‘rniga storno.</p>
+                <p className="text-xs text-muted-foreground">Yopilgandan keyin tahrir imkonsiz. O‘chirish o‘rniga storno.</p>
                 <Button onClick={createDoc} disabled={mut.create.isPending} className="bg-violet-700 hover:bg-violet-800">
                   <Plus className="h-4 w-4" />
                   Hujjatni saqlash
@@ -632,14 +632,14 @@ export default function ReviziyaPage() {
               <MetricCard label="Jami yo‘lda" value={money(openTransit.reduce((s: number, t: { amount?: number }) => s + Number(t.amount || 0), 0))} hint="so‘m" icon={Banknote} tone="sky" />
               <MetricCard label="4 soatdan oshgan" value={overdueTransit.length} hint="rahbariyat ogohlantiriladi" icon={Clock} tone="amber" warn={overdueTransit.length > 0} />
             </div>
-            <div className="overflow-hidden rounded-2xl border bg-white shadow-sm">
+            <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
               <div className="flex items-center gap-3 border-b bg-gradient-to-r from-violet-50 to-white px-5 py-4">
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-white">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-600 text-foreground dark:text-white">
                   <Truck className="h-5 w-5" />
                 </span>
                 <div>
-                  <p className="font-semibold text-slate-900">Yo‘ldagi pul hisobi</p>
-                  <p className="text-xs text-slate-500">Filial kassasi → revizor → markaziy kassa. Oraliqda mas’uliyat aniq.</p>
+                  <p className="font-semibold text-foreground">Yo‘ldagi pul hisobi</p>
+                  <p className="text-xs text-muted-foreground">Filial kassasi → revizor → markaziy kassa. Oraliqda mas’uliyat aniq.</p>
                 </div>
               </div>
               {(transit.data || []).length ? (
@@ -655,8 +655,8 @@ export default function ReviziyaPage() {
                   }>).map((t) => (
                     <div key={t.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                       <div>
-                        <p className="text-lg font-semibold tabular-nums text-slate-900">{money(t.amount)} <span className="text-sm font-normal text-slate-500">so‘m</span></p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-lg font-semibold tabular-nums text-foreground">{money(t.amount)} <span className="text-sm font-normal text-muted-foreground">so‘m</span></p>
+                        <p className="text-xs text-muted-foreground">
                           {t.branchName || "Filial"} · {t.hoursOpen} soat · {t.routeNote || "marshrut"}
                         </p>
                         <div className="mt-2 h-1.5 w-48 overflow-hidden rounded-full bg-slate-100">
@@ -665,7 +665,7 @@ export default function ReviziyaPage() {
                             style={{ width: `${Math.min(100, (t.hoursOpen / 4) * 100)}%` }}
                           />
                         </div>
-                        <p className="mt-1 text-[11px] text-slate-400">4 soatlik limit</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">4 soatlik limit</p>
                       </div>
                       {t.status === "open" ? (
                         <Button size="sm" className="bg-violet-700" onClick={() => mut.handover.mutate(t.id)}>
@@ -682,8 +682,8 @@ export default function ReviziyaPage() {
                   <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50">
                     <Truck className="h-8 w-8 text-violet-400" />
                   </div>
-                  <p className="mt-4 font-semibold text-slate-800">Ochiq qoldiq yo‘q</p>
-                  <p className="mx-auto mt-1 max-w-sm text-sm text-slate-500">
+                  <p className="mt-4 font-semibold text-foreground">Ochiq qoldiq yo‘q</p>
+                  <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
                     Naqd qabul qilish hujjati yaratilganda pul avtomatik revizor balansiga tushadi. Markazga topshirilguncha shu yerda turadi.
                   </p>
                   <Button className="mt-4" variant="secondary" onClick={() => { setForm((f) => ({ ...f, docType: "cash_receipt" })); setTab("new"); }}>
@@ -707,9 +707,9 @@ export default function ReviziyaPage() {
                   {dicts
                     .filter((x: { kind: string }) => x.kind === block.kind)
                     .map((x: { id: number; code: string; label: string }) => (
-                      <div key={x.id} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm">
+                      <div key={x.id} className="flex items-center justify-between rounded-lg bg-muted px-3 py-2 text-sm">
                         <span>{x.label}</span>
-                        <span className="font-mono text-[11px] text-slate-400">{x.code}</span>
+                        <span className="font-mono text-[11px] text-muted-foreground">{x.code}</span>
                       </div>
                     ))}
                 </div>
@@ -780,7 +780,7 @@ function MetricCard({
       type={onClick ? "button" : undefined}
       onClick={onClick}
       className={cn(
-        "rounded-2xl border bg-white p-4 text-left shadow-sm",
+        "rounded-2xl border bg-card p-4 text-left shadow-sm",
         warn && "border-amber-300 ring-1 ring-amber-200",
         onClick && "cursor-pointer hover:shadow-md",
       )}
@@ -788,21 +788,21 @@ function MetricCard({
       <span className={cn("inline-flex rounded-xl p-2", tones[tone])}>
         <Icon className="h-4 w-4" />
       </span>
-      <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      {value == null ? <Skeleton className="mt-1 h-7 w-16" /> : <p className="mt-0.5 text-xl font-semibold tabular-nums text-slate-900">{value}</p>}
-      {hint ? <p className="mt-0.5 text-[11px] text-slate-400">{hint}</p> : null}
+      <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      {value == null ? <Skeleton className="mt-1 h-7 w-16" /> : <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{value}</p>}
+      {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p> : null}
     </Tag>
   );
 }
 
 function MiniStat({ icon: Icon, title, value }: { icon: React.ComponentType<{ className?: string }>; title: string; value: number }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border bg-white px-4 py-3 shadow-sm">
-      <span className="rounded-lg bg-slate-100 p-2 text-slate-600">
+    <div className="flex items-center gap-3 rounded-2xl border bg-card px-4 py-3 shadow-sm">
+      <span className="rounded-lg bg-slate-100 p-2 text-muted-foreground">
         <Icon className="h-4 w-4" />
       </span>
       <div>
-        <p className="text-xs text-slate-500">{title}</p>
+        <p className="text-xs text-muted-foreground">{title}</p>
         <p className="text-lg font-semibold tabular-nums">{value}</p>
       </div>
     </div>
@@ -821,14 +821,14 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border bg-card p-5 shadow-sm">
       <div className="mb-4 flex items-start gap-3">
         <span className="rounded-xl bg-violet-50 p-2 text-violet-700">
           <Icon className="h-4 w-4" />
         </span>
         <div>
-          <p className="font-semibold text-slate-900">{title}</p>
-          {subtitle ? <p className="text-xs text-slate-500">{subtitle}</p> : null}
+          <p className="font-semibold text-foreground">{title}</p>
+          {subtitle ? <p className="text-xs text-muted-foreground">{subtitle}</p> : null}
         </div>
       </div>
       {children}
@@ -837,13 +837,13 @@ function Panel({
 }
 
 function Empty({ hint }: { hint: string }) {
-  return <p className="rounded-xl bg-slate-50 px-3 py-6 text-center text-sm text-slate-500">{hint}</p>;
+  return <p className="rounded-xl bg-muted px-3 py-6 text-center text-sm text-muted-foreground">{hint}</p>;
 }
 
 function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
   return (
     <div className={className}>
-      <Label className="mb-1 block text-xs text-slate-600">{label}</Label>
+      <Label className="mb-1 block text-xs text-muted-foreground">{label}</Label>
       {children}
     </div>
   );
@@ -871,12 +871,12 @@ function MobileTools({
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {tiles.map((t) => (
-        <div key={t.title} className="rounded-2xl border bg-white p-4 shadow-sm">
+        <div key={t.title} className="rounded-2xl border bg-card p-4 shadow-sm">
           <span className="inline-flex rounded-xl bg-violet-50 p-2 text-violet-700">
             <t.icon className="h-5 w-5" />
           </span>
           <p className="mt-3 font-semibold">{t.title}</p>
-          <p className="mt-1 text-xs text-slate-500">{t.desc}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t.desc}</p>
           {t.title === "Shtrix-kod" ? (
             <div className="mt-3 flex gap-2">
               <Input placeholder="Kod" value={manual} onChange={(e) => setManual(e.target.value)} />

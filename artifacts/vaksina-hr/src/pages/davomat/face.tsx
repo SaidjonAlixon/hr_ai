@@ -146,11 +146,11 @@ const STATUS_UZ: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  present: "bg-emerald-50 text-emerald-800",
-  late: "bg-amber-50 text-amber-900",
-  incomplete: "bg-sky-50 text-sky-800",
-  absent: "bg-rose-50 text-rose-800",
-  leave: "bg-violet-50 text-violet-800",
+  present: "bg-teal-50 text-teal-800 dark:bg-teal-500/15 dark:text-teal-300",
+  late: "bg-amber-50 text-amber-900 dark:bg-amber-500/15 dark:text-amber-300",
+  incomplete: "bg-slate-100 text-slate-700 dark:bg-slate-500/15 dark:text-slate-300",
+  absent: "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
+  leave: "bg-violet-50 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
 };
 
 const WEEKDAY_UZ = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
@@ -242,27 +242,27 @@ function MobileStepHint({
   return (
     <div
       className={cn(
-        "mb-2 flex items-center gap-2 rounded-xl border px-3 py-2.5 shadow-sm",
-        tone === "amber" && "border-amber-300 bg-amber-50 text-amber-950",
-        tone === "rose" && "border-rose-300 bg-rose-50 text-rose-950",
-        tone === "emerald" && "border-emerald-300 bg-emerald-50 text-emerald-950",
+        "dv-step-hint border-l-[3px]",
+        tone === "amber" && "border-l-primary",
+        tone === "rose" && "border-l-rose-500",
+        tone === "emerald" && "border-l-teal-500",
       )}
     >
       <span
         className={cn(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white",
-          tone === "amber" && "bg-amber-600",
-          tone === "rose" && "bg-rose-600",
-          tone === "emerald" && "bg-emerald-600",
+          "dv-step-badge",
+          tone === "amber" && "dv-step-badge-warn",
+          tone === "rose" && "dv-step-badge-danger",
+          tone === "emerald" && "dv-step-badge-success",
         )}
       >
         {step}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-semibold uppercase tracking-wide opacity-70">{step}-qadam</p>
-        <p className="text-sm font-semibold leading-snug">{label}</p>
+        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{step}-qadam</p>
+        <p className="text-sm font-medium leading-snug text-foreground">{label}</p>
       </div>
-      <ArrowDown className="h-4 w-4 shrink-0 animate-bounce opacity-70" aria-hidden />
+      <ArrowDown className="h-4 w-4 shrink-0 animate-bounce text-muted-foreground" aria-hidden />
     </div>
   );
 }
@@ -367,19 +367,19 @@ function GuideBoard({
   })();
 
   return (
-    <section className="rounded-[24px] border border-[#0b3a5c]/15 bg-white p-4 shadow-sm">
+    <section className="dv-card">
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-[#0b3a5c]/70">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             Yo‘riqnoma
           </p>
-          <h2 className="mt-0.5 text-base font-bold text-[#0b3a5c]">Davomat qadamlari</h2>
-          <p className="mt-1 text-xs text-slate-500">
+          <h2 className="mt-0.5 text-base font-semibold text-foreground">Davomat qadamlari</h2>
+          <p className="mt-1 text-xs text-muted-foreground">
             Har kirganingizda shu tartibda boring — aniq va tartibli
           </p>
         </div>
         {done ? (
-          <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
+          <span className="dv-tone-emerald rounded-full border px-2.5 py-1 text-[11px] font-semibold">
             Bugun yakunlandi
           </span>
         ) : null}
@@ -403,31 +403,31 @@ function GuideBoard({
               key={`${it.id}-${it.n}`}
               className={cn(
                 "flex gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
-                isActive && !passed && "border-amber-300 bg-amber-50 shadow-sm",
-                passed && "border-emerald-200 bg-emerald-50/70",
-                !isActive && !passed && "border-slate-100 bg-slate-50/80",
-                it.id === "zone" && isActive && "border-rose-300 bg-rose-50",
+                isActive && !passed && it.id !== "zone" && "dv-guide-active",
+                passed && "dv-guide-passed",
+                !isActive && !passed && "dv-guide-idle",
+                it.id === "zone" && isActive && "dv-guide-danger",
               )}
             >
               <span
                 className={cn(
                   "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
-                  passed && "bg-emerald-600 text-white",
-                  isActive && !passed && it.id === "zone" && "bg-rose-600 text-white",
-                  isActive && !passed && it.id !== "zone" && "bg-amber-500 text-white",
-                  !isActive && !passed && "bg-slate-200 text-slate-600",
+                  passed && "dv-step-badge-success",
+                  isActive && !passed && it.id === "zone" && "dv-step-badge-danger",
+                  isActive && !passed && it.id !== "zone" && "dv-step-badge-warn",
+                  !isActive && !passed && "bg-muted text-muted-foreground",
                 )}
               >
                 {passed ? "✓" : it.n === 0 ? "!" : it.n}
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-slate-900">
+                <p className="text-sm font-semibold text-foreground">
                   {it.n === 0 ? "Avval" : `${it.n}-qadam`}: {it.title}
                 </p>
                 <p
                   className={cn(
                     "mt-0.5 text-xs leading-snug",
-                    it.id === "zone" && isActive ? "font-medium text-rose-700" : "text-slate-500",
+                    it.id === "zone" && isActive ? "font-medium text-rose-700 dark:text-rose-300" : "text-muted-foreground",
                   )}
                 >
                   {it.detail}
@@ -438,12 +438,12 @@ function GuideBoard({
         })}
       </ol>
       {active === "zone" ? (
-        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm font-semibold text-rose-800">
+        <p className="dv-tone-rose mt-3 rounded-xl border px-3 py-2 text-center text-sm font-semibold">
           Yashil hududga kirmasangiz — bugun kelmagan deb belgilanasiz
         </p>
       ) : null}
       {active === "ketdim" ? (
-        <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm font-semibold text-rose-800">
+        <p className="dv-tone-rose mt-3 rounded-xl border px-3 py-2 text-center text-sm font-semibold">
           4-qadam: «Ketdim» ni bosing — tasdiqlang
         </p>
       ) : null}
@@ -1021,10 +1021,10 @@ export default function DavomatFacePage() {
   }, [filteredHistoryDays]);
 
   const ringClass = inside
-    ? "ring-4 ring-emerald-400/80"
+    ? "ring-4 ring-teal-400/70"
     : gps
-      ? "ring-4 ring-rose-400/80"
-      : "ring-4 ring-white/40";
+      ? "ring-4 ring-rose-400/60"
+      : "ring-4 ring-primary-foreground/25";
 
   const locationReady = Boolean(gps) && inside && !gpsError && faceRegistered !== false;
   const showFaceStep =
@@ -1049,12 +1049,12 @@ export default function DavomatFacePage() {
   };
 
   return (
-    <div className="min-h-[100dvh] bg-[linear-gradient(180deg,#e8f1f7_0%,#f8fafc_42%,#ffffff_100%)]">
+    <div className="davomat-face-page">
       <div className="mx-auto max-w-lg px-3 pb-10 pt-4 sm:px-4 md:max-w-3xl lg:max-w-4xl">
-        <section className="overflow-hidden rounded-[28px] bg-[#0b3a5c] text-white shadow-[0_20px_50px_-24px_rgba(11,58,92,0.7)]">
+        <section className="dv-hero">
           <div className="relative px-5 pb-6 pt-5">
-            <div className="pointer-events-none absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/10" />
-            <div className="pointer-events-none absolute -bottom-10 -left-8 h-28 w-28 rounded-full bg-sky-300/10" />
+            <div className="pointer-events-none absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/[0.06]" />
+            <div className="pointer-events-none absolute -bottom-10 -left-8 h-28 w-28 rounded-full bg-white/[0.04]" />
 
             <div className="relative flex items-start justify-between gap-3">
               <div className="min-w-0">
@@ -1065,16 +1065,16 @@ export default function DavomatFacePage() {
                   <ArrowLeft className="h-4 w-4" />
                   Chiqish
                 </Link>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-sky-200/90">
-                  {isTgMiniApp ? "Telegram · Davomat" : "Davomat"}
+                <p className="text-[11px] font-medium uppercase tracking-[0.18em] dv-hero-muted">
+                  Davomat
                 </p>
-                <div className="mt-1 flex items-center gap-2 text-sky-100/90">
+                <div className="mt-1 flex items-center gap-2 dv-hero-muted">
                   <CalendarDays className="h-3.5 w-3.5" />
                   <span className="text-xs">{dateLabel}</span>
                 </div>
               </div>
-              <div className="rounded-2xl bg-white/10 px-3 py-2 text-right backdrop-blur-sm">
-                <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wide text-sky-200">
+              <div className="dv-hero-stat px-3 py-2 text-right">
+                <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wide dv-hero-muted">
                   <Clock3 className="h-3 w-3" />
                   Ayni vaqt
                 </div>
@@ -1083,7 +1083,7 @@ export default function DavomatFacePage() {
             </div>
 
             <div className="relative mt-6 flex items-center gap-4">
-              <div className={cn("relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-full bg-white/15", ringClass)}>
+              <div className={cn("relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-full dv-hero-stat", ringClass)}>
                 {shownFace ? (
                   <img src={shownFace} alt={displayName} className="h-full w-full object-cover" />
                 ) : (
@@ -1093,26 +1093,24 @@ export default function DavomatFacePage() {
                 )}
                 <span
                   className={cn(
-                    "absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full border-2 border-[#0b3a5c]",
-                    inside ? "bg-emerald-400" : gps ? "bg-rose-500" : "bg-slate-300",
+                    "absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full border-2 border-primary",
+                    inside ? "bg-teal-400" : gps ? "bg-rose-400" : "bg-slate-400",
                   )}
                 />
               </div>
               <div className="min-w-0 flex-1">
                 <h1 className="truncate text-xl font-semibold leading-tight">{displayName}</h1>
-                <p className="mt-0.5 truncate text-sm text-sky-100/90">{position}</p>
-                {department ? <p className="truncate text-xs text-sky-200/80">{department}</p> : null}
+                <p className="mt-0.5 truncate text-sm dv-hero-muted">{position}</p>
+                {department ? <p className="truncate text-xs dv-hero-muted opacity-80">{department}</p> : null}
                 <div className="mt-2">
                   <span
                     className={cn(
                       "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium",
                       done || todayStatus === "complete"
-                        ? "bg-white/15 text-white"
-                        : hasIn
-                          ? "bg-emerald-400/20 text-emerald-100"
-                          : inside
-                            ? "bg-emerald-400/20 text-emerald-100"
-                            : "bg-rose-400/25 text-rose-100",
+                        ? "bg-white/12 text-white"
+                        : hasIn || inside
+                          ? "bg-teal-400/20 text-teal-100"
+                          : "bg-slate-400/25 text-slate-100",
                     )}
                   >
                     Holat: {holatLabel}
@@ -1122,21 +1120,21 @@ export default function DavomatFacePage() {
             </div>
 
             <div className="relative mt-4 grid grid-cols-2 gap-2 text-[11px]">
-              <div className="rounded-2xl bg-emerald-500/20 px-3 py-2">
-                <div className="text-emerald-200">Keldim</div>
-                <div className="mt-0.5 text-sm font-semibold tabular-nums text-emerald-50">
+              <div className="dv-punch-in">
+                <div className="dv-punch-label">Keldim</div>
+                <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
                   {verified?.checkIn || workplace?.today.checkIn || "—"}
                 </div>
               </div>
-              <div className="rounded-2xl bg-rose-500/20 px-3 py-2">
-                <div className="text-rose-200">Ketdim</div>
-                <div className="mt-0.5 text-sm font-semibold tabular-nums text-rose-50">
+              <div className="dv-punch-out">
+                <div className="dv-punch-label">Ketdim</div>
+                <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
                   {verified?.checkOut || workplace?.today.checkOut || "—"}
                 </div>
               </div>
             </div>
             {phone ? (
-              <p className="relative mt-2 text-[11px] text-sky-200/80">Tel: {phone}</p>
+              <p className="relative mt-2 text-[11px] dv-hero-muted">Tel: {phone}</p>
             ) : null}
           </div>
         </section>
@@ -1154,25 +1152,23 @@ export default function DavomatFacePage() {
         </div>
 
         {faceRegistered === false ? (
-          <section className="mt-4 rounded-[24px] border border-amber-300 bg-amber-50 p-4 shadow-sm">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-600 text-[11px] font-bold text-white">
-                !
-              </span>
-              <h2 className="text-sm font-semibold text-amber-950">Avval yuzni ro‘yxatdan o‘tkazing</h2>
-            </div>
+          <section className="dv-card dv-tone-info mt-4 border-l-[3px] border-l-primary">
             {showGuide && guideStep === "enroll" ? (
               <MobileStepHint step={0} label="Face ID ni ulashni bosing" tone="amber" />
             ) : null}
-            <p className="mb-3 text-sm text-amber-900/80">
+            <div className={cn("flex items-center gap-2", showGuide && guideStep === "enroll" ? "mt-3" : "mb-3")}>
+              <span className="dv-step-badge dv-step-badge-warn">!</span>
+              <h2 className="text-sm font-semibold">Avval yuzni ro‘yxatdan o‘tkazing</h2>
+            </div>
+            <p className="mb-3 text-sm opacity-90">
               Davomat qilishdan oldin bir marta Face ID ulashing. Keyin yo‘riqnoma 1–4 qadam bilan ochiladi.
             </p>
             <Button
               type="button"
               size="lg"
               className={cn(
-                "h-14 w-full gap-2 rounded-2xl bg-[#0b3a5c] text-base hover:bg-[#0a314d]",
-                showGuide && guideStep === "enroll" && "ring-2 ring-amber-400 ring-offset-2",
+                "h-14 w-full gap-2 rounded-2xl text-base",
+                showGuide && guideStep === "enroll" && "dv-focus",
               )}
               disabled={!isFaceIdSupported()}
               onClick={() => setEnrollOpen(true)}
@@ -1181,32 +1177,31 @@ export default function DavomatFacePage() {
               Face ID ni ulash
             </Button>
             {!isFaceIdSupported() ? (
-              <p className="mt-2 text-center text-xs text-amber-800">Kamera va HTTPS/localhost kerak</p>
+              <p className="mt-2 text-center text-xs opacity-80">Kamera va HTTPS/localhost kerak</p>
             ) : null}
           </section>
         ) : null}
 
-        <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
-          <div className="mb-3 flex items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
+        <section className="dv-card mt-4">
+          {showGuide && guideStep === "permission" ? (
+            <MobileStepHint step={1} label="Ruxsat berish ni bosing" tone="amber" />
+          ) : null}
+          <div className={cn("flex items-center gap-2", showGuide && guideStep === "permission" ? "mt-3 mb-3" : "mb-3")}>
+            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
               1
             </span>
             <div className="flex flex-1 items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <MapPin className="h-4 w-4" />
                 Joylashuv
               </div>
-            <div className="relative shrink-0">
-              {showGuide && guideStep === "permission" ? (
-                <MobileStepHint step={1} label="Ruxsat berish ni bosing" tone="amber" />
-              ) : null}
               <Button
                 type="button"
                 size="sm"
                 variant="outline"
                 className={cn(
-                  "h-9 gap-1.5 rounded-full border-[#0b3a5c]/20 text-[#0b3a5c]",
-                  showGuide && guideStep === "permission" && "ring-2 ring-amber-400 ring-offset-2",
+                  "h-9 shrink-0 gap-1.5 rounded-full border-border text-foreground hover:bg-muted",
+                  showGuide && guideStep === "permission" && "dv-focus",
                 )}
                 disabled={gpsSharing || faceRegistered === false}
                 onClick={() => void requestLocationPermission()}
@@ -1215,14 +1210,13 @@ export default function DavomatFacePage() {
                 Ruxsat berish
               </Button>
             </div>
-            </div>
           </div>
 
           <div className="mt-3 grid grid-cols-[auto_1fr] items-center gap-3">
             <div
               className={cn(
                 "flex h-16 w-16 flex-col items-center justify-center rounded-2xl text-center",
-                inside ? "bg-emerald-50 text-emerald-800" : gps ? "bg-rose-50 text-rose-800" : "bg-slate-100 text-slate-500",
+                inside ? "dv-tone-emerald border-0 bg-teal-500/15" : gps ? "dv-tone-rose border-0 bg-rose-500/15" : "bg-muted text-muted-foreground",
               )}
             >
               {gps && distance != null ? (
@@ -1238,31 +1232,31 @@ export default function DavomatFacePage() {
             </div>
             <div className="min-w-0 text-sm">
               {inside ? (
-                <p className="font-medium text-emerald-800">
+                <p className="font-medium text-emerald-700 dark:text-emerald-300">
                   <CheckCircle2 className="mr-1 inline h-4 w-4" />
                   Hududdasiz
                 </p>
               ) : gps && remain != null ? (
-                <p className="font-medium text-rose-800">
+                <p className="font-medium text-rose-700 dark:text-rose-300">
                   <XCircle className="mr-1 inline h-4 w-4" />
                   Hududdan tashqarida
                 </p>
               ) : (
-                <p className="text-slate-500">«Ruxsat berish» ni bosing — lokatsiya so‘raladi</p>
+                <p className="text-muted-foreground">«Ruxsat berish» ni bosing — lokatsiya so‘raladi</p>
               )}
-              <p className="mt-0.5 text-xs text-slate-500">
+              <p className="mt-0.5 text-xs text-muted-foreground">
                 {workplace?.site?.kind === "branch" ? "Belgilangan filial" : "Asosiy ofis"} · ruxsat {allowedMeters} m
               </p>
               {workplace?.shift ? (
-                <p className="mt-1 rounded-lg bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-950">
+                <p className="mt-1 rounded-lg dv-tone-amber border-0 px-2 py-1 text-[11px] font-medium">
                   {workplace.shift.label}: {workplace.shift.start}–{workplace.shift.end}. Kechikish — jarima.
                 </p>
               ) : null}
               {site.label ? (
-                <p className="mt-0.5 truncate text-[11px] text-slate-400">{site.label}</p>
+                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{site.label}</p>
               ) : null}
               {gps ? (
-                <p className="mt-0.5 font-mono text-[11px] text-slate-400">
+                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
                   {gps.lat.toFixed(5)}, {gps.lng.toFixed(5)} · ±{gps.accuracy} m
                 </p>
               ) : null}
@@ -1270,7 +1264,7 @@ export default function DavomatFacePage() {
           </div>
 
           {workplace && workplace.employee.hasGps === false ? (
-            <p className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-center text-sm text-amber-950">
+            <p className="dv-tone-amber mt-3 rounded-2xl border px-3 py-2 text-center text-sm">
               {workplace.gpsError ||
                 "Filial lokatsiyasi kiritilmagan. Koordinator GPS kiritsin."}
             </p>
@@ -1281,8 +1275,8 @@ export default function DavomatFacePage() {
               className={cn(
                 "mt-3 rounded-2xl border px-3 py-2.5 text-center text-sm font-medium",
                 inside
-                  ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                  : "border-rose-200 bg-rose-50 text-rose-800",
+                  ? "dv-tone-emerald"
+                  : "dv-tone-rose",
               )}
             >
               {inside ? (
@@ -1294,10 +1288,10 @@ export default function DavomatFacePage() {
                 <>
                   <XCircle className="mr-1 inline h-4 w-4" />
                   Siz {formatDistance(distance)} uzoqdasiz · {formatApproach(remain)}
-                  <span className="mt-1 block text-sm font-semibold text-rose-800">
+                  <span className="mt-1 block text-sm font-semibold">
                     Yashil hududga kirmasangiz — kelmagan deb belgilanasiz
                   </span>
-                  <span className="mt-0.5 block text-xs font-normal text-rose-700">
+                  <span className="mt-0.5 block text-xs font-normal opacity-90">
                     Davomat faqat {workplace?.site?.kind === "branch" ? "filial" : "asosiy ofis"}dan{" "}
                     {allowedMeters} m ichida
                   </span>
@@ -1318,7 +1312,7 @@ export default function DavomatFacePage() {
 
           {gpsError ? <p className="mt-2 text-sm text-rose-600">{gpsError}</p> : null}
           {locationReady ? (
-            <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+            <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-400">
               <CheckCircle2 className="h-3.5 w-3.5" />
               Joylashuv tasdiqlandi — keyingi qadam: Face ID
             </p>
@@ -1326,21 +1320,21 @@ export default function DavomatFacePage() {
         </section>
 
         {showFaceStep ? (
-          <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
+          <section className="dv-card mt-4">
             <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
                 2
               </span>
-              <h2 className="text-sm font-semibold text-[#0b3a5c]">Face ID</h2>
+              <h2 className="text-sm font-semibold text-foreground">Face ID</h2>
             </div>
             {verified ? (
               <div className="space-y-3">
-                <div className="flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+                <div className="dv-tone-emerald flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm">
                   <CheckCircle2 className="h-5 w-5 shrink-0" />
                   <div>
                     <p className="font-semibold">Yuz tasdiqlandi</p>
-                    <p className="text-xs text-emerald-700">{verified.fullName}</p>
-                    <p className="mt-0.5 text-[11px] text-emerald-600">
+                    <p className="text-xs opacity-80">{verified.fullName}</p>
+                    <p className="mt-0.5 text-[11px] opacity-70">
                       Tizim shu xodim profiliga o‘tdi
                     </p>
                   </div>
@@ -1348,7 +1342,7 @@ export default function DavomatFacePage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-11 w-full gap-2 rounded-2xl border-[#0b3a5c]/30 text-[#0b3a5c]"
+                  className="h-11 w-full gap-2 rounded-2xl"
                   onClick={() => {
                     const role = user?.role;
                     setLocation(role === "stajyor" ? "/kirish" : "/dashboard");
@@ -1364,7 +1358,7 @@ export default function DavomatFacePage() {
                   <MobileStepHint step={2} label="Face ID ni bosing" tone="amber" />
                 ) : null}
                 {guideStep === "zone" || (gps && !inside) ? (
-                  <p className="rounded-2xl border border-rose-300 bg-rose-50 px-3 py-2.5 text-center text-sm font-semibold text-rose-800">
+                  <p className="dv-tone-rose rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold">
                     2-qadam yopiq: avval yashil hududga kiring. Aks holda kelmagan deb belgilanasiz.
                   </p>
                 ) : null}
@@ -1372,8 +1366,8 @@ export default function DavomatFacePage() {
                   type="button"
                   size="lg"
                   className={cn(
-                    "h-14 w-full gap-2 rounded-2xl bg-[#0b3a5c] text-base hover:bg-[#0a314d]",
-                    showGuide && guideStep === "face" && "ring-2 ring-amber-400 ring-offset-2",
+                    "h-14 w-full gap-2 rounded-2xl text-base",
+                    showGuide && guideStep === "face" && "dv-focus",
                   )}
                   disabled={!canOpenFace}
                   onClick={() => setScanOpen(true)}
@@ -1382,11 +1376,11 @@ export default function DavomatFacePage() {
                   {canOpenFace ? "Face ID" : "Face ID yopiq"}
                 </Button>
                 {!canOpenFace && faceLockedReason ? (
-                  <p className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-center text-sm text-rose-800">
+                  <p className="dv-tone-rose rounded-2xl border px-3 py-2 text-center text-sm">
                     {faceLockedReason}
                   </p>
                 ) : (
-                  <p className="text-center text-xs text-slate-500">
+                  <p className="text-center text-xs text-muted-foreground">
                     3-qadam: yuz tasdiqlangach «Keldim» ni bosing
                   </p>
                 )}
@@ -1396,12 +1390,12 @@ export default function DavomatFacePage() {
         ) : null}
 
         {showPunchStep ? (
-          <section className="mt-4 rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
+          <section className="dv-card mt-4">
             <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
                 {hasIn ? 4 : 3}
               </span>
-              <h2 className="text-sm font-semibold text-[#0b3a5c]">
+              <h2 className="text-sm font-semibold text-foreground">
                 {hasIn ? "Ketdim" : "Keldim"}
               </h2>
             </div>
@@ -1414,8 +1408,8 @@ export default function DavomatFacePage() {
                   type="button"
                   size="lg"
                   className={cn(
-                    "h-14 w-full gap-2 rounded-2xl bg-red-600 text-base text-white hover:bg-red-700",
-                    showGuide && guideStep === "ketdim" && "ring-2 ring-rose-400 ring-offset-2",
+                    "dv-btn-out",
+                    showGuide && guideStep === "ketdim" && "dv-focus",
                   )}
                   disabled={busy || !canPunchOut}
                   onClick={() => setConfirmOut(true)}
@@ -1423,7 +1417,7 @@ export default function DavomatFacePage() {
                   <LogOut className="h-5 w-5" />
                   Ketdim
                 </Button>
-                <p className="text-center text-xs text-slate-500">
+                <p className="text-center text-xs text-muted-foreground">
                   Bosilganda ketishni tasdiqlash so‘raladi. 18:00 dan oldin ham chiqish mumkin.
                 </p>
               </div>
@@ -1436,8 +1430,8 @@ export default function DavomatFacePage() {
                   type="button"
                   size="lg"
                   className={cn(
-                    "h-14 w-full gap-2 rounded-2xl bg-emerald-600 text-base text-white hover:bg-emerald-700",
-                    showGuide && guideStep === "keldim" && "ring-2 ring-amber-400 ring-offset-2",
+                    "dv-btn-in",
+                    showGuide && guideStep === "keldim" && "dv-focus",
                   )}
                   disabled={busy}
                   onClick={() => void punch("in")}
@@ -1445,7 +1439,7 @@ export default function DavomatFacePage() {
                   <LogIn className="h-5 w-5" />
                   Keldim
                 </Button>
-                <p className="text-center text-xs text-slate-500">
+                <p className="text-center text-xs text-muted-foreground">
                   Keldim dan keyin «Ketdim» ochiladi — tasdiqlab chiqishingiz mumkin
                 </p>
               </div>
@@ -1454,18 +1448,18 @@ export default function DavomatFacePage() {
         ) : null}
 
         {working ? (
-          <section className="mt-4 rounded-[24px] border border-emerald-200 bg-emerald-50/80 px-4 py-4 text-center">
-            <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-700">Ishlayotgan vaqt</p>
-            <p className="mt-1 font-mono text-4xl font-semibold tabular-nums text-emerald-950">{elapsedLabel}</p>
-            <p className="mt-1 text-xs text-emerald-700">Keldim: {verified?.checkIn || workplace?.today.checkIn}</p>
+          <section className="dv-tone-emerald mt-4 rounded-[24px] border px-4 py-4 text-center">
+            <p className="text-[11px] font-medium uppercase tracking-wide opacity-80">Ishlayotgan vaqt</p>
+            <p className="mt-1 font-mono text-4xl font-semibold tabular-nums">{elapsedLabel}</p>
+            <p className="mt-1 text-xs opacity-80">Keldim: {verified?.checkIn || workplace?.today.checkIn}</p>
           </section>
         ) : null}
 
-        <section className="mt-4 overflow-hidden rounded-[24px] border border-slate-200/80 bg-white shadow-sm">
-          <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-3">
+        <section className="mt-4 overflow-hidden rounded-[24px] border border-border bg-card shadow-sm">
+          <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
             <div>
-              <h2 className="text-sm font-semibold text-[#0b3a5c]">Bugungi davomatim</h2>
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-slate-500">
+              <h2 className="text-sm font-semibold text-foreground">Bugungi davomatim</h2>
+              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <CalendarDays className="h-3.5 w-3.5" />
                 {dateLabel}
               </p>
@@ -1474,60 +1468,60 @@ export default function DavomatFacePage() {
               className={cn(
                 "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium",
                 done
-                  ? "bg-slate-100 text-slate-600"
+                  ? "bg-muted text-muted-foreground"
                   : hasIn
-                    ? "bg-emerald-50 text-emerald-800"
-                    : "bg-slate-50 text-slate-500",
+                    ? "dv-tone-emerald border-0 px-2.5 py-1"
+                    : "bg-muted text-muted-foreground",
               )}
             >
               {holatLabel}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3 p-4">
-            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-emerald-700">
+            <div className="dv-punch-card-in">
+              <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
                 <LogIn className="h-3.5 w-3.5" />
                 Keldim
               </div>
-              <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-emerald-950">
+              <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
                 {checkInLabel}
               </div>
             </div>
-            <div className="rounded-2xl border border-rose-200 bg-rose-50 px-3 py-3">
-              <div className="flex items-center gap-1.5 text-xs font-medium text-rose-700">
+            <div className="dv-punch-card-out">
+              <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
                 <LogOut className="h-3.5 w-3.5" />
                 Ketdim
               </div>
-              <div className="mt-1 font-mono text-2xl font-semibold tabular-nums text-rose-950">
+              <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
                 {checkOutLabel}
               </div>
             </div>
           </div>
           {done && closedWork != null ? (
-            <div className="mx-4 mb-4 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-center">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Ishlangan vaqt</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums text-[#0b3a5c]">
+            <div className="mx-4 mb-4 rounded-2xl border border-border bg-muted px-3 py-3 text-center">
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Ishlangan vaqt</p>
+              <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
                 {formatHoursUz(closedWork)}
               </p>
-              <p className="mt-2 text-[11px] text-slate-400">
+              <p className="mt-2 text-[11px] text-muted-foreground">
                 Kuniga faqat 1 marta Keldim va 1 marta Ketdim
               </p>
             </div>
           ) : done ? (
-            <p className="px-4 pb-3 text-center text-xs text-slate-400">
+            <p className="px-4 pb-3 text-center text-xs text-muted-foreground">
               Kuniga faqat 1 marta Keldim va 1 marta Ketdim
             </p>
           ) : null}
         </section>
 
-        <section className="mt-3 overflow-hidden rounded-xl border border-slate-300/80 bg-white shadow-sm md:rounded-lg">
-          <div className="flex flex-col gap-2 border-b border-slate-200 bg-slate-50/90 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-3">
+        <section className="mt-3 overflow-hidden rounded-xl border border-border bg-card shadow-sm md:rounded-lg">
+          <div className="flex flex-col gap-2 border-b border-border bg-muted/50 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-3">
             <div className="min-w-0">
-              <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-[#0b3a5c]">
+              <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
                 <History className="h-3.5 w-3.5 shrink-0" />
                 {isTgMiniApp ? "Davomat holati" : "Tarix"}
               </h2>
-              <p className="mt-0.5 text-[10px] leading-tight text-slate-500 sm:text-[11px]">
+              <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground sm:text-[11px]">
                 {historyRange === "day"
                   ? "Bugungi kun"
                   : historyRange === "week"
@@ -1541,7 +1535,7 @@ export default function DavomatFacePage() {
               </p>
             </div>
             <div
-              className="grid grid-cols-3 gap-0.5 rounded-md border border-slate-200 bg-white p-0.5 sm:inline-flex sm:w-auto"
+              className="grid grid-cols-3 gap-0.5 rounded-md border border-border bg-card p-0.5 sm:inline-flex sm:w-auto"
               role="tablist"
               aria-label="Davomat oralig‘i"
             >
@@ -1561,8 +1555,8 @@ export default function DavomatFacePage() {
                   className={cn(
                     "rounded px-2 py-1 text-[11px] font-semibold transition-colors sm:px-2.5 sm:text-xs",
                     historyRange === opt.id
-                      ? "bg-[#0b3a5c] text-white shadow-sm"
-                      : "text-slate-600 hover:bg-slate-100",
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted",
                   )}
                 >
                   {opt.label}
@@ -1572,23 +1566,23 @@ export default function DavomatFacePage() {
           </div>
 
           {historyDays.length === 0 ? (
-            <p className="px-3 py-5 text-center text-xs text-slate-400 sm:text-sm">
+            <p className="px-3 py-5 text-center text-xs text-muted-foreground sm:text-sm">
               Hali yozuv yo‘q. Face ID bilan belgilang — tarix shu yerda chiqadi.
             </p>
           ) : filteredHistoryDays.length === 0 ? (
-            <p className="px-3 py-5 text-center text-xs text-slate-400 sm:text-sm">
+            <p className="px-3 py-5 text-center text-xs text-muted-foreground sm:text-sm">
               Tanlangan oralikda yozuv yo‘q.
             </p>
           ) : (
             <>
-              <div className="flex flex-wrap gap-1.5 border-b border-slate-100 px-2.5 py-1.5 text-[10px] sm:px-3 sm:text-[11px]">
-                <span className="rounded bg-emerald-50 px-1.5 py-0.5 font-medium text-emerald-800">
+              <div className="flex flex-wrap gap-1.5 border-b border-border px-2.5 py-1.5 text-[10px] sm:px-3 sm:text-[11px]">
+                <span className="dv-tone-emerald rounded border-0 px-1.5 py-0.5 font-medium">
                   Kelgan {historySummary.present}
                 </span>
-                <span className="rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-900">
+                <span className="dv-tone-amber rounded border-0 px-1.5 py-0.5 font-medium">
                   Kech {historySummary.late}
                 </span>
-                <span className="rounded bg-rose-50 px-1.5 py-0.5 font-medium text-rose-800">
+                <span className="dv-tone-rose rounded border-0 px-1.5 py-0.5 font-medium">
                   Kelmagan {historySummary.absent}
                 </span>
               </div>
@@ -1601,12 +1595,12 @@ export default function DavomatFacePage() {
                 )}
               >
                 <table className="w-full border-collapse text-[11px]">
-                  <thead className="sticky top-0 z-10 bg-[#eef2f6] shadow-[inset_0_-1px_0_#cbd5e1]">
-                    <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-slate-600">
-                      <th className="border-r border-slate-200 px-2 py-1.5">Sana</th>
-                      <th className="border-r border-slate-200 px-1.5 py-1.5 text-center">Kel</th>
-                      <th className="border-r border-slate-200 px-1.5 py-1.5 text-center">Ket</th>
-                      <th className="border-r border-slate-200 px-1.5 py-1.5 text-center">Holat</th>
+                  <thead className="sticky top-0 z-10 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))] dark:bg-slate-800">
+                    <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                      <th className="border-r border-border px-2 py-1.5">Sana</th>
+                      <th className="border-r border-border px-1.5 py-1.5 text-center">Kel</th>
+                      <th className="border-r border-border px-1.5 py-1.5 text-center">Ket</th>
+                      <th className="border-r border-border px-1.5 py-1.5 text-center">Holat</th>
                       <th className="px-1.5 py-1.5 text-right">Vaqt</th>
                     </tr>
                   </thead>
@@ -1625,44 +1619,44 @@ export default function DavomatFacePage() {
                         <tr
                           key={d.date}
                           className={cn(
-                            "border-b border-slate-100",
+                            "border-b border-border",
                             isToday
-                              ? "bg-sky-50"
+                              ? "dv-history-today"
                               : i % 2 === 1
-                                ? "bg-slate-50/70"
-                                : "bg-white",
+                                ? "bg-muted/70"
+                                : "bg-card",
                           )}
                         >
-                          <td className="border-r border-slate-100 px-2 py-1.5">
+                          <td className="border-r border-border px-2 py-1.5">
                             <div className="leading-tight">
-                              <span className="font-semibold text-slate-800">{dayParts.date}</span>
-                              <span className="ml-1 text-[10px] text-slate-500">
+                              <span className="font-semibold text-foreground">{dayParts.date}</span>
+                              <span className="ml-1 text-[10px] text-muted-foreground">
                                 {dayParts.weekday.slice(0, 2)}
                               </span>
                               {isToday ? (
-                                <span className="ml-1 text-[9px] font-semibold text-emerald-700">
+                                <span className="ml-1 text-[9px] font-semibold text-teal-700 dark:text-teal-300">
                                   bugun
                                 </span>
                               ) : null}
                             </div>
                           </td>
-                          <td className="border-r border-slate-100 px-1.5 py-1.5 text-center font-mono tabular-nums text-emerald-800">
+                          <td className="border-r border-border px-1.5 py-1.5 text-center font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
                             {d.checkIn}
                           </td>
-                          <td className="border-r border-slate-100 px-1.5 py-1.5 text-center font-mono tabular-nums text-rose-800">
+                          <td className="border-r border-border px-1.5 py-1.5 text-center font-mono tabular-nums text-rose-700 dark:text-rose-400">
                             {d.checkOut}
                           </td>
-                          <td className="border-r border-slate-100 px-1.5 py-1.5 text-center">
+                          <td className="border-r border-border px-1.5 py-1.5 text-center">
                             <span
                               className={cn(
                                 "inline-flex rounded px-1 py-0.5 text-[9px] font-semibold",
-                                STATUS_STYLE[d.status] || "bg-slate-100 text-slate-600",
+                                STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
                               )}
                             >
                               {STATUS_UZ[d.status] || d.status}
                             </span>
                           </td>
-                          <td className="px-1.5 py-1.5 text-right font-medium tabular-nums text-slate-800">
+                          <td className="px-1.5 py-1.5 text-right font-medium tabular-nums text-foreground">
                             {worked != null ? formatHoursUz(worked) : d.workedHours || "—"}
                           </td>
                         </tr>
@@ -1680,15 +1674,15 @@ export default function DavomatFacePage() {
                 )}
               >
                 <table className="w-full min-w-[640px] border-collapse text-sm">
-                  <thead className="sticky top-0 z-10 bg-[#e8eef4] shadow-[inset_0_-1px_0_#94a3b8]">
-                    <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-slate-600">
-                      <th className="sticky left-0 z-[1] border-r border-slate-300 bg-[#e8eef4] px-3 py-2">
+                  <thead className="sticky top-0 z-10 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))] dark:bg-slate-800">
+                    <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      <th className="sticky left-0 z-[1] border-r border-border bg-muted px-3 py-2 dark:bg-slate-800">
                         Sana
                       </th>
-                      <th className="border-r border-slate-200 px-3 py-2">Hafta kuni</th>
-                      <th className="border-r border-slate-200 px-3 py-2 text-center">Keldim</th>
-                      <th className="border-r border-slate-200 px-3 py-2 text-center">Ketdim</th>
-                      <th className="border-r border-slate-200 px-3 py-2 text-center">Holat</th>
+                      <th className="border-r border-border px-3 py-2">Hafta kuni</th>
+                      <th className="border-r border-border px-3 py-2 text-center">Keldim</th>
+                      <th className="border-r border-border px-3 py-2 text-center">Ketdim</th>
+                      <th className="border-r border-border px-3 py-2 text-center">Holat</th>
                       <th className="px-3 py-2 text-right">Ishlangan vaqt</th>
                     </tr>
                   </thead>
@@ -1707,47 +1701,47 @@ export default function DavomatFacePage() {
                         <tr
                           key={d.date}
                           className={cn(
-                            "border-b border-slate-200/80 hover:bg-sky-50/60",
+                            "border-b border-border hover:bg-muted/50",
                             isToday
-                              ? "bg-sky-50"
+                              ? "dv-history-today"
                               : i % 2 === 1
-                                ? "bg-slate-50/80"
-                                : "bg-white",
+                                ? "bg-muted/80"
+                                : "bg-card",
                           )}
                         >
                           <td
                             className={cn(
-                              "sticky left-0 z-[1] border-r border-slate-200 px-3 py-1.5 font-semibold tabular-nums text-slate-900",
-                              isToday ? "bg-sky-50" : i % 2 === 1 ? "bg-slate-50/80" : "bg-white",
+                              "sticky left-0 z-[1] border-r border-border px-3 py-1.5 font-semibold tabular-nums text-foreground",
+                              isToday ? "dv-history-today-cell" : i % 2 === 1 ? "bg-muted/80" : "bg-card",
                             )}
                           >
                             {dayParts.date}
                             {isToday ? (
-                              <span className="ml-2 rounded bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-800">
+                              <span className="ml-2 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 dark:text-teal-300">
                                 bugun
                               </span>
                             ) : null}
                           </td>
-                          <td className="border-r border-slate-100 px-3 py-1.5 capitalize text-slate-600">
+                          <td className="border-r border-border px-3 py-1.5 capitalize text-muted-foreground">
                             {dayParts.weekday}
                           </td>
-                          <td className="border-r border-slate-100 px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-emerald-800">
+                          <td className="border-r border-border px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-emerald-700 dark:text-emerald-400">
                             {d.checkIn}
                           </td>
-                          <td className="border-r border-slate-100 px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-rose-800">
+                          <td className="border-r border-border px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-rose-700 dark:text-rose-400">
                             {d.checkOut}
                           </td>
-                          <td className="border-r border-slate-100 px-3 py-1.5 text-center">
+                          <td className="border-r border-border px-3 py-1.5 text-center">
                             <span
                               className={cn(
                                 "inline-flex rounded px-2 py-0.5 text-[11px] font-semibold",
-                                STATUS_STYLE[d.status] || "bg-slate-100 text-slate-600",
+                                STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
                               )}
                             >
                               {STATUS_UZ[d.status] || d.status}
                             </span>
                           </td>
-                          <td className="px-3 py-1.5 text-right font-medium tabular-nums text-slate-800">
+                          <td className="px-3 py-1.5 text-right font-medium tabular-nums text-foreground">
                             {worked != null ? formatHoursUz(worked) : d.workedHours || "—"}
                           </td>
                         </tr>
@@ -1762,17 +1756,17 @@ export default function DavomatFacePage() {
 
         {isAuthenticated && oylikMe.data ? (
           <Link href="/oylik">
-            <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-[#0b3a5c]">
+            <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm">
+              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Banknote className="h-4 w-4" />
                 Mening oyligim · {oylikMe.data.monthLabel}
               </div>
-              <p className="mt-1 text-[11px] text-slate-500">Faqat o‘zingizning KPI. Batafsil — Oylik.</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">Faqat o‘zingizning KPI. Batafsil — Oylik.</p>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
                 <p>Fiks maosh: <span className="font-semibold">{formatSom(oylikMe.data.fixedSalary)}</span></p>
                 <p>KPI: <span className="font-semibold">{oylikMe.data.kpiPercent}%</span></p>
                 <p>Bonus: <span className="font-semibold">{formatSom(oylikMe.data.bonusAmount)}</span></p>
-                <p>Jami: <span className="font-bold text-[#0b3a5c]">{formatSom(oylikMe.data.totalAmount)}</span></p>
+                <p>Jami: <span className="font-bold text-primary">{formatSom(oylikMe.data.totalAmount)}</span></p>
               </div>
             </div>
           </Link>
@@ -1780,12 +1774,12 @@ export default function DavomatFacePage() {
 
         <div className="mt-5 flex justify-center gap-4 text-sm">
           {!isTgMiniApp ? (
-            <Link href="/login" className="text-[#0b3a5c] underline-offset-2 hover:underline">
+            <Link href="/login" className="text-primary underline-offset-2 hover:underline">
               Login
             </Link>
           ) : null}
           {isAuthenticated && canReport ? (
-            <Link href="/davomat" className="text-[#0b3a5c] underline-offset-2 hover:underline">
+            <Link href="/davomat" className="text-primary underline-offset-2 hover:underline">
               Hisobot
             </Link>
           ) : null}
@@ -1822,7 +1816,7 @@ export default function DavomatFacePage() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Yo‘q</AlertDialogCancel>
-            <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => void punch("out")}>
+            <AlertDialogAction className="dv-btn-out h-10 px-4" onClick={() => void punch("out")}>
               Ha
             </AlertDialogAction>
           </AlertDialogFooter>

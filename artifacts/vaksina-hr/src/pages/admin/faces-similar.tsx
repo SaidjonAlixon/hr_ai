@@ -48,7 +48,7 @@ export default function AdminFacesSimilarPage() {
         <div>
           <Link
             href="/admin/faces"
-            className="mb-2 inline-flex items-center gap-1 text-sm text-slate-500 hover:text-slate-800"
+            className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="h-4 w-4" />
             Face ID ro‘yxati
@@ -75,14 +75,14 @@ export default function AdminFacesSimilarPage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-500">O‘xshash juftlik</p>
+        <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <p className="text-xs text-muted-foreground">O‘xshash juftlik</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums text-amber-800">
             {data?.similarPairs ?? "—"}
           </p>
         </div>
-        <div className="rounded-2xl border bg-white p-4 shadow-sm">
-          <p className="text-xs text-slate-500">Chegara (masofa)</p>
+        <div className="rounded-2xl border bg-card p-4 shadow-sm">
+          <p className="text-xs text-muted-foreground">Chegara (masofa)</p>
           <p className="mt-1 text-2xl font-semibold tabular-nums">
             ≤ {data?.enrollBlockMax ?? "—"}
           </p>
@@ -90,7 +90,7 @@ export default function AdminFacesSimilarPage() {
       </div>
 
       {isLoading ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+        <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
           <Loader2 className="h-5 w-5 animate-spin" />
           Yuklanmoqda…
         </div>
@@ -105,7 +105,7 @@ export default function AdminFacesSimilarPage() {
           </p>
         </div>
       ) : (
-        <div className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-amber-200 bg-card shadow-sm">
           <div className="border-b border-amber-100 bg-amber-50/90 px-4 py-3">
             <p className="flex items-center gap-2 text-sm font-semibold text-amber-950">
               <AlertTriangle className="h-4 w-4" />
@@ -119,15 +119,15 @@ export default function AdminFacesSimilarPage() {
                 className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
               >
                 <div className="min-w-0">
-                  <p className="text-xs font-medium uppercase tracking-wide text-slate-400">
+                  <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                     #{idx + 1} · masofa {d.distance}
                   </p>
-                  <p className="mt-1 text-base font-semibold text-slate-900">
+                  <p className="mt-1 text-base font-semibold text-foreground">
                     {d.a.fullName}
-                    <span className="mx-2 font-normal text-slate-400">↔</span>
+                    <span className="mx-2 font-normal text-muted-foreground">↔</span>
                     {d.b.fullName}
                   </p>
-                  <p className="mt-0.5 text-xs text-slate-500">
+                  <p className="mt-0.5 text-xs text-muted-foreground">
                     {d.a.login} · {d.b.login}
                   </p>
                 </div>

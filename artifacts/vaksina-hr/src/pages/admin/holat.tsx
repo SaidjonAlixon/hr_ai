@@ -46,7 +46,7 @@ export default function AdminHolatPage() {
   }
 
   if (!allowed) {
-    return <p className="p-6 text-sm text-slate-500">Holat faqat admin, direktor, HR, koordinator va mudir uchun.</p>;
+    return <p className="p-6 text-sm text-muted-foreground">Holat faqat admin, direktor, HR, koordinator va mudir uchun.</p>;
   }
 
   if (isLoading) {
@@ -75,7 +75,7 @@ export default function AdminHolatPage() {
 
   return (
     <div className="space-y-5 pb-10">
-      <div className="relative overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-br from-[#0b3a5c] via-[#0f4a73] to-[#163a55] p-5 text-white shadow-md">
+      <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-[#0b3a5c] via-[#0f4a73] to-[#163a55] p-5 text-foreground dark:text-white shadow-md">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <span className="rounded-xl bg-white/15 p-2.5 ring-1 ring-white/20">
@@ -94,7 +94,7 @@ export default function AdminHolatPage() {
             type="button"
             disabled={exporting}
             onClick={() => void onExport()}
-            className="h-11 shrink-0 gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-[#0b3a5c] shadow-sm hover:bg-sky-50"
+            className="h-11 shrink-0 gap-2 rounded-xl bg-card px-5 text-sm font-semibold text-[#0b3a5c] shadow-sm hover:bg-sky-50"
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             Excel yuklash

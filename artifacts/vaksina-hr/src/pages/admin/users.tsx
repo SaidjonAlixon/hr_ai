@@ -88,7 +88,7 @@ function statusClass(status?: string | null) {
   if (key === 'active') return 'bg-emerald-100 text-emerald-800';
   if (key === 'on_leave') return 'bg-amber-100 text-amber-900';
   if (key === 'terminated') return 'bg-rose-100 text-rose-800';
-  return 'bg-slate-100 text-slate-700';
+  return 'bg-slate-100 text-foreground';
 }
 
 type CreatedCredentials = {
@@ -463,7 +463,7 @@ export default function AdminUsersPage() {
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 rounded-xl border bg-white p-3 shadow-sm sm:flex-row sm:flex-wrap">
+      <div className="flex flex-col gap-3 rounded-xl border bg-card p-3 shadow-sm sm:flex-row sm:flex-wrap">
         <div className="relative min-w-[200px] flex-1">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -816,7 +816,7 @@ export default function AdminUsersPage() {
           </DialogHeader>
           {created && (
             <div className="space-y-3">
-              <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="rounded-lg border bg-muted p-3">
                 <div className="mb-1 text-xs font-medium text-muted-foreground">Login</div>
                 <div className="flex items-center justify-between gap-2">
                   <code className="text-sm font-semibold">{created.login}</code>
@@ -832,7 +832,7 @@ export default function AdminUsersPage() {
                   </Button>
                 </div>
               </div>
-              <div className="rounded-lg border bg-slate-50 p-3">
+              <div className="rounded-lg border bg-muted p-3">
                 <div className="mb-1 text-xs font-medium text-muted-foreground">Parol</div>
                 <div className="flex items-center justify-between gap-2">
                   <code className="text-sm font-semibold tracking-wide">

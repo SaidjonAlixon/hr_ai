@@ -177,7 +177,7 @@ export function PipelineFunnel({
               return (
                 <Link key={stage.stage} href={`/candidates?stage=${stage.stage}`}>
                   <div
-                    className="group relative rounded-xl border bg-white p-3 sm:p-4 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
+                    className="group relative rounded-xl border bg-card p-3 sm:p-4 hover:shadow-md hover:border-primary/30 transition-all cursor-pointer"
                     style={{ marginLeft: `${idx * 1.2}%`, marginRight: `${idx * 1.2}%` }}
                   >
                     <div className="flex items-center gap-3 sm:gap-4">

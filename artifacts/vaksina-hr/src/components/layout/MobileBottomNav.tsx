@@ -17,7 +17,7 @@ function ensureVazifalar(paths: string[], byPath: Map<string, MobileNavItem>): s
 
 const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   admin: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
-  director: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
+  director: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat', '/chat'],
   hr: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
   hr_menejer: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
   hr_direktor: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
@@ -45,6 +45,7 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
 const SHORT_LABELS: Record<string, string> = {
   Boshqaruv: 'Asosiy',
   'Davomat hisobot': 'Hisobot',
+  'Davomat tahlili': 'Tahlil',
   "Ish o'rinlari": 'Vakansiya',
   "Aptekalar tarmog'i": 'Tarmoq',
   'Cheklist holati': 'Cheklist',
@@ -126,8 +127,9 @@ export function MobileBottomNav({ role, location, navItems, hidden }: Props) {
       <div
         className={cn(
           'pointer-events-auto mx-auto flex max-w-md items-stretch justify-between gap-0.5',
-          'rounded-[1.65rem] border border-white/20 px-1.5 py-1.5',
-          'bg-[#0b1728]/90 shadow-[0_14px_44px_-12px_rgba(0,0,0,0.55)] backdrop-blur-xl',
+          'rounded-[1.65rem] border px-1.5 py-1.5 backdrop-blur-xl',
+          'border-border bg-card/95 shadow-lg',
+          'dark:border-white/20 dark:bg-[#0b1728]/90 dark:shadow-[0_14px_44px_-12px_rgba(0,0,0,0.55)]',
         )}
       >
         {items.map((item) => {
@@ -139,17 +141,20 @@ export function MobileBottomNav({ role, location, navItems, hidden }: Props) {
                 className={cn(
                   'flex min-w-[3.1rem] flex-col items-center justify-center gap-0.5 rounded-2xl px-1.5 py-1.5 transition-all',
                   active
-                    ? 'bg-white/10 ring-1 ring-white/75'
-                    : 'text-white/70 active:scale-95',
+                    ? 'bg-primary/10 ring-1 ring-primary/40 dark:bg-white/10 dark:ring-white/75'
+                    : 'text-muted-foreground active:scale-95 dark:text-white/70',
                 )}
               >
                 <Icon
-                  className={cn('h-[1.15rem] w-[1.15rem] shrink-0', active ? 'text-white' : 'text-white/80')}
+                  className={cn(
+                    'h-[1.15rem] w-[1.15rem] shrink-0',
+                    active ? 'text-primary dark:text-foreground dark:text-white' : 'text-muted-foreground dark:text-white/80',
+                  )}
                 />
                 <span
                   className={cn(
                     'max-w-[3.25rem] truncate text-center text-[8.5px] font-bold uppercase leading-tight tracking-wide',
-                    active ? 'text-white' : 'text-white/75',
+                    active ? 'text-primary dark:text-foreground dark:text-white' : 'text-muted-foreground dark:text-white/75',
                   )}
                 >
                   {labelFor(item)}

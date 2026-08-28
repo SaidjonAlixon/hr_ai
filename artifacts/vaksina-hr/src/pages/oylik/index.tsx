@@ -47,11 +47,11 @@ import {
 function MonthNav({ month, onChange }: { month: string; onChange: (m: string) => void }) {
   return (
     <div className="flex items-center gap-0.5 rounded-lg bg-white/10 p-0.5">
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, -1))}>
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => onChange(shiftMonthKey(month, -1))}>
         <ChevronLeft className="h-4 w-4" />
       </Button>
       <span className="min-w-[118px] px-1 text-center text-[13px] font-semibold">{monthLabelUz(month)}</span>
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey()}>
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => onChange(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey()}>
         <ChevronRight className="h-4 w-4" />
       </Button>
     </div>
@@ -59,7 +59,7 @@ function MonthNav({ month, onChange }: { month: string; onChange: (m: string) =>
 }
 
 function pct(available: boolean, value: number) {
-  if (!available) return <span className="text-slate-400">—</span>;
+  if (!available) return <span className="text-muted-foreground">—</span>;
   return <span className="tabular-nums">{value}%</span>;
 }
 
@@ -102,17 +102,17 @@ function WorkCalendar({
   }
   const labels = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"];
   return (
-    <div className="rounded-xl border bg-white p-3 shadow-sm">
+    <div className="rounded-xl border bg-card p-3 shadow-sm">
       <div className="mb-2 flex items-center justify-between gap-2">
         <p className="flex items-center gap-1.5 text-sm font-semibold text-[#0b3a5c]">
           <CalendarDays className="h-4 w-4" /> Ish kunlari kalendari
         </p>
-        <p className="text-xs text-slate-500">
+        <p className="text-xs text-muted-foreground">
           {workDays.length} ish kuni
           {canEdit ? " · bosing: ish ↔ dam" : " · yakshanba dam"}
         </p>
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-slate-500">
+      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-muted-foreground">
         {labels.map((l) => (
           <div key={l}>{l}</div>
         ))}
@@ -123,7 +123,7 @@ function WorkCalendar({
           const work = set.has(c.iso);
           const cls = cn(
             "flex h-8 items-center justify-center rounded-md text-[12px] font-semibold tabular-nums",
-            work ? "bg-emerald-500 text-white" : "bg-slate-100 text-slate-400",
+            work ? "bg-emerald-500 text-foreground dark:text-white" : "bg-slate-100 text-muted-foreground",
             canEdit && "cursor-pointer hover:ring-2 hover:ring-[#0b3a5c]/40",
             pending && "opacity-70",
           );
@@ -166,11 +166,11 @@ function KpiRow({
   onOpen?: () => void;
 }) {
   return (
-    <button type="button" onClick={onOpen} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-slate-50">
-      <span className="text-sm font-medium text-slate-800">{name}</span>
+    <button type="button" onClick={onOpen} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-muted">
+      <span className="text-sm font-medium text-foreground">{name}</span>
       <span className="tabular-nums text-sm">
         {available ? `${percent}%` : "hisobdan tashqari"}
-        <span className="ml-2 text-xs text-slate-400">{available ? `${weight}%` : "—"}</span>
+        <span className="ml-2 text-xs text-muted-foreground">{available ? `${weight}%` : "—"}</span>
       </span>
     </button>
   );
@@ -187,32 +187,32 @@ function ReportCard({
 }) {
   return (
     <div className="grid gap-3 lg:grid-cols-3">
-      <div className="rounded-xl border bg-white p-3 shadow-sm lg:col-span-1">
-        <p className="text-xs text-slate-500">
+      <div className="rounded-xl border bg-card p-3 shadow-sm lg:col-span-1">
+        <p className="text-xs text-muted-foreground">
           {data.fullName} · {data.position || data.roleLabel}
           {data.branch ? ` · ${data.branch}` : ""}
         </p>
         <div className="mt-2 grid grid-cols-2 gap-2">
-          <div className="rounded-lg bg-slate-50 px-3 py-2">
-            <p className="text-[11px] text-slate-500">Fiks maosh</p>
+          <div className="rounded-lg bg-muted px-3 py-2">
+            <p className="text-[11px] text-muted-foreground">Fiks maosh</p>
             <p className="text-sm font-bold text-[#0b3a5c]">{formatSom(data.fixedSalary)}</p>
           </div>
-          <div className="rounded-lg bg-slate-50 px-3 py-2">
-            <p className="text-[11px] text-slate-500">Bonus foizi</p>
+          <div className="rounded-lg bg-muted px-3 py-2">
+            <p className="text-[11px] text-muted-foreground">Bonus foizi</p>
             <p className="text-sm font-bold">{data.bonusPercent}%</p>
           </div>
         </div>
-        <p className="mt-3 text-[11px] text-slate-500">KPI asosidagi bonus</p>
+        <p className="mt-3 text-[11px] text-muted-foreground">KPI asosidagi bonus</p>
         <p className="text-lg font-bold text-emerald-700">{formatSom(data.bonusAmount)}</p>
-        <p className="mt-1 text-[11px] text-slate-500">Jami = fiks + bonus</p>
+        <p className="mt-1 text-[11px] text-muted-foreground">Jami = fiks + bonus</p>
         <p className="text-xl font-bold tabular-nums text-[#0b3a5c]">{formatSom(data.totalAmount)}</p>
         <Badge className="mt-2" variant={data.status === "approved" ? "default" : "outline"}>
           {data.status === "approved" ? "Tasdiqlangan" : "Qoralama"}
         </Badge>
       </div>
 
-      <div className="rounded-xl border bg-white p-3 shadow-sm lg:col-span-2">
-        <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-slate-500">KPI (bosing — batafsil)</p>
+      <div className="rounded-xl border bg-card p-3 shadow-sm lg:col-span-2">
+        <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">KPI (bosing — batafsil)</p>
         <KpiRow
           name="Davomat"
           percent={data.attendance?.percent ?? 0}
@@ -241,7 +241,7 @@ function ReportCard({
           </span>
         </div>
         {detail === "att" ? (
-          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-slate-50 p-2 text-xs">
+          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-muted p-2 text-xs">
             <p className="mb-1 font-semibold">
               Davomat: {data.attendance?.points ?? 0} ball
               {data.attendance?.complete
@@ -257,20 +257,20 @@ function ReportCard({
           </div>
         ) : null}
         {detail === "task" ? (
-          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-slate-50 p-2 text-xs">
+          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-muted p-2 text-xs">
             <p className="mb-1 font-semibold">Topshiriq: {data.tasks?.points ?? 0} / {data.tasks?.total ?? 0}</p>
             {(data.tasks?.items ?? []).map((t) => (
               <p key={t.id} className="py-0.5">{t.title} — {t.label} ({t.points})</p>
             ))}
-            {!data.tasks?.items?.length ? <p className="text-slate-500">Bu oyda topshiriq yo‘q — KPI dan chiqarilgan.</p> : null}
+            {!data.tasks?.items?.length ? <p className="text-muted-foreground">Bu oyda topshiriq yo‘q — KPI dan chiqarilgan.</p> : null}
           </div>
         ) : null}
         {detail === "check" ? (
-          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-slate-50 p-2 text-xs">
+          <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border bg-muted p-2 text-xs">
             {(data.checklist?.items ?? []).map((c) => (
               <p key={c.id} className="py-0.5">{c.visitDate} · {c.visitName}: {c.percent}% ({c.yesCount}/{c.totalCount})</p>
             ))}
-            {!data.checklist?.items?.length ? <p className="text-slate-500">Bu oyda checklist yo‘q — KPI dan chiqarilgan.</p> : null}
+            {!data.checklist?.items?.length ? <p className="text-muted-foreground">Bu oyda checklist yo‘q — KPI dan chiqarilgan.</p> : null}
           </div>
         ) : null}
       </div>
@@ -342,35 +342,35 @@ function TeamTable({
 
   if (!rows.length) {
     return (
-      <div className="rounded-xl border bg-white px-4 py-10 text-center text-sm text-slate-500">
+      <div className="rounded-xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
         Bu oy uchun xodim topilmadi. Qidiruvni tozalang yoki API qayta ishga tushganini tekshiring.
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-white shadow-sm">
+    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
       <div className="grid grid-cols-2 gap-px border-b bg-slate-100 sm:grid-cols-4">
-        <div className="bg-white px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500">Xodim</p>
+        <div className="bg-card px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Xodim</p>
           <p className="text-sm font-bold tabular-nums text-[#0b3a5c]">{rows.length} ta</p>
         </div>
-        <div className="bg-white px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500">Jami fiks</p>
+        <div className="bg-card px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jami fiks</p>
           <p className="text-sm font-bold tabular-nums">{formatSom(totals.fix)}</p>
         </div>
-        <div className="bg-white px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500">Jami bonus</p>
+        <div className="bg-card px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jami bonus</p>
           <p className="text-sm font-bold tabular-nums text-emerald-700">{formatSom(totals.bonus)}</p>
         </div>
-        <div className="bg-white px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-slate-500">Jami oylik</p>
+        <div className="bg-card px-3 py-2">
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jami oylik</p>
           <p className="text-sm font-bold tabular-nums text-[#0b3a5c]">{formatSom(totals.total)}</p>
         </div>
       </div>
       <div className="max-h-[min(70vh,720px)] overflow-auto">
         <table className="w-full min-w-[1080px] border-collapse text-[12.5px]">
-          <thead className="sticky top-0 z-10 bg-[#0b3a5c] text-white">
+          <thead className="sticky top-0 z-10 bg-primary text-primary-foreground">
             <tr className="text-left">
               <th className="px-3 py-2 font-semibold">Xodim</th>
               <th className="px-2 py-2 font-semibold">Lavozim / filial</th>
@@ -392,16 +392,16 @@ function TeamTable({
               return (
                 <React.Fragment key={rid}>
                   <tr
-                    className={cn("cursor-pointer border-b border-slate-100 hover:bg-slate-50", open && "bg-sky-50/70")}
+                    className={cn("cursor-pointer border-b border-slate-100 hover:bg-muted", open && "bg-sky-50/70")}
                     onClick={() => setOpenId(open ? null : rid)}
                   >
                     <td className="px-3 py-1.5">
-                      <p className="font-semibold text-slate-900">{row.fullName}</p>
-                      <p className="text-[11px] text-slate-500">{row.roleLabel}</p>
+                      <p className="font-semibold text-foreground">{row.fullName}</p>
+                      <p className="text-[11px] text-muted-foreground">{row.roleLabel}</p>
                     </td>
-                    <td className="max-w-[180px] truncate px-2 py-1.5 text-slate-600">
+                    <td className="max-w-[180px] truncate px-2 py-1.5 text-muted-foreground">
                       {row.position || "—"}
-                      {row.branch ? <span className="block truncate text-[11px] text-slate-400">{row.branch}</span> : null}
+                      {row.branch ? <span className="block truncate text-[11px] text-muted-foreground">{row.branch}</span> : null}
                     </td>
                     <td className="px-2 py-1.5 text-right">{pctAtt(row)}</td>
                     <td className="px-2 py-1.5 text-right">{pct(row.tasksAvailable, row.tasks)}</td>
@@ -414,20 +414,20 @@ function TeamTable({
                     <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">{formatSom(row.bonusAmount)}</td>
                     <td className="px-3 py-1.5 text-right font-bold tabular-nums">{formatSom(row.totalAmount)}</td>
                     <td className="px-2 py-1.5">
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", row.status === "approved" ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600")}>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", row.status === "approved" ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-muted-foreground")}>
                         {row.status === "approved" ? "Tasdiq" : "Qoralama"}
                       </span>
                     </td>
                   </tr>
                   {open ? (
-                    <tr className="border-b bg-slate-50/80">
+                    <tr className="border-b bg-muted/80">
                       <td colSpan={11} className="px-3 py-3">
                         {canEditKpiSettings(userRole) ? (
                           <div className="mb-3 flex flex-wrap items-end gap-2">
                             <div>
                               <Label className="text-[11px]">Fiks maosh (so‘m)</Label>
                               <MoneyInput
-                                className="h-8 w-44 rounded-lg border border-slate-200 text-sm"
+                                className="h-8 w-44 rounded-lg border border-border text-sm"
                                 value={parseMoney(fix)}
                                 onLive={(n) => {
                                   live.current.fix = n;
@@ -444,7 +444,7 @@ function TeamTable({
                               <Label className="text-[11px]">Bonus foizi</Label>
                               <MoneyInput
                                 grouped={false}
-                                className="h-8 w-24 rounded-lg border border-slate-200 text-sm"
+                                className="h-8 w-24 rounded-lg border border-border text-sm"
                                 value={parseMoney(bp)}
                                 onLive={(n) => {
                                   live.current.bp = n;
@@ -597,7 +597,7 @@ export default function OylikPage() {
 
   return (
     <div className="space-y-3 pb-6">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#0b3a5c] px-4 py-3 text-white shadow">
+      <div className="surface-brand flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 shadow-sm">
         <div className="min-w-0">
           <h1 className="text-lg font-bold leading-tight sm:text-xl">Oylik · Fiks maosh + bonus</h1>
           <p className="truncate text-xs text-white/70">
@@ -686,7 +686,7 @@ export default function OylikPage() {
                   <Download className="mr-1 h-4 w-4" /> Excel
                 </Button>
                 <select
-                  className="h-9 max-w-[200px] rounded-lg border border-slate-200 bg-white px-2 text-sm"
+                  className="h-9 max-w-[200px] rounded-lg border border-border bg-card px-2 text-sm"
                   value={posFilter}
                   onChange={(e) => setPosFilter(e.target.value)}
                 >
@@ -697,17 +697,17 @@ export default function OylikPage() {
                 </select>
                 {canEditKpiSettings(user?.role) ? (
                   <>
-                    <span className="text-xs text-slate-500">Fiksa</span>
+                    <span className="text-xs text-muted-foreground">Fiksa</span>
                     <MoneyInput
-                      className="h-9 w-36 rounded-lg border border-slate-200 text-sm"
+                      className="h-9 w-36 rounded-lg border border-border text-sm"
                       value={parseMoney(bulkFix)}
                       onLive={(n) => setBulkFix(formatMoney(n))}
                       onCommit={(n) => setBulkFix(formatMoney(n))}
                     />
-                    <span className="text-xs text-slate-500">Bonus %</span>
+                    <span className="text-xs text-muted-foreground">Bonus %</span>
                     <MoneyInput
                       grouped={false}
-                      className="h-9 w-24 rounded-lg border border-slate-200 text-sm"
+                      className="h-9 w-24 rounded-lg border border-border text-sm"
                       value={parseMoney(bulkBp)}
                       onLive={(n) => setBulkBp(String(n))}
                       onCommit={(n) => setBulkBp(String(n))}
@@ -789,9 +789,9 @@ export default function OylikPage() {
             )}
           </TabsContent>
           <TabsContent value="set" className="mt-3">
-            <div className="max-w-xl rounded-xl border bg-white p-4 shadow-sm">
+            <div className="max-w-xl rounded-xl border bg-card p-4 shadow-sm">
               <p className="text-sm font-semibold">KPI og‘irliklari</p>
-              <p className="mt-1 text-xs text-slate-500">Yo‘q komponent avtomatik chiqariladi, qolganlari proporsional oshadi.</p>
+              <p className="mt-1 text-xs text-muted-foreground">Yo‘q komponent avtomatik chiqariladi, qolganlari proporsional oshadi.</p>
               <div className="mt-3 grid grid-cols-3 gap-2">
                 <div>
                   <Label className="text-[11px]">Davomat %</Label>
@@ -811,7 +811,7 @@ export default function OylikPage() {
                   Saqlash
                 </Button>
               ) : (
-                <p className="mt-2 text-xs text-slate-500">O‘zgartirish: admin, HR direktor, direktor, moliyachi</p>
+                <p className="mt-2 text-xs text-muted-foreground">O‘zgartirish: admin, HR direktor, direktor, moliyachi</p>
               )}
             </div>
           </TabsContent>

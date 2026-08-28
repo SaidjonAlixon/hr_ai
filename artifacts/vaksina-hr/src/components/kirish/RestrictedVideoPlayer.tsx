@@ -111,7 +111,7 @@ function FirstPlayHint({
         </span>
         <ArrowDown className="mt-1 h-10 w-10 text-[#F1C40F] drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]" />
       </div>
-      <span className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-[#2AABEE] text-white shadow-[0_0_0_8px_rgba(42,171,238,0.35)]">
+      <span className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-[#2AABEE] text-foreground dark:text-white shadow-[0_0_0_8px_rgba(42,171,238,0.35)]">
         <Play className="ml-1 h-8 w-8 fill-white" />
       </span>
     </button>
@@ -129,7 +129,7 @@ function CenterPlay({ onPlay }: { onPlay: () => void }) {
         onPlay();
       }}
     >
-      <span className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-[#2AABEE] text-white shadow-[0_0_0_8px_rgba(42,171,238,0.35)]">
+      <span className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-[#2AABEE] text-foreground dark:text-white shadow-[0_0_0_8px_rgba(42,171,238,0.35)]">
         <Play className="ml-1 h-8 w-8 fill-white" />
       </span>
     </button>
@@ -251,7 +251,7 @@ function Controls({
         <span className="absolute inset-y-0 left-0 rounded-full bg-white/35" style={{ width: `${watchedPct}%` }} />
         <span className="absolute inset-y-0 left-0 rounded-full bg-[#2AABEE]" style={{ width: `${nowPct}%` }} />
       </button>
-      <div className="flex items-center gap-2 text-white">
+      <div className="flex items-center gap-2 text-foreground dark:text-white">
         <button
           type="button"
           onClick={onRewind}

@@ -145,7 +145,7 @@ function EmploymentBadge({ status }: { status?: string | null }) {
       : s === 'new'
         ? 'bg-sky-50 text-sky-700 ring-sky-200'
         : s === 'closed'
-          ? 'bg-slate-200 text-slate-800 ring-slate-400'
+          ? 'bg-slate-200 text-foreground ring-slate-400'
         : s === 'dismissed'
           ? 'bg-red-100 text-red-800 ring-red-300'
           : s === 'no_manager'
@@ -202,10 +202,10 @@ function PipelineStrip({ step }: { step: number }) {
               className={cn(
                 'rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
                 current
-                  ? 'bg-red-600 text-white animate-pulse'
+                  ? 'bg-red-600 text-foreground dark:text-white animate-pulse'
                   : active
-                    ? 'bg-slate-700 text-white'
-                    : 'bg-slate-100 text-slate-400',
+                    ? 'bg-slate-700 text-foreground dark:text-white'
+                    : 'bg-slate-100 text-muted-foreground',
               )}
               title={s.label}
             >
@@ -222,7 +222,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-full font-semibold text-white bg-slate-600',
+        'flex shrink-0 items-center justify-center rounded-full font-semibold text-foreground dark:text-white bg-slate-600',
         size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-9 w-9 text-xs',
       )}
     >
@@ -246,15 +246,15 @@ function LoginPassCard({
 }) {
   if (!cred.login || cred.login === '—') return null;
   return (
-    <div className="mt-2 space-y-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-[11px]">
+    <div className="mt-2 space-y-1 rounded-lg border border-border bg-muted px-2 py-1.5 text-[11px]">
       <div className="flex items-center justify-between gap-2">
         <p className="min-w-0 truncate">
-          <span className="text-slate-500">Login: </span>
-          <span className="font-mono font-semibold text-slate-800">{cred.login}</span>
+          <span className="text-muted-foreground">Login: </span>
+          <span className="font-mono font-semibold text-foreground">{cred.login}</span>
         </p>
         <button
           type="button"
-          className="shrink-0 text-slate-400 hover:text-primary"
+          className="shrink-0 text-muted-foreground hover:text-primary"
           title="Loginni nusxalash"
           onClick={(e) => {
             e.stopPropagation();
@@ -266,15 +266,15 @@ function LoginPassCard({
       </div>
       <div className="flex items-center justify-between gap-2">
         <p className="min-w-0 truncate">
-          <span className="text-slate-500">Parol: </span>
-          <span className="font-mono font-semibold text-slate-800">
+          <span className="text-muted-foreground">Parol: </span>
+          <span className="font-mono font-semibold text-foreground">
             {reveal ? cred.password : '••••••••'}
           </span>
         </p>
         <div className="flex shrink-0 items-center gap-1">
           <button
             type="button"
-            className="text-slate-400 hover:text-primary"
+            className="text-muted-foreground hover:text-primary"
             title={reveal ? 'Yashirish' : 'Ko‘rsatish'}
             onClick={(e) => {
               e.stopPropagation();
@@ -285,7 +285,7 @@ function LoginPassCard({
           </button>
           <button
             type="button"
-            className="text-slate-400 hover:text-primary"
+            className="text-muted-foreground hover:text-primary"
             title="Parolni nusxalash"
             onClick={(e) => {
               e.stopPropagation();
@@ -980,7 +980,7 @@ export default function PharmacyNetworkPage() {
   if (isMudirOnly) {
     if (allManagers.length === 0) {
       return (
-        <div className="mx-auto max-w-md rounded-2xl border border-dashed bg-white p-8 text-center">
+        <div className="mx-auto max-w-md rounded-2xl border border-dashed bg-card p-8 text-center">
           <Store className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
           <h2 className="text-lg font-semibold">Filial bog‘lanmagan</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -997,7 +997,7 @@ export default function PharmacyNetworkPage() {
     <div className={cn('space-y-5', canAddTeam && 'pb-24 md:pb-0')}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">Aptekalar tarmog‘i</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Aptekalar tarmog‘i</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isMudirOnly
               ? 'O‘z filialingizdagi farmasevt va stajyorlar — login/parol, Excel va tahrirlash.'
@@ -1039,7 +1039,7 @@ export default function PharmacyNetworkPage() {
       </div>
 
       {networkEmpty ? (
-        <div className="rounded-2xl border border-dashed bg-white p-8 text-center">
+        <div className="rounded-2xl border border-dashed bg-card p-8 text-center">
           <Store className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
           <h2 className="text-lg font-semibold">Tarmoq maʼlumoti yo‘q</h2>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -1061,7 +1061,7 @@ export default function PharmacyNetworkPage() {
               'rounded-xl border p-3 sm:p-4 transition-colors',
               openAlerts.length > 0
                 ? 'border-red-300 bg-red-50/70'
-                : 'border-slate-200 bg-slate-50/80',
+                : 'border-border bg-muted/80',
             )}
           >
             <button
@@ -1071,20 +1071,20 @@ export default function PharmacyNetworkPage() {
             >
               <div className="flex min-w-0 items-center gap-2">
                 {alertsOpen ? (
-                  <ChevronUp className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-slate-500')} />
+                  <ChevronUp className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-muted-foreground')} />
                 ) : (
-                  <ChevronDown className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-slate-500')} />
+                  <ChevronDown className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-muted-foreground')} />
                 )}
                 <span className="relative inline-flex">
                   <AlertTriangle
                     className={cn(
                       'h-4 w-4 shrink-0',
-                      openAlerts.length > 0 ? 'text-red-600' : 'text-slate-400',
+                      openAlerts.length > 0 ? 'text-red-600' : 'text-muted-foreground',
                       openAlerts.length > 0 && 'animate-pulse',
                     )}
                   />
                   {openAlerts.length > 0 && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-white animate-pulse ring-2 ring-red-100">
+                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-foreground dark:text-white animate-pulse ring-2 ring-red-100">
                       {openAlerts.length > 99 ? '99+' : openAlerts.length}
                     </span>
                   )}
@@ -1092,7 +1092,7 @@ export default function PharmacyNetworkPage() {
                 <h2
                   className={cn(
                     'text-sm font-semibold',
-                    openAlerts.length > 0 ? 'text-red-900' : 'text-slate-700',
+                    openAlerts.length > 0 ? 'text-red-900' : 'text-foreground',
                   )}
                 >
                   {user?.role === 'koordinator'
@@ -1121,7 +1121,7 @@ export default function PharmacyNetworkPage() {
                 <span
                   className={cn(
                     'text-[11px] font-medium',
-                    openAlerts.length > 0 ? 'text-red-700/70' : 'text-slate-500',
+                    openAlerts.length > 0 ? 'text-red-700/70' : 'text-muted-foreground',
                   )}
                 >
                   {alertsOpen ? 'Yig‘ish' : 'Ochish'}
@@ -1132,7 +1132,7 @@ export default function PharmacyNetworkPage() {
             {alertsOpen && (
               <div className="mt-3">
                 {!openAlerts.length ? (
-                  <p className="text-sm text-slate-500">Hozircha ochiq ogohlantirish yoʻq.</p>
+                  <p className="text-sm text-muted-foreground">Hozircha ochiq ogohlantirish yoʻq.</p>
                 ) : (
                   <div className="max-h-[min(50vh,380px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
                     {user?.role === 'koordinator' && pendingAlerts.length > 0 && (
@@ -1149,17 +1149,17 @@ export default function PharmacyNetworkPage() {
                       return (
                         <React.Fragment key={a.id}>
                           {showArizaDivider && (
-                            <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                            <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                               Ariza jarayonida
                             </p>
                           )}
-                          <div className="rounded-lg border border-red-200 bg-white px-3 py-2">
+                          <div className="rounded-lg border border-red-200 bg-card px-3 py-2">
                             <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                               <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-slate-900">
+                                <p className="truncate text-sm font-semibold text-foreground">
                                   {a.branchLocation || 'Filial'} — {a.employeeName}
                                 </p>
-                                <p className="truncate text-xs text-slate-500">
+                                <p className="truncate text-xs text-muted-foreground">
                                   {a.employmentStatusLabel}
                                   {' · '}
                                   {shiftText(a.shiftType, a.shiftLabel)}
@@ -1222,7 +1222,7 @@ export default function PharmacyNetworkPage() {
                                   </Link>
                                 )}
                                 {a.workflowStatus === 'confirmed' && !a.requestId && (
-                                  <span className="text-[11px] font-medium text-slate-500">
+                                  <span className="text-[11px] font-medium text-muted-foreground">
                                     Ariza yaratilgan
                                   </span>
                                 )}
@@ -1250,7 +1250,7 @@ export default function PharmacyNetworkPage() {
         )}
 
         {canSeeFullNetwork && (
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-white p-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3 sm:flex-row sm:flex-wrap sm:items-center">
           <div className="relative min-w-[220px] flex-1">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
@@ -1303,8 +1303,8 @@ export default function PharmacyNetworkPage() {
                       ? 'bg-amber-100 text-amber-900 ring-amber-300'
                       : key === 'with'
                         ? 'bg-emerald-100 text-emerald-800 ring-emerald-300'
-                        : 'bg-[#0b3a5c] text-white ring-[#0b3a5c]'
-                    : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50',
+                        : 'bg-primary text-primary-foreground ring-[#0b3a5c]'
+                    : 'bg-card text-muted-foreground ring-slate-200 hover:bg-muted',
                 )}
               >
                 {label}
@@ -1314,14 +1314,14 @@ export default function PharmacyNetworkPage() {
         </div>
         )}
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-gradient-to-b from-[#f4f7fa] to-white">
+      <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-[#f4f7fa] to-white">
         {(canSeeFullNetwork || isMudirOnly) && (
-        <div className="border-b border-slate-200/80 px-4 py-4 sm:px-5">
-          <p className="mb-3 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+        <div className="border-b border-border px-4 py-4 sm:px-5">
+          <p className="mb-3 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             1 · Koordinator
           </p>
           {!filteredCoordinators.length ? (
-            <p className="py-4 text-center text-sm text-slate-400">
+            <p className="py-4 text-center text-sm text-muted-foreground">
               {isMudirOnly ? 'Koordinator topilmadi' : 'Filter bo‘yicha koordinator topilmadi'}
             </p>
           ) : (
@@ -1339,7 +1339,7 @@ export default function PharmacyNetworkPage() {
                   >
                     <div
                       className={cn(
-                        'flex min-w-0 flex-col overflow-hidden rounded-xl border bg-white shadow-sm',
+                        'flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm',
                         alert ? 'border-red-300 ring-1 ring-red-200' : 'border-[#0b3a5c]/25',
                       )}
                     >
@@ -1350,23 +1350,23 @@ export default function PharmacyNetworkPage() {
                           alert ? 'border-t-red-500' : 'border-t-[#0b3a5c]',
                         )}
                       >
-                        <span className="mb-2 w-fit truncate rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-slate-600">
+                        <span className="mb-2 w-fit truncate rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
                           Markaz
                         </span>
                         <div className="flex items-start gap-3">
                           <div
                             className={cn(
-                              'flex shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] font-semibold text-white',
+                              'flex shrink-0 items-center justify-center rounded-full bg-primary font-semibold text-primary-foreground',
                               isMudirOnly ? 'h-11 w-11 text-sm' : 'h-7 w-7 text-[9px]',
                             )}
                           >
                             {initials(coordinator.fullName)}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className={cn('truncate font-semibold leading-snug text-slate-900', isMudirOnly ? 'text-sm' : 'text-xs')}>
+                            <p className={cn('truncate font-semibold leading-snug text-foreground', isMudirOnly ? 'text-sm' : 'text-xs')}>
                               {coordinator.fullName}
                             </p>
-                            <p className={cn('mt-0.5 truncate text-slate-500', isMudirOnly ? 'text-[11px]' : 'text-[10px]')}>
+                            <p className={cn('mt-0.5 truncate text-muted-foreground', isMudirOnly ? 'text-[11px]' : 'text-[10px]')}>
                               Koordinator
                             </p>
                             <div className="mt-1.5 flex flex-wrap items-center gap-1">
@@ -1375,7 +1375,7 @@ export default function PharmacyNetworkPage() {
                                 <button
                                   type="button"
                                   onClick={(e) => openEditor(coordinator, e)}
-                                  className="rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-primary"
+                                  className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-primary"
                                 >
                                   <Pencil className="h-2.5 w-2.5" />
                                 </button>
@@ -1395,10 +1395,10 @@ export default function PharmacyNetworkPage() {
 
         <div className="px-3 py-3 sm:px-4">
           <div className="mb-2.5 flex items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               {isMudirOnly ? 'Mening filiali' : '2 · Filial mudirlari'}
             </p>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               {teamStats.total} ta filial
               {!isMudirOnly ? ` · ${teamStats.withTeam} jamoa bor · ${teamStats.without} yo‘q` : ''}
             </p>
@@ -1414,20 +1414,20 @@ export default function PharmacyNetworkPage() {
               <div
                 ref={teamPanelRef}
                 className={cn(
-                  'mb-4 flex max-h-[min(55vh,480px)] scroll-mt-20 flex-col rounded-xl border bg-white shadow-sm',
+                  'mb-4 flex max-h-[min(55vh,480px)] scroll-mt-20 flex-col rounded-xl border bg-card shadow-sm',
                   alert
                     ? 'border-red-300'
                     : isNoManagerStatus(empStatus(manager))
                       ? 'border-amber-300'
-                      : 'border-slate-200',
+                      : 'border-border',
                 )}
               >
                 <div className="mb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
                   <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Farmatsevtlar — eʼlon holati
                     </p>
-                    <p className="mt-0.5 text-sm font-semibold text-slate-900">
+                    <p className="mt-0.5 text-sm font-semibold text-foreground">
                       {displayBranchName(manager.location) || 'Filial'} — {manager.fullName}
                     </p>
                   </div>
@@ -1459,14 +1459,14 @@ export default function PharmacyNetworkPage() {
                             key={ph.id}
                             className={cn(
                               'rounded-lg border px-3 py-2.5',
-                              phAlert ? 'border-red-300 bg-red-50/80' : 'border-slate-200 bg-slate-50/70',
+                              phAlert ? 'border-red-300 bg-red-50/80' : 'border-border bg-muted/70',
                             )}
                           >
                             <div className="flex items-start gap-3">
                               <Avatar name={ph.fullName} size="sm" />
                               <div className="min-w-0 flex-1">
                                 <div className="flex items-start justify-between gap-2">
-                                  <p className="truncate text-sm font-medium text-slate-900">{ph.fullName}</p>
+                                  <p className="truncate text-sm font-medium text-foreground">{ph.fullName}</p>
                                   {ph.orgRole === 'intern' ? (
                                     <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
                                       Stajyor
@@ -1476,7 +1476,7 @@ export default function PharmacyNetworkPage() {
                                       Boshqaruvchi
                                     </span>
                                   ) : (
-                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600">
+                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
                                       Farmasevt
                                     </span>
                                   )}
@@ -1484,7 +1484,7 @@ export default function PharmacyNetworkPage() {
                                     <button
                                       type="button"
                                       onClick={(e) => openEditor(ph, e)}
-                                      className="rounded p-1.5 text-slate-400 hover:bg-white hover:text-primary"
+                                      className="rounded p-1.5 text-muted-foreground hover:bg-card hover:text-primary"
                                     >
                                       <Pencil className="h-3.5 w-3.5" />
                                     </button>
@@ -1555,7 +1555,7 @@ export default function PharmacyNetworkPage() {
           })()}
 
           {visibleManagers.length === 0 && orphanStaffGroups.length === 0 ? (
-            <p className="py-6 text-center text-sm text-slate-400">Filter bo‘yicha mudir topilmadi</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">Filter bo‘yicha mudir topilmadi</p>
           ) : (
             <div
               className={cn(
@@ -1605,7 +1605,7 @@ export default function PharmacyNetworkPage() {
                   <div
                     key={manager.id}
                     className={cn(
-                      'group flex min-w-0 flex-col overflow-hidden rounded-xl border border-t-[3px] bg-white shadow-sm transition-all hover:shadow-md',
+                      'group flex min-w-0 flex-col overflow-hidden rounded-xl border border-t-[3px] bg-card shadow-sm transition-all hover:shadow-md',
                       accent,
                       alert && 'border-red-300 bg-red-50/30 ring-1 ring-red-200',
                       branchClosed && !alert && 'border-slate-300 bg-slate-100/70 ring-1 ring-slate-300',
@@ -1620,7 +1620,7 @@ export default function PharmacyNetworkPage() {
                           : noMudir
                             ? 'shadow-md ring-2 ring-amber-200'
                             : 'border-primary/40 shadow-md ring-2 ring-primary/20'
-                        : !alert && 'border-slate-200 hover:border-slate-300',
+                        : !alert && 'border-border hover:border-slate-300',
                     )}
                   >
                     <div className="flex flex-1 flex-col gap-3 p-3.5 sm:p-4">
@@ -1632,7 +1632,7 @@ export default function PharmacyNetworkPage() {
                             return (
                               <div className="min-w-0 w-full space-y-2">
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                  <label className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                                     Filial nomi
                                   </label>
                                   <Input
@@ -1651,7 +1651,7 @@ export default function PharmacyNetworkPage() {
                                   />
                                 </div>
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-medium uppercase tracking-wide text-slate-500">
+                                  <label className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
                                     Koordinata (GPS)
                                   </label>
                                   <textarea
@@ -1663,7 +1663,7 @@ export default function PharmacyNetworkPage() {
                                     rows={2}
                                     className="w-full resize-none rounded-md border border-input bg-background px-2.5 py-1.5 font-mono text-xs leading-snug"
                                   />
-                                  <p className="text-[10px] leading-snug text-slate-500">
+                                  <p className="text-[10px] leading-snug text-muted-foreground">
                                     Google Maps dan nusxa. Agar GPS allaqachon bor bo‘lsa, faqat nomni
                                     o‘zgartirish mumkin.
                                   </p>
@@ -1716,7 +1716,7 @@ export default function PharmacyNetworkPage() {
                                   onClick={(e) => e.stopPropagation()}
                                   className={cn(
                                     'inline-flex min-w-0 flex-1 items-start gap-2 rounded-xl px-2.5 py-2 transition-colors hover:bg-sky-50 hover:text-sky-800',
-                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800',
+                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-foreground',
                                   )}
                                 >
                                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
@@ -1728,7 +1728,7 @@ export default function PharmacyNetworkPage() {
                                 <div
                                   className={cn(
                                     'inline-flex min-w-0 flex-1 items-start gap-2 rounded-xl px-2.5 py-2',
-                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-slate-800',
+                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-foreground',
                                   )}
                                 >
                                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
@@ -1740,7 +1740,7 @@ export default function PharmacyNetworkPage() {
                               {canSetBranchGps ? (
                                 <button
                                   type="button"
-                                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 shadow-sm hover:border-[#0b3a5c]/30 hover:text-[#0b3a5c]"
+                                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm hover:border-[#0b3a5c]/30 hover:text-[#0b3a5c]"
                                   title="Nom va koordinatani tahrirlash"
                                   onClick={() => {
                                     setGpsEditingId(manager.id);
@@ -1775,7 +1775,7 @@ export default function PharmacyNetworkPage() {
                             <button
                               type="button"
                               onClick={() => openAddStaff('xodim', manager.id)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-sm hover:bg-muted"
                               title="Farmasevt yoki stajyor qo‘shish"
                             >
                               <Plus className="h-4 w-4" />
@@ -1785,7 +1785,7 @@ export default function PharmacyNetworkPage() {
                             <button
                               type="button"
                               onClick={() => openAddStaff('xodim', manager.id)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-sm hover:bg-muted"
                               title="Xodim qo‘shish"
                             >
                               <Plus className="h-4 w-4" />
@@ -1815,7 +1815,7 @@ export default function PharmacyNetworkPage() {
                             <button
                               type="button"
                               onClick={(e) => openEditor(manager, e)}
-                              className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-primary"
+                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
                               title="Holatni o'zgartirish"
                             >
                               <Pencil className="h-3.5 w-3.5" />
@@ -1827,17 +1827,17 @@ export default function PharmacyNetworkPage() {
                       <div className="flex min-w-0 items-start gap-3">
                         <div
                           className={cn(
-                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white',
+                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-foreground dark:text-white',
                             alert ? 'bg-red-600' : 'bg-slate-700',
                           )}
                         >
                           {initials(manager.fullName)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold leading-snug text-slate-900">
+                          <p className="text-sm font-semibold leading-snug text-foreground">
                             {manager.fullName}
                           </p>
-                          <p className="mt-0.5 text-[11px] text-slate-500">
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
                             {noMudir ? 'Mudir yo‘q' : 'Mudir (zav.aptek)'}
                           </p>
                           <p className="mt-1 flex items-start gap-1 text-xs font-semibold leading-snug text-sky-900">
@@ -1848,7 +1848,7 @@ export default function PharmacyNetworkPage() {
                             <span
                               className={cn(
                                 'rounded-md px-2 py-0.5 font-medium',
-                                counts.pharmacists > 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-slate-500',
+                                counts.pharmacists > 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-muted-foreground',
                               )}
                             >
                               Farmasevt: {counts.pharmacists}
@@ -1856,7 +1856,7 @@ export default function PharmacyNetworkPage() {
                             <span
                               className={cn(
                                 'rounded-md px-2 py-0.5 font-medium',
-                                counts.interns > 0 ? 'bg-indigo-50 text-indigo-800' : 'bg-slate-100 text-slate-500',
+                                counts.interns > 0 ? 'bg-indigo-50 text-indigo-800' : 'bg-slate-100 text-muted-foreground',
                               )}
                             >
                               Stajyor: {counts.interns}
@@ -1899,7 +1899,7 @@ export default function PharmacyNetworkPage() {
                                   : empStatus(manager) === 'searching'
                                     ? 'bg-violet-100 text-violet-800 ring-violet-300'
                                     : empStatus(manager) === 'closed'
-                                      ? 'bg-slate-200 text-slate-800 ring-slate-400'
+                                      ? 'bg-slate-200 text-foreground ring-slate-400'
                                     : empStatus(manager) === 'dismissed'
                                       ? 'bg-red-100 text-red-800 ring-red-300'
                                       : empStatus(manager) === 'new'
@@ -1924,7 +1924,7 @@ export default function PharmacyNetworkPage() {
                             ? 'bg-primary text-primary-foreground'
                             : alert
                               ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                              : 'bg-slate-50 text-slate-700 hover:bg-slate-100',
+                              : 'bg-muted text-foreground hover:bg-muted',
                         )}
                       >
                         {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1933,11 +1933,11 @@ export default function PharmacyNetworkPage() {
 
                       {isMudirOnly && (
                         <div className="space-y-2 border-t border-slate-100 pt-3">
-                          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             Filial xodimlari
                           </p>
                           {fullTeam.length === 0 ? (
-                            <p className="text-center text-xs text-slate-400">
+                            <p className="text-center text-xs text-muted-foreground">
                               Hali farmasevt yoki stajyor yo‘q. «Xodim qo‘shish» bosing.
                             </p>
                           ) : (
@@ -1949,16 +1949,16 @@ export default function PharmacyNetworkPage() {
                                   key={ph.id}
                                   className={cn(
                                     'rounded-lg border px-3 py-2.5',
-                                    phAlert ? 'border-red-300 bg-red-50/80' : 'border-slate-200 bg-slate-50/70',
+                                    phAlert ? 'border-red-300 bg-red-50/80' : 'border-border bg-muted/70',
                                   )}
                                 >
                                   <div className="flex items-start gap-3">
-                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-semibold text-white">
+                                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                                       {initials(ph.fullName)}
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                      <p className="truncate text-sm font-semibold text-slate-900">{ph.fullName}</p>
-                                      <p className="mt-0.5 text-[11px] text-slate-500">
+                                      <p className="truncate text-sm font-semibold text-foreground">{ph.fullName}</p>
+                                      <p className="mt-0.5 text-[11px] text-muted-foreground">
                                         {ph.orgRole === 'intern'
                                           ? 'Stajyor'
                                           : ph.orgRole === 'supervisor'
@@ -1976,7 +1976,7 @@ export default function PharmacyNetworkPage() {
                                           <button
                                             type="button"
                                             onClick={(e) => openEditor(ph, e)}
-                                            className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-primary"
+                                            className="rounded p-0.5 text-muted-foreground hover:bg-card hover:text-primary"
                                           >
                                             <Pencil className="h-3 w-3" />
                                           </button>
@@ -2037,8 +2037,8 @@ export default function PharmacyNetworkPage() {
                       </span>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">Mudir yo‘q</p>
-                      <p className="mt-0.5 text-[11px] text-slate-500">
+                      <p className="text-sm font-semibold text-foreground">Mudir yo‘q</p>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
                         Filialda xodimlar bor, mudir biriktirilmagan. Ular ishlashda davom etadi.
                       </p>
                       <div className="mt-2">
@@ -2049,14 +2049,14 @@ export default function PharmacyNetworkPage() {
                     </div>
                     <div className="space-y-2 border-t border-amber-100 pt-3">
                       {group.staff.map((ph) => (
-                        <div key={ph.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+                        <div key={ph.id} className="rounded-lg border border-border bg-card px-3 py-2.5">
                           <div className="flex items-start gap-3">
-                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-semibold text-white">
+                            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
                               {initials(ph.fullName)}
                             </div>
                             <div className="min-w-0 flex-1">
-                              <p className="truncate text-sm font-semibold text-slate-900">{ph.fullName}</p>
-                              <p className="mt-0.5 text-[11px] text-slate-500">
+                              <p className="truncate text-sm font-semibold text-foreground">{ph.fullName}</p>
+                              <p className="mt-0.5 text-[11px] text-muted-foreground">
                                 {ph.orgRole === 'intern'
                                   ? 'Stajyor'
                                   : ph.orgRole === 'supervisor'
@@ -2074,7 +2074,7 @@ export default function PharmacyNetworkPage() {
                                   <button
                                     type="button"
                                     onClick={(e) => openEditor(ph, e)}
-                                    className="rounded p-0.5 text-slate-400 hover:bg-white hover:text-primary"
+                                    className="rounded p-0.5 text-muted-foreground hover:bg-card hover:text-primary"
                                   >
                                     <Pencil className="h-3 w-3" />
                                   </button>
@@ -2094,7 +2094,7 @@ export default function PharmacyNetworkPage() {
       </div>
 
       {canAddTeam && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-slate-200 bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] md:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] md:hidden">
           <Button className="h-11 w-full gap-2" onClick={() => openAddStaff('xodim')}>
             <Plus className="h-4 w-4" />
             Xodim qo‘shish
@@ -2125,7 +2125,7 @@ export default function PharmacyNetworkPage() {
                 onChange={(e) => setCredPassword(e.target.value)}
                 placeholder="O‘zgartirmasangiz bo‘sh qoldiring"
               />
-              <p className="text-xs text-slate-500">Kamida 6 belgi. Bo‘sh qoldirsangiz, parol o‘zgarmaydi.</p>
+              <p className="text-xs text-muted-foreground">Kamida 6 belgi. Bo‘sh qoldirsangiz, parol o‘zgarmaydi.</p>
             </div>
           </div>
           <DialogFooter>
@@ -2191,7 +2191,7 @@ export default function PharmacyNetworkPage() {
                   </SelectContent>
                 </Select>
                 {employmentStatus === 'closed' ? (
-                  <p className="text-xs text-slate-600">
+                  <p className="text-xs text-muted-foreground">
                     Filial yopilgan deb belgilanadi, lekin ro‘yxatda «Yopilgan» statusi bilan qoladi.
                   </p>
                 ) : employmentStatus === 'no_manager' ? (
@@ -2390,10 +2390,10 @@ export default function PharmacyNetworkPage() {
                 {' · '}
                 {createdCreds.role}
               </p>
-              <div className="rounded-lg border bg-slate-50 p-3 space-y-2">
+              <div className="rounded-lg border bg-muted p-3 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-[11px] uppercase text-slate-500">Login</p>
+                    <p className="text-[11px] uppercase text-muted-foreground">Login</p>
                     <p className="font-mono text-sm font-semibold">{createdCreds.login}</p>
                   </div>
                   <Button
@@ -2408,7 +2408,7 @@ export default function PharmacyNetworkPage() {
                 </div>
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-[11px] uppercase text-slate-500">Parol</p>
+                    <p className="text-[11px] uppercase text-muted-foreground">Parol</p>
                     <p className="font-mono text-sm font-semibold">
                       {showPwd ? createdCreds.temporaryPassword : '••••••••'}
                     </p>
@@ -2466,9 +2466,9 @@ export default function PharmacyNetworkPage() {
               {deleteTarget?.kind === 'filial' ? 'Filialni o‘chirish?' : 'Xodimni o‘chirish?'}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
-              <div className="space-y-2 text-sm text-slate-600">
+              <div className="space-y-2 text-sm text-muted-foreground">
                 <p>
-                  <span className="font-semibold text-slate-900">{deleteTarget?.fullName}</span>{' '}
+                  <span className="font-semibold text-foreground">{deleteTarget?.fullName}</span>{' '}
                   {deleteTarget?.kind === 'filial'
                     ? 'filiali va mudiri tizimdan butunlay o‘chiriladi.'
                     : 'tizimdan butunlay o‘chiriladi.'}

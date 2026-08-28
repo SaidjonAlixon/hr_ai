@@ -59,49 +59,49 @@
 }
 
 :root {
-  --background: 210 20% 98%;
-  --foreground: 222 47% 11%;
+  --background: 220 20% 97%;
+  --foreground: 224 47% 11%;
 
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
   --ring: 212 67% 32%;
 
   --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --card-border: 214 32% 91%;
+  --card-foreground: 224 47% 11%;
+  --card-border: 220 13% 91%;
 
   --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-  --popover-border: 214 32% 91%;
+  --popover-foreground: 224 47% 11%;
+  --popover-border: 220 13% 91%;
 
   --primary: 212 67% 32%;
   --primary-foreground: 210 40% 98%;
 
-  --secondary: 202 71% 52%;
-  --secondary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 212 67% 32%;
 
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
+  --muted: 220 14% 96%;
+  --muted-foreground: 220 9% 46%;
 
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
+  --accent: 220 14% 96%;
+  --accent-foreground: 224 47% 11%;
 
   --destructive: 0 84.2% 60.2%;
   --destructive-foreground: 210 40% 98%;
 
-  --sidebar: 212 67% 32%;
-  --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 212 67% 25%;
-  --sidebar-primary: 202 71% 52%;
+  --sidebar: 0 0% 100%;
+  --sidebar-foreground: 224 47% 11%;
+  --sidebar-border: 220 13% 91%;
+  --sidebar-primary: 212 67% 32%;
   --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 212 67% 25%;
-  --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 202 71% 52%;
+  --sidebar-accent: 220 14% 96%;
+  --sidebar-accent-foreground: 224 47% 11%;
+  --sidebar-ring: 212 67% 32%;
 
   --app-font-sans: 'Inter', system-ui, sans-serif;
   --app-font-serif: Georgia, serif;
   --app-font-mono: 'JetBrains Mono', monospace;
-  --radius: 0.5rem;
+  --radius: 0.625rem;
 }
 
 .dark {
@@ -149,6 +149,12 @@
   * {
     @apply border-border;
   }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
   html,
   body,
   #root {
@@ -156,14 +162,320 @@
   }
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+    -webkit-font-smoothing: antialiased;
   }
+}
+
+.app-sidebar {
+  @apply border-sidebar-border bg-sidebar text-sidebar-foreground;
+  border-right-width: 1px;
+  box-shadow: 1px 0 0 hsl(var(--sidebar-border));
+}
+
+.dark .app-sidebar {
+  background: linear-gradient(180deg, #0a1728 0%, #081323 42%, #070f1c 100%);
+  border-color: rgb(255 255 255 / 0.06);
+  box-shadow: 8px 0 40px -20px rgba(0, 0, 0, 0.55);
+}
+
+.app-sidebar-nav-item {
+  @apply text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground;
+}
+
+.app-sidebar-nav-item-active {
+  @apply bg-sidebar-accent text-sidebar-foreground shadow-sm ring-1 ring-sidebar-border;
+}
+
+.dark .app-sidebar-nav-item {
+  @apply text-white/75 hover:bg-white/[0.07] hover:text-white;
+}
+
+.dark .app-sidebar-nav-item-active {
+  @apply bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] ring-0;
+}
+
+.app-sidebar-section-open {
+  @apply bg-sidebar-accent ring-1 ring-sidebar-border shadow-sm;
+}
+
+.app-sidebar-section-closed {
+  @apply hover:bg-sidebar-accent/70;
+}
+
+.dark .app-sidebar-section-open {
+  @apply bg-gradient-to-b from-white/[0.08] to-white/[0.03] ring-white/10 shadow-[0_8px_24px_-16px_rgba(0,0,0,0.55)];
+}
+
+.dark .app-sidebar-section-closed {
+  @apply hover:bg-white/[0.04];
+}
+
+.analytics-shell {
+  @apply min-h-full bg-background text-foreground;
+}
+
+.dark .analytics-shell {
+  @apply bg-gradient-to-b from-[#0a1628] via-[#0d1b2e] to-[#0a1628] text-slate-100;
+}
+
+.analytics-panel {
+  @apply rounded-xl border border-border/70 bg-card p-4 text-card-foreground shadow-sm;
+}
+
+.dark .analytics-panel {
+  @apply rounded-2xl border-slate-700/60 bg-slate-900/70 text-slate-100 shadow-lg backdrop-blur-sm;
+}
+
+.analytics-kpi {
+  @apply rounded-xl border border-border/70 bg-card p-4 text-card-foreground shadow-sm;
+}
+
+.dark .analytics-kpi {
+  @apply rounded-2xl border-slate-700/60 bg-slate-900/70 text-slate-100 shadow-lg backdrop-blur-sm;
+}
+
+.analytics-segment {
+  @apply rounded-xl border border-border bg-card p-4 text-left transition-all hover:border-primary/25 hover:bg-muted/40;
+}
+
+.analytics-segment-active {
+  @apply border-primary/30 bg-primary/5 ring-1 ring-primary/15;
+}
+
+.dark .analytics-segment {
+  @apply rounded-2xl border-slate-700/60 bg-slate-900/40 hover:border-slate-500 hover:bg-slate-900/55;
+}
+
+.dark .analytics-segment-active {
+  @apply border-sky-500/80 bg-sky-500/10 ring-sky-400/40;
+}
+
+.analytics-inset {
+  @apply rounded-lg bg-muted/70 px-3 py-2;
+}
+
+.dark .analytics-inset {
+  @apply rounded-xl bg-slate-800/60;
+}
+
+.surface-brand {
+  @apply bg-primary text-primary-foreground;
+}
+
+.surface-brand-subtle {
+  @apply text-primary-foreground/75;
+}
+
+/* Davomat Face — modern palette */
+.dv-hero {
+  @apply overflow-hidden rounded-[28px] border border-primary/10 bg-gradient-to-br from-primary via-[hsl(212,67%,28%)] to-[hsl(212,67%,22%)] text-white shadow-[0_20px_50px_-24px_rgba(11,58,92,0.45)];
+}
+.dark .dv-hero {
+  @apply border-slate-700/50 bg-gradient-to-br from-slate-900 via-[#0f1f33] to-slate-950 text-slate-50 shadow-[0_24px_56px_-28px_rgba(0,0,0,0.7)];
+}
+
+.dv-hero-muted {
+  @apply text-white/70;
+}
+.dark .dv-hero-muted {
+  @apply text-slate-300;
+}
+
+.dv-hero-stat {
+  @apply rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-2 text-white backdrop-blur-sm;
+}
+.dark .dv-hero-stat {
+  @apply border-slate-600/40 bg-slate-800/50 text-slate-50;
+}
+
+.dv-card {
+  @apply rounded-[24px] border border-border bg-card p-4 shadow-sm;
+}
+
+.dv-tone-emerald {
+  @apply border-teal-200/80 bg-teal-50/80 text-teal-800;
+}
+.dark .dv-tone-emerald {
+  @apply border-teal-500/25 bg-teal-500/10 text-teal-200;
+}
+.dv-tone-amber {
+  @apply border-amber-200/80 bg-amber-50/60 text-amber-900;
+}
+.dark .dv-tone-amber {
+  @apply border-amber-400/20 bg-amber-400/[0.08] text-amber-100;
+}
+.dv-tone-rose {
+  @apply border-rose-200/80 bg-rose-50/80 text-rose-800;
+}
+.dark .dv-tone-rose {
+  @apply border-rose-400/25 bg-rose-500/10 text-rose-200;
+}
+
+.dv-tone-info {
+  @apply border-primary/15 bg-primary/[0.04] text-foreground;
+}
+.dark .dv-tone-info {
+  @apply border-primary/30 bg-primary/10 text-foreground;
+}
+
+.dv-punch-in {
+  @apply rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-2 backdrop-blur-sm border-l-[3px] border-l-teal-400;
+}
+.dark .dv-punch-in {
+  @apply border-slate-600/40 bg-slate-800/50;
+}
+.dv-punch-in .dv-punch-label {
+  @apply text-teal-300;
+}
+.dv-punch-in .dv-punch-value {
+  @apply text-white;
+}
+
+.dv-punch-out {
+  @apply rounded-2xl border border-white/10 bg-white/[0.07] px-3 py-2 backdrop-blur-sm border-l-[3px] border-l-slate-400;
+}
+.dark .dv-punch-out {
+  @apply border-slate-600/40 bg-slate-800/50;
+}
+.dv-punch-out .dv-punch-label {
+  @apply text-slate-300;
+}
+.dv-punch-out .dv-punch-value {
+  @apply text-white;
+}
+
+.dv-punch-card-in {
+  @apply rounded-2xl border border-teal-200/70 bg-teal-50/40 px-3 py-3 text-teal-900;
+}
+.dark .dv-punch-card-in {
+  @apply border-teal-500/25 bg-teal-500/10 text-teal-100;
+}
+.dv-punch-card-in .dv-punch-card-label {
+  @apply text-teal-700;
+}
+.dark .dv-punch-card-in .dv-punch-card-label {
+  @apply text-teal-300;
+}
+.dv-punch-card-in .dv-punch-card-value {
+  @apply text-teal-900;
+}
+.dark .dv-punch-card-in .dv-punch-card-value {
+  @apply text-teal-50;
+}
+
+.dv-punch-card-out {
+  @apply rounded-2xl border border-slate-200/80 bg-slate-50/60 px-3 py-3 text-foreground;
+}
+.dark .dv-punch-card-out {
+  @apply border-slate-600/40 bg-slate-800/40 text-slate-100;
+}
+.dv-punch-card-out .dv-punch-card-label {
+  @apply text-slate-600;
+}
+.dark .dv-punch-card-out .dv-punch-card-label {
+  @apply text-slate-300;
+}
+.dv-punch-card-out .dv-punch-card-value {
+  @apply text-foreground;
+}
+.dark .dv-punch-card-out .dv-punch-card-value {
+  @apply text-slate-50;
+}
+
+.dv-btn-in {
+  @apply h-14 w-full gap-2 rounded-2xl bg-teal-600 text-base text-white hover:bg-teal-700;
+}
+
+.dv-btn-out {
+  @apply h-14 w-full gap-2 rounded-2xl bg-slate-700 text-base text-white hover:bg-slate-800;
+}
+.dark .dv-btn-out {
+  @apply bg-slate-600 hover:bg-slate-500;
+}
+
+.dv-step-hint {
+  @apply mb-2 flex items-center gap-2.5 rounded-xl border border-border bg-muted/40 px-3 py-2.5;
+}
+.dark .dv-step-hint {
+  @apply border-slate-700/60 bg-slate-800/40;
+}
+
+.dv-step-badge {
+  @apply flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-primary text-[11px] font-bold text-primary-foreground;
+}
+
+.dv-step-badge-warn {
+  @apply bg-primary text-primary-foreground;
+}
+
+.dv-step-badge-danger {
+  @apply bg-rose-600 text-white;
+}
+
+.dv-step-badge-success {
+  @apply bg-teal-600 text-white;
+}
+
+.dv-focus {
+  @apply ring-2 ring-primary/35 ring-offset-2 ring-offset-background;
+}
+
+.dv-guide-active {
+  @apply border-primary/25 bg-primary/[0.04] shadow-sm;
+}
+.dark .dv-guide-active {
+  @apply border-primary/35 bg-primary/10;
+}
+
+.dv-guide-passed {
+  @apply border-teal-500/20 bg-teal-500/[0.06];
+}
+.dark .dv-guide-passed {
+  @apply border-teal-400/25 bg-teal-400/10;
+}
+
+.dv-guide-danger {
+  @apply border-rose-500/25 bg-rose-500/[0.06];
+}
+.dark .dv-guide-danger {
+  @apply border-rose-400/30 bg-rose-400/10;
+}
+
+.dv-guide-idle {
+  @apply border-border bg-muted/30;
+}
+.dark .dv-guide-idle {
+  @apply border-slate-700/50 bg-slate-800/30;
+}
+
+.dv-history-today {
+  @apply bg-primary/10;
+}
+.dark .dv-history-today {
+  @apply bg-primary/20;
+}
+
+.dv-history-today-cell {
+  @apply bg-primary/10;
+}
+.dark .dv-history-today-cell {
+  @apply bg-primary/20;
+}
+
+.davomat-face-page {
+  @apply min-h-[100dvh] bg-gradient-to-b from-muted/30 via-background to-background;
+}
+
+.dark .davomat-face-page {
+  @apply bg-gradient-to-b from-slate-950 via-background to-background;
 }
 
 /* Telegram Mini App — to‘liq ekran, safe area */
 html.tg-mini-app,
 body.tg-mini-app {
   overscroll-behavior: none;
-  background: #f8fafc;
+  background: hsl(var(--background));
 }
 body.tg-mini-app {
   padding-top: env(safe-area-inset-top, 0);

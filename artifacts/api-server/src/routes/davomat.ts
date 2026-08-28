@@ -18,6 +18,7 @@ import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
 import { hoursForStaff, isPharmacyShiftStaff, shiftWindow } from "../lib/shift-hours";
 import { loadStaffFromUsers } from "../lib/staff-directory";
+import { buildDavomatAnalytics, type DavomatSegment } from "../lib/davomat-analytics";
 
 const router: IRouter = Router();
 
@@ -237,6 +238,7 @@ async function loadActiveEmployees(filters: {
     location: s.location,
     employmentStatus: s.employmentStatus,
     userId: s.userId,
+    userRole: s.userRole,
     orgRole: s.orgRole,
     shiftType: s.shiftType,
   }));
@@ -517,6 +519,38 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
   } catch (err) {
     console.error("GET /davomat error:", err);
     res.status(503).json({ error: "Davomat yuklanmadi" });
+  }
+});
+
+router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  try {
+    const q = req.query as Record<string, string>;
+    const to = q.to || todayTashkent();
+    const from = q.from || addDays(to, -29);
+    const segment = (q.segment === "office" || q.segment === "pharmacy" ? q.segment : "all") as DavomatSegment;
+    const employees = await loadActiveEmployees({});
+    const employeeIds = employees.map((e) => e.id);
+    const records = await loadRecords(from, to, employeeIds);
+    const report = buildReport(employees, records, from, to);
+
+    const span = eachDateInclusive(from, to).length;
+    const prevTo = addDays(from, -1);
+    const prevFrom = addDays(prevTo, -(span - 1));
+    const prevRecords = await loadRecords(prevFrom, prevTo, employeeIds);
+    const prevReport = buildReport(employees, prevRecords, prevFrom, prevTo);
+
+    const meta = employees.map((e) => ({
+      id: e.id,
+      userRole: e.userRole ?? null,
+      orgRole: e.orgRole ?? null,
+      shiftType: e.shiftType ?? null,
+    }));
+
+    res.json(buildDavomatAnalytics(report, meta, segment, prevReport));
+  } catch (err) {
+    console.error("GET /davomat/analytics error:", err);
+    res.status(503).json({ error: "Davomat analitikasi yuklanmadi" });
   }
 });
 

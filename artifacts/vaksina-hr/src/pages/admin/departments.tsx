@@ -192,7 +192,7 @@ export default function AdminDepartmentsPage() {
     <div className="mx-auto max-w-4xl space-y-6 p-4 sm:p-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-900 sm:text-3xl">
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
             Bo‘limlar
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -247,11 +247,11 @@ export default function AdminDepartmentsPage() {
                   className="flex flex-col gap-2 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                 >
                   <div className="min-w-0">
-                    <p className="font-medium text-slate-900">{d.name}</p>
+                    <p className="font-medium text-foreground">{d.name}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       Boshliq:{" "}
                       {d.headName ? (
-                        <span className="text-slate-700">{d.headName}</span>
+                        <span className="text-foreground">{d.headName}</span>
                       ) : (
                         <span className="italic">Belgilanmagan</span>
                       )}

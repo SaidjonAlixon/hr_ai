@@ -41,7 +41,6 @@ export function canViewReviziya(role?: string | null): boolean {
   return (
     isReviziyaRole(role) ||
     role === "admin" ||
-    role === "director" ||
     role === "moliya" ||
     role === "sb" ||
     role === "sb_boshliq" ||
@@ -160,7 +159,7 @@ export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);
 }
 
-/** Ish o‘rinlari, nomzod, suhbat, pipeline, stajirovka — faqat HR oilasi + admin/direktor/rekruter/trener */
+/** Ish o‘rinlari, nomzod, suhbat, pipeline, stajirovka — faqat HR oilasi + admin/rekruter/trener */
 export const HR_RECRUITMENT_PATHS = [
   "/vacancies",
   "/candidates",
@@ -173,7 +172,6 @@ export function canSeeHrRecruitment(role?: string | null): boolean {
   return (
     isHrRole(role) ||
     role === "admin" ||
-    role === "director" ||
     role === "recruiter" ||
     role === "trainer"
   );

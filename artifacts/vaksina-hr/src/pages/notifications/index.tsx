@@ -70,7 +70,7 @@ function typeMeta(type: string) {
   return TYPE_META[type] || {
     label: 'Bildirishnoma',
     icon: Bell,
-    color: 'text-slate-700',
+    color: 'text-foreground',
     soft: 'bg-slate-100',
   };
 }
@@ -154,13 +154,13 @@ export default function NotificationsPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-lg border bg-white p-1">
+          <div className="inline-flex rounded-lg border bg-card p-1">
             <button
               type="button"
               onClick={() => setFilter('all')}
               className={cn(
                 'rounded-md px-3 py-1.5 text-sm font-medium',
-                filter === 'all' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50',
+                filter === 'all' ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted',
               )}
             >
               Barchasi
@@ -170,7 +170,7 @@ export default function NotificationsPage() {
               onClick={() => setFilter('unread')}
               className={cn(
                 'rounded-md px-3 py-1.5 text-sm font-medium',
-                filter === 'unread' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-50',
+                filter === 'unread' ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted',
               )}
             >
               O‘qilmagan
@@ -200,9 +200,9 @@ export default function NotificationsPage() {
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
-                <Bell className="h-5 w-5 text-slate-400" />
+                <Bell className="h-5 w-5 text-muted-foreground" />
               </div>
-              <p className="font-medium text-slate-700">Bildirishnoma yo‘q</p>
+              <p className="font-medium text-foreground">Bildirishnoma yo‘q</p>
               <p className="text-sm text-muted-foreground">
                 {filter === 'unread' ? 'O‘qilmagan bildirishnoma qolmadi' : 'Hali xabar kelmagan'}
               </p>
@@ -219,7 +219,7 @@ export default function NotificationsPage() {
                       onClick={() => openNotification(n)}
                       className={cn(
                         'flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors',
-                        'hover:bg-slate-50',
+                        'hover:bg-muted',
                         !n.isRead && 'bg-sky-50/50',
                       )}
                     >
@@ -244,7 +244,7 @@ export default function NotificationsPage() {
                         </div>
                         <p
                           className={cn(
-                            'mt-1 text-sm leading-snug text-slate-800',
+                            'mt-1 text-sm leading-snug text-foreground',
                             !n.isRead && 'font-medium',
                           )}
                         >

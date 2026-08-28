@@ -1,6 +1,6 @@
 export function DrivePdfViewer({ fileId }: { fileId: string }) {
   return (
-    <div className="overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+    <div className="overflow-hidden rounded-xl border border-border bg-slate-100">
       <iframe
         title="Slayd PDF"
         src={`https://drive.google.com/file/d/${fileId}/preview`}

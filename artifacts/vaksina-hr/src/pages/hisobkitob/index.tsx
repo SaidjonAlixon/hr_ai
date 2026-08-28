@@ -58,7 +58,7 @@ function CellInput({
         setTxt(percent ? String(n) : formatMoney(n));
       }}
       className={cn(
-        "h-6 w-full rounded-sm border-0 bg-transparent px-1 text-right text-[11px] leading-none tabular-nums outline-none focus:bg-white focus:ring-1 focus:ring-[#0b3a5c]/30 disabled:opacity-70",
+        "h-6 w-full rounded-sm border-0 bg-transparent px-1 text-right text-[11px] leading-none tabular-nums outline-none focus:bg-card focus:ring-1 focus:ring-[#0b3a5c]/30 disabled:opacity-70",
         className,
       )}
     />
@@ -73,12 +73,12 @@ function roleLabel(p?: string | null) {
 
 function FormulaHint() {
   return (
-    <div className="rounded-xl border bg-white p-3 text-[11px] leading-relaxed text-slate-600 shadow-sm">
+    <div className="rounded-xl border bg-card p-3 text-[11px] leading-relaxed text-muted-foreground shadow-sm">
       <p className="font-semibold text-[#0b3a5c]">Hisoblash (serverda, barcha lavozimlar)</p>
       <p className="mt-1">Rejadan ortiq = max(0, savdo − joriy reja). Reja % = savdo / reja × 100.</p>
       <p>Foiz summasi = savdo × savdo foizi. Reja bonusi faqat reja bajarilsa (aks holda 0).</p>
       <p>Hisoblangan = fiks + foiz + reja bonusi + KPI. Qo‘lga = max(0, hisoblangan − avans − jarimalar).</p>
-      <p className="mt-1 text-[11px] text-slate-500">Fiks Oylikdan keladi va shu yerdan xodim kartochkasiga yoziladi. Savdo yo‘q lavozimda faqat fiks va KPI.</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">Fiks Oylikdan keladi va shu yerdan xodim kartochkasiga yoziladi. Savdo yo‘q lavozimda faqat fiks va KPI.</p>
     </div>
   );
 }
@@ -122,7 +122,7 @@ export default function HisobkitobPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
         <h1 className="text-xl font-bold">Hisob-kitob</h1>
-        <p className="mt-2 text-sm text-slate-500">Faqat admin, direktor va moliyachi ko‘radi.</p>
+        <p className="mt-2 text-sm text-muted-foreground">Faqat admin, direktor va moliyachi ko‘radi.</p>
       </div>
     );
   }
@@ -169,19 +169,19 @@ export default function HisobkitobPage() {
 
   return (
     <div className="space-y-3 pb-8">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[#0b3a5c] px-4 py-3 text-white shadow">
+      <div className="surface-brand flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 shadow-sm">
         <div>
           <h1 className="flex items-center gap-2 text-lg font-bold">
             <Calculator className="h-5 w-5" /> Xodimlar oylik hisobi
           </h1>
-          <p className="text-xs text-white/70">Savdo, reja, fiks, bonus va jarimalar — barcha lavozimlar. Oylik (KPI) bilan bog‘langan.</p>
+          <p className="surface-brand-subtle text-xs">Savdo, reja, fiks, bonus va jarimalar — barcha lavozimlar. Oylik (KPI) bilan bog‘langan.</p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-white/10 p-0.5">
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-[120px] text-center text-[13px] font-semibold">{monthLabelUz(month)}</span>
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey() && month >= "2026-08"}>
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => setMonth(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey() && month >= "2026-08"}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -192,7 +192,7 @@ export default function HisobkitobPage() {
       ) : detail.error ? (
         <p className="text-sm text-rose-700">{(detail.error as Error).message}</p>
       ) : !d ? (
-        <p className="rounded-xl border bg-white px-4 py-10 text-center text-sm text-slate-500">
+        <p className="rounded-xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
           {monthLabelUz(month)} uchun ma’lumot yo‘q.
         </p>
       ) : (
@@ -207,25 +207,25 @@ export default function HisobkitobPage() {
               { l: `${monthLabelUz(shiftMonthKey(d.month, -1))}ga %`, v: `${d.totals.vsPrevPct}%` },
               { l: "Qo‘lga / karta", v: formatSom(d.totals.cardTotal) },
             ].map((c) => (
-              <div key={c.l} className="rounded-xl border bg-white px-3 py-2 shadow-sm">
-                <p className="text-[10px] uppercase tracking-wide text-slate-500">{c.l}</p>
+              <div key={c.l} className="rounded-xl border bg-card px-3 py-2 shadow-sm">
+                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{c.l}</p>
                 <p className="text-sm font-bold tabular-nums text-[#0b3a5c]">{c.v}</p>
               </div>
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-white px-3 py-2 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-3 py-2 shadow-sm">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
                 value={nameQuery}
                 onChange={(e) => setNameQuery(e.target.value)}
                 placeholder="Ism familiya"
-                className="h-8 w-48 rounded-lg border border-slate-200 bg-white pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-[#0b3a5c]/30"
+                className="h-8 w-48 rounded-lg border border-border bg-card pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-[#0b3a5c]/30"
               />
             </div>
             <select
-              className="h-8 max-w-[220px] rounded-lg border border-slate-200 bg-white px-2 text-sm"
+              className="h-8 max-w-[220px] rounded-lg border border-border bg-card px-2 text-sm"
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
             >
@@ -236,18 +236,18 @@ export default function HisobkitobPage() {
             </select>
             {edit ? (
               <>
-                <span className="text-xs text-slate-500">Fiksa</span>
+                <span className="text-xs text-muted-foreground">Fiksa</span>
                 <input
                   inputMode="numeric"
                   value={bulkFiks}
                   onChange={(e) => setBulkFiks(formatMoneyInput(e.target.value) || "0")}
-                  className="h-8 w-36 rounded-lg border border-slate-200 px-2 text-sm tabular-nums"
+                  className="h-8 w-36 rounded-lg border border-border px-2 text-sm tabular-nums"
                 />
-                <span className="text-xs text-slate-500">Bonus %</span>
+                <span className="text-xs text-muted-foreground">Bonus %</span>
                 <input
                   value={bulkBonus}
                   onChange={(e) => setBulkBonus(e.target.value)}
-                  className="h-8 w-20 rounded-lg border border-slate-200 px-2 text-sm tabular-nums"
+                  className="h-8 w-20 rounded-lg border border-border px-2 text-sm tabular-nums"
                 />
                 <Button
                   type="button"
@@ -293,7 +293,7 @@ export default function HisobkitobPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-300 bg-white shadow-sm">
+          <div className="rounded-xl border border-slate-300 bg-card shadow-sm">
             <div className="max-h-[min(72vh,760px)] overflow-auto">
               <table className="w-full min-w-[2100px] border-collapse text-[11px] leading-tight">
                 <thead className="sticky top-0 z-10">
@@ -323,7 +323,7 @@ export default function HisobkitobPage() {
                       <th
                         key={h.k || h.t}
                         className={cn(
-                          "whitespace-nowrap border border-slate-400 bg-[#0b3a5c] px-1.5 py-1 text-[10px] font-semibold leading-tight text-white",
+                          "whitespace-nowrap border border-border bg-primary px-1.5 py-1 text-[10px] font-semibold leading-tight text-primary-foreground",
                           h.a === "right" ? "text-right" : h.a === "center" ? "text-center" : "text-left",
                         )}
                       >
@@ -342,14 +342,14 @@ export default function HisobkitobPage() {
                 <tbody>
                   {rows.map((row: SettlementLine, idx) => (
                     <tr key={row.id} className="hover:bg-sky-50/60">
-                      <td className="sticky left-0 z-[1] w-8 border border-slate-300 bg-slate-50 px-0.5 py-0 text-center text-[10px] tabular-nums text-slate-500">
+                      <td className="sticky left-0 z-[1] w-8 border border-slate-300 bg-muted px-0.5 py-0 text-center text-[10px] tabular-nums text-muted-foreground">
                         {idx + 1}
                       </td>
-                      <td className="sticky left-8 z-[1] min-w-[220px] whitespace-nowrap border border-slate-300 bg-white px-1 py-0">
+                      <td className="sticky left-8 z-[1] min-w-[220px] whitespace-nowrap border border-slate-300 bg-card px-1 py-0">
                         {edit ? (
                           <input
                             defaultValue={row.fullName}
-                            className="h-6 w-full min-w-[200px] bg-transparent px-1 text-left text-[11px] font-semibold leading-none outline-none focus:bg-white"
+                            className="h-6 w-full min-w-[200px] bg-transparent px-1 text-left text-[11px] font-semibold leading-none outline-none focus:bg-card"
                             onBlur={(e) => saveLine(row.id, { fullName: e.target.value })}
                           />
                         ) : (
@@ -360,22 +360,22 @@ export default function HisobkitobPage() {
                         {edit ? (
                           <input
                             defaultValue={roleLabel(row.position)}
-                            className="h-6 w-full min-w-[120px] bg-transparent px-1 text-[11px] leading-none outline-none focus:bg-white"
+                            className="h-6 w-full min-w-[120px] bg-transparent px-1 text-[11px] leading-none outline-none focus:bg-card"
                             onBlur={(e) => saveLine(row.id, { position: e.target.value })}
                           />
                         ) : (
-                          <span className="block px-1 py-0 text-slate-700 whitespace-nowrap">{roleLabel(row.position) || "—"}</span>
+                          <span className="block px-1 py-0 text-foreground whitespace-nowrap">{roleLabel(row.position) || "—"}</span>
                         )}
                       </td>
                       <td className="border border-slate-300 px-1 py-0">
                         {edit ? (
                           <input
                             defaultValue={row.phone || ""}
-                            className="h-6 w-28 bg-transparent px-1 text-[11px] leading-none outline-none focus:bg-white"
+                            className="h-6 w-28 bg-transparent px-1 text-[11px] leading-none outline-none focus:bg-card"
                             onBlur={(e) => saveLine(row.id, { phone: e.target.value })}
                           />
                         ) : (
-                          <span className="px-1 text-slate-600">{row.phone || "—"}</span>
+                          <span className="px-1 text-muted-foreground">{row.phone || "—"}</span>
                         )}
                       </td>
                       <td className="border border-slate-300 px-1 py-0"><CellInput value={row.planCurrent ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { planCurrent: n })} /></td>
@@ -403,7 +403,7 @@ export default function HisobkitobPage() {
                   <tr className="bg-slate-100 font-semibold">
                     <td className="border border-slate-400 px-1 py-0 text-center">—</td>
                     <td className="border border-slate-400 px-1 py-0">Jami</td>
-                    <td className="border border-slate-400 px-1 py-0 text-[11px] text-slate-600">{rows.length} / {d.lines.length} xodim</td>
+                    <td className="border border-slate-400 px-1 py-0 text-[11px] text-muted-foreground">{rows.length} / {d.lines.length} xodim</td>
                     <td className="border border-slate-400" />
                     <td className="border border-slate-400" />
                     <td className="border border-slate-400" />

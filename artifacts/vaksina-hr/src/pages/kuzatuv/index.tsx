@@ -105,13 +105,13 @@ function StatCard({
   icon: React.ComponentType<{ className?: string }>;
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200/80 bg-white p-4 shadow-sm">
+    <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-          <p className="mt-1 truncate text-2xl font-semibold text-slate-900">{value}</p>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+          <p className="mt-1 truncate text-2xl font-semibold text-foreground">{value}</p>
         </div>
-        <span className="rounded-xl bg-slate-50 p-2 text-slate-600">
+        <span className="rounded-xl bg-muted p-2 text-muted-foreground">
           <Icon className="h-5 w-5" />
         </span>
       </div>
@@ -151,24 +151,24 @@ function empStatusClass(status: string) {
     case "new":
       return "bg-sky-50 text-sky-800";
     case "dismissed":
-      return "bg-slate-200 text-slate-700";
+      return "bg-slate-200 text-foreground";
     case "need_hire":
       return "bg-amber-50 text-amber-900";
     case "searching":
       return "bg-orange-50 text-orange-900";
     default:
-      return "bg-slate-100 text-slate-700";
+      return "bg-slate-100 text-foreground";
   }
 }
 
 function OrgPersonCard({ e }: { e: OrgEmployeeView }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-slate-900">{e.fullName}</p>
-          <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+          <p className="font-medium text-foreground">{e.fullName}</p>
+          <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-foreground">
               {e.orgRoleLabel}
             </span>
             {e.position ? <span>{e.position}</span> : null}
@@ -179,7 +179,7 @@ function OrgPersonCard({ e }: { e: OrgEmployeeView }) {
             ) : null}
             {e.managerName ? <span>Mudir: {e.managerName}</span> : null}
           </p>
-          <p className="mt-1 text-[11px] text-slate-400">
+          <p className="mt-1 text-[11px] text-muted-foreground">
             Smena: {e.shiftDisplay}
             {e.hiredAt ? ` · Ishga kirgan: ${e.hiredAt}` : ""}
           </p>
@@ -210,14 +210,14 @@ function Section({
 }) {
   return (
     <section className="space-y-3">
-      <h3 className="flex items-center gap-2 text-base font-semibold text-slate-900">
+      <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
         {title}
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-muted-foreground">
           {count}
         </span>
       </h3>
       {count === 0 ? (
-        <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-4 py-6 text-center text-sm text-slate-400">
+        <p className="rounded-xl border border-dashed border-border bg-muted/50 px-4 py-6 text-center text-sm text-muted-foreground">
           {empty}
         </p>
       ) : (
@@ -234,7 +234,7 @@ function PersonChip({
   name: string;
   onClick?: () => void;
 }) {
-  if (!onClick) return <span className="font-medium text-slate-700">{name}</span>;
+  if (!onClick) return <span className="font-medium text-foreground">{name}</span>;
   return (
     <button
       type="button"
@@ -256,11 +256,11 @@ function TaskRow({
   onOpenPerson?: (id: number) => void;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+    <div className="rounded-xl border border-border bg-card px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-slate-900">{task.title}</p>
-          <p className="mt-0.5 text-xs text-slate-500">
+          <p className="font-medium text-foreground">{task.title}</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
             Kimga:{" "}
             <PersonChip
               name={task.assigneeName}
@@ -282,14 +282,14 @@ function TaskRow({
             />
           </p>
           {full && task.description ? (
-            <p className="mt-1 text-sm text-slate-600">{task.description}</p>
+            <p className="mt-1 text-sm text-muted-foreground">{task.description}</p>
           ) : null}
           {full && task.completionNote ? (
             <p className="mt-1 text-xs text-emerald-700">Natija: {task.completionNote}</p>
           ) : null}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-foreground">
             {STATUS_LABEL[task.status] || task.status}
           </span>
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -297,7 +297,7 @@ function TaskRow({
           </span>
         </div>
       </div>
-      <p className="mt-2 text-[11px] text-slate-400">Muddat: {formatDue(task.dueAt)}</p>
+      <p className="mt-2 text-[11px] text-muted-foreground">Muddat: {formatDue(task.dueAt)}</p>
     </div>
   );
 }
@@ -417,11 +417,11 @@ function PersonDossier({
     <div className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <Button type="button" variant="ghost" onClick={onBack} className="-ml-2 mb-2 gap-2 text-slate-600">
+          <Button type="button" variant="ghost" onClick={onBack} className="-ml-2 mb-2 gap-2 text-muted-foreground">
             <ArrowLeft className="h-4 w-4" /> Kuzatuvga qaytish
           </Button>
           <div className="flex items-center gap-3">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#0b3a5c] text-lg font-bold text-white">
+            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary text-lg font-bold text-primary-foreground">
               {p.person.fullName
                 .split(/\s+/)
                 .slice(0, 2)
@@ -430,10 +430,10 @@ function PersonDossier({
                 .toUpperCase()}
             </div>
             <div>
-              <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+              <h1 className="text-2xl font-semibold tracking-tight text-foreground">
                 {p.person.fullName}
               </h1>
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-muted-foreground">
                 {p.person.roleLabel || ROLE_LABELS[p.person.role] || p.person.role}
                 {p.person.departmentName ? ` · ${p.person.departmentName}` : ""}
                 {full && p.person.login ? ` · @${p.person.login}` : ""}
@@ -442,7 +442,7 @@ function PersonDossier({
                 {p.person.status === "active" ? "Faol" : p.person.status}
               </p>
               {p.employee ? (
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   {p.employee.orgRoleLabel}
                   {p.employee.location ? ` · ${p.employee.location}` : ""}
                   {" · "}
@@ -464,7 +464,7 @@ function PersonDossier({
               ) : null}
             </div>
           </div>
-          <p className="mt-2 max-w-2xl text-sm text-slate-500">
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             {isCoordOrMudir
               ? "Shu koordinator/mudirga bog‘liq filiallar, mudirlar, checklist holati, ehtiyojlar va topshiriqlar — to‘liq kuzatuv."
               : "Bo‘lim, vazifalar, vakansiyalar, nomzodlar va suhbatlar — to‘liq ko‘rinish."}
@@ -526,7 +526,7 @@ function PersonDossier({
         )}
       </div>
 
-      <div className="flex flex-wrap gap-2 border-b border-slate-200 pb-2">
+      <div className="flex flex-wrap gap-2 border-b border-border pb-2">
         {tabs.map((t) => (
           <button
             key={t.id}
@@ -535,8 +535,8 @@ function PersonDossier({
             className={cn(
               "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
               tab === t.id
-                ? "bg-[#0b3a5c] text-white"
-                : "bg-slate-100 text-slate-600 hover:bg-slate-200",
+                ? "bg-primary text-primary-foreground"
+                : "bg-slate-100 text-muted-foreground hover:bg-slate-200",
             )}
           >
             {t.label}
@@ -567,12 +567,12 @@ function PersonDossier({
           }))).map((b) => (
             <div
               key={b.managerEmployeeId}
-              className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+              className="rounded-2xl border border-border bg-card p-4 shadow-sm"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-base font-semibold text-slate-900">{b.managerName}</p>
-                  <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                  <p className="text-base font-semibold text-foreground">{b.managerName}</p>
+                  <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     {b.location ? (
                       <span className="inline-flex items-center gap-1">
                         <MapPin className="h-3 w-3" /> {b.location}
@@ -596,14 +596,14 @@ function PersonDossier({
                 ) : null}
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                <div className="rounded-xl bg-slate-50 px-3 py-2">
-                  <p className="text-[11px] uppercase tracking-wide text-slate-400">Checklist</p>
-                  <p className="mt-0.5 text-sm font-semibold text-slate-900">
+                <div className="rounded-xl bg-muted px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-wide text-muted-foreground">Checklist</p>
+                  <p className="mt-0.5 text-sm font-semibold text-foreground">
                     {b.latestAudit
                       ? `${b.latestAudit.scorePercent}% · ${b.latestAudit.visitDate}`
                       : "Tashrif yo‘q"}
                   </p>
-                  <p className="text-[11px] text-slate-500">{b.auditsCount} ta tashrif</p>
+                  <p className="text-[11px] text-muted-foreground">{b.auditsCount} ta tashrif</p>
                 </div>
                 <div className="rounded-xl bg-amber-50/70 px-3 py-2">
                   <p className="text-[11px] uppercase tracking-wide text-amber-700/70">Ehtiyoj</p>
@@ -619,7 +619,7 @@ function PersonDossier({
                 </div>
               </div>
               {b.latestAudit ? (
-                <p className="mt-2 text-xs text-slate-500">
+                <p className="mt-2 text-xs text-muted-foreground">
                   Oxirgi checklist: {b.latestAudit.visitName} · Ha {b.latestAudit.yesCount} / Yo‘q{" "}
                   {b.latestAudit.noCount} (jami {b.latestAudit.totalCount})
                 </p>
@@ -638,17 +638,17 @@ function PersonDossier({
           {audits.map((a) => (
             <div
               key={a.id}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
             >
               <div>
-                <p className="font-medium text-slate-900">
+                <p className="font-medium text-foreground">
                   {a.branchLocation || "Filial"} · {a.managerName || "Mudir"}
                 </p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {a.visitDate} · {a.visitName}
                   {a.createdAt ? ` · ${formatDt(a.createdAt)}` : ""}
                 </p>
-                <p className="mt-1 text-xs text-slate-500">
+                <p className="mt-1 text-xs text-muted-foreground">
                   Ha: {a.yesCount} · Yo‘q: {a.noCount} · Javob: {a.answeredCount}/{a.totalCount}
                 </p>
               </div>
@@ -674,21 +674,21 @@ function PersonDossier({
           {needs.map((n) => (
             <div
               key={n.id}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
             >
               <div>
-                <p className="font-medium text-slate-900">{n.needType}</p>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="font-medium text-foreground">{n.needType}</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {n.branchLocation || "—"}
                   {n.managerName ? ` · ${n.managerName}` : ""}
                 </p>
-                {n.note ? <p className="mt-1 text-sm text-slate-600">{n.note}</p> : null}
-                <p className="mt-1 text-[11px] text-slate-400">
+                {n.note ? <p className="mt-1 text-sm text-muted-foreground">{n.note}</p> : null}
+                <p className="mt-1 text-[11px] text-muted-foreground">
                   Yaratilgan: {formatDt(n.createdAt)}
                   {n.verifiedAt ? ` · Tasdiq: ${formatDt(n.verifiedAt)}` : ""}
                 </p>
               </div>
-              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-700">
+              <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-foreground">
                 {n.statusLabel}
               </span>
             </div>
@@ -699,32 +699,32 @@ function PersonDossier({
       {(tab === "all" || tab === "org") && hasNetwork ? (
         <>
           {p.person.departmentName || p.employee ? (
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-slate-900">
+            <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+              <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-foreground">
                 <Building2 className="h-4 w-4 text-[#0b3a5c]" />
                 Bo‘lim va apteka profili
               </h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Bo‘lim</p>
-                  <p className="font-medium text-slate-900">{p.person.departmentName || "—"}</p>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">Bo‘lim</p>
+                  <p className="font-medium text-foreground">{p.person.departmentName || "—"}</p>
                 </div>
                 {p.employee ? (
                   <>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Org rol</p>
-                      <p className="font-medium text-slate-900">{p.employee.orgRoleLabel}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Org rol</p>
+                      <p className="font-medium text-foreground">{p.employee.orgRoleLabel}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Lavozim</p>
-                      <p className="font-medium text-slate-900">{p.employee.position || "—"}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Lavozim</p>
+                      <p className="font-medium text-foreground">{p.employee.position || "—"}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Filial / joy</p>
-                      <p className="font-medium text-slate-900">{p.employee.location || "—"}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Filial / joy</p>
+                      <p className="font-medium text-foreground">{p.employee.location || "—"}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Holat</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Holat</p>
                       <p>
                         <span
                           className={cn(
@@ -737,23 +737,23 @@ function PersonDossier({
                       </p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Smena</p>
-                      <p className="font-medium text-slate-900">{p.employee.shiftDisplay}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Smena</p>
+                      <p className="font-medium text-foreground">{p.employee.shiftDisplay}</p>
                     </div>
                     <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Ishga kirgan</p>
-                      <p className="font-medium text-slate-900">{p.employee.hiredAt || "—"}</p>
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Ishga kirgan</p>
+                      <p className="font-medium text-foreground">{p.employee.hiredAt || "—"}</p>
                     </div>
                   </>
                 ) : null}
                 {p.reportsTo || p.coordinator ? (
                   <div className="sm:col-span-2">
-                    <p className="text-xs uppercase tracking-wide text-slate-400">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">
                       {p.person.role === "mudir" ? "Koordinator" : "Kimga bo‘ysunadi"}
                     </p>
-                    <p className="font-medium text-slate-900">
+                    <p className="font-medium text-foreground">
                       {(p.coordinator || p.reportsTo)!.fullName}
-                      <span className="ml-2 text-xs font-normal text-slate-500">
+                      <span className="ml-2 text-xs font-normal text-muted-foreground">
                         ({(p.coordinator || p.reportsTo)!.orgRoleLabel}
                         {(p.coordinator || p.reportsTo)!.location
                           ? ` · ${(p.coordinator || p.reportsTo)!.location}`
@@ -776,11 +776,11 @@ function PersonDossier({
               {managers.map((m) => {
                 const under = staffByManager.get(m.id) ?? [];
                 return (
-                  <div key={m.id} className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50/80 p-3">
+                  <div key={m.id} className="space-y-2 rounded-2xl border border-border bg-muted/80 p-3">
                     <OrgPersonCard e={m} />
                     {under.length > 0 ? (
                       <div className="ml-2 space-y-2 border-l-2 border-[#0b3a5c]/20 pl-3">
-                        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                           Shu mudirning xodimlari ({under.length})
                         </p>
                         {under.map((s) => (
@@ -788,7 +788,7 @@ function PersonDossier({
                         ))}
                       </div>
                     ) : (
-                      <p className="px-2 text-xs text-slate-400">
+                      <p className="px-2 text-xs text-muted-foreground">
                         Bu mudir ostida hali farmasevt/stajyor yo‘q
                       </p>
                     )}
@@ -833,12 +833,12 @@ function PersonDossier({
               empty="Mudirlarga topshiriq biriktirilmagan"
             >
               {networkTasks.map((t) => (
-                <div key={t.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div key={t.id} className="rounded-xl border border-border bg-card px-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="font-medium text-slate-900">{t.title}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Mudir: <span className="font-medium text-slate-700">{t.assigneeName}</span>
+                      <p className="font-medium text-foreground">{t.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Mudir: <span className="font-medium text-foreground">{t.assigneeName}</span>
                         {" · "}
                         Kimdan: {t.createdByName}
                       </p>
@@ -850,7 +850,7 @@ function PersonDossier({
                       {t.statusLabel}
                     </span>
                   </div>
-                  <p className="mt-2 text-[11px] text-slate-400">
+                  <p className="mt-2 text-[11px] text-muted-foreground">
                     Muddat: {formatDue(t.dueAt)}
                     {t.completedAt ? ` · Bajarilgan: ${formatDt(t.completedAt)}` : ""}
                   </p>
@@ -865,15 +865,15 @@ function PersonDossier({
             empty="Bu odamga vazifa biriktirilmagan"
           >
             {p.tasksAssigned.map((t) => (
-              <div key={t.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div key={t.id} className="rounded-xl border border-border bg-card px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-slate-900">{t.title}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      Kimdan: <span className="font-medium text-slate-700">{t.createdByName}</span>
+                    <p className="font-medium text-foreground">{t.title}</p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Kimdan: <span className="font-medium text-foreground">{t.createdByName}</span>
                     </p>
                     {t.description ? (
-                      <p className="mt-1 text-sm text-slate-600">{t.description}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{t.description}</p>
                     ) : null}
                     {t.completionNote ? (
                       <p className="mt-1 rounded-lg bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
@@ -882,7 +882,7 @@ function PersonDossier({
                     ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-foreground">
                       {t.statusLabel}
                     </span>
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
@@ -890,7 +890,7 @@ function PersonDossier({
                     </span>
                   </div>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-400">
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
                   <span>Muddat: {formatDue(t.dueAt)}</span>
                   <span>Yaratilgan: {formatDt(t.createdAt)}</span>
                   {t.acceptedAt ? <span>Qabul: {formatDt(t.acceptedAt)}</span> : null}
@@ -907,15 +907,15 @@ function PersonDossier({
               empty="Bu odam boshqalarga vazifa bermagan"
             >
               {p.tasksCreated.map((t) => (
-                <div key={t.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                <div key={t.id} className="rounded-xl border border-border bg-card px-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="font-medium text-slate-900">{t.title}</p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Kimga: <span className="font-medium text-slate-700">{t.assigneeName}</span>
+                      <p className="font-medium text-foreground">{t.title}</p>
+                      <p className="mt-0.5 text-xs text-muted-foreground">
+                        Kimga: <span className="font-medium text-foreground">{t.assigneeName}</span>
                       </p>
                       {t.description ? (
-                        <p className="mt-1 text-sm text-slate-600">{t.description}</p>
+                        <p className="mt-1 text-sm text-muted-foreground">{t.description}</p>
                       ) : null}
                       {t.completionNote ? (
                         <p className="mt-1 text-xs text-emerald-700">Natija: {t.completionNote}</p>
@@ -925,7 +925,7 @@ function PersonDossier({
                       {t.statusLabel}
                     </span>
                   </div>
-                  <p className="mt-2 text-[11px] text-slate-400">Muddat: {formatDue(t.dueAt)}</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">Muddat: {formatDue(t.dueAt)}</p>
                 </div>
               ))}
             </Section>
@@ -942,13 +942,13 @@ function PersonDossier({
           {p.vacancies.map((v) => (
             <div
               key={v.id}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
             >
               <div>
                 <Link href={`/vacancies/${v.id}`} className="font-medium text-[#0b3a5c] hover:underline">
                   {v.title}
                 </Link>
-                <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
+                <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {v.location ? (
                     <span className="inline-flex items-center gap-1">
                       <MapPin className="h-3 w-3" /> {v.location}
@@ -964,7 +964,7 @@ function PersonDossier({
                   v.status === "published"
                     ? "bg-emerald-50 text-emerald-800"
                     : v.status === "closed"
-                      ? "bg-slate-800 text-white"
+                      ? "bg-muted dark:bg-slate-800 text-foreground dark:text-white"
                       : "bg-amber-50 text-amber-800",
                 )}
               >
@@ -980,7 +980,7 @@ function PersonDossier({
           {p.candidates.map((c) => (
             <div
               key={c.id}
-              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white px-4 py-3"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-xl border border-border bg-card px-4 py-3"
             >
               <div>
                 <Link
@@ -989,11 +989,11 @@ function PersonDossier({
                 >
                   {c.fullName}
                 </Link>
-                <p className="mt-0.5 text-xs text-slate-500">
+                <p className="mt-0.5 text-xs text-muted-foreground">
                   {c.vacancyTitle}
                   {c.phone ? ` · ${c.phone}` : ""}
                 </p>
-                <p className="mt-1 text-[11px] text-slate-400">
+                <p className="mt-1 text-[11px] text-muted-foreground">
                   Yangilangan: {formatDt(c.updatedAt)}
                 </p>
               </div>
@@ -1008,7 +1008,7 @@ function PersonDossier({
                       ? "bg-emerald-50 text-emerald-800"
                       : c.status === "rejected"
                         ? "bg-red-50 text-red-700"
-                        : "bg-slate-100 text-slate-700",
+                        : "bg-slate-100 text-foreground",
                   )}
                 >
                   {c.statusLabel}
@@ -1027,7 +1027,7 @@ function PersonDossier({
             empty="Telefon suhbat yo‘q"
           >
             {p.phoneInterviews.map((i) => (
-              <div key={i.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div key={i.id} className="rounded-xl border border-border bg-card px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <Link
@@ -1036,10 +1036,10 @@ function PersonDossier({
                     >
                       {i.candidateName}
                     </Link>
-                    <p className="mt-0.5 text-xs text-slate-500">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       Sana: {i.interviewDate || "—"} · {formatDt(i.createdAt)}
                     </p>
-                    {i.notes ? <p className="mt-1 text-sm text-slate-600">{i.notes}</p> : null}
+                    {i.notes ? <p className="mt-1 text-sm text-muted-foreground">{i.notes}</p> : null}
                     {i.rejectReason ? (
                       <p className="mt-1 text-xs text-red-600">Sabab: {i.rejectReason}</p>
                     ) : null}
@@ -1058,7 +1058,7 @@ function PersonDossier({
             empty="Onlayn suhbat yo‘q"
           >
             {p.onlineInterviews.map((i) => (
-              <div key={i.id} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div key={i.id} className="rounded-xl border border-border bg-card px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <Link
@@ -1067,11 +1067,11 @@ function PersonDossier({
                     >
                       {i.candidateName}
                     </Link>
-                    <p className="mt-0.5 text-xs text-slate-500">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       Sana: {i.interviewDate || "—"}
                       {i.experienceLevel ? ` · ${i.experienceLevel}` : ""}
                     </p>
-                    {i.notes ? <p className="mt-1 text-sm text-slate-600">{i.notes}</p> : null}
+                    {i.notes ? <p className="mt-1 text-sm text-muted-foreground">{i.notes}</p> : null}
                   </div>
                   {i.score != null ? (
                     <span className="rounded-full bg-violet-50 px-2 py-0.5 text-[11px] font-semibold text-violet-800">
@@ -1089,7 +1089,7 @@ function PersonDossier({
             empty="Offline suhbat yo‘q"
           >
             {p.offlineInterviews.map((i) => (
-              <div key={`${i.roleInInterview}-${i.id}`} className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+              <div key={`${i.roleInInterview}-${i.id}`} className="rounded-xl border border-border bg-card px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
                     <Link
@@ -1098,7 +1098,7 @@ function PersonDossier({
                     >
                       {i.candidateName}
                     </Link>
-                    <p className="mt-0.5 text-xs text-slate-500">
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       <Calendar className="mr-1 inline h-3 w-3" />
                       {i.scheduledDate}
                       {i.scheduledTime ? ` ${i.scheduledTime}` : ""}
@@ -1106,7 +1106,7 @@ function PersonDossier({
                       Rol: {i.roleInInterview === "hr" ? "HR" : "Trener"}
                     </p>
                     {i.resultNotes ? (
-                      <p className="mt-1 text-sm text-slate-600">{i.resultNotes}</p>
+                      <p className="mt-1 text-sm text-muted-foreground">{i.resultNotes}</p>
                     ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-1 text-[11px]">
@@ -1157,7 +1157,7 @@ export default function KuzatuvPage() {
   }, [user, allowed, setLocation]);
 
   if (!user || !allowed) {
-    return <div className="p-8 text-center text-slate-500">Ruxsat yo‘q…</div>;
+    return <div className="p-8 text-center text-muted-foreground">Ruxsat yo‘q…</div>;
   }
 
   if (selectedPersonId != null) {
@@ -1180,12 +1180,12 @@ export default function KuzatuvPage() {
       <div>
         <div className="mb-1 flex items-center gap-2 text-[#0b3a5c]">
           <Eye className="h-5 w-5" />
-          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-slate-500">
+          <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
             {full ? "HR Direktor" : "HR Auditor"}
           </span>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 sm:text-3xl">Kuzatuv</h1>
-        <p className="mt-1 max-w-2xl text-sm text-slate-500">
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Kuzatuv</h1>
+        <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
           Istalgan xodimni ismi, lavozimi yoki bo‘limi bo‘yicha toping — tanlanganda bo‘limi,
           apteka tarmog‘idagi mudir/farmasevt/stajyorlari va holatlari, vazifalar, vakansiyalar
           va suhbatlar to‘liq ochiladi.
@@ -1193,16 +1193,16 @@ export default function KuzatuvPage() {
       </div>
 
       {/* Xodim tanlash */}
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+      <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-slate-900">Xodimni tanlash</h2>
-          <span className="text-xs text-slate-400">
+          <h2 className="text-base font-semibold text-foreground">Xodimni tanlash</h2>
+          <span className="text-xs text-muted-foreground">
             {peopleLoading ? "Yuklanmoqda…" : `${people.length} ta xodim`}
           </span>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
           <div className="relative min-w-0 flex-1">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={peopleQ}
               onChange={(e) => setPeopleQ(e.target.value)}
@@ -1225,7 +1225,7 @@ export default function KuzatuvPage() {
           </Select>
         </div>
 
-        <div className="mt-4 max-h-[360px] space-y-1 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/60 p-1.5">
+        <div className="mt-4 max-h-[360px] space-y-1 overflow-y-auto rounded-xl border border-slate-100 bg-muted/60 p-1.5">
           {peopleLoading ? (
             <div className="space-y-2 p-2">
               {Array.from({ length: 5 }).map((_, i) => (
@@ -1233,7 +1233,7 @@ export default function KuzatuvPage() {
               ))}
             </div>
           ) : people.length === 0 ? (
-            <p className="px-4 py-8 text-center text-sm text-slate-400">
+            <p className="px-4 py-8 text-center text-sm text-muted-foreground">
               Mos xodim topilmadi
             </p>
           ) : (
@@ -1242,9 +1242,9 @@ export default function KuzatuvPage() {
                 key={p.id}
                 type="button"
                 onClick={() => setSelectedPersonId(p.id)}
-                className="flex w-full items-center gap-3 rounded-xl bg-white px-3 py-3 text-left shadow-sm ring-1 ring-slate-200/70 transition hover:ring-[#0b3a5c]/40 hover:shadow-md"
+                className="flex w-full items-center gap-3 rounded-xl bg-card px-3 py-3 text-left shadow-sm ring-1 ring-slate-200/70 transition hover:ring-[#0b3a5c]/40 hover:shadow-md"
               >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-[#0b3a5c] text-sm font-bold text-white">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-sm font-bold text-primary-foreground">
                   {p.fullName
                     .split(/\s+/)
                     .slice(0, 2)
@@ -1253,13 +1253,13 @@ export default function KuzatuvPage() {
                     .toUpperCase()}
                 </span>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-semibold text-slate-900">{p.fullName}</span>
-                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
-                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-700">
+                  <span className="block truncate font-semibold text-foreground">{p.fullName}</span>
+                  <span className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                    <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-foreground">
                       {p.roleLabel}
                     </span>
                     {p.departmentName ? (
-                      <span className="inline-flex items-center gap-1 text-slate-600">
+                      <span className="inline-flex items-center gap-1 text-muted-foreground">
                         <Building2 className="h-3 w-3" />
                         {p.departmentName}
                       </span>
@@ -1340,11 +1340,11 @@ export default function KuzatuvPage() {
           </div>
 
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-slate-900">Rekruterlar ishi</h2>
-            <p className="text-xs text-slate-500">Qatorni bosing — to‘liq dossier ochiladi</p>
-            <div className="overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm">
+            <h2 className="text-lg font-semibold text-foreground">Rekruterlar ishi</h2>
+            <p className="text-xs text-muted-foreground">Qatorni bosing — to‘liq dossier ochiladi</p>
+            <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
               <table className="min-w-full text-left text-sm">
-                <thead className="border-b bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-4 py-3 font-medium">Rekruter</th>
                     <th className="px-4 py-3 font-medium">Vakansiya</th>
@@ -1358,7 +1358,7 @@ export default function KuzatuvPage() {
                 <tbody>
                   {data.recruiters.length === 0 ? (
                     <tr>
-                      <td colSpan={full ? 7 : 6} className="px-4 py-8 text-center text-slate-400">
+                      <td colSpan={full ? 7 : 6} className="px-4 py-8 text-center text-muted-foreground">
                         Rekruter topilmadi
                       </td>
                     </tr>
@@ -1371,13 +1371,13 @@ export default function KuzatuvPage() {
                       >
                         <td className="px-4 py-3 font-medium text-[#0b3a5c]">
                           {r.fullName}
-                          <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
+                          <span className="mt-0.5 block text-[11px] font-normal text-muted-foreground">
                             Rekruter · Batafsil →
                           </span>
                         </td>
                         <td className="px-4 py-3">
                           {r.vacanciesPublished}
-                          <span className="text-slate-400"> / {r.vacanciesTotal}</span>
+                          <span className="text-muted-foreground"> / {r.vacanciesTotal}</span>
                         </td>
                         <td className="px-4 py-3">{r.candidatesActive}</td>
                         <td className="px-4 py-3">{r.phoneInterviews}</td>
@@ -1388,7 +1388,7 @@ export default function KuzatuvPage() {
                           <span className="text-emerald-700">{r.tasksDone}</span>
                         </td>
                         {full ? (
-                          <td className="px-4 py-3 text-xs text-slate-500">
+                          <td className="px-4 py-3 text-xs text-muted-foreground">
                             rad: {r.candidatesRejected ?? 0}
                             {r.offlineInterviews != null ? ` · offline: ${r.offlineInterviews}` : ""}
                             {r.vacanciesClosed != null ? ` · yopilgan: ${r.vacanciesClosed}` : ""}
@@ -1404,17 +1404,17 @@ export default function KuzatuvPage() {
 
           {full && data.pipeline && data.pipeline.length > 0 ? (
             <section className="space-y-3">
-              <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+              <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
                 <Kanban className="h-5 w-5" /> Pipeline
               </h2>
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {data.pipeline.map((p) => (
                   <div
                     key={p.stage}
-                    className="rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm"
+                    className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm"
                   >
-                    <p className="text-xs text-slate-500">{STAGE_LABELS[p.stage] || p.stage}</p>
-                    <p className="mt-1 text-xl font-semibold text-slate-900">{p.count}</p>
+                    <p className="text-xs text-muted-foreground">{STAGE_LABELS[p.stage] || p.stage}</p>
+                    <p className="mt-1 text-xl font-semibold text-foreground">{p.count}</p>
                   </div>
                 ))}
               </div>
@@ -1422,14 +1422,14 @@ export default function KuzatuvPage() {
           ) : null}
 
           <section className="space-y-3">
-            <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-900">
+            <h2 className="flex items-center gap-2 text-lg font-semibold text-foreground">
               <FileText className="h-5 w-5" />
               Vazifalar {full ? "(to‘liq)" : "(so‘nggi)"}
             </h2>
-            <p className="text-xs text-slate-500">Ismni bosing — shu odamning dossieri ochiladi</p>
+            <p className="text-xs text-muted-foreground">Ismni bosing — shu odamning dossieri ochiladi</p>
             <div className="space-y-2">
               {data.tasks.length === 0 ? (
-                <p className="rounded-xl border border-dashed border-slate-200 p-6 text-center text-sm text-slate-400">
+                <p className="rounded-xl border border-dashed border-border p-6 text-center text-sm text-muted-foreground">
                   Vazifa yo‘q
                 </p>
               ) : (

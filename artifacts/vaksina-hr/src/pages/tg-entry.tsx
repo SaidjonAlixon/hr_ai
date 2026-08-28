@@ -215,11 +215,11 @@ export default function TgEntryPage() {
   };
 
   return (
-    <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-slate-50 px-6 text-center">
+    <div className="min-h-[100dvh] flex flex-col items-center justify-center bg-muted px-6 text-center">
       {phase !== "error" ? (
         <>
           <Loader2 className="h-10 w-10 animate-spin text-[#0b3a5c]" />
-          <p className="mt-4 text-sm font-medium text-slate-800">
+          <p className="mt-4 text-sm font-medium text-foreground">
             Telegram orqali kirilmoqda…
           </p>
           <p className="mt-1 text-xs text-muted-foreground">Sessiyangiz tekshirilmoqda</p>
@@ -227,13 +227,13 @@ export default function TgEntryPage() {
       ) : (
         <>
           <p className="text-base font-semibold text-rose-700">Kirish amalga oshmadi</p>
-          <p className="mt-2 max-w-sm text-sm text-slate-600">{error}</p>
+          <p className="mt-2 max-w-sm text-sm text-muted-foreground">{error}</p>
           <div className="mt-6 flex w-full max-w-xs flex-col gap-2">
             <button
               type="button"
               disabled={retrying}
               onClick={() => void onRetryInitData()}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-[#0b3a5c] px-4 py-2.5 text-sm font-medium text-white disabled:opacity-60"
+              className="inline-flex items-center justify-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground disabled:opacity-60"
             >
               {retrying ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -245,13 +245,13 @@ export default function TgEntryPage() {
             <button
               type="button"
               onClick={openBotForNewToken}
-              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#0b3a5c]/30 bg-white px-4 py-2.5 text-sm font-medium text-[#0b3a5c]"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#0b3a5c]/30 bg-card px-4 py-2.5 text-sm font-medium text-[#0b3a5c]"
             >
               Yangi token / botga o‘tish
             </button>
             <a
               href="/login"
-              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-slate-600 underline-offset-2 hover:underline"
+              className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground underline-offset-2 hover:underline"
             >
               Oddiy login
             </a>

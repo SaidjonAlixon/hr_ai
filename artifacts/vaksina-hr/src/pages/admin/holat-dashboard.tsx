@@ -62,26 +62,26 @@ function PersonCard({
   onEdit?: () => void;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-3">
+    <div className="rounded-xl border border-border bg-card p-3">
       <div className="flex items-start justify-between gap-2">
         <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0b3a5c]">{role}</p>
         {canEdit && p.employeeId != null && onEdit ? (
           <button
             type="button"
             onClick={onEdit}
-            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-[#0b3a5c] hover:bg-slate-100"
+            className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-[#0b3a5c] hover:bg-muted"
           >
             <Pencil className="h-3 w-3" />
             Tahrirlash
           </button>
         ) : null}
       </div>
-      <p className="mt-1 font-semibold text-slate-900">{p.fullName}</p>
-      <p className="mt-1 flex items-center gap-1.5 text-sm text-slate-600">
-        <Phone className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+      <p className="mt-1 font-semibold text-foreground">{p.fullName}</p>
+      <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
+        <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         {p.phone || "Telefon yo‘q"}
       </p>
-      <p className="mt-0.5 text-xs text-slate-500">
+      <p className="mt-0.5 text-xs text-muted-foreground">
         {p.login ? `Login: ${p.login}` : "Login yo‘q"}
         {p.employmentStatusLabel && p.employmentStatusLabel !== "—"
           ? ` · ${p.employmentStatusLabel}`
@@ -232,17 +232,17 @@ export function HolatDashboardPanel({
 
   return (
     <div className="space-y-4">
-      <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5">
+      <section className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="min-w-0">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Koordinator</p>
-          <p className="truncate text-lg font-semibold text-slate-900">{pickerLabel}</p>
-          <p className="mt-0.5 text-sm text-slate-500">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">Koordinator</p>
+          <p className="truncate text-lg font-semibold text-foreground">{pickerLabel}</p>
+          <p className="mt-0.5 text-sm text-muted-foreground">
             Filial kartasini bosing — mudir, farmasevt va stajyor ochiladi.
           </p>
         </div>
         <Button
           type="button"
-          className="h-11 shrink-0 gap-2 rounded-xl bg-[#0b3a5c] px-4 text-white hover:bg-[#0f4a73]"
+          className="h-11 shrink-0 gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
           onClick={() => setPickerOpen(true)}
         >
           Koordinator tanlash
@@ -256,7 +256,7 @@ export function HolatDashboardPanel({
             <DialogTitle>Koordinator tanlang</DialogTitle>
           </DialogHeader>
           <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
             <Input
               className="pl-8"
               placeholder="Ism yozing…"
@@ -272,7 +272,7 @@ export function HolatDashboardPanel({
                 onClick={() => pickCoord("all")}
                 className={cn(
                   "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm",
-                  effectiveKey === "all" ? "bg-[#0b3a5c] text-white" : "hover:bg-slate-50",
+                  effectiveKey === "all" ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                 )}
               >
                 <span className="font-medium">Barcha koordinatorlar</span>
@@ -289,32 +289,32 @@ export function HolatDashboardPanel({
                   onClick={() => pickCoord(key)}
                   className={cn(
                     "flex w-full items-center justify-between rounded-xl px-3 py-2.5 text-left text-sm",
-                    active ? "bg-[#0b3a5c] text-white" : "hover:bg-slate-50",
+                    active ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                   )}
                 >
                   <span className="min-w-0 truncate font-medium">{c.fullName}</span>
-                  <span className={cn("shrink-0 text-xs", active ? "text-white/80" : "text-slate-500")}>
+                  <span className={cn("shrink-0 text-xs", active ? "text-white/80" : "text-muted-foreground")}>
                     {c.mudirCount ?? 0} filial
                   </span>
                 </button>
               );
             })}
-            {!coords.length ? <p className="px-2 py-6 text-center text-sm text-slate-400">Topilmadi</p> : null}
+            {!coords.length ? <p className="px-2 py-6 text-center text-sm text-muted-foreground">Topilmadi</p> : null}
           </div>
         </DialogContent>
       </Dialog>
 
       {!effectiveKey ? (
-        <div className="rounded-2xl border border-dashed bg-slate-50 px-4 py-12 text-center">
-          <Users className="mx-auto mb-2 h-8 w-8 text-slate-300" />
-          <p className="font-medium text-slate-700">Avval koordinatorni tanlang</p>
-          <p className="mt-1 text-sm text-slate-500">«Koordinator tanlash» tugmasini bosing.</p>
+        <div className="rounded-2xl border border-dashed bg-muted px-4 py-12 text-center">
+          <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground" />
+          <p className="font-medium text-foreground">Avval koordinatorni tanlang</p>
+          <p className="mt-1 text-sm text-muted-foreground">«Koordinator tanlash» tugmasini bosing.</p>
         </div>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="rounded-xl border bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase text-slate-400">Filial</p>
+            <div className="rounded-xl border bg-card p-3">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Filial</p>
               <p className="mt-0.5 text-2xl font-semibold tabular-nums">{branches.length}</p>
             </div>
             <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
@@ -325,10 +325,10 @@ export function HolatDashboardPanel({
               <p className="text-[10px] font-semibold uppercase text-amber-800">Jamoa yo‘q</p>
               <p className="mt-0.5 text-2xl font-semibold tabular-nums text-amber-950">{branches.length - withTeam}</p>
             </div>
-            <div className="rounded-xl border bg-white p-3">
-              <p className="text-[10px] font-semibold uppercase text-slate-400">Xodimlar</p>
+            <div className="rounded-xl border bg-card p-3">
+              <p className="text-[10px] font-semibold uppercase text-muted-foreground">Xodimlar</p>
               <p className="mt-0.5 text-2xl font-semibold tabular-nums">{farm + intern}</p>
-              <p className="text-[11px] text-slate-500">{farm} farmasevt · {intern} stajyor</p>
+              <p className="text-[11px] text-muted-foreground">{farm} farmasevt · {intern} stajyor</p>
             </div>
           </div>
 
@@ -336,11 +336,11 @@ export function HolatDashboardPanel({
             <h2 className="mb-1 flex items-center gap-2 text-base font-semibold">
               <Store className="h-4 w-4" /> Filiallar
             </h2>
-            <p className="mb-3 text-sm text-slate-500">
+            <p className="mb-3 text-sm text-muted-foreground">
               Kartani bosing — jamoa ro‘yxati ochiladi. Yashil: xodim bor. Sariq: yo‘q.
             </p>
             {branches.length === 0 ? (
-              <p className="rounded-2xl border bg-white py-10 text-center text-sm text-slate-400">
+              <p className="rounded-2xl border bg-card py-10 text-center text-sm text-muted-foreground">
                 Bu koordinatorda filial yo‘q
               </p>
             ) : (
@@ -355,12 +355,12 @@ export function HolatDashboardPanel({
                       className={cn(
                         "rounded-xl border p-3.5 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
                         has
-                          ? "border-emerald-200 bg-white hover:border-emerald-400"
+                          ? "border-emerald-200 bg-card hover:border-emerald-400"
                           : "border-amber-200 bg-amber-50/50 hover:border-amber-400",
                       )}
                     >
                       <div className="flex items-start justify-between gap-2">
-                        <p className="text-sm font-semibold leading-snug text-slate-900">
+                        <p className="text-sm font-semibold leading-snug text-foreground">
                           {mudir.branch || "Filial"}
                         </p>
                         <span
@@ -373,10 +373,10 @@ export function HolatDashboardPanel({
                         </span>
                       </div>
                       {effectiveKey === "all" ? (
-                        <p className="mt-1 text-[11px] text-slate-500">{coordName}</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{coordName}</p>
                       ) : null}
-                      <p className="mt-1.5 text-xs text-slate-600">Mudir: {mudir.fullName}</p>
-                      <p className="mt-2 text-[11px] font-medium text-slate-500">
+                      <p className="mt-1.5 text-xs text-muted-foreground">Mudir: {mudir.fullName}</p>
+                      <p className="mt-2 text-[11px] font-medium text-muted-foreground">
                         Farmasevt {mudir.pharmacistCount ?? 0} · Stajyor {mudir.internCount ?? 0} · bosib oching
                       </p>
                     </button>
@@ -396,7 +396,7 @@ export function HolatDashboardPanel({
           {openMudir && detail ? (
             <div className="space-y-4">
               {effectiveKey === "all" ? (
-                <p className="text-xs text-slate-500">Koordinator: {openCoordName}</p>
+                <p className="text-xs text-muted-foreground">Koordinator: {openCoordName}</p>
               ) : null}
               <PersonCard
                 p={openMudir}
@@ -405,7 +405,7 @@ export function HolatDashboardPanel({
                 onEdit={() => openPersonEdit(openMudir, "Mudir")}
               />
               <div>
-                <p className="mb-2 text-sm font-semibold text-slate-800">
+                <p className="mb-2 text-sm font-semibold text-foreground">
                   Farmasevtlar ({detail.farmasevts.length})
                 </p>
                 {detail.farmasevts.length ? (
@@ -427,7 +427,7 @@ export function HolatDashboardPanel({
                 )}
               </div>
               <div>
-                <p className="mb-2 text-sm font-semibold text-slate-800">
+                <p className="mb-2 text-sm font-semibold text-foreground">
                   Stajyorlar ({detail.interns.length})
                 </p>
                 {detail.interns.length ? (
@@ -450,7 +450,7 @@ export function HolatDashboardPanel({
               </div>
               {detail.other.length ? (
                 <div>
-                  <p className="mb-2 text-sm font-semibold text-slate-800">Boshqa xodimlar</p>
+                  <p className="mb-2 text-sm font-semibold text-foreground">Boshqa xodimlar</p>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {detail.other.map((s) => (
                       <PersonCard

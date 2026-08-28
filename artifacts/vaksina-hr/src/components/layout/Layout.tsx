@@ -47,9 +47,10 @@ import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees } from '@/lib/roles';
+import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -97,7 +98,7 @@ const NAV_SECTIONS: {
     label: 'Asosiy',
     accent: 'bg-sky-400',
     line: 'border-sky-400/55',
-    chip: 'text-sky-300',
+    chip: 'text-sky-700 dark:text-sky-300',
     paths: ['/dashboard', '/kirish', '/chat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it', '/texnik'],
   },
   {
@@ -105,23 +106,37 @@ const NAV_SECTIONS: {
     label: 'Mening ishim',
     accent: 'bg-amber-400',
     line: 'border-amber-400/55',
-    chip: 'text-amber-300',
+    chip: 'text-amber-700 dark:text-amber-300',
     paths: ['/vazifalar', '/eslatmalar'],
   },
   {
-    id: 'hr',
-    label: 'HR va kadrlar',
+    id: 'requests',
+    label: 'Arizalar',
+    accent: 'bg-blue-400',
+    line: 'border-blue-400/55',
+    chip: 'text-blue-700 dark:text-blue-300',
+    paths: ['/requests'],
+  },
+  {
+    id: 'staff',
+    label: 'Xodimlar',
+    accent: 'bg-violet-400',
+    line: 'border-violet-400/55',
+    chip: 'text-violet-700 dark:text-violet-300',
+    paths: ['/employees'],
+  },
+  {
+    id: 'recruitment',
+    label: 'Ishga qabul',
     accent: 'bg-indigo-400',
     line: 'border-indigo-400/55',
-    chip: 'text-indigo-300',
+    chip: 'text-indigo-700 dark:text-indigo-300',
     paths: [
-      '/requests',
       '/vacancies',
       '/candidates',
       '/interviews',
       '/pipeline',
       '/internships',
-      '/employees',
     ],
   },
   {
@@ -129,15 +144,15 @@ const NAV_SECTIONS: {
     label: 'Davomat',
     accent: 'bg-teal-400',
     line: 'border-teal-400/55',
-    chip: 'text-teal-300',
-    paths: ['/davomat-face', '/davomat', '/davomat-uzoq', '/smena-filial', '/checklist-holati'],
+    chip: 'text-teal-700 dark:text-teal-300',
+    paths: ['/davomat/analytics', '/davomat-face', '/davomat', '/davomat-uzoq', '/smena-filial', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
     label: "Apteka tarmog'i",
     accent: 'bg-emerald-400',
     line: 'border-emerald-400/55',
-    chip: 'text-emerald-300',
+    chip: 'text-emerald-700 dark:text-emerald-300',
     paths: ['/pharmacy-network', '/checklist', '/ehtiyoj'],
   },
   {
@@ -145,17 +160,21 @@ const NAV_SECTIONS: {
     label: 'Sozlamalar',
     accent: 'bg-rose-400',
     line: 'border-rose-400/55',
-    chip: 'text-rose-300',
+    chip: 'text-rose-700 dark:text-rose-300',
     paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces'],
   },
 ];
 
-function groupNavItems(items: NavItem[]): NavSection[] {
+function groupNavItems(items: NavItem[], role?: string): NavSection[] {
   const byPath = new Map(items.map((item) => [item.path, item]));
   const used = new Set<string>();
   const groups: NavSection[] = [];
   for (const sec of NAV_SECTIONS) {
-    const list = sec.paths
+    const paths =
+      role === 'director' && sec.id === 'attendance'
+        ? ['/davomat', '/davomat/analytics', '/smena-filial', '/checklist-holati', '/davomat-face']
+        : sec.paths;
+    const list = paths
       .map((path) => byPath.get(path))
       .filter((item): item is NavItem => !!item);
     if (!list.length) continue;
@@ -176,7 +195,7 @@ function groupNavItems(items: NavItem[]): NavSection[] {
       label: 'Boshqa',
       accent: 'bg-slate-400',
       line: 'border-slate-400/55',
-      chip: 'text-slate-300',
+      chip: 'text-muted-foreground',
       items: rest,
     });
   }
@@ -196,6 +215,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/vacancies')) return '/vacancies';
   if (path.startsWith('/employees')) return '/employees';
   if (path.startsWith('/smena-filial')) return '/smena-filial';
+  if (path.startsWith('/davomat/analytics')) return '/davomat/analytics';
   if (path.startsWith('/davomat-face')) return '/davomat-face';
   if (path.startsWith('/davomat-uzoq')) return '/davomat-uzoq';
   if (path.startsWith('/davomat')) return '/davomat';
@@ -551,6 +571,17 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (isHrRecruitmentPath(location) && !canSeeHrRecruitment(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/reviziya') && !canViewReviziya(user.role)) {
+      setLocation('/dashboard');
+    }
+    if (
+      user.role === 'director' &&
+      (location.startsWith('/it') ||
+        location.startsWith('/texnik') ||
+        location.startsWith('/davomat-uzoq'))
+    ) {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/employees') && !canViewEmployees(user.role)) {
       setLocation('/dashboard');
     }
@@ -579,6 +610,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const chatNav = { name: 'Chat', path: '/chat', icon: MessageCircle };
   const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
+  const davomatAnalyticsNav = { name: 'Davomat tahlili', path: '/davomat/analytics', icon: BarChart3 };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
   const davomatFarNav = { name: 'Masofaviy', path: '/davomat-uzoq', icon: MapPin };
@@ -612,7 +644,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const at = orgIdx >= 0 ? orgIdx + 1 : next.length;
       next = [...next.slice(0, at), reviziyaNav, ...next.slice(at)];
     }
-    if ((user.role === 'admin' || user.role === 'director' || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
+    if (canViewDavomat(user.role) && !next.some((i) => i.path === '/davomat/analytics')) {
+      const davIdx = next.findIndex((i) => i.path === '/davomat');
+      const at = davIdx >= 0 ? davIdx : next.length;
+      next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
+    }
+    if ((user.role === 'admin' || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
       next = [...next, itNav, texnikNav];
     }
     return next;
@@ -728,15 +765,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       chatNav,
       orgNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
-      { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       hisobNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
-      davomatFarNav,
-      davomatFaceNav,
+      davomatAnalyticsNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
+      davomatFaceNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
@@ -744,9 +779,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
-      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
-      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     hr: hrMenejerNav,
     hr_menejer: hrMenejerNav,
@@ -974,7 +1006,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const navSections = groupNavItems(navItems);
+  const navSections = groupNavItems(navItems, user.role);
   const pinnedSet = new Set(pinnedIds);
 
   const togglePin = (id: string) => {
@@ -997,9 +1029,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           className={cn(
             'group relative flex items-center gap-3 rounded-xl cursor-pointer transition-all duration-200',
             opts.nested ? 'px-3 py-2.5 md:py-2' : 'px-3 py-3',
-            active
-              ? 'bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)]'
-              : 'text-white/75 hover:bg-white/[0.07] hover:text-white active:scale-[0.99]',
+            active ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item active:scale-[0.99]',
           )}
         >
           {active ? (
@@ -1014,7 +1044,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             <item.icon
               className={cn(
                 'h-5 w-5 min-w-[20px] transition-colors',
-                active ? 'text-white' : 'text-white/55 group-hover:text-white/90',
+                active ? 'text-sidebar-foreground dark:text-white' : 'text-sidebar-foreground/55 group-hover:text-sidebar-foreground dark:text-white/55 dark:group-hover:text-white/90',
               )}
             />
             {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} />}
@@ -1057,9 +1087,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           key={section.id}
           className={cn(
             'mb-1.5 overflow-hidden rounded-2xl transition-all duration-200',
-            open
-              ? 'bg-gradient-to-b from-white/[0.08] to-white/[0.03] ring-1 ring-white/10 shadow-[0_8px_24px_-16px_rgba(0,0,0,0.55)]'
-              : 'hover:bg-white/[0.04]',
+            open ? 'app-sidebar-section-open' : 'app-sidebar-section-closed',
           )}
         >
           <div className="flex items-center gap-0.5 pr-1.5">
@@ -1070,7 +1098,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               }
               className={cn(
                 'flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left md:py-2',
-                hasActive || open ? section.chip : 'text-white/45',
+                hasActive || open ? section.chip : 'text-muted-foreground dark:text-white/45',
               )}
             >
               <span className={cn('h-5 w-1 shrink-0 rounded-full shadow-sm', section.accent)} />
@@ -1084,7 +1112,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               ) : null}
               <ChevronDown
                 className={cn(
-                  'h-3.5 w-3.5 shrink-0 text-white/40 transition-transform duration-200',
+                  'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 dark:text-white/40',
                   open && 'rotate-180',
                 )}
               />
@@ -1098,8 +1126,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 className={cn(
                   'shrink-0 rounded-lg p-1.5 transition-colors',
                   pinned
-                    ? 'bg-amber-400/20 text-amber-300'
-                    : 'text-white/25 hover:bg-white/10 hover:text-white/65',
+                    ? 'bg-amber-400/20 text-amber-700 dark:text-amber-300'
+                    : 'text-muted-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground dark:text-white/25 dark:hover:bg-white/10 dark:hover:text-white/65',
                 )}
               >
                 <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
@@ -1107,7 +1135,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             ) : null}
           </div>
           {open ? (
-            <div className="mb-2 ml-3.5 mr-2 flex flex-col gap-0.5 border-l border-white/10 pl-2">
+            <div className="mb-2 ml-3.5 mr-2 flex flex-col gap-0.5 border-l border-sidebar-border pl-2 dark:border-white/10">
               {section.items.map((item) =>
                 renderNavItem(item, { ...opts, nested: true, accentDot: section.accent }),
               )}
@@ -1118,13 +1146,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     });
 
   return (
-    <div className="flex h-[100dvh] bg-[#f4f6f9] overflow-hidden">
+    <div className="flex h-[100dvh] bg-background overflow-hidden">
       {/* Mobil: fon (overlay) */}
       {mobileOpen ? (
         <button
           type="button"
           aria-label="Menyuni yopish"
-          className="fixed inset-0 z-40 bg-[#06101c]/65 backdrop-blur-[2px] md:hidden"
+          className="fixed inset-0 z-40 bg-foreground/30 backdrop-blur-[2px] dark:bg-[#06101c]/65 md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       ) : null}
@@ -1132,41 +1160,37 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {/* Sidebar: mobilda drawer, desktopda doimiy */}
       <aside
         className={cn(
-          'text-sidebar-foreground flex flex-col transition-[transform,width] duration-300 ease-out',
+          'app-sidebar text-sidebar-foreground flex flex-col transition-[transform,width] duration-300 ease-out',
           'fixed inset-y-0 left-0 z-50 w-[min(19.5rem,92vw)]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           'md:static md:z-auto md:translate-x-0',
           desktopCollapsed ? 'md:w-[4.75rem]' : 'md:w-[16.5rem]',
-          'border-r border-white/[0.06] shadow-[8px_0_40px_-20px_rgba(0,0,0,0.55)]',
+          'border-r border-sidebar-border shadow-sm dark:border-white/[0.06] dark:shadow-[8px_0_40px_-20px_rgba(0,0,0,0.55)]',
           'rounded-none md:rounded-none',
           mobileOpen && 'rounded-r-[1.35rem]',
         )}
-        style={{
-          background:
-            'linear-gradient(180deg, #0a1728 0%, #081323 42%, #070f1c 100%)',
-        }}
       >
-        <div className="relative shrink-0 overflow-hidden border-b border-white/[0.06] px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] pb-3.5 md:px-3 md:pt-4">
+        <div className="relative shrink-0 overflow-hidden border-b border-sidebar-border px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] pb-3.5 md:px-3 md:pt-4 dark:border-white/[0.06]">
           <div
-            className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-sky-500/15 blur-2xl"
+            className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-primary/10 blur-2xl dark:bg-sky-500/15"
             aria-hidden
           />
           <div className="relative flex items-center justify-between gap-2">
             <div className={cn('min-w-0', desktopCollapsed && 'md:hidden')}>
-              <p className="text-[15px] font-bold tracking-tight text-white">VAKSINA MED</p>
-              <p className="mt-0.5 text-[11px] font-medium tracking-wide text-sky-200/55">
+              <p className="text-[15px] font-bold tracking-tight text-sidebar-foreground dark:text-white">VAKSINA MED</p>
+              <p className="mt-0.5 text-[11px] font-medium tracking-wide text-sidebar-foreground/60 dark:text-sky-200/55">
                 HR platforma
               </p>
             </div>
             {desktopCollapsed ? (
-              <div className="mx-auto hidden h-9 w-9 items-center justify-center rounded-xl bg-white/10 text-[11px] font-bold text-sky-200 md:flex">
+              <div className="mx-auto hidden h-9 w-9 items-center justify-center rounded-xl bg-sidebar-accent text-[11px] font-bold text-primary dark:bg-white/10 dark:text-sky-200 md:flex">
                 VM
               </div>
             ) : null}
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
-              className="rounded-xl p-2 text-white/70 hover:bg-white/10 hover:text-white md:hidden"
+              className="rounded-xl p-2 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground md:hidden dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
               aria-label="Yopish"
             >
               <X className="h-5 w-5" />
@@ -1189,10 +1213,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </nav>
 
-        <div className="shrink-0 border-t border-white/[0.07] bg-black/20 p-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] md:p-3">
+        <div className="shrink-0 border-t border-sidebar-border bg-sidebar-accent/40 p-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] md:p-3 dark:border-white/[0.07] dark:bg-black/20">
           <div
             className={cn(
-              'flex items-center gap-2 rounded-2xl bg-white/[0.05] p-2.5 ring-1 ring-white/10',
+              'flex items-center gap-2 rounded-2xl bg-sidebar-accent p-2.5 ring-1 ring-sidebar-border dark:bg-white/[0.05] dark:ring-white/10',
               desktopCollapsed && 'md:justify-center md:p-2',
             )}
           >
@@ -1201,14 +1225,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 type="button"
                 onClick={openProfileEditor}
                 className={cn(
-                  'flex w-full min-w-0 items-center gap-2 rounded-xl text-left transition-colors hover:bg-white/[0.06]',
+                  'flex w-full min-w-0 items-center gap-2 rounded-xl text-left transition-colors hover:bg-sidebar-accent/80 dark:hover:bg-white/[0.06]',
                   desktopCollapsed && 'md:justify-center',
                 )}
                 title="Profilni tahrirlash"
               >
                 <div
                   className={cn(
-                    'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-sky-400/30 to-indigo-500/25 text-xs font-bold text-sky-100 ring-1 ring-white/15',
+                    'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10 text-xs font-bold text-primary ring-1 ring-sidebar-border dark:bg-gradient-to-br dark:from-sky-400/30 dark:to-indigo-500/25 dark:text-sky-100 dark:ring-white/15',
                     desktopCollapsed && 'md:h-8 md:w-8',
                   )}
                 >
@@ -1219,19 +1243,22 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                   )}
                 </div>
                 <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
-                  <span className="block truncate text-sm font-semibold text-white">{user.fullName}</span>
-                  <span className="block truncate text-[11px] capitalize text-white/45">
+                  <span className="block truncate text-sm font-semibold text-sidebar-foreground dark:text-white">{user.fullName}</span>
+                  <span className="block truncate text-[11px] capitalize text-sidebar-foreground/50 dark:text-white/45">
                     {user.role.replace(/_/g, ' ')}
                   </span>
                 </div>
               </button>
-              <div className={cn(desktopCollapsed && 'md:hidden')}>
-                <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
-              </div>
+              {user.role !== 'director' ? (
+                <div className={cn(desktopCollapsed && 'md:hidden')}>
+                  <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
+                </div>
+              ) : null}
             </div>
+            <ThemeToggle variant="sidebar" />
             <button
               onClick={handleLogout}
-              className="shrink-0 rounded-xl p-2 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+              className="shrink-0 rounded-xl p-2 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
               title="Chiqish"
             >
               <LogOut className="h-[18px] w-[18px]" />
@@ -1246,8 +1273,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             <DialogTitle>Profil va parol</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
-            <div className="flex items-center gap-3 rounded-xl border bg-slate-50 p-3">
-              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-200 text-lg font-bold text-slate-600">
+            <div className="flex items-center gap-3 rounded-xl border bg-muted p-3">
+              <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-muted text-lg font-bold text-muted-foreground">
                 {facePhotoUrl ? (
                   <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
@@ -1318,12 +1345,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       </Dialog>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden w-full">
-        <header className="safe-top z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-200/80 bg-white/95 px-3 backdrop-blur-md sm:h-16 sm:px-5">
+        <header className="safe-top z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md sm:h-16 sm:px-5">
           <div className="flex min-w-0 flex-1 items-center gap-2">
             <button
               type="button"
               onClick={toggleNav}
-              className="shrink-0 -ml-1 rounded-xl p-2 text-slate-600 transition-colors hover:bg-slate-100"
+              className="shrink-0 -ml-1 rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
               aria-label="Menyu"
               aria-expanded={mobileOpen || !desktopCollapsed}
             >
@@ -1336,12 +1363,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             />
           </div>
 
-          <div className="flex shrink-0 items-center">
+          <div className="flex shrink-0 items-center gap-0.5">
+            <ThemeToggle />
             <Link href="/notifications">
-              <div className="relative cursor-pointer rounded-full p-2 text-slate-500 transition-colors hover:bg-slate-100">
+              <div className="relative cursor-pointer rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
                 <Bell className="h-5 w-5" />
                 {totalUnread > 0 && (
-                  <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-white">
+                  <span className="absolute right-0.5 top-0.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-none text-destructive-foreground">
                     {totalUnread > 99 ? '99+' : totalUnread}
                   </span>
                 )}
@@ -1371,6 +1399,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               location === '/pipeline' ||
                 location === '/vazifalar' ||
                 location === '/davomat' ||
+                location.startsWith('/davomat/analytics') ||
+                (location === '/dashboard' && user.role === 'director') ||
                 location === '/oylik' ||
                 location === '/hisobkitob' ||
                 location.startsWith('/employees') ||

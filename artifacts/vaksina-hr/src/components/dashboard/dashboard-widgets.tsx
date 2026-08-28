@@ -38,7 +38,7 @@ export function DashTile({
   value,
   icon: Icon,
   loading,
-  color = 'text-slate-600',
+  color = 'text-muted-foreground',
   accent = 'bg-slate-100',
   onClick,
   hint,
@@ -60,7 +60,7 @@ export function DashTile({
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={cn(
-        'group relative flex min-h-[88px] flex-col justify-between rounded-xl border bg-white p-3 text-left transition',
+        'group relative flex min-h-[88px] flex-col justify-between rounded-xl border bg-card p-3 text-left transition',
         onClick && 'cursor-pointer hover:border-[#0b3a5c]/35 hover:shadow-sm active:scale-[0.99]',
         active && 'border-[#0b3a5c]/50 ring-1 ring-[#0b3a5c]/15',
       )}
@@ -78,7 +78,7 @@ export function DashTile({
         {loading ? (
           <Skeleton className="mt-1.5 h-6 w-12" />
         ) : (
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-slate-900">{value ?? '—'}</p>
+          <p className="mt-0.5 text-xl font-bold tabular-nums text-foreground">{value ?? '—'}</p>
         )}
         {hint ? <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{hint}</p> : null}
       </div>
@@ -100,12 +100,12 @@ export function DashActionBar({
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
       {items.map(({ href, title, desc, icon: Icon }) => (
         <Link key={href + title} href={href}>
-          <div className="flex h-full items-center gap-2.5 rounded-xl border bg-white px-3 py-2.5 transition hover:border-[#0b3a5c]/35 hover:shadow-sm cursor-pointer">
-            <span className="rounded-lg bg-slate-100 p-2 text-slate-700 shrink-0">
+          <div className="flex h-full items-center gap-2.5 rounded-xl border bg-card px-3 py-2.5 transition hover:border-[#0b3a5c]/35 hover:shadow-sm cursor-pointer">
+            <span className="rounded-lg bg-slate-100 p-2 text-foreground shrink-0">
               <Icon className="h-4 w-4" />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">{title}</p>
+              <p className="truncate text-sm font-semibold text-foreground">{title}</p>
               {desc ? <p className="truncate text-[11px] text-muted-foreground">{desc}</p> : null}
             </div>
           </div>
@@ -132,12 +132,12 @@ export function DashListRow({
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={cn(
-        'flex w-full items-center justify-between gap-3 rounded-lg border bg-white px-3 py-2.5 text-left',
-        onClick && 'cursor-pointer hover:bg-slate-50',
+        'flex w-full items-center justify-between gap-3 rounded-lg border bg-card px-3 py-2.5 text-left',
+        onClick && 'cursor-pointer hover:bg-muted',
       )}
     >
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium text-slate-900">{title}</p>
+        <p className="truncate text-sm font-medium text-foreground">{title}</p>
         {subtitle ? <p className="truncate text-xs text-muted-foreground">{subtitle}</p> : null}
       </div>
       {badge ? <div className="shrink-0">{badge}</div> : null}

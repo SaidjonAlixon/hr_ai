@@ -151,7 +151,7 @@ function StatusPill({ status }: { status: string }) {
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-        STATUS_STYLE[status] || "border-slate-200 bg-slate-50 text-slate-600",
+        STATUS_STYLE[status] || "border-border bg-muted text-muted-foreground",
       )}
     >
       <span
@@ -422,7 +422,7 @@ export default function DavomatPage() {
 
   if (!allowed) {
     return (
-      <div className="mx-auto max-w-lg py-16 text-center text-slate-600">
+      <div className="mx-auto max-w-lg py-16 text-center text-muted-foreground">
         <p>Umumiy hisobot faqat Direktor va HR uchun.</p>
         <a href="/davomat-face" className="mt-3 inline-block text-[#0b3a5c] underline underline-offset-2">
           O‘z davomatingiz →
@@ -432,14 +432,14 @@ export default function DavomatPage() {
   }
 
   const fieldClass =
-    "h-11 rounded-xl border-slate-200 bg-white text-base shadow-none md:h-9 md:text-sm";
+    "h-11 rounded-xl border-border bg-card text-base shadow-none md:h-9 md:text-sm";
 
   const filters = (
     <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
       {section === "schedule" && calMode === "range" ? (
         <>
           <div>
-            <Label className="text-[11px] font-medium text-slate-500">Sanadan</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">Sanadan</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -453,7 +453,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="text-[11px] font-medium text-slate-500">Sanagacha</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">Sanagacha</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -466,16 +466,16 @@ export default function DavomatPage() {
             />
           </div>
           <div className="sm:col-span-2 lg:col-span-4">
-            <p className="text-[11px] text-slate-500">
-              Tanlangan davr: <span className="font-medium text-slate-700">{from}</span> —{" "}
-              <span className="font-medium text-slate-700">{to}</span>
+            <p className="text-[11px] text-muted-foreground">
+              Tanlangan davr: <span className="font-medium text-foreground">{from}</span> —{" "}
+              <span className="font-medium text-foreground">{to}</span>
               {periodDates.length ? ` · ${periodDates.length} kun` : ""}
             </p>
           </div>
         </>
       ) : section === "schedule" ? (
         <div className="sm:col-span-2">
-          <Label className="text-[11px] font-medium text-slate-500">
+          <Label className="text-[11px] font-medium text-muted-foreground">
             {calMode === "month" ? "Oy" : calMode === "week" ? "Hafta boshi" : "Sana"}
           </Label>
           <div className="flex items-center gap-1">
@@ -483,7 +483,7 @@ export default function DavomatPage() {
               type="button"
               variant="outline"
               size="icon"
-              className="h-11 w-11 shrink-0 rounded-xl border-slate-200 md:h-9 md:w-9"
+              className="h-11 w-11 shrink-0 rounded-xl border-border md:h-9 md:w-9"
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, -7);
@@ -536,7 +536,7 @@ export default function DavomatPage() {
               type="button"
               variant="outline"
               size="icon"
-              className="h-11 w-11 shrink-0 rounded-xl border-slate-200 md:h-9 md:w-9"
+              className="h-11 w-11 shrink-0 rounded-xl border-border md:h-9 md:w-9"
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, 7);
@@ -562,12 +562,12 @@ export default function DavomatPage() {
             </Button>
           </div>
           {calMode === "week" ? (
-            <p className="mt-1 text-[11px] text-slate-500">
+            <p className="mt-1 text-[11px] text-muted-foreground">
               Hafta: {weekStart} — {addDaysYmd(weekStart, 6)}
             </p>
           ) : null}
           {calMode === "month" ? (
-            <p className="mt-1 text-[11px] text-slate-500">
+            <p className="mt-1 text-[11px] text-muted-foreground">
               Oy: {monthLabelUz(monthAnchor)} · {firstOfMonth(monthAnchor)} — {lastOfMonth(monthAnchor)}
             </p>
           ) : null}
@@ -575,7 +575,7 @@ export default function DavomatPage() {
       ) : (
         <>
           <div>
-            <Label className="text-[11px] font-medium text-slate-500">Sanadan</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">Sanadan</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -584,7 +584,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="text-[11px] font-medium text-slate-500">Sanagacha</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">Sanagacha</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -595,7 +595,7 @@ export default function DavomatPage() {
         </>
       )}
       <div>
-        <Label className="text-[11px] font-medium text-slate-500">Bo‘lim</Label>
+        <Label className="text-[11px] font-medium text-muted-foreground">Bo‘lim</Label>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
           <SelectTrigger className={cn(fieldClass, "px-3")}>
             <SelectValue placeholder="Barchasi" />
@@ -611,9 +611,9 @@ export default function DavomatPage() {
         </Select>
       </div>
       <div>
-        <Label className="text-[11px] font-medium text-slate-500">Qidiruv</Label>
+        <Label className="text-[11px] font-medium text-muted-foreground">Qidiruv</Label>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className={cn(fieldClass, "pl-9")}
             placeholder="Ism, lavozim…"
@@ -627,7 +627,7 @@ export default function DavomatPage() {
 
   return (
     <div className="w-full space-y-5 pb-10">
-      <div className="overflow-hidden rounded-2xl border border-[#0b3a5c]/10 bg-gradient-to-br from-[#0b3a5c] to-[#0f4a73] text-white shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-[#0b3a5c]/10 bg-gradient-to-br from-[#0b3a5c] to-[#0f4a73] text-foreground dark:text-white shadow-sm">
         <div className="flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-6">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/80">
@@ -635,14 +635,14 @@ export default function DavomatPage() {
             </p>
             <h1 className="mt-0.5 text-xl font-bold tracking-tight sm:text-[1.7rem]">Davomat</h1>
             <p className="mt-1 text-xs text-sky-100/85 sm:text-sm">
-              Ish vaqti norma: <span className="font-semibold text-white">09:00–18:00</span>
+              Ish vaqti norma: <span className="font-semibold text-foreground dark:text-white">09:00–18:00</span>
             </p>
           </div>
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <a href="/davomat-face" className="min-w-0">
               <Button
                 type="button"
-                className="h-10 w-full gap-1.5 rounded-xl bg-white px-2.5 text-xs font-semibold text-[#0b3a5c] hover:bg-sky-50 sm:h-10 sm:w-auto sm:px-3 sm:text-sm"
+                className="h-10 w-full gap-1.5 rounded-xl bg-card px-2.5 text-xs font-semibold text-[#0b3a5c] hover:bg-sky-50 sm:h-10 sm:w-auto sm:px-3 sm:text-sm"
               >
                 <UserCheck className="h-4 w-4 shrink-0" />
                 Keldim / Ketdim
@@ -653,7 +653,7 @@ export default function DavomatPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-white hover:bg-white/15 hover:text-white sm:w-auto sm:px-3 sm:text-sm"
+                  className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white sm:w-auto sm:px-3 sm:text-sm"
                 >
                   <ClipboardCheck className="h-4 w-4 shrink-0" />
                   Cheklist
@@ -663,7 +663,7 @@ export default function DavomatPage() {
             <Button
               type="button"
               variant="outline"
-              className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-white hover:bg-white/15 hover:text-white sm:w-auto sm:px-3 sm:text-sm"
+              className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white sm:w-auto sm:px-3 sm:text-sm"
               onClick={() => void onAnnounce()}
               disabled={announcing || loading}
             >
@@ -672,7 +672,7 @@ export default function DavomatPage() {
             </Button>
             <Button
               type="button"
-              className="h-10 w-full gap-1.5 rounded-xl bg-emerald-500 px-2.5 text-xs font-semibold text-white hover:bg-emerald-400 sm:w-auto sm:px-3 sm:text-sm"
+              className="h-10 w-full gap-1.5 rounded-xl bg-emerald-500 px-2.5 text-xs font-semibold text-foreground dark:text-white hover:bg-emerald-400 sm:w-auto sm:px-3 sm:text-sm"
               onClick={() => void onExport()}
               disabled={exporting || loading}
             >
@@ -690,10 +690,10 @@ export default function DavomatPage() {
           setSelectedEmpId("all");
         }}
       >
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-slate-200/80 bg-white p-1 shadow-sm">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border bg-card p-1 shadow-sm">
           <TabsTrigger
             value="schedule"
-            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-[#0b3a5c] data-[state=active]:text-white data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
+            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
           >
             <CalendarDays className="h-4 w-4 shrink-0" />
             <span className="truncate sm:hidden">Jadval</span>
@@ -701,7 +701,7 @@ export default function DavomatPage() {
           </TabsTrigger>
           <TabsTrigger
             value="totals"
-            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-[#0b3a5c] data-[state=active]:text-white data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
+            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
           >
             <Users className="h-4 w-4 shrink-0" />
             <span className="truncate sm:hidden">Jami</span>
@@ -710,10 +710,10 @@ export default function DavomatPage() {
         </TabsList>
 
         <TabsContent value="schedule" className="mt-4 space-y-4">
-          <Card className="border-slate-200/80 shadow-sm">
+          <Card className="border-border shadow-sm">
             <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:space-y-4 sm:px-6 sm:pt-5">
               <div>
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Davr turi
                 </p>
                 <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100/90 p-1">
@@ -731,8 +731,8 @@ export default function DavomatPage() {
                       className={cn(
                         "rounded-lg px-1 py-2 text-center transition-all sm:px-3 sm:py-2.5 sm:text-left",
                         calMode === m.id
-                          ? "bg-white text-[#0b3a5c] shadow-sm ring-1 ring-[#0b3a5c]/15"
-                          : "text-slate-600 hover:bg-white/60 hover:text-slate-900",
+                          ? "bg-card text-[#0b3a5c] shadow-sm ring-1 ring-[#0b3a5c]/15"
+                          : "text-muted-foreground hover:bg-white/60 hover:text-foreground",
                       )}
                       onClick={() => setCalModeSafe(m.id)}
                     >
@@ -741,7 +741,7 @@ export default function DavomatPage() {
                       <span
                         className={cn(
                           "mt-1 hidden text-[10px] sm:block",
-                          calMode === m.id ? "text-[#0b3a5c]/65" : "text-slate-400",
+                          calMode === m.id ? "text-[#0b3a5c]/65" : "text-muted-foreground",
                         )}
                       >
                         {m.hint}
@@ -755,18 +755,18 @@ export default function DavomatPage() {
           </Card>
 
           {loading && !report ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+            <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" /> Yuklanmoqda…
             </div>
           ) : report ? (
             calMode === "day" ? (
               <>
-              <Card className="border-slate-200/80 shadow-sm overflow-hidden">
+              <Card className="border-border shadow-sm overflow-hidden">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">Kunlik davomat · {selectedDay}</CardTitle>
                   {dayInfo ? (
-                    <p className="text-xs text-slate-600">
-                      <span className="font-semibold text-slate-800">
+                    <p className="text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground">
                         Jami: {report.summary.employees} xodim
                       </span>
                       {" · "}
@@ -777,7 +777,7 @@ export default function DavomatPage() {
                       <span className="font-medium text-rose-700">Kelmagan: {dayInfo.absent}</span>
                       {" · "}
                       <span className="font-medium text-sky-700">Ketish yo‘q: {dayInfo.incomplete}</span>
-                      <span className="mt-0.5 block text-slate-500">
+                      <span className="mt-0.5 block text-muted-foreground">
                         Kech keldi: {dayTiming.lateArrival} · Erta keldi: {dayTiming.earlyArrival} · Erta
                         ketdi: {dayTiming.earlyLeave} · Kech ketdi: {dayTiming.overtime}
                       </span>
@@ -787,7 +787,7 @@ export default function DavomatPage() {
                 <CardContent className="overflow-x-auto">
                   <table className="w-full min-w-[1100px] border-collapse text-sm">
                     <thead>
-                      <tr className="border-b bg-slate-50 text-left text-xs text-slate-500">
+                      <tr className="border-b bg-muted text-left text-xs text-muted-foreground">
                         <th className="w-12 px-2 py-2 text-center">№</th>
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
@@ -799,19 +799,19 @@ export default function DavomatPage() {
                         </th>
                         <th className="px-3 py-2">
                           Kech keldi
-                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan keyin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan keyin</span>
                         </th>
                         <th className="px-3 py-2">
                           Erta keldi
-                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan oldin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan oldin</span>
                         </th>
                         <th className="px-3 py-2">
                           Erta ketdi
-                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan oldin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan oldin</span>
                         </th>
                         <th className="px-3 py-2">
                           Kech ketdi
-                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan keyin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan keyin</span>
                         </th>
                         <th className="px-3 py-2 w-10" />
                       </tr>
@@ -825,14 +825,14 @@ export default function DavomatPage() {
                             STATUS_ROW[day!.status],
                           )}
                         >
-                          <td className="px-2 py-2 text-center text-xs tabular-nums text-slate-500">
+                          <td className="px-2 py-2 text-center text-xs tabular-nums text-muted-foreground">
                             {idx + 1}
                           </td>
-                          <td className="px-3 py-2 font-medium text-slate-800">{emp.fullName}</td>
-                          <td className="px-3 py-2 text-slate-600">
+                          <td className="px-3 py-2 font-medium text-foreground">{emp.fullName}</td>
+                          <td className="px-3 py-2 text-muted-foreground">
                             {emp.position}
                             {emp.location ? (
-                              <div className="text-xs text-slate-400">{emp.location}</div>
+                              <div className="text-xs text-muted-foreground">{emp.location}</div>
                             ) : null}
                           </td>
                           <td className="px-3 py-2">
@@ -885,12 +885,12 @@ export default function DavomatPage() {
         </TabsContent>
 
         <TabsContent value="totals" className="mt-4 space-y-4">
-          <Card className="border-slate-200/80 shadow-sm">
+          <Card className="border-border shadow-sm">
             <CardContent className="pt-5">{filters}</CardContent>
           </Card>
 
           {loading && !report ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-slate-500">
+            <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
               <Loader2 className="h-5 w-5 animate-spin" /> Yuklanmoqda…
             </div>
           ) : report ? (
@@ -915,17 +915,17 @@ export default function DavomatPage() {
                 />
               </div>
 
-              <Card className="border-slate-200/80 shadow-sm overflow-hidden">
+              <Card className="border-border shadow-sm overflow-hidden">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">
                     Xodimlar jami · {periodFrom} — {periodTo}
                   </CardTitle>
-                  <p className="text-xs text-slate-500">Qatorni bosing — shu xodimning kunlari chiqadi</p>
+                  <p className="text-xs text-muted-foreground">Qatorni bosing — shu xodimning kunlari chiqadi</p>
                 </CardHeader>
                 <CardContent className="overflow-x-auto">
                   <table className="w-full border-collapse text-sm">
                     <thead>
-                      <tr className="border-b bg-slate-50 text-left text-xs text-slate-500">
+                      <tr className="border-b bg-muted text-left text-xs text-muted-foreground">
                         <th className="px-3 py-2">№</th>
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
@@ -933,26 +933,26 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">Kelmagan</th>
                         <th className="px-3 py-2">
                           Kech
-                          <span className="block font-normal text-[10px] text-slate-400">kunlar</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">kunlar</span>
                         </th>
                         <th className="px-3 py-2">
                           Ishlagan
                         </th>
                         <th className="px-3 py-2">
                           Kech keldi
-                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan keyin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan keyin</span>
                         </th>
                         <th className="px-3 py-2">
                           Erta keldi
-                          <span className="block font-normal text-[10px] text-slate-400">09:00 dan oldin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan oldin</span>
                         </th>
                         <th className="px-3 py-2">
                           Erta ketdi
-                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan oldin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan oldin</span>
                         </th>
                         <th className="px-3 py-2">
                           Kech ketdi
-                          <span className="block font-normal text-[10px] text-slate-400">18:00 dan keyin</span>
+                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan keyin</span>
                         </th>
                       </tr>
                     </thead>
@@ -961,14 +961,14 @@ export default function DavomatPage() {
                         <tr
                           key={e.id}
                           className={cn(
-                            "border-b border-slate-100 cursor-pointer hover:bg-slate-50",
+                            "border-b border-slate-100 cursor-pointer hover:bg-muted",
                             selectedEmpId === e.id && "bg-sky-50",
                           )}
                           onClick={() => setSelectedEmpId(selectedEmpId === e.id ? "all" : e.id)}
                         >
-                          <td className="px-3 py-2 text-slate-400">{i + 1}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
                           <td className="px-3 py-2 font-medium text-[#0b3a5c]">{e.fullName}</td>
-                          <td className="px-3 py-2 text-slate-600">{e.position}</td>
+                          <td className="px-3 py-2 text-muted-foreground">{e.position}</td>
                           <td className="px-3 py-2">{e.totals.present}</td>
                           <td className="px-3 py-2 text-rose-700">{e.totals.absent}</td>
                           <td className="px-3 py-2 text-amber-700">{e.totals.late}</td>
@@ -985,14 +985,14 @@ export default function DavomatPage() {
               </Card>
 
               {detailEmployee ? (
-                <Card className="border-slate-200/80 shadow-sm overflow-hidden">
+                <Card className="border-border shadow-sm overflow-hidden">
                   <CardHeader className="pb-2">
                     <CardTitle className="text-base">{detailEmployee.fullName} — kunlar</CardTitle>
                   </CardHeader>
                   <CardContent className="overflow-x-auto">
                     <table className="w-full border-collapse text-sm">
                       <thead>
-                        <tr className="border-b bg-slate-50 text-left text-xs text-slate-500">
+                        <tr className="border-b bg-muted text-left text-xs text-muted-foreground">
                           <th className="px-3 py-2">Sana</th>
                           <th className="px-3 py-2">Holat</th>
                           <th className="px-3 py-2">Kelish</th>
@@ -1002,19 +1002,19 @@ export default function DavomatPage() {
                         </th>
                           <th className="px-3 py-2">
                             Kech keldi
-                            <span className="block font-normal text-[10px] text-slate-400">09:00 dan keyin</span>
+                            <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan keyin</span>
                           </th>
                           <th className="px-3 py-2">
                             Erta keldi
-                            <span className="block font-normal text-[10px] text-slate-400">09:00 dan oldin</span>
+                            <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan oldin</span>
                           </th>
                           <th className="px-3 py-2">
                             Erta ketdi
-                            <span className="block font-normal text-[10px] text-slate-400">18:00 dan oldin</span>
+                            <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan oldin</span>
                           </th>
                           <th className="px-3 py-2">
                             Kech ketdi
-                            <span className="block font-normal text-[10px] text-slate-400">18:00 dan keyin</span>
+                            <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan keyin</span>
                           </th>
                           <th className="px-3 py-2 w-10" />
                         </tr>
@@ -1071,8 +1071,8 @@ export default function DavomatPage() {
           </DialogHeader>
           {edit ? (
             <div className="space-y-3">
-              <p className="text-sm text-slate-600">
-                <span className="font-medium text-slate-900">{edit.fullName}</span> · {edit.workDate}
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{edit.fullName}</span> · {edit.workDate}
               </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1134,7 +1134,7 @@ export default function DavomatPage() {
 }
 
 function TimeMetric({ value }: { value: string }) {
-  if (!value || value === "—") return <span className="text-slate-300">—</span>;
+  if (!value || value === "—") return <span className="text-muted-foreground">—</span>;
   return <span className="tabular-nums font-medium">{value}</span>;
 }
 
@@ -1210,12 +1210,12 @@ function PeriodAttendanceGrid({
     barRef: React.RefObject<HTMLDivElement | null>;
     label: string;
   }) => (
-    <div className="flex items-center gap-2 border-b border-slate-200/80 bg-[#0b3a5c]/[0.03] px-2 py-2 sm:px-3">
+    <div className="flex items-center gap-2 border-b border-border bg-[#0b3a5c]/[0.03] px-2 py-2 sm:px-3">
       <Button
         type="button"
         size="sm"
         variant="outline"
-        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-white px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40"
+        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-card px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40"
         disabled={!canLeft}
         onClick={() => scrollByStep(-1)}
         aria-label="Chapga"
@@ -1229,11 +1229,11 @@ function PeriodAttendanceGrid({
             <MoveHorizontal className="h-3.5 w-3.5" />
             {label}
           </span>
-          <span className="text-[10px] tabular-nums text-slate-500">{dates.length} kun</span>
+          <span className="text-[10px] tabular-nums text-muted-foreground">{dates.length} kun</span>
         </div>
         <div
           ref={barRef}
-          className="overflow-x-auto rounded-lg border border-slate-200 bg-white"
+          className="overflow-x-auto rounded-lg border border-border bg-card"
           onScroll={(e) => syncFrom(e.currentTarget)}
         >
           <div style={{ width: tableWidth, height: 14 }} aria-hidden />
@@ -1243,7 +1243,7 @@ function PeriodAttendanceGrid({
         type="button"
         size="sm"
         variant="outline"
-        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-white px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40"
+        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-card px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40"
         disabled={!canRight}
         onClick={() => scrollByStep(1)}
         aria-label="O‘ngga"
@@ -1255,11 +1255,11 @@ function PeriodAttendanceGrid({
   );
 
   return (
-    <Card className="overflow-hidden border-slate-200/80 shadow-sm">
-      <CardHeader className="border-b border-slate-100 bg-slate-50/60 pb-3">
+    <Card className="overflow-hidden border-border shadow-sm">
+      <CardHeader className="border-b border-slate-100 bg-muted/60 pb-3">
         <CardTitle className="text-base text-[#0b3a5c]">{title}</CardTitle>
-        <p className="mt-1 text-xs text-slate-600">{subtitle}</p>
-        <p className="mt-0.5 text-xs text-slate-500">
+        <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
           Katakka bosing — tahrirlash · {employeeCount} xodim
           {dates.length ? ` · ${dates.length} kun` : ""}
         </p>
@@ -1283,7 +1283,7 @@ function PeriodAttendanceGrid({
       </CardHeader>
 
       {dates.length === 0 ? (
-        <p className="py-10 text-center text-sm text-slate-500">Bu davr uchun kunlar yo‘q</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">Bu davr uchun kunlar yo‘q</p>
       ) : (
         <div className="flex flex-col">
           <ScrollRail barRef={topBarRef} label="Sanalarni surish" />
@@ -1298,7 +1298,7 @@ function PeriodAttendanceGrid({
               style={{ width: tableWidth, minWidth: tableWidth }}
             >
               <thead className="sticky top-0 z-20">
-                <tr className="border-b border-slate-200 bg-[#0b3a5c] text-white">
+                <tr className="border-b border-border bg-primary text-primary-foreground">
                   <th
                     className="sticky left-0 z-30 bg-[#0b3a5c] px-2 py-2.5 text-center text-xs font-semibold"
                     style={{ width: NUM_W, minWidth: NUM_W, left: 0 }}
@@ -1328,15 +1328,15 @@ function PeriodAttendanceGrid({
               <tbody>
                 {employees.map((emp, rowIdx) => {
                   const zebra = rowIdx % 2 === 0;
-                  const stickyBg = zebra ? "bg-white" : "bg-slate-50";
+                  const stickyBg = zebra ? "bg-card" : "bg-muted";
                   return (
                     <tr
                       key={emp.id}
-                      className={cn("border-b border-slate-100", zebra ? "bg-white" : "bg-slate-50/40")}
+                      className={cn("border-b border-slate-100", zebra ? "bg-card" : "bg-muted/40")}
                     >
                       <td
                         className={cn(
-                          "sticky left-0 z-10 px-2 py-1.5 text-center text-xs tabular-nums text-slate-500",
+                          "sticky left-0 z-10 px-2 py-1.5 text-center text-xs tabular-nums text-muted-foreground",
                           stickyBg,
                         )}
                         style={{ width: NUM_W, minWidth: NUM_W, left: 0 }}
@@ -1350,11 +1350,11 @@ function PeriodAttendanceGrid({
                         )}
                         style={{ width: NAME_W, minWidth: NAME_W, left: NUM_W }}
                       >
-                        <div className="truncate font-medium text-slate-800" title={emp.fullName}>
+                        <div className="truncate font-medium text-foreground" title={emp.fullName}>
                           {emp.fullName}
                         </div>
                         {emp.position ? (
-                          <div className="truncate text-[10px] text-slate-400">{emp.position}</div>
+                          <div className="truncate text-[10px] text-muted-foreground">{emp.position}</div>
                         ) : null}
                       </td>
                       {dates.map((date) => {
@@ -1372,7 +1372,7 @@ function PeriodAttendanceGrid({
             </table>
           </div>
 
-          <div className="sticky bottom-0 z-30 border-t border-slate-200 bg-white/95 shadow-[0_-6px_16px_-8px_rgba(15,23,42,0.18)] backdrop-blur-sm">
+          <div className="sticky bottom-0 z-30 border-t border-border bg-white/95 shadow-[0_-6px_16px_-8px_rgba(15,23,42,0.18)] backdrop-blur-sm">
             <ScrollRail barRef={bottomBarRef} label="Sanalarni surish (past)" />
           </div>
         </div>
@@ -1399,7 +1399,7 @@ function WeekCell({
       onClick={onClick}
       className={cn(
         "mx-auto flex h-[58px] w-full flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 font-medium transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20",
-        STATUS_STYLE[status] || "bg-slate-50",
+        STATUS_STYLE[status] || "bg-muted",
       )}
       title={
         day
@@ -1440,13 +1440,13 @@ function Stat({
   sub?: string;
 }) {
   return (
-    <Card className="border-slate-200/80 shadow-sm">
+    <Card className="border-border shadow-sm">
       <CardContent className="flex items-start gap-3 pt-5">
-        <div className="rounded-lg bg-slate-100 p-2 text-slate-600">{icon}</div>
+        <div className="rounded-lg bg-slate-100 p-2 text-muted-foreground">{icon}</div>
         <div>
-          <div className="text-xs text-slate-500">{label}</div>
-          <div className="text-xl font-semibold text-slate-900 tabular-nums">{value}</div>
-          {sub ? <div className="text-xs text-slate-500">{sub}</div> : null}
+          <div className="text-xs text-muted-foreground">{label}</div>
+          <div className="text-xl font-semibold text-foreground tabular-nums">{value}</div>
+          {sub ? <div className="text-xs text-muted-foreground">{sub}</div> : null}
         </div>
       </CardContent>
     </Card>

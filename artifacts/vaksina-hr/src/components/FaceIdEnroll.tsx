@@ -126,7 +126,7 @@ export function FaceIdEnroll({
           </button>
         </div>
       ) : (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
           <div className="flex items-start gap-3">
             <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200">
               {photoUrl ? (
@@ -137,13 +137,13 @@ export function FaceIdEnroll({
                   crossOrigin="use-credentials"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-slate-400">
+                <div className="flex h-full w-full items-center justify-center text-muted-foreground">
                   <ScanFace className="h-8 w-8" />
                 </div>
               )}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 Face ID
                 {registered ? (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
@@ -151,7 +151,7 @@ export function FaceIdEnroll({
                   </span>
                 ) : null}
               </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-1 text-xs text-muted-foreground">
                 Face ID faqat davomatda sizni tasdiqlash uchun. Tizimga login/parol bilan kirasiz.
               </p>
               <div className="mt-3 flex flex-wrap gap-2">

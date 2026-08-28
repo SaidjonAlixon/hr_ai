@@ -38,7 +38,7 @@ export default function NazoratPage() {
       case 'reviewing': return <Badge variant="secondary" className="bg-blue-100 text-blue-800">Ko'rib chiqilmoqda</Badge>;
       case 'accepted': return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">Qabul qilingan</Badge>;
       case 'announced': return <Badge variant="secondary" className="bg-purple-100 text-purple-800">E'lon qilingan</Badge>;
-      case 'closed': return <Badge variant="secondary" className="bg-gray-800 text-white">Yopilgan</Badge>;
+      case 'closed': return <Badge variant="secondary" className="bg-gray-800 text-foreground dark:text-white">Yopilgan</Badge>;
       default: return <Badge>{status}</Badge>;
     }
   };

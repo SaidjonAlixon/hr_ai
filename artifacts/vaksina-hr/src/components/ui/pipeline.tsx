@@ -15,14 +15,14 @@ export function Pipeline({ stages, className, selectedStage, onSelectStage }: Pi
     const ring = selected ? 'ring-4 ring-primary/30 scale-110' : '';
     switch (status) {
       case 'completed':
-        return cn('bg-emerald-500 border-emerald-500 text-white', ring);
+        return cn('bg-emerald-500 border-emerald-500 text-foreground dark:text-white', ring);
       case 'in_progress':
-        return cn('bg-amber-400 border-amber-400 text-white ring-4 ring-amber-200', selected && 'ring-primary/40');
+        return cn('bg-amber-400 border-amber-400 text-foreground dark:text-white ring-4 ring-amber-200', selected && 'ring-primary/40');
       case 'failed':
-        return cn('bg-destructive border-destructive text-white', ring);
+        return cn('bg-destructive border-destructive text-foreground dark:text-white', ring);
       case 'pending':
       default:
-        return cn('bg-white border-gray-300 text-muted-foreground', ring);
+        return cn('bg-card border-gray-300 text-muted-foreground', ring);
     }
   };
 

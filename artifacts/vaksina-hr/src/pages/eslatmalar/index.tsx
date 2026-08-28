@@ -303,16 +303,16 @@ export default function EslatmalarPage() {
 
   return (
     <div className="flex h-full min-h-0 flex-col bg-gradient-to-br from-slate-50 via-white to-amber-50/30">
-      <div className="shrink-0 border-b border-slate-200/80 bg-white/70 px-4 py-5 backdrop-blur sm:px-6">
+      <div className="shrink-0 border-b border-border bg-white/70 px-4 py-5 backdrop-blur sm:px-6">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-1 text-xs font-medium uppercase tracking-wider text-amber-700/80">
               Shaxsiy nazorat
             </p>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">
               Eslatmalarim
             </h1>
-            <p className="mt-1 max-w-2xl text-sm text-slate-500">
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
               O‘zingizga vazifa, muddat, ogohlantirish va qayta eslatish.
               Muddat o‘tsa — «Bajarilmadi». Ko‘chirishlar tarixda saqlanadi.
             </p>
@@ -338,13 +338,13 @@ export default function EslatmalarPage() {
               return (
                 <div
                   key={col.id}
-                  className="flex w-[260px] shrink-0 flex-col overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm sm:w-[280px]"
+                  className="flex w-[260px] shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-sm sm:w-[280px]"
                 >
                   <div className={cn("h-1.5", col.top)} />
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 px-3 py-2.5">
                     <div>
-                      <p className="text-sm font-semibold text-slate-900">{col.label}</p>
-                      <p className="text-[11px] text-slate-500">{col.hint}</p>
+                      <p className="text-sm font-semibold text-foreground">{col.label}</p>
+                      <p className="text-[11px] text-muted-foreground">{col.hint}</p>
                     </div>
                     <span
                       className={cn(
@@ -358,7 +358,7 @@ export default function EslatmalarPage() {
 
                   <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
                     {items.length === 0 ? (
-                      <p className="px-1 py-6 text-center text-xs text-slate-400">{col.empty}</p>
+                      <p className="px-1 py-6 text-center text-xs text-muted-foreground">{col.empty}</p>
                     ) : (
                       items.map((r) => (
                         <button
@@ -371,28 +371,28 @@ export default function EslatmalarPage() {
                               ? "border-rose-200 bg-rose-50/70"
                               : r.status === "completed"
                                 ? "border-violet-200 bg-violet-50/50"
-                                : "border-slate-200 bg-slate-50/80 hover:border-slate-300",
+                                : "border-border bg-muted/80 hover:border-slate-300",
                           )}
                         >
-                          <p className="text-sm font-semibold leading-snug text-slate-900">
+                          <p className="text-sm font-semibold leading-snug text-foreground">
                             {r.title}
                           </p>
                           {r.description ? (
-                            <p className="mt-1 line-clamp-2 text-xs text-slate-600">
+                            <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
                               {r.description}
                             </p>
                           ) : null}
                           <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] font-medium text-slate-600 ring-1 ring-slate-200">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-card px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground ring-1 ring-slate-200">
                               <Clock className="h-3 w-3" />
                               {r.remainingLabel}
                             </span>
-                            <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] text-slate-500 ring-1 ring-slate-200">
+                            <span className="inline-flex items-center gap-1 rounded-md bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground ring-1 ring-slate-200">
                               <CalendarClock className="h-3 w-3" />
                               {formatDate(r.dueAt)}
                             </span>
                             {r.attachments?.length ? (
-                              <span className="inline-flex items-center gap-1 rounded-md bg-white px-1.5 py-0.5 text-[10px] text-slate-500 ring-1 ring-slate-200">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-card px-1.5 py-0.5 text-[10px] text-muted-foreground ring-1 ring-slate-200">
                                 <FileText className="h-3 w-3" />
                                 {r.attachments.length}
                               </span>
@@ -409,7 +409,7 @@ export default function EslatmalarPage() {
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-full justify-start gap-1.5 text-xs text-slate-600"
+                        className="h-8 w-full justify-start gap-1.5 text-xs text-muted-foreground"
                         onClick={() => openCreate(col.id)}
                       >
                         <Plus className="h-3.5 w-3.5" />
@@ -500,12 +500,12 @@ export default function EslatmalarPage() {
                 {attachments.map((a) => (
                   <li
                     key={a.id}
-                    className="flex items-center justify-between gap-2 rounded-lg border bg-slate-50 px-2.5 py-1.5 text-sm"
+                    className="flex items-center justify-between gap-2 rounded-lg border bg-muted px-2.5 py-1.5 text-sm"
                   >
                     <span className="truncate">{a.name}</span>
                     <button
                       type="button"
-                      className="text-slate-400 hover:text-rose-600"
+                      className="text-muted-foreground hover:text-rose-600"
                       onClick={() =>
                         setAttachments((prev) => prev.filter((x) => x.id !== a.id))
                       }
@@ -539,24 +539,24 @@ export default function EslatmalarPage() {
           ) : (
             <div className="space-y-4 py-1">
               {detail.description ? (
-                <p className="text-sm text-slate-700 whitespace-pre-wrap">{detail.description}</p>
+                <p className="text-sm text-foreground whitespace-pre-wrap">{detail.description}</p>
               ) : null}
 
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div className="rounded-lg border bg-slate-50 px-3 py-2">
-                  <p className="text-[11px] text-slate-500">Muddat</p>
+                <div className="rounded-lg border bg-muted px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Muddat</p>
                   <p className="font-medium">{formatDate(detail.dueAt)}</p>
                 </div>
-                <div className="rounded-lg border bg-slate-50 px-3 py-2">
-                  <p className="text-[11px] text-slate-500">Qolgan vaqt</p>
+                <div className="rounded-lg border bg-muted px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Qolgan vaqt</p>
                   <p className="font-medium">{detail.remainingLabel}</p>
                 </div>
-                <div className="rounded-lg border bg-slate-50 px-3 py-2">
-                  <p className="text-[11px] text-slate-500">Ogohlantirish</p>
+                <div className="rounded-lg border bg-muted px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Ogohlantirish</p>
                   <p className="font-medium">{formatDate(detail.notifyAt)}</p>
                 </div>
-                <div className="rounded-lg border bg-slate-50 px-3 py-2">
-                  <p className="text-[11px] text-slate-500">Qayta eslatish</p>
+                <div className="rounded-lg border bg-muted px-3 py-2">
+                  <p className="text-[11px] text-muted-foreground">Qayta eslatish</p>
                   <p className="font-medium">
                     {INTERVALS.find((i) => i.value === String(detail.remindIntervalMinutes ?? "none"))
                       ?.label || "Faqat bir marta"}
@@ -566,7 +566,7 @@ export default function EslatmalarPage() {
 
               {detail.attachments?.length ? (
                 <div className="space-y-1.5">
-                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     Fayllar
                   </p>
                   <ul className="space-y-1">
@@ -576,9 +576,9 @@ export default function EslatmalarPage() {
                           href={a.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm hover:bg-slate-50"
+                          className="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 text-sm hover:bg-muted"
                         >
-                          <FileText className="h-4 w-4 text-slate-500" />
+                          <FileText className="h-4 w-4 text-muted-foreground" />
                           <span className="truncate">{a.name}</span>
                         </a>
                       </li>
@@ -588,7 +588,7 @@ export default function EslatmalarPage() {
               ) : null}
 
               <div className="space-y-2">
-                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <p className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                   <History className="h-3.5 w-3.5" />
                   Tarix
                 </p>
@@ -596,30 +596,30 @@ export default function EslatmalarPage() {
                   {(detail.events ?? []).map((ev) => (
                     <li
                       key={ev.id}
-                      className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs"
+                      className="rounded-lg border border-border bg-card px-3 py-2 text-xs"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <span className="font-semibold text-slate-800">
+                        <span className="font-semibold text-foreground">
                           {EVENT_LABELS[ev.eventType] || ev.eventType}
                         </span>
-                        <span className="text-slate-400">{formatDate(ev.createdAt)}</span>
+                        <span className="text-muted-foreground">{formatDate(ev.createdAt)}</span>
                       </div>
-                      {ev.note ? <p className="mt-0.5 text-slate-600">{ev.note}</p> : null}
+                      {ev.note ? <p className="mt-0.5 text-muted-foreground">{ev.note}</p> : null}
                       {(ev.fromDueAt || ev.toDueAt) && (
-                        <p className="mt-1 text-slate-500">
+                        <p className="mt-1 text-muted-foreground">
                           {ev.fromDueAt ? formatDate(ev.fromDueAt) : "—"} →{" "}
                           {ev.toDueAt ? formatDate(ev.toDueAt) : "—"}
                         </p>
                       )}
                       {(ev.fromStatus || ev.toStatus) && (
-                        <p className="mt-0.5 text-slate-500">
+                        <p className="mt-0.5 text-muted-foreground">
                           Holat: {ev.fromStatus || "—"} → {ev.toStatus || "—"}
                         </p>
                       )}
                     </li>
                   ))}
                   {!detail.events?.length && (
-                    <li className="text-center text-slate-400">Tarix bo‘sh</li>
+                    <li className="text-center text-muted-foreground">Tarix bo‘sh</li>
                   )}
                 </ul>
               </div>
@@ -712,7 +712,7 @@ export default function EslatmalarPage() {
                 rows={2}
               />
             </div>
-            <p className="text-xs text-slate-500">
+            <p className="text-xs text-muted-foreground">
               Eski va yangi muddat tarixda saqlanadi (1-holat, 2-holat…).
             </p>
           </div>
@@ -765,17 +765,17 @@ function FileDropzone({
           "flex cursor-pointer items-center gap-3 rounded-xl border border-dashed px-4 py-3.5 transition-colors",
           dragging
             ? "border-primary bg-primary/5"
-            : "border-slate-300 bg-slate-50/80 hover:border-primary/50",
+            : "border-slate-300 bg-muted/80 hover:border-primary/50",
         )}
       >
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-600 text-white">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-amber-600 text-foreground dark:text-white">
           <Bell className="h-5 w-5" />
         </span>
         <span className="min-w-0 text-left">
-          <span className="block text-sm font-semibold text-slate-700">
+          <span className="block text-sm font-semibold text-foreground">
             Fayl yuklash
           </span>
-          <span className="mt-0.5 block text-xs text-slate-500">
+          <span className="mt-0.5 block text-xs text-muted-foreground">
             PDF, rasm, hujjat — 10 MB gacha
           </span>
         </span>

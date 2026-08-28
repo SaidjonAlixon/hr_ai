@@ -54,10 +54,10 @@ export function DavomatAttendanceBanner() {
       className={cn(
         "border-b px-3 py-2 sm:px-4 sm:py-1.5",
         done
-          ? "bg-emerald-50 border-emerald-200 text-emerald-900"
+          ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
           : urgent
-            ? "bg-amber-50 border-amber-200 text-amber-950"
-            : "bg-sky-50 border-sky-200 text-sky-950",
+            ? "border-amber-500/20 bg-amber-500/10 text-amber-900 dark:text-amber-100"
+            : "border-sky-500/20 bg-sky-500/10 text-sky-900 dark:text-sky-100",
       )}
     >
       <div className="mx-auto flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
@@ -72,16 +72,12 @@ export function DavomatAttendanceBanner() {
             <span className="mt-0.5 block text-[11px] font-medium opacity-70 sm:mt-0 sm:ml-1.5 sm:inline">
               {HOLAT[status.nextAction]}
             </span>
-            <span className="mt-0.5 block tabular-nums text-xs sm:ml-1.5 sm:inline">
+            <span className="mt-0.5 block tabular-nums text-xs opacity-80 sm:ml-1.5 sm:inline">
               Kelish {status.checkIn} · Ketish {status.checkOut}
             </span>
           </p>
         </div>
-        <Button
-          asChild
-          size="sm"
-          className="h-8 w-full gap-1.5 rounded-lg bg-[#0b3a5c] text-xs hover:bg-[#0a314d] sm:h-7 sm:w-auto sm:px-2.5"
-        >
+        <Button asChild size="sm" className="h-8 w-full gap-1.5 rounded-lg text-xs sm:h-7 sm:w-auto sm:px-2.5">
           <Link href={status.linkUrl || "/davomat-face"}>
             <ScanFace className="h-3.5 w-3.5" />
             Davomat

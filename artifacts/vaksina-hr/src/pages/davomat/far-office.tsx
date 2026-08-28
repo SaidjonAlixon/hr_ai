@@ -97,12 +97,12 @@ export default function DavomatFarOfficePage() {
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+          <div className="mb-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <Link href="/davomat" className="hover:text-[#0b3a5c] hover:underline">
               Davomat hisobot
             </Link>
             <span>/</span>
-            <span className="text-slate-700">Masofaviy</span>
+            <span className="text-foreground">Masofaviy</span>
           </div>
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-amber-950 sm:text-3xl">
             <MapPin className="h-7 w-7 text-amber-700" />
@@ -128,7 +128,7 @@ export default function DavomatFarOfficePage() {
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-9 w-9 border-amber-200 bg-white"
+                className="h-9 w-9 border-amber-200 bg-card"
                 onClick={() => setSelectedDay((d) => addDaysYmd(d, -1))}
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -137,13 +137,13 @@ export default function DavomatFarOfficePage() {
                 type="date"
                 value={selectedDay}
                 onChange={(e) => setSelectedDay(e.target.value || todayYmd())}
-                className="h-9 w-[11.5rem] border-amber-200 bg-white"
+                className="h-9 w-[11.5rem] border-amber-200 bg-card"
               />
               <Button
                 type="button"
                 variant="outline"
                 size="icon"
-                className="h-9 w-9 border-amber-200 bg-white"
+                className="h-9 w-9 border-amber-200 bg-card"
                 onClick={() => setSelectedDay((d) => addDaysYmd(d, 1))}
               >
                 <ChevronRight className="h-4 w-4" />
@@ -152,7 +152,7 @@ export default function DavomatFarOfficePage() {
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-9 border-amber-200 bg-white"
+                className="h-9 border-amber-200 bg-card"
                 onClick={() => setSelectedDay(todayYmd())}
               >
                 Bugun
@@ -166,7 +166,7 @@ export default function DavomatFarOfficePage() {
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Ism, lavozim, bo‘lim…"
-              className="h-9 border-amber-200 bg-white pl-9"
+              className="h-9 border-amber-200 bg-card pl-9"
             />
           </div>
         </CardContent>

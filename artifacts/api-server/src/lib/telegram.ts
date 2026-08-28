@@ -263,3 +263,30 @@ export function statusLabelUz(status?: string | null): string {
       return status || "Noma’lum";
   }
 }
+
+export function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/** Telegram Mini App kirish havolasi (token ixtiyoriy) */
+export function miniAppEntryUrl(opts?: { next?: string; token?: string }): string | null {
+  const base = publicAppUrl();
+  if (!base) return null;
+  const u = new URL(`${base}/tg`);
+  if (opts?.next) u.searchParams.set("next", opts.next);
+  if (opts?.token) u.searchParams.set("token", opts.token);
+  u.searchParams.set("fresh", "1");
+  return u.toString();
+}
+
+export function davomatMiniAppKeyboard(): { inline_keyboard: InlineKeyboardButton[][] } | undefined {
+  const url = miniAppEntryUrl({ next: "davomat-face" });
+  if (!url) return undefined;
+  return {
+    inline_keyboard: [[{ text: "📋 Davomat — Face ID", web_app: { url } }]],
+  };
+}

@@ -56,6 +56,7 @@ import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 import { formatSom, useOylikMe } from "@/lib/oylik-api";
+import { PUNCH_FINE_HINT, punchPlanLabel, workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
 
@@ -966,6 +967,20 @@ export default function DavomatFacePage() {
 
   const displayName =
     verified?.fullName || workplace?.employee.fullName || user?.fullName || "Xodim";
+  const displayShift = useMemo(() => {
+    if (workplace?.shift) return workplace.shift;
+    if (!user?.role) return null;
+    return workShiftForUserRole(user.role);
+  }, [workplace?.shift, user?.role]);
+  const workplaceTitle = useMemo(
+    () =>
+      workplaceDisplayTitle(
+        user?.role,
+        workplace?.site ?? (site.kind ? { kind: site.kind, label: site.label } : null),
+        workplace?.employee?.location,
+      ),
+    [user?.role, workplace?.site, workplace?.employee?.location, site.kind, site.label],
+  );
   const position = roleLabel(user?.role) || "Xodim";
   const department = user?.departmentName;
   const phone = user?.phone;
@@ -1102,6 +1117,29 @@ export default function DavomatFacePage() {
                 <h1 className="truncate text-xl font-semibold leading-tight">{displayName}</h1>
                 <p className="mt-0.5 truncate text-sm dv-hero-muted">{position}</p>
                 {department ? <p className="truncate text-xs dv-hero-muted opacity-80">{department}</p> : null}
+                {displayShift ? (
+                  <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.06] px-2.5 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-medium uppercase tracking-wide dv-hero-muted">
+                          Ish joyi
+                        </p>
+                        <p className="truncate text-sm font-semibold text-white">{workplaceTitle}</p>
+                      </div>
+                      <div className="shrink-0 text-right">
+                        <p className="text-[10px] font-medium uppercase tracking-wide dv-hero-muted">
+                          {displayShift.type === "office" ? "Ish vaqti" : "Smena · ish vaqti"}
+                        </p>
+                        {displayShift.type !== "office" ? (
+                          <p className="text-[11px] font-medium text-white/90">{displayShift.label}</p>
+                        ) : null}
+                        <p className="font-mono text-sm font-semibold tabular-nums text-white">
+                          {displayShift.start} – {displayShift.end}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
                 <div className="mt-2">
                   <span
                     className={cn(
@@ -1121,18 +1159,27 @@ export default function DavomatFacePage() {
 
             <div className="relative mt-4 grid grid-cols-2 gap-2 text-[11px]">
               <div className="dv-punch-in">
-                <div className="dv-punch-label">Keldim</div>
+                <div className="dv-punch-label">
+                  Keldim{displayShift ? ` ${punchPlanLabel("in", displayShift.start)}` : ""}
+                </div>
                 <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
                   {verified?.checkIn || workplace?.today.checkIn || "—"}
                 </div>
               </div>
               <div className="dv-punch-out">
-                <div className="dv-punch-label">Ketdim</div>
+                <div className="dv-punch-label">
+                  Ketdim{displayShift ? ` ${punchPlanLabel("out", displayShift.end)}` : ""}
+                </div>
                 <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
                   {verified?.checkOut || workplace?.today.checkOut || "—"}
                 </div>
               </div>
             </div>
+            {displayShift ? (
+              <p className="relative mt-2 text-center text-[10px] font-medium leading-snug text-rose-400">
+                {PUNCH_FINE_HINT}
+              </p>
+            ) : null}
             {phone ? (
               <p className="relative mt-2 text-[11px] dv-hero-muted">Tel: {phone}</p>
             ) : null}
@@ -1247,9 +1294,9 @@ export default function DavomatFacePage() {
               <p className="mt-0.5 text-xs text-muted-foreground">
                 {workplace?.site?.kind === "branch" ? "Belgilangan filial" : "Asosiy ofis"} · ruxsat {allowedMeters} m
               </p>
-              {workplace?.shift ? (
+              {displayShift ? (
                 <p className="mt-1 rounded-lg dv-tone-amber border-0 px-2 py-1 text-[11px] font-medium">
-                  {workplace.shift.label}: {workplace.shift.start}–{workplace.shift.end}. Kechikish — jarima.
+                  {displayShift.label}: {displayShift.start}–{displayShift.end}. Kechikish — jarima.
                 </p>
               ) : null}
               {site.label ? (
@@ -1481,7 +1528,7 @@ export default function DavomatFacePage() {
             <div className="dv-punch-card-in">
               <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
                 <LogIn className="h-3.5 w-3.5" />
-                Keldim
+                Keldim{displayShift ? ` ${punchPlanLabel("in", displayShift.start)}` : ""}
               </div>
               <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
                 {checkInLabel}
@@ -1490,13 +1537,18 @@ export default function DavomatFacePage() {
             <div className="dv-punch-card-out">
               <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
                 <LogOut className="h-3.5 w-3.5" />
-                Ketdim
+                Ketdim{displayShift ? ` ${punchPlanLabel("out", displayShift.end)}` : ""}
               </div>
               <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
                 {checkOutLabel}
               </div>
             </div>
           </div>
+          {displayShift ? (
+            <p className="px-4 pb-3 text-center text-[11px] font-medium leading-snug text-red-600">
+              {PUNCH_FINE_HINT}
+            </p>
+          ) : null}
           {done && closedWork != null ? (
             <div className="mx-4 mb-4 rounded-2xl border border-border bg-muted px-3 py-3 text-center">
               <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Ishlangan vaqt</p>
@@ -1649,7 +1701,7 @@ export default function DavomatFacePage() {
                           <td className="border-r border-border px-1.5 py-1.5 text-center">
                             <span
                               className={cn(
-                                "inline-flex rounded px-1 py-0.5 text-[9px] font-semibold",
+                                "inline-flex whitespace-nowrap rounded px-1 py-0.5 text-[9px] font-semibold",
                                 STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
                               )}
                             >
@@ -1734,7 +1786,7 @@ export default function DavomatFacePage() {
                           <td className="border-r border-border px-3 py-1.5 text-center">
                             <span
                               className={cn(
-                                "inline-flex rounded px-2 py-0.5 text-[11px] font-semibold",
+                                "inline-flex whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-semibold",
                                 STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
                               )}
                             >

@@ -7,9 +7,9 @@ import {
   notificationsTable,
 } from "@workspace/db";
 import { logger } from "../lib/logger";
-import { notifyAllActiveUsers } from "../lib/notify";
+import { notifyAllActiveUsers, notifyUser } from "../lib/notify";
 import { DAVOMAT_GEOFENCE_METERS } from "../routes/davomat";
-import { isPharmacyShiftStaff, shiftWindow, hmToMinutes } from "../lib/shift-hours";
+import { isPharmacyShiftStaff, shiftWindow, hmToMinutes, workScheduleForStaff } from "../lib/shift-hours";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
@@ -109,7 +109,7 @@ async function userRoleMap(ids: number[]): Promise<Map<number, string>> {
   return map;
 }
 
-/** Smena boshlanishidan 15 daqiqa oldin — qat’iy ogohlantirish */
+/** Ish boshlanishidan 15 daqiqa oldin — apteka smenasi va ofis xodimlari */
 export async function remindPharmacyShiftWarn(): Promise<number> {
   const { ymd, hour, minute } = tashkentParts();
   const mins = hour * 60 + minute;
@@ -121,8 +121,7 @@ export async function remindPharmacyShiftWarn(): Promise<number> {
   for (const e of linked) {
     if (!e.userId) continue;
     const role = roles.get(e.userId) || "";
-    if (!isPharmacyShiftStaff(role, e.orgRole)) continue;
-    const w = shiftWindow(e.shiftType);
+    const w = workScheduleForStaff(role, e.orgRole, e.shiftType);
     const warnMin = hmToMinutes(w.warnHm);
     if (mins < warnMin || mins >= warnMin + 15) continue;
 
@@ -136,15 +135,17 @@ export async function remindPharmacyShiftWarn(): Promise<number> {
     const type = `davomat_shift_warn_${w.key}`;
     if (await alreadyNotifiedToday(e.userId, type, since)) continue;
 
-    await db.insert(notificationsTable).values({
+    const text = `${w.label} (${w.start}–${w.end}): ${w.warnText}`;
+    await notifyUser({
       userId: e.userId,
-      text: `${e.fullName}: ${w.warnText} Davomat: Face ID, ${DAVOMAT_GEOFENCE_METERS} m.`,
+      text,
       type,
       linkUrl: "/davomat-face",
+      telegram: true,
     });
     sent += 1;
   }
-  if (sent > 0) logger.info({ sent }, "Pharmacy shift warnings sent");
+  if (sent > 0) logger.info({ sent }, "Shift start warnings sent");
   return sent;
 }
 

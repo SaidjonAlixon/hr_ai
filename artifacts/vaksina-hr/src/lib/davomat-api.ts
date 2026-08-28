@@ -30,6 +30,11 @@ export type DavomatEmployee = {
   departmentName: string | null;
   location: string | null;
   orgRole: string | null;
+  userRole?: string | null;
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+  workStart?: string;
+  workEnd?: string;
   days: DavomatDayMetrics[];
   totals: {
     present: number;
@@ -330,7 +335,7 @@ export type WorkplaceInfo = {
     nextAction: "in" | "out" | "done";
   };
   shift?: {
-    type: "one" | "two";
+    type: "one" | "two" | "office";
     label: string;
     start: string;
     end: string;

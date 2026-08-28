@@ -221,7 +221,7 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
     assignable,
     rules: {
       shift1: "1-smena: 08:00–17:00. Ogohlantirish 07:45. Kechiksa — jarima.",
-      shift2: "2-smena: 18:00–23:45. Ogohlantirish 17:45. Kechiksa — jarima.",
+      shift2: "2-smena: 17:00–23:45. Ogohlantirish 16:45. Kechiksa — jarima.",
       branch:
         "Farmasevt qaysi filialga borishini faqat mudir yoki koordinator belgilaydi. Stajyor lokatsiyasini mudir yoki o‘z farmasevti belgilaydi. Smenani xodim o‘zi tanlaydi. Face ID faqat belgilangan filial GPS (35 m) da o‘tadi.",
     },
@@ -248,7 +248,7 @@ router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<vo
       return;
     }
     patch.shiftType = body.shiftType;
-    patch.shiftLabel = body.shiftType === "two" ? "2-smena 18:00–23:45" : "1-smena 08:00–17:00";
+    patch.shiftLabel = body.shiftType === "two" ? "2-smena 17:00–23:45" : "1-smena 08:00–17:00";
   }
 
   if (body.assignedBranchId !== undefined) {
@@ -315,7 +315,7 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
       ...(body.shiftType
         ? {
             shiftType: body.shiftType,
-            shiftLabel: body.shiftType === "two" ? "2-smena 18:00–23:45" : "1-smena 08:00–17:00",
+            shiftLabel: body.shiftType === "two" ? "2-smena 17:00–23:45" : "1-smena 08:00–17:00",
           }
         : {}),
       updatedAt: new Date(),
@@ -323,7 +323,7 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
     .where(eq(employeesTable.id, target.id));
 
   if (target.userId) {
-    const shiftTxt = body.shiftType === "two" ? "2-smena 18:00–23:45" : body.shiftType === "one" ? "1-smena 08:00–17:00" : "";
+    const shiftTxt = body.shiftType === "two" ? "2-smena 17:00–23:45" : body.shiftType === "one" ? "1-smena 08:00–17:00" : "";
     await notifyUser({
       userId: target.userId,
       text: `${target.fullName}: ${loc} filialiga biriktirildi${shiftTxt ? `, ${shiftTxt}` : ""}. Face ID faqat shu joydan (35 m).`,

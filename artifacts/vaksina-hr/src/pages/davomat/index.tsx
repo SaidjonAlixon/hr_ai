@@ -47,6 +47,14 @@ import {
 } from "../../lib/davomat-api";
 import { useAuth } from "../../contexts/AuthContext";
 import { canViewChecklistStatus, canViewDavomat } from "../../lib/roles";
+import {
+  type DavomatStaffFilter,
+  matchesStaffFilter,
+  STAFF_FILTER_OPTIONS,
+  staffFilterLabel,
+  workHoursForEmployee,
+  workHoursForStaffFilter,
+} from "../../lib/davomat-staff-filter";
 
 function todayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -150,7 +158,7 @@ function StatusPill({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold",
         STATUS_STYLE[status] || "border-border bg-muted text-muted-foreground",
       )}
     >
@@ -158,7 +166,7 @@ function StatusPill({ status }: { status: string }) {
         className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[status] || "bg-slate-400")}
         aria-hidden
       />
-      {label}
+      <span className="whitespace-nowrap">{label}</span>
     </span>
   );
 }
@@ -192,6 +200,7 @@ export default function DavomatPage() {
   const [periodTo, setPeriodTo] = useState(() => todayYmd());
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
+  const [staffFilter, setStaffFilter] = useState<DavomatStaffFilter>("all");
   const [selectedEmpId, setSelectedEmpId] = useState<number | "all">("all");
   const [report, setReport] = useState<DavomatReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -258,14 +267,45 @@ export default function DavomatPage() {
     [report, selectedDay],
   );
 
+  const farOfficeIds = useMemo(() => {
+    const day = report?.days.find((d) => d.date === (dayInfo?.date || selectedDay));
+    return new Set((day?.farFromOffice ?? []).map((f) => f.employeeId));
+  }, [report, dayInfo?.date, selectedDay]);
+
+  const filteredEmployees = useMemo(() => {
+    if (!report) return [];
+    return report.employees.filter((emp) => matchesStaffFilter(emp, staffFilter, farOfficeIds));
+  }, [report, staffFilter, farOfficeIds]);
+
   const employeesForDay = useMemo(() => {
     if (!report) return [];
     const date = dayInfo?.date || selectedDay;
-    return report.employees
+    return filteredEmployees
       .map((e) => ({ emp: e, day: e.days.find((d) => d.date === date) }))
       .filter((x) => x.day)
       .sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "uz"));
-  }, [report, selectedDay, dayInfo]);
+  }, [report, selectedDay, dayInfo, filteredEmployees]);
+
+  const filteredDayStats = useMemo(() => {
+    let present = 0;
+    let late = 0;
+    let absent = 0;
+    let incomplete = 0;
+    let leave = 0;
+    for (const { day } of employeesForDay) {
+      if (!day) continue;
+      if (day.status === "absent") absent += 1;
+      else if (day.status === "leave") leave += 1;
+      else {
+        present += 1;
+        if (day.status === "late") late += 1;
+        if (day.status === "incomplete") incomplete += 1;
+      }
+    }
+    return { present, late, absent, incomplete, leave, total: employeesForDay.length };
+  }, [employeesForDay]);
+
+  const activeWorkHours = useMemo(() => workHoursForStaffFilter(staffFilter), [staffFilter]);
 
   const dayTiming = useMemo(() => {
     const rows = employeesForDay;
@@ -328,8 +368,13 @@ export default function DavomatPage() {
 
   const detailEmployee: DavomatEmployee | null = useMemo(() => {
     if (!report || selectedEmpId === "all") return null;
-    return report.employees.find((e) => e.id === selectedEmpId) ?? null;
-  }, [report, selectedEmpId]);
+    return filteredEmployees.find((e) => e.id === selectedEmpId) ?? null;
+  }, [report, selectedEmpId, filteredEmployees]);
+
+  const detailWorkHours = useMemo(
+    () => (detailEmployee ? workHoursForEmployee(detailEmployee) : activeWorkHours),
+    [detailEmployee, activeWorkHours],
+  );
 
   const onExport = async () => {
     if (exporting) return;
@@ -435,7 +480,14 @@ export default function DavomatPage() {
     "h-11 rounded-xl border-border bg-card text-base shadow-none md:h-9 md:text-sm";
 
   const filters = (
-    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
+    <div
+      className={cn(
+        "grid gap-2",
+        section === "schedule" && calMode !== "range"
+          ? "sm:grid-cols-2 lg:grid-cols-4"
+          : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
+      )}
+    >
       {section === "schedule" && calMode === "range" ? (
         <>
           <div>
@@ -465,25 +517,18 @@ export default function DavomatPage() {
               }}
             />
           </div>
-          <div className="sm:col-span-2 lg:col-span-4">
-            <p className="text-[11px] text-muted-foreground">
-              Tanlangan davr: <span className="font-medium text-foreground">{from}</span> —{" "}
-              <span className="font-medium text-foreground">{to}</span>
-              {periodDates.length ? ` · ${periodDates.length} kun` : ""}
-            </p>
-          </div>
         </>
       ) : section === "schedule" ? (
-        <div className="sm:col-span-2">
+        <div>
           <Label className="text-[11px] font-medium text-muted-foreground">
-            {calMode === "month" ? "Oy" : calMode === "week" ? "Hafta boshi" : "Sana"}
+            {calMode === "month" ? "Oy" : calMode === "week" ? "Hafta" : "Sana"}
           </Label>
           <div className="flex items-center gap-1">
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="h-11 w-11 shrink-0 rounded-xl border-border md:h-9 md:w-9"
+              className="h-9 w-9 shrink-0 rounded-xl border-border"
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, -7);
@@ -509,7 +554,7 @@ export default function DavomatPage() {
             </Button>
             <Input
               type={calMode === "month" ? "month" : "date"}
-              className={cn(fieldClass, "min-w-0 flex-1 px-2")}
+              className={cn(fieldClass, "min-w-0 flex-1 px-2 text-sm")}
               value={
                 calMode === "week"
                   ? weekStart
@@ -536,7 +581,7 @@ export default function DavomatPage() {
               type="button"
               variant="outline"
               size="icon"
-              className="h-11 w-11 shrink-0 rounded-xl border-border md:h-9 md:w-9"
+              className="h-9 w-9 shrink-0 rounded-xl border-border"
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, 7);
@@ -561,16 +606,6 @@ export default function DavomatPage() {
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
-          {calMode === "week" ? (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Hafta: {weekStart} — {addDaysYmd(weekStart, 6)}
-            </p>
-          ) : null}
-          {calMode === "month" ? (
-            <p className="mt-1 text-[11px] text-muted-foreground">
-              Oy: {monthLabelUz(monthAnchor)} · {firstOfMonth(monthAnchor)} — {lastOfMonth(monthAnchor)}
-            </p>
-          ) : null}
         </div>
       ) : (
         <>
@@ -598,7 +633,7 @@ export default function DavomatPage() {
         <Label className="text-[11px] font-medium text-muted-foreground">Bo‘lim</Label>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
           <SelectTrigger className={cn(fieldClass, "px-3")}>
-            <SelectValue placeholder="Barchasi" />
+            <SelectValue placeholder="Barcha bo‘limlar" />
           </SelectTrigger>
           <SelectContent position="popper" className="z-[90]">
             <SelectItem value="all">Barcha bo‘limlar</SelectItem>
@@ -611,6 +646,21 @@ export default function DavomatPage() {
         </Select>
       </div>
       <div>
+        <Label className="text-[11px] font-medium text-muted-foreground">Xodimlar guruhi</Label>
+        <Select value={staffFilter} onValueChange={(v) => setStaffFilter(v as DavomatStaffFilter)}>
+          <SelectTrigger className={cn(fieldClass, "px-3")}>
+            <SelectValue placeholder="Hammasi" />
+          </SelectTrigger>
+          <SelectContent position="popper" className="z-[90]">
+            {STAFF_FILTER_OPTIONS.map((opt) => (
+              <SelectItem key={opt.key} value={opt.key}>
+                {opt.label} · {opt.hint}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <div className={cn(section === "schedule" && calMode !== "range" ? "sm:col-span-2 lg:col-span-1" : "sm:col-span-2 xl:col-span-1")}>
         <Label className="text-[11px] font-medium text-muted-foreground">Qidiruv</Label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -627,34 +677,30 @@ export default function DavomatPage() {
 
   return (
     <div className="w-full space-y-5 pb-10">
-      <div className="overflow-hidden rounded-2xl border border-[#0b3a5c]/10 bg-gradient-to-br from-[#0b3a5c] to-[#0f4a73] text-foreground dark:text-white shadow-sm">
+      <div className="dv-report-hero">
         <div className="flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-6">
           <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-sky-200/80">
-              Hisobot
-            </p>
-            <h1 className="mt-0.5 text-xl font-bold tracking-tight sm:text-[1.7rem]">Davomat</h1>
-            <p className="mt-1 text-xs text-sky-100/85 sm:text-sm">
-              Ish vaqti norma: <span className="font-semibold text-foreground dark:text-white">09:00–18:00</span>
+            <p className="dv-report-hero-label">Hisobot</p>
+            <h1 className="dv-report-hero-title">Davomat</h1>
+            <p className="dv-report-hero-sub">
+              Ish vaqti:{" "}
+              <span className="dv-report-hero-strong">
+                {staffFilter === "all"
+                  ? "Ofis 09:00–18:00 · 1-smena 08:00–17:00 · 2-smena 17:00–23:45"
+                  : `${staffFilterLabel(staffFilter)} ${activeWorkHours.start}–${activeWorkHours.end}`}
+              </span>
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+          <div className="dv-report-actions grid grid-cols-2 sm:flex sm:flex-wrap">
             <a href="/davomat-face" className="min-w-0">
-              <Button
-                type="button"
-                className="h-10 w-full gap-1.5 rounded-xl bg-card px-2.5 text-xs font-semibold text-[#0b3a5c] hover:bg-sky-50 sm:h-10 sm:w-auto sm:px-3 sm:text-sm"
-              >
+              <Button type="button" variant="ghost" className="dv-report-btn-primary">
                 <UserCheck className="h-4 w-4 shrink-0" />
                 Keldim / Ketdim
               </Button>
             </a>
             {canViewChecklistStatus(user?.role) && (
               <Link href="/checklist-holati" className="min-w-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white sm:w-auto sm:px-3 sm:text-sm"
-                >
+                <Button type="button" variant="ghost" className="dv-report-btn-ghost">
                   <ClipboardCheck className="h-4 w-4 shrink-0" />
                   Cheklist
                 </Button>
@@ -662,8 +708,8 @@ export default function DavomatPage() {
             )}
             <Button
               type="button"
-              variant="outline"
-              className="h-10 w-full gap-1.5 rounded-xl border-white/30 bg-white/10 px-2.5 text-xs font-semibold text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white sm:w-auto sm:px-3 sm:text-sm"
+              variant="ghost"
+              className="dv-report-btn-ghost"
               onClick={() => void onAnnounce()}
               disabled={announcing || loading}
             >
@@ -672,7 +718,8 @@ export default function DavomatPage() {
             </Button>
             <Button
               type="button"
-              className="h-10 w-full gap-1.5 rounded-xl bg-emerald-500 px-2.5 text-xs font-semibold text-foreground dark:text-white hover:bg-emerald-400 sm:w-auto sm:px-3 sm:text-sm"
+              variant="ghost"
+              className="dv-report-btn-excel"
               onClick={() => void onExport()}
               disabled={exporting || loading}
             >
@@ -763,23 +810,37 @@ export default function DavomatPage() {
               <>
               <Card className="border-border shadow-sm overflow-hidden">
                 <CardHeader className="pb-2">
-                  <CardTitle className="text-base">Kunlik davomat · {selectedDay}</CardTitle>
+                  <CardTitle className="text-base">
+                    Kunlik davomat · {selectedDay}
+                    {staffFilter !== "all" ? (
+                      <span className="ml-2 text-sm font-medium text-primary">
+                        · {staffFilterLabel(staffFilter)}
+                      </span>
+                    ) : null}
+                  </CardTitle>
                   {dayInfo ? (
                     <p className="text-xs text-muted-foreground">
                       <span className="font-semibold text-foreground">
-                        Jami: {report.summary.employees} xodim
+                        Jami: {filteredDayStats.total} xodim
+                        {staffFilter !== "all" && report ? ` / ${report.summary.employees}` : ""}
                       </span>
                       {" · "}
-                      <span className="font-medium text-emerald-700">Kelgan: {dayInfo.present}</span>
+                      <span className="font-medium text-emerald-700">Kelgan: {filteredDayStats.present}</span>
                       {" · "}
-                      <span className="font-medium text-amber-700">Kech: {dayInfo.late}</span>
+                      <span className="font-medium text-amber-700">Kech: {filteredDayStats.late}</span>
                       {" · "}
-                      <span className="font-medium text-rose-700">Kelmagan: {dayInfo.absent}</span>
+                      <span className="font-medium text-rose-700">Kelmagan: {filteredDayStats.absent}</span>
                       {" · "}
-                      <span className="font-medium text-sky-700">Ketish yo‘q: {dayInfo.incomplete}</span>
+                      <span className="font-medium text-sky-700">Ketish yo‘q: {filteredDayStats.incomplete}</span>
                       <span className="mt-0.5 block text-muted-foreground">
                         Kech keldi: {dayTiming.lateArrival} · Erta keldi: {dayTiming.earlyArrival} · Erta
                         ketdi: {dayTiming.earlyLeave} · Kech ketdi: {dayTiming.overtime}
+                        {staffFilter !== "all" ? (
+                          <>
+                            {" "}
+                            · Reja: {activeWorkHours.start}–{activeWorkHours.end}
+                          </>
+                        ) : null}
                       </span>
                     </p>
                   ) : null}
@@ -792,27 +853,13 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
                         <th className="px-3 py-2">Holat</th>
+                        {staffFilter === "all" ? (
+                          <th className="px-3 py-2">Smena / vaqt</th>
+                        ) : null}
                         <th className="px-3 py-2">Kelish</th>
                         <th className="px-3 py-2">Ketish</th>
-                        <th className="px-3 py-2">
-                          Ishlagan
-                        </th>
-                        <th className="px-3 py-2">
-                          Kech keldi
-                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan keyin</span>
-                        </th>
-                        <th className="px-3 py-2">
-                          Erta keldi
-                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan oldin</span>
-                        </th>
-                        <th className="px-3 py-2">
-                          Erta ketdi
-                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan oldin</span>
-                        </th>
-                        <th className="px-3 py-2">
-                          Kech ketdi
-                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan keyin</span>
-                        </th>
+                        <th className="px-3 py-2">Ishlagan</th>
+                        <TimingHeaderCells workStart={activeWorkHours.start} workEnd={activeWorkHours.end} />
                         <th className="px-3 py-2 w-10" />
                       </tr>
                     </thead>
@@ -838,6 +885,14 @@ export default function DavomatPage() {
                           <td className="px-3 py-2">
                             <StatusPill status={day!.status} />
                           </td>
+                          {staffFilter === "all" ? (
+                            <td className="px-3 py-2 text-xs text-muted-foreground">
+                              {(() => {
+                                const h = workHoursForEmployee(emp);
+                                return `${h.start}–${h.end}`;
+                              })()}
+                            </td>
+                          ) : null}
                           <td className="px-3 py-2 tabular-nums">{day!.checkIn}</td>
                           <td className="px-3 py-2 tabular-nums">{day!.checkOut}</td>
                           <td className="px-3 py-2 tabular-nums font-medium">{day!.workedHours}</td>
@@ -876,8 +931,9 @@ export default function DavomatPage() {
                 title={periodTitle}
                 subtitle={periodSubtitle}
                 dates={periodDates}
-                employees={report.employees}
-                employeeCount={report.summary.employees}
+                employees={filteredEmployees}
+                employeeCount={filteredEmployees.length}
+                staffFilter={staffFilter}
                 onEdit={openEdit}
               />
             )
@@ -896,7 +952,7 @@ export default function DavomatPage() {
           ) : report ? (
             <>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat icon={<Users className="h-4 w-4" />} label="Xodimlar" value={String(report.summary.employees)} />
+                <Stat icon={<Users className="h-4 w-4" />} label="Xodimlar" value={String(filteredEmployees.length)} />
                 <Stat
                   icon={<UserCheck className="h-4 w-4 text-emerald-600" />}
                   label="Kelgan (kun×odam)"
@@ -938,26 +994,11 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">
                           Ishlagan
                         </th>
-                        <th className="px-3 py-2">
-                          Kech keldi
-                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan keyin</span>
-                        </th>
-                        <th className="px-3 py-2">
-                          Erta keldi
-                          <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan oldin</span>
-                        </th>
-                        <th className="px-3 py-2">
-                          Erta ketdi
-                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan oldin</span>
-                        </th>
-                        <th className="px-3 py-2">
-                          Kech ketdi
-                          <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan keyin</span>
-                        </th>
+                        <TimingHeaderCells workStart={activeWorkHours.start} workEnd={activeWorkHours.end} />
                       </tr>
                     </thead>
                     <tbody>
-                      {report.employees.map((e, i) => (
+                      {filteredEmployees.map((e, i) => (
                         <tr
                           key={e.id}
                           className={cn(
@@ -1000,22 +1041,7 @@ export default function DavomatPage() {
                           <th className="px-3 py-2">
                           Ishlagan
                         </th>
-                          <th className="px-3 py-2">
-                            Kech keldi
-                            <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan keyin</span>
-                          </th>
-                          <th className="px-3 py-2">
-                            Erta keldi
-                            <span className="block font-normal text-[10px] text-muted-foreground">09:00 dan oldin</span>
-                          </th>
-                          <th className="px-3 py-2">
-                            Erta ketdi
-                            <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan oldin</span>
-                          </th>
-                          <th className="px-3 py-2">
-                            Kech ketdi
-                            <span className="block font-normal text-[10px] text-muted-foreground">18:00 dan keyin</span>
-                          </th>
+                          <TimingHeaderCells workStart={detailWorkHours.start} workEnd={detailWorkHours.end} />
                           <th className="px-3 py-2 w-10" />
                         </tr>
                       </thead>
@@ -1133,6 +1159,29 @@ export default function DavomatPage() {
   );
 }
 
+function TimingHeaderCells({ workStart, workEnd }: { workStart: string; workEnd: string }) {
+  return (
+    <>
+      <th className="px-3 py-2">
+        Kech keldi
+        <span className="block font-normal text-[10px] text-muted-foreground">{workStart} dan keyin</span>
+      </th>
+      <th className="px-3 py-2">
+        Erta keldi
+        <span className="block font-normal text-[10px] text-muted-foreground">{workStart} dan oldin</span>
+      </th>
+      <th className="px-3 py-2">
+        Erta ketdi
+        <span className="block font-normal text-[10px] text-muted-foreground">{workEnd} dan oldin</span>
+      </th>
+      <th className="px-3 py-2">
+        Kech ketdi
+        <span className="block font-normal text-[10px] text-muted-foreground">{workEnd} dan keyin</span>
+      </th>
+    </>
+  );
+}
+
 function TimeMetric({ value }: { value: string }) {
   if (!value || value === "—") return <span className="text-muted-foreground">—</span>;
   return <span className="tabular-nums font-medium">{value}</span>;
@@ -1148,6 +1197,7 @@ function PeriodAttendanceGrid({
   dates,
   employees,
   employeeCount,
+  staffFilter,
   onEdit,
 }: {
   title: string;
@@ -1155,6 +1205,7 @@ function PeriodAttendanceGrid({
   dates: string[];
   employees: DavomatEmployee[];
   employeeCount: number;
+  staffFilter: DavomatStaffFilter;
   onEdit: (emp: DavomatEmployee, date: string) => void;
 }) {
   const topBarRef = useRef<HTMLDivElement>(null);
@@ -1261,6 +1312,7 @@ function PeriodAttendanceGrid({
         <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           Katakka bosing — tahrirlash · {employeeCount} xodim
+          {staffFilter !== "all" ? ` · ${staffFilterLabel(staffFilter)}` : ""}
           {dates.length ? ` · ${dates.length} kun` : ""}
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-medium">
@@ -1407,7 +1459,7 @@ function WeekCell({
           : "Yozish"
       }
     >
-      <span className="w-full text-center text-[10px] font-bold leading-none">
+      <span className="w-full whitespace-nowrap text-center text-[10px] font-bold leading-none">
         {statusLabel}
       </span>
       {hasIn || hasOut ? (

@@ -16,7 +16,7 @@ import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
-import { hoursForStaff, isPharmacyShiftStaff, shiftWindow } from "../lib/shift-hours";
+import { hoursForStaff, normalizeShiftType, workScheduleForStaff } from "../lib/shift-hours";
 import { loadStaffFromUsers } from "../lib/staff-directory";
 import { buildDavomatAnalytics, type DavomatSegment } from "../lib/davomat-analytics";
 
@@ -239,8 +239,9 @@ async function loadActiveEmployees(filters: {
     employmentStatus: s.employmentStatus,
     userId: s.userId,
     userRole: s.userRole,
-    orgRole: s.orgRole,
+    orgRole: s.orgRole || orgRoleFromUserRole(s.userRole || "") || null,
     shiftType: s.shiftType,
+    shiftLabel: s.shiftLabel,
   }));
 
   return rows.filter((e) => {
@@ -334,7 +335,7 @@ function buildReport(
         leave += 1;
         continue;
       }
-      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType));
+      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel));
       if (m.status === "late") {
         late += 1;
         lateList.push(e.fullName);
@@ -412,7 +413,7 @@ function buildReport(
             recordId: rec.id,
           };
         }
-        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType));
+        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel));
         return {
           date,
           ...m,
@@ -460,6 +461,13 @@ function buildReport(
         departmentName: e.departmentName,
         location: e.location,
         orgRole: e.orgRole,
+        userRole: e.userRole,
+        shiftType: normalizeShiftType(e.shiftType, e.shiftLabel),
+        shiftLabel: e.shiftLabel,
+        ...(() => {
+          const h = hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel);
+          return { workStart: h.start, workEnd: h.end };
+        })(),
         days,
         totals: {
           ...totals,
@@ -702,6 +710,7 @@ type WorkplaceEmp = {
   reportsToId: number | null;
   assignedBranchId: number | null;
   shiftType: string | null;
+  shiftLabel: string | null;
 };
 
 const BRANCH_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
@@ -845,6 +854,7 @@ async function findEmployeeByUserId(userId: number): Promise<WorkplaceEmp | null
       reportsToId: employeesTable.reportsToId,
       assignedBranchId: employeesTable.assignedBranchId,
       shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
     })
     .from(employeesTable)
     .where(eq(employeesTable.userId, userId))
@@ -879,6 +889,7 @@ async function ensureEmployeeForUser(user: {
       reportsToId: employeesTable.reportsToId,
       assignedBranchId: employeesTable.assignedBranchId,
       shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
       employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable);
@@ -912,6 +923,7 @@ async function ensureEmployeeForUser(user: {
       reportsToId: byName.reportsToId,
       assignedBranchId: byName.assignedBranchId,
       shiftType: byName.shiftType,
+      shiftLabel: byName.shiftLabel,
     };
   }
 
@@ -952,6 +964,7 @@ async function ensureEmployeeForUser(user: {
       reportsToId: employeesTable.reportsToId,
       assignedBranchId: employeesTable.assignedBranchId,
       shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
     });
 
   if (!created) throw new Error("Xodim yaratilmadi");
@@ -1104,7 +1117,7 @@ async function applyFacePunch(opts: {
   | PunchFail
 > {
   const { emp, latitude, longitude, distanceMeters, allowedMeters, faceProfileId, action } = opts;
-  const hours = hoursForStaff(emp.orgRole, emp.shiftType);
+  const hours = hoursForStaff(emp.orgRole, emp.shiftType, user.role);
   const workDate = todayTashkent();
   const now = new Date();
   const dateFilter = and(
@@ -1361,18 +1374,15 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       gpsError: resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q"),
       workDate,
       shift: (() => {
-        const w = shiftWindow(emp.shiftType);
-        const pharmacy = isPharmacyShiftStaff(user.role, emp.orgRole);
-        return pharmacy
-          ? {
-              type: w.key,
-              label: w.label,
-              start: w.start,
-              end: w.end,
-              warnHm: w.warnHm,
-              warnText: w.warnText,
-            }
-          : null;
+        const w = workScheduleForStaff(user.role, emp.orgRole, emp.shiftType, emp.shiftLabel);
+        return {
+          type: w.key,
+          label: w.label,
+          start: w.start,
+          end: w.end,
+          warnHm: w.warnHm,
+          warnText: w.warnText,
+        };
       })(),
       employee: {
         id: emp.id,

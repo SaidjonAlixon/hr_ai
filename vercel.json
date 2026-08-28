@@ -18,6 +18,10 @@
     {
       "path": "/api/jobs/vacancy-reminders",
       "schedule": "*/10 * * * *"
+    },
+    {
+      "path": "/api/jobs/davomat-reminders",
+      "schedule": "*/5 * * * *"
     }
   ]
 }

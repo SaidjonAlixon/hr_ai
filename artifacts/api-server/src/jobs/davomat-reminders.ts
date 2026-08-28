@@ -8,6 +8,7 @@ import {
 } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { notifyAllActiveUsers, notifyUser } from "../lib/notify";
+import { isTelegramConfigured } from "../lib/telegram";
 import { DAVOMAT_GEOFENCE_METERS } from "../routes/davomat";
 import { isPharmacyShiftStaff, shiftWindow, hmToMinutes, workScheduleForStaff } from "../lib/shift-hours";
 
@@ -270,5 +271,10 @@ export async function forceBroadcastDavomatToAll(): Promise<number> {
       `Muhim: endi barcha xodimlar davomatdan Face ID orqali o‘tadi. Kelish/ketish — faqat belgilangan joydan ${DAVOMAT_GEOFENCE_METERS} m ichida. Ochish: Davomat Face ID.`,
     type: "davomat_rule",
     linkUrl: "/davomat-face",
+    telegram: true,
   });
+}
+
+export function davomatBroadcastTelegramReady(): boolean {
+  return isTelegramConfigured();
 }

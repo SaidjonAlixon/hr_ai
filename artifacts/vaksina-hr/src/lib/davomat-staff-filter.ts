@@ -82,6 +82,24 @@ export function staffFilterLabel(filter: DavomatStaffFilter): string {
   }
 }
 
+/** Jadval va katak uchun qisqa smena nomi */
+export function smenaLabelShort(emp: DavomatEmployee): string {
+  if (EXTERNAL_USER_ROLES.has(emp.userRole || "")) return "Tashqi xodimlar";
+  const kind = classifyDavomatStaff(emp);
+  switch (kind) {
+    case "shift_one":
+      return "1-smena";
+    case "shift_two":
+      return "2-smena";
+    case "office":
+      return "Asosiy ofis";
+    case "external":
+      return "Tashqi xodimlar";
+    default:
+      return "Asosiy ofis";
+  }
+}
+
 export function workHoursForStaffFilter(filter: DavomatStaffFilter): { start: string; end: string } {
   switch (filter) {
     case "shift_one":

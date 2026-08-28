@@ -52,6 +52,7 @@ import {
   matchesStaffFilter,
   STAFF_FILTER_OPTIONS,
   staffFilterLabel,
+  smenaLabelShort,
   workHoursForEmployee,
   workHoursForStaffFilter,
 } from "../../lib/davomat-staff-filter";
@@ -123,10 +124,10 @@ function weekdayShort(ymd: string): string {
 
 const STATUS_UZ: Record<string, string> = {
   present: "Kelgan",
-  late: "Kech",
-  incomplete: "Ketish yo‘q",
+  late: "Kechikdi",
+  incomplete: "Ketish yozilmagan",
   absent: "Kelmagan",
-  leave: "Ta’til",
+  leave: "Ta'tilda",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -144,6 +145,50 @@ const STATUS_DOT: Record<string, string> = {
   absent: "bg-rose-500",
   leave: "bg-violet-500",
 };
+
+/** Haftalik jadval kataklari — qisqa matn */
+const WEEK_CELL_STATUS: Record<string, string> = {
+  present: "Keldi",
+  late: "Kechikdi",
+  incomplete: "Ketish —",
+  absent: "Kelmagan",
+  leave: "Ta'til",
+};
+
+function compactDuration(label: string): string {
+  return label
+    .replace(/\s*soat\s*/gi, "s ")
+    .replace(/\s*daq/gi, "d")
+    .replace(/^−/, "-")
+    .trim();
+}
+
+function weekCellSublineParts(day: DavomatDayMetrics): {
+  worked?: string;
+  late?: string;
+  earlyLeave?: string;
+  overtime?: string;
+} | null {
+  const worked =
+    day.workedHours && day.workedHours !== "0:00" && day.workedHours !== "—"
+      ? day.workedHours
+      : undefined;
+  const late =
+    day.lateArrivalLabel && day.lateArrivalLabel !== "—"
+      ? `-${compactDuration(day.lateArrivalLabel)}`
+      : undefined;
+  const earlyLeave =
+    day.earlyLeaveLabel && day.earlyLeaveLabel !== "—"
+      ? `-${compactDuration(day.earlyLeaveLabel)}`
+      : undefined;
+  const overtime =
+    day.overtimeLabel && day.overtimeLabel !== "—"
+      ? `+${compactDuration(day.overtimeLabel)}`
+      : undefined;
+
+  if (!worked && !late && !earlyLeave && !overtime) return null;
+  return { worked, late, earlyLeave, overtime };
+}
 
 const STATUS_ROW: Record<string, string> = {
   present: "bg-emerald-50/40",
@@ -379,6 +424,10 @@ export default function DavomatPage() {
   const onExport = async () => {
     if (exporting) return;
     setExporting(true);
+    toast({
+      title: "Excel tayyorlanmoqda…",
+      description: "Katta hisobot 20–40 soniya olishi mumkin. Iltimos, kuting.",
+    });
     try {
       await downloadDavomatExcel({
         from,
@@ -388,12 +437,12 @@ export default function DavomatPage() {
       });
       toast({
         title: "Excel yuklandi",
-        description: "5 varaq: xulosa, batafsil, jami, kelganlar, kelmaganlar",
+        description: "5 varaq: jadval, xulosa, jami, kelganlar, kelmaganlar",
       });
     } catch (err) {
       toast({
-        title: "Xatolik",
-        description: (err as Error)?.message,
+        title: "Excel yuklanmadi",
+        description: (err as Error)?.message || "Server bilan bog‘lanib bo‘lmadi",
         variant: "destructive",
       });
     } finally {
@@ -403,6 +452,10 @@ export default function DavomatPage() {
 
   const onAnnounce = async () => {
     if (announcing) return;
+    const ok = window.confirm(
+      "Barcha faol xodimlarga davomat qoidasi haqida xabar yuborilsinmi?\n\nTelegram va tizim ichidagi bildirishnomaga yetkaziladi.",
+    );
+    if (!ok) return;
     setAnnouncing(true);
     try {
       const res = await fetch("/api/davomat/announce", {
@@ -417,8 +470,8 @@ export default function DavomatPage() {
       });
     } catch (err) {
       toast({
-        title: "Xatolik",
-        description: (err as Error)?.message,
+        title: "Xabar yuborilmadi",
+        description: (err as Error)?.message || "Server bilan bog‘lanib bo‘lmadi",
         variant: "destructive",
       });
     } finally {
@@ -691,7 +744,7 @@ export default function DavomatPage() {
               </span>
             </p>
           </div>
-          <div className="dv-report-actions grid grid-cols-2 sm:flex sm:flex-wrap">
+          <div className="dv-report-actions relative z-10 grid grid-cols-2 sm:flex sm:flex-wrap">
             <a href="/davomat-face" className="min-w-0">
               <Button type="button" variant="ghost" className="dv-report-btn-primary">
                 <UserCheck className="h-4 w-4 shrink-0" />
@@ -709,9 +762,9 @@ export default function DavomatPage() {
             <Button
               type="button"
               variant="ghost"
-              className="dv-report-btn-ghost"
+              className="dv-report-btn-announce"
               onClick={() => void onAnnounce()}
-              disabled={announcing || loading}
+              disabled={announcing || (loading && !report)}
             >
               {announcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4 shrink-0" />}
               Xabar
@@ -721,7 +774,7 @@ export default function DavomatPage() {
               variant="ghost"
               className="dv-report-btn-excel"
               onClick={() => void onExport()}
-              disabled={exporting || loading}
+              disabled={exporting || (loading && !report)}
             >
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 shrink-0" />}
               Excel
@@ -1160,23 +1213,24 @@ export default function DavomatPage() {
 }
 
 function TimingHeaderCells({ workStart, workEnd }: { workStart: string; workEnd: string }) {
+  const sub = "block whitespace-nowrap font-normal text-[10px] text-muted-foreground";
   return (
     <>
-      <th className="px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2">
         Kech keldi
-        <span className="block font-normal text-[10px] text-muted-foreground">{workStart} dan keyin</span>
+        <span className={sub}>{workStart} dan keyin</span>
       </th>
-      <th className="px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2">
         Erta keldi
-        <span className="block font-normal text-[10px] text-muted-foreground">{workStart} dan oldin</span>
+        <span className={sub}>{workStart} dan oldin</span>
       </th>
-      <th className="px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2">
         Erta ketdi
-        <span className="block font-normal text-[10px] text-muted-foreground">{workEnd} dan oldin</span>
+        <span className={sub}>{workEnd} dan oldin</span>
       </th>
-      <th className="px-3 py-2">
+      <th className="whitespace-nowrap px-3 py-2">
         Kech ketdi
-        <span className="block font-normal text-[10px] text-muted-foreground">{workEnd} dan keyin</span>
+        <span className={sub}>{workEnd} dan keyin</span>
       </th>
     </>
   );
@@ -1320,7 +1374,7 @@ function PeriodAttendanceGrid({
             Yashil = Kelgan
           </span>
           <span className="rounded-md border border-amber-300 bg-amber-100 px-2 py-0.5 text-amber-900">
-            Sariq = Kech
+            Sariq = Kechikdi
           </span>
           <span className="rounded-md border border-rose-300 bg-rose-100 px-2 py-0.5 text-rose-800">
             Qizil = Kelmagan
@@ -1329,7 +1383,7 @@ function PeriodAttendanceGrid({
             Binafsha = Ta’til
           </span>
           <span className="rounded-md border border-sky-300 bg-sky-100 px-2 py-0.5 text-sky-800">
-            Ko‘k = Ketish yo‘q
+            Ko‘k = Ketish —
           </span>
         </div>
       </CardHeader>
@@ -1405,15 +1459,24 @@ function PeriodAttendanceGrid({
                         <div className="truncate font-medium text-foreground" title={emp.fullName}>
                           {emp.fullName}
                         </div>
-                        {emp.position ? (
-                          <div className="truncate text-[10px] text-muted-foreground">{emp.position}</div>
-                        ) : null}
+                        <div className="truncate text-[10px] text-muted-foreground">
+                          {emp.position ? `${emp.position} · ` : ""}
+                          {smenaLabelShort(emp)}
+                        </div>
                       </td>
                       {dates.map((date) => {
                         const day = emp.days.find((d) => d.date === date);
                         return (
                           <td key={date} className="px-1 py-1 align-middle">
-                            <WeekCell day={day} onClick={() => onEdit(emp, date)} />
+                            <WeekCell
+                              day={day}
+                              hours={
+                                emp.workStart && emp.workEnd
+                                  ? { start: emp.workStart, end: emp.workEnd }
+                                  : undefined
+                              }
+                              onClick={() => onEdit(emp, date)}
+                            />
                           </td>
                         );
                       })}
@@ -1433,49 +1496,86 @@ function PeriodAttendanceGrid({
   );
 }
 
+function dayCellTooltip(day: DavomatDayMetrics, hours?: { start: string; end: string }) {
+  const h = hours ?? { start: "09:00", end: "18:00" };
+  const lines = [STATUS_UZ[day.status] || day.status];
+  lines.push(`Keldim: ${day.checkIn} (reja ${h.start})`);
+  lines.push(`Ketdim: ${day.checkOut} (reja ${h.end})`);
+  if (day.workedHours && day.workedHours !== "0:00" && day.workedHours !== "—") {
+    lines.push(`Ishlangan: ${day.workedHours}`);
+  }
+  if (day.lateArrivalLabel && day.lateArrivalLabel !== "—") {
+    lines.push(`Kechikish: ${day.lateArrivalLabel}`);
+  }
+  if (day.earlyArrivalLabel && day.earlyArrivalLabel !== "—") {
+    lines.push(`Erta kelish: ${day.earlyArrivalLabel}`);
+  }
+  if (day.earlyLeaveLabel && day.earlyLeaveLabel !== "—") {
+    lines.push(`Erta ketish: ${day.earlyLeaveLabel}`);
+  }
+  if (day.overtimeLabel && day.overtimeLabel !== "—") {
+    lines.push(`Qo'shimcha ish: ${day.overtimeLabel}`);
+  }
+  return lines.join("\n");
+}
+
 function WeekCell({
   day,
   onClick,
+  hours,
 }: {
   day?: DavomatDayMetrics;
   onClick: () => void;
+  hours?: { start: string; end: string };
 }) {
   const status = day?.status || "absent";
   const hasIn = Boolean(day?.checkIn && day.checkIn !== "—");
   const hasOut = Boolean(day?.checkOut && day.checkOut !== "—");
-  const statusLabel = STATUS_UZ[status] || status;
+  const statusLabel = WEEK_CELL_STATUS[status] || STATUS_UZ[status] || status;
+  const showTimes = status !== "absent" && status !== "leave" && (hasIn || hasOut || status === "incomplete");
+  const subline = day ? weekCellSublineParts(day) : null;
 
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "mx-auto flex h-[58px] w-full flex-col items-center justify-center gap-0.5 rounded-lg border px-1 py-1 font-medium transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20",
+        "mx-auto flex h-[62px] w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20",
         STATUS_STYLE[status] || "bg-muted",
       )}
-      title={
-        day
-          ? `${statusLabel} · ${day.checkIn}–${day.checkOut} · ish ${day.workedHours}`
-          : "Yozish"
-      }
+      title={day ? dayCellTooltip(day, hours) : "Yozish"}
     >
       <span className="w-full whitespace-nowrap text-center text-[10px] font-bold leading-none">
         {statusLabel}
       </span>
-      {hasIn || hasOut ? (
-        <>
-          <span className="w-full text-center text-[11px] font-semibold tabular-nums leading-tight">
-            {hasIn ? day!.checkIn : "—"}
-            <span className="font-normal opacity-50">–</span>
-            {hasOut ? day!.checkOut : "—"}
-          </span>
-          {day!.workedHours && day!.workedHours !== "0:00" && day!.workedHours !== "—" ? (
-            <span className="w-full text-center text-[9px] opacity-70">{day!.workedHours}</span>
+      {showTimes ? (
+        <span className="w-full whitespace-nowrap text-center text-[10px] font-semibold tabular-nums leading-tight">
+          {hasIn ? day!.checkIn : "—"}–{hasOut ? day!.checkOut : "—"}
+        </span>
+      ) : null}
+      {subline ? (
+        <span className="flex w-full items-center justify-center gap-0.5 whitespace-nowrap text-center text-[9px] tabular-nums leading-none">
+          {subline.worked ? <span className="opacity-75">{subline.worked}</span> : null}
+          {subline.worked && subline.late ? <span className="opacity-50">·</span> : null}
+          {subline.late ? (
+            <span className="font-bold text-red-600 dark:text-red-500">
+              Kech {subline.late}
+            </span>
           ) : null}
-        </>
-      ) : status === "leave" ? null : (
-        <span className="text-[11px] leading-none opacity-50">—</span>
-      )}
+          {(subline.worked || subline.late) && subline.earlyLeave ? (
+            <span className="opacity-50">·</span>
+          ) : null}
+          {subline.earlyLeave ? (
+            <span className="font-semibold text-amber-700 dark:text-amber-500">{subline.earlyLeave}</span>
+          ) : null}
+          {(subline.worked || subline.late || subline.earlyLeave) && subline.overtime ? (
+            <span className="opacity-50">·</span>
+          ) : null}
+          {subline.overtime ? (
+            <span className="font-semibold text-emerald-700 dark:text-emerald-500">{subline.overtime}</span>
+          ) : null}
+        </span>
+      ) : null}
     </button>
   );
 }

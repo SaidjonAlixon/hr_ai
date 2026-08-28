@@ -423,9 +423,12 @@ export async function downloadDavomatExcel(params: {
   const res = await fetch(`/api/davomat/export?${q}`, { credentials: "include" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
+    throw new Error((body as { error?: string }).error || `Excel yuklanmadi (${res.status})`);
   }
   const blob = await res.blob();
+  if (!blob.size) {
+    throw new Error("Server bo‘sh fayl qaytardi — qayta urinib ko‘ring");
+  }
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;

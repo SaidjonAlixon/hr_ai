@@ -11,7 +11,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
-import { forceBroadcastDavomatToAll } from "../jobs/davomat-reminders";
+import { forceBroadcastDavomatToAll, davomatBroadcastTelegramReady } from "../jobs/davomat-reminders";
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
@@ -210,6 +210,75 @@ function computeMetrics(
     earlyLeaveLabel: earlyLeaveMin ? fmtSignedMin(earlyLeaveMin) : "—",
     overtimeLabel: overtimeMin ? fmtSignedMin(overtimeMin) : "—",
   };
+}
+
+/** Excel va eksport uchun kunlik katak matni — qisqa qisqartmalarsiz. */
+function formatDavomatDayCell(
+  d: {
+    status: string;
+    checkIn: string;
+    checkOut: string;
+    workedHours: string;
+    lateArrivalLabel: string;
+    earlyArrivalLabel: string;
+    earlyLeaveLabel: string;
+    overtimeLabel: string;
+  },
+  hours: { start: string; end: string },
+): string {
+  if (d.status === "absent") return "Kelmagan";
+  if (d.status === "leave") return "Ta'tilda";
+
+  const lines: string[] = [];
+  if (d.status === "late") lines.push("Kechikib keldi");
+  else if (d.status === "incomplete") lines.push("Keldi, ketish yozilmagan");
+  else lines.push("O'z vaqtida keldi");
+
+  const cin = d.checkIn && d.checkIn !== "—" ? d.checkIn : "—";
+  const cout = d.checkOut && d.checkOut !== "—" ? d.checkOut : "—";
+  lines.push(`Keldim: ${cin} (reja ${hours.start})`);
+  lines.push(`Ketdim: ${cout} (reja ${hours.end})`);
+
+  if (d.workedHours && d.workedHours !== "—" && d.workedHours !== "0:00") {
+    lines.push(`Ishlangan: ${d.workedHours}`);
+  }
+  if (d.lateArrivalLabel && d.lateArrivalLabel !== "—") {
+    lines.push(`Kechikish: ${d.lateArrivalLabel}`);
+  }
+  if (d.earlyArrivalLabel && d.earlyArrivalLabel !== "—") {
+    lines.push(`Erta kelish: ${d.earlyArrivalLabel}`);
+  }
+  if (d.earlyLeaveLabel && d.earlyLeaveLabel !== "—") {
+    lines.push(`Erta ketish: ${d.earlyLeaveLabel}`);
+  }
+  if (d.overtimeLabel && d.overtimeLabel !== "—") {
+    lines.push(`Qo'shimcha ish: ${d.overtimeLabel}`);
+  }
+  return lines.join("\n");
+}
+
+const EXTERNAL_USER_ROLES = new Set([
+  "revizor",
+  "reviziya_rahbar",
+  "texnik",
+  "texnik_rahbar",
+  "sb",
+  "sb_boshliq",
+  "mentor",
+  "recruiter",
+  "trainer",
+]);
+
+function smenaLabelForEmployee(e: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+}): string {
+  if (EXTERNAL_USER_ROLES.has(e.userRole || "")) return "Tashqi xodimlar";
+  const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
+  if (w.key === "office") return "Asosiy ofis";
+  return `${w.label}da ishlaydiganlar`;
 }
 
 async function loadActiveEmployees(filters: {
@@ -1506,11 +1575,15 @@ router.post("/davomat/announce", requireAuth, async (req: AuthRequest, res): Pro
   try {
     const linked = await ensureAllActiveUsersLinked();
     const sent = await forceBroadcastDavomatToAll();
+    const tg = davomatBroadcastTelegramReady();
     res.json({
       ok: true,
       sent,
       linked,
-      message: `${sent} ta xabar, ${linked} ta akkaunt xodimlar bilan bog‘landi`,
+      telegram: tg,
+      message: tg
+        ? `${sent} ta xabar yuborildi (Telegram + tizim ichida)`
+        : `${sent} ta xabar tizim ichida yuborildi (Telegram sozlanmagan)`,
     });
   } catch (err) {
     console.error("POST /davomat/announce error:", err);
@@ -1836,11 +1909,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     };
 
     const statusUz: Record<string, string> = {
-      present: "Kelgan",
-      late: "Kech",
-      incomplete: "Ketish yo‘q",
+      present: "O'z vaqtida keldi",
+      late: "Kechikib keldi",
+      incomplete: "Ketish yozilmagan",
       absent: "Kelmagan",
-      leave: "Ta’til",
+      leave: "Ta'tilda",
     };
 
     const statusFill: Record<string, string> = {
@@ -1866,36 +1939,10 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       return weekdayUz[idx] ?? "";
     };
 
-    const dayCellText = (d: (typeof report.employees)[0]["days"][0]) => {
-      const st = statusUz[d.status] || d.status;
-      if (d.status === "absent") return "Kelmagan";
-      if (d.status === "leave") return "Ta’til";
-      const lines = [st];
-      if ((d.checkIn && d.checkIn !== "—") || (d.checkOut && d.checkOut !== "—")) {
-        lines.push(`${d.checkIn || "—"}–${d.checkOut || "—"}`);
-      }
-      if (d.workedHours && d.workedHours !== "—" && d.workedHours !== "0:00") {
-        lines.push(`Ish: ${d.workedHours}`);
-      }
-      if (d.lateArrivalLabel && d.lateArrivalLabel !== "—") {
-        lines.push(`Kech: ${d.lateArrivalLabel}`);
-      }
-      if (d.earlyArrivalLabel && d.earlyArrivalLabel !== "—") {
-        lines.push(`Erta: ${d.earlyArrivalLabel}`);
-      }
-      if (d.earlyLeaveLabel && d.earlyLeaveLabel !== "—") {
-        lines.push(`Erta ket: ${d.earlyLeaveLabel}`);
-      }
-      if (d.overtimeLabel && d.overtimeLabel !== "—") {
-        lines.push(`Kech ket: ${d.overtimeLabel}`);
-      }
-      return lines.join("\n");
-    };
-
     const dates = report.dates?.length
       ? report.dates
       : report.days.map((d) => d.date);
-    const metaCols = 5; // No, F.I.Sh., Lavozim, Bo'lim, Filial
+    const metaCols = 7; // No, F.I.Sh., Lavozim, Bo'lim, Filial, Smena, Ish vaqti
     const lastCol = metaCols + dates.length;
 
     // —— Sheet 1: Jadval (1 xodim = 1 qator, sanalar o‘ngga) ——
@@ -1904,13 +1951,13 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     });
     sGrid.mergeCells(1, 1, 1, Math.max(lastCol, 6));
     const tGrid = sGrid.getCell("A1");
-    tGrid.value = `VAKSINA MED — Davomat jadvali (${from} — ${to}) · ${dates.length} kun · Norma ${WORK_START}–${WORK_END} · Har qator = 1 xodim, sanalar o‘ngga`;
+    tGrid.value = `VAKSINA MED — Davomat jadvali (${from} — ${to}) · ${dates.length} kun · Har xodim o‘z ish vaqtiga qarab · Katak: holat, keldim/ketdim, kechikish`;
     tGrid.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     tGrid.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
     tGrid.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     sGrid.getRow(1).height = 28;
 
-    const metaHeaders = ["No", "F.I.Sh.", "Lavozim", "Bo‘lim", "Filial"];
+    const metaHeaders = ["No", "F.I.Sh.", "Lavozim", "Bo‘lim", "Filial", "Smena", "Ish vaqti"];
     metaHeaders.forEach((h, i) => {
       const cell = sGrid.getRow(2).getCell(i + 1);
       cell.value = h;
@@ -1929,20 +1976,28 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     sGrid.getColumn(3).width = 16;
     sGrid.getColumn(4).width = 16;
     sGrid.getColumn(5).width = 14;
+    sGrid.getColumn(6).width = 14;
+    sGrid.getColumn(7).width = 12;
     dates.forEach((_, i) => {
-      sGrid.getColumn(metaCols + 1 + i).width = 16;
+      sGrid.getColumn(metaCols + 1 + i).width = 24;
     });
 
     report.employees.forEach((e, idx) => {
       const row = sGrid.getRow(3 + idx);
       const zebra = idx % 2 === 0;
       const bg = zebra ? "FFF7FAFC" : "FFFFFFFF";
+      const empHours = {
+        start: e.workStart ?? WORK_START,
+        end: e.workEnd ?? WORK_END,
+      };
       const vals: (string | number)[] = [
         idx + 1,
         e.fullName,
         e.position,
         e.departmentName || "—",
         e.location || "—",
+        smenaLabelForEmployee(e),
+        `${empHours.start}–${empHours.end}`,
       ];
       vals.forEach((v, i) => {
         const cell = row.getCell(i + 1);
@@ -1965,7 +2020,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         const d = e.days.find((x) => x.date === date);
         const status = d?.status || "absent";
         const cell = row.getCell(metaCols + 1 + i);
-        cell.value = d ? dayCellText(d) : "Kelmagan";
+        cell.value = d ? formatDavomatDayCell(d, empHours) : "Kelmagan";
         cell.font = {
           name: "Calibri",
           size: 9,
@@ -1984,7 +2039,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
           right: { style: "thin", color: { argb: "FFE2E8F0" } },
         };
       });
-      row.height = 52;
+      row.height = 68;
     });
     if (lastCol >= 1) {
       sGrid.autoFilter = {
@@ -1999,13 +2054,13 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     });
     s1.mergeCells("A1:F1");
     const t1 = s1.getCell("A1");
-    t1.value = `VAKSINA MED — Kunlik xulosa (${from} — ${to}) · Norma: ${WORK_START}–${WORK_END}`;
+    t1.value = `VAKSINA MED — Kunlik xulosa (${from} — ${to}) · Har xodim o‘z smenasiga qarab hisoblanadi`;
     t1.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     t1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
     t1.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     s1.getRow(1).height = 30;
 
-    const h1 = ["Sana", "Kelgan", "Kech keldi", "Ketish yo‘q", "Ta’til", "Kelmagan"];
+    const h1 = ["Sana", "O'z vaqtida", "Kechikib keldi", "Ketish yozilmagan", "Ta'tilda", "Kelmagan"];
     h1.forEach((h, i) => {
       const cell = s1.getRow(2).getCell(i + 1);
       cell.value = h;
@@ -2035,9 +2090,9 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const s3 = workbook.addWorksheet("Xodimlar jami", {
       views: [{ state: "frozen", ySplit: 2 }],
     });
-    s3.mergeCells("A1:M1");
+    s3.mergeCells("A1:O1");
     const t3 = s3.getCell("A1");
-    t3.value = `Xodimlar bo‘yicha jami (${from} — ${to}) · Norma ${WORK_START}–${WORK_END}`;
+    t3.value = `Xodimlar bo‘yicha jami (${from} — ${to}) · Har xodim o‘z ish vaqtiga qarab`;
     t3.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     t3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
     t3.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
@@ -2049,14 +2104,16 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       "Lavozim",
       "Bo‘lim",
       "Filial",
+      "Smena",
+      "Ish vaqti",
       "Kelgan kun",
       "Kelmagan kun",
-      "Kech kun",
+      "Kechikkan kun",
       "Jami ishlagan",
-      "Kech keldi (09:00 dan keyin)",
-      "Erta keldi (09:00 dan oldin)",
-      "Erta ketdi (18:00 dan oldin)",
-      "Kech ketdi (18:00 dan keyin)",
+      "Kechikish (jami)",
+      "Erta kelish (jami)",
+      "Erta ketish (jami)",
+      "Qo'shimcha ish (jami)",
     ];
     h3.forEach((h, i) => {
       const cell = s3.getRow(2).getCell(i + 1);
@@ -2069,9 +2126,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 16 },
       { width: 16 },
       { width: 16 },
+      { width: 14 },
       { width: 12 },
       { width: 12 },
-      { width: 10 },
+      { width: 12 },
+      { width: 12 },
       { width: 14 },
       { width: 14 },
       { width: 14 },
@@ -2079,12 +2138,15 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 18 },
     ];
     report.employees.forEach((e, idx) => {
+      const empHours = `${e.workStart ?? WORK_START}–${e.workEnd ?? WORK_END}`;
       const row = s3.addRow([
         idx + 1,
         e.fullName,
         e.position,
         e.departmentName || "—",
         e.location || "—",
+        smenaLabelForEmployee(e),
+        empHours,
         e.totals.present,
         e.totals.absent,
         e.totals.late,
@@ -2094,9 +2156,9 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         e.totals.earlyLeaveLabel,
         e.totals.overtimeLabel,
       ]);
-      paintRow(row, idx % 2 === 0, [1, 6, 7, 8, 9]);
+      paintRow(row, idx % 2 === 0, [1, 8, 9, 10, 11]);
     });
-    s3.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 13 } };
+    s3.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: 15 } };
 
     const paintBanner = (row: ExcelJS.Row, fill: string, lastCol: number) => {
       for (let c = 1; c <= lastCol; c++) {

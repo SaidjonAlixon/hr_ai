@@ -96,14 +96,17 @@ export async function notifyAllActiveUsers(opts: {
   text: string;
   type: string;
   linkUrl: string;
+  /** Standart: Telegram + tizim ichidagi xabar */
+  telegram?: boolean;
 }): Promise<number> {
   const users = await db
     .select({ id: usersTable.id })
     .from(usersTable)
     .where(eq(usersTable.status, "active"));
 
+  const telegram = opts.telegram ?? true;
   for (const u of users) {
-    await notifyUser({ userId: u.id, ...opts });
+    await notifyUser({ userId: u.id, ...opts, telegram });
   }
   return users.length;
 }

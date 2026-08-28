@@ -1,0 +1,149 @@
+export const FACE_AI_WIN_MARGIN_DEFAULT = 0.12;
+
+export const FACE_LOGIN_MSG_NOT_ENROLLED = "Bu yuz tizimda ro‘yxatdan o‘tmagan.";
+export const FACE_LOGIN_MSG_AMBIGUOUS = "Bu yuz bir nechta xodimga o‘xshash — ochilmadi.";
+export const FACE_LOGIN_MSG_RETRY =
+  "Yuz tasdiqlanmadi. Kameraga tik qarang, yuzni oval ichiga oling.";
+
+/** AI hech kimni tanimasa: yaqin vektor — qayta urinish; uzoq — tizimda yo‘q. */
+export function loginFailFromScores(opts: {
+  ambiguous: boolean;
+  closestDist: number | undefined;
+  ownerMaxDist: number;
+}): { error: string; code: "face_ai_mismatch" | "face_ai_low_confidence" | "face_not_registered" } {
+  if (opts.ambiguous) {
+    return { error: FACE_LOGIN_MSG_AMBIGUOUS, code: "face_ai_low_confidence" };
+  }
+  const dist = opts.closestDist;
+  if (dist != null && Number.isFinite(dist) && dist <= opts.ownerMaxDist) {
+    return { error: FACE_LOGIN_MSG_RETRY, code: "face_ai_mismatch" };
+  }
+  return { error: FACE_LOGIN_MSG_NOT_ENROLLED, code: "face_not_registered" };
+}
+
+export type FaceAiCompareResult = {
+  samePerson: boolean;
+  confidence: number;
+  similarity: number;
+};
+
+export type FaceAiGate =
+  | { ok: true; source: "ai" | "local_fallback"; confidence: number; similarity: number }
+  | { ok: false; error: string; code: "face_ai_mismatch" | "face_ai_low_confidence"; confidence: number };
+
+function clamp01(n: number): number {
+  if (!Number.isFinite(n)) return 0;
+  return Math.min(1, Math.max(0, n));
+}
+
+export function parseFaceAiPayload(raw: unknown): FaceAiCompareResult | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const same =
+    o.samePerson === true ||
+    o.same_person === true ||
+    o.match === true ||
+    String(o.samePerson ?? o.same_person ?? "").toLowerCase() === "true";
+  const confidence = clamp01(Number(o.confidence ?? o.score ?? 0));
+  const similarity = clamp01(Number(o.similarity ?? o.confidence ?? 0));
+  return { samePerson: same, confidence, similarity };
+}
+
+/** Galereyadan faqat ruxsat etilgan id — o‘xshash begona id qabul qilinmaydi. */
+export function parseFaceAiIdentify(raw: unknown, allowedIds: number[]): number | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const allowed = new Set(allowedIds);
+  const rawId = o.matchId ?? o.faceProfileId ?? o.id ?? o.winnerId;
+  if (rawId === null || rawId === undefined || rawId === "" || rawId === "null") return null;
+  const id = Number(rawId);
+  if (!Number.isFinite(id) || !allowed.has(id)) return null;
+  return id;
+}
+
+export function decideFaceAiGate(ai: FaceAiCompareResult): FaceAiGate {
+  if (!ai.samePerson || ai.confidence < 0.9 || ai.similarity < 0.88) {
+    return {
+      ok: false,
+      error: FACE_LOGIN_MSG_RETRY,
+      code: "face_ai_mismatch",
+      confidence: ai.confidence,
+    };
+  }
+  return {
+    ok: true,
+    source: "ai",
+    confidence: ai.confidence,
+    similarity: ai.similarity,
+  };
+}
+
+export type FaceAiInspectResult = {
+  ok: boolean;
+  faceCount: number;
+  quality: number;
+  reason: string;
+  liveHuman: boolean;
+  spoof: boolean;
+};
+
+export function parseFaceAiInspect(raw: unknown): FaceAiInspectResult | null {
+  if (!raw || typeof raw !== "object") return null;
+  const o = raw as Record<string, unknown>;
+  const faceCount = Math.max(0, Math.round(Number(o.faceCount ?? o.faces ?? 0)));
+  const quality = clamp01(Number(o.quality ?? o.score ?? 0));
+  const spoof =
+    o.spoof === true ||
+    o.isSpoof === true ||
+    o.photoOfPhoto === true ||
+    o.screen === true ||
+    String(o.spoof ?? "").toLowerCase() === "true";
+  const liveHuman =
+    !spoof &&
+    (o.liveHuman === true ||
+      o.live === true ||
+      o.realPerson === true ||
+      (o.liveHuman !== false && o.ok === true && faceCount === 1));
+  const ok = o.ok === true && faceCount === 1 && liveHuman && !spoof && quality >= 0.7;
+  const reason = String(o.reason ?? o.error ?? "").trim();
+  return { ok, faceCount, quality, reason, liveHuman, spoof };
+}
+
+export type FaceAiCandidateScore = {
+  faceProfileId: number;
+  userId: number;
+  samePerson: boolean;
+  confidence: number;
+  similarity: number;
+};
+
+/** Faqat bitta samePerson=true va yuqori ishonch. Ikki kishi “ha” yoki yaqin ishonch — hech kim ochilmaydi. */
+export function pickAiIdentityWinner(
+  scores: FaceAiCandidateScore[],
+  opts?: { minConfidence?: number; minSimilarity?: number },
+):
+  | { ok: true; faceProfileId: number; userId: number; confidence: number; similarity: number }
+  | { ok: false; code: "face_ai_mismatch" | "face_ai_low_confidence" } {
+  const minConf = opts?.minConfidence ?? 0.9;
+  const minSim = opts?.minSimilarity ?? 0.88;
+  const hits = scores
+    .filter((s) => s.samePerson && s.confidence >= minConf && s.similarity >= minSim)
+    .sort((a, b) => b.confidence - a.confidence || b.similarity - a.similarity);
+  if (hits.length === 0) return { ok: false, code: "face_ai_mismatch" };
+  if (hits.length > 1) {
+    const a = hits[0]!;
+    const b = hits[1]!;
+    /** Ikki xodim ham “shu odam” — xavfsiz rad (noto‘g‘ri akkaunt ochilmasin). */
+    if (a.confidence - b.confidence < FACE_AI_WIN_MARGIN_DEFAULT) {
+      return { ok: false, code: "face_ai_low_confidence" };
+    }
+  }
+  const best = hits[0]!;
+  return {
+    ok: true,
+    faceProfileId: best.faceProfileId,
+    userId: best.userId,
+    confidence: best.confidence,
+    similarity: best.similarity,
+  };
+}

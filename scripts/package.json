@@ -1,0 +1,22 @@
+{
+  "name": "@workspace/scripts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "hello": "tsx ./src/hello.ts",
+    "seed": "tsx ./src/seed.ts",
+    "purge-demo": "tsx ./src/purge-demo-users.ts",
+    "normalize-names": "tsx ./src/normalize-person-names.ts",
+    "sync-rahbariyat": "tsx ./src/sync-rahbariyat-dept.ts",
+    "sync-departments": "tsx ./src/sync-role-departments.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@workspace/db": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsx": "catalog:"
+  }
+}

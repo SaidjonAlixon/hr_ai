@@ -251,6 +251,14 @@ export default function DavomatPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [announcing, setAnnouncing] = useState(false);
+  const [announceOpen, setAnnounceOpen] = useState(false);
+  const [announcePreview, setAnnouncePreview] = useState<{
+    text: string;
+    recipients: string;
+    channels: string[];
+    telegramConfigured: boolean;
+  } | null>(null);
+  const [announcePreviewLoading, setAnnouncePreviewLoading] = useState(false);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -437,7 +445,7 @@ export default function DavomatPage() {
       });
       toast({
         title: "Excel yuklandi",
-        description: "5 varaq: jadval, xulosa, jami, kelganlar, kelmaganlar",
+        description: "6 varaq: qo'llanma, jadval, xulosa, jami, kelganlar, kelmaganlar",
       });
     } catch (err) {
       toast({
@@ -450,12 +458,29 @@ export default function DavomatPage() {
     }
   };
 
-  const onAnnounce = async () => {
+  const openAnnounceDialog = async () => {
     if (announcing) return;
-    const ok = window.confirm(
-      "Barcha faol xodimlarga davomat qoidasi haqida xabar yuborilsinmi?\n\nTelegram va tizim ichidagi bildirishnomaga yetkaziladi.",
-    );
-    if (!ok) return;
+    setAnnounceOpen(true);
+    setAnnouncePreviewLoading(true);
+    try {
+      const res = await fetch("/api/davomat/announce/preview", { credentials: "include" });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((body as { error?: string }).error || "Ma'lumot yuklanmadi");
+      setAnnouncePreview(body as typeof announcePreview);
+    } catch (err) {
+      setAnnounceOpen(false);
+      toast({
+        title: "Xabar oynasi ochilmadi",
+        description: (err as Error)?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setAnnouncePreviewLoading(false);
+    }
+  };
+
+  const onAnnounceConfirm = async () => {
+    if (announcing) return;
     setAnnouncing(true);
     try {
       const res = await fetch("/api/davomat/announce", {
@@ -464,6 +489,7 @@ export default function DavomatPage() {
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error((body as { error?: string }).error || "Yuborilmadi");
+      setAnnounceOpen(false);
       toast({
         title: "Xabar yuborildi",
         description: (body as { message?: string }).message || "Barcha xodimlarga yetkazildi",
@@ -763,7 +789,7 @@ export default function DavomatPage() {
               type="button"
               variant="ghost"
               className="dv-report-btn-announce"
-              onClick={() => void onAnnounce()}
+              onClick={() => void openAnnounceDialog()}
               disabled={announcing || (loading && !report)}
             >
               {announcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4 shrink-0" />}
@@ -1204,6 +1230,68 @@ export default function DavomatPage() {
             <Button type="button" onClick={() => void saveEdit()} disabled={saving}>
               {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
               Saqlash
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={announceOpen}
+        onOpenChange={(o) => {
+          if (!o && !announcing) setAnnounceOpen(false);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Xabarni tasdiqlang</DialogTitle>
+          </DialogHeader>
+          {announcePreviewLoading ? (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Xabar matni yuklanmoqda…
+            </div>
+          ) : announcePreview ? (
+            <div className="space-y-4">
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm dark:border-amber-900/40 dark:bg-amber-950/30">
+                <p className="text-xs font-semibold uppercase tracking-wide text-amber-900/70 dark:text-amber-200/80">
+                  Kimga yuboriladi
+                </p>
+                <p className="mt-1 font-medium text-foreground">{announcePreview.recipients}</p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Kanallar: {announcePreview.channels.join(" · ")}
+                  {!announcePreview.telegramConfigured ? " (Telegram sozlanmagan)" : ""}
+                </p>
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Yuboriladigan matn
+                </p>
+                <div className="rounded-xl border border-border bg-muted/40 p-3 text-sm leading-relaxed text-foreground">
+                  {announcePreview.text}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Davom etish uchun «Yuborish» tugmasini bosing. Bekor qilish uchun «Bekor qilish».
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAnnounceOpen(false)}
+              disabled={announcing}
+            >
+              Bekor qilish
+            </Button>
+            <Button
+              type="button"
+              className="bg-amber-500 text-amber-950 hover:bg-amber-400"
+              onClick={() => void onAnnounceConfirm()}
+              disabled={announcing || announcePreviewLoading || !announcePreview}
+            >
+              {announcing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Yuborish
             </Button>
           </DialogFooter>
         </DialogContent>

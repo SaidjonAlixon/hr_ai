@@ -265,10 +265,13 @@ export function startDavomatReminderJob(): void {
 }
 
 /** Darhol barcha faol xodimlarga bir marta yuborish (admin/HR) */
+export function davomatBroadcastMessage(): string {
+  return `Muhim: endi barcha xodimlar davomatdan Face ID orqali o‘tadi. Kelish/ketish — faqat belgilangan joydan ${DAVOMAT_GEOFENCE_METERS} m ichida. Ochish: Davomat Face ID.`;
+}
+
 export async function forceBroadcastDavomatToAll(): Promise<number> {
   return notifyAllActiveUsers({
-    text:
-      `Muhim: endi barcha xodimlar davomatdan Face ID orqali o‘tadi. Kelish/ketish — faqat belgilangan joydan ${DAVOMAT_GEOFENCE_METERS} m ichida. Ochish: Davomat Face ID.`,
+    text: davomatBroadcastMessage(),
     type: "davomat_rule",
     linkUrl: "/davomat-face",
     telegram: true,

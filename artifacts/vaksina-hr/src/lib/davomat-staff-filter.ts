@@ -177,7 +177,7 @@ export const STAFF_FILTER_OPTIONS: Array<{
   {
     key: "office",
     label: "Ofis",
-    hint: "09:00 – 18:00 (filial va maydon xodimlari dan tashqari)",
+    hint: "09:00 – 18:00",
     hours: "09:00–18:00",
   },
   {

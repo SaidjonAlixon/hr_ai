@@ -21,7 +21,7 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   recruiter: "Rekruting",
   trainer: "Trening",
   mentor: "Trening",
-  koordinator: "Farmatsiya",
+  koordinator: "Koordinator",
   department_head: "Farmatsiya",
   it: "IT",
   it_rahbar: "IT",

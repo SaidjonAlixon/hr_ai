@@ -19,6 +19,7 @@ import { setSessionCookie } from "../lib/session";
 import { hoursForStaff, normalizeShiftType, workScheduleForStaff } from "../lib/shift-hours";
 import { loadStaffFromUsers } from "../lib/staff-directory";
 import { buildDavomatAnalytics, type DavomatSegment } from "../lib/davomat-analytics";
+import { matchesDepartmentFilter, resolveDepartmentFilter } from "../lib/department-filter";
 
 const router: IRouter = Router();
 
@@ -380,9 +381,17 @@ async function loadActiveEmployees(filters: {
     shiftLabel: s.shiftLabel,
   }));
 
+  const departmentFilter = filters.departmentId
+    ? await resolveDepartmentFilter(filters.departmentId)
+    : null;
+
   return rows.filter((e) => {
     if (filters.employeeId && e.id !== Number(filters.employeeId)) return false;
-    if (filters.departmentId && e.departmentId !== Number(filters.departmentId)) return false;
+    if (departmentFilter) {
+      if (!matchesDepartmentFilter(e, departmentFilter)) return false;
+    } else if (filters.departmentId && e.departmentId !== Number(filters.departmentId)) {
+      return false;
+    }
     if (filters.location && (e.location || "") !== filters.location) return false;
     if (filters.search) {
       const q = filters.search.toLowerCase();

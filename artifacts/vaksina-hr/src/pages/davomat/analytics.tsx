@@ -38,16 +38,27 @@ import { canViewDavomat } from "@/lib/roles";
 import {
   type DavomatAnalytics,
   type DavomatSegment,
+  type AnalyticsRangePreset,
+  addDaysYmd,
   rangeForPreset,
+  tashkentTodayYmd,
   useDavomatAnalytics,
 } from "@/lib/davomat-analytics-api";
 import { cn } from "@/lib/utils";
 import { useChartTheme } from "@/lib/chart-theme";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 
-type RangePreset = "7d" | "30d" | "month";
+type RangePreset = AnalyticsRangePreset | "custom";
+
+const PRESET_BUTTONS: { key: AnalyticsRangePreset; label: string }[] = [
+  { key: "today", label: "Bugun" },
+  { key: "7d", label: "7 kun" },
+  { key: "30d", label: "30 kun" },
+  { key: "month", label: "Oy" },
+];
 
 const SEGMENT_OPTIONS: { key: DavomatSegment; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { key: "all", label: "Hammasi", hint: "Barcha xodimlar", icon: Users },
@@ -264,11 +275,20 @@ export function DavomatAnalyticsDashboard({
     return seg === "office" || seg === "pharmacy" ? seg : "all";
   }, [embedded, initialSegment, search]);
   const [preset, setPreset] = useState<RangePreset>("30d");
+  const [customFrom, setCustomFrom] = useState(() => addDaysYmd(tashkentTodayYmd(), -6));
+  const [customTo, setCustomTo] = useState(() => tashkentTodayYmd());
   const [segment, setSegment] = useState<DavomatSegment>(segmentFromUrl);
   useEffect(() => {
     setSegment(segmentFromUrl);
   }, [segmentFromUrl]);
-  const range = useMemo(() => rangeForPreset(preset), [preset]);
+  const range = useMemo(() => {
+    if (preset === "custom") {
+      const from = customFrom <= customTo ? customFrom : customTo;
+      const to = customFrom <= customTo ? customTo : customFrom;
+      return { from, to };
+    }
+    return rangeForPreset(preset);
+  }, [preset, customFrom, customTo]);
   const { data, isLoading, isError, error, refetch } = useDavomatAnalytics({ ...range, segment }, true);
   const chart = useChartTheme();
   const fillId = embedded ? "presentFillDash" : "presentFillPage";
@@ -311,26 +331,64 @@ export function DavomatAnalyticsDashboard({
               </>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {(["7d", "30d", "month"] as RangePreset[]).map((p) => (
+          <div className="flex flex-col gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              {PRESET_BUTTONS.map(({ key, label }) => (
+                <Button
+                  key={key}
+                  size="sm"
+                  variant={preset === key ? "default" : "outline"}
+                  onClick={() => setPreset(key)}
+                >
+                  {label}
+                </Button>
+              ))}
               <Button
-                key={p}
                 size="sm"
-                variant={preset === p ? "default" : "outline"}
-                onClick={() => setPreset(p)}
+                variant={preset === "custom" ? "default" : "outline"}
+                onClick={() => setPreset("custom")}
               >
-                {p === "7d" ? "7 kun" : p === "30d" ? "30 kun" : "Oy"}
+                <CalendarDays className="mr-1.5 h-4 w-4" />
+                Davr
               </Button>
-            ))}
-            <Button size="sm" variant="outline" onClick={() => refetch()}>
-              <Download className="mr-1.5 h-4 w-4" />
-              Yangilash
-            </Button>
-            <Link href="/davomat">
-              <Button size="sm" variant="outline">
-                Batafsil jadval
+              <Button size="sm" variant="outline" onClick={() => refetch()}>
+                <Download className="mr-1.5 h-4 w-4" />
+                Yangilash
               </Button>
-            </Link>
+              <Link href="/davomat">
+                <Button size="sm" variant="outline">
+                  Batafsil jadval
+                </Button>
+              </Link>
+            </div>
+            {preset === "custom" ? (
+              <div className="flex flex-wrap items-end gap-2 rounded-xl border border-border bg-card/60 p-2.5 dark:border-slate-600/40 dark:bg-slate-800/40">
+                <label className="flex flex-col gap-1 text-xs">
+                  <span className="font-medium text-muted-foreground">Dan</span>
+                  <Input
+                    type="date"
+                    value={customFrom}
+                    max={customTo}
+                    onChange={(e) => setCustomFrom(e.target.value)}
+                    className="h-9 w-[148px] rounded-lg"
+                  />
+                </label>
+                <label className="flex flex-col gap-1 text-xs">
+                  <span className="font-medium text-muted-foreground">Gacha</span>
+                  <Input
+                    type="date"
+                    value={customTo}
+                    min={customFrom}
+                    max={tashkentTodayYmd()}
+                    onChange={(e) => setCustomTo(e.target.value)}
+                    className="h-9 w-[148px] rounded-lg"
+                  />
+                </label>
+                <p className="pb-1 text-xs text-muted-foreground">
+                  {range.from === range.to ? formatYmdUz(range.from) : `${formatYmdUz(range.from)} — ${formatYmdUz(range.to)}`}
+                </p>
+              </div>
+            ) : null}
           </div>
         </div>
 
@@ -574,6 +632,9 @@ export function DavomatAnalyticsDashboard({
           <Panel title="Filiallar ochilishi" className="xl:col-span-1">
             <p className="mb-3 text-xs text-muted-foreground">
               Mudir kelish vaqti bo‘yicha — qaysi filial vaqtida yoki kech ochilgan
+              {range.from !== range.to ? (
+                <span className="block mt-0.5">Filial holati: {formatYmdUz(range.to)} (davr oxirgi kuni)</span>
+              ) : null}
             </p>
             <BranchOpeningsPanel
               openings={data?.branchOpenings ?? []}

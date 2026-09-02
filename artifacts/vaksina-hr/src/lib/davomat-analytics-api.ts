@@ -112,23 +112,30 @@ export type DavomatAnalytics = {
   worstDay: { date: string; rate: number } | null;
 };
 
-function tashkentYmd(d = new Date()) {
+export type AnalyticsRangePreset = "today" | "7d" | "30d" | "month";
+
+export function tashkentTodayYmd() {
   return new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Tashkent",
     year: "numeric",
     month: "2-digit",
     day: "2-digit",
-  }).format(d);
+  }).format(new Date());
 }
 
-function addDaysYmd(ymd: string, delta: number) {
+export function addDaysYmd(ymd: string, delta: number) {
   const [y, m, d] = ymd.split("-").map(Number);
   const dt = new Date(Date.UTC(y!, m! - 1, d! + delta));
   return dt.toISOString().slice(0, 10);
 }
 
-export function rangeForPreset(preset: "7d" | "30d" | "month") {
+function tashkentYmd() {
+  return tashkentTodayYmd();
+}
+
+export function rangeForPreset(preset: AnalyticsRangePreset) {
   const to = tashkentYmd();
+  if (preset === "today") return { from: to, to };
   if (preset === "7d") return { from: addDaysYmd(to, -6), to };
   if (preset === "30d") return { from: addDaysYmd(to, -29), to };
   const [y, m] = to.split("-");

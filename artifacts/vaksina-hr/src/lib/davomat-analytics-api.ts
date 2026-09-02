@@ -78,7 +78,26 @@ export type DavomatAnalytics = {
     lateDays: number;
     lateMinutes: number;
   }>;
-  heatmap: Array<{ date: string; dow: number; dowLabel: string; rate: number }>;
+  branchOpenings: Array<{
+    branchId: number;
+    branchName: string;
+    managerName: string;
+    shiftLabel: string;
+    expectedOpen: string;
+    checkIn: string | null;
+    status: "on_time" | "late" | "absent" | "leave";
+    statusLabel: string;
+    lateMinutes: number;
+    date: string;
+  }>;
+  branchOpeningSummary: {
+    date: string;
+    total: number;
+    onTime: number;
+    late: number;
+    absent: number;
+    leave: number;
+  } | null;
   recentCheckins: Array<{
     fullName: string;
     departmentName: string | null;

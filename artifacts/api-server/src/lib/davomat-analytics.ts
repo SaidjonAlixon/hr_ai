@@ -1,4 +1,5 @@
-import { shiftWindow } from "./shift-hours";
+import { shiftWindow, workScheduleForStaff } from "./shift-hours";
+import { displayBranchName } from "./geo-location";
 
 export const PHARMACY_SEGMENT_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
 export const PHARMACY_SEGMENT_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "coordinator"]);
@@ -148,7 +149,26 @@ export type DavomatAnalyticsPayload = {
     lateDays: number;
     lateMinutes: number;
   }>;
-  heatmap: Array<{ date: string; dow: number; dowLabel: string; rate: number }>;
+  branchOpenings: Array<{
+    branchId: number;
+    branchName: string;
+    managerName: string;
+    shiftLabel: string;
+    expectedOpen: string;
+    checkIn: string | null;
+    status: "on_time" | "late" | "absent" | "leave";
+    statusLabel: string;
+    lateMinutes: number;
+    date: string;
+  }>;
+  branchOpeningSummary: {
+    date: string;
+    total: number;
+    onTime: number;
+    late: number;
+    absent: number;
+    leave: number;
+  } | null;
   recentCheckins: Array<{
     fullName: string;
     departmentName: string | null;
@@ -181,8 +201,6 @@ const STATUS_LABELS: Record<string, string> = {
   incomplete: "To‘liq emas",
   leave: "Ta'til",
 };
-
-const DOW_LABELS = ["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"];
 
 function pct(n: number, total: number) {
   if (!total) return 0;
@@ -274,6 +292,71 @@ function roleKey(meta: EmployeeMeta | undefined, emp: EmpRow) {
   if (meta?.userRole && PHARMACY_SEGMENT_USER_ROLES.has(meta.userRole)) return meta.userRole;
   if (emp.orgRole && PHARMACY_SEGMENT_ORG_ROLES.has(emp.orgRole)) return emp.orgRole;
   return meta?.userRole || emp.orgRole || "office";
+}
+
+function isBranchManager(meta: EmployeeMeta | undefined, emp: EmpRow): boolean {
+  return meta?.userRole === "mudir" || emp.orgRole === "manager" || meta?.orgRole === "manager";
+}
+
+function buildBranchOpenings(
+  report: ReportLike,
+  metaById: Map<number, EmployeeMeta>,
+  targetDate: string,
+): DavomatAnalyticsPayload["branchOpenings"] {
+  const openings: DavomatAnalyticsPayload["branchOpenings"] = [];
+  for (const e of report.employees) {
+    const m = metaById.get(e.id);
+    if (!isBranchManager(m, e)) continue;
+
+    const branchName = displayBranchName(e.location) || e.location?.trim() || e.fullName;
+    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+    const day = e.days.find((x) => x.date === targetDate);
+
+    let status: "on_time" | "late" | "absent" | "leave";
+    let statusLabel: string;
+    let checkIn: string | null = null;
+    let lateMinutes = 0;
+
+    if (!day || day.status === "absent") {
+      status = "absent";
+      statusLabel = "Ochilmagan";
+    } else if (day.status === "leave") {
+      status = "leave";
+      statusLabel = "Ta'tilda";
+    } else {
+      checkIn = day.checkIn && day.checkIn !== "—" ? day.checkIn : null;
+      if (day.status === "late") {
+        status = "late";
+        statusLabel = "Kech ochilgan";
+        lateMinutes = day.lateArrivalMin;
+      } else {
+        status = "on_time";
+        statusLabel = "Vaqtida";
+      }
+    }
+
+    openings.push({
+      branchId: e.id,
+      branchName,
+      managerName: e.fullName,
+      shiftLabel: schedule.label,
+      expectedOpen: schedule.start,
+      checkIn,
+      status,
+      statusLabel,
+      lateMinutes,
+      date: targetDate,
+    });
+  }
+
+  const order: Record<string, number> = { late: 0, absent: 1, leave: 2, on_time: 3 };
+  return openings.sort((a, b) => {
+    const oa = order[a.status] ?? 9;
+    const ob = order[b.status] ?? 9;
+    if (oa !== ob) return oa - ob;
+    if (b.lateMinutes !== a.lateMinutes) return b.lateMinutes - a.lateMinutes;
+    return a.branchName.localeCompare(b.branchName, "uz");
+  });
 }
 
 export function buildDavomatAnalytics(
@@ -467,19 +550,25 @@ export function buildDavomatAnalytics(
       lateMinutes: e.totals.lateArrivalMin,
     }));
 
-  const heatmap = filtered.days.map((d) => {
-    const dt = new Date(`${d.date}T12:00:00+05:00`);
-    const dow = dt.getUTCDay();
-    const hc = filtered.summary.employees || 1;
-    return {
-      date: d.date,
-      dow,
-      dowLabel: DOW_LABELS[dow] ?? "",
-      rate: pct(d.present, hc),
-    };
-  });
+  const lastDate = filtered.dates[filtered.dates.length - 1] ?? "";
+  const branchOpenings = lastDate
+    ? buildBranchOpenings(
+        segment === "pharmacy" || segment === "all" ? report : pharmacyReport,
+        metaById,
+        lastDate,
+      )
+    : [];
+  const branchOpeningSummary = lastDate
+    ? {
+        date: lastDate,
+        total: branchOpenings.length,
+        onTime: branchOpenings.filter((b) => b.status === "on_time").length,
+        late: branchOpenings.filter((b) => b.status === "late").length,
+        absent: branchOpenings.filter((b) => b.status === "absent").length,
+        leave: branchOpenings.filter((b) => b.status === "leave").length,
+      }
+    : null;
 
-  const lastDate = filtered.dates[filtered.dates.length - 1];
   const recentCheckins = filtered.employees
     .map((e) => {
       const d = e.days.find((x) => x.date === lastDate);
@@ -590,7 +679,8 @@ export function buildDavomatAnalytics(
     distribution,
     topDepartments: byDepartment.slice(0, 5),
     topLate,
-    heatmap,
+    branchOpenings,
+    branchOpeningSummary,
     recentCheckins,
     alerts,
     bestDay,

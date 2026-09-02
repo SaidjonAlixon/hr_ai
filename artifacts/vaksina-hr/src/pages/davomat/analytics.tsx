@@ -13,6 +13,8 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
+  CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import {
   Area,
@@ -34,6 +36,7 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import { canViewDavomat } from "@/lib/roles";
 import {
+  type DavomatAnalytics,
   type DavomatSegment,
   rangeForPreset,
   useDavomatAnalytics,
@@ -131,12 +134,119 @@ function Panel({
   );
 }
 
-function heatColor(rate: number) {
-  if (rate >= 90) return "bg-emerald-500";
-  if (rate >= 75) return "bg-emerald-400/80";
-  if (rate >= 60) return "bg-amber-400";
-  if (rate >= 40) return "bg-orange-500";
-  return "bg-rose-500";
+function formatYmdUz(ymd: string) {
+  const [y, m, d] = ymd.split("-");
+  const months = ["yan", "fev", "mar", "apr", "may", "iyn", "iyl", "avg", "sen", "okt", "noy", "dek"];
+  return `${Number(d)}-${months[Number(m) - 1]} ${y}`;
+}
+
+function branchStatusStyle(status: "on_time" | "late" | "absent" | "leave") {
+  if (status === "on_time") {
+    return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+  }
+  if (status === "late") {
+    return "border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-300";
+  }
+  if (status === "leave") {
+    return "border-violet-500/40 bg-violet-500/10 text-violet-800 dark:text-violet-300";
+  }
+  return "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-300";
+}
+
+function BranchOpeningsPanel({
+  openings,
+  summary,
+  loading,
+}: {
+  openings: DavomatAnalytics["branchOpenings"];
+  summary: DavomatAnalytics["branchOpeningSummary"];
+  loading?: boolean;
+}) {
+  if (loading) {
+    return (
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+        <Skeleton className="h-16 w-full" />
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">Ma’lumot yo‘q</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 font-medium text-foreground">
+          {formatYmdUz(summary.date)}
+        </span>
+        <span className="stat-emerald font-semibold">Vaqtida: {summary.onTime}</span>
+        <span className="stat-amber font-semibold">Kech: {summary.late}</span>
+        <span className="stat-rose font-semibold">Ochilmagan: {summary.absent}</span>
+        {summary.leave > 0 ? (
+          <span className="font-semibold text-violet-600 dark:text-violet-400">Ta'til: {summary.leave}</span>
+        ) : null}
+      </div>
+
+      {!openings.length ? (
+        <p className="py-4 text-center text-sm text-muted-foreground">Mudir biriktirilgan filial topilmadi</p>
+      ) : (
+        <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
+          {openings.map((b) => (
+            <div
+              key={b.branchId}
+              className={cn(
+                "flex items-start gap-3 rounded-xl border px-3 py-2.5",
+                branchStatusStyle(b.status),
+              )}
+            >
+              <div className="mt-0.5 rounded-lg bg-background/50 p-2 dark:bg-slate-900/40">
+                <Store className="h-4 w-4 shrink-0" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold">{b.branchName}</p>
+                    <p className="truncate text-xs opacity-80">{b.managerName} · {b.shiftLabel}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-current/25 bg-background/40 px-2 py-0.5 text-[11px] font-semibold">
+                    {b.statusLabel}
+                  </span>
+                </div>
+                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+                  <span className="inline-flex items-center gap-1 tabular-nums">
+                    <Clock className="h-3.5 w-3.5 opacity-70" />
+                    Kutilgan: <strong>{b.expectedOpen}</strong>
+                  </span>
+                  {b.checkIn ? (
+                    <span className="inline-flex items-center gap-1 tabular-nums">
+                      {b.status === "on_time" ? (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      ) : b.status === "late" ? (
+                        <AlertTriangle className="h-3.5 w-3.5" />
+                      ) : null}
+                      Keldi: <strong>{b.checkIn}</strong>
+                      {b.lateMinutes > 0 ? (
+                        <span className="font-semibold">(+{b.lateMinutes} daq)</span>
+                      ) : null}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 opacity-90">
+                      <XCircle className="h-3.5 w-3.5" />
+                      Mudir kelmagan
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function DavomatAnalyticsDashboard({
@@ -461,30 +571,15 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Kunlik issiqlik xaritasi (heatmap)">
-            <div className="grid grid-cols-7 gap-1.5">
-              {["Yak", "Dush", "Sesh", "Chor", "Pay", "Jum", "Shan"].map((d) => (
-                <div key={d} className="text-center text-[10px] font-medium text-muted-foreground">
-                  {d}
-                </div>
-              ))}
-              {(data?.heatmap ?? []).map((h) => (
-                <div
-                  key={h.date}
-                  title={`${h.date}: ${h.rate}%`}
-                  className={cn("aspect-square rounded-md", heatColor(h.rate))}
-                />
-              ))}
-            </div>
-            <div className="mt-3 flex items-center justify-between text-xs text-muted-foreground">
-              <span>Past</span>
-              <div className="flex gap-1">
-                <span className="h-3 w-6 rounded bg-rose-500" />
-                <span className="h-3 w-6 rounded bg-amber-400" />
-                <span className="h-3 w-6 rounded bg-emerald-500" />
-              </div>
-              <span>Yuqori</span>
-            </div>
+          <Panel title="Filiallar ochilishi" className="xl:col-span-1">
+            <p className="mb-3 text-xs text-muted-foreground">
+              Mudir kelish vaqti bo‘yicha — qaysi filial vaqtida yoki kech ochilgan
+            </p>
+            <BranchOpeningsPanel
+              openings={data?.branchOpenings ?? []}
+              summary={data?.branchOpeningSummary ?? null}
+              loading={isLoading}
+            />
           </Panel>
 
           <Panel title="Ogohlantirishlar">

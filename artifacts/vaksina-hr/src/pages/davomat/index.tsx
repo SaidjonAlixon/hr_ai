@@ -1088,13 +1088,13 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 font-medium text-[#0b3a5c] dark:text-sky-300">{e.fullName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{e.position}</td>
                           <td className="px-3 py-2">{e.totals.present}</td>
-                          <td className="px-3 py-2 text-rose-700 dark:text-rose-400 dark:text-rose-400">{e.totals.absent}</td>
+                          <td className="px-3 py-2 text-rose-700 dark:text-rose-400">{e.totals.absent}</td>
                           <td className="px-3 py-2 text-amber-700 dark:text-amber-400">{e.totals.late}</td>
                           <td className="px-3 py-2 font-medium">{e.totals.workedHours}</td>
                           <td className="px-3 py-2 text-amber-700 dark:text-amber-400">{e.totals.lateArrivalLabel}</td>
                           <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">{e.totals.earlyArrivalLabel}</td>
-                          <td className="px-3 py-2 text-rose-700 dark:text-rose-400 dark:text-rose-400">{e.totals.earlyLeaveLabel}</td>
-                          <td className="px-3 py-2 text-sky-700 dark:text-sky-400 dark:text-sky-400">{e.totals.overtimeLabel}</td>
+                          <td className="px-3 py-2 text-rose-700 dark:text-rose-400">{e.totals.earlyLeaveLabel}</td>
+                          <td className="px-3 py-2 text-sky-700 dark:text-sky-400">{e.totals.overtimeLabel}</td>
                         </tr>
                       ))}
                     </tbody>

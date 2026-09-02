@@ -29,7 +29,6 @@ import {
   BarChart3,
   Banknote,
   Calculator,
-  MapPin,
   Cpu,
   Wrench,
 } from 'lucide-react';
@@ -145,7 +144,7 @@ const NAV_SECTIONS: {
     accent: 'bg-teal-400',
     line: 'border-teal-400/55',
     chip: 'text-teal-700 dark:text-teal-300',
-    paths: ['/davomat/analytics', '/davomat-face', '/davomat', '/davomat-uzoq', '/smena-filial', '/checklist-holati'],
+    paths: ['/davomat/analytics', '/davomat-face', '/davomat', '/smena-filial', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
@@ -217,7 +216,6 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/smena-filial')) return '/smena-filial';
   if (path.startsWith('/davomat/analytics')) return '/davomat/analytics';
   if (path.startsWith('/davomat-face')) return '/davomat-face';
-  if (path.startsWith('/davomat-uzoq')) return '/davomat-uzoq';
   if (path.startsWith('/davomat')) return '/davomat';
   if (path.startsWith('/checklist-holati')) return '/checklist-holati';
   if (path.startsWith('/internships')) return '/internships';
@@ -576,9 +574,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
     if (
       user.role === 'director' &&
-      (location.startsWith('/it') ||
-        location.startsWith('/texnik') ||
-        location.startsWith('/davomat-uzoq'))
+      (location.startsWith('/it') || location.startsWith('/texnik'))
     ) {
       setLocation('/dashboard');
     }
@@ -613,7 +609,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatAnalyticsNav = { name: 'Davomat tahlili', path: '/davomat/analytics', icon: BarChart3 };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
-  const davomatFarNav = { name: 'Masofaviy', path: '/davomat-uzoq', icon: MapPin };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
@@ -667,7 +662,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
-      davomatFarNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
@@ -690,7 +684,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
     { name: 'Xodimlar', path: '/employees', icon: Users },
     { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
-    davomatFarNav,
     davomatFaceNav,
     { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
     { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
@@ -728,7 +721,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'IT', path: '/it', icon: Cpu },
       { name: 'Texnik', path: '/texnik', icon: Wrench },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
-      davomatFarNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
@@ -912,7 +904,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       chatNav,
       orgNav,
-      davomatFarNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
@@ -926,7 +917,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       chatNav,
       orgNav,
-      davomatFarNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },

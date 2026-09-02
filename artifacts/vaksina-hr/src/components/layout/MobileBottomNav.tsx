@@ -55,7 +55,6 @@ const SHORT_LABELS: Record<string, string> = {
   'Topshiriqlar': 'Vazifa',
   Eslatmalarim: 'Eslatma',
   Kirish: 'Kirish',
-  Masofaviy: 'Masofa',
   Reyting: 'Reyting',
   Nomzodlar: 'Nomzod',
   Suhbatlar: 'Suhbat',

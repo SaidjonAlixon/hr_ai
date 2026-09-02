@@ -603,7 +603,7 @@ export default function Dashboard() {
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-0.5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tarmoq holati</p>
-                <Link href="/admin/holat" className="text-xs font-medium text-[#0b3a5c] hover:underline">
+                <Link href="/admin/holat" className="text-xs font-medium text-[#0b3a5c] hover:underline dark:text-sky-400">
                   Holat →
                 </Link>
               </div>

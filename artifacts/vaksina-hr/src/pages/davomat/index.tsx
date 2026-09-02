@@ -131,11 +131,11 @@ const STATUS_UZ: Record<string, string> = {
 };
 
 const STATUS_STYLE: Record<string, string> = {
-  present: "border-emerald-400 bg-emerald-500/15 text-emerald-800",
-  late: "border-amber-400 bg-amber-500/15 text-amber-950",
-  incomplete: "border-sky-400 bg-sky-500/15 text-sky-900",
-  absent: "border-rose-400 bg-rose-500/15 text-rose-800",
-  leave: "border-violet-400 bg-violet-500/15 text-violet-900",
+  present: "border-emerald-400 bg-emerald-500/15 text-emerald-800 dark:border-emerald-500/50 dark:bg-emerald-500/20 dark:text-emerald-300",
+  late: "border-amber-400 bg-amber-500/15 text-amber-950 dark:border-amber-500/50 dark:bg-amber-500/20 dark:text-amber-300",
+  incomplete: "border-sky-400 bg-sky-500/15 text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-300",
+  absent: "border-rose-400 bg-rose-500/15 text-rose-800 dark:border-rose-500/50 dark:bg-rose-500/20 dark:text-rose-300",
+  leave: "border-violet-400 bg-violet-500/15 text-violet-900 dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-300",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -191,11 +191,11 @@ function weekCellSublineParts(day: DavomatDayMetrics): {
 }
 
 const STATUS_ROW: Record<string, string> = {
-  present: "bg-emerald-50/40",
-  late: "bg-amber-50/50",
-  incomplete: "bg-sky-50/40",
-  absent: "bg-rose-50/30",
-  leave: "bg-violet-50/40",
+  present: "bg-emerald-50/40 dark:bg-emerald-500/10",
+  late: "bg-amber-50/50 dark:bg-amber-500/10",
+  incomplete: "bg-sky-50/40 dark:bg-sky-500/10",
+  absent: "bg-rose-50/30 dark:bg-rose-500/10",
+  leave: "bg-violet-50/40 dark:bg-violet-500/10",
 };
 
 function StatusPill({ status }: { status: string }) {
@@ -548,7 +548,7 @@ export default function DavomatPage() {
     return (
       <div className="mx-auto max-w-lg py-16 text-center text-muted-foreground">
         <p>Umumiy hisobot faqat Direktor va HR uchun.</p>
-        <a href="/davomat-face" className="mt-3 inline-block text-[#0b3a5c] underline underline-offset-2">
+        <a href="/davomat-face" className="mt-3 inline-block text-[#0b3a5c] underline underline-offset-2 dark:text-sky-400">
           O‘z davomatingiz →
         </a>
       </div>
@@ -945,7 +945,7 @@ export default function DavomatPage() {
                         <tr
                           key={emp.id}
                           className={cn(
-                            "border-b border-slate-100 hover:brightness-[0.98]",
+                            "border-b border-slate-100 dark:border-slate-700/60 hover:brightness-[0.98] dark:hover:bg-slate-800/40",
                             STATUS_ROW[day!.status],
                           )}
                         >
@@ -979,10 +979,10 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">
                             <TimeMetric value={day!.earlyArrivalLabel} />
                           </td>
-                          <td className="px-3 py-2 text-rose-700">
+                          <td className="px-3 py-2 text-rose-700 dark:text-rose-400">
                             <TimeMetric value={day!.earlyLeaveLabel} />
                           </td>
-                          <td className="px-3 py-2 text-sky-700">
+                          <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                             <TimeMetric value={day!.overtimeLabel} />
                           </td>
                           <td className="px-3 py-2">
@@ -1079,22 +1079,22 @@ export default function DavomatPage() {
                         <tr
                           key={e.id}
                           className={cn(
-                            "border-b border-slate-100 cursor-pointer hover:bg-muted",
-                            selectedEmpId === e.id && "bg-sky-50",
+                            "border-b border-slate-100 dark:border-slate-700/60 cursor-pointer hover:bg-muted dark:hover:bg-slate-800/50",
+                            selectedEmpId === e.id && "bg-sky-50 dark:bg-sky-500/15",
                           )}
                           onClick={() => setSelectedEmpId(selectedEmpId === e.id ? "all" : e.id)}
                         >
                           <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
-                          <td className="px-3 py-2 font-medium text-[#0b3a5c]">{e.fullName}</td>
+                          <td className="px-3 py-2 font-medium text-[#0b3a5c] dark:text-sky-300">{e.fullName}</td>
                           <td className="px-3 py-2 text-muted-foreground">{e.position}</td>
                           <td className="px-3 py-2">{e.totals.present}</td>
-                          <td className="px-3 py-2 text-rose-700">{e.totals.absent}</td>
+                          <td className="px-3 py-2 text-rose-700 dark:text-rose-400 dark:text-rose-400">{e.totals.absent}</td>
                           <td className="px-3 py-2 text-amber-700 dark:text-amber-400">{e.totals.late}</td>
                           <td className="px-3 py-2 font-medium">{e.totals.workedHours}</td>
                           <td className="px-3 py-2 text-amber-700 dark:text-amber-400">{e.totals.lateArrivalLabel}</td>
                           <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">{e.totals.earlyArrivalLabel}</td>
-                          <td className="px-3 py-2 text-rose-700">{e.totals.earlyLeaveLabel}</td>
-                          <td className="px-3 py-2 text-sky-700">{e.totals.overtimeLabel}</td>
+                          <td className="px-3 py-2 text-rose-700 dark:text-rose-400 dark:text-rose-400">{e.totals.earlyLeaveLabel}</td>
+                          <td className="px-3 py-2 text-sky-700 dark:text-sky-400 dark:text-sky-400">{e.totals.overtimeLabel}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1124,7 +1124,7 @@ export default function DavomatPage() {
                       </thead>
                       <tbody>
                         {detailEmployee.days.map((d) => (
-                          <tr key={d.date} className="border-b border-slate-100">
+                          <tr key={d.date} className="border-b border-slate-100 dark:border-slate-700/60">
                             <td className="px-3 py-2 tabular-nums">{d.date}</td>
                             <td className="px-3 py-2">
                               <StatusPill status={d.status} />
@@ -1138,10 +1138,10 @@ export default function DavomatPage() {
                             <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">
                               <TimeMetric value={d.earlyArrivalLabel} />
                             </td>
-                            <td className="px-3 py-2 text-rose-700">
+                            <td className="px-3 py-2 text-rose-700 dark:text-rose-400">
                               <TimeMetric value={d.earlyLeaveLabel} />
                             </td>
-                            <td className="px-3 py-2 text-sky-700">
+                            <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                               <TimeMetric value={d.overtimeLabel} />
                             </td>
                             <td className="px-3 py-2">
@@ -1401,12 +1401,12 @@ function PeriodAttendanceGrid({
     barRef: React.RefObject<HTMLDivElement | null>;
     label: string;
   }) => (
-    <div className="flex items-center gap-2 border-b border-border bg-[#0b3a5c]/[0.03] px-2 py-2 sm:px-3">
+    <div className="flex items-center gap-2 border-b border-border bg-[#0b3a5c]/[0.03] px-2 py-2 dark:bg-slate-800/40 sm:px-3">
       <Button
         type="button"
         size="sm"
         variant="outline"
-        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-card px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40"
+        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-card px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40 dark:border-sky-500/30 dark:text-sky-300 dark:hover:bg-sky-500/10"
         disabled={!canLeft}
         onClick={() => scrollByStep(-1)}
         aria-label="Chapga"
@@ -1416,7 +1416,7 @@ function PeriodAttendanceGrid({
       </Button>
       <div className="min-w-0 flex-1">
         <div className="mb-1 flex items-center justify-between gap-2 px-0.5">
-          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#0b3a5c]/70">
+          <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#0b3a5c]/70 dark:text-sky-400/80">
             <MoveHorizontal className="h-3.5 w-3.5" />
             {label}
           </span>
@@ -1434,7 +1434,7 @@ function PeriodAttendanceGrid({
         type="button"
         size="sm"
         variant="outline"
-        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-card px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40"
+        className="h-9 shrink-0 gap-1 rounded-xl border-[#0b3a5c]/20 bg-card px-2.5 text-[#0b3a5c] hover:bg-[#0b3a5c]/5 disabled:opacity-40 dark:border-sky-500/30 dark:text-sky-300 dark:hover:bg-sky-500/10"
         disabled={!canRight}
         onClick={() => scrollByStep(1)}
         aria-label="O‘ngga"
@@ -1447,8 +1447,8 @@ function PeriodAttendanceGrid({
 
   return (
     <Card className="overflow-hidden border-border shadow-sm">
-      <CardHeader className="border-b border-slate-100 bg-muted/60 pb-3">
-        <CardTitle className="text-base text-[#0b3a5c]">{title}</CardTitle>
+      <CardHeader className="border-b border-slate-100 bg-muted/60 pb-3 dark:border-slate-700/60 dark:bg-slate-800/50">
+        <CardTitle className="text-base text-[#0b3a5c] dark:text-sky-300">{title}</CardTitle>
         <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
           Katakka bosing — tahrirlash · {employeeCount} xodim
@@ -1456,19 +1456,19 @@ function PeriodAttendanceGrid({
           {dates.length ? ` · ${dates.length} kun` : ""}
         </p>
         <div className="mt-2 flex flex-wrap gap-1.5 text-[10px] font-medium">
-          <span className="rounded-md border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-emerald-800">
+          <span className="rounded-md border border-emerald-300 bg-emerald-100 px-2 py-0.5 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300">
             Yashil = Kelgan
           </span>
-          <span className="rounded-md border border-amber-300 bg-amber-100 px-2 py-0.5 text-amber-900">
+          <span className="rounded-md border border-amber-300 bg-amber-100 px-2 py-0.5 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300">
             Sariq = Kechikdi
           </span>
-          <span className="rounded-md border border-rose-300 bg-rose-100 px-2 py-0.5 text-rose-800">
+          <span className="rounded-md border border-rose-300 bg-rose-100 px-2 py-0.5 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300">
             Qizil = Kelmagan
           </span>
-          <span className="rounded-md border border-violet-300 bg-violet-100 px-2 py-0.5 text-violet-800">
+          <span className="rounded-md border border-violet-300 bg-violet-100 px-2 py-0.5 text-violet-800 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-300">
             Binafsha = Ta’til
           </span>
-          <span className="rounded-md border border-sky-300 bg-sky-100 px-2 py-0.5 text-sky-800">
+          <span className="rounded-md border border-sky-300 bg-sky-100 px-2 py-0.5 text-sky-800 dark:border-sky-500/40 dark:bg-sky-500/15 dark:text-sky-300">
             Ko‘k = Ketish —
           </span>
         </div>
@@ -1524,7 +1524,7 @@ function PeriodAttendanceGrid({
                   return (
                     <tr
                       key={emp.id}
-                      className={cn("border-b border-slate-100", zebra ? "bg-card" : "bg-muted/40")}
+                      className={cn("border-b border-slate-100 dark:border-slate-700/60", zebra ? "bg-card" : "bg-muted/40 dark:bg-slate-800/30")}
                     >
                       <td
                         className={cn(
@@ -1680,7 +1680,7 @@ function Stat({
   return (
     <Card className="border-border shadow-sm">
       <CardContent className="flex items-start gap-3 pt-5">
-        <div className="rounded-lg bg-slate-100 p-2 text-muted-foreground">{icon}</div>
+        <div className="rounded-lg bg-slate-100 p-2 text-muted-foreground dark:bg-slate-700/50 dark:text-slate-300">{icon}</div>
         <div>
           <div className="text-xs text-muted-foreground">{label}</div>
           <div className="text-xl font-semibold text-foreground tabular-nums">{value}</div>

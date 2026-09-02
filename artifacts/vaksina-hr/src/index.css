@@ -303,6 +303,71 @@
   @apply rounded-xl bg-slate-800/60;
 }
 
+/* Aptekalar tarmog'i — dark mode */
+.pharmacy-network-page .pn-section {
+  @apply overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-muted/30 to-card;
+}
+
+.dark .pharmacy-network-page .pn-section {
+  @apply border-slate-700/60 bg-gradient-to-b from-slate-900/90 to-slate-950;
+}
+
+.pharmacy-network-page .pn-section-title {
+  @apply text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground;
+}
+
+.dark .pharmacy-network-page .pn-section-title {
+  @apply text-slate-400;
+}
+
+.pharmacy-network-page .pn-card {
+  @apply rounded-xl border bg-card shadow-sm;
+}
+
+.dark .pharmacy-network-page .pn-card {
+  @apply border-slate-700/60 bg-slate-900/70 shadow-lg backdrop-blur-sm;
+}
+
+.pharmacy-network-page .pn-location {
+  @apply inline-flex min-w-0 flex-1 items-start gap-2 rounded-xl bg-muted px-2.5 py-2 text-foreground;
+}
+
+.dark .pharmacy-network-page .pn-location {
+  @apply bg-slate-800/70 text-slate-100;
+}
+
+.pharmacy-network-page .pn-location-alert {
+  @apply bg-red-100 text-red-800;
+}
+
+.dark .pharmacy-network-page .pn-location-alert {
+  @apply bg-red-950/50 text-red-300;
+}
+
+.pharmacy-network-page .pn-alerts {
+  @apply rounded-xl border border-border bg-muted/80;
+}
+
+.dark .pharmacy-network-page .pn-alerts {
+  @apply border-slate-700/60 bg-slate-900/50;
+}
+
+.pharmacy-network-page .pn-alerts-open {
+  @apply border-red-300 bg-red-50/70;
+}
+
+.dark .pharmacy-network-page .pn-alerts-open {
+  @apply border-red-500/40 bg-red-950/30;
+}
+
+.pharmacy-network-page .pn-mobile-bar {
+  @apply fixed inset-x-0 bottom-0 z-30 border-t border-border bg-card/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)];
+}
+
+.dark .pharmacy-network-page .pn-mobile-bar {
+  @apply bg-slate-950/95 shadow-[0_-8px_24px_rgba(0,0,0,0.45)];
+}
+
 .surface-brand {
   @apply bg-primary text-white;
 }

@@ -141,18 +141,18 @@ function EmploymentBadge({ status }: { status?: string | null }) {
   const label = EMPLOYMENT_STATUS_LABELS[s] || s;
   const tone =
     s === 'working'
-      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-500/30'
       : s === 'new'
-        ? 'bg-sky-50 text-sky-700 ring-sky-200'
+        ? 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30'
         : s === 'closed'
-          ? 'bg-slate-200 text-foreground ring-slate-400'
+          ? 'bg-slate-200 text-foreground ring-slate-400 dark:bg-slate-700/60 dark:text-slate-200 dark:ring-slate-500/40'
         : s === 'dismissed'
-          ? 'bg-red-100 text-red-800 ring-red-300'
+          ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
           : s === 'no_manager'
-            ? 'bg-amber-100 text-amber-900 ring-amber-300'
+            ? 'bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
           : s === 'searching'
-            ? 'bg-violet-100 text-violet-800 ring-violet-300 animate-pulse'
-            : 'bg-orange-100 text-orange-800 ring-orange-300';
+            ? 'bg-violet-100 text-violet-800 ring-violet-300 animate-pulse dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-500/30'
+            : 'bg-orange-100 text-orange-800 ring-orange-300 dark:bg-orange-950/50 dark:text-orange-300 dark:ring-orange-500/30';
 
   return (
     <span className={cn('inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset', tone)}>
@@ -172,12 +172,12 @@ function ShiftBadge({
 }) {
   const label = shiftText(shiftType, shiftLabel);
   const tone = alert
-    ? 'bg-red-100 text-red-800 ring-red-300'
+    ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
     : shiftType === 'two'
-      ? 'bg-teal-50 text-teal-700 ring-teal-200'
+      ? 'bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-500/30'
       : shiftType === 'custom'
-        ? 'bg-amber-50 text-amber-800 ring-amber-200'
-        : 'bg-sky-50 text-sky-700 ring-sky-200';
+        ? 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
+        : 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30';
 
   return (
     <span className={cn('inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ring-1 ring-inset', tone)}>
@@ -196,16 +196,16 @@ function PipelineStrip({ step }: { step: number }) {
         return (
           <React.Fragment key={s.key}>
             {i > 0 && (
-              <span className={cn('h-px w-2 shrink-0', active ? 'bg-red-400' : 'bg-slate-200')} />
+              <span className={cn('h-px w-2 shrink-0', active ? 'bg-red-400 dark:bg-red-500' : 'bg-slate-200 dark:bg-slate-600')} />
             )}
             <span
               className={cn(
                 'rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
                 current
-                  ? 'bg-red-600 text-foreground dark:text-white animate-pulse'
+                  ? 'bg-red-600 text-white animate-pulse dark:bg-red-500'
                   : active
-                    ? 'bg-slate-700 text-foreground dark:text-white'
-                    : 'bg-slate-100 text-muted-foreground',
+                    ? 'bg-slate-700 text-white dark:bg-slate-600'
+                    : 'bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-400',
               )}
               title={s.label}
             >
@@ -222,7 +222,7 @@ function Avatar({ name, size = 'md' }: { name: string; size?: 'sm' | 'md' }) {
   return (
     <div
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-full font-semibold text-foreground dark:text-white bg-slate-600',
+        'flex shrink-0 items-center justify-center rounded-full bg-primary/90 font-semibold text-primary-foreground dark:bg-sky-600',
         size === 'sm' ? 'h-8 w-8 text-[10px]' : 'h-9 w-9 text-xs',
       )}
     >
@@ -994,7 +994,7 @@ export default function PharmacyNetworkPage() {
   const networkEmpty = !isMudirOnly && coordinators.length === 0 && allManagers.length === 0;
 
   return (
-    <div className={cn('space-y-5', canAddTeam && 'pb-24 md:pb-0')}>
+    <div className={cn('pharmacy-network-page space-y-5', canAddTeam && 'pb-24 md:pb-0')}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Aptekalar tarmog‘i</h1>
@@ -1058,10 +1058,8 @@ export default function PharmacyNetworkPage() {
         {canSeeAlerts && (
           <div
             className={cn(
-              'rounded-xl border p-3 sm:p-4 transition-colors',
-              openAlerts.length > 0
-                ? 'border-red-300 bg-red-50/70'
-                : 'border-border bg-muted/80',
+              'pn-alerts p-3 sm:p-4 transition-colors',
+              openAlerts.length > 0 && 'pn-alerts-open',
             )}
           >
             <button
@@ -1092,7 +1090,7 @@ export default function PharmacyNetworkPage() {
                 <h2
                   className={cn(
                     'text-sm font-semibold',
-                    openAlerts.length > 0 ? 'text-red-900' : 'text-foreground',
+                    openAlerts.length > 0 ? 'text-red-900 dark:text-red-300' : 'text-foreground',
                   )}
                 >
                   {user?.role === 'koordinator'
@@ -1101,7 +1099,7 @@ export default function PharmacyNetworkPage() {
                   {openAlerts.length ? ` (${openAlerts.length})` : ''}
                 </h2>
                 {openAlerts.length > 0 && !alertsOpen && (
-                  <span className="hidden rounded-full bg-red-600/15 px-2 py-0.5 text-[10px] font-semibold text-red-700 animate-pulse sm:inline">
+                  <span className="hidden rounded-full bg-red-600/15 px-2 py-0.5 text-[10px] font-semibold text-red-700 animate-pulse dark:text-red-300 sm:inline">
                     Yangi xabar bor — oching
                   </span>
                 )}
@@ -1136,7 +1134,7 @@ export default function PharmacyNetworkPage() {
                 ) : (
                   <div className="max-h-[min(50vh,380px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
                     {user?.role === 'koordinator' && pendingAlerts.length > 0 && (
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
                         Tasdiq kutilmoqda
                       </p>
                     )}
@@ -1297,14 +1295,14 @@ export default function PharmacyNetworkPage() {
                 type="button"
                 onClick={() => setTeamFilter(key)}
                 className={cn(
-                  'rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset',
+                  'rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition-colors',
                   teamFilter === key
                     ? key === 'without'
-                      ? 'bg-amber-100 text-amber-900 ring-amber-300'
+                      ? 'bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/40'
                       : key === 'with'
-                        ? 'bg-emerald-100 text-emerald-800 ring-emerald-300'
-                        : 'bg-primary text-primary-foreground ring-[#0b3a5c]'
-                    : 'bg-card text-muted-foreground ring-slate-200 hover:bg-muted',
+                        ? 'bg-emerald-100 text-emerald-800 ring-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-500/40'
+                        : 'bg-primary text-primary-foreground ring-primary/80'
+                    : 'bg-card text-muted-foreground ring-border hover:bg-muted dark:ring-slate-600 dark:hover:bg-slate-800/60',
                 )}
               >
                 {label}
@@ -1314,10 +1312,10 @@ export default function PharmacyNetworkPage() {
         </div>
         )}
 
-      <div className="overflow-hidden rounded-2xl border border-border bg-gradient-to-b from-[#f4f7fa] to-white">
+      <div className="pn-section">
         {(canSeeFullNetwork || isMudirOnly) && (
-        <div className="border-b border-border px-4 py-4 sm:px-5">
-          <p className="mb-3 text-center text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+        <div className="border-b border-border px-4 py-4 dark:border-slate-700/60 sm:px-5">
+          <p className="pn-section-title mb-3 text-center">
             1 · Koordinator
           </p>
           {!filteredCoordinators.length ? (
@@ -1339,18 +1337,18 @@ export default function PharmacyNetworkPage() {
                   >
                     <div
                       className={cn(
-                        'flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card shadow-sm',
-                        alert ? 'border-red-300 ring-1 ring-red-200' : 'border-[#0b3a5c]/25',
+                        'pn-card flex min-w-0 flex-col overflow-hidden',
+                        alert ? 'border-red-300 ring-1 ring-red-200 dark:border-red-500/50 dark:ring-red-500/20' : 'border-primary/25 dark:border-sky-500/30',
                       )}
                     >
                       <div
                         className={cn(
                           'flex flex-1 flex-col border-t-[3px]',
                           isMudirOnly ? 'p-3.5 sm:p-4' : 'p-2.5',
-                          alert ? 'border-t-red-500' : 'border-t-[#0b3a5c]',
+                          alert ? 'border-t-red-500' : 'border-t-primary dark:border-t-sky-500',
                         )}
                       >
-                        <span className="mb-2 w-fit truncate rounded bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground">
+                        <span className="mb-2 w-fit truncate rounded bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground dark:bg-slate-800/80 dark:text-slate-400">
                           Markaz
                         </span>
                         <div className="flex items-start gap-3">
@@ -1395,7 +1393,7 @@ export default function PharmacyNetworkPage() {
 
         <div className="px-3 py-3 sm:px-4">
           <div className="mb-2.5 flex items-center justify-between gap-3">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+            <p className="pn-section-title">
               {isMudirOnly ? 'Mening filiali' : '2 · Filial mudirlari'}
             </p>
             <p className="text-xs text-muted-foreground">
@@ -1422,7 +1420,7 @@ export default function PharmacyNetworkPage() {
                       : 'border-border',
                 )}
               >
-                <div className="mb-0 flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
+                <div className="mb-0 flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 dark:border-slate-700/60">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       Farmatsevtlar — eʼlon holati
@@ -1443,7 +1441,7 @@ export default function PharmacyNetworkPage() {
                 </div>
 
                 {team.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-sm text-amber-800">
+                  <p className="px-4 py-6 text-center text-sm text-amber-800 dark:text-amber-300">
                     Bu filialda farmasevt va stajyor yo‘q
                   </p>
                 ) : (
@@ -1459,7 +1457,9 @@ export default function PharmacyNetworkPage() {
                             key={ph.id}
                             className={cn(
                               'rounded-lg border px-3 py-2.5',
-                              phAlert ? 'border-red-300 bg-red-50/80' : 'border-border bg-muted/70',
+                              phAlert
+                                ? 'border-red-300 bg-red-50/80 dark:border-red-500/40 dark:bg-red-950/30'
+                                : 'border-border bg-muted/70 dark:bg-slate-800/50',
                             )}
                           >
                             <div className="flex items-start gap-3">
@@ -1468,15 +1468,15 @@ export default function PharmacyNetworkPage() {
                                 <div className="flex items-start justify-between gap-2">
                                   <p className="truncate text-sm font-medium text-foreground">{ph.fullName}</p>
                                   {ph.orgRole === 'intern' ? (
-                                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:ring-indigo-500/30">
                                       Stajyor
                                     </span>
                                   ) : ph.orgRole === 'supervisor' ? (
-                                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                                    <span className="rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 ring-1 ring-indigo-200 dark:bg-indigo-950/50 dark:text-indigo-300 dark:ring-indigo-500/30">
                                       Boshqaruvchi
                                     </span>
                                   ) : (
-                                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground dark:bg-slate-800/80">
                                       Farmasevt
                                     </span>
                                   )}
@@ -1493,7 +1493,7 @@ export default function PharmacyNetworkPage() {
                                     <button
                                       type="button"
                                       onClick={() => openDeleteTarget(ph)}
-                                      className="rounded p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-700"
+                                      className="rounded p-1.5 text-rose-500 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
                                       title="Butunlay o‘chirish"
                                     >
                                       <Trash2 className="h-3.5 w-3.5" />
@@ -1605,22 +1605,22 @@ export default function PharmacyNetworkPage() {
                   <div
                     key={manager.id}
                     className={cn(
-                      'group flex min-w-0 flex-col overflow-hidden rounded-xl border border-t-[3px] bg-card shadow-sm transition-all hover:shadow-md',
+                      'group pn-card flex min-w-0 flex-col overflow-hidden border-t-[3px] transition-all hover:shadow-md',
                       accent,
-                      alert && 'border-red-300 bg-red-50/30 ring-1 ring-red-200',
-                      branchClosed && !alert && 'border-slate-300 bg-slate-100/70 ring-1 ring-slate-300',
-                      noMudir && !alert && !branchClosed && 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-200',
-                      !alert && !noMudir && !branchClosed && !hasTeam && 'border-amber-200 bg-amber-50/30',
-                      !alert && !noMudir && !branchClosed && hasTeam && 'border-emerald-200',
+                      alert && 'border-red-300 bg-red-50/30 ring-1 ring-red-200 dark:border-red-500/50 dark:bg-red-950/25 dark:ring-red-500/20',
+                      branchClosed && !alert && 'border-slate-300 bg-slate-100/70 ring-1 ring-slate-300 dark:border-slate-600 dark:bg-slate-800/50 dark:ring-slate-600/40',
+                      noMudir && !alert && !branchClosed && 'border-amber-300 bg-amber-50/40 ring-1 ring-amber-200 dark:border-amber-500/40 dark:bg-amber-950/20 dark:ring-amber-500/20',
+                      !alert && !noMudir && !branchClosed && !hasTeam && 'border-amber-200 bg-amber-50/30 dark:border-amber-500/30 dark:bg-amber-950/15',
+                      !alert && !noMudir && !branchClosed && hasTeam && 'border-emerald-200 dark:border-emerald-500/35',
                       open
                         ? alert
-                          ? 'shadow-md ring-2 ring-red-200'
+                          ? 'shadow-md ring-2 ring-red-200 dark:ring-red-500/30'
                           : branchClosed
-                            ? 'shadow-md ring-2 ring-slate-300'
+                            ? 'shadow-md ring-2 ring-slate-300 dark:ring-slate-600/50'
                           : noMudir
-                            ? 'shadow-md ring-2 ring-amber-200'
-                            : 'border-primary/40 shadow-md ring-2 ring-primary/20'
-                        : !alert && 'border-border hover:border-slate-300',
+                            ? 'shadow-md ring-2 ring-amber-200 dark:ring-amber-500/30'
+                            : 'border-primary/40 shadow-md ring-2 ring-primary/20 dark:ring-sky-500/25'
+                        : !alert && 'border-border hover:border-slate-300 dark:hover:border-slate-600',
                     )}
                   >
                     <div className="flex flex-1 flex-col gap-3 p-3.5 sm:p-4">
@@ -1715,8 +1715,8 @@ export default function PharmacyNetworkPage() {
                                   title="Xaritada ochish"
                                   onClick={(e) => e.stopPropagation()}
                                   className={cn(
-                                    'inline-flex min-w-0 flex-1 items-start gap-2 rounded-xl px-2.5 py-2 transition-colors hover:bg-sky-50 hover:text-sky-800',
-                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-foreground',
+                                    'pn-location transition-colors hover:bg-sky-50 hover:text-sky-800 dark:hover:bg-sky-950/40 dark:hover:text-sky-300',
+                                    alert && 'pn-location-alert',
                                   )}
                                 >
                                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
@@ -1726,10 +1726,7 @@ export default function PharmacyNetworkPage() {
                                 </a>
                               ) : (
                                 <div
-                                  className={cn(
-                                    'inline-flex min-w-0 flex-1 items-start gap-2 rounded-xl px-2.5 py-2',
-                                    alert ? 'bg-red-100 text-red-800' : 'bg-slate-100 text-foreground',
-                                  )}
+                                  className={cn('pn-location', alert && 'pn-location-alert')}
                                 >
                                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
                                   <span className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug">
@@ -1740,7 +1737,7 @@ export default function PharmacyNetworkPage() {
                               {canSetBranchGps ? (
                                 <button
                                   type="button"
-                                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm hover:border-[#0b3a5c]/30 hover:text-[#0b3a5c]"
+                                  className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-border bg-card text-muted-foreground shadow-sm hover:border-primary/30 hover:text-primary dark:border-slate-600 dark:bg-slate-800/70 dark:hover:border-sky-500/40 dark:hover:text-sky-300"
                                   title="Nom va koordinatani tahrirlash"
                                   onClick={() => {
                                     setGpsEditingId(manager.id);
@@ -1765,7 +1762,7 @@ export default function PharmacyNetworkPage() {
                           <span
                             className={cn(
                               'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold',
-                              hasTeam ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-900',
+                              hasTeam ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-amber-100 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300',
                             )}
                             title={hasTeam ? 'Farmasevt yoki stajyor bor' : 'Farmasevt va stajyor yo‘q'}
                           >
@@ -1805,7 +1802,7 @@ export default function PharmacyNetworkPage() {
                             <button
                               type="button"
                               onClick={() => openDeleteTarget(manager, fullTeam.length)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 shadow-sm hover:bg-rose-100"
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 shadow-sm hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60"
                               title="Filial va mudirni butunlay o‘chirish"
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1827,8 +1824,8 @@ export default function PharmacyNetworkPage() {
                       <div className="flex min-w-0 items-start gap-3">
                         <div
                           className={cn(
-                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-foreground dark:text-white',
-                            alert ? 'bg-red-600' : 'bg-slate-700',
+                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white',
+                            alert ? 'bg-red-600' : 'bg-slate-700 dark:bg-slate-600',
                           )}
                         >
                           {initials(manager.fullName)}
@@ -1840,15 +1837,15 @@ export default function PharmacyNetworkPage() {
                           <p className="mt-0.5 text-[11px] text-muted-foreground">
                             {noMudir ? 'Mudir yo‘q' : 'Mudir (zav.aptek)'}
                           </p>
-                          <p className="mt-1 flex items-start gap-1 text-xs font-semibold leading-snug text-sky-900">
-                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700" />
+                          <p className="mt-1 flex items-start gap-1 text-xs font-semibold leading-snug text-sky-900 dark:text-sky-300">
+                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-400" />
                             <span className="min-w-0 break-words">{locationLabel}</span>
                           </p>
                           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
                             <span
                               className={cn(
                                 'rounded-md px-2 py-0.5 font-medium',
-                                counts.pharmacists > 0 ? 'bg-emerald-50 text-emerald-800' : 'bg-slate-100 text-muted-foreground',
+                                counts.pharmacists > 0 ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-300' : 'bg-muted text-muted-foreground dark:bg-slate-800/70',
                               )}
                             >
                               Farmasevt: {counts.pharmacists}
@@ -1856,7 +1853,7 @@ export default function PharmacyNetworkPage() {
                             <span
                               className={cn(
                                 'rounded-md px-2 py-0.5 font-medium',
-                                counts.interns > 0 ? 'bg-indigo-50 text-indigo-800' : 'bg-slate-100 text-muted-foreground',
+                                counts.interns > 0 ? 'bg-indigo-50 text-indigo-800 dark:bg-indigo-950/50 dark:text-indigo-300' : 'bg-muted text-muted-foreground dark:bg-slate-800/70',
                               )}
                             >
                               Stajyor: {counts.interns}
@@ -1881,12 +1878,12 @@ export default function PharmacyNetworkPage() {
                               className={cn(
                                 'inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
                                 alert
-                                  ? 'bg-red-100 text-red-800 ring-red-300'
+                                  ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
                                   : manager.shiftType === 'two'
-                                    ? 'bg-teal-50 text-teal-700 ring-teal-200'
+                                    ? 'bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-500/30'
                                     : manager.shiftType === 'custom'
-                                      ? 'bg-amber-50 text-amber-800 ring-amber-200'
-                                      : 'bg-sky-50 text-sky-700 ring-sky-200',
+                                      ? 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
+                                      : 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30',
                               )}
                             >
                               {shiftText(manager.shiftType, manager.shiftLabel)}
@@ -1895,18 +1892,18 @@ export default function PharmacyNetworkPage() {
                               className={cn(
                                 'inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset',
                                 empStatus(manager) === 'working'
-                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-500/30'
                                   : empStatus(manager) === 'searching'
-                                    ? 'bg-violet-100 text-violet-800 ring-violet-300'
+                                    ? 'bg-violet-100 text-violet-800 ring-violet-300 dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-500/30'
                                     : empStatus(manager) === 'closed'
-                                      ? 'bg-slate-200 text-foreground ring-slate-400'
+                                      ? 'bg-slate-200 text-foreground ring-slate-400 dark:bg-slate-700/60 dark:text-slate-200 dark:ring-slate-500/40'
                                     : empStatus(manager) === 'dismissed'
-                                      ? 'bg-red-100 text-red-800 ring-red-300'
+                                      ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
                                       : empStatus(manager) === 'new'
-                                        ? 'bg-sky-50 text-sky-700 ring-sky-200'
+                                        ? 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30'
                                         : empStatus(manager) === 'no_manager'
-                                          ? 'bg-amber-100 text-amber-900 ring-amber-300'
-                                        : 'bg-orange-100 text-orange-800 ring-orange-300',
+                                          ? 'bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
+                                        : 'bg-orange-100 text-orange-800 ring-orange-300 dark:bg-orange-950/50 dark:text-orange-300 dark:ring-orange-500/30',
                               )}
                             >
                               {EMPLOYMENT_STATUS_LABELS[empStatus(manager)]}
@@ -1923,8 +1920,8 @@ export default function PharmacyNetworkPage() {
                           open
                             ? 'bg-primary text-primary-foreground'
                             : alert
-                              ? 'bg-red-100 text-red-700 hover:bg-red-200'
-                              : 'bg-muted text-foreground hover:bg-muted',
+                              ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-950/50 dark:text-red-300 dark:hover:bg-red-950/70'
+                              : 'bg-muted text-foreground hover:bg-muted/80 dark:bg-slate-800/70 dark:hover:bg-slate-800',
                         )}
                       >
                         {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -1932,7 +1929,7 @@ export default function PharmacyNetworkPage() {
                       </button>
 
                       {isMudirOnly && (
-                        <div className="space-y-2 border-t border-slate-100 pt-3">
+                        <div className="space-y-2 border-t border-border pt-3 dark:border-slate-700/60">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             Filial xodimlari
                           </p>
@@ -1949,7 +1946,7 @@ export default function PharmacyNetworkPage() {
                                   key={ph.id}
                                   className={cn(
                                     'rounded-lg border px-3 py-2.5',
-                                    phAlert ? 'border-red-300 bg-red-50/80' : 'border-border bg-muted/70',
+                                    phAlert ? 'border-red-300 bg-red-50/80 dark:border-red-500/40 dark:bg-red-950/30' : 'border-border bg-muted/70 dark:bg-slate-800/50',
                                   )}
                                 >
                                   <div className="flex items-start gap-3">
@@ -1985,7 +1982,7 @@ export default function PharmacyNetworkPage() {
                                           <button
                                             type="button"
                                             onClick={() => openDeleteTarget(ph)}
-                                            className="rounded p-0.5 text-rose-500 hover:bg-rose-50"
+                                            className="rounded p-0.5 text-rose-500 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
                                             title="Butunlay o‘chirish"
                                           >
                                             <Trash2 className="h-3 w-3" />
@@ -2021,17 +2018,17 @@ export default function PharmacyNetworkPage() {
               {orphanStaffGroups.map((group) => (
                 <div
                   key={`orphan-${group.key}`}
-                  className="group flex min-w-0 flex-col overflow-hidden rounded-xl border border-amber-300 border-t-[3px] border-t-amber-500 bg-amber-50/40 shadow-sm ring-1 ring-amber-200"
+                  className="group pn-card flex min-w-0 flex-col overflow-hidden border border-amber-300 border-t-[3px] border-t-amber-500 bg-amber-50/40 ring-1 ring-amber-200 dark:border-amber-500/40 dark:bg-amber-950/20 dark:ring-amber-500/20"
                 >
                   <div className="flex flex-1 flex-col gap-3 p-3.5 sm:p-4">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="inline-flex min-w-0 items-start gap-1.5 rounded-lg bg-amber-100 px-2 py-1 text-amber-900">
+                      <div className="inline-flex min-w-0 items-start gap-1.5 rounded-lg bg-amber-100 px-2 py-1 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
                         <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
                         <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] font-semibold leading-snug">
                           {displayBranchName(group.location) || group.location || 'Filial'}
                         </span>
                       </div>
-                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-800">
+                      <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
                         <Users className="h-3 w-3" />
                         {group.staff.length}
                       </span>
@@ -2042,12 +2039,12 @@ export default function PharmacyNetworkPage() {
                         Filialda xodimlar bor, mudir biriktirilmagan. Ular ishlashda davom etadi.
                       </p>
                       <div className="mt-2">
-                        <span className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-300">
+                        <span className="inline-flex rounded-md bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-900 ring-1 ring-inset ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30">
                           Mudir yo‘q
                         </span>
                       </div>
                     </div>
-                    <div className="space-y-2 border-t border-amber-100 pt-3">
+                    <div className="space-y-2 border-t border-amber-100 pt-3 dark:border-amber-500/20">
                       {group.staff.map((ph) => (
                         <div key={ph.id} className="rounded-lg border border-border bg-card px-3 py-2.5">
                           <div className="flex items-start gap-3">
@@ -2094,7 +2091,7 @@ export default function PharmacyNetworkPage() {
       </div>
 
       {canAddTeam && (
-        <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-white/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-8px_24px_rgba(15,23,42,0.08)] md:hidden">
+        <div className="pn-mobile-bar md:hidden">
           <Button className="h-11 w-full gap-2" onClick={() => openAddStaff('xodim')}>
             <Plus className="h-4 w-4" />
             Xodim qo‘shish
@@ -2238,7 +2235,7 @@ export default function PharmacyNetworkPage() {
               <Button
                 type="button"
                 variant="outline"
-                className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50"
+                className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-950/40"
                 onClick={() => {
                   const count =
                     editTarget.orgRole === 'manager'
@@ -2474,7 +2471,7 @@ export default function PharmacyNetworkPage() {
                     : 'tizimdan butunlay o‘chiriladi.'}
                 </p>
                 {deleteTarget?.kind === 'filial' && (deleteTarget.staffCount ?? 0) > 0 ? (
-                  <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800">
+                  <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300">
                     Shu filialdagi {deleteTarget.staffCount} ta farmasevt/stajyor ham o‘chadi.
                   </p>
                 ) : null}

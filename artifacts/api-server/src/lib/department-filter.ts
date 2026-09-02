@@ -8,6 +8,8 @@ export type DepartmentFilterMatch = {
   departmentName: string;
   userRoles: Set<string>;
   orgRoles: Set<string>;
+  excludeUserRoles: Set<string>;
+  excludeOrgRoles: Set<string>;
 };
 
 /** Bo‘lim nomi bo‘yicha rol/org_role bilan ham moslashtirish (masalan Koordinator bo‘limi). */
@@ -17,6 +19,11 @@ const DEPARTMENT_ROLE_ALIASES: Record<string, { userRoles: string[]; orgRoles: s
     userRoles: ["mudir", "farmasevt", "stajyor"],
     orgRoles: ["manager", "pharmacist", "intern"],
   },
+};
+
+/** Bo‘limda ko‘rinmasligi kerak bo‘lgan rollar (masalan Farmatsiyada koordinator yo‘q). */
+const DEPARTMENT_ROLE_EXCLUDE: Record<string, { userRoles: string[]; orgRoles: string[] }> = {
+  Farmatsiya: { userRoles: ["koordinator"], orgRoles: ["coordinator"] },
 };
 
 export async function resolveDepartmentFilter(
@@ -33,11 +40,14 @@ export async function resolveDepartmentFilter(
   if (!dept) return null;
 
   const alias = DEPARTMENT_ROLE_ALIASES[dept.name];
+  const exclude = DEPARTMENT_ROLE_EXCLUDE[dept.name];
   return {
     departmentId: dept.id,
     departmentName: dept.name,
     userRoles: new Set(alias?.userRoles ?? []),
     orgRoles: new Set(alias?.orgRoles ?? []),
+    excludeUserRoles: new Set(exclude?.userRoles ?? []),
+    excludeOrgRoles: new Set(exclude?.orgRoles ?? []),
   };
 }
 
@@ -49,9 +59,15 @@ export function matchesDepartmentFilter(
   },
   filter: DepartmentFilterMatch,
 ): boolean {
-  if (emp.departmentId === filter.departmentId) return true;
-  if (filter.userRoles.has(emp.userRole || "")) return true;
   const org = emp.orgRole || orgRoleFromUserRole(emp.userRole);
-  if (org && filter.orgRoles.has(org)) return true;
-  return false;
+  if (filter.excludeUserRoles.has(emp.userRole || "")) return false;
+  if (org && filter.excludeOrgRoles.has(org)) return false;
+
+  if (filter.userRoles.size > 0 || filter.orgRoles.size > 0) {
+    if (filter.userRoles.has(emp.userRole || "")) return true;
+    if (org && filter.orgRoles.has(org)) return true;
+    return false;
+  }
+
+  return emp.departmentId === filter.departmentId;
 }

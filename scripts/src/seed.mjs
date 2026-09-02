@@ -2,7 +2,7 @@ import pg from "../../lib/db/node_modules/pg/lib/index.js";
 
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 
-const departments = ["Rekruting", "HR", "Trening", "Farmatsiya", "Farmasevt", "Laboratoriya"];
+const departments = ["Rekruting", "HR", "Trening", "Farmatsiya", "Koordinator", "Farmasevt", "Laboratoriya"];
 
 const users = [
   ["System Admin", "admin", null, "admin", "admin123", "+998901000001"],
@@ -12,7 +12,7 @@ const users = [
   ["Bahodir Direktor", "director", null, "director1", "pass123", "+998901000005"],
   ["Madina Bo'lim boshlig'i", "department_head", "Farmatsiya", "dept_head1", "pass123", "+998901000006"],
   ["Sardor Mudir", "mudir", "Farmasevt", "mudir1", "pass123", "+998901000007"],
-  ["Rustamova Lola", "koordinator", "Farmatsiya", "koordinator1", "pass123", "+998901000008"],
+  ["Rustamova Lola", "koordinator", "Koordinator", "koordinator1", "pass123", "+998901000008"],
 ];
 
 const client = await pool.connect();

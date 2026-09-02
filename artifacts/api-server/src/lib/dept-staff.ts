@@ -16,6 +16,7 @@ export const DEPT_HEAD_ROLES = [
   "reviziya_rahbar",
   "sb_boshliq",
   "hr_direktor",
+  "hr_kadr_rahbar",
   "hr_menejer",
 ] as const;
 
@@ -24,7 +25,8 @@ const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   texnik_rahbar: ["texnik"],
   reviziya_rahbar: ["revizor"],
   sb_boshliq: ["sb"],
-  hr_direktor: ["hr", "hr_menejer", "hr_auditor", "recruiter", "trainer", "mentor"],
+  hr_direktor: ["hr", "hr_menejer", "hr_kadr_rahbar", "hr_auditor", "recruiter", "trainer", "mentor"],
+  hr_kadr_rahbar: ["hr", "hr_menejer", "hr_auditor", "recruiter", "trainer", "mentor"],
   hr_menejer: ["hr", "recruiter", "trainer", "mentor"],
 };
 
@@ -46,6 +48,7 @@ const BLOCKED_STAFF_ROLES = new Set([
 export const ROLE_LABEL_UZ: Record<string, string> = {
   hr: "HR",
   hr_menejer: "HR Menejer",
+  hr_kadr_rahbar: "HR kadr b/m",
   hr_auditor: "HR Auditor",
   recruiter: "Rekruter",
   trainer: "Trener",

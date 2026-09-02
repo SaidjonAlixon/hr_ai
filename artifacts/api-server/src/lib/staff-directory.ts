@@ -47,6 +47,7 @@ const ROLE_POSITION: Record<string, string> = {
   asoschi: "Asoschi",
   department_head: "Bo‘lim boshlig‘i",
   hr_direktor: "HR Direktor",
+  hr_kadr_rahbar: "HR kadr b/m",
   hr_menejer: "HR Menejer",
   hr_auditor: "HR Auditor",
   recruiter: "Rekruter",

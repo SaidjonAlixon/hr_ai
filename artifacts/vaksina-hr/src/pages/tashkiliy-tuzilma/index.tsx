@@ -191,6 +191,7 @@ const ALLOWED_ROLES = new Set([
   "director",
   "hr",
   "hr_direktor",
+  "hr_kadr_rahbar",
   "hr_auditor",
   "hr_menejer",
   "recruiter",
@@ -493,6 +494,7 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
   }
 
   const direktor = activeUsers(users, "hr_direktor")[0];
+  const kadrRahbar = activeUsers(users, "hr_kadr_rahbar")[0];
   const auditor = activeUsers(users, "hr_auditor")[0];
   const recruiters = activeUsers(users, "recruiter");
   const trainers = activeUsers(users, "trainer");
@@ -504,6 +506,17 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
     tone: "director",
     icon: Crown,
     children: [
+      ...(kadrRahbar
+        ? [
+            {
+              id: "hr-kadr-rahbar",
+              label: kadrRahbar.fullName,
+              hint: "HR kadr b/m",
+              tone: "director" as const,
+              icon: Briefcase,
+            },
+          ]
+        : []),
       {
         id: "hr-auditor",
         label: auditor?.fullName || "HR Auditor",

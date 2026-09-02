@@ -19,6 +19,7 @@ const LOGIN_UZ: Record<string, string> = {
   recruiter: "Rekruter",
   hr: "HR",
   hr_direktor: "HR Direktor",
+  hr_kadr_rahbar: "HR kadr b/m",
   hr_auditor: "HR Auditor",
   hr_menejer: "HR Menejer",
   trainer: "Trener",

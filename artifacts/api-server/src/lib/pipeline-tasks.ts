@@ -1,14 +1,10 @@
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
 import { db, tasksTable, usersTable, candidatesTable } from "@workspace/db";
 import { notifyUser } from "./notify";
+import { HR_ROLES } from "./roles";
 
 /** Offline / yakuniy / ishga qabul — shu HR rollariga topshiriq */
-export const PIPELINE_HR_ROLES = [
-  "hr",
-  "hr_menejer",
-  "hr_direktor",
-  "hr_auditor",
-] as const;
+export const PIPELINE_HR_ROLES = [...HR_ROLES] as const;
 
 const STAGE_TITLES: Record<string, string> = {
   offline_interview: "4-qadam · Offline suhbat",

@@ -63,6 +63,7 @@ export function roleLabel(role?: string | null): string {
       return "Koordinator";
     case "hr":
     case "hr_direktor":
+    case "hr_kadr_rahbar":
     case "hr_auditor":
     case "hr_menejer":
       return "HR";

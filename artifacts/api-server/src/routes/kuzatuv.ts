@@ -24,6 +24,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   admin: "Admin",
   hr: "HR",
   hr_direktor: "HR Direktor",
+  hr_kadr_rahbar: "HR kadr b/m",
   hr_auditor: "HR Auditor",
   hr_menejer: "HR Menejer",
   recruiter: "Rekruter",

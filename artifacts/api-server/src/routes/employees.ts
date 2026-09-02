@@ -646,7 +646,7 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
         }
       }
       if (req.body[key] === "closed") {
-        const canCloseBranch = ["admin", "director", "hr_direktor", "hr_menejer", "hr"].includes(role);
+        const canCloseBranch = ["admin", "director", "hr_direktor", "hr_kadr_rahbar", "hr_menejer", "hr"].includes(role);
         if (!canCloseBranch) {
           res.status(403).json({
             error: "Filialni yopish faqat Admin, Direktor, HR menejer yoki HR direktor uchun",

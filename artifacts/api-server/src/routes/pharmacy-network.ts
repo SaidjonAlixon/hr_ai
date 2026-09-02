@@ -16,6 +16,7 @@ import {
   dismissPharmacyEmployee,
   fillVacantBranchSlot,
 } from "../lib/dismiss-pharmacy-staff";
+import { isHrRole } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -567,12 +568,7 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
       res.status(403).json({ error: "Mudir faqat farmasevt yoki stajyor qo‘sha oladi" });
       return;
     }
-  } else if (
-    actorRole === "admin" ||
-    actorRole === "hr" ||
-    actorRole === "hr_menejer" ||
-    actorRole === "hr_direktor"
-  ) {
+  } else if (actorRole === "admin" || isHrRole(actorRole)) {
     // HR/admin ham xuddi shu rollarni yaratishi mumkin
   } else {
     res.status(403).json({ error: "Ruxsat yo‘q" });

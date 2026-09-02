@@ -40,6 +40,7 @@ import { userRoleLabel, canManageSettings } from '../../lib/roles';
 const ROLES = [
   { value: 'admin', label: 'Admin' },
   { value: 'hr_direktor', label: 'HR Direktor' },
+  { value: 'hr_kadr_rahbar', label: 'HR kadr b/m' },
   { value: 'hr_auditor', label: 'HR Auditor' },
   { value: 'hr_menejer', label: 'HR Menejer' },
   { value: 'recruiter', label: 'Rekruter' },

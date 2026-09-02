@@ -16,6 +16,7 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   stajyor: FARMASEVT_DEPARTMENT_NAME,
   hr: "HR",
   hr_direktor: "HR",
+  hr_kadr_rahbar: "HR",
   hr_menejer: "HR",
   hr_auditor: "HR",
   recruiter: "Rekruting",

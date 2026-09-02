@@ -49,7 +49,7 @@ import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -382,7 +382,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   }, [pinnedIds]);
 
   useEffect(() => {
-    if (!isHrOversight(user?.role)) return;
+    if (!hasHrOversightNav(user?.role)) return;
     const allIds = NAV_SECTIONS.map((section) => section.id);
     setPinnedIds((prev) => {
       const missing = allIds.filter((id) => !prev.includes(id));
@@ -629,7 +629,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const texnikNav = { name: 'Texnik', path: '/texnik', icon: Wrench };
 
   function injectCommonNav(items: NavItem[], role: string): NavItem[] {
-    if (isHrOversight(role)) return items;
+    if (hasHrOversightNav(role)) return items;
     let next = [...items];
     if (!next.some((i) => i.path === '/vazifalar')) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
@@ -786,6 +786,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     hr: hrMenejerNav,
     hr_menejer: hrMenejerNav,
     hr_direktor: hrOversightNav,
+    hr_kadr_rahbar: hrOversightNav,
     hr_auditor: hrOversightNav,
     trainer: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -990,7 +991,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   };
 
   const userRole = normalizeUserRole(user.role);
-  const oversightNav = isHrOversight(userRole);
+  const oversightNav = hasHrOversightNav(userRole);
   const roleNav = injectCommonNav(
     oversightNav
       ? hrOversightNav

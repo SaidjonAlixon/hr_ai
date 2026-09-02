@@ -144,6 +144,7 @@ function canEditEmploymentStatus(role?: string | null) {
     "admin",
     "director",
     "hr_direktor",
+    "hr_kadr_rahbar",
     "hr_menejer",
     "hr",
     "moliya",

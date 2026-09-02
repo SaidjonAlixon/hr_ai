@@ -106,6 +106,7 @@ export const ROLE_LABELS: Record<string, string> = {
   moliya: "Moliyachi",
   hr: "HR",
   hr_direktor: "HR Direktor",
+  hr_kadr_rahbar: "HR kadr b/m",
   hr_menejer: "HR Menejer",
   hr_auditor: "HR Auditor",
   recruiter: "Rekruter",
@@ -128,7 +129,7 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 export function canManagePayroll(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya" || role === "hr_direktor";
+  return role === "admin" || role === "director" || role === "moliya" || role === "hr_direktor" || role === "hr_kadr_rahbar";
 }
 
 export function canApprovePayroll(role?: string | null) {
@@ -136,7 +137,7 @@ export function canApprovePayroll(role?: string | null) {
 }
 
 export function canEditKpiSettings(role?: string | null) {
-  return role === "admin" || role === "hr_direktor" || role === "director" || role === "moliya";
+  return role === "admin" || role === "hr_direktor" || role === "hr_kadr_rahbar" || role === "director" || role === "moliya";
 }
 
 export function currentMonthKey() {

@@ -1,5 +1,5 @@
 /** HR oilasi — barcha HR ichki rollari (eski `hr` = menejer bilan bir xil huquq). */
-export const HR_ROLES = ["hr", "hr_direktor", "hr_auditor", "hr_menejer"] as const;
+export const HR_ROLES = ["hr", "hr_direktor", "hr_auditor", "hr_menejer", "hr_kadr_rahbar"] as const;
 
 export type HrRole = (typeof HR_ROLES)[number];
 
@@ -18,7 +18,16 @@ export function isHrOversight(role?: string | null): boolean {
 }
 
 export function isHrDirektor(role?: string | null): boolean {
-  return role === "hr_direktor";
+  return normalizeUserRole(role) === "hr_direktor";
+}
+
+export function isHrKadrRahbar(role?: string | null): boolean {
+  return normalizeUserRole(role) === "hr_kadr_rahbar";
+}
+
+/** To‘liq HR boshqaruv menyusi (direktor, auditor, kadr b/m). */
+export function hasHrOversightNav(role?: string | null): boolean {
+  return isHrOversight(role) || isHrKadrRahbar(role);
 }
 
 /** Xavfsizlik (SB) — operator va bo‘lim boshlig‘i */
@@ -45,7 +54,7 @@ export function isTexnikRole(role?: string | null): boolean {
 export function canViewReviziya(role?: string | null): boolean {
   return (
     isReviziyaRole(role) ||
-    isHrOversight(role) ||
+    hasHrOversightNav(role) ||
     role === "admin" ||
     role === "moliya" ||
     role === "sb" ||
@@ -68,7 +77,7 @@ export function canViewDavomat(role?: string | null): boolean {
   return (
     role === "admin" ||
     role === "director" ||
-    isHrOversight(role) ||
+    hasHrOversightNav(role) ||
     role === "hr_menejer" ||
     role === "hr" ||
     isSbRole(role) ||
@@ -105,6 +114,7 @@ export const DEPT_HEAD_ROLES = [
   "reviziya_rahbar",
   "sb_boshliq",
   "hr_direktor",
+  "hr_kadr_rahbar",
   "hr_menejer",
 ] as const;
 
@@ -121,7 +131,7 @@ export function canViewChecklistStatus(role?: string | null): boolean {
   return (
     role === "admin" ||
     role === "director" ||
-    isHrOversight(role) ||
+    hasHrOversightNav(role) ||
     role === "hr_menejer" ||
     role === "hr" ||
     role === "moliya"
@@ -216,6 +226,7 @@ export const HR_ROLE_LABELS: Record<string, string> = {
   hr_direktor: "HR Direktor",
   hr_auditor: "HR Auditor",
   hr_menejer: "HR Menejer",
+  hr_kadr_rahbar: "HR kadr b/m",
 };
 
 /** Foydalanuvchi rollari — Farmasevt va Stajyor alohida */

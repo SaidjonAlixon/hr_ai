@@ -334,9 +334,7 @@ export default function PharmacyNetworkPage() {
   const canAddStaff = canAddMudir || canAddTeam;
   const canHardDelete =
     user?.role === 'admin' ||
-    user?.role === 'hr' ||
-    user?.role === 'hr_menejer' ||
-    user?.role === 'hr_direktor' ||
+    isHrRole(user?.role) ||
     user?.role === 'director';
   const canPickFilialForStaff = canAddMudir;
 
@@ -398,9 +396,7 @@ export default function PharmacyNetworkPage() {
   const canCloseBranch =
     user?.role === 'admin' ||
     user?.role === 'director' ||
-    user?.role === 'hr_direktor' ||
-    user?.role === 'hr_menejer' ||
-    user?.role === 'hr';
+    isHrRole(user?.role);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);

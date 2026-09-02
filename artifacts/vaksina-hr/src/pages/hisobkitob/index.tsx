@@ -73,8 +73,8 @@ function roleLabel(p?: string | null) {
 
 function FormulaHint() {
   return (
-    <div className="rounded-xl border bg-card p-3 text-[11px] leading-relaxed text-muted-foreground shadow-sm">
-      <p className="font-semibold text-[#0b3a5c]">Hisoblash (serverda, barcha lavozimlar)</p>
+    <div className="dept-panel text-[11px] leading-relaxed text-muted-foreground">
+      <p className="font-semibold dept-accent-value">Hisoblash (serverda, barcha lavozimlar)</p>
       <p className="mt-1">Rejadan ortiq = max(0, savdo − joriy reja). Reja % = savdo / reja × 100.</p>
       <p>Foiz summasi = savdo × savdo foizi. Reja bonusi faqat reja bajarilsa (aks holda 0).</p>
       <p>Hisoblangan = fiks + foiz + reja bonusi + KPI. Qo‘lga = max(0, hisoblangan − avans − jarimalar).</p>
@@ -168,33 +168,39 @@ export default function HisobkitobPage() {
   };
 
   return (
-    <div className="space-y-3 pb-8">
-      <div className="surface-brand flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 shadow-sm">
-        <div>
-          <h1 className="flex items-center gap-2 text-lg font-bold">
-            <Calculator className="h-5 w-5" /> Xodimlar oylik hisobi
-          </h1>
-          <p className="surface-brand-subtle text-xs">Savdo, reja, fiks, bonus va jarimalar — barcha lavozimlar. Oylik (KPI) bilan bog‘langan.</p>
-        </div>
-        <div className="flex items-center gap-1 rounded-lg bg-white/10 p-0.5">
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <span className="min-w-[120px] text-center text-[13px] font-semibold">{monthLabelUz(month)}</span>
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey() && month >= "2026-08"}>
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+    <div className="dept-page">
+      <div className="dept-hero dept-hero-primary">
+        <div className="dept-hero-glow" />
+        <div className="dept-hero-body flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="dept-eyebrow">Moliya · savdo</p>
+            <h1 className="dept-title flex items-center gap-2">
+              <Calculator className="h-6 w-6" /> Xodimlar oylik hisobi
+            </h1>
+            <p className="dept-desc">
+              Savdo, reja, fiks, bonus va jarimalar — barcha lavozimlar. Oylik (KPI) bilan bog‘langan.
+            </p>
+          </div>
+          <div className="dept-month-nav">
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <span className="min-w-[120px] px-1 text-center text-[13px] font-semibold text-white">{monthLabelUz(month)}</span>
+            <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey() && month >= "2026-08"}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
       </div>
+
+      <div className="dept-page-inner">
 
       {sheets.isLoading || detail.isLoading || (!d && mut.create.isPending) ? (
         <Skeleton className="h-80 rounded-xl" />
       ) : detail.error ? (
         <p className="text-sm text-rose-700">{(detail.error as Error).message}</p>
       ) : !d ? (
-        <p className="rounded-xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
-          {monthLabelUz(month)} uchun ma’lumot yo‘q.
-        </p>
+        <p className="dept-empty">{monthLabelUz(month)} uchun ma’lumot yo‘q.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-7">
@@ -207,14 +213,14 @@ export default function HisobkitobPage() {
               { l: `${monthLabelUz(shiftMonthKey(d.month, -1))}ga %`, v: `${d.totals.vsPrevPct}%` },
               { l: "Qo‘lga / karta", v: formatSom(d.totals.cardTotal) },
             ].map((c) => (
-              <div key={c.l} className="rounded-xl border bg-card px-3 py-2 shadow-sm">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{c.l}</p>
-                <p className="text-sm font-bold tabular-nums text-[#0b3a5c]">{c.v}</p>
+              <div key={c.l} className="dept-kpi !p-3">
+                <p className="dept-kpi-label !mt-0">{c.l}</p>
+                <p className="dept-kpi-value !text-sm md:!text-base">{c.v}</p>
               </div>
             ))}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border bg-card px-3 py-2 shadow-sm">
+          <div className="dept-toolbar">
             <div className="relative">
               <Search className="pointer-events-none absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <input
@@ -252,7 +258,7 @@ export default function HisobkitobPage() {
                 <Button
                   type="button"
                   size="sm"
-                  className="h-8 bg-[#0b3a5c]"
+                  className="h-8"
                   disabled={mut.applyPosition.isPending || !roleFilter}
                   onClick={() => {
                     if (!roleFilter) {
@@ -278,7 +284,7 @@ export default function HisobkitobPage() {
               </>
             ) : null}
             <div className="ml-auto flex flex-wrap gap-2">
-              <Button type="button" size="sm" className="h-8 bg-[#0b3a5c]" onClick={() => { window.location.href = `/api/hisobkitob/sheets/${d.id}/export`; }}>
+              <Button type="button" size="sm" className="h-8" onClick={() => { window.location.href = `/api/hisobkitob/sheets/${d.id}/export`; }}>
                 <Download className="mr-1 h-3.5 w-3.5" /> Excel
               </Button>
               {d.status !== "approved" ? (
@@ -293,7 +299,7 @@ export default function HisobkitobPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-slate-300 bg-card shadow-sm">
+          <div className="dept-data-table">
             <div className="max-h-[min(72vh,760px)] overflow-auto">
               <table className="w-full min-w-[2100px] border-collapse text-[11px] leading-tight">
                 <thead className="sticky top-0 z-10">
@@ -323,7 +329,7 @@ export default function HisobkitobPage() {
                       <th
                         key={h.k || h.t}
                         className={cn(
-                          "whitespace-nowrap border border-border bg-primary px-1.5 py-1 text-[10px] font-semibold leading-tight text-primary-foreground",
+                          "whitespace-nowrap px-1.5 py-1 text-[10px] font-semibold leading-tight",
                           h.a === "right" ? "text-right" : h.a === "center" ? "text-center" : "text-left",
                         )}
                       >
@@ -341,11 +347,11 @@ export default function HisobkitobPage() {
                 </thead>
                 <tbody>
                   {rows.map((row: SettlementLine, idx) => (
-                    <tr key={row.id} className="hover:bg-sky-50/60">
-                      <td className="sticky left-0 z-[1] w-8 border border-slate-300 bg-muted px-0.5 py-0 text-center text-[10px] tabular-nums text-muted-foreground">
+                    <tr key={row.id}>
+                      <td className="sticky left-0 z-[1] w-8 bg-muted px-0.5 py-0 text-center text-[10px] tabular-nums text-muted-foreground">
                         {idx + 1}
                       </td>
-                      <td className="sticky left-8 z-[1] min-w-[220px] whitespace-nowrap border border-slate-300 bg-card px-1 py-0">
+                      <td className="sticky left-8 z-[1] min-w-[220px] whitespace-nowrap bg-card px-1 py-0">
                         {edit ? (
                           <input
                             defaultValue={row.fullName}
@@ -356,7 +362,7 @@ export default function HisobkitobPage() {
                           <span className="block px-1 py-0 font-semibold whitespace-nowrap">{row.fullName}</span>
                         )}
                       </td>
-                      <td className="min-w-[140px] whitespace-nowrap border border-slate-300 px-1 py-0">
+                      <td className="min-w-[140px] whitespace-nowrap px-1 py-0">
                         {edit ? (
                           <input
                             defaultValue={roleLabel(row.position)}
@@ -367,7 +373,7 @@ export default function HisobkitobPage() {
                           <span className="block px-1 py-0 text-foreground whitespace-nowrap">{roleLabel(row.position) || "—"}</span>
                         )}
                       </td>
-                      <td className="border border-slate-300 px-1 py-0">
+                      <td className="px-1 py-0">
                         {edit ? (
                           <input
                             defaultValue={row.phone || ""}
@@ -378,43 +384,43 @@ export default function HisobkitobPage() {
                           <span className="px-1 text-muted-foreground">{row.phone || "—"}</span>
                         )}
                       </td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.planCurrent ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { planCurrent: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.planPrev ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { planPrev: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.sales} disabled={!edit} onCommit={(n) => saveLine(row.id, { sales: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0 text-right tabular-nums text-emerald-800">{formatSom(row.overPlan ?? 0)}</td>
+                      <td className="px-1 py-0"><CellInput value={row.planCurrent ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { planCurrent: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.planPrev ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { planPrev: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.sales} disabled={!edit} onCommit={(n) => saveLine(row.id, { sales: n })} /></td>
+                      <td className="px-1 py-0 text-right tabular-nums text-emerald-700 dark:text-emerald-400">{formatSom(row.overPlan ?? 0)}</td>
                       <td className="border border-slate-300 px-1 py-0 text-right tabular-nums">{row.planPct ?? 0}%</td>
                       <td className="border border-slate-300 px-1 py-0" title="0 = foiz yo‘q; 0.6 = 0.6%">
                         <CellInput value={row.percent} percent disabled={!edit} onCommit={(n) => saveLine(row.id, { percent: n })} />
                       </td>
-                      <td className="border border-slate-300 px-1 py-0 text-right font-medium tabular-nums text-emerald-800">{formatSom(row.oylikPct)}</td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.fiksa} disabled={!edit} onCommit={(n) => saveLine(row.id, { fiksa: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.planBonus} disabled={!edit} onCommit={(n) => saveLine(row.id, { planBonus: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.extraBonus ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { extraBonus: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.avans} disabled={!edit} onCommit={(n) => saveLine(row.id, { avans: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.inventoryFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { inventoryFine: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.timeFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { timeFine: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0"><CellInput value={row.expiryHold} disabled={!edit} onCommit={(n) => saveLine(row.id, { expiryHold: n })} /></td>
-                      <td className="border border-slate-300 px-1 py-0 text-right font-bold tabular-nums text-[#0b3a5c]">{formatSom(row.grossPay ?? row.net)}</td>
+                      <td className="px-1 py-0 text-right font-medium tabular-nums text-emerald-700 dark:text-emerald-400">{formatSom(row.oylikPct)}</td>
+                      <td className="px-1 py-0"><CellInput value={row.fiksa} disabled={!edit} onCommit={(n) => saveLine(row.id, { fiksa: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.planBonus} disabled={!edit} onCommit={(n) => saveLine(row.id, { planBonus: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.extraBonus ?? 0} disabled={!edit} onCommit={(n) => saveLine(row.id, { extraBonus: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.avans} disabled={!edit} onCommit={(n) => saveLine(row.id, { avans: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.inventoryFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { inventoryFine: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.timeFine} disabled={!edit} onCommit={(n) => saveLine(row.id, { timeFine: n })} /></td>
+                      <td className="px-1 py-0"><CellInput value={row.expiryHold} disabled={!edit} onCommit={(n) => saveLine(row.id, { expiryHold: n })} /></td>
+                      <td className="px-1 py-0 text-right font-bold tabular-nums dept-accent-value">{formatSom(row.grossPay ?? row.net)}</td>
                       <td className="border border-slate-300 px-1 py-0 text-right font-bold tabular-nums">{formatSom(row.card)}</td>
                     </tr>
                   ))}
                 </tbody>
                 <tfoot className="sticky bottom-0">
-                  <tr className="bg-slate-100 font-semibold">
-                    <td className="border border-slate-400 px-1 py-0 text-center">—</td>
-                    <td className="border border-slate-400 px-1 py-0">Jami</td>
-                    <td className="border border-slate-400 px-1 py-0 text-[11px] text-muted-foreground">{rows.length} / {d.lines.length} xodim</td>
-                    <td className="border border-slate-400" />
-                    <td className="border border-slate-400" />
-                    <td className="border border-slate-400" />
-                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom(d.totals.salesTotal)}</td>
-                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom((d.totals as { overPlanTotal?: number }).overPlanTotal ?? 0)}</td>
-                    <td className="border border-slate-400 px-1 py-0 text-right">{d.totals.vsCurrentPct}%</td>
-                    <td className="border border-slate-400" />
-                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom(d.totals.oylikPctTotal)}</td>
-                    <td className="border border-slate-400" colSpan={7} />
-                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom((d.totals as { grossPayTotal?: number }).grossPayTotal ?? d.totals.netTotal)}</td>
-                    <td className="border border-slate-400 px-1 py-0 text-right tabular-nums">{formatSom(d.totals.cardTotal)}</td>
+                  <tr>
+                    <td className="px-1 py-0 text-center">—</td>
+                    <td className="px-1 py-0">Jami</td>
+                    <td className="px-1 py-0 text-[11px] text-muted-foreground">{rows.length} / {d.lines.length} xodim</td>
+                    <td />
+                    <td />
+                    <td />
+                    <td className="px-1 py-0 text-right tabular-nums">{formatSom(d.totals.salesTotal)}</td>
+                    <td className="px-1 py-0 text-right tabular-nums">{formatSom((d.totals as { overPlanTotal?: number }).overPlanTotal ?? 0)}</td>
+                    <td className="px-1 py-0 text-right">{d.totals.vsCurrentPct}%</td>
+                    <td />
+                    <td className="px-1 py-0 text-right tabular-nums">{formatSom(d.totals.oylikPctTotal)}</td>
+                    <td colSpan={7} />
+                    <td className="px-1 py-0 text-right tabular-nums">{formatSom((d.totals as { grossPayTotal?: number }).grossPayTotal ?? d.totals.netTotal)}</td>
+                    <td className="px-1 py-0 text-right tabular-nums">{formatSom(d.totals.cardTotal)}</td>
                   </tr>
                 </tfoot>
               </table>
@@ -423,6 +429,7 @@ export default function HisobkitobPage() {
           <FormulaHint />
         </>
       )}
+      </div>
     </div>
   );
 }

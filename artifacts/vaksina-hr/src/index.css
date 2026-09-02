@@ -737,6 +737,273 @@
   @apply text-sky-400;
 }
 
+/* ── Bo‘lim sahifalari — premium, theme-aware ── */
+.dept-page {
+  @apply min-h-full bg-background pb-8 text-foreground;
+}
+
+.dept-page-inner {
+  @apply mx-auto max-w-6xl space-y-5 px-4 py-5 md:px-6 md:py-6;
+}
+
+.dept-hero {
+  @apply hero-dark relative overflow-hidden border-b border-white/5;
+}
+
+.dept-hero-violet {
+  @apply bg-gradient-to-br from-[#2e1065] via-[#4c1d95] to-[#0b3a5c];
+}
+.dark .dept-hero-violet {
+  @apply from-[#12082a] via-[#2e1065] to-[#06101c];
+}
+
+.dept-hero-cyan {
+  @apply bg-gradient-to-br from-[#0e7490] via-[#0f766e] to-[#0b3a5c];
+}
+.dark .dept-hero-cyan {
+  @apply from-[#042f2e] via-[#134e4a] to-[#06101c];
+}
+
+.dept-hero-amber {
+  @apply bg-gradient-to-br from-[#b45309] via-[#c2410c] to-[#0b3a5c];
+}
+.dark .dept-hero-amber {
+  @apply from-[#431407] via-[#9a3412] to-[#06101c];
+}
+
+.dept-hero-primary {
+  @apply bg-gradient-to-br from-[#0b3a5c] via-[#0f4a73] to-[#163a55];
+}
+.dark .dept-hero-primary {
+  @apply from-[#06101c] via-[#0b3a5c] to-[#0f2137];
+}
+
+.dept-hero-glow {
+  @apply pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-3xl;
+}
+
+.dept-hero-glow2 {
+  @apply pointer-events-none absolute -bottom-20 left-1/4 h-40 w-40 rounded-full bg-white/5 blur-3xl;
+}
+
+.dept-hero-body {
+  @apply relative mx-auto max-w-6xl px-4 py-6 md:px-6 md:py-7;
+}
+
+.dept-eyebrow {
+  @apply text-[11px] font-semibold uppercase tracking-[0.2em] text-white/60;
+}
+
+.dept-title {
+  @apply mt-1 text-2xl font-semibold tracking-tight text-white md:text-[28px];
+}
+
+.dept-desc {
+  @apply mt-2 max-w-2xl text-sm leading-relaxed text-white/75;
+}
+
+.dept-badge {
+  @apply rounded-full border border-white/15 bg-white/10 px-3 py-1 text-xs font-medium text-white/90 backdrop-blur-sm;
+}
+
+.dept-tabs {
+  @apply mt-5 flex flex-wrap gap-1.5;
+}
+
+.dept-tab {
+  @apply inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-medium transition-all;
+}
+
+.dept-tab--idle {
+  @apply bg-white/10 text-white/85 hover:bg-white/20;
+}
+
+.dept-tab--active {
+  @apply bg-white text-slate-900 shadow-lg shadow-black/15;
+}
+
+.dept-kpi {
+  @apply rounded-2xl border border-border/80 bg-card p-4 text-left shadow-sm transition-shadow hover:shadow-md;
+}
+.dark .dept-kpi {
+  @apply border-slate-700/55 bg-slate-900/65 shadow-lg backdrop-blur-sm;
+}
+
+.dept-kpi--warn {
+  @apply border-amber-300/80 ring-1 ring-amber-200/60;
+}
+.dark .dept-kpi--warn {
+  @apply border-amber-500/35 ring-amber-400/20;
+}
+
+.dept-kpi-label {
+  @apply mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground;
+}
+
+.dept-kpi-value {
+  @apply mt-0.5 text-xl font-semibold tabular-nums text-foreground;
+}
+
+.dept-kpi-hint {
+  @apply mt-0.5 text-[11px] text-muted-foreground;
+}
+
+.dept-icon-emerald {
+  @apply inline-flex rounded-xl bg-emerald-50 p-2 text-emerald-700;
+}
+.dark .dept-icon-emerald {
+  @apply bg-emerald-500/15 text-emerald-300;
+}
+.dept-icon-sky {
+  @apply inline-flex rounded-xl bg-sky-50 p-2 text-sky-700;
+}
+.dark .dept-icon-sky {
+  @apply bg-sky-500/15 text-sky-300;
+}
+.dept-icon-violet {
+  @apply inline-flex rounded-xl bg-violet-50 p-2 text-violet-700;
+}
+.dark .dept-icon-violet {
+  @apply bg-violet-500/15 text-violet-300;
+}
+.dept-icon-rose {
+  @apply inline-flex rounded-xl bg-rose-50 p-2 text-rose-700;
+}
+.dark .dept-icon-rose {
+  @apply bg-rose-500/15 text-rose-300;
+}
+.dept-icon-indigo {
+  @apply inline-flex rounded-xl bg-indigo-50 p-2 text-indigo-700;
+}
+.dark .dept-icon-indigo {
+  @apply bg-indigo-500/15 text-indigo-300;
+}
+.dept-icon-amber {
+  @apply inline-flex rounded-xl bg-amber-50 p-2 text-amber-800;
+}
+.dark .dept-icon-amber {
+  @apply bg-amber-500/15 text-amber-300;
+}
+.dept-icon-slate {
+  @apply inline-flex rounded-xl bg-muted p-2 text-muted-foreground;
+}
+.dark .dept-icon-slate {
+  @apply bg-slate-800/80 text-slate-300;
+}
+
+.dept-panel {
+  @apply rounded-2xl border border-border/80 bg-card p-5 shadow-sm;
+}
+.dark .dept-panel {
+  @apply border-slate-700/55 bg-slate-900/60 shadow-lg backdrop-blur-sm;
+}
+
+.dept-panel-icon {
+  @apply rounded-xl bg-violet-50 p-2 text-violet-700;
+}
+.dark .dept-panel-icon {
+  @apply bg-violet-500/15 text-violet-300;
+}
+
+.dept-mini {
+  @apply flex items-center gap-3 rounded-2xl border border-border/80 bg-card px-4 py-3 shadow-sm;
+}
+.dark .dept-mini {
+  @apply border-slate-700/55 bg-slate-900/55;
+}
+
+.dept-empty {
+  @apply rounded-2xl border border-dashed border-border bg-muted/25 px-4 py-12 text-center text-sm text-muted-foreground;
+}
+.dark .dept-empty {
+  @apply border-slate-700/50 bg-slate-900/35 text-slate-400;
+}
+
+.dept-chip {
+  @apply rounded-full border border-border bg-muted/40 px-3 py-1 text-xs text-muted-foreground shadow-sm;
+}
+.dark .dept-chip {
+  @apply border-slate-700/55 bg-slate-800/50 text-slate-300;
+}
+
+.dept-form {
+  @apply rounded-2xl border border-border/80 bg-card p-5 shadow-sm;
+}
+.dark .dept-form {
+  @apply border-slate-700/55 bg-slate-900/60 shadow-lg;
+}
+
+.dept-ticket {
+  @apply flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border/80 bg-card p-4 shadow-sm transition-colors hover:border-primary/25;
+}
+.dark .dept-ticket {
+  @apply border-slate-700/55 bg-slate-900/55 hover:border-sky-500/35;
+}
+
+.dept-status {
+  @apply rounded-full bg-muted px-2.5 py-1 text-[11px] font-semibold text-foreground;
+}
+.dark .dept-status {
+  @apply bg-slate-800 text-slate-200;
+}
+
+.dept-toolbar {
+  @apply flex flex-wrap items-center gap-2 rounded-2xl border border-border/80 bg-card/90 px-3 py-2.5 shadow-sm backdrop-blur-sm;
+}
+.dark .dept-toolbar {
+  @apply border-slate-700/55 bg-slate-900/50;
+}
+
+.dept-month-nav {
+  @apply flex items-center gap-0.5 rounded-xl border border-white/15 bg-white/10 p-0.5 backdrop-blur-sm;
+}
+
+.dept-data-table {
+  @apply overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm;
+}
+.dark .dept-data-table {
+  @apply border-slate-700/55 bg-slate-900/55 shadow-lg;
+}
+
+.dept-data-table thead tr {
+  @apply border-b border-primary/20 bg-primary text-primary-foreground;
+}
+.dark .dept-data-table thead tr {
+  @apply border-slate-600/40 bg-slate-800/95 text-slate-100;
+}
+
+.dept-data-table th {
+  @apply whitespace-nowrap px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wide;
+}
+
+.dept-data-table td {
+  @apply border-b border-border/60 px-2 py-1;
+}
+.dark .dept-data-table td {
+  @apply border-slate-700/40;
+}
+
+.dept-data-table tbody tr {
+  @apply transition-colors hover:bg-muted/40;
+}
+.dark .dept-data-table tbody tr {
+  @apply hover:bg-slate-800/45;
+}
+
+.dept-data-table tfoot tr {
+  @apply bg-muted/70 font-semibold;
+}
+.dark .dept-data-table tfoot tr {
+  @apply bg-slate-800/75;
+}
+
+.dept-accent-value {
+  @apply font-semibold tabular-nums text-primary;
+}
+.dark .dept-accent-value {
+  @apply text-sky-300;
+}
+
 /* Bo‘lim bannerlari */
 .dept-banner {
   @apply rounded-xl border p-3.5 shadow-sm;

@@ -49,7 +49,7 @@ import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -581,6 +581,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/employees') && !canViewEmployees(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/admin/users') && !canManageSettings(user.role)) {
+      setLocation('/dashboard');
+    }
   }, [isLoading, isAuthenticated, user, setLocation, location]);
 
   if (isLoading) {
@@ -616,7 +619,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const itNav = { name: 'IT', path: '/it', icon: Cpu };
   const texnikNav = { name: 'Texnik', path: '/texnik', icon: Wrench };
 
-  function injectCommonNav(items: NavItem[]): NavItem[] {
+  function injectCommonNav(items: NavItem[], role: string): NavItem[] {
+    if (isHrOversight(role)) return items;
     let next = [...items];
     if (!next.some((i) => i.path === '/vazifalar')) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
@@ -672,37 +676,35 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ];
 
-  const hrDirektorNav: NavItem[] = [
+  const hrOversightNav: NavItem[] = [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+    chatNav,
+    orgNav,
+    oylikNav,
+    hisobNav,
+    reviziyaNav,
+    itNav,
+    texnikNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-    chatNav,
-    orgNav,
     { name: 'Arizalar', path: '/requests', icon: FileText },
-    { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
-    { name: 'Nomzodlar', path: '/candidates', icon: Users },
-    { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
     { name: 'Xodimlar', path: '/employees', icon: Users },
-    { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
-    davomatFaceNav,
-    { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
-    { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
-    { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
-      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
-      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
-    ];
-
-  const hrAuditorNav: NavItem[] = [
-    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-    { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
-    chatNav,
-    orgNav,
-    davomatFaceNav,
     { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
     { name: 'Pipeline', path: '/pipeline', icon: Kanban },
+    { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+    davomatAnalyticsNav,
+    davomatFaceNav,
+    { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+    smenaNav,
+    { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
+    { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+    { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
+    { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
+    { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+    { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
   ];
 
   const roleNavigation: Record<string, NavItem[]> = {
@@ -774,8 +776,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     hr: hrMenejerNav,
     hr_menejer: hrMenejerNav,
-    hr_direktor: hrDirektorNav,
-    hr_auditor: hrAuditorNav,
+    hr_direktor: hrOversightNav,
+    hr_auditor: hrOversightNav,
     trainer: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -980,7 +982,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const roleNav = injectCommonNav(roleNavigation[user.role] || [
     { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-  ]);
+  ], user.role);
   const withFace = roleNav.some((item) => item.path === '/davomat-face')
     ? roleNav
     : [...roleNav, davomatFaceNav];

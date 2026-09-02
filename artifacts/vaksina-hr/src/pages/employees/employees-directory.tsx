@@ -29,7 +29,8 @@ import {
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
-import { canViewEmployees } from "../../lib/roles";
+import { canViewEmployees, canAddDeptStaff } from "../../lib/roles";
+import { AddDeptStaffButton } from "../../components/dept/AddDeptStaffDialog";
 import { fetchStaff, staffQueryKey, type StaffGroup } from "../../lib/staff-api";
 import { formatPersonName } from "../../lib/person-name";
 import { EmployeesTabs } from "./employees-tabs";
@@ -239,6 +240,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const allowed = canViewEmployees(user?.role);
   const qc = useQueryClient();
   const canEdit = canEditEmploymentStatus(user?.role);
+  const canAddStaff = canAddDeptStaff(user?.role);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -377,6 +379,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <EmployeesTabs />
+          <AddDeptStaffButton enabled={canAddStaff} />
           <Button
             type="button"
             size="sm"

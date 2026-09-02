@@ -65,31 +65,31 @@ export default function ReviziyaDocPage() {
   };
 
   return (
-    <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
-      <div className="hero-dark bg-gradient-to-br from-[#2e1065] to-[#0b3a5c] px-4 py-5 md:px-6">
-        <div className="mx-auto max-w-3xl">
-          <Link href="/reviziya">
-            <span className="inline-flex items-center text-sm text-violet-200 hover:text-white">
-              <ArrowLeft className="mr-1 h-4 w-4" /> Reviziya
-            </span>
-          </Link>
-          <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-wider text-violet-200">{typeLabel}</p>
-              <h1 className="text-2xl font-semibold">{row.docNo}</h1>
-              <p className="mt-1 text-sm text-violet-100">
-                {row.branchName || "Filial"} · {row.responsibleName || "mas’ul kiritilmagan"}
-              </p>
+    <div className="dept-page">
+      <div className="dept-hero dept-hero-violet">
+        <div className="dept-hero-body">
+          <div className="mx-auto max-w-3xl">
+            <Link href="/reviziya">
+              <span className="inline-flex items-center text-sm text-white/70 hover:text-white">
+                <ArrowLeft className="mr-1 h-4 w-4" /> Reviziya
+              </span>
+            </Link>
+            <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="dept-eyebrow">{typeLabel}</p>
+                <h1 className="dept-title">{row.docNo}</h1>
+                <p className="dept-desc">
+                  {row.branchName || "Filial"} · {row.responsibleName || "mas’ul kiritilmagan"}
+                </p>
+              </div>
+              <span className="dept-badge">{STATUS_UZ[row.status] || row.status}</span>
             </div>
-            <span className="rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur">
-              {STATUS_UZ[row.status] || row.status}
-            </span>
           </div>
         </div>
       </div>
 
-      <div className="mx-auto max-w-3xl space-y-4 px-4 py-5 md:px-6">
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
+      <div className="dept-page-inner !max-w-3xl">
+        <div className="dept-panel p-4">
           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Asosiy oqim</p>
           <div className="flex flex-wrap gap-1.5">
             {FLOW.map((s, i) => (
@@ -171,9 +171,9 @@ export default function ReviziyaDocPage() {
           </div>
         </div>
 
-        <div className="rounded-2xl border bg-card p-4 shadow-sm">
+        <div className="dept-panel p-4">
           <p className="mb-2 flex items-center gap-2 text-sm font-semibold">
-            <Shield className="h-4 w-4 text-violet-600" /> Audit log
+            <Shield className="h-4 w-4 text-violet-600 dark:text-violet-400" /> Audit log
           </p>
           {(row.audit || []).length ? (
             (row.audit || []).map((a) => (

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, eq, inArray, ne } from "drizzle-orm";
+import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { db, usersTable, employeesTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
@@ -11,6 +11,11 @@ import {
   canHardDeletePharmacyNetwork,
   hardDeletePharmacyEmployee,
 } from "../lib/delete-pharmacy-staff";
+import {
+  canDismissPharmacyNetwork,
+  dismissPharmacyEmployee,
+  fillVacantBranchSlot,
+} from "../lib/dismiss-pharmacy-staff";
 
 const router: IRouter = Router();
 
@@ -692,24 +697,97 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
       })
       .returning();
 
-    const [employee] = await db
-      .insert(employeesTable)
-      .values({
-        fullName,
-        position,
-        departmentId,
-        hiredAt: new Date().toISOString().slice(0, 10),
-        orgRole,
-        reportsToId,
-        location: branchLocation,
-        latitude: branchLat,
-        longitude: branchLng,
-        userId: user.id,
-        employmentStatus: "working",
-        shiftType: "one",
-        createdById: actorId,
-      })
-      .returning();
+    let employeeId: number;
+    let employeeRow: typeof employeesTable.$inferSelect;
+
+    const mid = parseInt(String(managerEmployeeId ?? ""), 10);
+    const vacantSlotId =
+      staffRole === "mudir" && Number.isFinite(mid)
+        ? mid
+        : null;
+
+    if (staffRole === "mudir" && vacantSlotId && (await fillVacantBranchSlot(vacantSlotId, user.id, fullName))) {
+      const [filled] = await db
+        .select()
+        .from(employeesTable)
+        .where(eq(employeesTable.id, vacantSlotId));
+      if (!filled) {
+        res.status(500).json({ error: "Filial sloti yangilanmadi" });
+        return;
+      }
+      employeeId = filled.id;
+      employeeRow = filled;
+    } else if (staffRole === "mudir" && actorRole === "koordinator" && reportsToId) {
+      const vacant = await db
+        .select()
+        .from(employeesTable)
+        .where(
+          and(
+            eq(employeesTable.orgRole, "manager"),
+            eq(employeesTable.reportsToId, reportsToId),
+            eq(employeesTable.employmentStatus, "no_manager"),
+            isNull(employeesTable.userId),
+          ),
+        );
+      const wantLoc = displayBranchName(branchLocation).trim().toLowerCase();
+      const slot = vacant.find(
+        (v) => displayBranchName(v.location).trim().toLowerCase() === wantLoc,
+      );
+      if (slot && (await fillVacantBranchSlot(slot.id, user.id, fullName))) {
+        const [filled] = await db
+          .select()
+          .from(employeesTable)
+          .where(eq(employeesTable.id, slot.id));
+        if (!filled) {
+          res.status(500).json({ error: "Filial sloti yangilanmadi" });
+          return;
+        }
+        employeeId = filled.id;
+        employeeRow = filled;
+      } else {
+        const [employee] = await db
+          .insert(employeesTable)
+          .values({
+            fullName,
+            position,
+            departmentId,
+            hiredAt: new Date().toISOString().slice(0, 10),
+            orgRole,
+            reportsToId,
+            location: branchLocation,
+            latitude: branchLat,
+            longitude: branchLng,
+            userId: user.id,
+            employmentStatus: "working",
+            shiftType: "one",
+            createdById: actorId,
+          })
+          .returning();
+        employeeId = employee!.id;
+        employeeRow = employee!;
+      }
+    } else {
+      const [employee] = await db
+        .insert(employeesTable)
+        .values({
+          fullName,
+          position,
+          departmentId,
+          hiredAt: new Date().toISOString().slice(0, 10),
+          orgRole,
+          reportsToId,
+          location: branchLocation,
+          latitude: branchLat,
+          longitude: branchLng,
+          userId: user.id,
+          employmentStatus: "working",
+          shiftType: "one",
+          createdById: actorId,
+        })
+        .returning();
+      employeeId = employee!.id;
+      employeeRow = employee!;
+    }
 
     res.status(201).json({
       id: user.id,
@@ -718,9 +796,9 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
       login: user.login,
       phone: user.phone,
       temporaryPassword: generatedPassword,
-      employeeId: employee.id,
-      orgRole: employee.orgRole,
-      location: employee.location,
+      employeeId,
+      orgRole: employeeRow.orgRole,
+      location: employeeRow.location,
     });
   } catch (err: any) {
     if (err?.code === "23505") {
@@ -851,6 +929,35 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
 
 router.post("/pharmacy-network/hard-delete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   await handleHardDelete(req, res);
+});
+
+router.post("/pharmacy-network/dismiss", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canDismissPharmacyNetwork(req.userRole ?? undefined)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  const employeeId = parseInt(String((req.body ?? {}).employeeId ?? ""), 10);
+  if (!Number.isFinite(employeeId)) {
+    res.status(400).json({ error: "Noto‘g‘ri xodim" });
+    return;
+  }
+  try {
+    const result = await dismissPharmacyEmployee(employeeId, req.userId!, req.userRole ?? "");
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json({
+      ok: true,
+      kind: result.kind,
+      fullName: result.fullName,
+      placeholderId: result.placeholderId,
+      message: result.message,
+    });
+  } catch (err) {
+    console.error("pharmacy-network dismiss error:", err);
+    res.status(503).json({ error: "Bo‘shatish amalga oshmadi" });
+  }
 });
 
 router.delete(

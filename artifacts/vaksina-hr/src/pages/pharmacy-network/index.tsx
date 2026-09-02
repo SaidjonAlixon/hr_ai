@@ -45,6 +45,7 @@ import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, St
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
+  useDismissPharmacyEmployee,
   useHardDeletePharmacyEmployee,
   useSaveManagerLocation,
   useOwnMudirCredentials,
@@ -324,6 +325,7 @@ export default function PharmacyNetworkPage() {
   const { mutate: confirmAlert, isPending: confirming } = useConfirmStaffingAlert();
   const { mutate: cancelAlert, isPending: cancelling } = useCancelStaffingAlert();
   const createStaff = useCreatePharmacyStaff();
+  const dismissStaff = useDismissPharmacyEmployee();
   const hardDeleteStaff = useHardDeletePharmacyEmployee();
   const saveBranchGps = useSaveManagerLocation();
 
@@ -338,6 +340,10 @@ export default function PharmacyNetworkPage() {
     user?.role === 'director';
   const canPickFilialForStaff = canAddMudir;
 
+  const isMudirOnly = user?.role === 'mudir';
+  const isKoordinatorOnly = user?.role === 'koordinator';
+  const canDismissStaff = isKoordinatorOnly || isMudirOnly || canHardDelete;
+
   const canSeeFullNetwork =
     isHrRole(user?.role) ||
     user?.role === 'director' ||
@@ -346,9 +352,6 @@ export default function PharmacyNetworkPage() {
     user?.role === 'koordinator' ||
     user?.role === 'department_head' ||
     isSbRole(user?.role);
-
-  const isMudirOnly = user?.role === 'mudir';
-  const isKoordinatorOnly = user?.role === 'koordinator';
   const { data: mudirCreds = [] } = useOwnMudirCredentials(isKoordinatorOnly);
   const { data: staffCreds = [] } = useOwnStaffLogins(isKoordinatorOnly || isMudirOnly);
   const patchCreds = usePatchNetworkCredentials();
@@ -441,7 +444,19 @@ export default function PharmacyNetworkPage() {
     fullName: string;
     kind: 'filial' | 'staff';
     staffCount?: number;
+    mode: 'hard' | 'dismiss';
   } | null>(null);
+
+  const canDismissPerson = (person: Employee) => {
+    if (!canDismissStaff) return false;
+    if (person.orgRole === 'coordinator') return false;
+    if (empStatus(person) === 'dismissed') return false;
+    if (isNoManagerStatus(empStatus(person)) && !person.userId) return false;
+    if (isMudirOnly && person.orgRole === 'manager') return false;
+    return true;
+  };
+
+  const showDismissButton = (person: Employee) => canDismissPerson(person) && !canHardDelete;
 
   const orgPeople = useMemo(
     () => (employees ?? []).filter((e) => !!e.orgRole),
@@ -458,7 +473,9 @@ export default function PharmacyNetworkPage() {
   }, [orgPeople, isKoordinatorOnly, user?.id]);
 
   const allManagers = useMemo(() => {
-    let list = orgPeople.filter((e) => e.orgRole === 'manager');
+    let list = orgPeople.filter(
+      (e) => e.orgRole === 'manager' && empStatus(e) !== 'dismissed',
+    );
     // Mudir faqat o‘z kartasini ko‘radi
     if (isMudirOnly && user?.id) {
       list = list.filter((e) => e.userId === user.id);
@@ -474,7 +491,9 @@ export default function PharmacyNetworkPage() {
   const pharmacistsByManager = useMemo(() => {
     const map = new Map<number, Employee[]>();
     for (const p of orgPeople.filter(
-      (e) => e.orgRole === 'pharmacist' || e.orgRole === 'intern' || e.orgRole === 'supervisor',
+      (e) =>
+        (e.orgRole === 'pharmacist' || e.orgRole === 'intern' || e.orgRole === 'supervisor') &&
+        empStatus(e) !== 'dismissed',
     )) {
       if (!p.reportsToId) continue;
       const list = map.get(p.reportsToId) ?? [];
@@ -596,6 +615,7 @@ export default function PharmacyNetworkPage() {
     const q = search.trim().toLowerCase();
     const orphans = orgPeople.filter((p) => {
       if (!staffRoles.has(p.orgRole || '')) return false;
+      if (empStatus(p) === 'dismissed') return false;
       if (!p.reportsToId || !allowedCoordIds.has(p.reportsToId)) return false;
       if (shiftFilter !== 'all' && !shiftMatch(p)) return false;
       if (q && !nameMatch(p, q)) return false;
@@ -616,7 +636,9 @@ export default function PharmacyNetworkPage() {
   }, [isMudirOnly, filteredCoordinators, orgPeople, shiftFilter, search]);
 
   const filterTeam = (managerId: number) => {
-    let team = pharmacistsByManager.get(managerId) ?? [];
+    let team = (pharmacistsByManager.get(managerId) ?? []).filter(
+      (p) => empStatus(p) !== 'dismissed',
+    );
     const q = search.trim().toLowerCase();
     if (shiftFilter !== 'all') {
       team = team.filter((p) => shiftMatch(p));
@@ -671,11 +693,24 @@ export default function PharmacyNetworkPage() {
       fullName: person.fullName,
       kind,
       staffCount: kind === 'filial' ? staffCount : 0,
+      mode: 'hard',
+    });
+  };
+
+  const openDismissTarget = (person: Employee) => {
+    const kind = person.orgRole === 'manager' ? 'filial' : 'staff';
+    setDeleteTarget({
+      id: person.id,
+      userId: person.userId ?? null,
+      fullName: person.fullName,
+      kind,
+      staffCount: 0,
+      mode: 'dismiss',
     });
   };
 
   const confirmHardDelete = () => {
-    if (!deleteTarget) return;
+    if (!deleteTarget || deleteTarget.mode !== 'hard') return;
     hardDeleteStaff.mutate(
       {
         employeeId: deleteTarget.id,
@@ -706,17 +741,56 @@ export default function PharmacyNetworkPage() {
     );
   };
 
+  const confirmDismiss = () => {
+    if (!deleteTarget || deleteTarget.mode !== 'dismiss') return;
+    dismissStaff.mutate(
+      { employeeId: deleteTarget.id },
+      {
+        onSuccess: (data) => {
+          setDeleteTarget(null);
+          setEditTarget(null);
+          setExpandedId(null);
+          void refetch();
+          void refetchAlerts();
+          toast({
+            title: 'Bo‘shatildi',
+            description: data.message,
+          });
+        },
+        onError: (err: Error) => {
+          void refetch();
+          toast({
+            title: 'Bo‘shatilmadi',
+            description: err.message || 'Xatolik',
+            variant: 'destructive',
+          });
+        },
+      },
+    );
+  };
+
   const openAddStaff = (kind: 'mudir' | 'xodim' = canAddMudir ? 'mudir' : 'xodim', managerId?: number) => {
     setFirstName('');
     setLastName('');
     setPhone('');
-    setBranchLocation('');
     setAddKind(kind);
     setStaffRole(kind === 'mudir' ? 'mudir' : 'farmasevt');
     setAddManagerId(managerId != null ? String(managerId) : '');
+    if (kind === 'mudir' && managerId != null) {
+      const slot = orgPeople.find((e) => e.id === managerId);
+      setBranchLocation(slot?.location ?? '');
+    } else {
+      setBranchLocation('');
+    }
     setShowPwd(false);
     setAddOpen(true);
   };
+
+  const fillingVacantSlot = useMemo(() => {
+    if (addKind !== 'mudir' || !addManagerId) return false;
+    const slot = allManagers.find((m) => m.id === Number(addManagerId));
+    return !!slot && isNoManagerStatus(empStatus(slot));
+  }, [addKind, addManagerId, allManagers]);
 
   const handleCreateStaff = () => {
     if (!firstName.trim() || !lastName.trim()) {
@@ -739,7 +813,9 @@ export default function PharmacyNetworkPage() {
         role: staffRole,
         location: staffRole === 'mudir' ? branchLocation.trim() || undefined : undefined,
         managerEmployeeId:
-          addKind === 'xodim' && addManagerId ? Number(addManagerId) : undefined,
+          addManagerId
+            ? Number(addManagerId)
+            : undefined,
       },
       {
         onSuccess: (data) => {
@@ -1489,6 +1565,16 @@ export default function PharmacyNetworkPage() {
                                       <Pencil className="h-3.5 w-3.5" />
                                     </button>
                                   )}
+                                  {showDismissButton(ph) && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openDismissTarget(ph)}
+                                      className="rounded p-1.5 text-amber-600 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                                      title="Bo‘shatish"
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                    </button>
+                                  )}
                                   {canHardDelete && (
                                     <button
                                       type="button"
@@ -1768,6 +1854,16 @@ export default function PharmacyNetworkPage() {
                           >
                             {hasTeam ? 'Jamoa bor' : 'Jamoa yo‘q'}
                           </span>
+                          {noMudir && canAddMudir && (
+                            <button
+                              type="button"
+                              onClick={() => openAddStaff('mudir', manager.id)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-300 bg-amber-50 text-amber-900 shadow-sm hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                              title="Yangi mudir qo‘shish"
+                            >
+                              <Plus className="h-4 w-4" />
+                            </button>
+                          )}
                           {isKoordinatorOnly && (
                             <button
                               type="button"
@@ -1796,6 +1892,16 @@ export default function PharmacyNetworkPage() {
                               title="Xodim qo‘shish"
                             >
                               <Plus className="h-4 w-4" />
+                            </button>
+                          )}
+                          {showDismissButton(manager) && (
+                            <button
+                              type="button"
+                              onClick={() => openDismissTarget(manager)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-800 shadow-sm hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                              title="Mudirni bo‘shatish (filial saqlanadi)"
+                            >
+                              <Trash2 className="h-4 w-4" />
                             </button>
                           )}
                           {canHardDelete && (
@@ -1976,6 +2082,16 @@ export default function PharmacyNetworkPage() {
                                             className="rounded p-0.5 text-muted-foreground hover:bg-card hover:text-primary"
                                           >
                                             <Pencil className="h-3 w-3" />
+                                          </button>
+                                        )}
+                                        {showDismissButton(ph) && (
+                                          <button
+                                            type="button"
+                                            onClick={() => openDismissTarget(ph)}
+                                            className="rounded p-0.5 text-amber-600 hover:bg-amber-50 hover:text-amber-800 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                                            title="Bo‘shatish"
+                                          >
+                                            <Trash2 className="h-3 w-3" />
                                           </button>
                                         )}
                                         {canHardDelete && (
@@ -2231,22 +2347,37 @@ export default function PharmacyNetworkPage() {
             )}
           </div>
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
-            {canHardDelete && editTarget && editTarget.orgRole !== 'coordinator' ? (
-              <Button
-                type="button"
-                variant="outline"
-                className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-950/40"
-                onClick={() => {
-                  const count =
-                    editTarget.orgRole === 'manager'
-                      ? (pharmacistsByManager.get(editTarget.id) ?? []).length
-                      : 0;
-                  openDeleteTarget(editTarget, count);
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-                Butunlay o‘chirish
-              </Button>
+            {editTarget && editTarget.orgRole !== 'coordinator' ? (
+              <div className="flex flex-wrap gap-2">
+                {showDismissButton(editTarget) ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-1.5 border-amber-300 text-amber-800 hover:bg-amber-50 dark:border-amber-500/40 dark:text-amber-300 dark:hover:bg-amber-950/40"
+                    onClick={() => openDismissTarget(editTarget)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Bo‘shatish
+                  </Button>
+                ) : null}
+                {canHardDelete ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-1.5 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-500/40 dark:text-rose-300 dark:hover:bg-rose-950/40"
+                    onClick={() => {
+                      const count =
+                        editTarget.orgRole === 'manager'
+                          ? (pharmacistsByManager.get(editTarget.id) ?? []).length
+                          : 0;
+                      openDeleteTarget(editTarget, count);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Butunlay o‘chirish
+                  </Button>
+                ) : null}
+              </div>
             ) : (
               <span />
             )}
@@ -2309,17 +2440,23 @@ export default function PharmacyNetworkPage() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>Filial koordinatasi</Label>
-                  <Input
-                    value={branchLocation}
-                    onChange={(e) => setBranchLocation(e.target.value)}
-                    placeholder={`41°18'23.3"N 69°18'28.0"E`}
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Google Maps dan nusxa — tizim lokatsiya nomini o‘zi topadi.
+                {fillingVacantSlot ? (
+                  <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
+                    Bo‘sh filial sloti — manzil va GPS saqlangan. Yangi mudir shu filialga biriktiriladi.
                   </p>
-                </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    <Label>Filial koordinatasi</Label>
+                    <Input
+                      value={branchLocation}
+                      onChange={(e) => setBranchLocation(e.target.value)}
+                      placeholder={`41°18'23.3"N 69°18'28.0"E`}
+                    />
+                    <p className="text-[11px] text-muted-foreground">
+                      Google Maps dan nusxa — tizim lokatsiya nomini o‘zi topadi.
+                    </p>
+                  </div>
+                )}
               </>
             ) : (
               <>
@@ -2460,39 +2597,83 @@ export default function PharmacyNetworkPage() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {deleteTarget?.kind === 'filial' ? 'Filialni o‘chirish?' : 'Xodimni o‘chirish?'}
+              {deleteTarget?.mode === 'dismiss'
+                ? deleteTarget?.kind === 'filial'
+                  ? 'Mudirni bo‘shatish?'
+                  : 'Xodimni bo‘shatish?'
+                : deleteTarget?.kind === 'filial'
+                  ? 'Filialni o‘chirish?'
+                  : 'Xodimni o‘chirish?'}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
-                <p>
-                  <span className="font-semibold text-foreground">{deleteTarget?.fullName}</span>{' '}
-                  {deleteTarget?.kind === 'filial'
-                    ? 'filiali va mudiri tizimdan butunlay o‘chiriladi.'
-                    : 'tizimdan butunlay o‘chiriladi.'}
-                </p>
-                {deleteTarget?.kind === 'filial' && (deleteTarget.staffCount ?? 0) > 0 ? (
-                  <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300">
-                    Shu filialdagi {deleteTarget.staffCount} ta farmasevt/stajyor ham o‘chadi.
-                  </p>
-                ) : null}
-                <p className="text-rose-700">
-                  Login, parol, davomat, Face ID va boshqa bog‘liq ma’lumotlar ham yo‘qoladi. Qaytarib
-                  bo‘lmaydi.
-                </p>
+                {deleteTarget?.mode === 'dismiss' ? (
+                  <>
+                    <p>
+                      <span className="font-semibold text-foreground">{deleteTarget?.fullName}</span>{' '}
+                      {deleteTarget?.kind === 'filial'
+                        ? 'bo‘shatiladi va tizimdan chiqariladi.'
+                        : 'bo‘shatiladi va tizimdan chiqariladi.'}
+                    </p>
+                    {deleteTarget?.kind === 'filial' ? (
+                      <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
+                        Filial, manzil va GPS saqlanadi. Jamoa (farmasevt/stajyor) qoladi. O‘rniga yangi
+                        mudir qo‘shishingiz mumkin.
+                      </p>
+                    ) : (
+                      <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
+                        Filial o‘chmaydi. O‘rniga yangi farmasevt yoki stajyor qo‘shishingiz mumkin.
+                      </p>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <p>
+                      <span className="font-semibold text-foreground">{deleteTarget?.fullName}</span>{' '}
+                      {deleteTarget?.kind === 'filial'
+                        ? 'filiali va mudiri tizimdan butunlay o‘chiriladi.'
+                        : 'tizimdan butunlay o‘chiriladi.'}
+                    </p>
+                    {deleteTarget?.kind === 'filial' && (deleteTarget.staffCount ?? 0) > 0 ? (
+                      <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300">
+                        Shu filialdagi {deleteTarget.staffCount} ta farmasevt/stajyor ham o‘chadi.
+                      </p>
+                    ) : null}
+                    <p className="text-rose-700">
+                      Login, parol, davomat, Face ID va boshqa bog‘liq ma’lumotlar ham yo‘qoladi. Qaytarib
+                      bo‘lmaydi.
+                    </p>
+                  </>
+                )}
               </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={hardDeleteStaff.isPending}>Bekor</AlertDialogCancel>
+            <AlertDialogCancel
+              disabled={hardDeleteStaff.isPending || dismissStaff.isPending}
+            >
+              Bekor
+            </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-rose-600 hover:bg-rose-700"
-              disabled={hardDeleteStaff.isPending}
+              className={
+                deleteTarget?.mode === 'dismiss'
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-rose-600 hover:bg-rose-700'
+              }
+              disabled={hardDeleteStaff.isPending || dismissStaff.isPending}
               onClick={(e) => {
                 e.preventDefault();
-                confirmHardDelete();
+                if (deleteTarget?.mode === 'dismiss') confirmDismiss();
+                else confirmHardDelete();
               }}
             >
-              {hardDeleteStaff.isPending ? 'O‘chirilmoqda…' : 'Ha, o‘chirish'}
+              {deleteTarget?.mode === 'dismiss'
+                ? dismissStaff.isPending
+                  ? 'Bo‘shatilmoqda…'
+                  : 'Ha, bo‘shatish'
+                : hardDeleteStaff.isPending
+                  ? 'O‘chirilmoqda…'
+                  : 'Ha, o‘chirish'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

@@ -70,7 +70,12 @@ export function canViewEmployees(role?: string | null): boolean {
     role === "department_head" ||
     role === "mentor" ||
     role === "mudir" ||
-    role === "koordinator"
+    role === "koordinator" ||
+    role === "it_rahbar" ||
+    role === "texnik_rahbar" ||
+    role === "reviziya_rahbar" ||
+    role === "hr_direktor" ||
+    role === "hr_menejer"
   );
 }
 

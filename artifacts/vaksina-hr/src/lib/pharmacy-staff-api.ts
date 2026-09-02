@@ -347,6 +347,35 @@ export function useHardDeletePharmacyEmployee() {
   });
 }
 
+export type DismissPharmacyResult = {
+  ok: true;
+  kind: "mudir" | "staff";
+  fullName: string;
+  placeholderId?: number;
+  message: string;
+};
+
+export function useDismissPharmacyEmployee() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { employeeId: number }) =>
+      apiFetch<DismissPharmacyResult>(`/pharmacy-network/dismiss`, {
+        method: "POST",
+        body: JSON.stringify({ employeeId: data.employeeId }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+      qc.invalidateQueries({ queryKey: ["/api/staffing/alerts"] });
+      qc.invalidateQueries({
+        predicate: (q) =>
+          JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
+}
+
 export type MudirCredential = {
   employeeId: number;
   fullName: string;

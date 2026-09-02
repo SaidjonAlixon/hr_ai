@@ -22,6 +22,7 @@ import {
   type StaffRow,
 } from "../lib/staff-directory";
 import { formatPersonName } from "../lib/person-name";
+import { getActorDepartmentId, isDeptHeadRole } from "../lib/dept-staff";
 
 const router: IRouter = Router();
 
@@ -283,7 +284,13 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
     const staffGroup = group === "other" ? "other" : "active";
 
     const rows = await loadStaffFromUsers(staffGroup);
-    const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
+    let filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
+    if (isDeptHeadRole(role) && userId) {
+      const actorDeptId = await getActorDepartmentId(userId);
+      if (actorDeptId) {
+        filtered = filtered.filter((e) => e.departmentId === actorDeptId);
+      }
+    }
     res.json(await enrichMany(filtered));
   } catch (err) {
     console.error("GET /employees error:", err);

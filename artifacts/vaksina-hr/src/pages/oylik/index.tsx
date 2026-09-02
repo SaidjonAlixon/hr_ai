@@ -102,9 +102,9 @@ function WorkCalendar({
   }
   const labels = ["Du", "Se", "Cho", "Pa", "Ju", "Sha", "Ya"];
   return (
-    <div className="rounded-xl border bg-card p-3 shadow-sm">
+    <div className="dept-panel p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-sm font-semibold text-[#0b3a5c]">
+        <p className="flex items-center gap-1.5 text-sm font-semibold dept-accent-value">
           <CalendarDays className="h-4 w-4" /> Ish kunlari kalendari
         </p>
         <p className="text-xs text-muted-foreground">
@@ -123,8 +123,8 @@ function WorkCalendar({
           const work = set.has(c.iso);
           const cls = cn(
             "flex h-8 items-center justify-center rounded-md text-[12px] font-semibold tabular-nums",
-            work ? "bg-emerald-500 text-foreground dark:text-white" : "bg-slate-100 text-muted-foreground",
-            canEdit && "cursor-pointer hover:ring-2 hover:ring-[#0b3a5c]/40",
+            work ? "bg-emerald-500 text-white dark:bg-emerald-600" : "bg-muted text-muted-foreground",
+            canEdit && "cursor-pointer hover:ring-2 hover:ring-primary/30",
             pending && "opacity-70",
           );
           if (!canEdit) {
@@ -187,7 +187,7 @@ function ReportCard({
 }) {
   return (
     <div className="grid gap-3 lg:grid-cols-3">
-      <div className="rounded-xl border bg-card p-3 shadow-sm lg:col-span-1">
+      <div className="dept-panel p-3 lg:col-span-1">
         <p className="text-xs text-muted-foreground">
           {data.fullName} · {data.position || data.roleLabel}
           {data.branch ? ` · ${data.branch}` : ""}
@@ -195,7 +195,7 @@ function ReportCard({
         <div className="mt-2 grid grid-cols-2 gap-2">
           <div className="rounded-lg bg-muted px-3 py-2">
             <p className="text-[11px] text-muted-foreground">Fiks maosh</p>
-            <p className="text-sm font-bold text-[#0b3a5c]">{formatSom(data.fixedSalary)}</p>
+            <p className="text-sm font-bold dept-accent-value">{formatSom(data.fixedSalary)}</p>
           </div>
           <div className="rounded-lg bg-muted px-3 py-2">
             <p className="text-[11px] text-muted-foreground">Bonus foizi</p>
@@ -205,13 +205,13 @@ function ReportCard({
         <p className="mt-3 text-[11px] text-muted-foreground">KPI asosidagi bonus</p>
         <p className="text-lg font-bold text-emerald-700">{formatSom(data.bonusAmount)}</p>
         <p className="mt-1 text-[11px] text-muted-foreground">Jami = fiks + bonus</p>
-        <p className="text-xl font-bold tabular-nums text-[#0b3a5c]">{formatSom(data.totalAmount)}</p>
+        <p className="text-xl font-bold tabular-nums dept-accent-value">{formatSom(data.totalAmount)}</p>
         <Badge className="mt-2" variant={data.status === "approved" ? "default" : "outline"}>
           {data.status === "approved" ? "Tasdiqlangan" : "Qoralama"}
         </Badge>
       </div>
 
-      <div className="rounded-xl border bg-card p-3 shadow-sm lg:col-span-2">
+      <div className="dept-panel p-3 lg:col-span-2">
         <p className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">KPI (bosing — batafsil)</p>
         <KpiRow
           name="Davomat"
@@ -236,7 +236,7 @@ function ReportCard({
         />
         <div className="mt-1 flex items-center justify-between border-t px-2 pt-2">
           <span className="text-sm font-semibold">Umumiy KPI</span>
-          <span className="text-base font-bold tabular-nums text-[#0b3a5c]">
+          <span className="text-base font-bold tabular-nums dept-accent-value">
             {data.attendance?.available ? `${data.kpiPercent}%` : "aniq emas"}
           </span>
         </div>
@@ -342,18 +342,18 @@ function TeamTable({
 
   if (!rows.length) {
     return (
-      <div className="rounded-xl border bg-card px-4 py-10 text-center text-sm text-muted-foreground">
+      <div className="dept-empty">
         Bu oy uchun xodim topilmadi. Qidiruvni tozalang yoki API qayta ishga tushganini tekshiring.
       </div>
     );
   }
 
   return (
-    <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
-      <div className="grid grid-cols-2 gap-px border-b bg-slate-100 sm:grid-cols-4">
+    <div className="dept-data-table">
+      <div className="grid grid-cols-2 gap-px border-b bg-muted/50 sm:grid-cols-4">
         <div className="bg-card px-3 py-2">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Xodim</p>
-          <p className="text-sm font-bold tabular-nums text-[#0b3a5c]">{rows.length} ta</p>
+          <p className="dept-accent-value text-sm font-bold tabular-nums">{rows.length} ta</p>
         </div>
         <div className="bg-card px-3 py-2">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jami fiks</p>
@@ -365,12 +365,12 @@ function TeamTable({
         </div>
         <div className="bg-card px-3 py-2">
           <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jami oylik</p>
-          <p className="text-sm font-bold tabular-nums text-[#0b3a5c]">{formatSom(totals.total)}</p>
+          <p className="dept-accent-value text-sm font-bold tabular-nums">{formatSom(totals.total)}</p>
         </div>
       </div>
       <div className="max-h-[min(70vh,720px)] overflow-auto">
         <table className="w-full min-w-[1080px] border-collapse text-[12.5px]">
-          <thead className="sticky top-0 z-10 bg-primary text-primary-foreground">
+          <thead className="sticky top-0 z-10 bg-primary text-primary-foreground dark:bg-slate-800/95 dark:text-slate-100">
             <tr className="text-left">
               <th className="px-3 py-2 font-semibold">Xodim</th>
               <th className="px-2 py-2 font-semibold">Lavozim / filial</th>
@@ -392,7 +392,7 @@ function TeamTable({
               return (
                 <React.Fragment key={rid}>
                   <tr
-                    className={cn("cursor-pointer border-b border-slate-100 hover:bg-muted", open && "bg-sky-50/70")}
+                    className={cn("cursor-pointer border-b border-border/60 hover:bg-muted/40 dark:hover:bg-slate-800/45", open && "bg-primary/5 dark:bg-sky-500/10")}
                     onClick={() => setOpenId(open ? null : rid)}
                   >
                     <td className="px-3 py-1.5">
@@ -406,7 +406,7 @@ function TeamTable({
                     <td className="px-2 py-1.5 text-right">{pctAtt(row)}</td>
                     <td className="px-2 py-1.5 text-right">{pct(row.tasksAvailable, row.tasks)}</td>
                     <td className="px-2 py-1.5 text-right">{pct(row.checklistAvailable, row.checklist)}</td>
-                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums text-[#0b3a5c]">
+                    <td className="px-2 py-1.5 text-right font-semibold tabular-nums dept-accent-value">
                       {row.attendanceAvailable ? `${row.kpiPercent}%` : "—"}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{formatSom(row.fixedSalary)}</td>
@@ -414,7 +414,7 @@ function TeamTable({
                     <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">{formatSom(row.bonusAmount)}</td>
                     <td className="px-3 py-1.5 text-right font-bold tabular-nums">{formatSom(row.totalAmount)}</td>
                     <td className="px-2 py-1.5">
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", row.status === "approved" ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-muted-foreground")}>
+                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-medium", row.status === "approved" ? "bg-emerald-50 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-300" : "bg-muted text-muted-foreground")}>
                         {row.status === "approved" ? "Tasdiq" : "Qoralama"}
                       </span>
                     </td>
@@ -460,7 +460,7 @@ function TeamTable({
                             <Button
                               type="button"
                               size="sm"
-                              className="h-8 rounded-lg bg-[#0b3a5c]"
+                              className="h-8 rounded-lg"
                               onClick={() =>
                                 saveSal.mutate(
                                   {
@@ -596,16 +596,22 @@ export default function OylikPage() {
   }, [one.data]);
 
   return (
-    <div className="space-y-3 pb-6">
-      <div className="surface-brand flex flex-wrap items-center justify-between gap-2 rounded-xl px-4 py-3 shadow-sm">
-        <div className="min-w-0">
-          <h1 className="text-lg font-bold leading-tight sm:text-xl">Oylik · Fiks maosh + bonus</h1>
-          <p className="truncate text-xs text-white/70">
-            {user?.fullName} · {userRoleLabel(user?.role)} · KPI davomat / topshiriq / checklist
-          </p>
+    <div className="dept-page">
+      <div className="dept-hero dept-hero-primary">
+        <div className="dept-hero-glow" />
+        <div className="dept-hero-body flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="dept-eyebrow">KPI · fiks maosh</p>
+            <h1 className="dept-title">Oylik · Fiks maosh + bonus</h1>
+            <p className="dept-desc truncate">
+              {user?.fullName} · {userRoleLabel(user?.role)} · KPI davomat / topshiriq / checklist
+            </p>
+          </div>
+          <MonthNav month={month} onChange={(m) => { setMonth(m); setOpenId(null); }} />
         </div>
-        <MonthNav month={month} onChange={(m) => { setMonth(m); setOpenId(null); }} />
       </div>
+
+      <div className="dept-page-inner">
 
       {manage ? (
         <Tabs value={tab} onValueChange={setTab}>
@@ -669,7 +675,7 @@ export default function OylikPage() {
                 ) : null}
                 <Button
                   type="button"
-                  className="h-9 rounded-lg bg-[#0b3a5c]"
+                  className="h-9 rounded-lg"
                   disabled={exporting}
                   onClick={async () => {
                     setExporting(true);
@@ -714,7 +720,7 @@ export default function OylikPage() {
                     />
                     <Button
                       type="button"
-                      className="h-9 rounded-lg bg-[#0b3a5c]"
+                      className="h-9 rounded-lg"
                       disabled={saveBulk.isPending || !posFilter}
                       onClick={() => {
                         if (!posFilter) {
@@ -789,7 +795,7 @@ export default function OylikPage() {
             )}
           </TabsContent>
           <TabsContent value="set" className="mt-3">
-            <div className="max-w-xl rounded-xl border bg-card p-4 shadow-sm">
+            <div className="max-w-xl dept-form">
               <p className="text-sm font-semibold">KPI og‘irliklari</p>
               <p className="mt-1 text-xs text-muted-foreground">Yo‘q komponent avtomatik chiqariladi, qolganlari proporsional oshadi.</p>
               <div className="mt-3 grid grid-cols-3 gap-2">
@@ -807,7 +813,7 @@ export default function OylikPage() {
                 </div>
               </div>
               {canEditKpiSettings(user?.role) ? (
-                <Button type="button" className="mt-3 h-9 rounded-lg bg-[#0b3a5c]" disabled={saveW.isPending} onClick={() => saveW.mutate({ attendance: Number(wAtt), tasks: Number(wTask), checklist: Number(wCheck) }, { onSuccess: () => toast({ title: "Og‘irliklar saqlandi" }) })}>
+                <Button type="button" className="mt-3 h-9 rounded-lg" disabled={saveW.isPending} onClick={() => saveW.mutate({ attendance: Number(wAtt), tasks: Number(wTask), checklist: Number(wCheck) }, { onSuccess: () => toast({ title: "Og‘irliklar saqlandi" }) })}>
                   Saqlash
                 </Button>
               ) : (
@@ -823,6 +829,7 @@ export default function OylikPage() {
       ) : me.error ? (
         <p className="text-sm text-rose-700">{(me.error as Error).message}</p>
       ) : null}
+      </div>
     </div>
   );
 }

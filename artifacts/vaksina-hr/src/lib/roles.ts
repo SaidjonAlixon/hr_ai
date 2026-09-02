@@ -40,6 +40,7 @@ export function isTexnikRole(role?: string | null): boolean {
 export function canViewReviziya(role?: string | null): boolean {
   return (
     isReviziyaRole(role) ||
+    isHrOversight(role) ||
     role === "admin" ||
     role === "moliya" ||
     role === "sb" ||
@@ -62,7 +63,7 @@ export function canViewDavomat(role?: string | null): boolean {
   return (
     role === "admin" ||
     role === "director" ||
-    role === "hr_direktor" ||
+    isHrOversight(role) ||
     role === "hr_menejer" ||
     role === "hr" ||
     isSbRole(role) ||
@@ -82,8 +83,32 @@ export function canViewEmployees(role?: string | null): boolean {
     role === "department_head" ||
     role === "mentor" ||
     role === "mudir" ||
-    role === "koordinator"
+    role === "koordinator" ||
+    role === "it_rahbar" ||
+    role === "texnik_rahbar" ||
+    role === "reviziya_rahbar" ||
+    role === "sb_boshliq" ||
+    role === "hr_direktor" ||
+    role === "hr_menejer"
   );
+}
+
+export const DEPT_HEAD_ROLES = [
+  "department_head",
+  "it_rahbar",
+  "texnik_rahbar",
+  "reviziya_rahbar",
+  "sb_boshliq",
+  "hr_direktor",
+  "hr_menejer",
+] as const;
+
+export function isDeptHeadRole(role?: string | null): boolean {
+  return !!role && (DEPT_HEAD_ROLES as readonly string[]).includes(role);
+}
+
+export function canAddDeptStaff(role?: string | null): boolean {
+  return isDeptHeadRole(role);
 }
 
 /** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR */
@@ -91,7 +116,7 @@ export function canViewChecklistStatus(role?: string | null): boolean {
   return (
     role === "admin" ||
     role === "director" ||
-    role === "hr_direktor" ||
+    isHrOversight(role) ||
     role === "hr_menejer" ||
     role === "hr" ||
     role === "moliya"

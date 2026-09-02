@@ -34,7 +34,8 @@ import {
   CircleDot,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { canViewReviziya, isReviziyaRole, userRoleLabel } from "@/lib/roles";
+import { canViewReviziya, isReviziyaRole, userRoleLabel, canAddDeptStaff } from "@/lib/roles";
+import { AddDeptStaffButton } from "@/components/dept/AddDeptStaffDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -224,47 +225,46 @@ export default function ReviziyaPage() {
   const cashDiff = (Number(form.actualCash) || 0) - (Number(form.systemCash) || 0);
 
   return (
-    <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
-      <div className="hero-dark relative overflow-hidden bg-gradient-to-br from-[#2e1065] via-[#4c1d95] to-[#0b3a5c] px-4 py-6 md:px-6 md:py-8">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
-        <div className="pointer-events-none absolute -bottom-20 left-1/3 h-40 w-40 rounded-full bg-fuchsia-400/20 blur-2xl" />
-        <div className="relative mx-auto max-w-6xl">
+    <div className="dept-page">
+      <div className="dept-hero dept-hero-violet">
+        <div className="dept-hero-glow" />
+        <div className="dept-hero-glow2" />
+        <div className="dept-hero-body">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-200">Ichki audit · yig‘uv</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white md:text-[28px]">Reviziya bo‘limi</h1>
-              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-violet-100/90">
+              <p className="dept-eyebrow">Ichki audit · yig‘uv</p>
+              <h1 className="dept-title">Reviziya bo‘limi</h1>
+              <p className="dept-desc">
                 Filial qoldig‘i, inventarizatsiya, kassa va inkassatsiya. Hujjatlar: rahbar → bosh buxgalter.
                 Taqiq: narx, vozvrat, qo‘lda qoldiq, o‘chirish — faqat storno.
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
-              <span className="rounded-full border border-white/20 bg-white/10 px-3 py-1 text-xs font-medium backdrop-blur">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {canAddDeptStaff(user?.role) && user?.role === "reviziya_rahbar" ? (
+                  <AddDeptStaffButton enabled className="h-9 bg-white text-slate-900 hover:bg-white/90" />
+                ) : null}
+                <span className="dept-badge">
                 {isReviziyaRole(user?.role)
                   ? user?.role === "reviziya_rahbar"
                     ? "Bo‘lim rahbari"
                     : "Revizor-yig‘uvchi"
                   : userRoleLabel(user?.role)}
               </span>
-              <div className="flex gap-2 text-[11px] text-violet-100">
-                <span className="rounded-md bg-black/20 px-2 py-1">O‘chirish ✕</span>
-                <span className="rounded-md bg-black/20 px-2 py-1">Storno ✓</span>
+              <div className="flex gap-2 text-[11px] text-white/70">
+                <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">O‘chirish ✕</span>
+                <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">Storno ✓</span>
               </div>
             </div>
           </div>
 
-          <div className="mt-5 flex flex-wrap gap-1.5">
+          <div className="dept-tabs">
             {TABS.map((t) => (
               <button
                 key={t.id}
                 type="button"
                 onClick={() => setTab(t.id)}
-                className={cn(
-                  "inline-flex items-center gap-1.5 rounded-xl px-3 py-2 text-[13px] font-medium transition",
-                  tab === t.id
-                    ? "bg-card text-violet-900 shadow-lg shadow-black/10"
-                    : "bg-white/10 text-white/85 hover:bg-white/20",
-                )}
+                className={cn("dept-tab", tab === t.id ? "dept-tab--active" : "dept-tab--idle")}
               >
                 <t.icon className="h-3.5 w-3.5" />
                 {t.label}
@@ -274,7 +274,7 @@ export default function ReviziyaPage() {
         </div>
       </div>
 
-      <div className="mx-auto max-w-6xl space-y-5 px-4 py-5 md:px-6 md:py-6">
+      <div className="dept-page-inner">
         {tab === "dash" && (
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
@@ -339,14 +339,14 @@ export default function ReviziyaPage() {
                         <div key={r.branch}>
                           <div className="mb-0.5 flex items-center justify-between text-sm">
                             <span className="flex items-center gap-2">
-                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-800">
+                              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-100 text-[10px] font-bold text-violet-800 dark:bg-violet-500/20 dark:text-violet-300">
                                 {i + 1}
                               </span>
                               {r.branch}
                             </span>
                             <span className="tabular-nums font-semibold text-foreground">{money(r.shortage)}</span>
                           </div>
-                          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
+                          <div className="h-1.5 overflow-hidden rounded-full bg-muted dark:bg-slate-800">
                             <div
                               className="h-full rounded-full bg-gradient-to-r from-violet-600 to-fuchsia-500"
                               style={{ width: `${Math.min(100, (r.shortage / max) * 100)}%` }}
@@ -766,39 +766,35 @@ function MetricCard({
   warn?: boolean;
   onClick?: () => void;
 }) {
-  const tones = {
-    emerald: "bg-emerald-50 text-emerald-700",
-    sky: "bg-sky-50 text-sky-700",
-    violet: "bg-violet-50 text-violet-700",
-    rose: "bg-rose-50 text-rose-700",
-    indigo: "bg-indigo-50 text-indigo-700",
-    amber: "bg-amber-50 text-amber-700",
+  const iconTone: Record<typeof tone, string> = {
+    emerald: "dept-icon-emerald",
+    sky: "dept-icon-sky",
+    violet: "dept-icon-violet",
+    rose: "dept-icon-rose",
+    indigo: "dept-icon-indigo",
+    amber: "dept-icon-amber",
   };
   const Tag = onClick ? "button" : "div";
   return (
     <Tag
       type={onClick ? "button" : undefined}
       onClick={onClick}
-      className={cn(
-        "rounded-2xl border bg-card p-4 text-left shadow-sm",
-        warn && "border-amber-300 ring-1 ring-amber-200",
-        onClick && "cursor-pointer hover:shadow-md",
-      )}
+      className={cn("dept-kpi", warn && "dept-kpi--warn", onClick && "cursor-pointer")}
     >
-      <span className={cn("inline-flex rounded-xl p-2", tones[tone])}>
+      <span className={iconTone[tone]}>
         <Icon className="h-4 w-4" />
       </span>
-      <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      {value == null ? <Skeleton className="mt-1 h-7 w-16" /> : <p className="mt-0.5 text-xl font-semibold tabular-nums text-foreground">{value}</p>}
-      {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p> : null}
+      <p className="dept-kpi-label">{label}</p>
+      {value == null ? <Skeleton className="mt-1 h-7 w-16" /> : <p className="dept-kpi-value">{value}</p>}
+      {hint ? <p className="dept-kpi-hint">{hint}</p> : null}
     </Tag>
   );
 }
 
 function MiniStat({ icon: Icon, title, value }: { icon: React.ComponentType<{ className?: string }>; title: string; value: number }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl border bg-card px-4 py-3 shadow-sm">
-      <span className="rounded-lg bg-slate-100 p-2 text-muted-foreground">
+    <div className="dept-mini">
+      <span className="dept-icon-slate">
         <Icon className="h-4 w-4" />
       </span>
       <div>
@@ -821,9 +817,9 @@ function Panel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border bg-card p-5 shadow-sm">
+    <div className="dept-panel">
       <div className="mb-4 flex items-start gap-3">
-        <span className="rounded-xl bg-violet-50 p-2 text-violet-700">
+        <span className="dept-panel-icon">
           <Icon className="h-4 w-4" />
         </span>
         <div>
@@ -837,7 +833,7 @@ function Panel({
 }
 
 function Empty({ hint }: { hint: string }) {
-  return <p className="rounded-xl bg-muted px-3 py-6 text-center text-sm text-muted-foreground">{hint}</p>;
+  return <p className="dept-empty">{hint}</p>;
 }
 
 function Field({ label, children, className }: { label: string; children: React.ReactNode; className?: string }) {
@@ -871,8 +867,8 @@ function MobileTools({
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
       {tiles.map((t) => (
-        <div key={t.title} className="rounded-2xl border bg-card p-4 shadow-sm">
-          <span className="inline-flex rounded-xl bg-violet-50 p-2 text-violet-700">
+        <div key={t.title} className="dept-panel">
+          <span className="dept-panel-icon">
             <t.icon className="h-5 w-5" />
           </span>
           <p className="mt-3 font-semibold">{t.title}</p>

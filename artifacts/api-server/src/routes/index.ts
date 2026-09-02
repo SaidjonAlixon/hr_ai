@@ -37,6 +37,7 @@ import hisobkitobRouter from "./hisobkitob";
 import telegramRouter from "./telegram";
 import reviziyaRouter from "./reviziya";
 import opsDeptRouter from "./ops-dept";
+import deptStaffRouter from "./dept-staff";
 
 const router: IRouter = Router();
 
@@ -62,6 +63,7 @@ router.use(hisobkitobRouter);
 router.use(telegramRouter);
 router.use(reviziyaRouter);
 router.use(opsDeptRouter);
+router.use(deptStaffRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

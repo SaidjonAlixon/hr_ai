@@ -334,17 +334,7 @@ function applyDavomatDayCell(
   cell.value = { richText: rich };
 }
 
-const EXTERNAL_USER_ROLES = new Set([
-  "revizor",
-  "reviziya_rahbar",
-  "texnik",
-  "texnik_rahbar",
-  "sb",
-  "sb_boshliq",
-  "mentor",
-  "recruiter",
-  "trainer",
-]);
+const EXTERNAL_USER_ROLES = new Set(["revizor", "reviziya_rahbar", "texnik", "texnik_rahbar"]);
 
 function smenaLabelForEmployee(e: {
   userRole?: string | null;

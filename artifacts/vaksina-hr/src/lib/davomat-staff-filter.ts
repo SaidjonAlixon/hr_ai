@@ -6,24 +6,15 @@ export type DavomatStaffFilter = "all" | "shift_one" | "shift_two" | "office" | 
 /** Apteka smenalari — mudir, farmasevt, stajyor */
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern"]);
-const SHIFT_PHARMACY_POSITION_RE = /\b(mudir|farmasevt|stajyor)\b/i;
+const SHIFT_PHARMACY_POSITION_RE = /mudir|farmasevt|stajyor/i;
 
-/** Ofisdan tashqari — faqat farmasevt, stajyor, koordinator */
-const NON_OFFICE_USER_ROLES = new Set(["farmasevt", "stajyor", "koordinator"]);
-const NON_OFFICE_ORG_ROLES = new Set(["pharmacist", "intern", "coordinator"]);
-const NON_OFFICE_POSITION_RE = /\b(farmasevt|stajyor|koordinator)\b/i;
+/** Ofisdan tashqari — mudir, farmasevt, stajyor, koordinator (filialda ishlaydi) */
+const NON_OFFICE_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
+const NON_OFFICE_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "coordinator"]);
+const NON_OFFICE_POSITION_RE = /mudir|farmasevt|stajyor|koordinator/i;
 
-const EXTERNAL_USER_ROLES = new Set([
-  "revizor",
-  "reviziya_rahbar",
-  "texnik",
-  "texnik_rahbar",
-  "sb",
-  "sb_boshliq",
-  "mentor",
-  "recruiter",
-  "trainer",
-]);
+/** Maydonda ishlaydiganlar — filial tekshiruvi va servis (ofis emas) */
+const EXTERNAL_USER_ROLES = new Set(["revizor", "reviziya_rahbar", "texnik", "texnik_rahbar"]);
 
 function orgRoleFromUserRole(role?: string | null): string | null {
   if (role === "mudir") return "manager";
@@ -114,6 +105,8 @@ export function staffFilterLabel(filter: DavomatStaffFilter): string {
 export function smenaLabelShort(emp: DavomatEmployee): string {
   if (EXTERNAL_USER_ROLES.has(emp.userRole || "")) return "Tashqi xodimlar";
   if (emp.userRole === "koordinator" || emp.orgRole === "coordinator") return "Koordinator";
+  if (emp.userRole === "mudir" || emp.orgRole === "manager" || /mudir/i.test(emp.position || ""))
+    return "Filial mudiri";
   const kind = classifyDavomatStaff(emp);
   switch (kind) {
     case "shift_one":
@@ -184,13 +177,13 @@ export const STAFF_FILTER_OPTIONS: Array<{
   {
     key: "office",
     label: "Ofis",
-    hint: "09:00 – 18:00 (farmasevt/stajyor/koordinator dan tashqari)",
+    hint: "09:00 – 18:00 (filial va maydon xodimlari dan tashqari)",
     hours: "09:00–18:00",
   },
   {
     key: "external",
     label: "Tashqi xodimlar",
-    hint: "Maydonda / masofadan",
+    hint: "Maydonda — reviziya va texnik xizmat",
     hours: "09:00–18:00",
   },
 ];

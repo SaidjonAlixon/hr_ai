@@ -1,4 +1,4 @@
-import { shiftWindow, workScheduleForStaff } from "./shift-hours";
+import { shiftWindow, workScheduleForStaff, onTimeUntilHm } from "./shift-hours";
 import { displayBranchName } from "./geo-location";
 
 export const PHARMACY_SEGMENT_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
@@ -155,6 +155,7 @@ export type DavomatAnalyticsPayload = {
     managerName: string;
     shiftLabel: string;
     expectedOpen: string;
+    graceUntil: string;
     checkIn: string | null;
     status: "on_time" | "late" | "absent" | "leave";
     statusLabel: string;
@@ -325,7 +326,7 @@ function buildBranchOpenings(
       statusLabel = "Ta'tilda";
     } else {
       checkIn = day.checkIn && day.checkIn !== "—" ? day.checkIn : null;
-      if (day.status === "late") {
+      if (day.status === "late" || day.lateArrivalMin > 0) {
         status = "late";
         statusLabel = "Kech ochilgan";
         lateMinutes = day.lateArrivalMin;
@@ -341,6 +342,7 @@ function buildBranchOpenings(
       managerName: e.fullName,
       shiftLabel: schedule.label,
       expectedOpen: schedule.start,
+      graceUntil: onTimeUntilHm(schedule.start, schedule.graceMinutes),
       checkIn,
       status,
       statusLabel,

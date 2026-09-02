@@ -5,6 +5,8 @@ export const SHIFT_ONE = {
   label: "1-smena",
   start: "08:00",
   end: "17:00",
+  /** 08:00–08:15 vaqtida; 08:16 dan kech */
+  graceMinutes: 15,
   warnHm: "07:45",
   warnText:
     "15 daqiqadan so‘ng 1-smena boshlanadi (08:00). Ishga kech qolayapsiz — bugun tizim ishga tushdi, davomatingiz platforma orqali qabul qilinadi.",
@@ -15,6 +17,7 @@ export const SHIFT_TWO = {
   label: "2-smena",
   start: "17:00",
   end: "23:45",
+  graceMinutes: 15,
   warnHm: "16:45",
   warnText:
     "15 daqiqadan so‘ng 2-smena boshlanadi (17:00). Ishga kech qolayapsiz — bugun tizim ishga tushdi, davomatingiz platforma orqali qabul qilinadi.",
@@ -49,6 +52,7 @@ export const SHIFT_OFFICE = {
   label: "Ofis",
   start: "09:00",
   end: "18:00",
+  graceMinutes: 15,
   warnHm: "08:45",
   warnText:
     "15 daqiqadan so‘ng ish vaqti boshlanadi (09:00). Ishga kech qolayapsiz — bugun tizim ishga tushdi, davomatingiz platforma orqali qabul qilinadi.",
@@ -59,8 +63,15 @@ export type WorkSchedule = {
   label: string;
   start: string;
   end: string;
+  graceMinutes: number;
   warnHm: string;
   warnText: string;
+};
+
+export type StaffHours = {
+  start: string;
+  end: string;
+  graceMinutes: number;
 };
 
 export function workScheduleForStaff(
@@ -87,13 +98,23 @@ export function hmToMinutes(hm: string): number {
   return (h || 0) * 60 + (m || 0);
 }
 
+export function minutesToHm(total: number): string {
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+export function onTimeUntilHm(start: string, graceMinutes: number): string {
+  return minutesToHm(hmToMinutes(start) + graceMinutes);
+}
+
 /** Apteka smenasi yoki ofis 09:00–18:00 */
 export function hoursForStaff(
   orgRole?: string | null,
   shiftType?: string | null,
   userRole?: string | null,
   shiftLabel?: string | null,
-): { start: string; end: string } {
+): StaffHours {
   const w = workScheduleForStaff(userRole, orgRole, shiftType, shiftLabel);
-  return { start: w.start, end: w.end };
+  return { start: w.start, end: w.end, graceMinutes: w.graceMinutes };
 }

@@ -164,10 +164,13 @@ function computeMetrics(
   checkInAt: Date | null | undefined,
   checkOutAt: Date | null | undefined,
   forcedStatus?: string | null,
-  hours?: { start: string; end: string },
+  hours?: { start: string; end: string; graceMinutes?: number },
 ): Metrics {
   const start = atTashkent(workDate, hours?.start ?? WORK_START);
   const end = atTashkent(workDate, hours?.end ?? WORK_END);
+  const graceMinutes = hours?.graceMinutes ?? 0;
+  const graceEnd =
+    graceMinutes > 0 ? new Date(start.getTime() + graceMinutes * 60_000) : start;
   let earlyArrivalMin = 0;
   let lateArrivalMin = 0;
   let earlyLeaveMin = 0;
@@ -176,11 +179,18 @@ function computeMetrics(
   let status = forcedStatus || "absent";
 
   if (checkInAt) {
-    const inDiff = minutesBetween(start, checkInAt);
-    if (inDiff < 0) earlyArrivalMin = -inDiff;
-    else if (inDiff > 0) lateArrivalMin = inDiff;
-    status = lateArrivalMin > 0 ? "late" : "present";
-    if (!checkOutAt) status = "incomplete";
+    const inDiffFromStart = minutesBetween(start, checkInAt);
+    if (inDiffFromStart < 0) earlyArrivalMin = -inDiffFromStart;
+    const pastGrace =
+      graceMinutes > 0 ? minutesBetween(graceEnd, checkInAt) : inDiffFromStart > 0 ? 1 : 0;
+    if (pastGrace > 0) {
+      lateArrivalMin = inDiffFromStart > 0 ? inDiffFromStart : pastGrace;
+      status = "late";
+    } else {
+      lateArrivalMin = 0;
+      status = "present";
+    }
+    if (!checkOutAt) status = lateArrivalMin > 0 ? "late" : "incomplete";
   }
 
   if (checkInAt && checkOutAt) {
@@ -775,8 +785,16 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
     }
 
     const [emp] = await db
-      .select({ id: employeesTable.id, userId: employeesTable.userId })
+      .select({
+        id: employeesTable.id,
+        userId: employeesTable.userId,
+        orgRole: employeesTable.orgRole,
+        shiftType: employeesTable.shiftType,
+        shiftLabel: employeesTable.shiftLabel,
+        userRole: usersTable.role,
+      })
       .from(employeesTable)
+      .leftJoin(usersTable, eq(employeesTable.userId, usersTable.id))
       .where(eq(employeesTable.id, employeeId))
       .limit(1);
     if (!emp) {
@@ -789,9 +807,11 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
     const checkOutAt =
       checkOut && /^\d{1,2}:\d{2}$/.test(checkOut) ? atTashkent(workDate, checkOut) : null;
 
+    const hours = hoursForStaff(emp.orgRole, emp.shiftType, emp.userRole, emp.shiftLabel);
+
     let nextStatus = status || "absent";
     if (!status || status === "auto") {
-      nextStatus = computeMetrics(workDate, checkInAt, checkOutAt).status;
+      nextStatus = computeMetrics(workDate, checkInAt, checkOutAt, undefined, hours).status;
       if (!checkInAt && !checkOutAt) nextStatus = "absent";
     }
 
@@ -828,7 +848,7 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
       await db.insert(attendanceRecordsTable).values(payload);
     }
 
-    const metrics = computeMetrics(workDate, checkInAt, checkOutAt, nextStatus);
+    const metrics = computeMetrics(workDate, checkInAt, checkOutAt, nextStatus, hours);
     res.json({ ok: true, workDate, employeeId, ...metrics });
   } catch (err) {
     console.error("POST /davomat/manual error:", err);

@@ -13,8 +13,6 @@ import {
   TrendingDown,
   TrendingUp,
   Users,
-  CheckCircle2,
-  XCircle,
 } from "lucide-react";
 import {
   Area,
@@ -128,19 +126,21 @@ function Panel({
   children,
   className,
   action,
+  bodyClassName,
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
   action?: React.ReactNode;
+  bodyClassName?: string;
 }) {
   return (
     <div className={cn("analytics-panel", className)}>
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <h3 className="text-sm font-medium text-foreground">{title}</h3>
+      <div className="analytics-panel-header">
+        <h3 className="analytics-panel-title">{title}</h3>
         {action}
       </div>
-      {children}
+      <div className={cn("analytics-panel-body", bodyClassName)}>{children}</div>
     </div>
   );
 }
@@ -164,22 +164,119 @@ function branchStatusStyle(status: "on_time" | "late" | "absent" | "leave") {
   return "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-300";
 }
 
+function BranchRow({ b }: { b: DavomatAnalytics["branchOpenings"][number] }) {
+  const opened = b.checkIn && b.checkIn !== "—" ? b.checkIn : null;
+
+  return (
+    <div
+      className={cn(
+        "flex items-center gap-2 rounded-lg border px-2 py-1.5",
+        branchStatusStyle(b.status),
+      )}
+    >
+      <Store className="h-3.5 w-3.5 shrink-0 opacity-80" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold leading-tight">{b.branchName}</p>
+        <p className="truncate text-[10px] leading-tight opacity-75">{b.managerName}</p>
+      </div>
+      <div className="shrink-0 text-right leading-tight">
+        <p className="text-[9px] font-medium uppercase tracking-wide opacity-60">Ochildi</p>
+        {opened ? (
+          <>
+            <p className="text-sm font-bold tabular-nums">{opened}</p>
+            <p className="text-[9px] tabular-nums opacity-60">
+              vaqtida {b.expectedOpen}–{b.graceUntil ?? b.expectedOpen}
+            </p>
+            {b.lateMinutes > 0 ? (
+              <p className="text-[9px] font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+                +{b.lateMinutes} daq
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <p className="text-xs font-semibold opacity-70">—</p>
+            <p className="text-[9px] tabular-nums opacity-60">
+              vaqtida {b.expectedOpen}–{b.graceUntil ?? b.expectedOpen}
+            </p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+type BranchStatusTab = "on_time" | "late" | "absent";
+
+function BranchStatusColumn({
+  title,
+  count,
+  tone,
+  items,
+  empty,
+}: {
+  title: string;
+  count: number;
+  tone: "emerald" | "amber" | "rose";
+  items: DavomatAnalytics["branchOpenings"];
+  empty: string;
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "border-emerald-500/30 bg-emerald-500/5"
+      : tone === "amber"
+        ? "border-amber-500/30 bg-amber-500/5"
+        : "border-rose-500/30 bg-rose-500/5";
+  const badgeClass =
+    tone === "emerald"
+      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+      : tone === "amber"
+        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+        : "bg-rose-500/15 text-rose-800 dark:text-rose-300";
+
+  return (
+    <div className={cn("flex min-h-0 flex-col rounded-xl border", toneClass)}>
+      <div className="flex items-center justify-between gap-2 border-b border-border/50 px-2.5 py-2">
+        <span className="text-xs font-semibold">{title}</span>
+        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums", badgeClass)}>{count}</span>
+      </div>
+      <div className="max-h-[220px] space-y-1 overflow-y-auto p-2">
+        {items.length ? (
+          items.map((b) => <BranchRow key={b.branchId} b={b} />)
+        ) : (
+          <p className="py-6 text-center text-[11px] text-muted-foreground">{empty}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function BranchOpeningsPanel({
   openings,
   summary,
   loading,
+  rangeLabel,
 }: {
   openings: DavomatAnalytics["branchOpenings"];
   summary: DavomatAnalytics["branchOpeningSummary"];
   loading?: boolean;
+  rangeLabel?: string;
 }) {
+  const [tab, setTab] = useState<BranchStatusTab>("late");
+
+  const grouped = useMemo(() => {
+    const onTime = openings.filter((b) => b.status === "on_time");
+    const late = openings.filter((b) => b.status === "late");
+    const absent = openings.filter((b) => b.status === "absent" || b.status === "leave");
+    return { onTime, late, absent };
+  }, [openings]);
+
   if (loading) {
     return (
-      <div className="space-y-2">
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
+      <div className="grid gap-2 md:grid-cols-3">
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
       </div>
     );
   }
@@ -188,73 +285,56 @@ function BranchOpeningsPanel({
     return <p className="py-6 text-center text-sm text-muted-foreground">Ma’lumot yo‘q</p>;
   }
 
+  const tabs: { key: BranchStatusTab; label: string; count: number; tone: "emerald" | "amber" | "rose"; items: DavomatAnalytics["branchOpenings"]; empty: string }[] = [
+    { key: "on_time", label: "Vaqtida", count: summary.onTime, tone: "emerald", items: grouped.onTime, empty: "Vaqtida ochilgan filial yo‘q" },
+    { key: "late", label: "Kech", count: summary.late, tone: "amber", items: grouped.late, empty: "Kech ochilgan filial yo‘q" },
+    { key: "absent", label: "Ochilmagan", count: summary.absent + summary.leave, tone: "rose", items: grouped.absent, empty: "Barcha filiallar ochilgan" },
+  ];
+
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2 text-xs">
-        <span className="rounded-full border border-border bg-muted/60 px-2.5 py-1 font-medium text-foreground">
-          {formatYmdUz(summary.date)}
-        </span>
-        <span className="stat-emerald font-semibold">Vaqtida: {summary.onTime}</span>
-        <span className="stat-amber font-semibold">Kech: {summary.late}</span>
-        <span className="stat-rose font-semibold">Ochilmagan: {summary.absent}</span>
-        {summary.leave > 0 ? (
-          <span className="font-semibold text-violet-600 dark:text-violet-400">Ta'til: {summary.leave}</span>
-        ) : null}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-medium text-foreground">
+            <CalendarDays className="h-3 w-3" />
+            {formatYmdUz(summary.date)}
+          </span>
+          {rangeLabel ? <span>{rangeLabel}</span> : null}
+        </div>
+        <div className="flex gap-1 md:hidden">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={cn(
+                "rounded-lg px-2 py-1 text-[11px] font-semibold transition",
+                tab === t.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+              )}
+            >
+              {t.label} ({t.count})
+            </button>
+          ))}
+        </div>
       </div>
 
       {!openings.length ? (
         <p className="py-4 text-center text-sm text-muted-foreground">Mudir biriktirilgan filial topilmadi</p>
       ) : (
-        <div className="max-h-[320px] space-y-2 overflow-y-auto pr-1">
-          {openings.map((b) => (
-            <div
-              key={b.branchId}
-              className={cn(
-                "flex items-start gap-3 rounded-xl border px-3 py-2.5",
-                branchStatusStyle(b.status),
-              )}
-            >
-              <div className="mt-0.5 rounded-lg bg-background/50 p-2 dark:bg-slate-900/40">
-                <Store className="h-4 w-4 shrink-0" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{b.branchName}</p>
-                    <p className="truncate text-xs opacity-80">{b.managerName} · {b.shiftLabel}</p>
-                  </div>
-                  <span className="shrink-0 rounded-full border border-current/25 bg-background/40 px-2 py-0.5 text-[11px] font-semibold">
-                    {b.statusLabel}
-                  </span>
-                </div>
-                <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-                  <span className="inline-flex items-center gap-1 tabular-nums">
-                    <Clock className="h-3.5 w-3.5 opacity-70" />
-                    Kutilgan: <strong>{b.expectedOpen}</strong>
-                  </span>
-                  {b.checkIn ? (
-                    <span className="inline-flex items-center gap-1 tabular-nums">
-                      {b.status === "on_time" ? (
-                        <CheckCircle2 className="h-3.5 w-3.5" />
-                      ) : b.status === "late" ? (
-                        <AlertTriangle className="h-3.5 w-3.5" />
-                      ) : null}
-                      Keldi: <strong>{b.checkIn}</strong>
-                      {b.lateMinutes > 0 ? (
-                        <span className="font-semibold">(+{b.lateMinutes} daq)</span>
-                      ) : null}
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 opacity-90">
-                      <XCircle className="h-3.5 w-3.5" />
-                      Mudir kelmagan
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+        <>
+          <div className="hidden gap-3 md:grid md:grid-cols-3">
+            {tabs.map((t) => (
+              <BranchStatusColumn key={t.key} title={t.label} count={t.count} tone={t.tone} items={t.items} empty={t.empty} />
+            ))}
+          </div>
+          <div className="md:hidden">
+            {tabs
+              .filter((t) => t.key === tab)
+              .map((t) => (
+                <BranchStatusColumn key={t.key} title={t.label} count={t.count} tone={t.tone} items={t.items} empty={t.empty} />
+              ))}
+          </div>
+        </>
       )}
     </div>
   );
@@ -561,20 +641,20 @@ export function DavomatAnalyticsDashboard({
           </Panel>
         </div>
 
-        <div className="grid gap-4 xl:grid-cols-3">
-          <Panel title="Lavozim / rol bo‘yicha" className="xl:col-span-1">
-            <div className="space-y-2">
+        <div className="grid gap-4 lg:grid-cols-12">
+          <Panel title="Lavozim / rol bo‘yicha" className="lg:col-span-3">
+            <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
               {(data?.byRole ?? []).map((r) => (
-                <div key={r.key} className="analytics-inset">
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="font-medium">{r.label}</span>
-                    <span className="tabular-nums text-emerald-600 dark:text-emerald-400">{r.attendanceRate}%</span>
+                <div key={r.key} className="analytics-inset !py-1.5 !px-2.5">
+                  <div className="flex items-center justify-between gap-2 text-xs">
+                    <span className="truncate font-medium">{r.label}</span>
+                    <span className="shrink-0 tabular-nums text-emerald-600 dark:text-emerald-400">{r.attendanceRate}%</span>
                   </div>
-                  <div className="mt-1 flex justify-between text-xs text-muted-foreground">
+                  <div className="mt-0.5 flex justify-between text-[10px] text-muted-foreground">
                     <span>{r.headcount} xodim</span>
-                    <span>{r.late} kechikish</span>
+                    <span>{r.late} kech</span>
                   </div>
-                  <Progress value={r.attendanceRate} className="mt-2 h-1.5" />
+                  <Progress value={r.attendanceRate} className="mt-1 h-1" />
                 </div>
               ))}
               {!isLoading && !(data?.byRole ?? []).length ? (
@@ -583,23 +663,18 @@ export function DavomatAnalyticsDashboard({
             </div>
           </Panel>
 
-          <Panel title="Davomat % taqsimoti" className="xl:col-span-1">
-            {isLoading ? (
-              <Skeleton className="h-48 w-full rounded-xl" />
-            ) : (
-              <ResponsiveContainer width="100%" height={200}>
-                <BarChart data={data?.distribution ?? []}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
-                  <XAxis dataKey="bucket" tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <Tooltip content={<ChartTip />} />
-                  <Bar dataKey="count" name="Xodimlar" fill={chart.barDist} radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            )}
+          <Panel title="Filiallar ochilishi" className="lg:col-span-6">
+            <BranchOpeningsPanel
+              openings={data?.branchOpenings ?? []}
+              summary={data?.branchOpeningSummary ?? null}
+              loading={isLoading}
+              rangeLabel={
+                range.from !== range.to ? `Davr oxirgi kuni · ${formatYmdUz(range.to)}` : undefined
+              }
+            />
           </Panel>
 
-          <Panel title="Ko‘rsatkichlar" className="xl:col-span-1">
+          <Panel title="Ko‘rsatkichlar" className="lg:col-span-3">
             <div className="space-y-3 text-sm">
               <div className="analytics-inset">
                 <p className="text-muted-foreground">Eng yaxshi kun</p>
@@ -629,66 +704,24 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Filiallar ochilishi" className="xl:col-span-1">
-            <p className="mb-3 text-xs text-muted-foreground">
-              Mudir kelish vaqti bo‘yicha — qaysi filial vaqtida yoki kech ochilgan
-              {range.from !== range.to ? (
-                <span className="block mt-0.5">Filial holati: {formatYmdUz(range.to)} (davr oxirgi kuni)</span>
-              ) : null}
-            </p>
-            <BranchOpeningsPanel
-              openings={data?.branchOpenings ?? []}
-              summary={data?.branchOpeningSummary ?? null}
-              loading={isLoading}
-            />
-          </Panel>
-
-          <Panel title="Ogohlantirishlar">
-            <div className="space-y-2">
-              {(data?.alerts ?? []).length ? (
-                data!.alerts.map((a) => (
-                  <div
-                    key={a.id}
-                    className={cn(
-                      "flex items-center justify-between rounded-xl border px-3 py-2.5",
-                      a.severity === "high"
-                        ? "border-rose-500/40 bg-rose-500/10"
-                        : "border-amber-500/40 bg-amber-500/10",
-                    )}
-                  >
-                    <div className="flex items-center gap-2">
-                      <AlertTriangle className={cn("h-4 w-4", a.severity === "high" ? "text-rose-400" : "text-amber-400")} />
-                      <span className="text-sm">{a.title}</span>
-                    </div>
-                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-semibold tabular-nums">{a.count}</span>
-                  </div>
-                ))
-              ) : (
-                <p className="text-sm text-muted-foreground">Jiddiy ogohlantirish yo‘q</p>
-              )}
-            </div>
-          </Panel>
-        </div>
-
-        <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Top 10 kechikuvchilar">
+          <Panel title="Top 10 kechikuvchilar" bodyClassName="p-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
+              <table className="analytics-table w-full text-sm">
                 <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="pb-2 pr-2">Xodim</th>
-                    <th className="pb-2 pr-2">Bo‘lim</th>
-                    <th className="pb-2 text-right">Kun</th>
-                    <th className="pb-2 text-right">Daqiqa</th>
+                  <tr>
+                    <th>Xodim</th>
+                    <th>Bo‘lim</th>
+                    <th className="text-right">Kun</th>
+                    <th className="text-right">Daqiqa</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data?.topLate ?? []).map((r) => (
-                    <tr key={r.id} className="border-b border-border/70">
-                      <td className="py-2 pr-2 font-medium">{r.fullName}</td>
-                      <td className="py-2 pr-2 text-muted-foreground">{r.departmentName || "—"}</td>
-                      <td className="py-2 text-right tabular-nums text-amber-600 dark:text-amber-400">{r.lateDays}</td>
-                      <td className="py-2 text-right tabular-nums text-muted-foreground">{r.lateMinutes}</td>
+                    <tr key={r.id}>
+                      <td className="font-medium">{r.fullName}</td>
+                      <td className="text-muted-foreground">{r.departmentName || "—"}</td>
+                      <td className="text-right tabular-nums text-amber-600 dark:text-amber-400">{r.lateDays}</td>
+                      <td className="text-right tabular-nums text-muted-foreground">{r.lateMinutes}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -696,24 +729,24 @@ export function DavomatAnalyticsDashboard({
             </div>
           </Panel>
 
-          <Panel title="So‘nggi kelishlar">
-            <div className="max-h-80 overflow-y-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-muted-foreground">
-                    <th className="pb-2 pr-2">Xodim</th>
-                    <th className="pb-2 pr-2">Bo‘lim</th>
-                    <th className="pb-2">Vaqt</th>
-                    <th className="pb-2 text-right">Holat</th>
+          <Panel title="So‘nggi kelishlar" bodyClassName="p-0">
+            <div className="max-h-80 overflow-y-auto overflow-x-auto">
+              <table className="analytics-table w-full text-sm">
+                <thead className="sticky top-0 z-10">
+                  <tr>
+                    <th>Xodim</th>
+                    <th>Bo‘lim</th>
+                    <th>Vaqt</th>
+                    <th className="text-right">Holat</th>
                   </tr>
                 </thead>
                 <tbody>
                   {(data?.recentCheckins ?? []).map((r, i) => (
-                    <tr key={`${r.fullName}-${i}`} className="border-b border-border/70">
-                      <td className="py-2 pr-2 font-medium">{r.fullName}</td>
-                      <td className="py-2 pr-2 text-muted-foreground">{r.departmentName || "—"}</td>
-                      <td className="py-2 tabular-nums text-muted-foreground">{r.checkIn}</td>
-                      <td className="py-2 text-right">
+                    <tr key={`${r.fullName}-${i}`}>
+                      <td className="font-medium">{r.fullName}</td>
+                      <td className="text-muted-foreground">{r.departmentName || "—"}</td>
+                      <td className="tabular-nums text-muted-foreground">{r.checkIn}</td>
+                      <td className="text-right">
                         <span
                           className={cn(
                             "rounded-full px-2 py-0.5 text-xs font-medium",
@@ -733,28 +766,28 @@ export function DavomatAnalyticsDashboard({
           </Panel>
         </div>
 
-        <Panel title="Bo‘limlar jadvali">
+        <Panel title="Bo‘limlar jadvali" bodyClassName="p-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="analytics-table w-full text-sm">
               <thead>
-                <tr className="border-b border-border text-left text-muted-foreground">
-                  <th className="pb-2 pr-3">Bo‘lim</th>
-                  <th className="pb-2 pr-3 text-right">Xodim</th>
-                  <th className="pb-2 pr-3 text-right">Kelgan</th>
-                  <th className="pb-2 pr-3 text-right">Kech</th>
-                  <th className="pb-2 pr-3 text-right">Kelmagan</th>
-                  <th className="pb-2 text-right">Davomat %</th>
+                <tr>
+                  <th>Bo‘lim</th>
+                  <th className="text-right">Xodim</th>
+                  <th className="text-right">Kelgan</th>
+                  <th className="text-right">Kech</th>
+                  <th className="text-right">Kelmagan</th>
+                  <th className="text-right">Davomat %</th>
                 </tr>
               </thead>
               <tbody>
                 {(data?.byDepartment ?? []).map((d) => (
-                  <tr key={d.name} className="border-b border-border/70">
-                    <td className="py-2 pr-3 font-medium">{d.name}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums">{d.headcount}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-emerald-600 dark:text-emerald-400">{d.present}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-amber-600 dark:text-amber-400">{d.late}</td>
-                    <td className="py-2 pr-3 text-right tabular-nums text-rose-600 dark:text-rose-400">{d.absent}</td>
-                    <td className="py-2 text-right font-medium tabular-nums text-primary">{d.attendanceRate}%</td>
+                  <tr key={d.name}>
+                    <td className="font-medium">{d.name}</td>
+                    <td className="text-right tabular-nums">{d.headcount}</td>
+                    <td className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">{d.present}</td>
+                    <td className="text-right tabular-nums text-amber-600 dark:text-amber-400">{d.late}</td>
+                    <td className="text-right tabular-nums text-rose-600 dark:text-rose-400">{d.absent}</td>
+                    <td className="text-right font-medium tabular-nums text-primary">{d.attendanceRate}%</td>
                   </tr>
                 ))}
               </tbody>

@@ -84,6 +84,7 @@ export type DavomatAnalytics = {
     managerName: string;
     shiftLabel: string;
     expectedOpen: string;
+    graceUntil: string;
     checkIn: string | null;
     status: "on_time" | "late" | "absent" | "leave";
     statusLabel: string;

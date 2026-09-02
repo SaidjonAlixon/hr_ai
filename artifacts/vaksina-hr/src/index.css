@@ -220,11 +220,55 @@
 }
 
 .analytics-panel {
-  @apply rounded-xl border border-border/70 bg-card p-4 text-card-foreground shadow-sm;
+  @apply overflow-hidden rounded-xl border border-border/70 bg-card text-card-foreground shadow-sm;
 }
 
 .dark .analytics-panel {
   @apply rounded-2xl border-slate-700/60 bg-slate-900/70 text-slate-100 shadow-lg backdrop-blur-sm;
+}
+
+.analytics-panel-header {
+  @apply flex items-center justify-between gap-3 border-b border-border/70 bg-gradient-to-r from-slate-50 to-slate-100/80 px-4 py-3;
+}
+
+.dark .analytics-panel-header {
+  @apply border-slate-600/50 bg-gradient-to-r from-slate-800/90 to-slate-900/70;
+}
+
+.analytics-panel-title {
+  @apply border-l-[3px] border-sky-600 pl-2.5 text-sm font-semibold tracking-tight text-sky-900;
+}
+
+.dark .analytics-panel-title {
+  @apply border-cyan-400 pl-2.5 text-cyan-300;
+}
+
+.analytics-panel-body {
+  @apply p-4;
+}
+
+.analytics-table thead tr {
+  @apply border-b border-border bg-muted/30;
+}
+
+.dark .analytics-table thead tr {
+  @apply border-slate-700/50 bg-slate-800/40;
+}
+
+.analytics-table th {
+  @apply px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground;
+}
+
+.analytics-table td {
+  @apply px-3 py-2;
+}
+
+.analytics-table tbody tr {
+  @apply border-b border-border/60 transition-colors hover:bg-muted/25;
+}
+
+.dark .analytics-table tbody tr {
+  @apply border-slate-700/40 hover:bg-slate-800/35;
 }
 
 .analytics-kpi {

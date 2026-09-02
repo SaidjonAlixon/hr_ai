@@ -42,6 +42,7 @@ export function workShiftForUserRole(
       label: "1-smena",
       start: "08:00",
       end: "17:00",
+      graceMinutes: 15,
       warnHm: "07:45",
     };
   }

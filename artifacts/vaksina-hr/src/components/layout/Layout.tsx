@@ -49,7 +49,7 @@ import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -380,6 +380,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       /* ignore */
     }
   }, [pinnedIds]);
+
+  useEffect(() => {
+    if (!isHrOversight(user?.role)) return;
+    const allIds = NAV_SECTIONS.map((section) => section.id);
+    setPinnedIds((prev) => {
+      const missing = allIds.filter((id) => !prev.includes(id));
+      return missing.length ? [...prev, ...missing] : prev;
+    });
+  }, [user?.role]);
 
   // Mobil menyu ochiq bo‘lsa body scrollni bloklash
   useEffect(() => {
@@ -980,13 +989,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
   };
 
-  const roleNav = injectCommonNav(roleNavigation[user.role] || [
-    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-  ], user.role);
+  const userRole = normalizeUserRole(user.role);
+  const oversightNav = isHrOversight(userRole);
+  const roleNav = injectCommonNav(
+    oversightNav
+      ? hrOversightNav
+      : roleNavigation[userRole] || [
+          { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+        ],
+    userRole,
+  );
   const withFace = roleNav.some((item) => item.path === '/davomat-face')
     ? roleNav
     : [...roleNav, davomatFaceNav];
-  const navItems = canSeeHrRecruitment(user.role)
+  const navItems = canSeeHrRecruitment(userRole)
     ? withFace
     : withFace.filter((item) => !isHrRecruitmentPath(item.path));
 
@@ -998,7 +1014,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const navSections = groupNavItems(navItems, user.role);
+  const navSections = groupNavItems(navItems, userRole);
   const pinnedSet = new Set(pinnedIds);
 
   const togglePin = (id: string) => {
@@ -1059,7 +1075,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const badgeSum = section.items.reduce((sum, item) => sum + (badgeByPath[item.path] ?? 0), 0);
       const hasActive = section.items.some((item) => pathIsActive(location, item.path));
       const pinned = pinnedSet.has(section.id);
-      const open = opts.collapsed || pinned || openSectionId === section.id || (opts.mobile && hasActive);
+      const open =
+        opts.collapsed ||
+        pinned ||
+        oversightNav ||
+        openSectionId === section.id ||
+        (opts.mobile && hasActive);
 
       if (opts.collapsed) {
         return (

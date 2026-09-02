@@ -8,8 +8,13 @@ export function isHrRole(role?: string | null): boolean {
 }
 
 /** HR direktor yoki auditor — Kuzatuv bo‘limi */
+export function normalizeUserRole(role?: string | null): string {
+  return (role ?? "").trim().toLowerCase();
+}
+
 export function isHrOversight(role?: string | null): boolean {
-  return role === "hr_direktor" || role === "hr_auditor";
+  const r = normalizeUserRole(role);
+  return r === "hr_direktor" || r === "hr_auditor";
 }
 
 export function isHrDirektor(role?: string | null): boolean {

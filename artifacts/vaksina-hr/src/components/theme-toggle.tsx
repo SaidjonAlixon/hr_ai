@@ -51,7 +51,7 @@ export function ThemeToggle({ className, variant = 'header' }: Props) {
         'shrink-0 rounded-full',
         variant === 'header'
           ? 'text-muted-foreground hover:bg-muted hover:text-foreground'
-          : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground',
+          : 'border-0 bg-transparent p-0 text-inherit shadow-none hover:bg-transparent hover:text-inherit',
         className,
       )}
       aria-label={isDark ? 'Kunduzgi rejim' : 'Kechki rejim'}

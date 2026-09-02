@@ -114,10 +114,8 @@ export function FaceIdEnroll({
             }}
             disabled={loading}
             className={cn(
-              "flex w-full items-center gap-1.5 rounded-lg px-1.5 py-1 text-left text-[10px] font-medium transition-colors",
-              registered
-                ? "text-emerald-300/95 hover:bg-emerald-400/10"
-                : "text-sky-200/70 hover:bg-white/10 hover:text-sky-100",
+              'app-sidebar-face-id-btn',
+              registered ? 'app-sidebar-face-id-btn--linked' : 'app-sidebar-face-id-btn--pending',
             )}
             title={registered ? "Face ID o‘chirish" : "Face ID ulash"}
           >

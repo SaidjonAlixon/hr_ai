@@ -1226,10 +1226,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </nav>
 
-        <div className="shrink-0 border-t border-sidebar-border bg-sidebar-accent/40 p-3 pb-[max(0.85rem,env(safe-area-inset-bottom))] md:p-3 dark:border-white/[0.07] dark:bg-black/20">
+        <div className="app-sidebar-profile-footer">
           <div
             className={cn(
-              'flex items-center gap-2 rounded-2xl bg-sidebar-accent p-2.5 ring-1 ring-sidebar-border dark:bg-white/[0.05] dark:ring-white/10',
+              'app-sidebar-profile-card flex items-center gap-2',
               desktopCollapsed && 'md:justify-center md:p-2',
             )}
           >
@@ -1238,14 +1238,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 type="button"
                 onClick={openProfileEditor}
                 className={cn(
-                  'flex w-full min-w-0 items-center gap-2 rounded-xl text-left transition-colors hover:bg-sidebar-accent/80 dark:hover:bg-white/[0.06]',
+                  'flex w-full min-w-0 items-center gap-2.5 rounded-xl text-left transition-colors hover:bg-sidebar-accent/70 dark:hover:bg-white/[0.06]',
                   desktopCollapsed && 'md:justify-center',
                 )}
                 title="Profilni tahrirlash"
               >
                 <div
                   className={cn(
-                    'flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-primary/10 text-xs font-bold text-primary ring-1 ring-sidebar-border dark:bg-gradient-to-br dark:from-sky-400/30 dark:to-indigo-500/25 dark:text-sky-100 dark:ring-white/15',
+                    'app-sidebar-profile-avatar ring-1',
                     desktopCollapsed && 'md:h-8 md:w-8',
                   )}
                 >
@@ -1256,22 +1256,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                   )}
                 </div>
                 <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
-                  <span className="block truncate text-sm font-semibold text-sidebar-foreground dark:text-white">{user.fullName}</span>
-                  <span className="block truncate text-[11px] capitalize text-sidebar-foreground/50 dark:text-white/45">
+                  <span className="app-sidebar-profile-name">{user.fullName}</span>
+                  <span className="app-sidebar-profile-role">
                     {user.role.replace(/_/g, ' ')}
                   </span>
                 </div>
               </button>
               {user.role !== 'director' ? (
-                <div className={cn(desktopCollapsed && 'md:hidden')}>
+                <div className={cn('px-0.5', desktopCollapsed && 'md:hidden')}>
                   <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
                 </div>
               ) : null}
             </div>
-            <ThemeToggle variant="sidebar" />
+            <ThemeToggle
+              variant="sidebar"
+              className="app-sidebar-profile-action h-9 w-9 rounded-xl border"
+            />
             <button
               onClick={handleLogout}
-              className="shrink-0 rounded-xl p-2 text-sidebar-foreground/50 transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground dark:text-white/50 dark:hover:bg-white/10 dark:hover:text-white"
+              className="app-sidebar-profile-action"
               title="Chiqish"
             >
               <LogOut className="h-[18px] w-[18px]" />

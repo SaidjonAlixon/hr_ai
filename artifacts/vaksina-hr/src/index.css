@@ -861,7 +861,7 @@
 }
 
 .dept-hero {
-  @apply hero-dark relative overflow-hidden border-b border-white/5;
+  @apply relative overflow-hidden border-b border-white/5 text-white;
 }
 
 .dept-hero-violet {

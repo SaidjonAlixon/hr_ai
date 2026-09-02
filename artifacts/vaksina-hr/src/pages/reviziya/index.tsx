@@ -251,6 +251,7 @@ export default function ReviziyaPage() {
                     : "Revizor-yig‘uvchi"
                   : userRoleLabel(user?.role)}
               </span>
+              </div>
               <div className="flex gap-2 text-[11px] text-white/70">
                 <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">O‘chirish ✕</span>
                 <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">Storno ✓</span>

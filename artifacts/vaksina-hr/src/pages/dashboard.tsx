@@ -510,18 +510,18 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-5">
-      <div className="flex items-start justify-between gap-3 flex-wrap rounded-2xl border bg-gradient-to-br from-white to-slate-50/80 p-4 sm:p-5">
+      <div className="page-hero">
         <div className="min-w-0 flex-1">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-[#0b3a5c]">Boshqaruv paneli</h1>
-          <p className="text-muted-foreground mt-1 text-sm break-words">
+          <h1 className="page-hero-title">Boshqaruv paneli</h1>
+          <p className="text-muted-foreground mt-1 text-sm break-words dark:text-slate-300">
             {user?.fullName}
             {subtitle ? (
-              <span className="ml-2 inline-flex items-center rounded-full bg-[#0b3a5c]/10 px-2.5 py-0.5 text-xs font-semibold text-[#0b3a5c] align-middle">
+              <span className="page-hero-badge">
                 {subtitle}
               </span>
             ) : null}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Kartochkani bosing — tezkor ma&apos;lumot ochiladi</p>
+          <p className="page-hero-hint">Kartochkani bosing — tezkor ma&apos;lumot ochiladi</p>
         </div>
       </div>
 
@@ -953,9 +953,9 @@ export default function Dashboard() {
       {/* ===== SECURITY (SB) ===== */}
       {kind === 'security' && (
         <>
-          <div className="rounded-xl border border-border bg-card p-3.5 shadow-sm">
+          <div className="rounded-xl border border-border bg-card p-3.5 shadow-sm dark:border-slate-600/40 dark:bg-slate-800/50">
             <div className="flex items-start gap-3">
-              <span className="rounded-lg bg-slate-100 p-2 text-foreground">
+              <span className="rounded-lg bg-muted p-2 text-foreground dark:bg-sky-500/15 dark:text-sky-300">
                 <Shield className="h-4 w-4" />
               </span>
               <div>
@@ -1005,9 +1005,9 @@ export default function Dashboard() {
 
       {kind === 'finance' && (
         <>
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50/70 p-3.5 shadow-sm">
-            <p className="text-sm font-semibold text-emerald-900">Moliya bo‘limi</p>
-            <p className="mt-0.5 text-xs text-emerald-800/80">
+          <div className="dept-banner dept-banner-emerald">
+            <p className="dept-banner-title-emerald">Moliya bo‘limi</p>
+            <p className="dept-banner-sub-emerald">
               Fiks maosh, KPI, bonus va jami oylik — xodimlar kesimida. Davomat, topshiriq va checklist
               avtomatik tortiladi.
             </p>
@@ -1061,8 +1061,8 @@ export default function Dashboard() {
 
       {kind === 'revision' && (
         <>
-          <div className="rounded-xl border border-violet-200 bg-violet-50/70 p-3.5 shadow-sm">
-            <p className="text-sm font-semibold text-violet-900">Reviziya bo‘limi</p>
+          <div className="dept-banner dept-banner-violet">
+            <p className="dept-banner-title-violet">Reviziya bo‘limi</p>
             <p className="mt-0.5 text-xs text-violet-800/80">
               Filial qoldig‘i, inventarizatsiya, kassa, yo‘ldagi pul. Narx/vozvrat/qo‘lda qoldiq/o‘chirish taqiqlangan.
             </p>
@@ -1086,8 +1086,8 @@ export default function Dashboard() {
 
       {kind === 'it' && (
         <>
-          <div className="rounded-xl border border-cyan-200 bg-cyan-50/70 p-3.5 shadow-sm">
-            <p className="text-sm font-semibold text-cyan-950">IT bo‘limi</p>
+          <div className="dept-banner dept-banner-cyan">
+            <p className="dept-banner-title-cyan">IT bo‘limi</p>
             <p className="mt-0.5 text-xs text-cyan-800/80">POS, tarmoq, kamera, kirish huquqi va 1C — arizalar shu yerda.</p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -1102,8 +1102,8 @@ export default function Dashboard() {
 
       {kind === 'tech' && (
         <>
-          <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-3.5 shadow-sm">
-            <p className="text-sm font-semibold text-amber-950">Texnik bo‘limi</p>
+          <div className="dept-banner dept-banner-amber">
+            <p className="dept-banner-title-amber">Texnik bo‘limi</p>
             <p className="mt-0.5 text-xs text-amber-800/80">Filial jihozlari, sovitgich, elektr va ta’mir arizalari.</p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
@@ -1152,21 +1152,21 @@ function DeadlineBlock({
   items: any[];
 }) {
   return (
-    <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4">
+    <div className="dept-banner dept-banner-amber">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h2 className="flex items-center gap-2 text-sm font-semibold text-amber-950">
+          <h2 className="dept-banner-title-amber flex items-center gap-2 text-sm font-semibold">
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500" />
             </span>
             E'lon muddati — qancha vaqt qoldi
           </h2>
-          <p className="mt-1 text-xs text-amber-900/70">
+          <p className="mt-1 text-xs text-amber-900/70 dark:text-amber-300/80">
             Sizga tegishli ochiq eʼlonlar. Kam qolgan muddat birinchi.
           </p>
         </div>
-        <Badge variant="secondary" className="bg-amber-100 text-amber-900">
+        <Badge variant="secondary" className="bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200">
           {items.length} ta
         </Badge>
       </div>

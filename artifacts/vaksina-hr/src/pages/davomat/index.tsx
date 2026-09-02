@@ -556,7 +556,7 @@ export default function DavomatPage() {
   }
 
   const fieldClass =
-    "h-11 rounded-xl border-border bg-card text-base shadow-none md:h-9 md:text-sm";
+    "h-11 rounded-xl border-border bg-card text-base shadow-none md:h-9 md:text-sm dark:border-slate-600/50 dark:bg-slate-800/60 dark:text-slate-100";
 
   const filters = (
     <div
@@ -816,10 +816,10 @@ export default function DavomatPage() {
           setSelectedEmpId("all");
         }}
       >
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border bg-card p-1 shadow-sm">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border bg-card p-1 shadow-sm dark:border-slate-600/40 dark:bg-slate-800/60">
           <TabsTrigger
             value="schedule"
-            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
+            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-sky-500 dark:data-[state=active]:text-slate-950 sm:h-11 sm:text-sm"
           >
             <CalendarDays className="h-4 w-4 shrink-0" />
             <span className="truncate sm:hidden">Jadval</span>
@@ -827,7 +827,7 @@ export default function DavomatPage() {
           </TabsTrigger>
           <TabsTrigger
             value="totals"
-            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm sm:h-11 sm:text-sm"
+            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-sky-500 dark:data-[state=active]:text-slate-950 sm:h-11 sm:text-sm"
           >
             <Users className="h-4 w-4 shrink-0" />
             <span className="truncate sm:hidden">Jami</span>
@@ -842,7 +842,7 @@ export default function DavomatPage() {
                 <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                   Davr turi
                 </p>
-                <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100/90 p-1">
+                <div className="dv-period-bar">
                   {(
                     [
                       { id: "day" as const, short: "Kun", label: "Kunlik", hint: "1 kun" },
@@ -855,10 +855,8 @@ export default function DavomatPage() {
                       key={m.id}
                       type="button"
                       className={cn(
-                        "rounded-lg px-1 py-2 text-center transition-all sm:px-3 sm:py-2.5 sm:text-left",
-                        calMode === m.id
-                          ? "bg-card text-[#0b3a5c] shadow-sm ring-1 ring-[#0b3a5c]/15"
-                          : "text-muted-foreground hover:bg-white/60 hover:text-foreground",
+                        "dv-period-btn",
+                        calMode === m.id ? "dv-period-btn-active" : "dv-period-btn-idle",
                       )}
                       onClick={() => setCalModeSafe(m.id)}
                     >
@@ -867,7 +865,7 @@ export default function DavomatPage() {
                       <span
                         className={cn(
                           "mt-1 hidden text-[10px] sm:block",
-                          calMode === m.id ? "text-[#0b3a5c]/65" : "text-muted-foreground",
+                          calMode === m.id ? "dv-period-hint-active" : "text-muted-foreground",
                         )}
                       >
                         {m.hint}
@@ -904,13 +902,13 @@ export default function DavomatPage() {
                         {staffFilter !== "all" && report ? ` / ${report.summary.employees}` : ""}
                       </span>
                       {" · "}
-                      <span className="font-medium text-emerald-700">Kelgan: {filteredDayStats.present}</span>
+                      <span className="font-medium stat-emerald">Kelgan: {filteredDayStats.present}</span>
                       {" · "}
-                      <span className="font-medium text-amber-700">Kech: {filteredDayStats.late}</span>
+                      <span className="font-medium stat-amber">Kech: {filteredDayStats.late}</span>
                       {" · "}
-                      <span className="font-medium text-rose-700">Kelmagan: {filteredDayStats.absent}</span>
+                      <span className="font-medium stat-rose">Kelmagan: {filteredDayStats.absent}</span>
                       {" · "}
-                      <span className="font-medium text-sky-700">Ketish yo‘q: {filteredDayStats.incomplete}</span>
+                      <span className="font-medium stat-sky">Ketish yo‘q: {filteredDayStats.incomplete}</span>
                       <span className="mt-0.5 block text-muted-foreground">
                         Kech keldi: {dayTiming.lateArrival} · Erta keldi: {dayTiming.earlyArrival} · Erta
                         ketdi: {dayTiming.earlyLeave} · Kech ketdi: {dayTiming.overtime}
@@ -975,10 +973,10 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 tabular-nums">{day!.checkIn}</td>
                           <td className="px-3 py-2 tabular-nums">{day!.checkOut}</td>
                           <td className="px-3 py-2 tabular-nums font-medium">{day!.workedHours}</td>
-                          <td className="px-3 py-2 text-amber-700">
+                          <td className="px-3 py-2 text-amber-700 dark:text-amber-400">
                             <TimeMetric value={day!.lateArrivalLabel} />
                           </td>
-                          <td className="px-3 py-2 text-emerald-700">
+                          <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">
                             <TimeMetric value={day!.earlyArrivalLabel} />
                           </td>
                           <td className="px-3 py-2 text-rose-700">
@@ -1091,10 +1089,10 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 text-muted-foreground">{e.position}</td>
                           <td className="px-3 py-2">{e.totals.present}</td>
                           <td className="px-3 py-2 text-rose-700">{e.totals.absent}</td>
-                          <td className="px-3 py-2 text-amber-700">{e.totals.late}</td>
+                          <td className="px-3 py-2 text-amber-700 dark:text-amber-400">{e.totals.late}</td>
                           <td className="px-3 py-2 font-medium">{e.totals.workedHours}</td>
-                          <td className="px-3 py-2 text-amber-700">{e.totals.lateArrivalLabel}</td>
-                          <td className="px-3 py-2 text-emerald-700">{e.totals.earlyArrivalLabel}</td>
+                          <td className="px-3 py-2 text-amber-700 dark:text-amber-400">{e.totals.lateArrivalLabel}</td>
+                          <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">{e.totals.earlyArrivalLabel}</td>
                           <td className="px-3 py-2 text-rose-700">{e.totals.earlyLeaveLabel}</td>
                           <td className="px-3 py-2 text-sky-700">{e.totals.overtimeLabel}</td>
                         </tr>
@@ -1134,10 +1132,10 @@ export default function DavomatPage() {
                             <td className="px-3 py-2 tabular-nums">{d.checkIn}</td>
                             <td className="px-3 py-2 tabular-nums">{d.checkOut}</td>
                             <td className="px-3 py-2 font-medium tabular-nums">{d.workedHours}</td>
-                            <td className="px-3 py-2 text-amber-700">
+                            <td className="px-3 py-2 text-amber-700 dark:text-amber-400">
                               <TimeMetric value={d.lateArrivalLabel} />
                             </td>
-                            <td className="px-3 py-2 text-emerald-700">
+                            <td className="px-3 py-2 text-emerald-700 dark:text-emerald-400">
                               <TimeMetric value={d.earlyArrivalLabel} />
                             </td>
                             <td className="px-3 py-2 text-rose-700">
@@ -1654,13 +1652,13 @@ function WeekCell({
             <span className="opacity-50">·</span>
           ) : null}
           {subline.earlyLeave ? (
-            <span className="font-semibold text-amber-700 dark:text-amber-500">{subline.earlyLeave}</span>
+            <span className="font-semibold text-amber-700 dark:text-amber-400 dark:text-amber-500">{subline.earlyLeave}</span>
           ) : null}
           {(subline.worked || subline.late || subline.earlyLeave) && subline.overtime ? (
             <span className="opacity-50">·</span>
           ) : null}
           {subline.overtime ? (
-            <span className="font-semibold text-emerald-700 dark:text-emerald-500">{subline.overtime}</span>
+            <span className="font-semibold text-emerald-700 dark:text-emerald-400 dark:text-emerald-500">{subline.overtime}</span>
           ) : null}
         </span>
       ) : null}

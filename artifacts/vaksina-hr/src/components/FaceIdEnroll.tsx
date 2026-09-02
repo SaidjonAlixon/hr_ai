@@ -126,9 +126,9 @@ export function FaceIdEnroll({
           </button>
         </div>
       ) : (
-        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+        <div className="rounded-2xl border border-border bg-card p-4 shadow-sm dark:border-slate-600/40 dark:bg-slate-800/50">
           <div className="flex items-start gap-3">
-            <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-slate-100 ring-1 ring-slate-200">
+            <div className="h-20 w-20 shrink-0 overflow-hidden rounded-2xl bg-muted ring-1 ring-border dark:bg-slate-700/60 dark:ring-slate-600/50">
               {photoUrl ? (
                 <img
                   src={photoUrl}
@@ -146,7 +146,7 @@ export function FaceIdEnroll({
               <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 Face ID
                 {registered ? (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-300">
                     <CheckCircle2 className="h-3 w-3" /> Ulangan
                   </span>
                 ) : null}

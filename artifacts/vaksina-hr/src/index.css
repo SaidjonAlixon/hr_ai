@@ -105,44 +105,44 @@
 }
 
 .dark {
-  --background: 222 47% 11%;
+  --background: 222 47% 7%;
   --foreground: 210 40% 98%;
 
-  --border: 217 33% 17%;
-  --input: 217 33% 17%;
-  --ring: 212 67% 50%;
+  --border: 217 28% 22%;
+  --input: 217 28% 20%;
+  --ring: 199 89% 58%;
 
-  --card: 222 47% 11%;
+  --card: 217 33% 13%;
   --card-foreground: 210 40% 98%;
-  --card-border: 217 33% 17%;
+  --card-border: 217 28% 22%;
 
-  --popover: 222 47% 11%;
+  --popover: 217 33% 13%;
   --popover-foreground: 210 40% 98%;
-  --popover-border: 217 33% 17%;
+  --popover-border: 217 28% 22%;
 
-  --primary: 212 67% 50%;
-  --primary-foreground: 222.2 47.4% 11.2%;
+  --primary: 199 89% 58%;
+  --primary-foreground: 222 47% 8%;
 
-  --secondary: 202 71% 52%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 199 70% 45%;
+  --secondary-foreground: 210 40% 98%;
 
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
+  --muted: 217 28% 18%;
+  --muted-foreground: 215 22% 78%;
 
-  --accent: 217.2 32.6% 17.5%;
+  --accent: 217 28% 20%;
   --accent-foreground: 210 40% 98%;
 
-  --destructive: 0 62.8% 30.6%;
+  --destructive: 0 72% 55%;
   --destructive-foreground: 210 40% 98%;
 
-  --sidebar: 222 47% 11%;
+  --sidebar: 222 47% 7%;
   --sidebar-foreground: 210 40% 98%;
-  --sidebar-border: 217 33% 17%;
-  --sidebar-primary: 212 67% 50%;
-  --sidebar-primary-foreground: 222.2 47.4% 11.2%;
-  --sidebar-accent: 217 33% 17%;
+  --sidebar-border: 217 28% 18%;
+  --sidebar-primary: 199 89% 58%;
+  --sidebar-primary-foreground: 222 47% 8%;
+  --sidebar-accent: 217 28% 16%;
   --sidebar-accent-foreground: 210 40% 98%;
-  --sidebar-ring: 212 67% 50%;
+  --sidebar-ring: 199 89% 58%;
 }
 
 @layer base {
@@ -481,70 +481,210 @@
   @apply overflow-hidden rounded-2xl border border-primary/10 bg-gradient-to-br from-primary via-[hsl(212,67%,28%)] to-[hsl(212,67%,22%)] text-white shadow-[0_16px_40px_-20px_rgba(11,58,92,0.45)];
 }
 .dark .dv-report-hero {
-  @apply border-slate-700/50 bg-gradient-to-br from-slate-900 via-[#0f1f33] to-slate-950 text-slate-50 shadow-[0_20px_48px_-24px_rgba(0,0,0,0.55)];
+  @apply border-sky-500/30 bg-gradient-to-br from-[#0a1e38] via-[#0f2f52] to-[#081525] text-white shadow-[0_20px_48px_-24px_rgba(14,116,220,0.35)];
 }
 
 .dv-report-hero-label {
   @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70;
 }
 .dark .dv-report-hero-label {
-  @apply text-slate-400;
+  @apply text-sky-300/90;
 }
 
 .dv-report-hero-title {
   @apply mt-0.5 text-xl font-bold tracking-tight text-white sm:text-[1.7rem];
 }
 .dark .dv-report-hero-title {
-  @apply text-slate-50;
+  @apply text-white;
 }
 
 .dv-report-hero-sub {
   @apply mt-1 text-xs text-white/80 sm:text-sm;
 }
 .dark .dv-report-hero-sub {
-  @apply text-slate-300;
+  @apply text-sky-100/85;
 }
 
 .dv-report-hero-strong {
   @apply font-semibold text-white;
 }
 .dark .dv-report-hero-strong {
-  @apply text-slate-50;
+  @apply text-sky-50;
 }
 
 .dv-report-actions {
   @apply flex flex-wrap gap-1.5 rounded-2xl border border-white/15 bg-white/[0.06] p-1.5 backdrop-blur-sm;
 }
 .dark .dv-report-actions {
-  @apply border-slate-600/40 bg-slate-900/35;
+  @apply border-sky-400/25 bg-slate-900/50;
 }
 
 .dv-report-btn-primary {
   @apply h-10 w-full gap-1.5 rounded-xl bg-white px-2.5 text-xs font-semibold text-primary shadow-sm transition-colors hover:bg-white/90 sm:w-auto sm:px-3 sm:text-sm;
 }
 .dark .dv-report-btn-primary {
-  @apply bg-slate-100 text-slate-900 hover:bg-white;
+  @apply bg-sky-400 text-slate-950 hover:bg-sky-300;
 }
 
 .dv-report-btn-ghost {
   @apply h-10 w-full gap-1.5 rounded-xl border border-white/25 bg-white/10 px-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/20 sm:w-auto sm:px-3 sm:text-sm;
 }
 .dark .dv-report-btn-ghost {
-  @apply border-slate-600/50 bg-slate-800/45 text-slate-100 hover:bg-slate-800/70;
+  @apply border-sky-400/35 bg-sky-500/15 text-sky-50 hover:bg-sky-500/25;
 }
 
 .dv-report-btn-excel {
   @apply h-10 w-full gap-1.5 rounded-xl bg-emerald-500 px-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-400 disabled:opacity-70 sm:w-auto sm:px-3 sm:text-sm;
 }
 .dark .dv-report-btn-excel {
-  @apply bg-emerald-600 text-emerald-50 hover:bg-emerald-500;
+  @apply bg-emerald-500 text-white hover:bg-emerald-400 shadow-emerald-500/25;
 }
 
 .dv-report-btn-announce {
   @apply h-10 w-full gap-1.5 rounded-xl border border-amber-200/80 bg-amber-400 px-2.5 text-xs font-semibold text-amber-950 shadow-sm transition-colors hover:bg-amber-300 disabled:opacity-70 sm:w-auto sm:px-3 sm:text-sm;
 }
 .dark .dv-report-btn-announce {
-  @apply border-amber-500/40 bg-amber-500 text-amber-950 hover:bg-amber-400;
+  @apply border-amber-400/50 bg-amber-400 text-amber-950 hover:bg-amber-300;
+}
+
+/* Boshqaruv paneli */
+.page-hero {
+  @apply flex flex-wrap items-start justify-between gap-3 rounded-2xl border bg-gradient-to-br from-white to-slate-50/80 p-4 shadow-sm sm:p-5;
+}
+.dark .page-hero {
+  @apply border-slate-600/35 bg-gradient-to-br from-slate-800/95 via-slate-900 to-[#0a1628] shadow-lg shadow-black/25;
+}
+.page-hero-title {
+  @apply text-xl font-bold tracking-tight text-[#0b3a5c] sm:text-2xl;
+}
+.dark .page-hero-title {
+  @apply text-white;
+}
+.page-hero-badge {
+  @apply ml-2 inline-flex items-center rounded-full bg-[#0b3a5c]/10 px-2.5 py-0.5 text-xs font-semibold text-[#0b3a5c] align-middle;
+}
+.dark .page-hero-badge {
+  @apply bg-sky-500/20 text-sky-200 ring-1 ring-sky-400/30;
+}
+.page-hero-hint {
+  @apply mt-1 text-xs text-muted-foreground;
+}
+.dark .page-hero-hint {
+  @apply text-slate-400;
+}
+
+/* Davomat — davr tanlash */
+.dv-period-bar {
+  @apply grid grid-cols-4 gap-1 rounded-xl bg-slate-100/90 p-1;
+}
+.dark .dv-period-bar {
+  @apply bg-slate-800/90 ring-1 ring-slate-600/45;
+}
+.dv-period-btn {
+  @apply rounded-lg px-1 py-2 text-center transition-all sm:px-3 sm:py-2.5 sm:text-left;
+}
+.dv-period-btn-active {
+  @apply bg-card text-[#0b3a5c] shadow-sm ring-1 ring-[#0b3a5c]/15;
+}
+.dark .dv-period-btn-active {
+  @apply bg-sky-500/20 text-sky-50 shadow-md ring-sky-400/45;
+}
+.dv-period-btn-idle {
+  @apply text-muted-foreground hover:bg-white/60 hover:text-foreground;
+}
+.dark .dv-period-btn-idle {
+  @apply text-slate-400 hover:bg-slate-700/55 hover:text-slate-100;
+}
+.dv-period-hint-active {
+  @apply text-[#0b3a5c]/65;
+}
+.dark .dv-period-hint-active {
+  @apply text-sky-200/75;
+}
+
+/* Statistik ranglar */
+.stat-emerald {
+  @apply font-medium text-emerald-700;
+}
+.dark .stat-emerald {
+  @apply text-emerald-400;
+}
+.stat-amber {
+  @apply font-medium text-amber-700;
+}
+.dark .stat-amber {
+  @apply text-amber-400;
+}
+.stat-rose {
+  @apply font-medium text-rose-700;
+}
+.dark .stat-rose {
+  @apply text-rose-400;
+}
+.stat-sky {
+  @apply font-medium text-sky-700;
+}
+.dark .stat-sky {
+  @apply text-sky-400;
+}
+
+/* Bo‘lim bannerlari */
+.dept-banner {
+  @apply rounded-xl border p-3.5 shadow-sm;
+}
+.dept-banner-emerald {
+  @apply border-emerald-200 bg-emerald-50/70;
+}
+.dark .dept-banner-emerald {
+  @apply border-emerald-500/30 bg-emerald-500/10;
+}
+.dept-banner-violet {
+  @apply border-violet-200 bg-violet-50/70;
+}
+.dark .dept-banner-violet {
+  @apply border-violet-500/30 bg-violet-500/10;
+}
+.dept-banner-cyan {
+  @apply border-cyan-200 bg-cyan-50/70;
+}
+.dark .dept-banner-cyan {
+  @apply border-cyan-500/30 bg-cyan-500/10;
+}
+.dept-banner-amber {
+  @apply border-amber-200 bg-amber-50/70;
+}
+.dark .dept-banner-amber {
+  @apply border-amber-500/30 bg-amber-500/10;
+}
+.dept-banner-title-emerald {
+  @apply text-sm font-semibold text-emerald-900;
+}
+.dark .dept-banner-title-emerald {
+  @apply text-emerald-200;
+}
+.dept-banner-sub-emerald {
+  @apply mt-0.5 text-xs text-emerald-800/80;
+}
+.dark .dept-banner-sub-emerald {
+  @apply text-emerald-300/80;
+}
+.dept-banner-title-violet {
+  @apply text-sm font-semibold text-violet-900;
+}
+.dark .dept-banner-title-violet {
+  @apply text-violet-200;
+}
+.dept-banner-title-cyan {
+  @apply text-sm font-semibold text-cyan-950;
+}
+.dark .dept-banner-title-cyan {
+  @apply text-cyan-200;
+}
+.dept-banner-title-amber {
+  @apply text-sm font-semibold text-amber-950;
+}
+.dark .dept-banner-title-amber {
+  @apply text-amber-200;
 }
 
 .davomat-face-page {

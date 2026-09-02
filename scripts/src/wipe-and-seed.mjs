@@ -104,7 +104,7 @@ if (extra.length) {
 
 console.log("Seeding departments + login users...");
 
-const departments = ["Rekruting", "HR", "Trening", "Farmatsiya", "Koordinator", "Farmasevt", "Laboratoriya"];
+const departments = ["Rekruting", "HR", "Trening", "Koordinator", "Farmasevt", "Texnik", "Ombor", "Laboratoriya"];
 const deptIds = {};
 for (const name of departments) {
   const r = await pool.query(
@@ -120,11 +120,11 @@ const users = [
   ["Dilnoza HR", "hr", "HR", "hr1", "pass123", "+998901000003"],
   ["Jasur Trener", "trainer", "Trening", "trainer1", "pass123", "+998901000004"],
   ["Bahodir Direktor", "director", null, "director1", "pass123", "+998901000005"],
-  ["Madina Bo'lim boshlig'i", "department_head", "Farmatsiya", "dept_head1", "pass123", "+998901000006"],
+  ["Madina Bo'lim boshlig'i", "department_head", "HR", "dept_head1", "pass123", "+998901000006"],
   ["Sardor Mudir", "mudir", "Farmasevt", "mudir1", "pass123", "+998901000007"],
   ["Rustamova Lola", "koordinator", "Koordinator", "koordinator1", "pass123", "+998901000008"],
-  ["Akmal Texnik", "texnik", "Farmatsiya", "texnik1", "pass123", "+998901000009"],
-  ["Zarina Ombor", "ombor", "Farmatsiya", "ombor1", "pass123", "+998901000010"],
+  ["Akmal Texnik", "texnik", "Texnik", "texnik1", "pass123", "+998901000009"],
+  ["Zarina Ombor", "ombor", "Ombor", "ombor1", "pass123", "+998901000010"],
   ["Dilshod Farmasevt", "farmasevt", "Farmasevt", "farmasevt1", "pass123", "+998901000011"],
   ["Malika Stajyor", "stajyor", "Farmasevt", "stajyor1", "pass123", "+998901000012"],
 ];

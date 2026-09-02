@@ -260,7 +260,7 @@ router.post("/staffing-alerts/:id/confirm", requireAuth, async (req: AuthRequest
       deadline: null,
       reason,
       city: branch,
-      district: dept?.name || "Farmatsiya",
+      district: dept?.name || "—",
       priority:
         alert.employmentStatus === "need_hire" || alert.employmentStatus === "dismissed" ? "urgent" : "normal",
       status: "submitted",

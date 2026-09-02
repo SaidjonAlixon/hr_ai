@@ -22,14 +22,6 @@ const DEPARTMENT_ROLE_ALIASES: Record<string, { userRoles: string[]; orgRoles: s
   },
 };
 
-/** Bo‘limda ko‘rinmasligi kerak bo‘lgan rollar (masalan Farmatsiyada koordinator yo‘q). */
-const DEPARTMENT_ROLE_EXCLUDE: Record<string, { userRoles: string[]; orgRoles: string[] }> = {
-  Farmatsiya: {
-    userRoles: ["koordinator", "mudir"],
-    orgRoles: ["coordinator", "manager"],
-  },
-};
-
 export async function resolveDepartmentFilter(
   departmentId: string,
 ): Promise<DepartmentFilterMatch | null> {
@@ -44,14 +36,13 @@ export async function resolveDepartmentFilter(
   if (!dept) return null;
 
   const alias = DEPARTMENT_ROLE_ALIASES[dept.name];
-  const exclude = DEPARTMENT_ROLE_EXCLUDE[dept.name];
   return {
     departmentId: dept.id,
     departmentName: dept.name,
     userRoles: new Set(alias?.userRoles ?? []),
     orgRoles: new Set(alias?.orgRoles ?? []),
-    excludeUserRoles: new Set(exclude?.userRoles ?? []),
-    excludeOrgRoles: new Set(exclude?.orgRoles ?? []),
+    excludeUserRoles: new Set<string>(),
+    excludeOrgRoles: new Set<string>(),
   };
 }
 

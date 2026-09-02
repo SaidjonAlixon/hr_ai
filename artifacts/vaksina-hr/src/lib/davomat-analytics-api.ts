@@ -90,6 +90,17 @@ export type DavomatAnalytics = {
     statusLabel: string;
     lateMinutes: number;
     date: string;
+    staff: Array<{
+      id: number;
+      fullName: string;
+      position: string;
+      shiftLabel: string;
+      checkIn: string | null;
+      checkOut: string | null;
+      status: "on_time" | "late" | "absent" | "leave" | "incomplete";
+      statusLabel: string;
+      lateMinutes: number;
+    }>;
   }>;
   branchOpeningSummary: {
     date: string;

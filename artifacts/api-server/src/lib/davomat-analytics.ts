@@ -1,4 +1,10 @@
-import { shiftWindow, workScheduleForStaff, onTimeUntilHm } from "./shift-hours";
+import {
+  hmToMinutes,
+  onTimeUntilHm,
+  shiftWindow,
+  workScheduleForStaff,
+  type WorkSchedule,
+} from "./shift-hours";
 import { displayBranchName } from "./geo-location";
 
 export const PHARMACY_SEGMENT_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
@@ -28,7 +34,22 @@ type EmpDay = {
   date: string;
   status: string;
   checkIn: string;
+  checkOut?: string;
   lateArrivalMin: number;
+};
+
+type BranchStaffStatus = "on_time" | "late" | "absent" | "leave" | "incomplete";
+
+type BranchStaffRow = {
+  id: number;
+  fullName: string;
+  position: string;
+  shiftLabel: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  status: BranchStaffStatus;
+  statusLabel: string;
+  lateMinutes: number;
 };
 
 type EmpRow = {
@@ -161,6 +182,7 @@ export type DavomatAnalyticsPayload = {
     statusLabel: string;
     lateMinutes: number;
     date: string;
+    staff: BranchStaffRow[];
   }>;
   branchOpeningSummary: {
     date: string;
@@ -299,6 +321,143 @@ function isBranchManager(meta: EmployeeMeta | undefined, emp: EmpRow): boolean {
   return meta?.userRole === "mudir" || emp.orgRole === "manager" || meta?.orgRole === "manager";
 }
 
+function normalizeBranchKey(location: string | null | undefined): string {
+  return (location || "").split("·")[0].split("|")[0].trim().toLowerCase();
+}
+
+const DEFAULT_GRACE_MINUTES = 15;
+
+function graceMinutesFor(schedule: WorkSchedule): number {
+  return schedule.graceMinutes > 0 ? schedule.graceMinutes : DEFAULT_GRACE_MINUTES;
+}
+
+function classifyCheckIn(
+  checkInHm: string | null,
+  schedule: WorkSchedule,
+): { status: "on_time" | "late"; lateMinutes: number } {
+  if (!checkInHm || checkInHm === "—") return { status: "on_time", lateMinutes: 0 };
+  const grace = graceMinutesFor(schedule);
+  const checkMin = hmToMinutes(checkInHm);
+  const graceEndMin = hmToMinutes(schedule.start) + grace;
+  if (checkMin <= graceEndMin) return { status: "on_time", lateMinutes: 0 };
+  return { status: "late", lateMinutes: checkMin - hmToMinutes(schedule.start) };
+}
+
+function classifyStaffDay(
+  day: EmpDay | undefined,
+  schedule: WorkSchedule,
+): {
+  status: BranchStaffStatus;
+  statusLabel: string;
+  checkIn: string | null;
+  checkOut: string | null;
+  lateMinutes: number;
+} {
+  if (!day || day.status === "absent") {
+    return {
+      status: "absent",
+      statusLabel: "Kelmagan",
+      checkIn: null,
+      checkOut: null,
+      lateMinutes: 0,
+    };
+  }
+  if (day.status === "leave") {
+    return {
+      status: "leave",
+      statusLabel: "Ta'tilda",
+      checkIn: null,
+      checkOut: null,
+      lateMinutes: 0,
+    };
+  }
+
+  const checkIn = day.checkIn && day.checkIn !== "—" ? day.checkIn : null;
+  const checkOut = day.checkOut && day.checkOut !== "—" ? day.checkOut : null;
+  if (!checkIn) {
+    return {
+      status: "absent",
+      statusLabel: "Kelmagan",
+      checkIn: null,
+      checkOut,
+      lateMinutes: 0,
+    };
+  }
+
+  const cls = classifyCheckIn(checkIn, schedule);
+  if (cls.status === "late") {
+    return {
+      status: "late",
+      statusLabel: "Kechikdi",
+      checkIn,
+      checkOut,
+      lateMinutes: cls.lateMinutes,
+    };
+  }
+  if (!checkOut && day.status === "incomplete") {
+    return {
+      status: "incomplete",
+      statusLabel: STATUS_LABELS.incomplete,
+      checkIn,
+      checkOut: null,
+      lateMinutes: 0,
+    };
+  }
+  return {
+    status: "on_time",
+    statusLabel: "Vaqtida",
+    checkIn,
+    checkOut,
+    lateMinutes: 0,
+  };
+}
+
+const STAFF_ROLE_ORDER: Record<string, number> = {
+  manager: 0,
+  mudir: 0,
+  pharmacist: 1,
+  farmasevt: 1,
+  intern: 2,
+  stajyor: 2,
+};
+
+function buildBranchStaff(
+  report: ReportLike,
+  metaById: Map<number, EmployeeMeta>,
+  mudir: EmpRow,
+  targetDate: string,
+): BranchStaffRow[] {
+  const branchKey = normalizeBranchKey(mudir.location);
+  const staffEmps = report.employees.filter((emp) => {
+    if (emp.id === mudir.id) return true;
+    if (!branchKey) return false;
+    return normalizeBranchKey(emp.location) === branchKey;
+  });
+
+  return staffEmps
+    .map((emp) => {
+      const m = metaById.get(emp.id);
+      const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? emp.orgRole, m?.shiftType);
+      const day = emp.days.find((x) => x.date === targetDate);
+      const cls = classifyStaffDay(day, schedule);
+      const roleKey = m?.userRole || emp.orgRole || "";
+      return {
+        id: emp.id,
+        fullName: emp.fullName,
+        position: emp.position || ROLE_LABELS[roleKey] || roleKey || "Xodim",
+        shiftLabel: schedule.label,
+        checkIn: cls.checkIn,
+        checkOut: cls.checkOut,
+        status: cls.status,
+        statusLabel: cls.statusLabel,
+        lateMinutes: cls.lateMinutes,
+        roleOrder: STAFF_ROLE_ORDER[roleKey] ?? 5,
+      };
+    })
+    .sort((a, b) => a.roleOrder - b.roleOrder || a.fullName.localeCompare(b.fullName, "uz"))
+    .map(({ roleOrder: _roleOrder, ...row }) => row);
+}
+
 function buildBranchOpenings(
   report: ReportLike,
   metaById: Map<number, EmployeeMeta>,
@@ -311,29 +470,29 @@ function buildBranchOpenings(
 
     const branchName = displayBranchName(e.location) || e.location?.trim() || e.fullName;
     const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+    const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
+    const mudirDay = classifyStaffDay(day, schedule);
 
     let status: "on_time" | "late" | "absent" | "leave";
     let statusLabel: string;
-    let checkIn: string | null = null;
-    let lateMinutes = 0;
+    let checkIn: string | null = mudirDay.checkIn;
+    let lateMinutes = mudirDay.lateMinutes;
 
-    if (!day || day.status === "absent") {
-      status = "absent";
-      statusLabel = "Ochilmagan";
-    } else if (day.status === "leave") {
+    if (mudirDay.status === "leave") {
       status = "leave";
       statusLabel = "Ta'tilda";
+    } else if (mudirDay.status === "absent" || !checkIn) {
+      status = "absent";
+      statusLabel = "Ochilmagan";
+      checkIn = null;
+      lateMinutes = 0;
+    } else if (mudirDay.status === "late") {
+      status = "late";
+      statusLabel = "Kech ochilgan";
     } else {
-      checkIn = day.checkIn && day.checkIn !== "—" ? day.checkIn : null;
-      if (day.status === "late" || day.lateArrivalMin > 0) {
-        status = "late";
-        statusLabel = "Kech ochilgan";
-        lateMinutes = day.lateArrivalMin;
-      } else {
-        status = "on_time";
-        statusLabel = "Vaqtida";
-      }
+      status = "on_time";
+      statusLabel = "Vaqtida";
     }
 
     openings.push({
@@ -342,12 +501,13 @@ function buildBranchOpenings(
       managerName: e.fullName,
       shiftLabel: schedule.label,
       expectedOpen: schedule.start,
-      graceUntil: onTimeUntilHm(schedule.start, schedule.graceMinutes),
+      graceUntil: onTimeUntilHm(schedule.start, grace),
       checkIn,
       status,
       statusLabel,
       lateMinutes,
       date: targetDate,
+      staff: buildBranchStaff(report, metaById, e, targetDate),
     });
   }
 

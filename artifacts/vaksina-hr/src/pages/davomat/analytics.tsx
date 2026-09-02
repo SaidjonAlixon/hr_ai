@@ -45,6 +45,12 @@ import {
 import { cn } from "@/lib/utils";
 import { useChartTheme } from "@/lib/chart-theme";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -164,13 +170,97 @@ function branchStatusStyle(status: "on_time" | "late" | "absent" | "leave") {
   return "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-300";
 }
 
-function BranchRow({ b }: { b: DavomatAnalytics["branchOpenings"][number] }) {
-  const opened = b.checkIn && b.checkIn !== "—" ? b.checkIn : null;
+function onTimeWindowLabel(expectedOpen: string, graceUntil: string) {
+  if (graceUntil && graceUntil !== expectedOpen) {
+    return `Norma: ${expectedOpen}–${graceUntil}`;
+  }
+  return `Norma: ${expectedOpen} gacha`;
+}
+
+function staffStatusStyle(status: string) {
+  if (status === "on_time" || status === "present") {
+    return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+  }
+  if (status === "late") return "bg-amber-500/15 text-amber-800 dark:text-amber-300";
+  if (status === "leave") return "bg-violet-500/15 text-violet-700 dark:text-violet-300";
+  if (status === "incomplete") return "bg-sky-500/15 text-sky-700 dark:text-sky-300";
+  return "bg-rose-500/15 text-rose-700 dark:text-rose-300";
+}
+
+type BranchOpening = DavomatAnalytics["branchOpenings"][number];
+
+function BranchStaffDialog({
+  branch,
+  open,
+  onOpenChange,
+}: {
+  branch: BranchOpening | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}) {
+  if (!branch) return null;
+  const staff = branch.staff ?? [];
 
   return (
-    <div
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[85vh] max-w-lg overflow-hidden p-0">
+        <DialogHeader className="border-b border-border px-4 py-3">
+          <DialogTitle className="text-left text-base">{branch.branchName}</DialogTitle>
+          <p className="text-left text-xs text-muted-foreground">
+            Mudir: {branch.managerName} · {branch.shiftLabel} · {onTimeWindowLabel(branch.expectedOpen, branch.graceUntil)}
+          </p>
+        </DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto p-3">
+          {staff.length ? (
+            <table className="analytics-table w-full text-sm">
+              <thead>
+                <tr>
+                  <th>Xodim</th>
+                  <th>Smena</th>
+                  <th>Keldi</th>
+                  <th>Ketdi</th>
+                  <th>Holat</th>
+                </tr>
+              </thead>
+              <tbody>
+                {staff.map((s) => (
+                  <tr key={s.id}>
+                    <td>
+                      <p className="font-medium leading-tight">{s.fullName}</p>
+                      <p className="text-[10px] text-muted-foreground">{s.position}</p>
+                    </td>
+                    <td className="text-xs text-muted-foreground">{s.shiftLabel}</td>
+                    <td className="tabular-nums font-medium">{s.checkIn || "—"}</td>
+                    <td className="tabular-nums text-muted-foreground">{s.checkOut || "—"}</td>
+                    <td>
+                      <span className={cn("inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold", staffStatusStyle(s.status))}>
+                        {s.statusLabel}
+                        {s.lateMinutes > 0 ? ` (+${s.lateMinutes})` : ""}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p className="py-8 text-center text-sm text-muted-foreground">Bu filialda xodim topilmadi</p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function BranchRow({ b, onSelect }: { b: BranchOpening; onSelect: (b: BranchOpening) => void }) {
+  const opened = b.checkIn && b.checkIn !== "—" ? b.checkIn : null;
+  const windowLabel = onTimeWindowLabel(b.expectedOpen, b.graceUntil);
+
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(b)}
       className={cn(
-        "flex items-center gap-2 rounded-lg border px-2 py-1.5",
+        "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left transition hover:brightness-110",
         branchStatusStyle(b.status),
       )}
     >
@@ -178,15 +268,16 @@ function BranchRow({ b }: { b: DavomatAnalytics["branchOpenings"][number] }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-xs font-semibold leading-tight">{b.branchName}</p>
         <p className="truncate text-[10px] leading-tight opacity-75">{b.managerName}</p>
+        {(b.staff?.length ?? 0) > 1 ? (
+          <p className="text-[9px] opacity-60">{b.staff.length} xodim · batafsil</p>
+        ) : null}
       </div>
       <div className="shrink-0 text-right leading-tight">
         <p className="text-[9px] font-medium uppercase tracking-wide opacity-60">Ochildi</p>
         {opened ? (
           <>
             <p className="text-sm font-bold tabular-nums">{opened}</p>
-            <p className="text-[9px] tabular-nums opacity-60">
-              vaqtida {b.expectedOpen}–{b.graceUntil ?? b.expectedOpen}
-            </p>
+            <p className="text-[9px] tabular-nums opacity-60">{windowLabel}</p>
             {b.lateMinutes > 0 ? (
               <p className="text-[9px] font-semibold tabular-nums text-amber-700 dark:text-amber-300">
                 +{b.lateMinutes} daq
@@ -196,13 +287,11 @@ function BranchRow({ b }: { b: DavomatAnalytics["branchOpenings"][number] }) {
         ) : (
           <>
             <p className="text-xs font-semibold opacity-70">—</p>
-            <p className="text-[9px] tabular-nums opacity-60">
-              vaqtida {b.expectedOpen}–{b.graceUntil ?? b.expectedOpen}
-            </p>
+            <p className="text-[9px] tabular-nums opacity-60">{windowLabel}</p>
           </>
         )}
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -214,12 +303,14 @@ function BranchStatusColumn({
   tone,
   items,
   empty,
+  onSelectBranch,
 }: {
   title: string;
   count: number;
   tone: "emerald" | "amber" | "rose";
   items: DavomatAnalytics["branchOpenings"];
   empty: string;
+  onSelectBranch: (b: BranchOpening) => void;
 }) {
   const toneClass =
     tone === "emerald"
@@ -242,7 +333,7 @@ function BranchStatusColumn({
       </div>
       <div className="max-h-[220px] space-y-1 overflow-y-auto p-2">
         {items.length ? (
-          items.map((b) => <BranchRow key={b.branchId} b={b} />)
+          items.map((b) => <BranchRow key={b.branchId} b={b} onSelect={onSelectBranch} />)
         ) : (
           <p className="py-6 text-center text-[11px] text-muted-foreground">{empty}</p>
         )}
@@ -263,6 +354,13 @@ function BranchOpeningsPanel({
   rangeLabel?: string;
 }) {
   const [tab, setTab] = useState<BranchStatusTab>("late");
+  const [selectedBranch, setSelectedBranch] = useState<BranchOpening | null>(null);
+  const [staffOpen, setStaffOpen] = useState(false);
+
+  const openBranchStaff = (b: BranchOpening) => {
+    setSelectedBranch(b);
+    setStaffOpen(true);
+  };
 
   const grouped = useMemo(() => {
     const onTime = openings.filter((b) => b.status === "on_time");
@@ -324,16 +422,33 @@ function BranchOpeningsPanel({
         <>
           <div className="hidden gap-3 md:grid md:grid-cols-3">
             {tabs.map((t) => (
-              <BranchStatusColumn key={t.key} title={t.label} count={t.count} tone={t.tone} items={t.items} empty={t.empty} />
+              <BranchStatusColumn
+                key={t.key}
+                title={t.label}
+                count={t.count}
+                tone={t.tone}
+                items={t.items}
+                empty={t.empty}
+                onSelectBranch={openBranchStaff}
+              />
             ))}
           </div>
           <div className="md:hidden">
             {tabs
               .filter((t) => t.key === tab)
               .map((t) => (
-                <BranchStatusColumn key={t.key} title={t.label} count={t.count} tone={t.tone} items={t.items} empty={t.empty} />
+                <BranchStatusColumn
+                  key={t.key}
+                  title={t.label}
+                  count={t.count}
+                  tone={t.tone}
+                  items={t.items}
+                  empty={t.empty}
+                  onSelectBranch={openBranchStaff}
+                />
               ))}
           </div>
+          <BranchStaffDialog branch={selectedBranch} open={staffOpen} onOpenChange={setStaffOpen} />
         </>
       )}
     </div>

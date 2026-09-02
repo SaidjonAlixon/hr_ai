@@ -5,7 +5,7 @@ const departments = [
   { name: "Rekruting" },
   { name: "HR" },
   { name: "Trening" },
-  { name: "Farmatsiya" },
+  { name: "Koordinator" },
   { name: "Farmasevt" },
   { name: "Laboratoriya" },
 ];
@@ -16,7 +16,7 @@ const users = [
   { fullName: "Dilnoza HR", role: "hr", login: "hr1", password: "pass123", phone: "+998901000003", dept: "HR" },
   { fullName: "Jasur Trener", role: "trainer", login: "trainer1", password: "pass123", phone: "+998901000004", dept: "Trening" },
   { fullName: "Bahodir Direktor", role: "director", login: "director1", password: "pass123", phone: "+998901000005" },
-  { fullName: "Madina Bo'lim boshlig'i", role: "department_head", login: "dept_head1", password: "pass123", phone: "+998901000006", dept: "Farmatsiya" },
+  { fullName: "Madina Bo'lim boshlig'i", role: "department_head", login: "dept_head1", password: "pass123", phone: "+998901000006", dept: "HR" },
 ];
 
 async function main() {

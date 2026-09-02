@@ -1252,6 +1252,7 @@ function oncePerDayFail(
 
 async function applyFacePunch(opts: {
   emp: WorkplaceEmp;
+  userRole: string;
   latitude: number;
   longitude: number;
   distanceMeters: number;
@@ -1262,8 +1263,8 @@ async function applyFacePunch(opts: {
   | { ok: true; payload: Record<string, unknown> }
   | PunchFail
 > {
-  const { emp, latitude, longitude, distanceMeters, allowedMeters, faceProfileId, action } = opts;
-  const hours = hoursForStaff(emp.orgRole, emp.shiftType, user.role);
+  const { emp, userRole, latitude, longitude, distanceMeters, allowedMeters, faceProfileId, action } = opts;
+  const hours = hoursForStaff(emp.orgRole, emp.shiftType, userRole, emp.shiftLabel);
   const workDate = todayTashkent();
   const now = new Date();
   const dateFilter = and(
@@ -1866,6 +1867,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
 
     const punched = await applyFacePunch({
       emp: resolved.emp,
+      userRole: resolved.user.role,
       latitude,
       longitude,
       distanceMeters: resolved.gate.distanceMeters,

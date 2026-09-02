@@ -194,7 +194,7 @@ export default function ReytingPage() {
 
 function Header({ title, subtitle }: { title: string; subtitle: string }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-5 py-6 text-foreground dark:text-white shadow-lg">
+    <div className="hero-dark relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-5 py-6 shadow-lg">
       <div className="pointer-events-none absolute -right-10 -top-10 h-40 w-40 rounded-full bg-cyan-400/10 blur-2xl" />
       <div className="relative">
         <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">

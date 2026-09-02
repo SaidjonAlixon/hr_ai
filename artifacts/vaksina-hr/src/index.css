@@ -260,11 +260,24 @@
 }
 
 .surface-brand {
-  @apply bg-primary text-primary-foreground;
+  @apply bg-primary text-white;
 }
 
 .surface-brand-subtle {
-  @apply text-primary-foreground/75;
+  @apply text-white/75;
+}
+
+/* Dark gradient heroes — always light text (independent of theme) */
+.hero-dark {
+  @apply text-white;
+}
+
+.hero-dark :where(.text-muted-foreground) {
+  @apply text-white/75;
+}
+
+.hero-dark :where(.text-foreground) {
+  @apply text-white;
 }
 
 /* Davomat Face — modern palette */

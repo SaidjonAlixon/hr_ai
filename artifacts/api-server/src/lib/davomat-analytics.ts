@@ -1,17 +1,7 @@
 import { shiftWindow } from "./shift-hours";
 
-export const PHARMACY_SEGMENT_USER_ROLES = new Set([
-  "mudir",
-  "farmasevt",
-  "stajyor",
-  "koordinator",
-]);
-export const PHARMACY_SEGMENT_ORG_ROLES = new Set([
-  "manager",
-  "pharmacist",
-  "intern",
-  "coordinator",
-]);
+export const PHARMACY_SEGMENT_USER_ROLES = new Set(["farmasevt", "stajyor", "koordinator"]);
+export const PHARMACY_SEGMENT_ORG_ROLES = new Set(["pharmacist", "intern", "coordinator"]);
 
 export type DavomatSegment = "all" | "office" | "pharmacy";
 

@@ -12,15 +12,15 @@ export function DavomatAnalyticsSummary({ enabled }: { enabled: boolean }) {
   if (!enabled) return null;
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-[#0a1628] via-[#0f2137] to-[#0a1628] text-foreground dark:text-white shadow-xl">
+    <section className="hero-dark overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-[#0a1628] via-[#0f2137] to-[#0a1628] shadow-xl">
       <div className="flex flex-col gap-3 border-b border-slate-700/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">Davomat tahlili</p>
-          <h2 className="text-lg font-bold md:text-xl">Boshqaruv paneli — davomat KPI</h2>
+          <h2 className="text-lg font-bold text-white md:text-xl">Boshqaruv paneli — davomat KPI</h2>
           <p className="text-sm text-muted-foreground">Ofis va apteka tarmog‘i alohida · 30 kunlik ko‘rinish</p>
         </div>
         <Link href="/davomat/analytics">
-          <span className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-foreground dark:text-white hover:bg-sky-500">
+          <span className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500">
             To‘liq analitika
             <ArrowRight className="h-4 w-4" />
           </span>
@@ -69,7 +69,7 @@ export function DavomatAnalyticsSummary({ enabled }: { enabled: boolean }) {
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <span className="inline-flex items-center gap-1.5 text-muted-foreground">
               <TrendingUp className="h-4 w-4 text-emerald-400" />
-              Bugun: <strong className="text-foreground dark:text-white">{data.today.attendanceRate}%</strong>
+              Bugun: <strong className="text-white">{data.today.attendanceRate}%</strong>
             </span>
             <span className="text-muted-foreground">{data.today.present} keldi</span>
             <span className="text-amber-400">{data.today.late} kechikdi</span>

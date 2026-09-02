@@ -556,7 +556,7 @@ export default function ChecklistPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-4 pb-28 sm:space-y-6 sm:pb-10">
       {/* Hero */}
-      <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-foreground dark:text-white shadow-lg sm:px-6 sm:py-7">
+      <div className="hero-dark relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 shadow-lg sm:px-6 sm:py-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-20 left-10 h-48 w-48 rounded-full bg-amber-400/10 blur-2xl" />
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
@@ -577,7 +577,7 @@ export default function ChecklistPage() {
           </div>
           <Button
             variant="secondary"
-            className="w-full shrink-0 bg-white/10 text-foreground dark:text-white hover:bg-white/20 sm:w-auto"
+            className="w-full shrink-0 bg-white/10 text-white hover:bg-white/20 sm:w-auto"
             onClick={() => setHistoryOpen(true)}
           >
             <History className="mr-1.5 h-4 w-4" />

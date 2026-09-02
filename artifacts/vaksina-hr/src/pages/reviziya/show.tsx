@@ -66,10 +66,10 @@ export default function ReviziyaDocPage() {
 
   return (
     <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
-      <div className="bg-gradient-to-br from-[#2e1065] to-[#0b3a5c] px-4 py-5 text-foreground dark:text-white md:px-6">
+      <div className="hero-dark bg-gradient-to-br from-[#2e1065] to-[#0b3a5c] px-4 py-5 md:px-6">
         <div className="mx-auto max-w-3xl">
           <Link href="/reviziya">
-            <span className="inline-flex items-center text-sm text-violet-200 hover:text-foreground dark:text-white">
+            <span className="inline-flex items-center text-sm text-violet-200 hover:text-white">
               <ArrowLeft className="mr-1 h-4 w-4" /> Reviziya
             </span>
           </Link>

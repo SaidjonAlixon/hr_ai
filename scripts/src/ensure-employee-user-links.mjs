@@ -28,7 +28,7 @@ if (mudir.rows[0]) {
   }
 }
 
-// koordinator1 → Aziza coordinator
+// koordinator1 → Rustamova Lola (koordinator)
 const koor = await pool.query(`SELECT id FROM users WHERE login = 'koordinator1' LIMIT 1`);
 if (koor.rows[0]) {
   const coord = await pool.query(

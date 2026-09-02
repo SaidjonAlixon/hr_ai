@@ -225,14 +225,14 @@ export default function ReviziyaPage() {
 
   return (
     <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
-      <div className="relative overflow-hidden bg-gradient-to-br from-[#2e1065] via-[#4c1d95] to-[#0b3a5c] px-4 py-6 text-foreground dark:text-white md:px-6 md:py-8">
+      <div className="hero-dark relative overflow-hidden bg-gradient-to-br from-[#2e1065] via-[#4c1d95] to-[#0b3a5c] px-4 py-6 md:px-6 md:py-8">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-white/10 blur-2xl" />
         <div className="pointer-events-none absolute -bottom-20 left-1/3 h-40 w-40 rounded-full bg-fuchsia-400/20 blur-2xl" />
         <div className="relative mx-auto max-w-6xl">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-200">Ichki audit · yig‘uv</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight md:text-[28px]">Reviziya bo‘limi</h1>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white md:text-[28px]">Reviziya bo‘limi</h1>
               <p className="mt-2 max-w-2xl text-sm leading-relaxed text-violet-100/90">
                 Filial qoldig‘i, inventarizatsiya, kassa va inkassatsiya. Hujjatlar: rahbar → bosh buxgalter.
                 Taqiq: narx, vozvrat, qo‘lda qoldiq, o‘chirish — faqat storno.

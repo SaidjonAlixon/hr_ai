@@ -312,15 +312,15 @@ export default function ChecklistHolatiPage() {
   if (isCoordOnly) {
     return (
       <div className="mx-auto max-w-3xl space-y-4 pb-10 sm:space-y-6">
-        <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-foreground dark:text-white shadow-lg sm:px-6 sm:py-7">
+        <div className="hero-dark relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0b3a5c] via-[#0b1a2e] to-[#06101c] px-4 py-5 shadow-lg sm:px-6 sm:py-7">
           <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
           <div className="relative">
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
               <ClipboardCheck className="h-3.5 w-3.5" />
               Koordinatorlar
             </div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Reyting</h1>
-            <p className="mt-1.5 max-w-xl text-xs text-muted-foreground sm:text-sm">
+            <h1 className="text-xl font-bold tracking-tight text-white sm:text-3xl">Reyting</h1>
+            <p className="mt-1.5 max-w-xl text-xs text-white/80 sm:text-sm">
               Kunlik, haftalik va oylik natija — tashrif, ball, qamrov va GPS asosida.
             </p>
           </div>
@@ -332,23 +332,23 @@ export default function ChecklistHolatiPage() {
 
   return (
     <div className="mx-auto max-w-7xl space-y-4 pb-10 sm:space-y-6">
-      <div className="relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 text-foreground dark:text-white shadow-lg sm:px-6 sm:py-7">
+      <div className="hero-dark relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0b3a5c] via-[#0b1a2e] to-[#06101c] px-4 py-5 shadow-lg sm:px-6 sm:py-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100">
               <ClipboardCheck className="h-3.5 w-3.5" />
               Nazorat · Tashriflar
             </div>
-            <h1 className="text-xl font-bold tracking-tight sm:text-3xl">Cheklist holati</h1>
-            <p className="mt-1.5 max-w-xl text-xs text-muted-foreground sm:text-sm">
+            <h1 className="text-xl font-bold tracking-tight text-white sm:text-3xl">Cheklist holati</h1>
+            <p className="mt-1.5 max-w-xl text-xs text-white/80 sm:text-sm">
               Dashboard, tashriflar, reyting va har bir koordinatorning filial qamrovi.
             </p>
           </div>
           {tab === "tashriflar" && canExportChecklistStatus(user?.role) && (
             <Button
               variant="secondary"
-              className="w-full bg-white/10 text-foreground dark:text-white hover:bg-white/20 sm:w-auto"
+              className="w-full border-white/25 bg-white/10 text-white hover:bg-white/20 sm:w-auto"
               onClick={() => void handleExcel()}
               disabled={exporting || filtered.length === 0}
             >

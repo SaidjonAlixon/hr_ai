@@ -177,11 +177,11 @@ export default function HisobkitobPage() {
           <p className="surface-brand-subtle text-xs">Savdo, reja, fiks, bonus va jarimalar — barcha lavozimlar. Oylik (KPI) bilan bog‘langan.</p>
         </div>
         <div className="flex items-center gap-1 rounded-lg bg-white/10 p-0.5">
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
             <ChevronLeft className="h-4 w-4" />
           </Button>
           <span className="min-w-[120px] text-center text-[13px] font-semibold">{monthLabelUz(month)}</span>
-          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => setMonth(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey() && month >= "2026-08"}>
+          <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey() && month >= "2026-08"}>
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>

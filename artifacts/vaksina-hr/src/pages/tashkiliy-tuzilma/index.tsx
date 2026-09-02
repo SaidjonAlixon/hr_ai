@@ -750,7 +750,7 @@ function NodeCard({
       {exec ? (
         <div
           className={cn(
-            "relative overflow-hidden rounded-[22px] bg-gradient-to-br px-4 py-3.5 text-foreground dark:text-white shadow-[0_18px_40px_-18px_rgba(7,30,51,0.7)]",
+            "hero-dark relative overflow-hidden rounded-[22px] bg-gradient-to-br px-4 py-3.5 shadow-[0_18px_40px_-18px_rgba(7,30,51,0.7)]",
             tone.fill,
           )}
         >
@@ -1343,9 +1343,9 @@ export default function TashkiliyTuzilmaPage() {
         </div>
         <h1 className="text-xl font-semibold tracking-tight text-[#0b3a5c] sm:text-2xl">Tashkiliy tuzilma</h1>
         <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 text-[12px] font-medium sm:text-[13px]">
-          <span className="shrink-0 rounded-full bg-[#071E33] px-2.5 py-1 text-foreground dark:text-white">Ta’sischi</span>
+          <span className="shrink-0 rounded-full bg-[#071E33] px-2.5 py-1 text-white">Ta’sischi</span>
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="shrink-0 rounded-full bg-[#0B3A5C] px-2.5 py-1 text-foreground dark:text-white">Direktor</span>
+          <span className="shrink-0 rounded-full bg-[#0B3A5C] px-2.5 py-1 text-white">Direktor</span>
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
           {LEGEND.map((item) => (
             <span

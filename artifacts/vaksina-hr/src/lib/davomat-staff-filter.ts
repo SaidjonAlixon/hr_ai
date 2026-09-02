@@ -1,10 +1,18 @@
 import type { DavomatEmployee } from "./davomat-api";
-import { isPharmacyShiftRole, normalizeShiftType } from "./work-schedule";
+import { normalizeShiftType } from "./work-schedule";
 
 export type DavomatStaffFilter = "all" | "shift_one" | "shift_two" | "office" | "external";
 
-const PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
-const PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "coordinator", "supervisor"]);
+/** Apteka smenalari — mudir, farmasevt, stajyor */
+const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
+const SHIFT_PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern"]);
+const SHIFT_PHARMACY_POSITION_RE = /\b(mudir|farmasevt|stajyor)\b/i;
+
+/** Ofisdan tashqari — faqat farmasevt, stajyor, koordinator */
+const NON_OFFICE_USER_ROLES = new Set(["farmasevt", "stajyor", "koordinator"]);
+const NON_OFFICE_ORG_ROLES = new Set(["pharmacist", "intern", "coordinator"]);
+const NON_OFFICE_POSITION_RE = /\b(farmasevt|stajyor|koordinator)\b/i;
+
 const EXTERNAL_USER_ROLES = new Set([
   "revizor",
   "reviziya_rahbar",
@@ -17,8 +25,6 @@ const EXTERNAL_USER_ROLES = new Set([
   "trainer",
 ]);
 
-const PHARMACY_POSITION_RE = /\b(mudir|farmasevt|stajyor|koordinator)\b/i;
-
 function orgRoleFromUserRole(role?: string | null): string | null {
   if (role === "mudir") return "manager";
   if (role === "farmasevt") return "pharmacist";
@@ -27,16 +33,37 @@ function orgRoleFromUserRole(role?: string | null): string | null {
   return null;
 }
 
+/** @deprecated isShiftPharmacyStaff yoki isNonOfficeStaff ishlating */
 export function isPharmacyDavomatStaff(emp: {
   userRole?: string | null;
   orgRole?: string | null;
   position?: string | null;
 }): boolean {
-  if (PHARMACY_USER_ROLES.has(emp.userRole || "")) return true;
-  if (PHARMACY_ORG_ROLES.has(emp.orgRole || "")) return true;
+  return isShiftPharmacyStaff(emp);
+}
+
+export function isShiftPharmacyStaff(emp: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+}): boolean {
+  if (SHIFT_PHARMACY_USER_ROLES.has(emp.userRole || "")) return true;
+  if (SHIFT_PHARMACY_ORG_ROLES.has(emp.orgRole || "")) return true;
   const inferred = orgRoleFromUserRole(emp.userRole);
-  if (inferred && PHARMACY_ORG_ROLES.has(inferred)) return true;
-  return PHARMACY_POSITION_RE.test(emp.position || "");
+  if (inferred && SHIFT_PHARMACY_ORG_ROLES.has(inferred)) return true;
+  return SHIFT_PHARMACY_POSITION_RE.test(emp.position || "");
+}
+
+export function isNonOfficeStaff(emp: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+}): boolean {
+  if (NON_OFFICE_USER_ROLES.has(emp.userRole || "")) return true;
+  if (NON_OFFICE_ORG_ROLES.has(emp.orgRole || "")) return true;
+  const inferred = orgRoleFromUserRole(emp.userRole);
+  if (inferred && NON_OFFICE_ORG_ROLES.has(inferred)) return true;
+  return NON_OFFICE_POSITION_RE.test(emp.position || "");
 }
 
 function isShiftTwo(emp: {
@@ -61,9 +88,10 @@ export function classifyDavomatStaff(emp: {
   workEnd?: string;
 }): Exclude<DavomatStaffFilter, "all"> {
   if (EXTERNAL_USER_ROLES.has(emp.userRole || "")) return "external";
-  if (isPharmacyDavomatStaff(emp)) {
+  if (isShiftPharmacyStaff(emp)) {
     return isShiftTwo(emp) ? "shift_two" : "shift_one";
   }
+  if (isNonOfficeStaff(emp)) return "shift_one";
   return "office";
 }
 
@@ -85,6 +113,7 @@ export function staffFilterLabel(filter: DavomatStaffFilter): string {
 /** Jadval va katak uchun qisqa smena nomi */
 export function smenaLabelShort(emp: DavomatEmployee): string {
   if (EXTERNAL_USER_ROLES.has(emp.userRole || "")) return "Tashqi xodimlar";
+  if (emp.userRole === "koordinator" || emp.orgRole === "coordinator") return "Koordinator";
   const kind = classifyDavomatStaff(emp);
   switch (kind) {
     case "shift_one":
@@ -129,17 +158,17 @@ export function matchesStaffFilter(
   if (filter === "all") return true;
 
   const external = EXTERNAL_USER_ROLES.has(emp.userRole || "");
+  const shiftPharmacy = isShiftPharmacyStaff(emp);
   const shiftTwo = isShiftTwo(emp);
-  const pharmacy = isPharmacyDavomatStaff(emp);
+  const nonOffice = isNonOfficeStaff(emp);
 
   if (filter === "external") {
     return external || Boolean(farOfficeIds?.has(emp.id));
   }
-  if (external) return false;
 
-  if (filter === "shift_two") return shiftTwo;
-  if (filter === "shift_one") return pharmacy && !shiftTwo;
-  if (filter === "office") return !pharmacy;
+  if (filter === "shift_two") return shiftPharmacy && shiftTwo;
+  if (filter === "shift_one") return shiftPharmacy && !shiftTwo;
+  if (filter === "office") return !nonOffice;
   return false;
 }
 
@@ -152,7 +181,12 @@ export const STAFF_FILTER_OPTIONS: Array<{
   { key: "all", label: "Hammasi", hint: "Barcha xodimlar", hours: "Turiga qarab" },
   { key: "shift_one", label: "1-smena", hint: "08:00 – 17:00", hours: "08:00–17:00" },
   { key: "shift_two", label: "2-smena", hint: "17:00 – 23:45", hours: "17:00–23:45" },
-  { key: "office", label: "Ofis", hint: "09:00 – 18:00", hours: "09:00–18:00" },
+  {
+    key: "office",
+    label: "Ofis",
+    hint: "09:00 – 18:00 (farmasevt/stajyor/koordinator dan tashqari)",
+    hours: "09:00–18:00",
+  },
   {
     key: "external",
     label: "Tashqi xodimlar",

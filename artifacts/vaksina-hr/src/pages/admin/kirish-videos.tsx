@@ -158,7 +158,7 @@ export default function AdminKirishVideosPage() {
       <div className="surface-brand shadow-sm sm:px-6 sm:py-5">
         <Link
           href="/dashboard"
-          className="mb-3 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-foreground dark:text-white ring-1 ring-white/20 hover:bg-white/25"
+          className="mb-3 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/25"
         >
           <ArrowLeft className="h-4 w-4" />
           Chiqish

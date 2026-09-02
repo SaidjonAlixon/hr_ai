@@ -47,11 +47,11 @@ import {
 function MonthNav({ month, onChange }: { month: string; onChange: (m: string) => void }) {
   return (
     <div className="flex items-center gap-0.5 rounded-lg bg-white/10 p-0.5">
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => onChange(shiftMonthKey(month, -1))}>
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, -1))}>
         <ChevronLeft className="h-4 w-4" />
       </Button>
       <span className="min-w-[118px] px-1 text-center text-[13px] font-semibold">{monthLabelUz(month)}</span>
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-foreground dark:text-white hover:bg-white/15 hover:text-foreground dark:text-white" onClick={() => onChange(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey()}>
+      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey()}>
         <ChevronRight className="h-4 w-4" />
       </Button>
     </div>

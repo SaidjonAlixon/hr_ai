@@ -308,7 +308,7 @@ export default function KirishPage() {
                       }}
                     />
                   ) : (
-                    <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br from-[#0B1B2B] via-[#16324F] to-[#1B4F72]">
+                    <div className="hero-dark absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-gradient-to-br from-[#0B1B2B] via-[#16324F] to-[#1B4F72]">
                       <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white/10 ring-2 ring-[#2AABEE]/40">
                         <Play className="h-7 w-7 text-[#F1C40F]" />
                       </div>

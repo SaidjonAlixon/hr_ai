@@ -75,7 +75,7 @@ export default function AdminHolatPage() {
 
   return (
     <div className="space-y-5 pb-10">
-      <div className="relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-[#0b3a5c] via-[#0f4a73] to-[#163a55] p-5 text-foreground dark:text-white shadow-md">
+      <div className="hero-dark relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-[#0b3a5c] via-[#0f4a73] to-[#163a55] p-5 shadow-md">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="flex items-start gap-3">
             <span className="rounded-xl bg-white/15 p-2.5 ring-1 ring-white/20">
@@ -83,7 +83,7 @@ export default function AdminHolatPage() {
             </span>
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/90">Sozlamalar</p>
-              <h1 className="text-2xl font-semibold">Holat</h1>
+              <h1 className="text-2xl font-semibold text-white">Holat</h1>
               <p className="mt-1 max-w-2xl text-sm text-sky-50/90">
                 Koordinatorni tanlang — filiallar ochiladi. Filialni bosing — mudir, farmasevt va stajyor chiqadi.
                 {data.scoped ? " Hozir faqat sizning tarmog‘ingiz." : " To‘liq tizim."} Yangilangan: {data.generatedAt}

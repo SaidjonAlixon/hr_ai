@@ -86,7 +86,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
     <div className="min-h-full bg-gradient-to-b from-slate-50 to-white">
       <div
         className={cn(
-          "relative overflow-hidden px-4 py-6 text-foreground dark:text-white md:px-6",
+          "hero-dark relative overflow-hidden px-4 py-6 md:px-6",
           isIt ? "bg-gradient-to-br from-cyan-900 via-teal-800 to-[#0b3a5c]" : "bg-gradient-to-br from-amber-900 via-orange-800 to-[#0b3a5c]",
         )}
       >
@@ -97,7 +97,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
           </p>
           <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h1 className="flex items-center gap-2 text-2xl font-semibold">
+              <h1 className="flex items-center gap-2 text-2xl font-semibold text-white">
                 {isIt ? <Cpu className="h-6 w-6" /> : <Wrench className="h-6 w-6" />}
                 {title}
               </h1>

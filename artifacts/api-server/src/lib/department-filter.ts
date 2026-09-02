@@ -15,6 +15,7 @@ export type DepartmentFilterMatch = {
 /** Bo‘lim nomi bo‘yicha rol/org_role bilan ham moslashtirish (masalan Koordinator bo‘limi). */
 const DEPARTMENT_ROLE_ALIASES: Record<string, { userRoles: string[]; orgRoles: string[] }> = {
   Koordinator: { userRoles: ["koordinator"], orgRoles: ["coordinator"] },
+  Mudir: { userRoles: ["mudir"], orgRoles: ["manager"] },
   [FARMASEVT_DEPARTMENT_NAME]: {
     userRoles: ["mudir", "farmasevt", "stajyor"],
     orgRoles: ["manager", "pharmacist", "intern"],
@@ -23,7 +24,10 @@ const DEPARTMENT_ROLE_ALIASES: Record<string, { userRoles: string[]; orgRoles: s
 
 /** Bo‘limda ko‘rinmasligi kerak bo‘lgan rollar (masalan Farmatsiyada koordinator yo‘q). */
 const DEPARTMENT_ROLE_EXCLUDE: Record<string, { userRoles: string[]; orgRoles: string[] }> = {
-  Farmatsiya: { userRoles: ["koordinator"], orgRoles: ["coordinator"] },
+  Farmatsiya: {
+    userRoles: ["koordinator", "mudir"],
+    orgRoles: ["coordinator", "manager"],
+  },
 };
 
 export async function resolveDepartmentFilter(

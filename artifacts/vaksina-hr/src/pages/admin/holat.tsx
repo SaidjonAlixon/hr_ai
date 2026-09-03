@@ -7,10 +7,12 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { HolatDashboardPanel } from "./holat-dashboard";
 import { BarChart3, Download, Loader2 } from "lucide-react";
 import { useToast } from "../../hooks/use-toast";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export default function AdminHolatPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
   const allowed = canViewHolat(user?.role);
   const { data, isLoading, error, refetch } = useHolat(allowed);
   const [exporting, setExporting] = useState(false);
@@ -46,7 +48,7 @@ export default function AdminHolatPage() {
   }
 
   if (!allowed) {
-    return <p className="p-6 text-sm text-muted-foreground">Holat faqat admin, direktor, HR, koordinator va mudir uchun.</p>;
+    return <p className="p-6 text-sm text-muted-foreground">{t("admin.holat.restricted")}</p>;
   }
 
   if (isLoading) {
@@ -65,9 +67,9 @@ export default function AdminHolatPage() {
   if (error || !data) {
     return (
       <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800">
-        {(error as Error)?.message || "Holat yuklanmadi"}
+        {(error as Error)?.message || t("admin.holat.loadErr")}
         <Button className="ml-3" size="sm" variant="outline" onClick={() => void refetch()}>
-          Qayta
+          {t("ui.retry")}
         </Button>
       </div>
     );
@@ -82,11 +84,11 @@ export default function AdminHolatPage() {
               <BarChart3 className="h-5 w-5" />
             </span>
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/90">Sozlamalar</p>
-              <h1 className="text-2xl font-semibold text-white">Holat</h1>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-100/90">{t("admin.holat.settings")}</p>
+              <h1 className="text-2xl font-semibold text-white">{t("admin.holat")}</h1>
               <p className="mt-1 max-w-2xl text-sm text-sky-50/90">
-                Koordinatorni tanlang — filiallar ochiladi. Filialni bosing — mudir, farmasevt va stajyor chiqadi.
-                {data.scoped ? " Hozir faqat sizning tarmog‘ingiz." : " To‘liq tizim."} Yangilangan: {data.generatedAt}
+                {t("admin.holat.subtitle")}
+                {data.scoped ? ` ${t("admin.holat.scoped")}` : ` ${t("admin.holat.full")}`} {t("admin.holat.updated")} {data.generatedAt}
               </p>
             </div>
           </div>
@@ -97,7 +99,7 @@ export default function AdminHolatPage() {
             className="h-11 shrink-0 gap-2 rounded-xl bg-card px-5 text-sm font-semibold text-[#0b3a5c] shadow-sm hover:bg-sky-50"
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Excel yuklash
+            {t("admin.holat.excel")}
           </Button>
         </div>
       </div>

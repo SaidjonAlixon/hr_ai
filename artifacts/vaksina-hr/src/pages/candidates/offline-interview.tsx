@@ -21,11 +21,13 @@ import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateRe
 import { canManageCandidate } from '../../lib/candidate-access';
 import { nextStageFormHref } from '../../lib/stage-routes';
 import { HR_ROLE_LABELS, isHrRole } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function OfflineInterviewPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
 
   const { data: candidate, isLoading } = useGetCandidate(candidateId, {
@@ -91,19 +93,19 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) {
-      toast({ title: 'Ruxsat yo\'q', description: 'Faqat HR va rekruter o\'zgartira oladi', variant: 'destructive' });
+      toast({ title: t('ui.noAccess'), description: t('hire.noPermHr'), variant: 'destructive' });
       return;
     }
     if (!scheduledDate) {
-      toast({ title: 'Xatolik', description: 'Sanani kiriting', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.offlineNeedDate'), variant: 'destructive' });
       return;
     }
     if (!hrId && !trainerId) {
-      toast({ title: 'Xatolik', description: 'HR yoki Trenerni tanlang', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.offlineNeedWho'), variant: 'destructive' });
       return;
     }
     if (!result) {
-      toast({ title: 'Xatolik', description: 'Yakuniy natijani tanlang', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.offlineNeedResult'), variant: 'destructive' });
       return;
     }
 
@@ -123,10 +125,10 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
 
     const finishOk = () => {
       toast({
-        title: 'Saqlandi',
+        title: t('ui.saved'),
         description: result === 'passed'
-          ? "Suhbatdan o'tdi — yakuniy qarorga o‘tilmoqda"
-          : "Suhbatdan o'tmadi",
+          ? t('hire.offlinePassDesc')
+          : t('hire.finalFailToast'),
       });
       if (result === 'passed') {
         setLocation(nextStageFormHref(candidateId, 'offline_interview')!);
@@ -141,7 +143,7 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
         {
           onSuccess: finishOk,
           onError: () => {
-            toast({ title: 'Xatolik', description: 'Natijani yangilashda xato', variant: 'destructive' });
+            toast({ title: t('ui.error'), description: t('hire.offlineUpdateFail'), variant: 'destructive' });
           },
         },
       );
@@ -165,20 +167,20 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
             {
               onSuccess: finishOk,
               onError: () => {
-                toast({ title: 'Xatolik', description: 'Natijani yangilashda xato', variant: 'destructive' });
+                toast({ title: t('ui.error'), description: t('hire.offlineUpdateFail'), variant: 'destructive' });
               },
             },
           );
         },
         onError: () => {
-          toast({ title: 'Xatolik', description: 'Suhbat yaratishda xato', variant: 'destructive' });
+          toast({ title: t('ui.error'), description: t('hire.offlineCreateFail'), variant: 'destructive' });
         },
       },
     );
   };
 
   if (isLoading || offlineLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div className="p-8">Nomzod topilmadi</div>;
+  if (!candidate) return <div className="p-8">{t('hire.notFound')}</div>;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -187,7 +189,7 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
       )}
       {existing?.result && (
         <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
-          Bu offline suhbat yakunlangan. Natija o‘zgartirilmaydi.
+          {t('hire.offlineDoneBanner')}
         </div>
       )}
       <div className="flex items-center gap-4">
@@ -195,8 +197,8 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Offline suhbat</h1>
-          <p className="text-muted-foreground mt-1">{candidate.fullName} — HR va Trener baholashi</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.offlineTitlePage')}</h1>
+          <p className="text-muted-foreground mt-1">{candidate.fullName} — {t('hire.offlineSub')}</p>
         </div>
       </div>
 
@@ -204,22 +206,22 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
       <form onSubmit={onSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Reja</CardTitle>
+            <CardTitle>{t('hire.offlinePlan')}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Sana *</Label>
+              <Label>{t('hire.offlineDate')}</Label>
               <Input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>Vaqt</Label>
+              <Label>{t('ui.time')}</Label>
               <Input type="time" value={scheduledTime} onChange={(e) => setScheduledTime(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label>HR</Label>
+              <Label>{t('hire.offlineHr')}</Label>
               <Select value={hrId} onValueChange={setHrId} disabled={hrsLoading}>
                 <SelectTrigger>
-                  <SelectValue placeholder="HR tanlang" />
+                  <SelectValue placeholder={t('hire.offlineHrPh')} />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
                   {hrs.map((u) => (
@@ -234,10 +236,10 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Trener</Label>
+              <Label>{t('hire.offlineTrainer')}</Label>
               <Select value={trainerId} onValueChange={setTrainerId} disabled={trainersLoading}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Trener tanlang" />
+                  <SelectValue placeholder={t('hire.offlineTrainerPh')} />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
                   {(trainers ?? []).filter((u) => u.status === 'active').map((u) => (
@@ -247,16 +249,16 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
               </Select>
             </div>
             <div className="space-y-2 md:col-span-2">
-              <Label>Kelish holati</Label>
+              <Label>{t('hire.offlineAttend')}</Label>
               <Select value={attendanceStatus} onValueChange={setAttendanceStatus}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
-                  <SelectItem value="attended">Keldi</SelectItem>
-                  <SelectItem value="absent">Kelmadi</SelectItem>
-                  <SelectItem value="rescheduled">Qayta belgilandi</SelectItem>
-                  <SelectItem value="pending">Kutilmoqda</SelectItem>
+                  <SelectItem value="attended">{t('hire.att.attended')}</SelectItem>
+                  <SelectItem value="absent">{t('hire.att.absent')}</SelectItem>
+                  <SelectItem value="rescheduled">{t('hire.att.rescheduled')}</SelectItem>
+                  <SelectItem value="pending">{t('hire.result.pending')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -265,41 +267,41 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
 
         <Card>
           <CardHeader>
-            <CardTitle>Baholash</CardTitle>
+            <CardTitle>{t('hire.offlineEval')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>HR ball (1–5)</Label>
+                <Label>{t('hire.offlineHrScore')}</Label>
                 <Input type="number" min={1} max={5} value={hrScore} onChange={(e) => setHrScore(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Trener ball (1–5)</Label>
+                <Label>{t('hire.offlineTrainerScore')}</Label>
                 <Input type="number" min={1} max={5} value={trainerScore} onChange={(e) => setTrainerScore(e.target.value)} />
               </div>
             </div>
             <div className="space-y-2">
-              <Label>HR izohi</Label>
+              <Label>{t('hire.offlineHrNotes')}</Label>
               <Textarea value={hrNotes} onChange={(e) => setHrNotes(e.target.value)} className="min-h-[70px]" />
             </div>
             <div className="space-y-2">
-              <Label>Trener izohi</Label>
+              <Label>{t('hire.offlineTrainerNotes')}</Label>
               <Textarea value={trainerNotes} onChange={(e) => setTrainerNotes(e.target.value)} className="min-h-[70px]" />
             </div>
             <div className="space-y-2">
-              <Label>Yakuniy qaror *</Label>
+              <Label>{t('hire.offlineResult')}</Label>
               <Select value={result} onValueChange={setResult}>
                 <SelectTrigger>
-                  <SelectValue placeholder="O'tdi / o'tmadi" />
+                  <SelectValue placeholder={t('hire.offlineResultPh')} />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
-                  <SelectItem value="passed">Suhbatdan o'tdi → Yakuniy qaror</SelectItem>
-                  <SelectItem value="failed">Suhbatdan o'tmadi → Rad</SelectItem>
+                  <SelectItem value="passed">{t('hire.offlinePassed')}</SelectItem>
+                  <SelectItem value="failed">{t('hire.offlineFailed')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Qaror izohi</Label>
+              <Label>{t('hire.offlineResultNotes')}</Label>
               <Textarea value={resultNotes} onChange={(e) => setResultNotes(e.target.value)} className="min-h-[70px]" />
             </div>
           </CardContent>
@@ -307,10 +309,10 @@ export default function OfflineInterviewPage({ params }: { params: { id: string 
 
         <div className="flex justify-end gap-3">
           <Link href={`/candidates/${candidateId}`}>
-            <Button type="button" variant="ghost">Bekor qilish</Button>
+            <Button type="button" variant="ghost">{t('ui.cancelFull')}</Button>
           </Link>
           <Button type="submit" disabled={isPending || !canEdit}>
-            {isPending ? 'Saqlanmoqda...' : 'Natijani saqlash'}
+            {isPending ? t('ui.saving') : t('hire.phoneSaveResult')}
           </Button>
         </div>
       </form>

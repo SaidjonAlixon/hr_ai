@@ -20,20 +20,21 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateReadOnlyBanner';
 import { canManageCandidate } from '../../lib/candidate-access';
 import { nextStageFormHref } from '../../lib/stage-routes';
+import { useI18n } from '../../i18n/I18nProvider';
 
 type QA = { question: string; answer: string };
-
-const DEFAULT_QUESTIONS = [
-  'Lavozim vazifalarini qanday tushunasiz?',
-  'O\'xshash ish tajribangiz bormi? Misollar keltiring.',
-  'Jamoada ishlash tajribangiz qanday?',
-];
 
 export default function OnlineInterviewPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
+
+  const defaultQuestions = useMemo(
+    () => [t('hire.onlineQ1'), t('hire.onlineQ2'), t('hire.onlineQ3')],
+    [t],
+  );
 
   const { data: candidate, isLoading } = useGetCandidate(candidateId, {
     query: { enabled: !!candidateId },
@@ -66,9 +67,15 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
   const [score, setScore] = useState<string>('');
   const [notes, setNotes] = useState('');
   const [qa, setQa] = useState<QA[]>(
-    DEFAULT_QUESTIONS.map((question) => ({ question, answer: '' })),
+    defaultQuestions.map((question) => ({ question, answer: '' })),
   );
   const [hydrated, setHydrated] = useState(false);
+
+  React.useEffect(() => {
+    if (!hydrated) {
+      setQa(defaultQuestions.map((question) => ({ question, answer: '' })));
+    }
+  }, [defaultQuestions, hydrated]);
 
   React.useEffect(() => {
     if (!interviewerId && user && (user.role === 'recruiter' || user.role === 'hr')) {
@@ -101,28 +108,28 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
   };
 
   const finishOk = () => {
-    toast({ title: 'Saqlandi', description: 'Onlayn suhbat natijasi yozildi — pre-boardingga o‘tilmoqda' });
+    toast({ title: t('ui.saved'), description: t('hire.onlineSaved') });
     setLocation(nextStageFormHref(candidateId, 'online_interview')!);
   };
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) {
-      toast({ title: 'Ruxsat yo\'q', description: 'Faqat mas\'ul va HR o\'zgartira oladi', variant: 'destructive' });
+      toast({ title: t('ui.noAccess'), description: t('hire.noPermEdit'), variant: 'destructive' });
       return;
     }
     if (!interviewerId) {
-      toast({ title: 'Xatolik', description: 'Suhbatni kim o\'tkazishini tanlang', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.phoneNeedWho'), variant: 'destructive' });
       return;
     }
     if (!experienceLevel) {
-      toast({ title: 'Xatolik', description: 'Tajriba darajasini tanlang', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.onlineNeedExp'), variant: 'destructive' });
       return;
     }
 
     const interviewer = interviewers.find((u) => String(u.id) === interviewerId);
     const interviewerNote = interviewer
-      ? `Suhbatni o'tkazdi: ${interviewer.fullName} (${interviewer.role})`
+      ? `${t('hire.onlineConducted')}: ${interviewer.fullName} (${interviewer.role})`
       : '';
 
     const payload = {
@@ -139,7 +146,7 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
         {
           onSuccess: finishOk,
           onError: () => {
-            toast({ title: 'Xatolik', description: 'Saqlashda xatolik yuz berdi', variant: 'destructive' });
+            toast({ title: t('ui.error'), description: t('hire.saveFailLong'), variant: 'destructive' });
           },
         },
       );
@@ -149,7 +156,7 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
         {
           onSuccess: finishOk,
           onError: () => {
-            toast({ title: 'Xatolik', description: 'Saqlashda xatolik yuz berdi', variant: 'destructive' });
+            toast({ title: t('ui.error'), description: t('hire.saveFailLong'), variant: 'destructive' });
           },
         },
       );
@@ -157,7 +164,7 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
   };
 
   if (isLoading || existingLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div className="p-8">Nomzod topilmadi</div>;
+  if (!candidate) return <div className="p-8">{t('hire.notFound')}</div>;
 
   const usersLoading = recruitersLoading || hrsLoading;
 
@@ -169,8 +176,8 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Onlayn suhbat</h1>
-          <p className="text-muted-foreground mt-1">{candidate.fullName} — savol-javob va baholash</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.onlineTitle')}</h1>
+          <p className="text-muted-foreground mt-1">{candidate.fullName} — {t('hire.onlineSub')}</p>
         </div>
       </div>
 
@@ -178,26 +185,26 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
       <form onSubmit={onSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Asosiy ma'lumotlar</CardTitle>
+            <CardTitle>{t('hire.section.basic')}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2 md:col-span-2">
-              <Label>Kim o'tkazadi *</Label>
+              <Label>{t('hire.onlineWho')}</Label>
               <Select
                 value={interviewerId}
                 onValueChange={setInterviewerId}
                 disabled={usersLoading}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder={usersLoading ? 'Yuklanmoqda...' : 'Rekruter yoki HR tanlang'} />
+                  <SelectValue placeholder={usersLoading ? t('ui.loading') : t('hire.onlineWhoPh')} />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
                   {interviewers.length === 0 ? (
-                    <div className="px-2 py-3 text-sm text-muted-foreground">Foydalanuvchi topilmadi</div>
+                    <div className="px-2 py-3 text-sm text-muted-foreground">{t('hire.onlineNoUser')}</div>
                   ) : (
                     interviewers.map((u) => (
                       <SelectItem key={u.id} value={String(u.id)}>
-                        {u.fullName} ({u.role === 'hr' ? 'HR' : 'Rekruter'})
+                        {u.fullName} ({u.role === 'hr' ? 'HR' : t('hire.role.recruiter')})
                       </SelectItem>
                     ))
                   )}
@@ -206,32 +213,32 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
             </div>
 
             <div className="space-y-2">
-              <Label>Suhbat sanasi</Label>
+              <Label>{t('hire.phoneDate')}</Label>
               <Input type="date" value={interviewDate} onChange={(e) => setInterviewDate(e.target.value)} />
             </div>
 
             <div className="space-y-2">
-              <Label>Tajriba darajasi *</Label>
+              <Label>{t('hire.onlineExp')}</Label>
               <Select value={experienceLevel} onValueChange={setExperienceLevel}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Tanlang" />
+                  <SelectValue placeholder={t('ui.select')} />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
-                  <SelectItem value="experienced">Tajribali</SelectItem>
-                  <SelectItem value="inexperienced">Tajribasiz</SelectItem>
+                  <SelectItem value="experienced">{t('hire.onlineExpYes')}</SelectItem>
+                  <SelectItem value="inexperienced">{t('hire.onlineExpNo')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
             <div className="space-y-2">
-              <Label>Umumiy ball (0–100)</Label>
+              <Label>{t('hire.onlineScore')}</Label>
               <Input
                 type="number"
                 min={0}
                 max={100}
                 value={score}
                 onChange={(e) => setScore(e.target.value)}
-                placeholder="Masalan: 75"
+                placeholder={t('hire.onlineScorePh')}
               />
             </div>
           </CardContent>
@@ -239,9 +246,9 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
 
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle>Savol-javoblar</CardTitle>
+            <CardTitle>{t('hire.onlineQa')}</CardTitle>
             <Button type="button" variant="outline" size="sm" onClick={addQuestion}>
-              <Plus className="w-4 h-4 mr-1" /> Savol qo'shish
+              <Plus className="w-4 h-4 mr-1" /> {t('hire.onlineAddQ')}
             </Button>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -251,7 +258,7 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
                   <Input
                     value={item.question}
                     onChange={(e) => updateQa(index, 'question', e.target.value)}
-                    placeholder={`Savol ${index + 1}`}
+                    placeholder={`${t('hire.onlineQPh')} ${index + 1}`}
                     className="flex-1"
                   />
                   {qa.length > 1 && (
@@ -263,7 +270,7 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
                 <Textarea
                   value={item.answer}
                   onChange={(e) => updateQa(index, 'answer', e.target.value)}
-                  placeholder="Nomzod javobi..."
+                  placeholder={t('hire.onlineAPh')}
                   className="min-h-[80px]"
                 />
               </div>
@@ -273,13 +280,13 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
 
         <Card>
           <CardHeader>
-            <CardTitle>Qo'shimcha izoh</CardTitle>
+            <CardTitle>{t('hire.onlineExtra')}</CardTitle>
           </CardHeader>
           <CardContent>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Suhbat bo'yicha umumiy xulosa..."
+              placeholder={t('hire.onlineExtraPh')}
               className="min-h-[100px]"
             />
           </CardContent>
@@ -287,10 +294,10 @@ export default function OnlineInterviewPage({ params }: { params: { id: string }
 
         <div className="flex justify-end gap-3">
           <Link href={`/candidates/${candidateId}`}>
-            <Button type="button" variant="ghost">Bekor qilish</Button>
+            <Button type="button" variant="ghost">{t('ui.cancelFull')}</Button>
           </Link>
           <Button type="submit" disabled={isPending || !canEdit}>
-            {isPending ? 'Saqlanmoqda...' : existing ? 'Yangilash' : 'Natijani saqlash'}
+            {isPending ? t('ui.saving') : existing ? t('ui.update') : t('hire.phoneSaveResult')}
           </Button>
         </div>
       </form>

@@ -39,6 +39,7 @@ import {
   type AdminFaceRow,
 } from "@/lib/face-id";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/I18nProvider";
 
 function fmtDate(v: string | null | undefined) {
   if (!v) return "—";
@@ -89,6 +90,7 @@ export default function AdminFacesPage() {
   const { user } = useAuth();
   const isAdmin = canManageSettings(user?.role);
   const { toast } = useToast();
+  const { t } = useI18n();
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "yes" | "no">("all");
@@ -167,8 +169,8 @@ export default function AdminFacesPage() {
   if (!isAdmin) {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
-        <h1 className="text-2xl font-bold">Face ID ro‘yxati</h1>
-        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin va direktor uchun.</p>
+        <h1 className="text-2xl font-bold">{t("admin.faces")}</h1>
+        <p className="mt-2 text-muted-foreground">{t("admin.restricted")}</p>
       </div>
     );
   }
@@ -179,10 +181,10 @@ export default function AdminFacesPage() {
         <div>
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight sm:text-3xl">
             <ScanFace className="h-7 w-7 text-[#0b3a5c]" />
-            Face ID ro‘yxati
+            {t("admin.faces")}
           </h1>
           <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-            Kim Face ID ulaganini ko‘ring. Surating ustiga bosib kattalashtiring.
+            {t("admin.facesSubtitle")}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -195,7 +197,7 @@ export default function AdminFacesPage() {
             onClick={() => void onExportExcel()}
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            Excel
+            {t("ui.excel")}
           </Button>
           <Button
             type="button"
@@ -206,7 +208,7 @@ export default function AdminFacesPage() {
             onClick={() => setConfirmClearAll(true)}
           >
             {clearAllMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-            Hammasini tozalash
+            {t("admin.faces.clearAll")}
           </Button>
           <Button
             type="button"
@@ -217,24 +219,24 @@ export default function AdminFacesPage() {
             onClick={() => void refetch()}
           >
             {isFetching ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            Yangilash
+            {t("ui.refresh")}
           </Button>
         </div>
       </div>
 
       <div className="grid grid-cols-3 gap-2 sm:gap-3">
         <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jami</p>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{t("ui.total")}</p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums">{data?.total ?? "—"}</p>
         </div>
         <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
-          <p className="text-[10px] uppercase tracking-wide text-emerald-800">O‘tgan</p>
+          <p className="text-[10px] uppercase tracking-wide text-emerald-800">{t("admin.faces.passed")}</p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums text-emerald-900">
             {data?.registered ?? "—"}
           </p>
         </div>
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 shadow-sm">
-          <p className="text-[10px] uppercase tracking-wide text-amber-800">O‘tmagan</p>
+          <p className="text-[10px] uppercase tracking-wide text-amber-800">{t("admin.faces.failed")}</p>
           <p className="mt-0.5 text-xl font-semibold tabular-nums text-amber-900">
             {data?.notRegistered ?? "—"}
           </p>
@@ -247,16 +249,16 @@ export default function AdminFacesPage() {
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            placeholder="Ism, login…"
+            placeholder={t("admin.faces.search")}
             className="h-9 pl-9"
           />
         </div>
         <div className="flex flex-wrap gap-1">
           {(
             [
-              { id: "all" as const, label: "Hammasi" },
-              { id: "yes" as const, label: "O‘tgan" },
-              { id: "no" as const, label: "O‘tmagan" },
+              { id: "all" as const, labelKey: "ui.all" },
+              { id: "yes" as const, labelKey: "admin.faces.passed" },
+              { id: "no" as const, labelKey: "admin.faces.failed" },
             ] as const
           ).map((f) => (
             <button
@@ -270,7 +272,7 @@ export default function AdminFacesPage() {
                   : "bg-slate-100 text-muted-foreground hover:bg-slate-200",
               )}
             >
-              {f.label}
+              {t(f.labelKey)}
             </button>
           ))}
         </div>
@@ -369,14 +371,14 @@ export default function AdminFacesPage() {
       <AlertDialog open={confirmClearAll} onOpenChange={setConfirmClearAll}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Barcha Face ID ni tozalaysizmi?</AlertDialogTitle>
+            <AlertDialogTitle>{t("admin.clearFaces")}</AlertDialogTitle>
             <AlertDialogDescription>
               Face ID dan o‘tgan barcha xodimlarning yuz shabloni va rasmi o‘chiriladi. Ular qayta
               ro‘yxatdan o‘tishi kerak. Bu amalni qaytarib bo‘lmaydi.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={clearAllMut.isPending}>Bekor qilish</AlertDialogCancel>
+            <AlertDialogCancel disabled={clearAllMut.isPending}>{t("ui.cancelFull")}</AlertDialogCancel>
             <AlertDialogAction
               className="bg-red-600 hover:bg-red-700"
               disabled={clearAllMut.isPending}
@@ -385,7 +387,7 @@ export default function AdminFacesPage() {
                 clearAllMut.mutate();
               }}
             >
-              {clearAllMut.isPending ? "Tozalanmoqda…" : "Ha, hammasini o‘chirish"}
+              {clearAllMut.isPending ? t("admin.faces.clearing") : t("admin.faces.clearConfirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

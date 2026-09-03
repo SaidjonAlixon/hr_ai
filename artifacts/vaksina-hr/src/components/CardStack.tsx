@@ -88,7 +88,7 @@ export function CardStack<T>({
             onClick={() =>
               setExpanded((prev) => ({ ...prev, [groupKey]: true }))
             }
-            title="Ochish uchun bosing"
+            title="Boshingizda yana vazifalar bor — ochish uchun bosing"
           >
             {/* Orqa qatlamlar — faqat oq chiziq / shadow, matnsiz */}
             {Array.from({ length: behindCount }).map((_, i) => {
@@ -114,9 +114,10 @@ export function CardStack<T>({
               {renderCard(group[0], { inStack: true, isTop: true })}
             </div>
 
-            <span className="pointer-events-none absolute bottom-0 right-2 z-30 inline-flex items-center gap-0.5 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-bold text-foreground dark:text-white shadow-md">
-              <ChevronDown className="h-3 w-3" />
-              {group.length}
+            <span className="pointer-events-none absolute bottom-1 right-2 z-30 inline-flex items-center gap-1 rounded-full bg-indigo-600 px-2 py-0.5 text-[10px] font-bold text-white shadow-md ring-2 ring-white/90">
+              <Layers className="h-3 w-3 shrink-0 opacity-90" />
+              <span>+{behindCount}</span>
+              <ChevronDown className="h-3 w-3 shrink-0 opacity-90" />
             </span>
           </button>
         );

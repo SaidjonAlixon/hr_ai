@@ -51,14 +51,27 @@ import {
 } from "@/lib/davomat-api";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useI18n } from "@/i18n/I18nProvider";
 import type { User } from "@workspace/api-client-react";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 import { formatSom, useOylikMe } from "@/lib/oylik-api";
-import { PUNCH_FINE_HINT, punchPlanLabel, workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
+import { workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
+
+type Translate = (key: string, fallback?: string) => string;
+
+function tr(t: Translate, key: string, vars?: Record<string, string | number>): string {
+  let s = t(key);
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      s = s.replaceAll(`{${k}}`, String(v));
+    }
+  }
+  return s;
+}
 
 type Gps = { lat: number; lng: number; accuracy: number };
 type Verified = {
@@ -84,6 +97,21 @@ function tashkentHour(now: number): number {
   return Number(raw);
 }
 
+/** Toshkent vaqti smena tugashiga yetganmi (HH:MM). */
+function isAtOrAfterHm(now: number, hm: string): boolean {
+  const endMin = hmToMinutes(hm);
+  if (endMin == null) return tashkentHour(now) >= 18;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent",
+    hour: "numeric",
+    minute: "numeric",
+    hour12: false,
+  }).formatToParts(new Date(now));
+  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
+  return hour * 60 + minute >= endMin;
+}
+
 function formatElapsed(ms: number): string {
   if (ms < 0) ms = 0;
   const totalMin = Math.floor(ms / 60000);
@@ -93,13 +121,19 @@ function formatElapsed(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function formatHoursUz(mins: number): string {
+function formatHours(mins: number, t: Translate): string {
   const n = Math.max(0, Math.round(mins));
   const h = Math.floor(n / 60);
   const m = n % 60;
-  if (h === 0) return `${m} daq`;
-  if (m === 0) return `${h} soat`;
-  return `${h} soat ${m} daq`;
+  const hour = t("davomat.hourShort");
+  const min = t("davomat.minShort");
+  if (h === 0) return `${m} ${min}`;
+  if (m === 0) return `${h} ${hour}`;
+  return `${h} ${hour} ${m} ${min}`;
+}
+
+function punchPlanLabelI18n(kind: "in" | "out", time: string, t: Translate): string {
+  return tr(t, kind === "in" ? "davomat.planIn" : "davomat.planOut", { time });
 }
 
 function hmToMinutes(hm: string): number | null {
@@ -138,12 +172,12 @@ function initials(name: string): string {
     .join("");
 }
 
-const STATUS_UZ: Record<string, string> = {
-  present: "Kelgan",
-  late: "Kech",
-  incomplete: "Ketish yo‘q",
-  absent: "Kelmagan",
-  leave: "Ta’til",
+const STATUS_KEYS: Record<string, string> = {
+  present: "davomat.arrived",
+  late: "davomat.lateShort",
+  incomplete: "davomat.noOut",
+  absent: "davomat.absent",
+  leave: "davomat.leaveShort",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -154,21 +188,30 @@ const STATUS_STYLE: Record<string, string> = {
   leave: "bg-violet-50 text-violet-800 dark:bg-violet-500/15 dark:text-violet-300",
 };
 
-const WEEKDAY_UZ = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
-const MONTH_UZ = [
-  "yanvar",
-  "fevral",
-  "mart",
-  "aprel",
-  "may",
-  "iyun",
-  "iyul",
-  "avgust",
-  "sentabr",
-  "oktabr",
-  "noyabr",
-  "dekabr",
-];
+const MONTH_KEYS = [
+  "month.1",
+  "month.2",
+  "month.3",
+  "month.4",
+  "month.5",
+  "month.6",
+  "month.7",
+  "month.8",
+  "month.9",
+  "month.10",
+  "month.11",
+  "month.12",
+] as const;
+
+const WD_KEYS = [
+  "davomat.wd.0",
+  "davomat.wd.1",
+  "davomat.wd.2",
+  "davomat.wd.3",
+  "davomat.wd.4",
+  "davomat.wd.5",
+  "davomat.wd.6",
+] as const;
 
 function parseYmd(ymd: string): { y: number; m: number; d: number } | null {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -180,17 +223,18 @@ function weekdayIndex(y: number, m: number, d: number): number {
   return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
 }
 
-function splitDayUz(ymd: string): { date: string; weekday: string } {
+function splitDay(ymd: string, t: Translate): { date: string; weekday: string } {
   const p = parseYmd(ymd);
   if (!p) return { date: ymd, weekday: "" };
-  const week = WEEKDAY_UZ[weekdayIndex(p.y, p.m, p.d)]!;
+  const week = t(WD_KEYS[weekdayIndex(p.y, p.m, p.d)]!);
+  const month = t(MONTH_KEYS[p.m - 1]!);
   return {
-    date: `${p.d}-${MONTH_UZ[p.m - 1]}`,
+    date: `${p.d}-${month}`,
     weekday: `${week[0]!.toUpperCase()}${week.slice(1)}`,
   };
 }
 
-function formatLongDateUz(ms: number): string {
+function formatLongDate(ms: number, t: Translate): string {
   const ymd = new Intl.DateTimeFormat("en-CA", {
     timeZone: "Asia/Tashkent",
     year: "numeric",
@@ -199,11 +243,12 @@ function formatLongDateUz(ms: number): string {
   }).format(new Date(ms));
   const p = parseYmd(ymd);
   if (!p) return ymd;
-  const week = WEEKDAY_UZ[weekdayIndex(p.y, p.m, p.d)];
-  return `${week[0]!.toUpperCase()}${week.slice(1)}, ${p.d}-${MONTH_UZ[p.m - 1]} ${p.y}`;
+  const week = t(WD_KEYS[weekdayIndex(p.y, p.m, p.d)]!);
+  const month = t(MONTH_KEYS[p.m - 1]!);
+  return `${week[0]!.toUpperCase()}${week.slice(1)}, ${p.d}-${month} ${p.y}`;
 }
 
-function formatDistanceParts(meters: number): { value: string; unit: string } {
+function formatDistanceParts(meters: number, t: Translate): { value: string; unit: string } {
   if (!Number.isFinite(meters)) return { value: "—", unit: "" };
   if (Math.abs(meters) >= 1000) {
     const km = meters / 1000;
@@ -212,19 +257,19 @@ function formatDistanceParts(meters: number): { value: string; unit: string } {
     return { value, unit: "km" };
   }
   const steps = Math.max(1, Math.round(Math.abs(meters) / 0.75));
-  return { value: String(steps), unit: "qadam" };
+  return { value: String(steps), unit: t("davomat.stepsUnit") };
 }
 
-function formatDistance(meters: number | null | undefined): string {
+function formatDistance(meters: number | null | undefined, t: Translate): string {
   if (meters == null || !Number.isFinite(meters)) return "—";
-  const p = formatDistanceParts(meters);
+  const p = formatDistanceParts(meters, t);
   return `${p.value} ${p.unit}`;
 }
 
-function formatApproach(remain: number | null | undefined): string {
-  if (remain == null || !Number.isFinite(remain) || remain <= 0) return "Hududdasiz";
-  if (remain >= 1000) return `yana ${formatDistance(remain)} yaqinlashishingiz kerak`;
-  return `yana ${formatDistanceParts(remain).value} qadam bosing`;
+function formatApproach(remain: number | null | undefined, t: Translate): string {
+  if (remain == null || !Number.isFinite(remain) || remain <= 0) return t("davomat.inZone");
+  if (remain >= 1000) return tr(t, "davomat.approachFar", { dist: formatDistance(remain, t) });
+  return tr(t, "davomat.approachSteps", { n: formatDistanceParts(remain, t).value });
 }
 
 function sortDaysDesc(days: DavomatDayMetrics[]): DavomatDayMetrics[] {
@@ -240,6 +285,7 @@ function MobileStepHint({
   label: string;
   tone?: "amber" | "rose" | "emerald";
 }) {
+  const { t } = useI18n();
   return (
     <div
       className={cn(
@@ -260,7 +306,9 @@ function MobileStepHint({
         {step}
       </span>
       <div className="min-w-0 flex-1">
-        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{step}-qadam</p>
+        <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {tr(t, "davomat.stepLabel", { n: step })}
+        </p>
         <p className="text-sm font-medium leading-snug text-foreground">{label}</p>
       </div>
       <ArrowDown className="h-4 w-4 shrink-0 animate-bounce text-muted-foreground" aria-hidden />
@@ -274,7 +322,7 @@ function GuideBoard({
   inside,
   hasGps,
   hasIn,
-  afterSix,
+  afterShiftEnd,
   done,
 }: {
   active: GuideStep;
@@ -282,9 +330,10 @@ function GuideBoard({
   inside: boolean;
   hasGps: boolean;
   hasIn: boolean;
-  afterSix: boolean;
+  afterShiftEnd: boolean;
   done: boolean;
 }) {
+  const { t } = useI18n();
   const items: Array<{
     id: GuideStep;
     n: number;
@@ -294,38 +343,38 @@ function GuideBoard({
     {
       id: "enroll",
       n: 0,
-      title: "Yuzni ro‘yxatdan o‘tkazing",
-      detail: "Davomatdan oldin Face ID bir marta ulanishi shart",
+      title: t("davomat.enrollFace"),
+      detail: t("davomat.enrollDetail"),
     },
     {
       id: "permission",
       n: 1,
-      title: "Ruxsat berish",
-      detail: "Lokatsiya ruxsatini yoqing",
+      title: t("davomat.grantPermission"),
+      detail: t("davomat.permissionDetail"),
     },
     {
       id: "zone",
       n: 1,
-      title: "Yashil hududga kiring",
-      detail: "Belgilangan zonaga kirmasangiz — kelmagan deb belgilanadi",
+      title: t("davomat.enterZone"),
+      detail: t("davomat.zoneDetail"),
     },
     {
       id: "face",
       n: 2,
-      title: "Face ID ni bosing",
-      detail: "Yashil hududdasiz — yuzni tasdiqlang",
+      title: t("davomat.pressFace"),
+      detail: t("davomat.faceDetail"),
     },
     {
       id: "keldim",
       n: 3,
-      title: "Keldim ni bosing",
-      detail: "Yuz o‘tgach kelishni belgilang",
+      title: t("davomat.pressIn"),
+      detail: t("davomat.keldimDetail"),
     },
     {
       id: "ketdim",
       n: 4,
-      title: "Ketdim ni bosing",
-      detail: "Ishdan chiqishni belgilang (tasdiq so‘raladi)",
+      title: t("davomat.pressOut"),
+      detail: t("davomat.ketdimDetail"),
     },
   ];
 
@@ -335,7 +384,7 @@ function GuideBoard({
     if (it.id === "permission") return faceRegistered !== false && (!hasGps || !inside) && !hasIn && !done;
     if (it.id === "face") return faceRegistered !== false;
     if (it.id === "keldim") return faceRegistered !== false;
-    if (it.id === "ketdim") return faceRegistered !== false && (hasIn || afterSix || done);
+    if (it.id === "ketdim") return faceRegistered !== false && (hasIn || afterShiftEnd || done);
     return true;
   });
 
@@ -372,16 +421,16 @@ function GuideBoard({
       <div className="mb-3 flex items-start justify-between gap-2">
         <div>
           <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            Yo‘riqnoma
+            {t("davomat.guideTitle")}
           </p>
-          <h2 className="mt-0.5 text-base font-semibold text-foreground">Davomat qadamlari</h2>
+          <h2 className="mt-0.5 text-base font-semibold text-foreground">{t("davomat.guideSteps")}</h2>
           <p className="mt-1 text-xs text-muted-foreground">
-            Har kirganingizda shu tartibda boring — aniq va tartibli
+            {t("davomat.guideHint")}
           </p>
         </div>
         {done ? (
           <span className="dv-tone-emerald rounded-full border px-2.5 py-1 text-[11px] font-semibold">
-            Bugun yakunlandi
+            {t("davomat.todayDone")}
           </span>
         ) : null}
       </div>
@@ -423,7 +472,7 @@ function GuideBoard({
               </span>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-foreground">
-                  {it.n === 0 ? "Avval" : `${it.n}-qadam`}: {it.title}
+                  {it.n === 0 ? t("davomat.stepFirst") : tr(t, "davomat.stepLabel", { n: it.n })}: {it.title}
                 </p>
                 <p
                   className={cn(
@@ -440,12 +489,12 @@ function GuideBoard({
       </ol>
       {active === "zone" ? (
         <p className="dv-tone-rose mt-3 rounded-xl border px-3 py-2 text-center text-sm font-semibold">
-          Yashil hududga kirmasangiz — bugun kelmagan deb belgilanasiz
+          {t("davomat.zoneWarnBanner")}
         </p>
       ) : null}
       {active === "ketdim" ? (
         <p className="dv-tone-rose mt-3 rounded-xl border px-3 py-2 text-center text-sm font-semibold">
-          4-qadam: «Ketdim» ni bosing — tasdiqlang
+          {t("davomat.step4OutBanner")}
         </p>
       ) : null}
     </section>
@@ -464,6 +513,7 @@ function isTelegramMiniAppContext(): boolean {
 
 export default function DavomatFacePage() {
   const { user, isAuthenticated, switchToUser } = useAuth();
+  const { t, locale } = useI18n();
   const [, setLocation] = useLocation();
   const oylikMe = useOylikMe();
   const isTgMiniApp = useMemo(() => isTelegramMiniAppContext(), []);
@@ -597,26 +647,26 @@ export default function DavomatFacePage() {
       (err) => {
         setGpsError(
           err.code === 1
-            ? "Lokatsiyaga ruxsat berilmadi — tugmani bosing va Ruxsatni tanlang"
-            : "GPS olinmadi — ochiq joyda qayta urinib ko‘ring",
+            ? t("davomat.gpsDenied")
+            : t("davomat.gpsFailed"),
         );
       },
       { enableHighAccuracy: true, maximumAge: 3_000, timeout: 20_000 },
     );
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!navigator.geolocation) {
-      setGpsError("Brauzer GPS ni qo‘llab-quvvatlamaydi");
+      setGpsError(t("davomat.gpsUnsupported"));
     }
     return () => {
       if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
     };
-  }, []);
+  }, [t]);
 
   const requestLocationPermission = async () => {
     if (!navigator.geolocation) {
-      toast({ title: "GPS yo‘q", description: "Brauzer lokatsiyani qo‘llab-quvvatlamaydi", variant: "destructive" });
+      toast({ title: t("davomat.gpsMissing"), description: t("davomat.browserNoGps"), variant: "destructive" });
       return;
     }
     setGpsSharing(true);
@@ -625,10 +675,9 @@ export default function DavomatFacePage() {
       if (permissions?.query) {
         const status = await permissions.query({ name: "geolocation" });
         if (status.state === "denied") {
-          const msg =
-            "Brauzer lokatsiyani bloklagan. Manzil qatoridagi qulfni bosing va «Joylashuv»ga ruxsat bering.";
+          const msg = t("davomat.gpsBlocked");
           setGpsError(msg);
-          toast({ title: "Ruxsat yo‘q", description: msg, variant: "destructive" });
+          toast({ title: t("davomat.gpsNoPermTitle"), description: msg, variant: "destructive" });
           setGpsSharing(false);
           return;
         }
@@ -642,18 +691,18 @@ export default function DavomatFacePage() {
         startWatch();
         setGpsSharing(false);
         toast({
-          title: "Ruxsat berildi",
-          description: `Lokatsiya ochiq · ±${Math.round(pos.coords.accuracy || 0)} m`,
+          title: t("davomat.gpsGrantedTitle"),
+          description: tr(t, "davomat.gpsGrantedDesc", { m: Math.round(pos.coords.accuracy || 0) }),
         });
       },
       (err) => {
         setGpsSharing(false);
         const msg =
           err.code === 1
-            ? "Lokatsiyaga ruxsat so‘raldi — brauzer oynasida «Ruxsat» ni bosing"
-            : "GPS olinmadi — ochiq joyda qayta urinib ko‘ring";
+            ? t("davomat.gpsAskAgain")
+            : t("davomat.gpsFailed");
         setGpsError(msg);
-        toast({ title: "Ruxsat olinmadi", description: msg, variant: "destructive" });
+        toast({ title: t("davomat.gpsNotGranted"), description: msg, variant: "destructive" });
       },
       { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
     );
@@ -669,17 +718,17 @@ export default function DavomatFacePage() {
 
   const clockLabel = useMemo(
     () =>
-      new Intl.DateTimeFormat("uz-UZ", {
+      new Intl.DateTimeFormat(locale === "ru" ? "ru-RU" : "uz-UZ", {
         timeZone: "Asia/Tashkent",
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
         hour12: false,
       }).format(nowTick),
-    [nowTick],
+    [nowTick, locale],
   );
 
-  const dateLabel = useMemo(() => formatLongDateUz(nowTick), [nowTick]);
+  const dateLabel = useMemo(() => formatLongDate(nowTick, t), [nowTick, t]);
 
   const distance = useMemo(() => {
     if (!gps) return null;
@@ -707,7 +756,12 @@ export default function DavomatFacePage() {
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   const done = nextAction === "done" || workplace?.today.complete;
   const hasIn = nextAction === "out" || done || Boolean(checkInAtIso);
-  const afterSix = tashkentHour(nowTick) >= 18;
+  const shiftEndHm =
+    workplace?.shift?.end ||
+    (user?.role ? workShiftForUserRole(user.role).end : null) ||
+    "18:00";
+  /** Smena tugaganmi — 1-smena 17:00, ofis 18:00, 2-smena 23:45 */
+  const afterShiftEnd = isAtOrAfterHm(nowTick, shiftEndHm);
 
   const guideStep = useMemo((): GuideStep => {
     if (done) return "done";
@@ -736,33 +790,36 @@ export default function DavomatFacePage() {
 
   const holatLabel =
     todayStatus === "complete"
-      ? "Bugun yopilgan"
+      ? t("davomat.closedToday")
       : hasIn
-        ? STATUS_UZ[workplace?.today.status || "present"] || "Ishda"
+        ? t(STATUS_KEYS[workplace?.today.status || "present"] || "davomat.arrived")
         : todayStatus === "inside"
-          ? "Hududda"
+          ? t("davomat.inside")
           : todayStatus === "outside"
-            ? "Hududdan tashqarida"
+            ? t("davomat.outside")
             : todayStatus === "no_gps"
-              ? "Lokatsiya yo‘q"
-              : "GPS kutilmoqda";
+              ? t("davomat.noLocation")
+              : t("davomat.waitingGps");
 
   const faceLockedReason = useMemo(() => {
-    if (faceRegistered === false) return "Avval yuzni ro‘yxatdan o‘tkazing";
+    if (faceRegistered === false) return t("davomat.needFace");
     if (gpsError) return gpsError;
-    if (!gps) return "1-qadam: «Ruxsat berish» ni bosing";
-    if (!isFaceIdSupported()) return "Face ID bu brauzerda ishlamaydi (HTTPS/localhost kerak)";
+    if (!gps) return t("davomat.step1Grant");
+    if (!isFaceIdSupported()) return t("davomat.faceUnsupported");
     if (workplaceGpsMissing) {
       return (
         workplace?.gpsError ||
-        "Filial lokatsiyasi kiritilmagan. Koordinator avval GPS kiritsin."
+        t("davomat.branchGpsMissingHint")
       );
     }
     if (remain != null && remain > 0) {
-      return `Yashil hududga kirmadingiz (${formatDistance(distance)}). Kelmagan deb belgilanasiz. ${formatApproach(remain)}.`;
+      return tr(t, "davomat.notInZoneDetail", {
+        dist: formatDistance(distance, t),
+        approach: formatApproach(remain, t),
+      });
     }
     return null;
-  }, [faceRegistered, gps, gpsError, remain, distance, workplaceGpsMissing, workplace?.gpsError]);
+  }, [faceRegistered, gps, gpsError, remain, distance, workplaceGpsMissing, workplace?.gpsError, t]);
 
   useEffect(() => {
     if (!isTgMiniApp || tgBootRef.current) return;
@@ -780,7 +837,7 @@ export default function DavomatFacePage() {
   }, [isTgMiniApp, canOpenFace, done, verified, faceRegistered]);
 
   const geoPayload = () => {
-    if (!gps) throw new Error("GPS yo‘q");
+    if (!gps) throw new Error(t("davomat.gpsMissing"));
     return { latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracy };
   };
 
@@ -800,10 +857,10 @@ export default function DavomatFacePage() {
       switchToUser(sessionUser as User);
       toast({
         title: fullName || sessionUser.fullName,
-        description: "Yuz aniqlandi — tizim shu profilga o‘tdi",
+        description: t("davomat.faceRecognized"),
       });
     },
-    [switchToUser, toast],
+    [switchToUser, toast, t],
   );
 
   const onCaptured = async (
@@ -811,9 +868,14 @@ export default function DavomatFacePage() {
     snapshot?: string,
     liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number },
   ) => {
-    if (!gps) throw new Error("GPS yo‘q");
+    if (!gps) throw new Error(t("davomat.gpsMissing"));
     if (!inside) {
-      throw new Error(`Hududdan tashqarida (${formatDistance(distance)}). Yana ${formatDistance(remain)} yaqinlashing.`);
+      throw new Error(
+        tr(t, "davomat.outsideThrow", {
+          dist: formatDistance(distance, t),
+          remain: formatDistance(remain, t),
+        }),
+      );
     }
     try {
       const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
@@ -842,7 +904,7 @@ export default function DavomatFacePage() {
         if (result.ownerVerified) {
           toast({
             title: result.fullName,
-            description: "Yuz tasdiqlandi — bu sizning akkauntingiz",
+            description: t("davomat.faceOwnerOk"),
           });
           void loadWorkplace();
           void loadHistory();
@@ -856,10 +918,10 @@ export default function DavomatFacePage() {
           title: result.fullName,
           description:
             result.nextAction === "done"
-              ? "Bugun Keldim va Ketdim allaqachon belgilangan"
+              ? t("davomat.alreadyBoth")
               : result.nextAction === "out"
-                ? "Bugun Keldim belgilangan — faqat Ketdim qolgan"
-                : "Yuz tasdiqlandi — Keldim ni bosing",
+                ? t("davomat.alreadyInOnlyOut")
+                : t("davomat.faceOkPressIn"),
         });
       }
       return { fullName: result.fullName };
@@ -867,8 +929,10 @@ export default function DavomatFacePage() {
       if (err instanceof DavomatApiError && err.code === "face_not_owner") {
         const msg =
           err.message ||
-          (err.fullName ? `Siz ${err.fullName} emassiz` : "Bu yuz kirgan akkauntga tegishli emas");
-        toast({ title: "Boshqa odam", description: msg, variant: "destructive" });
+          (err.fullName
+            ? tr(t, "davomat.notPerson", { name: err.fullName })
+            : t("davomat.faceNotOwner"));
+        toast({ title: t("davomat.wrongPerson"), description: msg, variant: "destructive" });
         throw new Error(msg);
       }
       if (err instanceof DavomatApiError && err.code === "outside_geofence") {
@@ -886,15 +950,18 @@ export default function DavomatFacePage() {
         }
         const text =
           err.remainMeters != null && err.remainMeters < 1000
-            ? formatApproach(err.remainMeters)
+            ? formatApproach(err.remainMeters, t)
             : err.distanceMeters != null
-              ? `Siz ${formatDistance(err.distanceMeters)} uzoqdasiz. ${formatApproach(err.remainMeters)}.`
-              : err.message || "Hududdan tashqarida";
-        toast({ title: "Hududdan tashqarida", description: text, variant: "destructive" });
+              ? tr(t, "davomat.outsideFar", {
+                  dist: formatDistance(err.distanceMeters, t),
+                  approach: formatApproach(err.remainMeters, t),
+                })
+              : err.message || t("davomat.outsideTitle");
+        toast({ title: t("davomat.outsideTitle"), description: text, variant: "destructive" });
         throw new Error(text);
       }
       if (err instanceof DavomatApiError && err.code === "branch_gps_missing") {
-        toast({ title: "Filial GPS yo‘q", description: err.message, variant: "destructive" });
+        toast({ title: t("davomat.needGps"), description: err.message, variant: "destructive" });
         throw err;
       }
       throw err;
@@ -926,7 +993,7 @@ export default function DavomatFacePage() {
         adoptRecognizedProfile(result.user as User, result.fullName || verified.fullName);
       }
       toast({
-        title: action === "in" ? "Keldim" : "Ketdi",
+        title: action === "in" ? t("davomat.btnIn") : t("davomat.leftToast"),
         description: result.message,
       });
       if (action === "in") {
@@ -948,13 +1015,13 @@ export default function DavomatFacePage() {
           checkInAt: err.checkInAt || verified.checkInAt,
           checkOutAt: err.checkOutAt || verified.checkOutAt,
         });
-        toast({ title: "Allaqachon belgilangan", description: err.message });
+        toast({ title: t("davomat.alreadyMarked"), description: err.message });
         await loadWorkplace();
         await loadHistory();
         return;
       }
       toast({
-        title: "Xatolik",
+        title: t("common.error"),
         description: (err as Error)?.message,
         variant: "destructive",
       });
@@ -966,7 +1033,7 @@ export default function DavomatFacePage() {
   };
 
   const displayName =
-    verified?.fullName || workplace?.employee.fullName || user?.fullName || "Xodim";
+    verified?.fullName || workplace?.employee.fullName || user?.fullName || t("davomat.employee");
   const displayShift = useMemo(() => {
     if (workplace?.shift) return workplace.shift;
     if (!user?.role) return null;
@@ -978,10 +1045,14 @@ export default function DavomatFacePage() {
         user?.role,
         workplace?.site ?? (site.kind ? { kind: site.kind, label: site.label } : null),
         workplace?.employee?.location,
+        {
+          mainOffice: t("davomat.mainOffice"),
+          branchUnset: t("davomat.branchUnset"),
+        },
       ),
-    [user?.role, workplace?.site, workplace?.employee?.location, site.kind, site.label],
+    [user?.role, workplace?.site, workplace?.employee?.location, site.kind, site.label, t],
   );
-  const position = roleLabel(user?.role) || "Xodim";
+  const position = roleLabel(user?.role) || t("davomat.employee");
   const department = user?.departmentName;
   const phone = user?.phone;
   const shownFace = verified?.faceImage || faceImage;
@@ -1057,8 +1128,8 @@ export default function DavomatFacePage() {
     setFaceRegistered(true);
     saveFaceImage(snapshot);
     toast({
-      title: "Yuz ro‘yxatdan o‘tdi",
-      description: "Endi 1-qadamdan davomatni boshlang",
+      title: t("davomat.enrollOk"),
+      description: t("davomat.enrollOkDesc"),
     });
     await refreshFaceStatus();
   };
@@ -1078,10 +1149,10 @@ export default function DavomatFacePage() {
                   className="mb-2.5 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/25"
                 >
                   <ArrowLeft className="h-4 w-4" />
-                  Chiqish
+                  {t("common.logout")}
                 </Link>
                 <p className="text-[11px] font-medium uppercase tracking-[0.18em] dv-hero-muted">
-                  Davomat
+                  {t("davomat.title")}
                 </p>
                 <div className="mt-1 flex items-center gap-2 dv-hero-muted">
                   <CalendarDays className="h-3.5 w-3.5" />
@@ -1091,24 +1162,33 @@ export default function DavomatFacePage() {
               <div className="dv-hero-stat px-3 py-2 text-right">
                 <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wide dv-hero-muted">
                   <Clock3 className="h-3 w-3" />
-                  Ayni vaqt
+                  {t("davomat.nowTime")}
                 </div>
                 <div className="mt-0.5 font-mono text-2xl font-semibold tabular-nums leading-none">{clockLabel}</div>
               </div>
             </div>
 
             <div className="relative mt-6 flex items-center gap-4">
-              <div className={cn("relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-full dv-hero-stat", ringClass)}>
+              <div
+                className={cn(
+                  "relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-2xl bg-white/10",
+                  ringClass,
+                )}
+              >
                 {shownFace ? (
-                  <img src={shownFace} alt={displayName} className="h-full w-full object-cover" />
+                  <img
+                    src={shownFace}
+                    alt={displayName}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
                 ) : (
-                  <div className="flex h-full w-full items-center justify-center text-2xl font-semibold text-white">
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-white/15 to-white/5 text-2xl font-semibold text-white">
                     {initials(displayName)}
                   </div>
                 )}
                 <span
                   className={cn(
-                    "absolute bottom-0.5 right-0.5 h-4 w-4 rounded-full border-2 border-primary",
+                    "absolute bottom-1 right-1 z-10 h-4 w-4 rounded-full border-2 border-primary",
                     inside ? "bg-teal-400" : gps ? "bg-rose-400" : "bg-slate-400",
                   )}
                 />
@@ -1122,16 +1202,22 @@ export default function DavomatFacePage() {
                     <div className="flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="text-[10px] font-medium uppercase tracking-wide dv-hero-muted">
-                          Ish joyi
+                          {t("davomat.workplace")}
                         </p>
                         <p className="truncate text-sm font-semibold text-white">{workplaceTitle}</p>
                       </div>
                       <div className="shrink-0 text-right">
                         <p className="text-[10px] font-medium uppercase tracking-wide dv-hero-muted">
-                          {displayShift.type === "office" ? "Ish vaqti" : "Smena · ish vaqti"}
+                          {displayShift.type === "office" ? t("davomat.workHours") : t("davomat.shiftWorkHours")}
                         </p>
                         {displayShift.type !== "office" ? (
-                          <p className="text-[11px] font-medium text-white/90">{displayShift.label}</p>
+                          <p className="text-[11px] font-medium text-white/90">
+                            {displayShift.type === "two"
+                              ? t("davomat.shift2")
+                              : displayShift.type === "one"
+                                ? t("davomat.shift1")
+                                : displayShift.label}
+                          </p>
                         ) : null}
                         <p className="font-mono text-sm font-semibold tabular-nums text-white">
                           {displayShift.start} – {displayShift.end}
@@ -1151,7 +1237,7 @@ export default function DavomatFacePage() {
                           : "bg-slate-400/25 text-slate-100",
                     )}
                   >
-                    Holat: {holatLabel}
+                    {t("davomat.status")}: {holatLabel}
                   </span>
                 </div>
               </div>
@@ -1160,7 +1246,8 @@ export default function DavomatFacePage() {
             <div className="relative mt-4 grid grid-cols-2 gap-2 text-[11px]">
               <div className="dv-punch-in">
                 <div className="dv-punch-label">
-                  Keldim{displayShift ? ` ${punchPlanLabel("in", displayShift.start)}` : ""}
+                  {t("davomat.btnIn")}
+                  {displayShift ? ` ${punchPlanLabelI18n("in", displayShift.start, t)}` : ""}
                 </div>
                 <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
                   {verified?.checkIn || workplace?.today.checkIn || "—"}
@@ -1168,7 +1255,8 @@ export default function DavomatFacePage() {
               </div>
               <div className="dv-punch-out">
                 <div className="dv-punch-label">
-                  Ketdim{displayShift ? ` ${punchPlanLabel("out", displayShift.end)}` : ""}
+                  {t("davomat.btnOut")}
+                  {displayShift ? ` ${punchPlanLabelI18n("out", displayShift.end, t)}` : ""}
                 </div>
                 <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
                   {verified?.checkOut || workplace?.today.checkOut || "—"}
@@ -1177,11 +1265,11 @@ export default function DavomatFacePage() {
             </div>
             {displayShift ? (
               <p className="relative mt-2 text-center text-[10px] font-medium leading-snug text-rose-400">
-                {PUNCH_FINE_HINT}
+                {t("davomat.fineHint")}
               </p>
             ) : null}
             {phone ? (
-              <p className="relative mt-2 text-[11px] dv-hero-muted">Tel: {phone}</p>
+              <p className="relative mt-2 text-[11px] dv-hero-muted">{t("davomat.tel")}: {phone}</p>
             ) : null}
           </div>
         </section>
@@ -1193,7 +1281,7 @@ export default function DavomatFacePage() {
             inside={inside}
             hasGps={Boolean(gps) && !gpsError}
             hasIn={hasIn}
-            afterSix={afterSix}
+            afterShiftEnd={afterShiftEnd}
             done={Boolean(done)}
           />
         </div>
@@ -1201,14 +1289,14 @@ export default function DavomatFacePage() {
         {faceRegistered === false ? (
           <section className="dv-card dv-tone-info mt-4 border-l-[3px] border-l-primary">
             {showGuide && guideStep === "enroll" ? (
-              <MobileStepHint step={0} label="Face ID ni ulashni bosing" tone="amber" />
+              <MobileStepHint step={0} label={t("davomat.connectFaceHint")} tone="amber" />
             ) : null}
             <div className={cn("flex items-center gap-2", showGuide && guideStep === "enroll" ? "mt-3" : "mb-3")}>
               <span className="dv-step-badge dv-step-badge-warn">!</span>
-              <h2 className="text-sm font-semibold">Avval yuzni ro‘yxatdan o‘tkazing</h2>
+              <h2 className="text-sm font-semibold">{t("davomat.enrollFace")}</h2>
             </div>
             <p className="mb-3 text-sm opacity-90">
-              Davomat qilishdan oldin bir marta Face ID ulashing. Keyin yo‘riqnoma 1–4 qadam bilan ochiladi.
+              {t("davomat.enrollBlurb")}
             </p>
             <Button
               type="button"
@@ -1221,17 +1309,17 @@ export default function DavomatFacePage() {
               onClick={() => setEnrollOpen(true)}
             >
               <ScanFace className="h-5 w-5" />
-              Face ID ni ulash
+              {t("davomat.connectFace")}
             </Button>
             {!isFaceIdSupported() ? (
-              <p className="mt-2 text-center text-xs opacity-80">Kamera va HTTPS/localhost kerak</p>
+              <p className="mt-2 text-center text-xs opacity-80">{t("davomat.cameraHttps")}</p>
             ) : null}
           </section>
         ) : null}
 
         <section className="dv-card mt-4">
           {showGuide && guideStep === "permission" ? (
-            <MobileStepHint step={1} label="Ruxsat berish ni bosing" tone="amber" />
+            <MobileStepHint step={1} label={t("davomat.grantStepHint")} tone="amber" />
           ) : null}
           <div className={cn("flex items-center gap-2", showGuide && guideStep === "permission" ? "mt-3 mb-3" : "mb-3")}>
             <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -1240,7 +1328,7 @@ export default function DavomatFacePage() {
             <div className="flex flex-1 items-center justify-between gap-2">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <MapPin className="h-4 w-4" />
-                Joylashuv
+                {t("davomat.location")}
               </div>
               <Button
                 type="button"
@@ -1254,7 +1342,7 @@ export default function DavomatFacePage() {
                 onClick={() => void requestLocationPermission()}
               >
                 {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-                Ruxsat berish
+                {t("davomat.grantPermission")}
               </Button>
             </div>
           </div>
@@ -1269,9 +1357,9 @@ export default function DavomatFacePage() {
               {gps && distance != null ? (
                 <>
                   <span className="text-lg font-semibold tabular-nums leading-none">
-                    {formatDistanceParts(distance).value}
+                    {formatDistanceParts(distance, t).value}
                   </span>
-                  <span className="text-[10px]">{formatDistanceParts(distance).unit}</span>
+                  <span className="text-[10px]">{formatDistanceParts(distance, t).unit}</span>
                 </>
               ) : (
                 <Loader2 className="h-5 w-5 animate-spin" />
@@ -1281,22 +1369,23 @@ export default function DavomatFacePage() {
               {inside ? (
                 <p className="font-medium text-emerald-700 dark:text-emerald-300">
                   <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                  Hududdasiz
+                  {t("davomat.inZone")}
                 </p>
               ) : gps && remain != null ? (
                 <p className="font-medium text-rose-700 dark:text-rose-300">
                   <XCircle className="mr-1 inline h-4 w-4" />
-                  Hududdan tashqarida
+                  {t("davomat.outside")}
                 </p>
               ) : (
-                <p className="text-muted-foreground">«Ruxsat berish» ni bosing — lokatsiya so‘raladi</p>
+                <p className="text-muted-foreground">{t("davomat.tapGrant")}</p>
               )}
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {workplace?.site?.kind === "branch" ? "Belgilangan filial" : "Asosiy ofis"} · ruxsat {allowedMeters} m
+                {workplace?.site?.kind === "branch" ? t("davomat.designatedBranch") : t("davomat.mainOffice")}{" "}
+                · {tr(t, "davomat.allowedMeters", { m: allowedMeters })}
               </p>
               {displayShift ? (
                 <p className="mt-1 rounded-lg dv-tone-amber border-0 px-2 py-1 text-[11px] font-medium">
-                  {displayShift.label}: {displayShift.start}–{displayShift.end}. Kechikish — jarima.
+                  {displayShift.label}: {displayShift.start}–{displayShift.end}. {t("davomat.lateFine")}
                 </p>
               ) : null}
               {site.label ? (
@@ -1312,8 +1401,7 @@ export default function DavomatFacePage() {
 
           {workplace && workplace.employee.hasGps === false ? (
             <p className="dv-tone-amber mt-3 rounded-2xl border px-3 py-2 text-center text-sm">
-              {workplace.gpsError ||
-                "Filial lokatsiyasi kiritilmagan. Koordinator GPS kiritsin."}
+              {workplace.gpsError || t("davomat.branchGpsHint")}
             </p>
           ) : null}
 
@@ -1329,18 +1417,29 @@ export default function DavomatFacePage() {
               {inside ? (
                 <>
                   <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                  Hududdasiz · {formatDistance(distance)} (ruxsat {allowedMeters} m)
+                  {tr(t, "davomat.inZoneMeters", {
+                    dist: formatDistance(distance, t),
+                    m: allowedMeters,
+                  })}
                 </>
               ) : (
                 <>
                   <XCircle className="mr-1 inline h-4 w-4" />
-                  Siz {formatDistance(distance)} uzoqdasiz · {formatApproach(remain)}
+                  {tr(t, "davomat.youAreFar", {
+                    dist: formatDistance(distance, t),
+                    approach: formatApproach(remain, t),
+                  })}
                   <span className="mt-1 block text-sm font-semibold">
-                    Yashil hududga kirmasangiz — kelmagan deb belgilanasiz
+                    {t("davomat.zoneAbsentWarn")}
                   </span>
                   <span className="mt-0.5 block text-xs font-normal opacity-90">
-                    Davomat faqat {workplace?.site?.kind === "branch" ? "filial" : "asosiy ofis"}dan{" "}
-                    {allowedMeters} m ichida
+                    {tr(t, "davomat.onlyWithin", {
+                      place:
+                        workplace?.site?.kind === "branch"
+                          ? t("davomat.placeBranch")
+                          : t("davomat.placeOffice"),
+                      m: allowedMeters,
+                    })}
                   </span>
                 </>
               )}
@@ -1351,7 +1450,7 @@ export default function DavomatFacePage() {
             <div className="mt-3">
               <MobileStepHint
                 step={1}
-                label="Yashil hududga kiring — aks holda kelmagan"
+                label={t("davomat.zoneStepHint")}
                 tone="rose"
               />
             </div>
@@ -1361,7 +1460,7 @@ export default function DavomatFacePage() {
           {locationReady ? (
             <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-400">
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Joylashuv tasdiqlandi — keyingi qadam: Face ID
+              {t("davomat.locationConfirmed")}
             </p>
           ) : null}
         </section>
@@ -1379,10 +1478,10 @@ export default function DavomatFacePage() {
                 <div className="dv-tone-emerald flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm">
                   <CheckCircle2 className="h-5 w-5 shrink-0" />
                   <div>
-                    <p className="font-semibold">Yuz tasdiqlandi</p>
+                    <p className="font-semibold">{t("davomat.faceVerified")}</p>
                     <p className="text-xs opacity-80">{verified.fullName}</p>
                     <p className="mt-0.5 text-[11px] opacity-70">
-                      Tizim shu xodim profiliga o‘tdi
+                      {t("davomat.switchedProfile")}
                     </p>
                   </div>
                 </div>
@@ -1396,17 +1495,17 @@ export default function DavomatFacePage() {
                   }}
                 >
                   <LogIn className="h-4 w-4" />
-                  {verified.fullName} profiliga o‘tish
+                  {tr(t, "davomat.goToProfile", { name: verified.fullName })}
                 </Button>
               </div>
             ) : (
               <div className="space-y-3">
                 {showGuide && guideStep === "face" ? (
-                  <MobileStepHint step={2} label="Face ID ni bosing" tone="amber" />
+                  <MobileStepHint step={2} label={t("davomat.pressFace")} tone="amber" />
                 ) : null}
                 {guideStep === "zone" || (gps && !inside) ? (
                   <p className="dv-tone-rose rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold">
-                    2-qadam yopiq: avval yashil hududga kiring. Aks holda kelmagan deb belgilanasiz.
+                    {t("davomat.faceStepClosed")}
                   </p>
                 ) : null}
                 <Button
@@ -1420,7 +1519,7 @@ export default function DavomatFacePage() {
                   onClick={() => setScanOpen(true)}
                 >
                   {canOpenFace ? <ScanFace className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
-                  {canOpenFace ? "Face ID" : "Face ID yopiq"}
+                  {canOpenFace ? "Face ID" : t("davomat.faceClosed")}
                 </Button>
                 {!canOpenFace && faceLockedReason ? (
                   <p className="dv-tone-rose rounded-2xl border px-3 py-2 text-center text-sm">
@@ -1428,7 +1527,7 @@ export default function DavomatFacePage() {
                   </p>
                 ) : (
                   <p className="text-center text-xs text-muted-foreground">
-                    3-qadam: yuz tasdiqlangach «Keldim» ni bosing
+                    {t("davomat.afterFacePressIn")}
                   </p>
                 )}
               </div>
@@ -1443,13 +1542,13 @@ export default function DavomatFacePage() {
                 {hasIn ? 4 : 3}
               </span>
               <h2 className="text-sm font-semibold text-foreground">
-                {hasIn ? "Ketdim" : "Keldim"}
+                {hasIn ? t("davomat.btnOut") : t("davomat.btnIn")}
               </h2>
             </div>
             {hasIn ? (
               <div className="space-y-3">
                 {showGuide && guideStep === "ketdim" ? (
-                  <MobileStepHint step={4} label="Ketdim ni bosing" tone="rose" />
+                  <MobileStepHint step={4} label={t("davomat.outStepHint")} tone="rose" />
                 ) : null}
                 <Button
                   type="button"
@@ -1462,16 +1561,16 @@ export default function DavomatFacePage() {
                   onClick={() => setConfirmOut(true)}
                 >
                   <LogOut className="h-5 w-5" />
-                  Ketdim
+                  {t("davomat.btnOut")}
                 </Button>
                 <p className="text-center text-xs text-muted-foreground">
-                  Bosilganda ketishni tasdiqlash so‘raladi. 18:00 dan oldin ham chiqish mumkin.
+                  {t("davomat.outHint")}
                 </p>
               </div>
             ) : (
               <div className="space-y-3">
                 {showGuide && guideStep === "keldim" ? (
-                  <MobileStepHint step={3} label="Keldim ni bosing" tone="emerald" />
+                  <MobileStepHint step={3} label={t("davomat.inStepHint")} tone="emerald" />
                 ) : null}
                 <Button
                   type="button"
@@ -1484,10 +1583,10 @@ export default function DavomatFacePage() {
                   onClick={() => void punch("in")}
                 >
                   <LogIn className="h-5 w-5" />
-                  Keldim
+                  {t("davomat.btnIn")}
                 </Button>
                 <p className="text-center text-xs text-muted-foreground">
-                  Keldim dan keyin «Ketdim» ochiladi — tasdiqlab chiqishingiz mumkin
+                  {t("davomat.inHint")}
                 </p>
               </div>
             )}
@@ -1496,16 +1595,18 @@ export default function DavomatFacePage() {
 
         {working ? (
           <section className="dv-tone-emerald mt-4 rounded-[24px] border px-4 py-4 text-center">
-            <p className="text-[11px] font-medium uppercase tracking-wide opacity-80">Ishlayotgan vaqt</p>
+            <p className="text-[11px] font-medium uppercase tracking-wide opacity-80">{t("davomat.workingTime")}</p>
             <p className="mt-1 font-mono text-4xl font-semibold tabular-nums">{elapsedLabel}</p>
-            <p className="mt-1 text-xs opacity-80">Keldim: {verified?.checkIn || workplace?.today.checkIn}</p>
+            <p className="mt-1 text-xs opacity-80">
+              {t("davomat.btnIn")}: {verified?.checkIn || workplace?.today.checkIn}
+            </p>
           </section>
         ) : null}
 
         <section className="mt-4 overflow-hidden rounded-[24px] border border-border bg-card shadow-sm">
           <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
             <div>
-              <h2 className="text-sm font-semibold text-foreground">Bugungi davomatim</h2>
+              <h2 className="text-sm font-semibold text-foreground">{t("davomat.myToday")}</h2>
               <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                 <CalendarDays className="h-3.5 w-3.5" />
                 {dateLabel}
@@ -1528,7 +1629,8 @@ export default function DavomatFacePage() {
             <div className="dv-punch-card-in">
               <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
                 <LogIn className="h-3.5 w-3.5" />
-                Keldim{displayShift ? ` ${punchPlanLabel("in", displayShift.start)}` : ""}
+                {t("davomat.btnIn")}
+                {displayShift ? ` ${punchPlanLabelI18n("in", displayShift.start, t)}` : ""}
               </div>
               <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
                 {checkInLabel}
@@ -1537,7 +1639,8 @@ export default function DavomatFacePage() {
             <div className="dv-punch-card-out">
               <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
                 <LogOut className="h-3.5 w-3.5" />
-                Ketdim{displayShift ? ` ${punchPlanLabel("out", displayShift.end)}` : ""}
+                {t("davomat.btnOut")}
+                {displayShift ? ` ${punchPlanLabelI18n("out", displayShift.end, t)}` : ""}
               </div>
               <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
                 {checkOutLabel}
@@ -1546,22 +1649,22 @@ export default function DavomatFacePage() {
           </div>
           {displayShift ? (
             <p className="px-4 pb-3 text-center text-[11px] font-medium leading-snug text-red-600">
-              {PUNCH_FINE_HINT}
+              {t("davomat.fineHint")}
             </p>
           ) : null}
           {done && closedWork != null ? (
             <div className="mx-4 mb-4 rounded-2xl border border-border bg-muted px-3 py-3 text-center">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">Ishlangan vaqt</p>
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("davomat.workedTime")}</p>
               <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                {formatHoursUz(closedWork)}
+                {formatHours(closedWork, t)}
               </p>
               <p className="mt-2 text-[11px] text-muted-foreground">
-                Kuniga faqat 1 marta Keldim va 1 marta Ketdim
+                {t("davomat.oncePerDay")}
               </p>
             </div>
           ) : done ? (
             <p className="px-4 pb-3 text-center text-xs text-muted-foreground">
-              Kuniga faqat 1 marta Keldim va 1 marta Ketdim
+              {t("davomat.oncePerDay")}
             </p>
           ) : null}
         </section>
@@ -1571,31 +1674,31 @@ export default function DavomatFacePage() {
             <div className="min-w-0">
               <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
                 <History className="h-3.5 w-3.5 shrink-0" />
-                {isTgMiniApp ? "Davomat holati" : "Tarix"}
+                {isTgMiniApp ? t("davomat.attStatus") : t("davomat.history")}
               </h2>
               <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground sm:text-[11px]">
                 {historyRange === "day"
-                  ? "Bugungi kun"
+                  ? t("davomat.todayDay")
                   : historyRange === "week"
-                    ? "So‘nggi 7 kun"
-                    : "So‘nggi 31 kun"}
+                    ? t("davomat.last7")
+                    : t("davomat.last31")}
                 {" · "}
-                {historySummary.count} qator
+                {tr(t, "davomat.rowsCount", { n: historySummary.count })}
                 {historySummary.minutes > 0
-                  ? ` · jami ${formatHoursUz(historySummary.minutes)}`
+                  ? ` · ${tr(t, "davomat.totalHours", { hours: formatHours(historySummary.minutes, t) })}`
                   : ""}
               </p>
             </div>
             <div
               className="grid grid-cols-3 gap-0.5 rounded-md border border-border bg-card p-0.5 sm:inline-flex sm:w-auto"
               role="tablist"
-              aria-label="Davomat oralig‘i"
+              aria-label={t("davomat.rangeAria")}
             >
               {(
                 [
-                  { id: "day" as const, label: "Kunlik" },
-                  { id: "week" as const, label: "Haftalik" },
-                  { id: "month" as const, label: "Oylik" },
+                  { id: "day" as const, label: t("davomat.daily") },
+                  { id: "week" as const, label: t("davomat.weekly") },
+                  { id: "month" as const, label: t("davomat.monthly") },
                 ] as const
               ).map((opt) => (
                 <button
@@ -1619,23 +1722,23 @@ export default function DavomatFacePage() {
 
           {historyDays.length === 0 ? (
             <p className="px-3 py-5 text-center text-xs text-muted-foreground sm:text-sm">
-              Hali yozuv yo‘q. Face ID bilan belgilang — tarix shu yerda chiqadi.
+              {t("davomat.historyEmpty")}
             </p>
           ) : filteredHistoryDays.length === 0 ? (
             <p className="px-3 py-5 text-center text-xs text-muted-foreground sm:text-sm">
-              Tanlangan oralikda yozuv yo‘q.
+              {t("davomat.rangeEmpty")}
             </p>
           ) : (
             <>
               <div className="flex flex-wrap gap-1.5 border-b border-border px-2.5 py-1.5 text-[10px] sm:px-3 sm:text-[11px]">
                 <span className="dv-tone-emerald rounded border-0 px-1.5 py-0.5 font-medium">
-                  Kelgan {historySummary.present}
+                  {t("davomat.arrived")} {historySummary.present}
                 </span>
                 <span className="dv-tone-amber rounded border-0 px-1.5 py-0.5 font-medium">
-                  Kech {historySummary.late}
+                  {t("davomat.lateShort")} {historySummary.late}
                 </span>
                 <span className="dv-tone-rose rounded border-0 px-1.5 py-0.5 font-medium">
-                  Kelmagan {historySummary.absent}
+                  {t("davomat.absent")} {historySummary.absent}
                 </span>
               </div>
 
@@ -1649,17 +1752,17 @@ export default function DavomatFacePage() {
                 <table className="w-full border-collapse text-[11px]">
                   <thead className="sticky top-0 z-10 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))] dark:bg-slate-800">
                     <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <th className="border-r border-border px-2 py-1.5">Sana</th>
-                      <th className="border-r border-border px-1.5 py-1.5 text-center">Kel</th>
-                      <th className="border-r border-border px-1.5 py-1.5 text-center">Ket</th>
-                      <th className="border-r border-border px-1.5 py-1.5 text-center">Holat</th>
-                      <th className="px-1.5 py-1.5 text-right">Vaqt</th>
+                      <th className="border-r border-border px-2 py-1.5">{t("davomat.colDate")}</th>
+                      <th className="border-r border-border px-1.5 py-1.5 text-center">{t("davomat.colInShort")}</th>
+                      <th className="border-r border-border px-1.5 py-1.5 text-center">{t("davomat.colOutShort")}</th>
+                      <th className="border-r border-border px-1.5 py-1.5 text-center">{t("davomat.colStatus")}</th>
+                      <th className="px-1.5 py-1.5 text-right">{t("davomat.colTime")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredHistoryDays.map((d, i) => {
                       const isToday = d.date === todayStamp;
-                      const dayParts = splitDayUz(d.date);
+                      const dayParts = splitDay(d.date, t);
                       const worked =
                         d.checkIn !== "—" && d.checkOut !== "—"
                           ? workedMinutesFromPunch({
@@ -1687,7 +1790,7 @@ export default function DavomatFacePage() {
                               </span>
                               {isToday ? (
                                 <span className="ml-1 text-[9px] font-semibold text-teal-700 dark:text-teal-300">
-                                  bugun
+                                  {t("davomat.todayTag")}
                                 </span>
                               ) : null}
                             </div>
@@ -1705,11 +1808,11 @@ export default function DavomatFacePage() {
                                 STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
                               )}
                             >
-                              {STATUS_UZ[d.status] || d.status}
+                              {t(STATUS_KEYS[d.status] || d.status, d.status)}
                             </span>
                           </td>
                           <td className="px-1.5 py-1.5 text-right font-medium tabular-nums text-foreground">
-                            {worked != null ? formatHoursUz(worked) : d.workedHours || "—"}
+                            {worked != null ? formatHours(worked, t) : d.workedHours || "—"}
                           </td>
                         </tr>
                       );
@@ -1729,19 +1832,19 @@ export default function DavomatFacePage() {
                   <thead className="sticky top-0 z-10 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))] dark:bg-slate-800">
                     <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                       <th className="sticky left-0 z-[1] border-r border-border bg-muted px-3 py-2 dark:bg-slate-800">
-                        Sana
+                        {t("davomat.colDate")}
                       </th>
-                      <th className="border-r border-border px-3 py-2">Hafta kuni</th>
-                      <th className="border-r border-border px-3 py-2 text-center">Keldim</th>
-                      <th className="border-r border-border px-3 py-2 text-center">Ketdim</th>
-                      <th className="border-r border-border px-3 py-2 text-center">Holat</th>
-                      <th className="px-3 py-2 text-right">Ishlangan vaqt</th>
+                      <th className="border-r border-border px-3 py-2">{t("davomat.colWeekday")}</th>
+                      <th className="border-r border-border px-3 py-2 text-center">{t("davomat.btnIn")}</th>
+                      <th className="border-r border-border px-3 py-2 text-center">{t("davomat.btnOut")}</th>
+                      <th className="border-r border-border px-3 py-2 text-center">{t("davomat.colStatus")}</th>
+                      <th className="px-3 py-2 text-right">{t("davomat.workedTime")}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredHistoryDays.map((d, i) => {
                       const isToday = d.date === todayStamp;
-                      const dayParts = splitDayUz(d.date);
+                      const dayParts = splitDay(d.date, t);
                       const worked =
                         d.checkIn !== "—" && d.checkOut !== "—"
                           ? workedMinutesFromPunch({
@@ -1770,7 +1873,7 @@ export default function DavomatFacePage() {
                             {dayParts.date}
                             {isToday ? (
                               <span className="ml-2 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 dark:text-teal-300">
-                                bugun
+                                {t("davomat.todayTag")}
                               </span>
                             ) : null}
                           </td>
@@ -1790,11 +1893,11 @@ export default function DavomatFacePage() {
                                 STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
                               )}
                             >
-                              {STATUS_UZ[d.status] || d.status}
+                              {t(STATUS_KEYS[d.status] || d.status, d.status)}
                             </span>
                           </td>
                           <td className="px-3 py-1.5 text-right font-medium tabular-nums text-foreground">
-                            {worked != null ? formatHoursUz(worked) : d.workedHours || "—"}
+                            {worked != null ? formatHours(worked, t) : d.workedHours || "—"}
                           </td>
                         </tr>
                       );
@@ -1811,14 +1914,14 @@ export default function DavomatFacePage() {
             <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm">
               <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
                 <Banknote className="h-4 w-4" />
-                Mening oyligim · {oylikMe.data.monthLabel}
+                {t("davomat.mySalary")} · {oylikMe.data.monthLabel}
               </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">Faqat o‘zingizning KPI. Batafsil — Oylik.</p>
+              <p className="mt-1 text-[11px] text-muted-foreground">{t("davomat.salaryHint")}</p>
               <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                <p>Fiks maosh: <span className="font-semibold">{formatSom(oylikMe.data.fixedSalary)}</span></p>
+                <p>{t("davomat.fixedPay")}: <span className="font-semibold">{formatSom(oylikMe.data.fixedSalary)}</span></p>
                 <p>KPI: <span className="font-semibold">{oylikMe.data.kpiPercent}%</span></p>
-                <p>Bonus: <span className="font-semibold">{formatSom(oylikMe.data.bonusAmount)}</span></p>
-                <p>Jami: <span className="font-bold text-primary">{formatSom(oylikMe.data.totalAmount)}</span></p>
+                <p>{t("davomat.bonus")}: <span className="font-semibold">{formatSom(oylikMe.data.bonusAmount)}</span></p>
+                <p>{t("davomat.totalPay")}: <span className="font-bold text-primary">{formatSom(oylikMe.data.totalAmount)}</span></p>
               </div>
             </div>
           </Link>
@@ -1827,12 +1930,12 @@ export default function DavomatFacePage() {
         <div className="mt-5 flex justify-center gap-4 text-sm">
           {!isTgMiniApp ? (
             <Link href="/login" className="text-primary underline-offset-2 hover:underline">
-              Login
+              {t("davomat.loginLink")}
             </Link>
           ) : null}
           {isAuthenticated && canReport ? (
             <Link href="/davomat" className="text-primary underline-offset-2 hover:underline">
-              Hisobot
+              {t("davomat.report")}
             </Link>
           ) : null}
         </div>
@@ -1842,8 +1945,8 @@ export default function DavomatFacePage() {
         open={enrollOpen}
         onOpenChange={setEnrollOpen}
         mode="enroll"
-        title="Davomat · Yuzni ulash"
-        description="Kameraga to‘g‘ri qarang — bir marta ro‘yxatdan o‘ting"
+        title={t("davomat.enrollTitle")}
+        description={t("davomat.enrollDesc")}
         onCaptured={onEnrollCaptured}
       />
 
@@ -1851,25 +1954,25 @@ export default function DavomatFacePage() {
         open={scanOpen}
         onOpenChange={setScanOpen}
         mode="login"
-        title="Davomat · Face ID"
-        description="Lokatsiya tasdiqlangan. Yuzni oval ichiga tuting."
+        title={t("davomat.faceTitle")}
+        description={t("davomat.scanDesc")}
         onCaptured={onCaptured}
       />
 
       <AlertDialog open={confirmOut} onOpenChange={setConfirmOut}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Ketishni tasdiqlaysizmi?</AlertDialogTitle>
+            <AlertDialogTitle>{t("davomat.confirmOutTitle")}</AlertDialogTitle>
             <AlertDialogDescription>
-              {afterSix
-                ? `${elapsedLabel} ishladingiz. Ha desangiz, bugungi ketish vaqti yoziladi.`
-                : `Hozir 18:00 dan oldin. ${elapsedLabel} ishladingiz. Ha desangiz, erta ketish sifatida yoziladi.`}
+              {afterShiftEnd
+                ? tr(t, "davomat.confirmOutAfter6", { elapsed: elapsedLabel })
+                : tr(t, "davomat.confirmOutEarly", { elapsed: elapsedLabel, time: shiftEndHm })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Yo‘q</AlertDialogCancel>
+            <AlertDialogCancel>{t("davomat.no")}</AlertDialogCancel>
             <AlertDialogAction className="dv-btn-out h-10 px-4" onClick={() => void punch("out")}>
-              Ha
+              {t("davomat.yes")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

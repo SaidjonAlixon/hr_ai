@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { canManageSettings } from "@/lib/roles";
+import { useI18n } from "@/i18n/I18nProvider";
 import {
   useClearKirishVideo,
   useKirishAdminVideos,
@@ -62,6 +63,7 @@ type Draft = { youtube: string; pdf: string; questions: KirishAdminQuestion[] };
 export default function AdminKirishVideosPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
   const isAdmin = canManageSettings(user?.role);
   const list = useKirishAdminVideos(isAdmin);
   const save = useSaveKirishVideo();
@@ -85,8 +87,8 @@ export default function AdminKirishVideosPage() {
   if (!isAdmin) {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
-        <h1 className="text-2xl font-bold">Kirish materiallari</h1>
-        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin va direktor uchun.</p>
+        <h1 className="text-2xl font-bold">{t("admin.kirishVideos")}</h1>
+        <p className="mt-2 text-muted-foreground">{t("admin.restricted")}</p>
       </div>
     );
   }
@@ -161,12 +163,11 @@ export default function AdminKirishVideosPage() {
           className="mb-3 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/25"
         >
           <ArrowLeft className="h-4 w-4" />
-          Chiqish
+          {t("ui.exit")}
         </Link>
-        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Kirish materiallari</h1>
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">{t("admin.kirishVideos")}</h1>
         <p className="mt-1.5 max-w-xl text-xs leading-relaxed text-sky-100/85 sm:text-sm">
-          Bosqichga YouTube, Drive PDF va test qo‘shing. Drive faylini «Havola orqali ko‘ra
-          oladiganlar» qiling.
+          {t("admin.kirish.subtitle")}
         </p>
       </div>
 
@@ -193,7 +194,7 @@ export default function AdminKirishVideosPage() {
                 )}
               >
                 <span className="text-[9px] font-semibold uppercase tracking-wide opacity-70">
-                  Bosqich
+                  {t("admin.kirish.stage")}
                 </span>
                 <span className="text-base font-bold tabular-nums leading-none">{item.stage}</span>
               </button>
@@ -237,7 +238,7 @@ export default function AdminKirishVideosPage() {
 
                   <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
                     <div className="space-y-1.5">
-                      <Label htmlFor={`yt-${v.stage}`}>YouTube video</Label>
+                      <Label htmlFor={`yt-${v.stage}`}>{t("admin.kirish.youtube")}</Label>
                       <Input
                         id={`yt-${v.stage}`}
                         className="h-11 rounded-xl text-base md:h-9 md:text-sm"
@@ -249,7 +250,7 @@ export default function AdminKirishVideosPage() {
                     <div className="space-y-1.5">
                       <Label htmlFor={`pdf-${v.stage}`} className="flex items-center gap-1.5">
                         <FileText className="h-3.5 w-3.5" />
-                        PDF slayd (Google Drive)
+                        {t("admin.kirish.pdf")}
                       </Label>
                       <Input
                         id={`pdf-${v.stage}`}
@@ -263,7 +264,7 @@ export default function AdminKirishVideosPage() {
 
                   <div className="space-y-3">
                     <div className="flex items-center justify-between gap-2">
-                      <Label>Test savollari</Label>
+                      <Label>{t("admin.kirish.quiz")}</Label>
                       <Button
                         type="button"
                         variant="outline"
@@ -286,7 +287,7 @@ export default function AdminKirishVideosPage() {
                           <span className="mt-2 text-xs font-semibold text-[#0b3a5c]">{qi + 1}.</span>
                           <Textarea
                             className="min-h-[64px] bg-card"
-                            placeholder="Savol matni"
+                            placeholder={t("admin.kirish.question")}
                             value={q.text}
                             onChange={(e) => {
                               const questions = draft.questions.map((item, i) =>
@@ -310,7 +311,7 @@ export default function AdminKirishVideosPage() {
                             <Trash2 className="h-4 w-4" />
                           </Button>
                         </div>
-                        <p className="text-[11px] text-muted-foreground">To‘g‘ri javobni belgilang</p>
+                        <p className="text-[11px] text-muted-foreground">{t("admin.kirish.correct")}</p>
                         <div className="grid gap-2">
                           {q.options.map((opt, oi) => (
                             <div key={oi} className="flex items-center gap-2">
@@ -353,7 +354,7 @@ export default function AdminKirishVideosPage() {
                       disabled={busy}
                       onClick={() => onSave(v.stage)}
                     >
-                      {busy && save.variables?.stage === v.stage ? "Saqlanmoqda..." : "Saqlash"}
+                      {busy && save.variables?.stage === v.stage ? t("ui.saving") : t("ui.save")}
                     </Button>
                     {v.youtubeId || v.driveFileId || (v.questions && v.questions.length > 0) ? (
                       <Button

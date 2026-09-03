@@ -70,6 +70,7 @@ import {
   Video,
   X,
 } from "lucide-react";
+import { useI18n } from "@/i18n/I18nProvider";
 
 const ROLE_LABELS: Record<string, string> = {
   admin: "Admin",
@@ -182,6 +183,7 @@ function tintForId(id: number) {
 }
 
 function TypeBadge({ type }: { type: string }) {
+  const { t } = useI18n();
   const isGroup = type === "group";
   return (
     <span
@@ -194,11 +196,11 @@ function TypeBadge({ type }: { type: string }) {
     >
       {isGroup ? (
         <>
-          <Users className="h-2.5 w-2.5" /> Guruh
+          <Users className="h-2.5 w-2.5" /> {t("chat.group")}
         </>
       ) : (
         <>
-          <User className="h-2.5 w-2.5" /> Shaxsiy
+          <User className="h-2.5 w-2.5" /> {t("chat.private")}
         </>
       )}
     </span>
@@ -208,6 +210,7 @@ function TypeBadge({ type }: { type: string }) {
 export default function ChatPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
   const [urlChatId, setUrlChatId] = useState<number | null>(() => {
     const id = Number(new URLSearchParams(window.location.search).get("id"));
     return Number.isFinite(id) && id > 0 ? id : null;
@@ -792,7 +795,7 @@ export default function ChatPage() {
           <div className="flex items-center justify-between mb-3">
             <h1 className="text-lg font-semibold tracking-tight flex items-center gap-2">
               <MessageCircle className="h-5 w-5 text-[#2AABEE]" />
-              Chat
+              {t("chat.title")}
             </h1>
             <Button
               size="sm"
@@ -805,16 +808,16 @@ export default function ChatPage() {
               }}
             >
               <Plus className="h-4 w-4" />
-              Yangi
+              {t("chat.new")}
             </Button>
           </div>
 
           <div className="flex gap-1.5 mb-3">
             {(
               [
-                { id: "all", label: "Barchasi", count: chats.length },
-                { id: "direct", label: "Shaxsiy", count: directCount },
-                { id: "group", label: "Guruh", count: groupCount },
+                { id: "all", label: t("ui.all"), count: chats.length },
+                { id: "direct", label: t("chat.private"), count: directCount },
+                { id: "group", label: t("chat.group"), count: groupCount },
               ] as const
             ).map((tab) => (
               <button
@@ -841,7 +844,7 @@ export default function ChatPage() {
             <Input
               value={listQuery}
               onChange={(e) => setListQuery(e.target.value)}
-              placeholder="Qidirish..."
+              placeholder={t("chat.search")}
               className="pl-9 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
             />
           </div>
@@ -849,14 +852,14 @@ export default function ChatPage() {
 
         <div className="flex-1 overflow-y-auto">
           {list.isLoading && (
-            <p className="text-sm text-[#6c7a89] p-4">Yuklanmoqda...</p>
+            <p className="text-sm text-[#6c7a89] p-4">{t("ui.loading")}</p>
           )}
           {!list.isLoading && filteredChats.length === 0 && (
             <div className="p-6 text-center text-[#6c7a89]">
               <MessageCircle className="h-10 w-10 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">Hali chat yo‘q</p>
+              <p className="text-sm">{t("chat.emptyList")}</p>
               <p className="text-xs mt-1">
-                Shaxsiy suhbat yoki guruh oching — faqat a’zolar ko‘radi
+                {t("chat.empty")}
               </p>
             </div>
           )}
@@ -924,9 +927,9 @@ export default function ChatPage() {
         {!selectedId || !activeChat ? (
           <div className="flex-1 flex flex-col items-center justify-center text-[#6c7a89] p-6">
             <MessageCircle className="h-16 w-16 mb-3 opacity-30" />
-            <p className="text-base">Chatni tanlang yoki yangi suhbat boshlang</p>
+            <p className="text-base">{t("chat.pick")}</p>
             <p className="text-xs mt-2 max-w-sm text-center">
-              Shaxsiy chat — faqat 2 kishi. Guruh — faqat qo‘shilgan a’zolar.
+              {t("chat.empty")}
             </p>
           </div>
         ) : (
@@ -994,20 +997,20 @@ export default function ChatPage() {
                     </AlertDialogTrigger>
                     <AlertDialogContent className="bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Guruhni o‘chirish?</AlertDialogTitle>
+                        <AlertDialogTitle>{t("chat.deleteGroup")}</AlertDialogTitle>
                         <AlertDialogDescription className="text-[#8b9aab]">
-                          «{activeChat.title}» to‘liq o‘chadi — barcha xabarlar va a’zolar.
+                          {t("chat.deleteGroupDesc")}
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]">
-                          Bekor
+                          {t("ui.cancel")}
                         </AlertDialogCancel>
                         <AlertDialogAction
                           className="bg-rose-600 hover:bg-rose-700"
                           onClick={handleDeleteGroup}
                         >
-                          O‘chirish
+                          {t("ui.delete")}
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
@@ -1366,12 +1369,12 @@ export default function ChatPage() {
                   onChange={(e) => setDraft(e.target.value)}
                   placeholder={
                     editingId
-                      ? "Tahrirlangan matn..."
+                      ? t("chat.placeholder.edit")
                       : replyTo
-                        ? "Javob yozing..."
+                        ? t("chat.placeholder.reply")
                         : uploadingFile
-                          ? "Fayl yuklanmoqda..."
-                          : "Xabar yoki fayl..."
+                          ? t("chat.uploading")
+                          : t("chat.placeholder.msg")
                   }
                   className="min-h-11 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89] focus-visible:ring-[#2AABEE]"
                   onKeyDown={(e) => {
@@ -1423,7 +1426,7 @@ export default function ChatPage() {
       <Dialog open={newOpen} onOpenChange={setNewOpen}>
         <DialogContent className="sm:max-w-md bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
           <DialogHeader>
-            <DialogTitle>Yangi chat</DialogTitle>
+            <DialogTitle>{t("chat.newDialog")}</DialogTitle>
           </DialogHeader>
 
           <div className="flex gap-2 mb-2">
@@ -1441,7 +1444,7 @@ export default function ChatPage() {
               }}
             >
               <User className="h-4 w-4" />
-              Shaxsiy
+              {t("chat.private")}
             </Button>
             <Button
               type="button"
@@ -1454,21 +1457,19 @@ export default function ChatPage() {
               onClick={() => setNewMode("group")}
             >
               <Users className="h-4 w-4" />
-              Guruh
+              {t("chat.group")}
             </Button>
           </div>
 
           <p className="text-xs text-[#8b9aab] mb-3">
-            {newMode === "direct"
-              ? "Faqat siz va tanlangan xodim ko‘radi. Boshqalar bu suhbatni ko‘rmaydi."
-              : "Faqat guruhga qo‘shilgan a’zolar ko‘radi. Keyin ham a’zo qo‘shish mumkin."}
+            {newMode === "direct" ? t("chat.hint.direct") : t("chat.hint.group")}
           </p>
 
           {newMode === "group" && (
             <Input
               value={groupTitle}
               onChange={(e) => setGroupTitle(e.target.value)}
-              placeholder="Guruh nomi *"
+              placeholder={t("chat.groupName")}
               className="mb-3 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89]"
             />
           )}
@@ -1479,7 +1480,7 @@ export default function ChatPage() {
               value={userQuery}
               onChange={(e) => setUserQuery(e.target.value)}
               placeholder={
-                newMode === "direct" ? "Xodim tanlang..." : "A’zolarni tanlang..."
+                newMode === "direct" ? t("chat.pickUser") : t("chat.pickMembers")
               }
               className="pl-9 bg-[#242f3d] border-transparent text-foreground dark:text-white placeholder:text-[#6c7a89]"
             />
@@ -1530,7 +1531,7 @@ export default function ChatPage() {
               );
             })}
             {!chatUsers.isLoading && (chatUsers.data?.users?.length ?? 0) === 0 && (
-              <p className="p-4 text-sm text-[#6c7a89] text-center">Xodim topilmadi</p>
+              <p className="p-4 text-sm text-[#6c7a89] text-center">{t("chat.noEmployees")}</p>
             )}
           </div>
 
@@ -1541,7 +1542,7 @@ export default function ChatPage() {
               className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]"
               onClick={() => setNewOpen(false)}
             >
-              Bekor
+              {t("ui.cancel")}
             </Button>
             <Button
               type="button"
@@ -1560,8 +1561,8 @@ export default function ChatPage() {
               {createChat.isPending
                 ? "..."
                 : newMode === "group"
-                  ? "Guruh ochish"
-                  : "Suhbat boshlash"}
+                  ? t("chat.createGroup")
+                  : t("chat.startDirect")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1571,7 +1572,7 @@ export default function ChatPage() {
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent className="sm:max-w-md bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
           <DialogHeader>
-            <DialogTitle>Guruhga a’zo qo‘shish</DialogTitle>
+            <DialogTitle>{t("chat.addMembers")}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-[#8b9aab] mb-3">
             Yangi a’zolar faqat shu guruhni ko‘radi. Shaxsiy chatlarga ta’sir qilmaydi.
@@ -1636,7 +1637,7 @@ export default function ChatPage() {
               className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]"
               onClick={() => setAddOpen(false)}
             >
-              Bekor
+              {t("ui.cancel")}
             </Button>
             <Button
               type="button"
@@ -1644,7 +1645,7 @@ export default function ChatPage() {
               disabled={!addPicked.length || addMembers.isPending}
               onClick={() => void submitAddMembers()}
             >
-              {addMembers.isPending ? "..." : "Qo‘shish"}
+              {addMembers.isPending ? "..." : t("ui.add")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1654,7 +1655,7 @@ export default function ChatPage() {
       <Dialog open={membersOpen} onOpenChange={setMembersOpen}>
         <DialogContent className="sm:max-w-sm bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
           <DialogHeader>
-            <DialogTitle>Guruh a’zolari</DialogTitle>
+            <DialogTitle>{t("chat.members")}</DialogTitle>
           </DialogHeader>
           <p className="text-xs text-[#8b9aab] -mt-1 mb-2">
             Istalgan a’zoni chiqarishingiz mumkin
@@ -1666,7 +1667,7 @@ export default function ChatPage() {
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">
                     {m.fullName}
-                    {m.id === meId ? " (siz)" : ""}
+                    {m.id === meId ? ` ${t("chat.you")}` : ""}
                   </p>
                   <p className="text-[11px] text-[#8b9aab]">
                     {ROLE_LABELS[m.role] || m.role}
@@ -1679,10 +1680,10 @@ export default function ChatPage() {
                   className="shrink-0 h-8 gap-1 text-rose-300 hover:text-rose-200 hover:bg-rose-500/15"
                   disabled={removeMember.isPending}
                   onClick={() => handleRemoveMember(m.id, m.fullName)}
-                  title={m.id === meId ? "Chiqish" : "Chiqarish"}
+                  title={m.id === meId ? t("chat.leave") : t("chat.kick")}
                 >
                   <UserMinus className="h-4 w-4" />
-                  <span className="text-xs">{m.id === meId ? "Chiqish" : "Chiqarish"}</span>
+                  <span className="text-xs">{m.id === meId ? t("chat.leave") : t("chat.kick")}</span>
                 </Button>
               </div>
             ))}
@@ -1701,20 +1702,20 @@ export default function ChatPage() {
               </AlertDialogTrigger>
               <AlertDialogContent className="bg-[#17212b] text-foreground dark:text-white border-[#1c2733]">
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Guruhni o‘chirish?</AlertDialogTitle>
+                  <AlertDialogTitle>{t("chat.deleteGroup")}</AlertDialogTitle>
                   <AlertDialogDescription className="text-[#8b9aab]">
-                    Barcha xabarlar o‘chadi. Bu amalni qaytarib bo‘lmaydi.
+                    {t("chat.deleteGroupDesc")}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
                   <AlertDialogCancel className="border-[#2b3a4a] bg-transparent text-foreground dark:text-white hover:bg-[#242f3d]">
-                    Bekor
+                    {t("ui.cancel")}
                   </AlertDialogCancel>
                   <AlertDialogAction
                     className="bg-rose-600 hover:bg-rose-700"
                     onClick={handleDeleteGroup}
                   >
-                    O‘chirish
+                    {t("ui.delete")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

@@ -189,8 +189,10 @@ export function currentMonthKey() {
     .slice(0, 7);
 }
 
-export function monthLabelUz(ym: string) {
-  const names = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
+export function monthLabelUz(ym: string, locale: "uz" | "ru" = "uz") {
+  const namesUz = ["Yanvar", "Fevral", "Mart", "Aprel", "May", "Iyun", "Iyul", "Avgust", "Sentabr", "Oktabr", "Noyabr", "Dekabr"];
+  const namesRu = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь", "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
+  const names = locale === "ru" ? namesRu : namesUz;
   const [y, m] = (ym || "").split("-").map(Number);
   if (!y || !m) return ym;
   return `${names[m - 1]} ${y}`;

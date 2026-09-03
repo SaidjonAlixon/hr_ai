@@ -60,12 +60,13 @@ export function workplaceDisplayTitle(
   userRole?: string | null,
   site?: { kind?: "branch" | "office"; label?: string } | null,
   employeeLocation?: string | null,
+  labels?: { mainOffice?: string; branchUnset?: string },
 ): string {
-  if (!isPharmacyShiftRole(userRole)) return "Asosiy Ofis";
+  if (!isPharmacyShiftRole(userRole)) return labels?.mainOffice || "Asosiy Ofis";
   const raw =
     (site?.kind === "branch" ? site.label : null) || employeeLocation || site?.label || "";
   const cleaned = raw.split("·")[0].split("|")[0].trim();
-  return cleaned || "Filial belgilanmagan";
+  return cleaned || labels?.branchUnset || "Filial belgilanmagan";
 }
 
 export const PUNCH_FINE_HINT =

@@ -43,10 +43,12 @@ import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { isHrManager } from "../../lib/roles";
 import { Skeleton } from "../../components/ui/skeleton";
+import { useI18n } from "../../i18n/I18nProvider";
 
 export default function AdminDepartmentsPage() {
   const { user: me } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
   const qc = useQueryClient();
 
   const canManage = isHrManager(me?.role) || me?.role === "director";
@@ -193,16 +195,16 @@ export default function AdminDepartmentsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-            Bo‘limlar
+            {t("admin.departments")}
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
-            Tashkilot bo‘limlari va ularning boshliqlari
+            {t("admin.deptSubtitle")}
           </p>
         </div>
         {canManage && (
           <Button onClick={openCreate} className="gap-1.5">
             <Plus className="h-4 w-4" />
-            Yangi bo‘lim
+            {t("admin.newDept")}
           </Button>
         )}
       </div>
@@ -210,12 +212,12 @@ export default function AdminDepartmentsPage() {
       <Card>
         <CardHeader className="pb-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <CardTitle className="text-base">Ro‘yxat ({filtered.length})</CardTitle>
+            <CardTitle className="text-base">{t("admin.listCount")} ({filtered.length})</CardTitle>
             <div className="relative w-full sm:w-72">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 className="pl-9"
-                placeholder="Qidirish..."
+                placeholder={t("ui.search")}
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
               />
@@ -232,10 +234,10 @@ export default function AdminDepartmentsPage() {
           ) : filtered.length === 0 ? (
             <div className="flex flex-col items-center justify-center gap-2 py-12 text-center text-muted-foreground">
               <Building2 className="h-10 w-10 opacity-40" />
-              <p>Bo‘lim topilmadi</p>
+              <p>{t("admin.deptEmpty")}</p>
               {canManage && (
                 <Button variant="outline" size="sm" onClick={openCreate}>
-                  Birinchi bo‘limni qo‘shish
+                  {t("admin.deptAddFirst")}
                 </Button>
               )}
             </div>
@@ -249,11 +251,11 @@ export default function AdminDepartmentsPage() {
                   <div className="min-w-0">
                     <p className="font-medium text-foreground">{d.name}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Boshliq:{" "}
+                      {t("admin.deptHead")}{" "}
                       {d.headName ? (
                         <span className="text-foreground">{d.headName}</span>
                       ) : (
-                        <span className="italic">Belgilanmagan</span>
+                        <span className="italic">{t("admin.unassigned")}</span>
                       )}
                     </p>
                   </div>
@@ -296,7 +298,7 @@ export default function AdminDepartmentsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{editing ? "Bo‘limni tahrirlash" : "Yangi bo‘lim"}</DialogTitle>
+            <DialogTitle>{editing ? t("admin.editDept") : t("admin.newDept")}</DialogTitle>
           </DialogHeader>
           <form onSubmit={onSave} className="space-y-4">
             <div className="space-y-2">
@@ -326,10 +328,10 @@ export default function AdminDepartmentsPage() {
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setDialogOpen(false)}>
-                Bekor
+                {t("ui.cancel")}
               </Button>
               <Button type="submit" disabled={pending}>
-                {pending ? "Saqlanmoqda..." : editing ? "Saqlash" : "Yaratish"}
+                {pending ? t("ui.saving") : editing ? t("ui.save") : t("ui.create")}
               </Button>
             </DialogFooter>
           </form>
@@ -342,14 +344,14 @@ export default function AdminDepartmentsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Bo‘lim o‘chirilsinmi?</AlertDialogTitle>
+            <AlertDialogTitle>{t("admin.dept.confirmDelete")}</AlertDialogTitle>
             <AlertDialogDescription>
               «{deleteTarget?.name}» o‘chiriladi. Agar unga bog‘langan xodim yoki ariza
               bo‘lsa, xato chiqishi mumkin.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel>Bekor</AlertDialogCancel>
+            <AlertDialogCancel>{t("ui.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               onClick={onDelete}
               className="bg-rose-600 hover:bg-rose-700"

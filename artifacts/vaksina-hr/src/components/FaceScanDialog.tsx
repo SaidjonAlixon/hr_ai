@@ -8,16 +8,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { useI18n } from "@/i18n/I18nProvider";
 import {
   averageDescriptorsRobust,
   detectFaceDescriptor,
   ensureFaceModels,
-  faceAlignHint,
   fetchFaceChallenge,
   isFaceIdSupported,
-  isStableSample,
   livenessMotion,
-  poseHint,
   poseMatchesWant,
   type FaceAlignStatus,
   type FaceChallengeStep,
@@ -28,6 +26,7 @@ import {
 import { cn } from "@/lib/utils";
 
 type CaptureResult = { fullName?: string } | void;
+type Translate = (key: string, fallback?: string) => string;
 
 type Props = {
   open: boolean;
@@ -50,9 +49,29 @@ const FALLBACK_LOGIN: Challenge[] = [{ key: "center", pose: "center", need: 2 }]
 const MIN_SCORE_ENROLL = 0.5;
 const MIN_SCORE_LOGIN = 0.45;
 
-function stepHint(step: Challenge): string {
-  if (step.blink) return "Ko‘zni yumib oching";
-  return poseHint(step.pose ?? "center");
+const ALIGN_KEYS: Record<FaceAlignStatus, string> = {
+  ok: "davomat.align.ok",
+  hold_still: "davomat.align.hold_still",
+  low_quality: "davomat.align.low_quality",
+  turn_face: "davomat.align.turn_face",
+  dark: "davomat.align.dark",
+  too_far: "davomat.align.too_far",
+  too_close: "davomat.align.too_close",
+  covered: "davomat.align.covered",
+  low_camera: "davomat.align.low_camera",
+  many_faces: "davomat.align.many_faces",
+  outside: "davomat.align.outside",
+  no_face: "davomat.align.default",
+};
+
+function stepHint(t: Translate, step: Challenge): string {
+  if (step.blink) return t("davomat.scanBlink");
+  const pose = step.pose ?? "center";
+  return t(`davomat.pose.${pose}`);
+}
+
+function alignHint(t: Translate, status: FaceAlignStatus): string {
+  return t(ALIGN_KEYS[status] ?? "davomat.align.default");
 }
 
 function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
@@ -94,13 +113,17 @@ function PoseArrow({ pose }: { pose: FacePose }) {
 }
 
 export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, description }: Props) {
+  const { t } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const ovalRef = useRef<HTMLDivElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const onCapturedRef = useRef(onCaptured);
   onCapturedRef.current = onCaptured;
 
-  const [hint, setHint] = useState("Kamera ochilmoqda…");
+  const [hint, setHint] = useState(() => t("davomat.scanCamOpening"));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [aligned, setAligned] = useState(false);
@@ -169,14 +192,14 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setPoseIndex(0);
       setPoseFill(0);
       if (!isFaceIdSupported()) {
-        setError("Kamera faqat localhost yoki HTTPS da ishlaydi");
+        setError(tRef.current("davomat.scanCamHttps"));
         return;
       }
       try {
-        setHint("Model yuklanmoqda…");
+        setHint(tRef.current("davomat.scanModelLoading"));
         await ensureFaceModels();
         if (cancelled) return;
-        setHint("Kamera ochilmoqda…");
+        setHint(tRef.current("davomat.scanCamOpening"));
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
@@ -186,7 +209,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           },
         });
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((track) => track.stop());
           return;
         }
         streamRef.current = stream;
@@ -194,19 +217,23 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         if (!video) return;
         video.srcObject = stream;
         await video.play();
-        setHint("Tasdiq tayyorlanmoqda…");
+        setHint(tRef.current("davomat.scanPrep"));
         const issued = await fetchFaceChallenge(mode);
         if (cancelled) return;
         steps = issued.steps?.length ? issued.steps : steps;
         challengeToken = issued.token;
         poseBuckets = steps.map(() => []);
         setLiveSteps(steps);
-        setHint(stepHint(steps[0]!));
+        setHint(stepHint(tRef.current, steps[0]!));
 
         const finish = async (videoEl: HTMLVideoElement) => {
           running = false;
           setBusy(true);
-          setHint(mode === "enroll" ? "Bir oz kuting yuzingiz saqlanmoqda" : "Yuz tekshirilmoqda…");
+          setHint(
+            mode === "enroll"
+              ? tRef.current("davomat.scanSaving")
+              : tRef.current("davomat.scanChecking"),
+          );
           const samples = poseBuckets.flat();
           const templates = poseBuckets
             .filter((b) => b.length)
@@ -247,13 +274,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               captured && typeof captured === "object" && captured.fullName ? captured.fullName.trim() : "";
             if (name) {
               setError(null);
-              setHint(`Xush kelibsiz, ${name}`);
+              setHint(tRef.current("davomat.scanWelcome").replace("{name}", name));
               await new Promise((r) => window.setTimeout(r, 700));
             }
             stopCamera();
             onOpenChange(false);
           } catch (err) {
-            setError((err as Error)?.message || "Tasdiqlanmadi");
+            setError((err as Error)?.message || tRef.current("davomat.scanFailed"));
             setBusy(false);
             poseI = 0;
             poseBuckets.forEach((b) => {
@@ -300,8 +327,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
 
               if (!want.blink && (!result.descriptor || (result.score ?? 0) < minScore)) {
                 setPoseFill(0);
-                if (alignStatus !== "ok" && alignStatus !== "turn_face") setHint(faceAlignHint(alignStatus));
-                else setHint(stepHint(want));
+                if (alignStatus !== "ok" && alignStatus !== "turn_face") {
+                  setHint(alignHint(tRef.current, alignStatus));
+                } else {
+                  setHint(stepHint(tRef.current, want));
+                }
               } else if (want.blink) {
                 if (result.descriptor) lastBlinkDesc = result.descriptor;
                 const ear = result.ear;
@@ -324,7 +354,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                   if (closedFrames >= 1) {
                     blinkClosed = true;
                     setAligned(true);
-                    setHint("Yaxshi — endi ko‘zni oching");
+                    setHint(tRef.current("davomat.scanBlinkOpen"));
                   }
                 } else if (
                   blinkClosed &&
@@ -343,7 +373,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                     blinkClosed = false;
                     closedFrames = 0;
                     openFrames = 0;
-                    setHint(poseI >= steps.length ? "Tasdiqlanmoqda…" : stepHint(steps[poseI]!));
+                    setHint(
+                      poseI >= steps.length
+                        ? tRef.current("davomat.scanConfirming")
+                        : stepHint(tRef.current, steps[poseI]!),
+                    );
                     if (poseI >= steps.length) {
                       await finish(videoEl);
                       return;
@@ -354,17 +388,17 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                   setAligned(Boolean(result.descriptor) || blinkClosed);
                   setHint(
                     blinkClosed
-                      ? "Ko‘zni oching"
-                      : "Ko‘zni yumib 1 soniya ushlab, keyin oching",
+                      ? tRef.current("davomat.scanOpenEyes")
+                      : tRef.current("davomat.scanBlinkHold"),
                   );
                 }
               } else if (!poseOk) {
                 lastDesc = null;
-                setHint(stepHint(want));
+                setHint(stepHint(tRef.current, want));
               } else {
                 const vec = result.descriptor;
                 if (!vec) {
-                  setHint(stepHint(want));
+                  setHint(stepHint(tRef.current, want));
                 } else {
                   lastDesc = vec;
                   if (wantPose === "center") {
@@ -373,7 +407,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                   const bucket = poseBuckets[poseI]!;
                   bucket.push(vec);
                   setPoseFill(bucket.length);
-                  setHint(`${stepHint(want)}  ·  ${bucket.length}/${want.need}`);
+                  setHint(`${stepHint(tRef.current, want)}  ·  ${bucket.length}/${want.need}`);
                   if (bucket.length >= want.need) {
                     poseI += 1;
                     setPoseIndex(poseI);
@@ -390,12 +424,12 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                       await finish(videoEl);
                       return;
                     }
-                    setHint(stepHint(steps[poseI]!));
+                    setHint(stepHint(tRef.current, steps[poseI]!));
                   }
                 }
               }
             } catch (err) {
-              if (!cancelled) setError((err as Error)?.message || "Face ID xatosi");
+              if (!cancelled) setError((err as Error)?.message || tRef.current("davomat.scanError"));
               return;
             }
           }
@@ -410,9 +444,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         if (cancelled) return;
         const name = err instanceof DOMException ? err.name : "";
         if (name === "NotAllowedError") {
-          setError("Kameraga ruxsat bering");
+          setError(tRef.current("davomat.scanCamDenied"));
         } else {
-          setError((err as Error)?.message || "Kamera ochilmadi");
+          setError((err as Error)?.message || tRef.current("davomat.scanCamFailed"));
         }
       }
     };
@@ -431,8 +465,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         className="w-[calc(100%-0.75rem)] max-w-sm gap-0 overflow-hidden rounded-[28px] border-0 bg-zinc-950 p-0 text-foreground dark:text-white !max-h-[100dvh] !overflow-hidden"
       >
         <DialogHeader className="sr-only">
-          <DialogTitle>{title || (mode === "enroll" ? "Face ID · ulash" : "Davomat · Face ID")}</DialogTitle>
-          <DialogDescription>{description || stepHint(currentStep)}</DialogDescription>
+          <DialogTitle>
+            {title ||
+              (mode === "enroll" ? t("davomat.scanTitleEnroll") : t("davomat.scanTitleLogin"))}
+          </DialogTitle>
+          <DialogDescription>{description || stepHint(t, currentStep)}</DialogDescription>
         </DialogHeader>
 
         <div className="relative aspect-[4/5] w-full overflow-hidden bg-black">
@@ -461,7 +498,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             />
           </div>
           <p className="absolute left-0 right-0 top-5 z-10 text-center text-[15px] font-semibold drop-shadow">
-            {stepHint(currentStep)}
+            {stepHint(t, currentStep)}
           </p>
           {currentStep.pose && currentStep.pose !== "center" ? (
             <div className="absolute left-1/2 top-[18%] z-10 -translate-x-1/2">
@@ -500,7 +537,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             onClick={() => onOpenChange(false)}
           >
             <X className="mr-1.5 h-4 w-4" />
-            Bekor qilish
+            {t("davomat.scanCancel")}
           </Button>
         </div>
       </DialogContent>

@@ -2,23 +2,34 @@
 <html lang="uz">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>VAKSINA HR</title>
-    <meta name="description" content="VAKSINA HR — kadrlar tanlovi va aptekalar tarmog‘ini boshqarish tizimi." />
+    <meta name="description" content="VAKSINA HR — Kadrlarni boshqaruv dasturi." />
     <meta name="robots" content="index, follow" />
     <meta property="og:title" content="VAKSINA HR" />
-    <meta property="og:description" content="VAKSINA HR — kadrlar tanlovi va aptekalar tarmog‘ini boshqarish tizimi." />
+    <meta property="og:description" content="VAKSINA HR — Kadrlarni boshqaruv dasturi." />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="VAKSINA HR" />
-    <meta name="twitter:description" content="VAKSINA HR — kadrlar tanlovi va aptekalar tarmog‘ini boshqarish tizimi." />
+    <meta name="twitter:description" content="VAKSINA HR — Kadrlarni boshqaruv dasturi." />
     <link rel="icon" type="image/png" href="./faviconni.png" />
     <link rel="apple-touch-icon" href="./faviconni.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/assets/index-C9xEkRVG.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-4h-qvi7B.css">
+    <script>
+      (function () {
+        try {
+          var key = 'vaksina-hr-theme';
+          var stored = localStorage.getItem(key);
+          var theme = stored === 'light' || stored === 'dark' ? stored : 'light';
+          if (theme === 'dark') document.documentElement.classList.add('dark');
+        } catch (e) {}
+      })();
+    </script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script type="module" crossorigin src="/assets/index-D3wSmyvO.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-3dbHFPLu.css">
   </head>
   <body>
     <div id="root"></div>

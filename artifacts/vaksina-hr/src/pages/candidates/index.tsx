@@ -9,6 +9,7 @@ import { Search, Plus, Filter, User, Briefcase, Phone } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../contexts/AuthContext';
 import { isHrManager } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 
 function getFiltersFromUrl() {
   if (typeof window === 'undefined') return { stage: 'all', status: 'all' };
@@ -26,15 +27,15 @@ function getFiltersFromUrl() {
   return { stage, status };
 }
 
-const STATUS_TITLES: Record<string, string> = {
-  all: "Barcha nomzodlar ro'yxati",
-  active: "Kutilmoqda — faol nomzodlar",
-  hired: "Ishga qabul qilingan nomzodlar",
-  rejected: "Rad etilgan nomzodlar",
-};
-
 export default function CandidatesList() {
+  const { t } = useI18n();
   const { user } = useAuth();
+  const STATUS_TITLES: Record<string, string> = {
+    all: t("hire.statusAll"),
+    active: t("hire.statusActive"),
+    hired: t("hire.statusHired"),
+    rejected: t("hire.statusRejected"),
+  };
   const [, setLocation] = useLocation();
   const initial = getFiltersFromUrl();
   const [search, setSearch] = useState('');
@@ -72,15 +73,15 @@ export default function CandidatesList() {
 
   const getStageBadge = (stage: CandidateStage) => {
     const stageMap: Record<string, { label: string, color: string }> = {
-      phone_interview: { label: 'Tanishuv', color: 'bg-blue-100 text-blue-800' },
-      online_interview: { label: 'Onlayn suhbat', color: 'bg-indigo-100 text-indigo-800' },
-      preboarding: { label: 'Pre-boarding', color: 'bg-purple-100 text-purple-800' },
-      offline_interview: { label: 'Offline suhbat', color: 'bg-orange-100 text-orange-800' },
-      final_decision: { label: 'Yakuniy qaror', color: 'bg-amber-100 text-amber-800' },
-      offer: { label: 'Job Offer', color: 'bg-teal-100 text-teal-800' },
-      documents: { label: 'Hujjatlar', color: 'bg-slate-100 text-foreground' },
-      internship: { label: 'Stajirovka', color: 'bg-cyan-100 text-cyan-800' },
-      hired: { label: 'Ishga qabul', color: 'bg-emerald-100 text-emerald-800' },
+      phone_interview: { label: t("hire.phone"), color: 'bg-blue-100 text-blue-800' },
+      online_interview: { label: t("hire.online"), color: 'bg-indigo-100 text-indigo-800' },
+      preboarding: { label: t("hire.preboarding"), color: 'bg-purple-100 text-purple-800' },
+      offline_interview: { label: t("hire.offline"), color: 'bg-orange-100 text-orange-800' },
+      final_decision: { label: t("hire.final"), color: 'bg-amber-100 text-amber-800' },
+      offer: { label: t("hire.offer"), color: 'bg-teal-100 text-teal-800' },
+      documents: { label: t("hire.docs"), color: 'bg-slate-100 text-foreground' },
+      internship: { label: t("hire.internship"), color: 'bg-cyan-100 text-cyan-800' },
+      hired: { label: t("hire.hired"), color: 'bg-emerald-100 text-emerald-800' },
     };
 
     const s = stageMap[stage] || { label: stage, color: 'bg-gray-100 text-gray-800' };
@@ -88,16 +89,16 @@ export default function CandidatesList() {
   };
 
   const getStatusBadge = (status?: string) => {
-    if (status === 'hired') return <Badge className="bg-emerald-100 text-emerald-800">Ishga qabul</Badge>;
-    if (status === 'rejected') return <Badge className="bg-rose-100 text-rose-800">Rad etilgan</Badge>;
-    return <Badge className="bg-amber-100 text-amber-800">Kutilmoqda</Badge>;
+    if (status === 'hired') return <Badge className="bg-emerald-100 text-emerald-800">{t("hire.hired")}</Badge>;
+    if (status === 'rejected') return <Badge className="bg-rose-100 text-rose-800">{t("hire.rejected")}</Badge>;
+    return <Badge className="bg-amber-100 text-amber-800">{t("hire.pending")}</Badge>;
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Nomzodlar</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t("hire.candidates")}</h1>
           <p className="text-muted-foreground mt-1">
             {STATUS_TITLES[statusFilter] || STATUS_TITLES.all}
           </p>
@@ -105,7 +106,7 @@ export default function CandidatesList() {
         {canAddCandidate && (
           <Link href="/candidates/new">
             <Button className="gap-2">
-              <Plus className="w-4 h-4" /> Yangi nomzod
+              <Plus className="w-4 h-4" /> {t("hire.newCandidate")}
             </Button>
           </Link>
         )}
@@ -115,7 +116,7 @@ export default function CandidatesList() {
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input 
-            placeholder="Ism, raqam bo'yicha qidirish..." 
+            placeholder={t("hire.searchCand")} 
             className="pl-9 bg-background border-transparent focus-visible:bg-card"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -125,30 +126,30 @@ export default function CandidatesList() {
           <Select value={statusFilter} onValueChange={updateStatus}>
             <SelectTrigger className="w-full sm:w-[180px] bg-background border-transparent">
               <Filter className="w-4 h-4 mr-2" />
-              <SelectValue placeholder="Holat" />
+              <SelectValue placeholder={t("ui.status")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Barcha holatlar</SelectItem>
-              <SelectItem value="active">Kutilmoqda</SelectItem>
-              <SelectItem value="hired">Ishga qabul</SelectItem>
-              <SelectItem value="rejected">Rad etilgan</SelectItem>
+              <SelectItem value="all">{t("hire.allStatuses")}</SelectItem>
+              <SelectItem value="active">{t("hire.pending")}</SelectItem>
+              <SelectItem value="hired">{t("hire.hired")}</SelectItem>
+              <SelectItem value="rejected">{t("hire.rejected")}</SelectItem>
             </SelectContent>
           </Select>
           <Select value={stageFilter} onValueChange={updateStage}>
             <SelectTrigger className="w-full sm:w-[200px] bg-background border-transparent">
-              <SelectValue placeholder="Bosqich" />
+              <SelectValue placeholder={t("hire.stage")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Barcha bosqichlar</SelectItem>
-              <SelectItem value="phone_interview">Tanishuv</SelectItem>
-              <SelectItem value="online_interview">Onlayn suhbat</SelectItem>
-              <SelectItem value="preboarding">Pre-boarding</SelectItem>
-              <SelectItem value="offline_interview">Offline suhbat</SelectItem>
-              <SelectItem value="final_decision">Yakuniy qaror</SelectItem>
-              <SelectItem value="offer">Job Offer</SelectItem>
-              <SelectItem value="documents">Hujjatlar</SelectItem>
-              <SelectItem value="internship">Stajirovka</SelectItem>
-              <SelectItem value="hired">Ishga qabul</SelectItem>
+              <SelectItem value="all">{t("hire.allStages")}</SelectItem>
+              <SelectItem value="phone_interview">{t("hire.phone")}</SelectItem>
+              <SelectItem value="online_interview">{t("hire.online")}</SelectItem>
+              <SelectItem value="preboarding">{t("hire.preboarding")}</SelectItem>
+              <SelectItem value="offline_interview">{t("hire.offline")}</SelectItem>
+              <SelectItem value="final_decision">{t("hire.final")}</SelectItem>
+              <SelectItem value="offer">{t("hire.offer")}</SelectItem>
+              <SelectItem value="documents">{t("hire.docs")}</SelectItem>
+              <SelectItem value="internship">{t("hire.internship")}</SelectItem>
+              <SelectItem value="hired">{t("hire.hired")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -159,19 +160,19 @@ export default function CandidatesList() {
           <table className="w-full text-sm text-left">
             <thead className="bg-muted/50 text-muted-foreground border-b">
               <tr>
-                <th className="px-6 py-4 font-medium">Nomzod</th>
-                <th className="px-6 py-4 font-medium">Ish o'rni</th>
-                <th className="px-6 py-4 font-medium">Aloqa</th>
-                <th className="px-6 py-4 font-medium">Bosqich</th>
-                <th className="px-6 py-4 font-medium">Holat</th>
-                <th className="px-6 py-4 font-medium">Rekruter</th>
+                <th className="px-6 py-4 font-medium">{t("hire.col.candidate")}</th>
+                <th className="px-6 py-4 font-medium">{t("hire.col.job")}</th>
+                <th className="px-6 py-4 font-medium">{t("hire.col.contact")}</th>
+                <th className="px-6 py-4 font-medium">{t("hire.col.stage")}</th>
+                <th className="px-6 py-4 font-medium">{t("hire.col.status")}</th>
+                <th className="px-6 py-4 font-medium">{t("hire.col.recruiter")}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {isLoading ? (
                 <tr>
                   <td colSpan={6} className="px-6 py-8 text-center text-muted-foreground">
-                    Yuklanmoqda...
+                    {t("ui.loading")}
                   </td>
                 </tr>
               ) : candidates && candidates.length > 0 ? (

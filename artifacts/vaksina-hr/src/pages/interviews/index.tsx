@@ -6,26 +6,28 @@ import { Phone, Video, Users } from 'lucide-react';
 import { format } from 'date-fns';
 import { Badge } from '../../components/ui/badge';
 import { Link } from 'wouter';
-
-const PHONE_RESULT_LABELS: Record<string, string> = {
-  suitable: 'Tavsiya etiladi',
-  not_suitable: 'Tavsiya etilmaydi',
-  pending: 'Kutilmoqda',
-};
-
-const ATTENDANCE_LABELS: Record<string, string> = {
-  attended: 'Keldi',
-  absent: 'Kelmadi',
-  pending: 'Kutilmoqda',
-  scheduled: 'Rejalashtirilgan',
-};
-
-const RESULT_LABELS: Record<string, string> = {
-  passed: "O'tdi",
-  failed: "O'tmadi",
-};
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function InterviewsList() {
+  const { t } = useI18n();
+  const PHONE_RESULT_LABELS: Record<string, string> = {
+    suitable: t("hire.result.suitable"),
+    not_suitable: t("hire.result.notSuitable"),
+    pending: t("hire.result.pending"),
+  };
+
+  const ATTENDANCE_LABELS: Record<string, string> = {
+    attended: t("hire.att.attended"),
+    absent: t("hire.att.absent"),
+    pending: t("hire.result.pending"),
+    scheduled: t("hire.att.scheduled"),
+  };
+
+  const RESULT_LABELS: Record<string, string> = {
+    passed: t("hire.result.passed"),
+    failed: t("hire.result.failed"),
+  };
+
   const { data: phoneInterviews, isLoading: phoneLoading } = useGetPhoneInterviews();
   const { data: onlineInterviews, isLoading: onlineLoading } = useGetOnlineInterviews();
   const { data: offlineInterviews, isLoading: offlineLoading } = useGetOfflineInterviews();
@@ -37,43 +39,43 @@ export default function InterviewsList() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Suhbatlar</h1>
-        <p className="text-muted-foreground mt-1">Rejalashtirilgan va o'tkazilgan barcha suhbatlar ro'yxati</p>
+        <h1 className="text-3xl font-bold tracking-tight">{t("hire.interviews")}</h1>
+        <p className="text-muted-foreground mt-1">{t("hire.interviewsSub")}</p>
       </div>
 
       <Tabs defaultValue="offline" className="w-full">
         <TabsList className="grid w-full grid-cols-3 max-w-md">
           <TabsTrigger value="offline"><Users className="w-4 h-4 mr-2" /> Offline</TabsTrigger>
           <TabsTrigger value="online"><Video className="w-4 h-4 mr-2" /> Online</TabsTrigger>
-          <TabsTrigger value="phone"><Phone className="w-4 h-4 mr-2" /> Tanishuv</TabsTrigger>
+          <TabsTrigger value="phone"><Phone className="w-4 h-4 mr-2" /> {t("hire.phone")}</TabsTrigger>
         </TabsList>
         
         <TabsContent value="offline" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Yuzma-yuz suhbatlar</CardTitle>
+              <CardTitle>{t("hire.offlineTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm text-left">
                   <thead className="bg-muted/50 text-muted-foreground border-b">
                     <tr>
-                      <th className="px-6 py-4 font-medium">Sana va Vaqt</th>
-                      <th className="px-6 py-4 font-medium">Nomzod</th>
-                      <th className="px-6 py-4 font-medium">Qatnashuvchilar</th>
-                      <th className="px-6 py-4 font-medium">Status</th>
-                      <th className="px-6 py-4 font-medium text-right">Amal</th>
+                      <th className="px-6 py-4 font-medium">{t("hire.col.dateTime")}</th>
+                      <th className="px-6 py-4 font-medium">{t("hire.col.candidate")}</th>
+                      <th className="px-6 py-4 font-medium">{t("hire.col.participants")}</th>
+                      <th className="px-6 py-4 font-medium">{t("ui.status")}</th>
+                      <th className="px-6 py-4 font-medium text-right">{t("hire.col.action")}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {offlineLoading ? (
-                      <tr><td colSpan={5} className="text-center py-8 text-muted-foreground">Yuklanmoqda...</td></tr>
+                      <tr><td colSpan={5} className="text-center py-8 text-muted-foreground">{t("ui.loading")}</td></tr>
                     ) : ((offlineInterviews && offlineInterviews.length > 0) || missingPending.length > 0) ? (
                       <>
                         {missingPending.map((c) => (
                           <tr key={`pending-${c.id}`} className="hover:bg-amber-50/50 bg-amber-50/30">
                             <td className="px-6 py-4">
-                              <div className="font-medium text-muted-foreground italic">Belgilanmagan</div>
+                              <div className="font-medium text-muted-foreground italic">{t("hire.notScheduled")}</div>
                             </td>
                             <td className="px-6 py-4">
                               <Link href={`/candidates/${c.id}`} className="font-semibold hover:text-primary">
@@ -95,7 +97,7 @@ export default function InterviewsList() {
                         <tr key={interview.id} className="hover:bg-muted/30">
                           <td className="px-6 py-4">
                             <div className="font-medium">{format(new Date(interview.scheduledDate), 'dd.MM.yyyy')}</div>
-                            <div className="text-xs text-muted-foreground">{interview.scheduledTime || 'Belgilanmagan'}</div>
+                            <div className="text-xs text-muted-foreground">{interview.scheduledTime || t("hire.notScheduled")}</div>
                           </td>
                           <td className="px-6 py-4">
                             <Link href={`/candidates/${interview.candidateId}`} className="font-semibold hover:text-primary">
@@ -135,7 +137,7 @@ export default function InterviewsList() {
                         ))}
                       </>
                     ) : (
-                      <tr><td colSpan={5} className="text-center py-8 text-muted-foreground">Suhbatlar topilmadi</td></tr>
+                      <tr><td colSpan={5} className="text-center py-8 text-muted-foreground">{t("hire.emptyInterviews")}</td></tr>
                     )}
                   </tbody>
                 </table>
@@ -147,7 +149,7 @@ export default function InterviewsList() {
         <TabsContent value="online" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Onlayn suhbatlar (Testlar)</CardTitle>
+              <CardTitle>{t("hire.onlineTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -155,14 +157,14 @@ export default function InterviewsList() {
                   <thead className="bg-muted/50 text-muted-foreground border-b">
                     <tr>
                       <th className="px-6 py-4 font-medium">Sana</th>
-                      <th className="px-6 py-4 font-medium">Nomzod</th>
+                      <th className="px-6 py-4 font-medium">{t("hire.col.candidate")}</th>
                       <th className="px-6 py-4 font-medium">Tajriba darajasi</th>
                       <th className="px-6 py-4 font-medium">Natija</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {onlineLoading ? (
-                      <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">Yuklanmoqda...</td></tr>
+                      <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">{t("ui.loading")}</td></tr>
                     ) : onlineInterviews && onlineInterviews.length > 0 ? (
                       onlineInterviews.map((interview) => (
                         <tr key={interview.id} className="hover:bg-muted/30">
@@ -199,7 +201,7 @@ export default function InterviewsList() {
         <TabsContent value="phone" className="mt-6">
           <Card>
             <CardHeader>
-              <CardTitle>Tanishuv</CardTitle>
+              <CardTitle>{t("hire.phoneTitle")}</CardTitle>
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
@@ -207,14 +209,14 @@ export default function InterviewsList() {
                   <thead className="bg-muted/50 text-muted-foreground border-b">
                     <tr>
                       <th className="px-6 py-4 font-medium">Sana</th>
-                      <th className="px-6 py-4 font-medium">Nomzod</th>
+                      <th className="px-6 py-4 font-medium">{t("hire.col.candidate")}</th>
                       <th className="px-6 py-4 font-medium">Rekruter</th>
                       <th className="px-6 py-4 font-medium">Natija</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
                     {phoneLoading ? (
-                      <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">Yuklanmoqda...</td></tr>
+                      <tr><td colSpan={4} className="text-center py-8 text-muted-foreground">{t("ui.loading")}</td></tr>
                     ) : phoneInterviews && phoneInterviews.length > 0 ? (
                       phoneInterviews.map((interview) => (
                         <tr key={interview.id} className="hover:bg-muted/30">

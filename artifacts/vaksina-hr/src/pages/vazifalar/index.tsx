@@ -74,6 +74,7 @@ import {
 
 import { HR_ROLES, isSbRole } from "@/lib/roles";
 import { SB_TASK_TEMPLATES } from "@/lib/sb";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type BoardCol = "past" | "today" | "tomorrow" | "week" | "completed";
 
@@ -95,65 +96,72 @@ const ASSIGNER_ROLES = new Set([
 
 const COLUMNS: {
   id: BoardCol;
-  label: string;
-  hint: string;
+  labelKey: string;
+  hintKey: string;
   top: string;
   countBg: string;
-  empty: string;
+  emptyKey: string;
   allowCreate?: boolean;
 }[] = [
   {
     id: "past",
-    label: "O'tgan kunlar",
-    hint: "Muddat o'tgan",
+    labelKey: "tasks.overdue",
+    hintKey: "tasks.overdueHint",
     top: "bg-rose-500",
     countBg: "bg-rose-100 text-rose-800",
-    empty: "Kechikkan vazifa yo'q",
+    emptyKey: "tasks.empty.overdue",
     allowCreate: true,
   },
   {
     id: "today",
-    label: "Bugun",
-    hint: "Shu kun",
+    labelKey: "tasks.today",
+    hintKey: "tasks.todayHint",
     top: "bg-amber-500",
     countBg: "bg-amber-100 text-amber-900",
-    empty: "Bugungi vazifa yo'q",
+    emptyKey: "tasks.empty.today",
     allowCreate: true,
   },
   {
     id: "tomorrow",
-    label: "Kelasi kun",
-    hint: "Ertaga",
+    labelKey: "tasks.tomorrow",
+    hintKey: "tasks.tomorrowHint",
     top: "bg-sky-500",
     countBg: "bg-sky-100 text-sky-800",
-    empty: "Ertangi vazifa yo'q",
+    emptyKey: "tasks.empty.tomorrow",
     allowCreate: true,
   },
   {
     id: "week",
-    label: "Kelasi hafta",
-    hint: "2–7 kun ichida",
+    labelKey: "tasks.nextWeek",
+    hintKey: "tasks.weekHint",
     top: "bg-emerald-500",
     countBg: "bg-emerald-100 text-emerald-800",
-    empty: "Haftalik vazifa yo'q",
+    emptyKey: "tasks.empty.week",
     allowCreate: true,
   },
   {
     id: "completed",
-    label: "Bajarilgan",
-    hint: "Tasdiqlangan vazifalar",
+    labelKey: "tasks.done",
+    hintKey: "tasks.doneHint",
     top: "bg-violet-500",
     countBg: "bg-violet-100 text-violet-800",
-    empty: "Bajarilgan vazifa yo'q",
+    emptyKey: "tasks.empty.done",
     allowCreate: false,
   },
 ];
 
-const PRIORITY: Record<string, { label: string; className: string }> = {
-  low: { label: "Past", className: "bg-slate-100 text-foreground" },
-  normal: { label: "Oddiy", className: "bg-blue-50 text-blue-700" },
-  high: { label: "Yuqori", className: "bg-orange-100 text-orange-800" },
-  urgent: { label: "Shoshilinch", className: "bg-red-100 text-red-800" },
+const PRIORITY_CLASS: Record<string, string> = {
+  low: "bg-slate-100 text-foreground",
+  normal: "bg-blue-50 text-blue-700",
+  high: "bg-orange-100 text-orange-800",
+  urgent: "bg-red-100 text-red-800",
+};
+
+const PRIORITY_KEYS: Record<string, string> = {
+  low: "tasks.priority.low",
+  normal: "tasks.priority.normal",
+  high: "tasks.priority.high",
+  urgent: "tasks.priority.urgent",
 };
 
 function startOfDay(d: Date) {
@@ -207,6 +215,7 @@ function formatDate(iso: string | null) {
 export default function VazifalarPage() {
   const { toast } = useToast();
   const { user } = useAuth();
+  const { t } = useI18n();
   const canAssign = !!user && ASSIGNER_ROLES.has(user.role);
 
   const { data: tasks = [], isLoading } = useGetTasks({ board: "active" });
@@ -560,14 +569,13 @@ export default function VazifalarPage() {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wider text-sky-700/80 mb-1">
-              Ish boshqaruvi
+              {t("tasks.eyebrow")}
             </p>
             <h1 className="text-2xl font-semibold text-foreground tracking-tight">
-              Topshiriqlar
+              {t("tasks.title")}
             </h1>
             <p className="text-sm text-muted-foreground mt-1 max-w-xl">
-              Belgilagan va olgan tomonlar ko‘radi. Ijrochi faqat natija
-              (matn/rasm/fayl) qo‘shib tasdiqlaydi yoki muddat so‘raydi.
+              {t("tasks.subtitle")}
             </p>
           </div>
           {canAssign && (
@@ -576,7 +584,7 @@ export default function VazifalarPage() {
               className="gap-2 shadow-sm"
             >
               <Plus className="h-4 w-4" />
-              Yangi vazifa
+              {t("tasks.new")}
             </Button>
           )}
         </div>
@@ -586,7 +594,7 @@ export default function VazifalarPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Qidiruv: sarlavha, ijrochi..."
+            placeholder={t("tasks.search")}
             className="pl-9 bg-card"
           />
         </div>
@@ -595,7 +603,7 @@ export default function VazifalarPage() {
       <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-4 md:p-6">
         {isLoading ? (
           <div className="h-full flex items-center justify-center text-muted-foreground">
-            Yuklanmoqda...
+            {t("ui.loading")}
           </div>
         ) : (
           <div className="h-full flex gap-4 min-w-max">
@@ -609,9 +617,9 @@ export default function VazifalarPage() {
                   <div className="px-3 py-3 flex items-start justify-between gap-2">
                     <div>
                       <h2 className="font-semibold text-foreground text-[15px]">
-                        {col.label}
+                        {t(col.labelKey)}
                       </h2>
-                      <p className="text-xs text-muted-foreground">{col.hint}</p>
+                      <p className="text-xs text-muted-foreground">{t(col.hintKey)}</p>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <span
@@ -627,7 +635,7 @@ export default function VazifalarPage() {
                           type="button"
                           onClick={() => openCreate(col.id)}
                           className="p-1 rounded-md text-muted-foreground hover:bg-card hover:text-foreground transition"
-                          title="Ushbu ustunga qo'shish"
+                          title={t("tasks.addToColumn")}
                         >
                           <Plus className="h-4 w-4" />
                         </button>
@@ -639,7 +647,7 @@ export default function VazifalarPage() {
                 <div className="flex-1 overflow-y-auto px-2.5 pb-3 space-y-2.5">
                   {byColumn[col.id].length === 0 ? (
                     <div className="mx-0.5 mt-1 rounded-xl border border-dashed border-slate-300 bg-white/50 px-3 py-8 text-center text-sm text-muted-foreground">
-                      {col.empty}
+                      {t(col.emptyKey)}
                     </div>
                   ) : (
                     <CardStack
@@ -681,7 +689,7 @@ export default function VazifalarPage() {
         <DialogContent className="max-w-lg sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>
-              {editing ? "Vazifani tahrirlash" : "Yangi vazifa"}
+              {editing ? t("tasks.edit") : t("tasks.new")}
             </DialogTitle>
           </DialogHeader>
 
@@ -759,7 +767,7 @@ export default function VazifalarPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label>Sarlavha</Label>
+              <Label>{t("tasks.field.title")}</Label>
               {isSbRole(user?.role) && !editing && (
                 <div className="space-y-1.5">
                   <Select
@@ -793,7 +801,7 @@ export default function VazifalarPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Tavsif</Label>
+              <Label>{t("tasks.field.desc")}</Label>
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
@@ -803,7 +811,7 @@ export default function VazifalarPage() {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label>Ijrochi</Label>
+                <Label>{t("tasks.assignee")}</Label>
                 <Popover modal open={assigneeOpen} onOpenChange={setAssigneeOpen}>
                   <PopoverTrigger asChild>
                     <Button
@@ -818,7 +826,7 @@ export default function VazifalarPage() {
                           !selectedAssignee && "text-muted-foreground",
                         )}
                       >
-                        {selectedAssignee?.label || "Xodimni tanlang"}
+                        {selectedAssignee?.label || t("tasks.pickEmployee")}
                       </span>
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
@@ -834,9 +842,9 @@ export default function VazifalarPage() {
                         return value.toLowerCase().includes(q) ? 1 : 0;
                       }}
                     >
-                      <CommandInput placeholder="Ism yoki lavozim bo‘yicha qidirish..." />
+                      <CommandInput placeholder={t("tasks.searchEmployee")} />
                       <CommandList className="max-h-56">
-                        <CommandEmpty>Xodim topilmadi</CommandEmpty>
+                        <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
                         <CommandGroup>
                           {assigneeOptions.map((o) => (
                             <CommandItem
@@ -865,7 +873,7 @@ export default function VazifalarPage() {
                 </Popover>
               </div>
               <div className="space-y-1.5">
-                <Label>Muddat</Label>
+                <Label>{t("tasks.deadline")}</Label>
                 <Input
                   type="datetime-local"
                   value={dueAt}
@@ -873,22 +881,22 @@ export default function VazifalarPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Muhimlik</Label>
+                <Label>{t("tasks.priorityLabel")}</Label>
                 <Select value={priority} onValueChange={setPriority}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="low">Past</SelectItem>
-                    <SelectItem value="normal">Oddiy</SelectItem>
-                    <SelectItem value="high">Yuqori</SelectItem>
-                    <SelectItem value="urgent">Shoshilinch</SelectItem>
+                    <SelectItem value="low">{t("tasks.priority.low")}</SelectItem>
+                    <SelectItem value="normal">{t("tasks.priority.normal")}</SelectItem>
+                    <SelectItem value="high">{t("tasks.priority.high")}</SelectItem>
+                    <SelectItem value="urgent">{t("tasks.priority.urgent")}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {editing && (
                 <div className="space-y-1.5">
-                  <Label>Holat</Label>
+                  <Label>{t("ui.status")}</Label>
                   <Select value={status} onValueChange={setStatus}>
                     <SelectTrigger>
                       <SelectValue />
@@ -944,13 +952,13 @@ export default function VazifalarPage() {
 
           <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setEditOpen(false)}>
-              Bekor
+              {t("ui.cancel")}
             </Button>
             <Button
               onClick={() => void handleSave()}
               disabled={createTask.isPending || updateTask.isPending}
             >
-              {editing ? "Saqlash" : "Yaratish"}
+              {editing ? t("ui.save") : t("ui.create")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1097,7 +1105,7 @@ export default function VazifalarPage() {
       <Dialog open={extendOpen} onOpenChange={setExtendOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Muddatni surish so‘rovi</DialogTitle>
+            <DialogTitle>{t("tasks.extendDialog")}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
             Yangi muddat belgilovchi tasdiqlasa qo‘llanadi.
@@ -1347,7 +1355,9 @@ function TaskCard({
   onRework: () => void;
   onAccept: () => void;
 }) {
-  const pri = PRIORITY[task.priority] || PRIORITY.normal;
+  const { t } = useI18n();
+  const priClass = PRIORITY_CLASS[task.priority] || PRIORITY_CLASS.normal;
+  const priLabel = t(PRIORITY_KEYS[task.priority] || PRIORITY_KEYS.normal!);
   const images = task.attachments?.filter((a) => a.kind === "image") ?? [];
   const files = task.attachments?.filter((a) => a.kind === "file") ?? [];
   const pendingExt = task.extensionStatus === "pending";
@@ -1384,10 +1394,10 @@ function TaskCard({
         ) : (
           <Badge
             variant="secondary"
-            className={cn("text-[9px] h-5 px-1.5 font-medium", pri.className)}
+            className={cn("text-[9px] h-5 px-1.5 font-medium", priClass)}
           >
             <Flag className="h-2.5 w-2.5 mr-0.5" />
-            {pri.label}
+            {priLabel}
           </Badge>
         )}
         <span
@@ -1537,10 +1547,10 @@ function TaskCard({
         {isAssignee && needsAccept && (
           <button
             type="button"
-            className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-sky-600 text-foreground dark:text-white hover:bg-sky-700"
+            className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-sky-600 text-white hover:bg-sky-700"
             onClick={onAccept}
           >
-            Qabul qilish
+            {t("tasks.accept")}
           </button>
         )}
         {isAssignee && isAccepted && (
@@ -1551,7 +1561,7 @@ function TaskCard({
               onClick={onComplete}
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Bajarildi
+              {t("tasks.markDone")}
             </button>
             <button
               type="button"
@@ -1559,7 +1569,7 @@ function TaskCard({
               onClick={onExtend}
             >
               <Clock className="h-3.5 w-3.5" />
-              Muddat
+              {t("tasks.deadline")}
             </button>
           </>
         )}
@@ -1567,18 +1577,18 @@ function TaskCard({
           <>
             <button
               type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-emerald-600 text-foreground dark:text-white hover:bg-emerald-700"
+              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
               onClick={onVerify}
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
-              Tasdiqlash
+              {t("ui.approve")}
             </button>
             <button
               type="button"
               className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 hover:bg-amber-50 text-amber-800 border border-amber-200"
               onClick={onRework}
             >
-              Qayta ishlash
+              {t("tasks.rework")}
             </button>
           </>
         )}
@@ -1589,14 +1599,14 @@ function TaskCard({
               className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 hover:bg-emerald-50 text-emerald-700"
               onClick={onApproveExt}
             >
-              Tasdiqlash
+              {t("ui.approve")}
             </button>
             <button
               type="button"
               className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 hover:bg-rose-50 text-rose-700"
               onClick={onRejectExt}
             >
-              Rad etish
+              {t("tasks.rejectExt")}
             </button>
           </>
         )}
@@ -1605,7 +1615,7 @@ function TaskCard({
             type="button"
             className="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-rose-50 text-rose-600 ml-auto"
             onClick={onDelete}
-            title="O'chirish"
+            title={t("ui.delete")}
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>

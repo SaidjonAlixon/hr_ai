@@ -18,6 +18,7 @@ import { Badge } from '../../components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useI18n } from '../../i18n/I18nProvider';
 import { canManageCandidate, isRecruiterScoped } from '../../lib/candidate-access';
 import { cn } from '../../lib/utils';
 import { CardStack } from '../../components/CardStack';
@@ -275,6 +276,7 @@ function CandidateCard({
 }
 
 export default function PipelineBoardPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -399,13 +401,13 @@ export default function PipelineBoardPage() {
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold tracking-tight text-foreground">Pipeline</h1>
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">{t("hire.pipeline")}</h1>
             <span className="rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-foreground dark:text-white">
               {activeCount}
             </span>
           </div>
           <p className="mt-1 text-sm text-muted-foreground">
-            Qadamlar ketma-ket: yakunlangach keyingi ustunga o‘tadi
+            {t("hire.pipelineSub")}
           </p>
         </div>
 
@@ -419,7 +421,7 @@ export default function PipelineBoardPage() {
                 tab === 'pipeline' ? 'bg-slate-900 text-foreground dark:text-white' : 'text-muted-foreground hover:bg-muted',
               )}
             >
-              Pipeline
+              {t("hire.pipeline")}
             </button>
             <button
               type="button"
@@ -429,7 +431,7 @@ export default function PipelineBoardPage() {
                 tab === 'archive' ? 'bg-slate-900 text-foreground dark:text-white' : 'text-muted-foreground hover:bg-muted',
               )}
             >
-              Baza / Arxiv
+              {t("hire.archive")}
               {archived.length > 0 && (
                 <span className="ml-1.5 tabular-nums text-inherit/80">{archived.length}</span>
               )}
@@ -444,7 +446,7 @@ export default function PipelineBoardPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ism, lavozim, telefon bo‘yicha qidirish"
+            placeholder={t("hire.searchPipeline")}
             className="h-10 border-0 bg-muted pl-9 shadow-none focus-visible:bg-card focus-visible:ring-1"
           />
         </div>
@@ -452,10 +454,10 @@ export default function PipelineBoardPage() {
           <Select value={assignee} onValueChange={setAssignee}>
             <SelectTrigger className="h-10 w-full border-0 bg-muted shadow-none sm:w-[220px]">
               <User className="mr-2 h-4 w-4 text-muted-foreground" />
-              <SelectValue placeholder="Mas'ul" />
+              <SelectValue placeholder={t("hire.assignee")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Barcha mas'ullar</SelectItem>
+              <SelectItem value="all">{t("hire.allAssignees")}</SelectItem>
               {assignees.map((a) => (
                 <SelectItem key={a.id} value={String(a.id)}>
                   {a.name}

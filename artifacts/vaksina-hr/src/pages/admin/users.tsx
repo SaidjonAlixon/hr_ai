@@ -36,6 +36,7 @@ import {
   UZ_PHONE_HINT,
 } from '../../lib/phone';
 import { userRoleLabel, canManageSettings } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -65,10 +66,10 @@ const ROLES = [
 ] as const;
 
 const STATUSES = [
-  { value: 'active', label: 'Faol' },
-  { value: 'vacant', label: "Bo‘sh" },
-  { value: 'terminated', label: 'Tugatilgan' },
-  { value: 'on_leave', label: 'Tatilda' },
+  { value: 'active', labelKey: 'admin.status.active' },
+  { value: 'vacant', labelKey: 'admin.status.idle' },
+  { value: 'terminated', labelKey: 'admin.status.terminated' },
+  { value: 'on_leave', labelKey: 'admin.status.leave' },
 ] as const;
 
 type UserStatusValue = (typeof STATUSES)[number]['value'];
@@ -79,9 +80,9 @@ function normalizeUserStatus(status?: string | null) {
   return 'active';
 }
 
-function statusLabel(status?: string | null) {
+function statusLabelKey(status?: string | null) {
   const key = normalizeUserStatus(status);
-  return STATUSES.find((s) => s.value === key)?.label || 'Faol';
+  return STATUSES.find((s) => s.value === key)?.labelKey || 'admin.status.active';
 }
 
 function statusClass(status?: string | null) {
@@ -102,6 +103,7 @@ type CreatedCredentials = {
 export default function AdminUsersPage() {
   const { user: me } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
   const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
@@ -146,13 +148,14 @@ export default function AdminUsersPage() {
 
   const statusFilterLabel = useMemo(() => {
     if (statusFilter.length === 0 || statusFilter.length === STATUSES.length) {
-      return 'Barcha holatlar';
+      return t("admin.allStatuses");
     }
     if (statusFilter.length === 1) {
-      return STATUSES.find((s) => s.value === statusFilter[0])?.label ?? 'Holat';
+      const key = STATUSES.find((s) => s.value === statusFilter[0])?.labelKey;
+      return key ? t(key) : t("admin.col.status");
     }
-    return `${statusFilter.length} holat`;
-  }, [statusFilter]);
+    return `${statusFilter.length}`;
+  }, [statusFilter, t]);
 
   const toggleStatusFilter = (value: UserStatusValue, checked: boolean) => {
     setStatusFilter((prev) => {
@@ -351,7 +354,7 @@ export default function AdminUsersPage() {
       {
         onSuccess: () => {
           invalidate();
-          toast({ title: 'Holat yangilandi', description: statusLabel(next) });
+          toast({ title: 'Holat yangilandi', description: t(statusLabelKey(next)) });
         },
         onError: (err: any) => {
           toast({ title: 'Xatolik', description: err?.message || 'Holat saqlanmadi', variant: 'destructive' });
@@ -427,8 +430,8 @@ export default function AdminUsersPage() {
   if (!isAdmin) {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
-        <h1 className="text-2xl font-bold">Foydalanuvchilar</h1>
-        <p className="mt-2 text-muted-foreground">Bu bo‘lim faqat admin va direktor uchun.</p>
+        <h1 className="text-2xl font-bold">{t("admin.users")}</h1>
+        <p className="mt-2 text-muted-foreground">{t("admin.restricted")}</p>
       </div>
     );
   }
@@ -437,9 +440,9 @@ export default function AdminUsersPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Foydalanuvchilar</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t("admin.users")}</h1>
           <p className="mt-1 text-muted-foreground">
-            Rol bo‘yicha login va parol avtomatik yaratiladi
+            {t("admin.usersSubtitle")}
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -455,11 +458,11 @@ export default function AdminUsersPage() {
             ) : (
               <FileSpreadsheet className="h-4 w-4 text-emerald-700" />
             )}
-            Excel export
+            {t("admin.excelExport")}
           </Button>
           <Button className="gap-2" onClick={() => setCreateOpen(true)}>
             <UserPlus className="h-4 w-4" />
-            Yangi foydalanuvchi
+            {t("admin.newUser")}
           </Button>
         </div>
       </div>
@@ -470,16 +473,16 @@ export default function AdminUsersPage() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Ism bo‘yicha qidirish..."
+            placeholder={t("admin.searchName")}
             className="pl-9"
           />
         </div>
         <Select value={roleFilter} onValueChange={setRoleFilter}>
           <SelectTrigger className="w-full sm:w-[200px]">
-            <SelectValue placeholder="Rol" />
+            <SelectValue placeholder={t("admin.col.role")} />
           </SelectTrigger>
           <SelectContent position="popper">
-            <SelectItem value="all">Barcha rollar</SelectItem>
+            <SelectItem value="all">{t("admin.allRoles")}</SelectItem>
             {ROLES.map((r) => (
               <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
             ))}
@@ -524,7 +527,7 @@ export default function AdminUsersPage() {
                       checked={checked}
                       onCheckedChange={(v) => toggleStatusFilter(s.value, v === true)}
                     />
-                    <span className="text-sm">{s.label}</span>
+                    <span className="text-sm">{t(s.labelKey)}</span>
                   </label>
                 );
               })}
@@ -539,7 +542,7 @@ export default function AdminUsersPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold">
-            Ro‘yxat {sorted.length ? `(${sorted.length})` : ''}
+            {t("admin.listCount")} {sorted.length ? `(${sorted.length})` : ''}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -547,25 +550,25 @@ export default function AdminUsersPage() {
             <table className="w-full text-sm">
               <thead className="border-b bg-muted/40 text-left text-muted-foreground">
                 <tr>
-                  <th className="px-4 py-3 font-medium">Foydalanuvchi</th>
-                  <th className="px-4 py-3 font-medium">Rol</th>
-                  <th className="px-4 py-3 font-medium">Login</th>
-                  <th className="px-4 py-3 font-medium">Bo‘lim</th>
-                  <th className="px-4 py-3 font-medium">Holat</th>
-                  <th className="px-4 py-3 font-medium text-right">Amallar</th>
+                  <th className="px-4 py-3 font-medium">{t("admin.col.user")}</th>
+                  <th className="px-4 py-3 font-medium">{t("admin.col.role")}</th>
+                  <th className="px-4 py-3 font-medium">{t("admin.col.login")}</th>
+                  <th className="px-4 py-3 font-medium">{t("admin.col.dept")}</th>
+                  <th className="px-4 py-3 font-medium">{t("admin.col.status")}</th>
+                  <th className="px-4 py-3 font-medium text-right">{t("admin.col.actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {isLoading ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                      Yuklanmoqda...
+                      {t("ui.loading")}
                     </td>
                   </tr>
                 ) : sorted.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="px-4 py-10 text-center text-muted-foreground">
-                      Foydalanuvchi topilmadi
+                      {t("ui.empty")}
                     </td>
                   </tr>
                 ) : (
@@ -597,7 +600,7 @@ export default function AdminUsersPage() {
                           <SelectContent>
                             {STATUSES.map((s) => (
                               <SelectItem key={s.value} value={s.value}>
-                                {s.label}
+                                {t(s.labelKey)}
                               </SelectItem>
                             ))}
                           </SelectContent>
@@ -786,7 +789,7 @@ export default function AdminUsersPage() {
                   </SelectTrigger>
                   <SelectContent position="popper" className="z-[100]">
                     {STATUSES.map((s) => (
-                      <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      <SelectItem key={s.value} value={s.value}>{t(s.labelKey)}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>

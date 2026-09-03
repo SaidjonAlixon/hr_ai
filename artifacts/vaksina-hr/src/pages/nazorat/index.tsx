@@ -10,8 +10,10 @@ import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../contexts/AuthContext';
 import { isHrManager } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function NazoratPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState('');
@@ -34,11 +36,11 @@ export default function NazoratPage() {
 
   const getStatusBadge = (status: RequestStatus) => {
     switch (status) {
-      case 'submitted': return <Badge variant="secondary" className="bg-gray-100 text-gray-800">Yangi</Badge>;
-      case 'reviewing': return <Badge variant="secondary" className="bg-blue-100 text-blue-800">Ko'rib chiqilmoqda</Badge>;
-      case 'accepted': return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">Qabul qilingan</Badge>;
-      case 'announced': return <Badge variant="secondary" className="bg-purple-100 text-purple-800">E'lon qilingan</Badge>;
-      case 'closed': return <Badge variant="secondary" className="bg-gray-800 text-foreground dark:text-white">Yopilgan</Badge>;
+      case 'submitted': return <Badge variant="secondary" className="bg-gray-100 text-gray-800">{t("nazorat.status.submitted")}</Badge>;
+      case 'reviewing': return <Badge variant="secondary" className="bg-blue-100 text-blue-800">{t("nazorat.status.reviewing")}</Badge>;
+      case 'accepted': return <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">{t("nazorat.status.accepted")}</Badge>;
+      case 'announced': return <Badge variant="secondary" className="bg-purple-100 text-purple-800">{t("nazorat.status.announced")}</Badge>;
+      case 'closed': return <Badge variant="secondary" className="bg-gray-800 text-foreground dark:text-white">{t("nazorat.status.closed")}</Badge>;
       default: return <Badge>{status}</Badge>;
     }
   };
@@ -46,7 +48,7 @@ export default function NazoratPage() {
   if (!allowed) {
     return (
       <div className="p-8 text-center text-muted-foreground">
-        Nazorat sahifasi faqat HR, Admin va Direktor uchun.
+        {t("nazorat.noAccess")}
       </div>
     );
   }
@@ -54,9 +56,9 @@ export default function NazoratPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Nazorat</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t("nazorat.title")}</h1>
         <p className="text-muted-foreground mt-1">
-          HR yuborgan, rekruter qabul qilgan va e'lon tasdiqlangan vaqtlar bilan to'liq nazorat
+          {t("nazorat.subtitle")}
         </p>
       </div>
 
@@ -66,7 +68,7 @@ export default function NazoratPage() {
             <div className="relative flex-1 w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                placeholder="Lavozim bo'yicha qidirish..."
+                placeholder={t("nazorat.search")}
                 className="pl-9"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
@@ -74,10 +76,10 @@ export default function NazoratPage() {
             </div>
             <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
               <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Bo'lim" />
+                <SelectValue placeholder={t("nazorat.dept")} />
               </SelectTrigger>
               <SelectContent className="z-[100]">
-                <SelectItem value="all">Barcha bo'limlar</SelectItem>
+                <SelectItem value="all">{t("nazorat.allDepts")}</SelectItem>
                 {(departments ?? []).map((d) => (
                   <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                 ))}
@@ -89,12 +91,12 @@ export default function NazoratPage() {
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent className="z-[100]">
-                <SelectItem value="all">Barcha statuslar</SelectItem>
-                <SelectItem value="submitted">Yangi</SelectItem>
-                <SelectItem value="reviewing">Ko'rib chiqilmoqda</SelectItem>
-                <SelectItem value="accepted">Qabul qilingan</SelectItem>
-                <SelectItem value="announced">E'lon qilingan</SelectItem>
-                <SelectItem value="closed">Yopilgan</SelectItem>
+                <SelectItem value="all">{t("nazorat.allStatuses")}</SelectItem>
+                <SelectItem value="submitted">{t("nazorat.status.submitted")}</SelectItem>
+                <SelectItem value="reviewing">{t("nazorat.status.reviewing")}</SelectItem>
+                <SelectItem value="accepted">{t("nazorat.status.accepted")}</SelectItem>
+                <SelectItem value="announced">{t("nazorat.status.announced")}</SelectItem>
+                <SelectItem value="closed">{t("nazorat.status.closed")}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -104,24 +106,24 @@ export default function NazoratPage() {
             <table className="w-full text-sm text-left">
               <thead className="bg-muted/50 text-muted-foreground border-b">
                 <tr>
-                  <th className="px-4 py-3 font-medium">ID</th>
-                  <th className="px-4 py-3 font-medium">Lavozim</th>
-                  <th className="px-4 py-3 font-medium">Bo'lim</th>
-                  <th className="px-4 py-3 font-medium">Joy</th>
-                  <th className="px-4 py-3 font-medium">Ariza bergan</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Rekruter</th>
-                  <th className="px-4 py-3 font-medium">HR yuborgan</th>
-                  <th className="px-4 py-3 font-medium">Rekruter qabul</th>
-                  <th className="px-4 py-3 font-medium">E'lon tasdiqlangan</th>
-                  <th className="px-4 py-3 font-medium text-right">Amallar</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.id")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.position")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.dept")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.place")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.applicant")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.status")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.recruiter")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.hrSent")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.recAccepted")}</th>
+                  <th className="px-4 py-3 font-medium">{t("nazorat.col.announced")}</th>
+                  <th className="px-4 py-3 font-medium text-right">{t("nazorat.col.actions")}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
                 {isLoading ? (
                   <tr>
                     <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
-                      Yuklanmoqda...
+                      {t("ui.loading")}
                     </td>
                   </tr>
                 ) : filtered.length > 0 ? (
@@ -156,7 +158,7 @@ export default function NazoratPage() {
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
                         {request.vacancyAcceptedAt
                           ? format(new Date(request.vacancyAcceptedAt), 'dd.MM.yyyy HH:mm')
-                          : <span className="text-muted-foreground italic">Kutilmoqda</span>}
+                          : <span className="text-muted-foreground italic">{t("nazorat.waiting")}</span>}
                       </td>
                       <td className="px-4 py-3 text-xs whitespace-nowrap">
                         {request.vacancyPublishedAt
@@ -187,7 +189,7 @@ export default function NazoratPage() {
                 ) : (
                   <tr>
                     <td colSpan={11} className="px-4 py-8 text-center text-muted-foreground">
-                      Hech qanday ariza topilmadi.
+                      {t("nazorat.empty")}
                     </td>
                   </tr>
                 )}

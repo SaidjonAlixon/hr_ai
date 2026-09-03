@@ -37,6 +37,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useBranchAuditsList, type BranchAudit } from "@/lib/branch-audits-api";
 import { buildCoverage } from "./coverage-panel";
 import { CoordinatorRankingBoard } from "./ranking-panel";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type RangeKey = "all" | "today" | "7d" | "30d";
 
@@ -121,6 +122,7 @@ export function ChecklistDashboard({
   onOpenCoverage: (coordinatorId?: string) => void;
   onOpenVisit: (audit: BranchAudit) => void;
 }) {
+  const { t } = useI18n();
   const { user } = useAuth();
   const [range, setRange] = useState<RangeKey>("all");
   const [coordinatorId, setCoordinatorId] = useState("all");
@@ -140,7 +142,7 @@ export function ChecklistDashboard({
     const map = new Map<string, string>();
     for (const a of audits) {
       const id = String(a.coordinatorId);
-      if (!map.has(id)) map.set(id, a.coordinatorName || `Koordinator #${id}`);
+      if (!map.has(id)) map.set(id, a.coordinatorName || `${t("checklist.coord")} #${id}`);
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
   }, [audits]);
@@ -155,7 +157,7 @@ export function ChecklistDashboard({
     for (const a of audits) {
       if (coordinatorId !== "all" && String(a.coordinatorId) !== coordinatorId) continue;
       const id = String(a.managerEmployeeId);
-      if (!map.has(id)) map.set(id, a.branchLocation || a.managerName || "Filial");
+      if (!map.has(id)) map.set(id, a.branchLocation || a.managerName || t("ui.branch"));
     }
     if (coverageAll && coordinatorId !== "all") {
       const coord = coverageAll.coordinators.find(
@@ -283,7 +285,7 @@ export function ChecklistDashboard({
               }}
             >
               <SelectTrigger className="h-11 w-full bg-card">
-                <SelectValue placeholder="Koordinator" />
+                <SelectValue placeholder={t("checklist.coord")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Barcha koordinatorlar</SelectItem>
@@ -299,7 +301,7 @@ export function ChecklistDashboard({
             <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Filial</Label>
             <Select value={branchKey} onValueChange={setBranchKey}>
               <SelectTrigger className="h-11 w-full bg-card">
-                <SelectValue placeholder="Filial" />
+                <SelectValue placeholder={t("ui.branch")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Barcha filiallar</SelectItem>
@@ -324,14 +326,14 @@ export function ChecklistDashboard({
         />
         <Kpi
           icon={Store}
-          label="Filial (tashrif)"
+          label={t("checklist.branchVisit")}
           value={String(dash.visitedBranches)}
           tone="bg-indigo-50 text-indigo-700"
           onClick={() => goVisits()}
         />
         <Kpi
           icon={Users}
-          label="Koordinator"
+          label={t("checklist.coord")}
           value={String(dash.coordinators)}
           tone="bg-violet-50 text-violet-700"
           onClick={() => goVisits()}
@@ -346,7 +348,7 @@ export function ChecklistDashboard({
         />
         <Kpi
           icon={CheckCircle2}
-          label="Qamrov"
+          label={t("checklist.coverage")}
           value={`${dash.coveragePct}%`}
           tone="bg-cyan-50 text-cyan-800"
           hint={coverage ? `${coverage.totals.filled}/${coverage.totals.branches}` : undefined}
@@ -633,9 +635,9 @@ export function ChecklistDashboard({
                     className="flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left hover:bg-muted"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{a.branchLocation || "Filial"}</p>
+                      <p className="truncate text-sm font-medium">{a.branchLocation || t("ui.branch")}</p>
                       <p className="truncate text-[11px] text-muted-foreground">
-                        {a.coordinatorName || "Koordinator"} · {formatShort(a.visitDate)} · {a.visitName}
+                        {a.coordinatorName || t("checklist.coord")} · {formatShort(a.visitDate)} · {a.visitName}
                       </p>
                     </div>
                     <span className="inline-flex items-center gap-1 text-xs">

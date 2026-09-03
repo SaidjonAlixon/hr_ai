@@ -34,9 +34,11 @@ import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { isHrManager } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function RequestDetails({ params }: { params: { id: string } }) {
   const id = parseInt(params.id, 10);
+  const { t } = useI18n();
   const { user } = useAuth();
   const { data: request, isLoading, refetch } = useGetRequest(id, { query: { enabled: !!id } });
   const { mutate: assign, isPending: isAssigning } = useAssignRequest();
@@ -53,7 +55,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
   const [claimNote, setClaimNote] = useState('');
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!request) return <div>Ariza topilmadi</div>;
+  if (!request) return <div>{t('hire.requestNotFound')}</div>;
 
   const canApprove = isHrManager(user?.role);
   const isHrLike = canApprove || user?.role === 'director';
@@ -77,7 +79,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
     if (!user) return;
     assign({ id, data: { userId: user.id } }, {
       onSuccess: () => {
-        toast({ title: 'Muvaffaqiyatli', description: "Ariza sizga biriktirildi" });
+        toast({ title: t('ui.success'), description: t('requests.assignedOk') });
         refetch();
       }
     });
@@ -88,12 +90,12 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
       { id, note: claimNote.trim() || undefined },
       {
         onSuccess: () => {
-          toast({ title: 'Soʻrov qoldirildi', description: 'HR koʻrib chiqib rekruterni belgilaydi' });
+          toast({ title: t('requests.claimLeft'), description: t('requests.claimLeftDesc') });
           setClaimNote('');
           refetchClaims();
         },
         onError: (err: Error) => {
-          toast({ title: 'Xatolik', description: err.message, variant: 'destructive' });
+          toast({ title: t('ui.error'), description: err.message, variant: 'destructive' });
         },
       },
     );
@@ -108,11 +110,11 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
 
   const handleApprove = () => {
     if (!recruiterId) {
-      toast({ title: 'Xatolik', description: 'Rekruterni tanlang', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('requests.pickRecruiter'), variant: 'destructive' });
       return;
     }
     if (needsDeadline && !deadline) {
-      toast({ title: 'Xatolik', description: 'Muddatni belgilang', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('requests.setDeadline'), variant: 'destructive' });
       return;
     }
 
@@ -127,8 +129,8 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
       {
         onSuccess: (result) => {
           toast({
-            title: 'Tasdiqlandi',
-            description: "Ish o'rni rekruterga biriktirildi. U qabul qilib e'lon qilgach faol bo'ladi.",
+            title: t('requests.approved'),
+            description: t('requests.approvedDesc'),
           });
           setApproveOpen(false);
           refetch();
@@ -139,8 +141,8 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || 'Tasdiqlashda xatolik',
+            title: t('ui.error'),
+            description: err?.message || t('requests.approveFail'),
             variant: 'destructive',
           });
         },
@@ -149,17 +151,17 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
   };
 
   const statusLabel: Record<string, string> = {
-    submitted: 'Yangi',
-    reviewing: "Ko'rib chiqilmoqda",
-    accepted: 'Qabul qilingan',
-    announced: "E'lon qilingan",
-    closed: 'Yopilgan',
+    submitted: t('requests.status.submitted'),
+    reviewing: t('requests.status.reviewing'),
+    accepted: t('requests.status.accepted'),
+    announced: t('requests.status.announced'),
+    closed: t('requests.status.closed'),
   };
 
   const claimStatusLabel: Record<string, string> = {
-    pending: 'Kutilmoqda',
-    accepted: 'Qabul',
-    rejected: 'Rad',
+    pending: t('requests.claim.pending'),
+    accepted: t('requests.claim.accepted'),
+    rejected: t('requests.claim.rejected'),
   };
 
   return (
@@ -173,7 +175,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-3xl font-bold tracking-tight">{request.position}</h1>
               <Badge variant={request.priority === 'urgent' ? 'destructive' : 'secondary'}>
-                {request.priority === 'urgent' ? 'Shoshilinch' : 'Odatdagi'}
+                {request.priority === 'urgent' ? t('hire.urgent') : t('hire.normal')}
               </Badge>
               <Badge className="bg-primary/10 text-primary hover:bg-primary/20">
                 {statusLabel[request.status] || request.status}
@@ -190,18 +192,18 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
         <div className="flex gap-2 flex-wrap">
           {request.status === 'submitted' && isHrLike && canApprove && (
             <Button variant="outline" className="gap-2" onClick={handleAssignToMe} disabled={isAssigning}>
-              <UserPlus className="w-4 h-4" /> Menga biriktirish
+              <UserPlus className="w-4 h-4" /> {t('requests.assignMe')}
             </Button>
           )}
           {canShowApprove && (
             <Button className="gap-2" onClick={openApprove}>
-              <CheckCircle className="w-4 h-4" /> Tasdiqlash va ish o'rni yaratish
+              <CheckCircle className="w-4 h-4" /> {t('requests.approveCreate')}
             </Button>
           )}
           {request.vacancyId && (
             <Link href={`/vacancies/${request.vacancyId}`}>
               <Button variant="secondary" className="gap-2">
-                <Briefcase className="w-4 h-4" /> Ish o'rnini ko'rish
+                <Briefcase className="w-4 h-4" /> {t('requests.viewVacancy')}
               </Button>
             </Link>
           )}
@@ -212,26 +214,26 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
         <div className="md:col-span-2 space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Asosiy ma'lumotlar</CardTitle>
+              <CardTitle>{t('requests.basicInfo')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
-                <h4 className="font-semibold text-sm text-muted-foreground mb-2">Vazifalar (Description)</h4>
+                <h4 className="font-semibold text-sm text-muted-foreground mb-2">{t('requests.dutiesLabel')}</h4>
                 <div className="bg-muted/30 p-4 rounded-md text-sm whitespace-pre-wrap">
-                  {request.description || 'Kiritilmagan'}
+                  {request.description || t('ui.notEntered')}
                 </div>
               </div>
 
               <div>
-                <h4 className="font-semibold text-sm text-muted-foreground mb-2">Talablar (Requirements)</h4>
+                <h4 className="font-semibold text-sm text-muted-foreground mb-2">{t('requests.reqsLabel')}</h4>
                 <div className="bg-muted/30 p-4 rounded-md text-sm whitespace-pre-wrap">
-                  {request.requirements || 'Kiritilmagan'}
+                  {request.requirements || t('ui.notEntered')}
                 </div>
               </div>
 
               {request.reason && (
                 <div>
-                  <h4 className="font-semibold text-sm text-muted-foreground mb-2">Sabab</h4>
+                  <h4 className="font-semibold text-sm text-muted-foreground mb-2">{t('requests.reasonLabel')}</h4>
                   <p className="text-sm">{request.reason}</p>
                 </div>
               )}
@@ -241,36 +243,36 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
           {(isHrLike || isRecruiter) && (
             <Card>
               <CardHeader>
-                <CardTitle>Rekruter soʻrovlari</CardTitle>
+                <CardTitle>{t('requests.claimsTitle')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 {canClaim && (
                   <div className="space-y-2 rounded-lg border border-dashed p-3">
                     <p className="text-sm text-muted-foreground">
-                      Bu vakansiyani olish uchun soʻrov qoldiring — HR belgilab beradi.
+                      {t('requests.claimHint')}
                     </p>
                     <Textarea
                       value={claimNote}
                       onChange={(e) => setClaimNote(e.target.value)}
-                      placeholder="Izoh (ixtiyoriy)"
+                      placeholder={t('requests.claimNotePh')}
                       rows={2}
                     />
                     <Button className="gap-2" onClick={handleClaim} disabled={claiming}>
                       <Hand className="w-4 h-4" />
-                      Soʻrov qoldirish
+                      {t('requests.claimBtn')}
                     </Button>
                   </div>
                 )}
 
                 {myClaim && user?.role === 'recruiter' && (
                   <p className="text-sm text-muted-foreground">
-                    Sizning soʻrovingiz: <strong>{claimStatusLabel[myClaim.status]}</strong>
+                    {t('requests.myClaim')}: <strong>{claimStatusLabel[myClaim.status]}</strong>
                     {myClaim.note ? ` — ${myClaim.note}` : ''}
                   </p>
                 )}
 
                 {(claims ?? []).length === 0 ? (
-                  <p className="text-sm text-muted-foreground italic">Hali soʻrov yoʻq</p>
+                  <p className="text-sm text-muted-foreground italic">{t('requests.noClaims')}</p>
                 ) : (
                   <ul className="space-y-2">
                     {(claims ?? []).map((c) => (
@@ -295,7 +297,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
                                 setApproveOpen(true);
                               }}
                             >
-                              Biriktirish
+                              {t('requests.assign')}
                             </Button>
                           )}
                         </div>
@@ -311,53 +313,53 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Kim kerak — ehtiyoj</CardTitle>
+              <CardTitle>{t('requests.needTitle')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Lavozim:</span>
+                <span className="text-muted-foreground">{t('requests.lbl.position')}</span>
                 <span className="font-medium text-right">{request.position}</span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Bo'lim:</span>
+                <span className="text-muted-foreground">{t('requests.lbl.dept')}</span>
                 <span className="font-medium">{request.departmentName || '—'}</span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Joy:</span>
+                <span className="text-muted-foreground">{t('requests.lbl.place')}</span>
                 <span className="font-medium text-right">
                   {[request.city, request.district].filter(Boolean).join(', ') || '—'}
                 </span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Ariza bergan:</span>
+                <span className="text-muted-foreground">{t('requests.lbl.author')}</span>
                 <span className="font-medium">{request.createdByName || '—'}</span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Kerakli soni:</span>
-                <span className="font-medium">{request.count} kishi</span>
+                <span className="text-muted-foreground">{t('requests.lbl.count')}</span>
+                <span className="font-medium">{request.count} {t('ui.people')}</span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Maosh:</span>
-                <span className="font-medium">{request.salaryRange || 'Kelishilgan'}</span>
+                <span className="text-muted-foreground">{t('requests.lbl.salary')}</span>
+                <span className="font-medium">{request.salaryRange || t('requests.negotiable')}</span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Muddat:</span>
+                <span className="text-muted-foreground">{t('requests.lbl.deadline')}</span>
                 <span className="font-medium">
                   {request.deadline
                     ? (() => {
                         const d = new Date(request.deadline);
                         return Number.isNaN(d.getTime()) ? request.deadline : format(d, 'dd.MM.yyyy');
                       })()
-                    : 'Belgilanmagan'}
+                    : t('ui.notSet')}
                 </span>
               </div>
               <div className="flex justify-between border-b pb-2">
-                <span className="text-muted-foreground">Ariza sanasi:</span>
+                <span className="text-muted-foreground">{t('requests.lbl.date')}</span>
                 <span className="font-medium">{format(new Date(request.createdAt), 'dd.MM.yyyy HH:mm')}</span>
               </div>
               {(request.vacancyAssignedAt || request.assignedAt) && (
                 <div className="flex justify-between border-b pb-2">
-                  <span className="text-muted-foreground">HR rekruterga yuborgan:</span>
+                  <span className="text-muted-foreground">{t('requests.lbl.hrSent')}</span>
                   <span className="font-medium">
                     {format(new Date(request.vacancyAssignedAt || request.assignedAt!), 'dd.MM.yyyy HH:mm')}
                   </span>
@@ -365,25 +367,25 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
               )}
               {request.vacancyAcceptedAt && (
                 <div className="flex justify-between border-b pb-2">
-                  <span className="text-muted-foreground">Rekruter qabul qilgan:</span>
+                  <span className="text-muted-foreground">{t('requests.lbl.recAccepted')}</span>
                   <span className="font-medium">{format(new Date(request.vacancyAcceptedAt), 'dd.MM.yyyy HH:mm')}</span>
                 </div>
               )}
               {request.vacancyPublishedAt && (
                 <div className="flex justify-between border-b pb-2">
-                  <span className="text-muted-foreground">E'lon tasdiqlangan:</span>
+                  <span className="text-muted-foreground">{t('requests.lbl.pubConfirmed')}</span>
                   <span className="font-medium">{format(new Date(request.vacancyPublishedAt), 'dd.MM.yyyy HH:mm')}</span>
                 </div>
               )}
               {!request.vacancyAcceptedAt && request.vacancyId && (
                 <div className="flex justify-between border-b pb-2">
-                  <span className="text-muted-foreground">Rekruter qabul:</span>
-                  <span className="font-medium italic text-muted-foreground">Kutilmoqda</span>
+                  <span className="text-muted-foreground">{t('requests.lbl.recAccept')}</span>
+                  <span className="font-medium italic text-muted-foreground">{t('hire.pending')}</span>
                 </div>
               )}
 
               <div className="pt-2">
-                <span className="text-muted-foreground block mb-1">Mas'ul (rekruter):</span>
+                <span className="text-muted-foreground block mb-1">{t('requests.lbl.assignee')}</span>
                 {request.assignedToName ? (
                   <div className="flex items-center gap-2 p-2 bg-muted/50 rounded-md">
                     <div className="w-6 h-6 rounded-full bg-primary/20 text-primary flex items-center justify-center font-bold text-xs">
@@ -393,7 +395,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
                   </div>
                 ) : (
                   <div className="p-2 border border-dashed border-gray-300 rounded-md text-center text-muted-foreground italic">
-                    Hali tayinlanmagan
+                    {t('requests.notAssignedYet')}
                   </div>
                 )}
               </div>
@@ -405,24 +407,24 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
       <Dialog open={approveOpen} onOpenChange={setApproveOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Tasdiqlash va ish o'rni yaratish</DialogTitle>
+            <DialogTitle>{t('requests.approveTitle')}</DialogTitle>
             <DialogDescription>
-              Rekruterni tanlang (soʻrov qoldirganlar yuqorida). Tasdiqlangach ish o'rni biriktiriladi.
+              {t('requests.approveDesc')}
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-2">
             {pendingClaims.length > 0 && (
               <div className="rounded-md bg-muted/40 p-2 text-xs text-muted-foreground">
-                Soʻrov qoldirganlar:{' '}
+                {t('requests.claimers')}{' '}
                 {pendingClaims.map((c) => c.recruiterName || `#${c.recruiterId}`).join(', ')}
               </div>
             )}
             <div className="space-y-2">
-              <Label>Rekruter</Label>
+              <Label>{t('hire.col.recruiter')}</Label>
               <Select value={recruiterId} onValueChange={setRecruiterId}>
                 <SelectTrigger>
-                  <SelectValue placeholder="Rekruterni tanlang" />
+                  <SelectValue placeholder={t('hire.ph.recruiter')} />
                 </SelectTrigger>
                 <SelectContent className="z-[100]">
                   {(recruiters ?? [])
@@ -431,7 +433,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
                       const claimed = pendingClaims.some((c) => c.recruiterId === u.id);
                       return (
                         <SelectItem key={u.id} value={String(u.id)}>
-                          {u.fullName}{claimed ? ' · soʻrov bor' : ''}
+                          {u.fullName}{claimed ? ` · ${t('requests.hasClaim')}` : ''}
                         </SelectItem>
                       );
                     })}
@@ -441,7 +443,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
 
             <div className="space-y-2">
               <Label>
-                Muddat {needsDeadline ? '(majburiy)' : '(arizadagi muddat bilan)'}
+                {needsDeadline ? t('requests.deadlineReq') : t('requests.deadlineWith')}
               </Label>
               <Input
                 type="date"
@@ -454,10 +456,10 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
 
           <DialogFooter>
             <Button variant="outline" onClick={() => setApproveOpen(false)} disabled={isApproving}>
-              Bekor qilish
+              {t('ui.cancelFull')}
             </Button>
             <Button onClick={handleApprove} disabled={isApproving}>
-              {isApproving ? 'Tasdiqlanmoqda...' : 'Tasdiqlash'}
+              {isApproving ? t('ui.confirming') : t('ui.approve')}
             </Button>
           </DialogFooter>
         </DialogContent>

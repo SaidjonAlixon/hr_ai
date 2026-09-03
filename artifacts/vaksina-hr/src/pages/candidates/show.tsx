@@ -38,18 +38,20 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '../../components/ui/alert-dialog';
+import { useI18n } from '../../i18n/I18nProvider';
 
-function InfoRow({ label, value }: { label: string; value?: string | null }) {
+function InfoRow({ label, value, empty }: { label: string; value?: string | null; empty: string }) {
   return (
     <div className="space-y-1">
       <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{label}</p>
-      <p className="text-sm font-medium whitespace-pre-wrap break-words">{value?.trim() ? value : 'Kiritilmagan'}</p>
+      <p className="text-sm font-medium whitespace-pre-wrap break-words">{value?.trim() ? value : empty}</p>
     </div>
   );
 }
 
 export default function CandidateProfile({ params }: { params: { id: string } }) {
   const id = parseInt(params.id, 10);
+  const { t } = useI18n();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -74,7 +76,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
   );
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div>Nomzod topilmadi</div>;
+  if (!candidate) return <div>{t('hire.notFound')}</div>;
 
   const activeStage = selectedStage || pipeline?.currentStage || candidate.stage;
 
@@ -84,13 +86,13 @@ export default function CandidateProfile({ params }: { params: { id: string } })
       { id, data: { recruiterId } as any },
       {
         onSuccess: () => {
-          toast({ title: 'Mas\'ul o\'zgartirildi', description: 'Suhbat yangi mas\'ulga biriktirildi' });
+          toast({ title: t('hire.reassignOk'), description: t('hire.reassignOkDesc') });
           refetch();
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || 'Mas\'ulni o\'zgartirib bo\'lmadi',
+            title: t('ui.error'),
+            description: err?.message || t('hire.reassignFail'),
             variant: 'destructive',
           });
         },
@@ -100,21 +102,21 @@ export default function CandidateProfile({ params }: { params: { id: string } })
 
   const renderActionButtons = () => {
     if (candidate.status === 'hired' || candidate.stage === 'hired') {
-      return <Badge className="bg-emerald-100 text-emerald-800 px-3 py-2 text-sm">Ishga qabul qilingan</Badge>;
+      return <Badge className="bg-emerald-100 text-emerald-800 px-3 py-2 text-sm">{t('hire.hiredBadge')}</Badge>;
     }
     if (candidate.status === 'rejected') {
-      return <Badge variant="destructive" className="px-3 py-2 text-sm">Rad etilgan</Badge>;
+      return <Badge variant="destructive" className="px-3 py-2 text-sm">{t('hire.rejected')}</Badge>;
     }
 
     const actions: Record<string, { href: string; label: string; viewLabel: string }> = {
-      phone_interview: { href: `/candidates/${id}/phone-interview`, label: '1. Suhbat natijasi', viewLabel: '1. Suhbat natijasini ko\'rish' },
-      online_interview: { href: `/candidates/${id}/online-interview`, label: '2. Onlayn suhbat natijalari', viewLabel: '2. Onlayn suhbatni ko\'rish' },
-      preboarding: { href: `/candidates/${id}/preboarding`, label: '3. Pre-boarding tekshiruvi', viewLabel: '3. Pre-boardingni ko\'rish' },
-      offline_interview: { href: `/candidates/${id}/offline-interview`, label: '4. Offline suhbat natijalari', viewLabel: '4. Offline suhbatni ko\'rish' },
-      final_decision: { href: `/candidates/${id}/final-decision`, label: '5. Yakuniy qaror', viewLabel: '5. Yakuniy qarorni ko\'rish' },
-      offer: { href: `/candidates/${id}/offer`, label: '6. Job Offer', viewLabel: '6. Job Offerni ko\'rish' },
-      documents: { href: `/candidates/${id}/documents`, label: '7. Hujjatlar', viewLabel: '7. Hujjatlarni ko\'rish' },
-      internship: { href: `/candidates/${id}/internship`, label: '8. Stajirovka', viewLabel: '8. Stajirovkani ko\'rish' },
+      phone_interview: { href: `/candidates/${id}/phone-interview`, label: t('hire.action.phone'), viewLabel: t('hire.action.phoneView') },
+      online_interview: { href: `/candidates/${id}/online-interview`, label: t('hire.action.online'), viewLabel: t('hire.action.onlineView') },
+      preboarding: { href: `/candidates/${id}/preboarding`, label: t('hire.action.preboard'), viewLabel: t('hire.action.preboardView') },
+      offline_interview: { href: `/candidates/${id}/offline-interview`, label: t('hire.action.offline'), viewLabel: t('hire.action.offlineView') },
+      final_decision: { href: `/candidates/${id}/final-decision`, label: t('hire.action.final'), viewLabel: t('hire.action.finalView') },
+      offer: { href: `/candidates/${id}/offer`, label: t('hire.action.offer'), viewLabel: t('hire.action.offerView') },
+      documents: { href: `/candidates/${id}/documents`, label: t('hire.action.docs'), viewLabel: t('hire.action.docsView') },
+      internship: { href: `/candidates/${id}/internship`, label: t('hire.action.intern'), viewLabel: t('hire.action.internView') },
     };
     const action = actions[candidate.stage];
     if (!action) return null;
@@ -128,20 +130,20 @@ export default function CandidateProfile({ params }: { params: { id: string } })
   };
 
   const statusLabel =
-    candidate.status === 'active' ? 'Faol' : candidate.status === 'hired' ? 'Ishga qabul qilingan' : 'Rad etilgan';
+    candidate.status === 'active' ? t('ui.active') : candidate.status === 'hired' ? t('hire.hiredBadge') : t('hire.rejected');
 
   const handleDelete = () => {
     removeCandidate(
       { id },
       {
         onSuccess: () => {
-          toast({ title: "O'chirildi", description: "Nomzod o'chirildi" });
+          toast({ title: t('ui.deleted'), description: t('hire.deletedCand') });
           setLocation('/candidates');
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || "O'chirishda xatolik yuz berdi",
+            title: t('ui.error'),
+            description: err?.message || t('hire.deleteFail'),
             variant: 'destructive',
           });
         },
@@ -176,14 +178,14 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                 </Badge>
               </div>
               <p className="text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
-                <Briefcase className="w-4 h-4" /> {candidate.vacancyTitle || "Noma'lum ish o'rni"}
+                <Briefcase className="w-4 h-4" /> {candidate.vacancyTitle || t('hire.unknownJob')}
                 <span className="mx-1">•</span>
                 ID: #{candidate.id}
                 <span className="mx-1">•</span>
                 <span>
-                  Mas'ul:{' '}
+                  {t('hire.assigneeLabel')}:{' '}
                   <span className="font-medium text-foreground">
-                    {candidate.recruiterName || 'Biriktirilmagan'}
+                    {candidate.recruiterName || t('ui.unassigned')}
                   </span>
                 </span>
               </p>
@@ -196,23 +198,23 @@ export default function CandidateProfile({ params }: { params: { id: string } })
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" className="gap-2" disabled={isDeleting}>
-                  <Trash2 className="w-4 h-4" /> O'chirish
+                  <Trash2 className="w-4 h-4" /> {t('ui.delete')}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Nomzodni o'chirasizmi?</AlertDialogTitle>
+                  <AlertDialogTitle>{t('hire.deleteCand')}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Nomzod va unga bog'liq suhbat/pipeline ma'lumotlari butunlay o'chiriladi. Bu amalni qaytarib bo'lmaydi.
+                    {t('hire.deleteCandDesc')}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+                  <AlertDialogCancel>{t('ui.cancelFull')}</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleDelete}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
-                    O'chirish
+                    {t('ui.delete')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -226,9 +228,9 @@ export default function CandidateProfile({ params }: { params: { id: string } })
           <CardContent className="p-4 sm:p-5">
             <div className="flex flex-col sm:flex-row sm:items-end gap-3 sm:gap-4">
               <div className="flex-1 space-y-1.5 min-w-0">
-                <p className="text-sm font-semibold text-foreground">Suhbatni kimga biriktirish</p>
+                <p className="text-sm font-semibold text-foreground">{t('hire.reassignTitle')}</p>
                 <p className="text-xs text-muted-foreground">
-                  Rekruter, HR, trener, direktor yoki bo'lim boshlig'ini tanlang. Faqat shu odam va HR suhbatni olib boradi.
+                  {t('hire.reassignHint')}
                 </p>
               </div>
               <div className="w-full sm:w-[320px] shrink-0">
@@ -238,10 +240,10 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                   disabled={isReassigning}
                 >
                   <SelectTrigger className="h-11 bg-card border-primary/30">
-                    <SelectValue placeholder="Mas'ulni tanlang" />
+                    <SelectValue placeholder={t('hire.pickAssignee')} />
                   </SelectTrigger>
                   <SelectContent className="z-[100]">
-                    <SelectItem value="none">Biriktirilmagan</SelectItem>
+                    <SelectItem value="none">{t('ui.unassigned')}</SelectItem>
                     {assignableUsers.map((u) => (
                       <SelectItem key={u.id} value={String(u.id)}>
                         {u.fullName} ({roleLabel(u.role)})
@@ -258,15 +260,15 @@ export default function CandidateProfile({ params }: { params: { id: string } })
       <Card className="border-t-4 border-t-primary shadow-md overflow-hidden">
         <CardHeader className="bg-muted/30 pb-4">
           <CardTitle className="flex justify-between items-center gap-3 flex-wrap">
-            <span>Tanlov bosqichlari</span>
+            <span>{t('hire.stagesTitle')}</span>
             <Badge variant="outline" className="font-normal text-xs bg-card">
-              Joriy: {pipeline?.currentStage || candidate.stage} ({(pipeline?.stages.findIndex((s) => s.key === (pipeline?.currentStage || candidate.stage)) ?? 0) + 1}/9)
+              {t('hire.currentStage')}: {pipeline?.currentStage || candidate.stage} ({(pipeline?.stages.findIndex((s) => s.key === (pipeline?.currentStage || candidate.stage)) ?? 0) + 1}/9)
             </Badge>
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           {isPipelineLoading ? (
-            <div className="p-8 text-center text-muted-foreground">Voronka yuklanmoqda...</div>
+            <div className="p-8 text-center text-muted-foreground">{t('hire.pipelineLoading')}</div>
           ) : pipeline ? (
             <Pipeline
               stages={pipeline.stages}
@@ -280,8 +282,8 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                 }
                 if (stage?.status === 'pending') {
                   toast({
-                    title: 'Hali ochilmagan',
-                    description: 'Avval joriy qadamni yakunlang',
+                    title: t('hire.stageLocked'),
+                    description: t('hire.stageLockedDesc'),
                   });
                   setSelectedStage(key);
                   return;
@@ -290,16 +292,16 @@ export default function CandidateProfile({ params }: { params: { id: string } })
               }}
             />
           ) : (
-            <div className="p-8 text-center text-muted-foreground">Ma'lumot topilmadi</div>
+            <div className="p-8 text-center text-muted-foreground">{t('ui.empty')}</div>
           )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Bosqichlar bo'yicha batafsil ma'lumot</CardTitle>
+          <CardTitle>{t('hire.detailTitle')}</CardTitle>
           <p className="text-sm text-muted-foreground">
-            Avval nomzodning asosiy ma'lumotlari, keyin har bir qadam natijasi
+            {t('hire.detailSub')}
           </p>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -307,22 +309,23 @@ export default function CandidateProfile({ params }: { params: { id: string } })
           <div className="rounded-xl border bg-muted/20 p-5 space-y-5">
             <div className="flex items-center gap-2">
               <User className="w-5 h-5 text-primary" />
-              <h3 className="text-lg font-semibold">Nomzodning asosiy ma'lumotlari</h3>
+              <h3 className="text-lg font-semibold">{t('hire.basicInfo')}</h3>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              <InfoRow label="F.I.Sh." value={candidate.fullName} />
-              <InfoRow label="ID" value={`#${candidate.id}`} />
-              <InfoRow label="Status" value={statusLabel} />
-              <InfoRow label="Telefon" value={candidate.phone} />
-              <InfoRow label="Manzil" value={candidate.address} />
+              <InfoRow label={t('hire.fullName')} value={candidate.fullName} empty={t('ui.notEntered')} />
+              <InfoRow label="ID" value={`#${candidate.id}`} empty={t('ui.notEntered')} />
+              <InfoRow label={t('ui.status')} value={statusLabel} empty={t('ui.notEntered')} />
+              <InfoRow label={t('ui.phone')} value={candidate.phone} empty={t('ui.notEntered')} />
+              <InfoRow label={t('ui.address')} value={candidate.address} empty={t('ui.notEntered')} />
               <InfoRow
-                label="Tug'ilgan sana"
+                label={t('hire.birthDate')}
                 value={candidate.birthDate ? format(new Date(candidate.birthDate), 'dd.MM.yyyy') : null}
+                empty={t('ui.notEntered')}
               />
-              <InfoRow label="Ish o'rni" value={candidate.vacancyTitle} />
+              <InfoRow label={t('hire.col.job')} value={candidate.vacancyTitle} empty={t('ui.notEntered')} />
               <div className="space-y-1 md:col-span-1">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Mas'ul</p>
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('hire.assigneeLabel')}</p>
                 {canReassign ? (
                   <Select
                     value={candidate.recruiterId ? String(candidate.recruiterId) : 'none'}
@@ -330,10 +333,10 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                     disabled={isReassigning}
                   >
                     <SelectTrigger className="h-9">
-                      <SelectValue placeholder="Mas'ulni tanlang" />
+                      <SelectValue placeholder={t('hire.pickAssignee')} />
                     </SelectTrigger>
                     <SelectContent className="z-[100]">
-                      <SelectItem value="none">Biriktirilmagan</SelectItem>
+                      <SelectItem value="none">{t('ui.unassigned')}</SelectItem>
                       {assignableUsers.map((u) => (
                         <SelectItem key={u.id} value={String(u.id)}>
                           {u.fullName} ({roleLabel(u.role)})
@@ -342,39 +345,40 @@ export default function CandidateProfile({ params }: { params: { id: string } })
                     </SelectContent>
                   </Select>
                 ) : (
-                  <p className="text-sm font-medium">{candidate.recruiterName || 'Biriktirilmagan'}</p>
+                  <p className="text-sm font-medium">{candidate.recruiterName || t('ui.unassigned')}</p>
                 )}
                 {canReassign && (
                   <p className="text-[11px] text-muted-foreground">
-                    HR istalgan vaqtda boshqa rolga o'tkaza oladi. Faqat mas'ul va HR o'zgartira oladi.
+                    {t('hire.reassignHrHint')}
                   </p>
                 )}
               </div>
               <InfoRow
-                label="Ro'yxatdan o'tgan"
+                label={t('hire.registeredAt')}
                 value={format(new Date(candidate.createdAt), 'dd.MM.yyyy HH:mm')}
+                empty={t('ui.notEntered')}
               />
-              <InfoRow label="Kutilayotgan maosh" value={candidate.expectedSalary} />
-              <InfoRow label="Joriy bosqich" value={candidate.stage} />
+              <InfoRow label={t('hire.expectedSalary')} value={candidate.expectedSalary} empty={t('ui.notEntered')} />
+              <InfoRow label={t('hire.currentStageField')} value={candidate.stage} empty={t('ui.notEntered')} />
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5 pt-2 border-t">
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <Briefcase className="w-4 h-4 text-primary" />
-                  Ish tajribasi
+                  {t('hire.experience')}
                 </div>
                 <div className="rounded-md bg-card border p-3 text-sm whitespace-pre-wrap min-h-[80px]">
-                  {candidate.experience?.trim() || 'Kiritilmagan'}
+                  {candidate.experience?.trim() || t('ui.notEntered')}
                 </div>
               </div>
               <div className="space-y-2">
                 <div className="flex items-center gap-2 text-sm font-semibold">
                   <GraduationCap className="w-4 h-4 text-primary" />
-                  Ma'lumoti
+                  {t('hire.education')}
                 </div>
                 <div className="rounded-md bg-card border p-3 text-sm whitespace-pre-wrap min-h-[80px]">
-                  {candidate.education?.trim() || 'Kiritilmagan'}
+                  {candidate.education?.trim() || t('ui.notEntered')}
                 </div>
               </div>
             </div>
@@ -382,17 +386,17 @@ export default function CandidateProfile({ params }: { params: { id: string } })
             <div className="space-y-2 pt-2 border-t">
               <div className="flex items-center gap-2 text-sm font-semibold">
                 <FileText className="w-4 h-4 text-primary" />
-                Rekruter qaydlari
+                {t('hire.recruiterNotes')}
               </div>
               <div className="rounded-md bg-amber-50/60 border border-amber-100 p-3 text-sm whitespace-pre-wrap">
-                {candidate.notes?.trim() || 'Hali qaydlar kiritilmagan'}
+                {candidate.notes?.trim() || t('hire.noNotesYet')}
               </div>
             </div>
           </div>
 
           <div>
             <h3 className="text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
-              1–9 qadamlar tarixi
+              {t('hire.stepsHistory')}
             </h3>
             <StageHistory
               candidateId={id}

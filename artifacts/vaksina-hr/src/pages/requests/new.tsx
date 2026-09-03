@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { ArrowLeft } from 'lucide-react';
 import { Link } from 'wouter';
 import { useToast } from '../../hooks/use-toast';
+import { useI18n } from '../../i18n/I18nProvider';
 
 const formSchema = z.object({
   departmentId: z.coerce.number({ required_error: "Bo'limni tanlang" }).min(1, "Bo'limni tanlang"),
@@ -30,6 +31,7 @@ const formSchema = z.object({
 
 export default function NewRequest() {
   const [, setLocation] = useLocation();
+  const { t } = useI18n();
   const { toast } = useToast();
   const { mutate, isPending } = useCreateRequest();
   const { data: departments, isLoading: deptsLoading } = useGetDepartments();
@@ -53,11 +55,11 @@ export default function NewRequest() {
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     mutate({ data: values as any }, {
       onSuccess: (data) => {
-        toast({ title: 'Muvaffaqiyatli', description: 'Ariza yaratildi' });
+        toast({ title: t('ui.success'), description: t('requests.created') });
         setLocation(`/requests/${data.id}`);
       },
       onError: () => {
-        toast({ title: 'Xatolik', description: 'Ariza yaratishda xatolik', variant: 'destructive' });
+        toast({ title: t('ui.error'), description: t('requests.createFail'), variant: 'destructive' });
       }
     });
   };
@@ -69,8 +71,8 @@ export default function NewRequest() {
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Yangi Ariza</h1>
-          <p className="text-muted-foreground mt-1">Yangi xodim qidirish uchun so'rovnoma</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('requests.newTitle')}</h1>
+          <p className="text-muted-foreground mt-1">{t('requests.newSub')}</p>
         </div>
       </div>
 
@@ -85,11 +87,11 @@ export default function NewRequest() {
                   name="departmentId"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Bo'lim *</FormLabel>
+                      <FormLabel>{t('requests.dept')}</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value?.toString()}>
                         <FormControl>
                           <SelectTrigger disabled={deptsLoading}>
-                            <SelectValue placeholder="Bo'limni tanlang" />
+                            <SelectValue placeholder={t('requests.deptPh')} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
@@ -108,9 +110,9 @@ export default function NewRequest() {
                   name="position"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Lavozim nomi *</FormLabel>
+                      <FormLabel>{t('requests.position')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Masalan: Kardiolog" {...field} />
+                        <Input placeholder={t('requests.positionPh')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -122,7 +124,7 @@ export default function NewRequest() {
                   name="count"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Kerakli xodimlar soni *</FormLabel>
+                      <FormLabel>{t('requests.count')}</FormLabel>
                       <FormControl>
                         <Input type="number" min="1" {...field} />
                       </FormControl>
@@ -136,16 +138,16 @@ export default function NewRequest() {
                   name="priority"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Prioritet *</FormLabel>
+                      <FormLabel>{t('requests.priority')}</FormLabel>
                       <Select onValueChange={field.onChange} defaultValue={field.value}>
                         <FormControl>
                           <SelectTrigger>
-                            <SelectValue placeholder="Prioritetni tanlang" />
+                            <SelectValue placeholder={t('requests.priorityPh')} />
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="normal">Odatdagi (1-2 oy)</SelectItem>
-                          <SelectItem value="urgent">Shoshilinch (1-2 hafta)</SelectItem>
+                          <SelectItem value="normal">{t('requests.priorityNormal')}</SelectItem>
+                          <SelectItem value="urgent">{t('requests.priorityUrgent')}</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -158,9 +160,9 @@ export default function NewRequest() {
                   name="city"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Shahar *</FormLabel>
+                      <FormLabel>{t('requests.city')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Masalan: Toshkent" {...field} />
+                        <Input placeholder={t('requests.cityPh')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -172,9 +174,9 @@ export default function NewRequest() {
                   name="district"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Tuman *</FormLabel>
+                      <FormLabel>{t('requests.district')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="Masalan: Yunusobod" {...field} />
+                        <Input placeholder={t('requests.districtPh')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -186,9 +188,9 @@ export default function NewRequest() {
                   name="salaryRange"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Kutilayotgan maosh (ixtiyoriy)</FormLabel>
+                      <FormLabel>{t('requests.salaryOpt')}</FormLabel>
                       <FormControl>
-                        <Input placeholder="5 - 8 mln so'm" {...field} />
+                        <Input placeholder={t('requests.salaryPh')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -200,7 +202,7 @@ export default function NewRequest() {
                   name="deadline"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Yopish muddati (ixtiyoriy)</FormLabel>
+                      <FormLabel>{t('requests.deadlineOpt')}</FormLabel>
                       <FormControl>
                         <Input type="date" {...field} />
                       </FormControl>
@@ -216,9 +218,9 @@ export default function NewRequest() {
                   name="description"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Vazifalar (Asosiy ishlar) *</FormLabel>
+                      <FormLabel>{t('requests.duties')}</FormLabel>
                       <FormControl>
-                        <Textarea className="h-24" placeholder="Xodim nima ishlar qiladi..." {...field} />
+                        <Textarea className="h-24" placeholder={t('requests.dutiesPh')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -230,9 +232,9 @@ export default function NewRequest() {
                   name="requirements"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Talablar *</FormLabel>
+                      <FormLabel>{t('requests.reqs')}</FormLabel>
                       <FormControl>
-                        <Textarea className="h-24" placeholder="Ta'lim, tajriba, ko'nikmalar..." {...field} />
+                        <Textarea className="h-24" placeholder={t('requests.reqsPh')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -244,9 +246,9 @@ export default function NewRequest() {
                   name="reason"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Ish o'rni ochilish sababi (ixtiyoriy)</FormLabel>
+                      <FormLabel>{t('requests.reasonOpt')}</FormLabel>
                       <FormControl>
-                        <Textarea className="h-16" placeholder="Yangi shtat, xodim ketdi, etc." {...field} />
+                        <Textarea className="h-16" placeholder={t('requests.reasonPh')} {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
@@ -256,10 +258,10 @@ export default function NewRequest() {
 
               <div className="flex justify-end gap-4 pt-4 border-t">
                 <Link href="/requests">
-                  <Button variant="ghost" type="button">Bekor qilish</Button>
+                  <Button variant="ghost" type="button">{t('ui.cancelFull')}</Button>
                 </Link>
                 <Button type="submit" disabled={isPending}>
-                  {isPending ? 'Saqlanmoqda...' : 'Ariza berish'}
+                  {isPending ? t('ui.saving') : t('requests.submit')}
                 </Button>
               </div>
             </form>

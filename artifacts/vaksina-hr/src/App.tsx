@@ -1,8 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider } from './components/theme-provider';
+import { I18nProvider } from './i18n/I18nProvider';
 import { Toaster } from './components/ui/toaster';
 import { TooltipProvider } from './components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter } from 'wouter';
+import { Route, Switch, Router as WouterRouter, Redirect } from 'wouter';
 import { AuthProvider } from './contexts/AuthContext';
 import { Layout } from './components/layout/Layout';
 import { RealtimeSync } from './lib/realtime-sync';
@@ -30,7 +31,6 @@ import InternshipPage from './pages/candidates/internship';
 import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import TashkiliyTuzilmaPage from './pages/tashkiliy-tuzilma/index';
-import PipelineBoardPage from './pages/pipeline/index';
 import VazifalarPage from './pages/vazifalar/index';
 import EslatmalarPage from './pages/eslatmalar/index';
 import ChatPage from './pages/chat/index';
@@ -131,7 +131,9 @@ function Router() {
       <ProtectedRoute path="/candidates/:id" component={CandidateProfile} />
       
       <ProtectedRoute path="/interviews" component={InterviewsList} />
-      <ProtectedRoute path="/pipeline" component={PipelineBoardPage} />
+      <Route path="/pipeline">
+        <Redirect to="/candidates" />
+      </Route>
       <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
       <ProtectedRoute path="/eslatmalar" component={EslatmalarPage} />
       <ProtectedRoute path="/chat" component={ChatPage} />
@@ -171,17 +173,19 @@ function Router() {
 function App() {
   return (
     <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <AuthProvider>
-          <RealtimeSync />
-          <TooltipProvider>
-            <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
-              <Router />
-            </WouterRouter>
-            <Toaster />
-          </TooltipProvider>
-        </AuthProvider>
-      </QueryClientProvider>
+      <I18nProvider>
+        <QueryClientProvider client={queryClient}>
+          <AuthProvider>
+            <RealtimeSync />
+            <TooltipProvider>
+              <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
+                <Router />
+              </WouterRouter>
+              <Toaster />
+            </TooltipProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </I18nProvider>
     </ThemeProvider>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useGetEmployees, type Employee } from '@workspace/api-client-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useI18n } from '../../i18n/I18nProvider';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
 import { isHrManager, isHrRole, isSbRole } from '../../lib/roles';
@@ -315,6 +316,7 @@ function LoginPassCard({
 }
 
 export default function PharmacyNetworkPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
   const { data: employees, isLoading, refetch } = useGetEmployees();
@@ -619,7 +621,7 @@ export default function PharmacyNetworkPage() {
     });
     const map = new Map<string, Employee[]>();
     for (const p of orphans) {
-      const loc = (p.location || '').trim() || 'Filial';
+      const loc = (p.location || '').trim() || t('pharmacy.branchFallback');
       const list = map.get(loc) ?? [];
       list.push(p);
       map.set(loc, list);
@@ -629,7 +631,7 @@ export default function PharmacyNetworkPage() {
       location,
       staff: staff.sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz')),
     }));
-  }, [isMudirOnly, filteredCoordinators, orgPeople, shiftFilter, search]);
+  }, [isMudirOnly, filteredCoordinators, orgPeople, shiftFilter, search, t]);
 
   const filterTeam = (managerId: number) => {
     let team = (pharmacistsByManager.get(managerId) ?? []).filter(
@@ -798,7 +800,7 @@ export default function PharmacyNetworkPage() {
       return;
     }
     if (addKind === 'xodim' && canPickFilialForStaff && !addManagerId && !canAddTeam) {
-      toast({ title: 'Filialni tanlang', variant: 'destructive' });
+      toast({ title: t('pharmacy.pickBranch'), variant: 'destructive' });
       return;
     }
     createStaff.mutate(
@@ -905,7 +907,7 @@ export default function PharmacyNetworkPage() {
             title: 'Saqlandi',
             description:
               canEditStatus && employmentStatus === 'no_manager'
-                ? 'Mudir yo‘q deb belgilandi. Xodimlar ishlashda davom etadi.'
+                ? t('pharmacy.markedNoMudir')
                 : canEditStatus && employmentStatus !== 'working'
                   ? 'Holat yangilandi — ogohlantirish yuborildi'
                   : 'Ism va maʼlumot yangilandi',
@@ -955,7 +957,7 @@ export default function PharmacyNetworkPage() {
 
     if (!branchName || branchName === 'Filial' || branchName === 'Lokatsiya') {
       toast({
-        title: 'Filial nomini yozing',
+        title: t('pharmacy.branchNameRequired'),
         description: 'Masalan: Novza, Olmos 2, Chilonzor',
         variant: 'destructive',
       });
@@ -1054,9 +1056,9 @@ export default function PharmacyNetworkPage() {
       return (
         <div className="mx-auto max-w-md rounded-2xl border border-dashed bg-card p-8 text-center">
           <Store className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">Filial bog‘lanmagan</h2>
+          <h2 className="text-lg font-semibold">{t("pharmacy.unlinked")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Sizning akkauntingiz hali filial mudiriga ulanmagan. Koordinator/HR bilan bog‘laning.
+            {t("pharmacy.unlinkedHint")}
           </p>
         </div>
       );
@@ -1069,13 +1071,13 @@ export default function PharmacyNetworkPage() {
     <div className={cn('pharmacy-network-page space-y-5', canAddTeam && 'pb-24 md:pb-0')}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">Aptekalar tarmog‘i</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{t("pharmacy.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {isMudirOnly
-              ? 'O‘z filialingizdagi farmasevt va stajyorlar — login/parol, Excel va tahrirlash.'
+              ? t('pharmacy.subtitle.mudir')
               : isKoordinatorOnly
-                ? 'Faqat o‘z filiallaringiz. «Xodim qo‘shish» — istalgan filialga farmasevt/stajyor. Excelda ham chiqadi.'
-                : 'Mudir qo‘shing — tizim login/parol beradi. Mudir keyin farmasevt va stajyor qo‘shadi.'}
+                ? t('pharmacy.subtitle.coord')
+                : t('pharmacy.subtitle.admin')}
           </p>
         </div>
         <div className="flex w-full shrink-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
@@ -1087,7 +1089,7 @@ export default function PharmacyNetworkPage() {
               disabled={exportingMudirs || allManagers.length === 0}
             >
               <Download className="h-4 w-4" />
-              {exportingMudirs ? 'Yuklanmoqda…' : 'Excel yuklash'}
+              {exportingMudirs ? t('ui.loading') : t('pharmacy.excelDownload')}
             </Button>
           )}
           {isKoordinatorOnly && (
@@ -1098,13 +1100,13 @@ export default function PharmacyNetworkPage() {
               disabled={allManagers.length === 0}
             >
               <Plus className="h-4 w-4" />
-              Xodim qo‘shish
+              {t('pharmacy.addStaff')}
             </Button>
           )}
           {canAddStaff && (
             <Button className="h-11 w-full gap-2 sm:h-9 sm:w-auto" onClick={() => openAddStaff(canAddMudir ? 'mudir' : 'xodim')}>
               <Plus className="h-4 w-4" />
-              {canAddMudir ? 'Mudir qo‘shish' : 'Xodim qo‘shish'}
+              {canAddMudir ? t('pharmacy.addMudir') : t('pharmacy.addStaff')}
             </Button>
           )}
         </div>
@@ -1113,15 +1115,15 @@ export default function PharmacyNetworkPage() {
       {networkEmpty ? (
         <div className="rounded-2xl border border-dashed bg-card p-8 text-center">
           <Store className="mx-auto mb-3 h-9 w-9 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">Tarmoq maʼlumoti yo‘q</h2>
+          <h2 className="text-lg font-semibold">{t("pharmacy.empty")}</h2>
           <p className="mt-1 text-sm text-muted-foreground">
             {canAddMudir
-              ? 'Birinchi mudirni qo‘shing — ism, familiya, raqam. Tizim login va parol yaratadi.'
-              : 'Koordinator va mudirlar hali qo‘shilmagan.'}
+              ? t('pharmacy.emptyAddFirst')
+              : t('pharmacy.emptyNoStaff')}
           </p>
           {canAddMudir && (
             <Button className="mt-4 gap-2" onClick={() => openAddStaff('mudir')}>
-              <Plus className="h-4 w-4" /> Mudir qo‘shish
+              <Plus className="h-4 w-4" /> {t('pharmacy.addMudir')}
             </Button>
           )}
         </div>
@@ -1233,7 +1235,7 @@ export default function PharmacyNetworkPage() {
                                   {a.employmentStatusLabel}
                                   {' · '}
                                   {shiftText(a.shiftType, a.shiftLabel)}
-                                  {a.managerName ? ` · Mudir: ${a.managerName}` : ''}
+                                  {a.managerName ? ` · ${t('pharmacy.mudirLabel')}: ${a.managerName}` : ''}
                                   {' · '}
                                   {a.pipelineLabel}
                                 </p>
@@ -1333,7 +1335,7 @@ export default function PharmacyNetworkPage() {
           {!isKoordinatorOnly ? (
             <Select value={coordinatorFilter} onValueChange={setCoordinatorFilter}>
               <SelectTrigger className="w-full sm:w-[200px]">
-                <SelectValue placeholder="Koordinatorlar" />
+                <SelectValue placeholder={t("pharmacy.coords")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Barcha koordinatorlar</SelectItem>
@@ -1345,12 +1347,12 @@ export default function PharmacyNetworkPage() {
           ) : null}
           <Select value={shiftFilter} onValueChange={setShiftFilter}>
             <SelectTrigger className="w-full sm:w-[170px]">
-              <SelectValue placeholder="Smena" />
+              <SelectValue placeholder={t("pharmacy.shift")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Barcha smenalar</SelectItem>
-              <SelectItem value="one">1-smena</SelectItem>
-              <SelectItem value="two">2-smena</SelectItem>
+              <SelectItem value="all">{t("pharmacy.allShifts")}</SelectItem>
+              <SelectItem value="one">{t("pharmacy.shift1")}</SelectItem>
+              <SelectItem value="two">{t("pharmacy.shift2")}</SelectItem>
               <SelectItem value="custom">Maxsus</SelectItem>
             </SelectContent>
           </Select>
@@ -1392,7 +1394,7 @@ export default function PharmacyNetworkPage() {
           </p>
           {!filteredCoordinators.length ? (
             <p className="py-4 text-center text-sm text-muted-foreground">
-              {isMudirOnly ? 'Koordinator topilmadi' : 'Filter bo‘yicha koordinator topilmadi'}
+              {isMudirOnly ? t('pharmacy.coordNotFound') : t('pharmacy.coordFilterEmpty')}
             </p>
           ) : (
             <div className={cn('flex flex-wrap justify-center gap-2.5', isMudirOnly && 'flex-col items-stretch sm:items-center')}>
@@ -1466,7 +1468,7 @@ export default function PharmacyNetworkPage() {
         <div className="px-3 py-3 sm:px-4">
           <div className="mb-2.5 flex items-center justify-between gap-3">
             <p className="pn-section-title">
-              {isMudirOnly ? 'Mening filiali' : '2 · Filial mudirlari'}
+              {isMudirOnly ? t('pharmacy.myBranch') : t('pharmacy.branchManagers')}
             </p>
             <p className="text-xs text-muted-foreground">
               {teamStats.total} ta filial
@@ -1498,7 +1500,7 @@ export default function PharmacyNetworkPage() {
                       Farmatsevtlar — eʼlon holati
                     </p>
                     <p className="mt-0.5 text-sm font-semibold text-foreground">
-                      {displayBranchName(manager.location) || 'Filial'} — {manager.fullName}
+                      {displayBranchName(manager.location) || t('pharmacy.branchFallback')} — {manager.fullName}
                     </p>
                   </div>
                   <Button
@@ -1621,7 +1623,7 @@ export default function PharmacyNetworkPage() {
                                     className="mt-1 inline-block text-[11px] font-medium text-primary hover:underline"
                                   >
                                     Ariza #{linked.requestId}
-                                    {linked.vacancyId ? ` · Vakansiya #${linked.vacancyId}` : ''}
+                                    {linked.vacancyId ? ` · ${t('pharmacy.vacancy')} #${linked.vacancyId}` : ''}
                                   </Link>
                                 )}
                               </div>
@@ -1672,7 +1674,7 @@ export default function PharmacyNetworkPage() {
                   ? displayName
                   : hasGps
                     ? 'Nomsiz lokatsiya'
-                    : 'Lokatsiya yo‘q';
+                    : t('pharmacy.noLocation');
                 const accent = alert
                   ? 'border-t-red-500'
                   : branchClosed
@@ -1875,7 +1877,7 @@ export default function PharmacyNetworkPage() {
                               type="button"
                               onClick={() => openAddStaff('xodim', manager.id)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-sm hover:bg-muted"
-                              title="Xodim qo‘shish"
+                              title={t("pharmacy.addStaff")}
                             >
                               <Plus className="h-4 w-4" />
                             </button>
@@ -1885,7 +1887,7 @@ export default function PharmacyNetworkPage() {
                               type="button"
                               onClick={() => openAddStaff('xodim', manager.id)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm"
-                              title="Xodim qo‘shish"
+                              title={t("pharmacy.addStaff")}
                             >
                               <Plus className="h-4 w-4" />
                             </button>
@@ -1895,7 +1897,7 @@ export default function PharmacyNetworkPage() {
                               type="button"
                               onClick={() => openDismissTarget(manager)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-800 shadow-sm hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
-                              title="Mudirni bo‘shatish (filial saqlanadi)"
+                              title={t("pharmacy.dismissMudirTitle")}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -1905,7 +1907,7 @@ export default function PharmacyNetworkPage() {
                               type="button"
                               onClick={() => openDeleteTarget(manager, fullTeam.length)}
                               className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 shadow-sm hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60"
-                              title="Filial va mudirni butunlay o‘chirish"
+                              title={t("pharmacy.deleteBranchTitle")}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -1937,7 +1939,7 @@ export default function PharmacyNetworkPage() {
                             {manager.fullName}
                           </p>
                           <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {noMudir ? 'Mudir yo‘q' : 'Mudir (zav.aptek)'}
+                            {noMudir ? t('pharmacy.noMudir') : t('pharmacy.mudirRole')}
                           </p>
                           <p className="mt-1 flex items-start gap-1 text-xs font-semibold leading-snug text-sky-900 dark:text-sky-300">
                             <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-400" />
@@ -2137,7 +2139,7 @@ export default function PharmacyNetworkPage() {
                       <div className="inline-flex min-w-0 items-start gap-1.5 rounded-lg bg-amber-100 px-2 py-1 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
                         <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
                         <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] font-semibold leading-snug">
-                          {displayBranchName(group.location) || group.location || 'Filial'}
+                          {displayBranchName(group.location) || group.location || t('pharmacy.branchFallback')}
                         </span>
                       </div>
                       <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
@@ -2227,7 +2229,7 @@ export default function PharmacyNetworkPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label>Yangi parol</Label>
+              <Label>{t("pharmacy.newPassword")}</Label>
               <Input
                 type="text"
                 value={credPassword}
@@ -2283,9 +2285,9 @@ export default function PharmacyNetworkPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="working">Ishlamoqda</SelectItem>
+                    <SelectItem value="working">{t("pharmacy.working")}</SelectItem>
                     <SelectItem value="new">Yangi</SelectItem>
-                    <SelectItem value="dismissed">Bo'shatilgan</SelectItem>
+                    <SelectItem value="dismissed">{t("pharmacy.dismissed")}</SelectItem>
                     <SelectItem value="need_hire">Xodim kerak</SelectItem>
                     <SelectItem value="searching">Qidirilmoqda</SelectItem>
                     {canSetNoManager && editTarget?.orgRole === 'manager' && (
@@ -2323,8 +2325,8 @@ export default function PharmacyNetworkPage() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="one">1-smena</SelectItem>
-                      <SelectItem value="two">2-smena</SelectItem>
+                      <SelectItem value="one">{t("pharmacy.shift1")}</SelectItem>
+                      <SelectItem value="two">{t("pharmacy.shift2")}</SelectItem>
                       <SelectItem value="custom">Mudir belgilagan holat</SelectItem>
                     </SelectContent>
                   </Select>
@@ -2461,7 +2463,7 @@ export default function PharmacyNetworkPage() {
                     <Label>Filial</Label>
                     <Select value={addManagerId || undefined} onValueChange={setAddManagerId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Filialni tanlang" />
+                        <SelectValue placeholder={t("pharmacy.pickBranch")} />
                       </SelectTrigger>
                       <SelectContent>
                         {allManagers.map((m) => (
@@ -2502,7 +2504,7 @@ export default function PharmacyNetworkPage() {
               Bekor
             </Button>
             <Button onClick={handleCreateStaff} disabled={createStaff.isPending}>
-              {createStaff.isPending ? 'Yaratilmoqda...' : 'Yaratish'}
+              {createStaff.isPending ? t('pharmacy.creating') : t('ui.create')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2511,7 +2513,7 @@ export default function PharmacyNetworkPage() {
       <Dialog open={!!createdCreds} onOpenChange={(o) => !o && setCreatedCreds(null)}>
         <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
-            <DialogTitle>Login va parol</DialogTitle>
+            <DialogTitle>{t("pharmacy.loginPass")}</DialogTitle>
           </DialogHeader>
           {createdCreds && (
             <div className="space-y-3">
@@ -2584,7 +2586,7 @@ export default function PharmacyNetworkPage() {
             </div>
           )}
           <DialogFooter>
-            <Button onClick={() => setCreatedCreds(null)}>Yopish</Button>
+            <Button onClick={() => setCreatedCreds(null)}>{t('pharmacy.close')}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2595,11 +2597,11 @@ export default function PharmacyNetworkPage() {
             <AlertDialogTitle>
               {deleteTarget?.mode === 'dismiss'
                 ? deleteTarget?.kind === 'filial'
-                  ? 'Mudirni bo‘shatish?'
-                  : 'Xodimni bo‘shatish?'
+                  ? t('pharmacy.dismissMudirQ')
+                  : t('pharmacy.dismissStaffQ')
                 : deleteTarget?.kind === 'filial'
-                  ? 'Filialni o‘chirish?'
-                  : 'Xodimni o‘chirish?'}
+                  ? t('pharmacy.deleteBranchQ')
+                  : t('pharmacy.deleteStaffQ')}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">

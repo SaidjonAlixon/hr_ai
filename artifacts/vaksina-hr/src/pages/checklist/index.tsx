@@ -66,29 +66,22 @@ import {
   gpsFromLocationField,
   displayBranchName,
 } from "@/lib/pharmacy-staff-api";
+import { useI18n } from "@/i18n/I18nProvider";
 
-const VISIT_NAMES = [
-  { value: "1-tashrif", label: "1-tashrif" },
-  { value: "2-tashrif", label: "2-tashrif" },
-  { value: "3-tashrif", label: "3-tashrif" },
-  { value: "nazorat", label: "Nazorat tashrifi" },
-  { value: "qayta-tekshiruv", label: "Qayta tekshiruv" },
-];
-
-const MONTHS = [
-  "Yanvar",
-  "Fevral",
-  "Mart",
-  "Aprel",
-  "May",
-  "Iyun",
-  "Iyul",
-  "Avgust",
-  "Sentabr",
-  "Oktabr",
-  "Noyabr",
-  "Dekabr",
-];
+const MONTHS_KEYS = [
+  "month.1",
+  "month.2",
+  "month.3",
+  "month.4",
+  "month.5",
+  "month.6",
+  "month.7",
+  "month.8",
+  "month.9",
+  "month.10",
+  "month.11",
+  "month.12",
+] as const;
 
 function todayIso() {
   const d = new Date();
@@ -96,10 +89,6 @@ function todayIso() {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function currentMonthLabel() {
-  return MONTHS[new Date().getMonth()];
 }
 
 function scoreTone(pct: number) {
@@ -157,6 +146,7 @@ function BranchPicker({
   onChange: (id: string) => void;
   disabled?: boolean;
 }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const selected = branches.find((b) => String(b.id) === value) || null;
@@ -195,32 +185,32 @@ function BranchPicker({
                 : "text-muted-foreground font-normal",
           )}
         >
-          {selected ? selected.label : "— Filialni tanlang —"}
+          {selected ? selected.label : `— ${t("checklist.pickBranch")} —`}
         </span>
         <ChevronDown className="h-4 w-4 shrink-0 opacity-50" />
       </button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex max-h-[85dvh] w-[calc(100%-1.5rem)] max-w-lg flex-col gap-3 overflow-hidden p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Filialni tanlang</DialogTitle>
+            <DialogTitle>{t("checklist.pickBranch")}</DialogTitle>
           </DialogHeader>
           <p className="text-[11px] text-muted-foreground">
-            <span className="font-semibold text-emerald-700">Yashil</span> — GPS bor ·{" "}
-            <span className="font-semibold text-rose-700">Qizil</span> — GPS yo‘q
+            <span className="font-semibold text-emerald-700">{t("checklist.gpsGreen")}</span> — {t("checklist.gpsHas")} ·{" "}
+            <span className="font-semibold text-rose-700">{t("checklist.gpsRed")}</span> — {t("checklist.gpsNone")}
           </p>
           <div className="relative">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Filial nomini qidiring…"
+              placeholder={t("checklist.searchBranch")}
               className="h-11 pl-9"
               autoFocus
             />
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border">
             {filtered.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">Topilmadi</p>
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">{t("checklist.notFound")}</p>
             ) : (
               <ul className="divide-y">
                 {filtered.map((b) => {
@@ -277,8 +267,16 @@ function BranchPicker({
 }
 
 export default function ChecklistPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
+  const VISIT_NAMES = [
+    { value: "1-tashrif", label: t("checklist.visit1") },
+    { value: "2-tashrif", label: t("checklist.visit2") },
+    { value: "3-tashrif", label: t("checklist.visit3") },
+    { value: "nazorat", label: t("checklist.visit") },
+    { value: "qayta-tekshiruv", label: t("checklist.recheck") },
+  ];
   const { data: rawBranches = [], isLoading: branchesLoading } = useAuditBranches();
   const branches = useMemo(() => normalizeAuditBranches(rawBranches), [rawBranches]);
   const { data: history = [], isLoading: historyLoading } = useBranchAudits();
@@ -288,7 +286,7 @@ export default function ChecklistPage() {
   const [managerId, setManagerId] = useState<string>("");
   const [visitDate, setVisitDate] = useState(todayIso());
   const [visitName, setVisitName] = useState("1-tashrif");
-  const [monthLabel, setMonthLabel] = useState(currentMonthLabel());
+  const [monthLabel, setMonthLabel] = useState(() => t(MONTHS_KEYS[new Date().getMonth()]));
   const [generalNote, setGeneralNote] = useState("");
   const [categories, setCategories] = useState<AuditCategory[]>(() =>
     createEmptyAuditTemplate(),
@@ -460,27 +458,27 @@ export default function ChecklistPage() {
     setManagerId("");
     setVisitDate(todayIso());
     setVisitName("1-tashrif");
-    setMonthLabel(currentMonthLabel());
+    setMonthLabel(t(MONTHS_KEYS[new Date().getMonth()]));
     setGeneralNote("");
     setCategories(createEmptyAuditTemplate());
   }
 
   async function handleSave() {
     if (!canWrite) {
-      toast({ title: "Ruxsat yo‘q", variant: "destructive" });
+      toast({ title: t("checklist.noPermission"), variant: "destructive" });
       return;
     }
     if (!managerId) {
-      toast({ title: "Filialni tanlang", variant: "destructive" });
+      toast({ title: t("checklist.pickBranch"), variant: "destructive" });
       return;
     }
     if (!visitDate) {
-      toast({ title: "Sanani belgilang", variant: "destructive" });
+      toast({ title: t("checklist.pickDate"), variant: "destructive" });
       return;
     }
     if (live.answered === 0) {
       toast({
-        title: "Javob belgilang",
+        title: t("checklist.pickAnswer"),
         description: "Kamida bitta talabga Ha yoki Yo‘q tanlang",
         variant: "destructive",
       });
@@ -491,7 +489,7 @@ export default function ChecklistPage() {
     if (mustGps) {
       if (!branchHasCoords) {
         toast({
-          title: "Filial GPS yo‘q",
+          title: t("checklist.noGps"),
           description: "Avval Aptekalar tarmog‘ida shu mudirga koordinata saqlang",
           variant: "destructive",
         });
@@ -499,7 +497,7 @@ export default function ChecklistPage() {
       }
       if (!gps) {
         toast({
-          title: "Joylashuv kerak",
+          title: t("checklist.needLoc"),
           description: "«Lokatsiyani yoqish» ni bosing — GPS so‘raladi",
           variant: "destructive",
         });
@@ -507,7 +505,7 @@ export default function ChecklistPage() {
       }
       if (!withinGeofence) {
         toast({
-          title: "Filialdan uzoqdasiz",
+          title: t("checklist.tooFar"),
           description: `Hozir ${formatDistance(distanceMeters ?? 0)}. Cheklist faqat ${AUDIT_GEOFENCE_METERS} m ichida ochiladi.`,
           variant: "destructive",
         });
@@ -528,13 +526,13 @@ export default function ChecklistPage() {
           : {}),
       });
       toast({
-        title: "Cheklist saqlandi",
+        title: t("checklist.savedOk"),
         description: `Umumiy ball: ${live.scorePercent}% (${live.yes} Ha / ${live.no} Yo‘q)`,
       });
       resetForm();
     } catch (e: any) {
       toast({
-        title: "Saqlanmadi",
+        title: t("checklist.saveFail"),
         description: e?.message || "Xato",
         variant: "destructive",
       });
@@ -545,9 +543,9 @@ export default function ChecklistPage() {
     return (
       <div className="rounded-2xl border bg-card p-8 text-center shadow-sm">
         <Info className="mx-auto h-10 w-10 text-muted-foreground" />
-        <h2 className="mt-3 text-lg font-semibold">Faqat koordinatorlar uchun</h2>
+        <h2 className="mt-3 text-lg font-semibold">{t("checklist.coordOnly")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Filial audit cheklistini faqat koordinator to‘ldiradi.
+          {t("checklist.coordOnlyHint")}
         </p>
       </div>
     );
@@ -563,16 +561,13 @@ export default function ChecklistPage() {
           <div className="min-w-0">
             <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-medium text-cyan-100 sm:px-3 sm:text-xs">
               <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
-              <span className="truncate">Koordinator · Filial nazorati</span>
+              <span className="truncate">{t("checklist.subtitle")}</span>
             </div>
             <h1 className="text-xl font-bold tracking-tight sm:text-3xl">
-              Audit cheklist
+              {t("checklist.title")}
             </h1>
             <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground sm:mt-2 sm:max-w-xl sm:text-sm">
-              Har bir filialga borib belgilangan talablarni tekshiring:{" "}
-              <span className="text-emerald-300">Ha</span> yoki{" "}
-              <span className="text-rose-300">Yo‘q</span>. Natija foizda
-              hisoblanadi va saqlanadi.
+              {t("checklist.heroHint")}
             </p>
           </div>
           <Button
@@ -581,7 +576,7 @@ export default function ChecklistPage() {
             onClick={() => setHistoryOpen(true)}
           >
             <History className="mr-1.5 h-4 w-4" />
-            Tarix ({history.length})
+            {t("checklist.history")} ({history.length})
           </Button>
         </div>
       </div>
@@ -590,23 +585,23 @@ export default function ChecklistPage() {
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
         <ScoreCard
           icon={<TrendingUp className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
-          label="Umumiy foiz"
+          label={t("checklist.overallPct")}
           value={`${live.scorePercent}%`}
           valueClass={scoreTone(live.scorePercent)}
         />
         <ScoreCard
           icon={<Check className="h-3.5 w-3.5 text-emerald-600 sm:h-4 sm:w-4" />}
-          label="Ha"
+          label={t("ui.yes")}
           value={String(live.yes)}
         />
         <ScoreCard
           icon={<X className="h-3.5 w-3.5 text-rose-600 sm:h-4 sm:w-4" />}
-          label="Yo‘q"
+          label={t("ui.no")}
           value={String(live.no)}
         />
         <ScoreCard
           icon={<ClipboardCheck className="h-3.5 w-3.5 sm:h-4 sm:w-4" />}
-          label="Javob"
+          label={t("checklist.answers")}
           value={`${live.answered}/${live.total}`}
         />
       </div>
@@ -629,9 +624,9 @@ export default function ChecklistPage() {
                 <Store className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold sm:text-base">Tashrif ma’lumotlari</h2>
+                <h2 className="text-sm font-semibold sm:text-base">{t("checklist.visitInfo")}</h2>
                 <p className="text-[11px] text-muted-foreground sm:text-xs">
-                  Filial tanlang — mudir avtomatik
+                  {t("checklist.visitHint")}
                 </p>
               </div>
             </div>
@@ -643,7 +638,7 @@ export default function ChecklistPage() {
               onClick={resetForm}
             >
               <RotateCcw className="h-3.5 w-3.5 sm:mr-1.5" />
-              <span className="hidden sm:inline">Tozalash</span>
+              <span className="hidden sm:inline">{t("checklist.reset")}</span>
             </Button>
           </div>
 
@@ -657,7 +652,7 @@ export default function ChecklistPage() {
           <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
             <div className="space-y-1.5">
               <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Filialni tanlang
+                {t("checklist.pickBranch")}
               </Label>
               <BranchPicker
                 branches={branches}
@@ -666,19 +661,19 @@ export default function ChecklistPage() {
                 disabled={branchesLoading || branches.length === 0}
               />
               <p className="text-[10px] text-muted-foreground">
-                <span className="font-medium text-emerald-700">Yashil</span> — lokatsiya kiritilgan ·{" "}
-                <span className="font-medium text-rose-700">Qizil</span> — GPS yo‘q
+                <span className="font-medium text-emerald-700">{t("checklist.gpsGreen")}</span> — {t("checklist.gpsHas")} ·{" "}
+                <span className="font-medium text-rose-700">{t("checklist.gpsRed")}</span> — {t("checklist.gpsNone")}
               </p>
             </div>
 
             <div className="space-y-1.5">
               <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Filial mudiri
+                {t("checklist.branchManager")}
               </Label>
               <div className="flex h-11 items-center gap-2 rounded-md border bg-muted px-3 text-sm">
                 <User className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className={cn("truncate", !selectedBranch && "text-muted-foreground")}>
-                  {selectedBranch?.managerName || "Avtomatik to‘ldiriladi…"}
+                  {selectedBranch?.managerName || t("checklist.autoFill")}
                 </span>
               </div>
             </div>
@@ -686,7 +681,7 @@ export default function ChecklistPage() {
             {selectedBranch && (
               <div className="space-y-2 sm:col-span-2">
                 <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                  Jonli lokatsiya · {AUDIT_GEOFENCE_METERS} m
+                  {t("checklist.liveLoc")} · {AUDIT_GEOFENCE_METERS} m
                 </Label>
 
                 {!branchHasCoords ? (
@@ -698,7 +693,7 @@ export default function ChecklistPage() {
                   <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
                     <Check className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
-                      <p className="font-semibold">Filial hududidasiz — cheklist ochiq</p>
+                      <p className="font-semibold">{t("checklist.inZone")}</p>
                       <p className="mt-0.5 text-xs text-emerald-800/80">
                         {selectedBranch.branchLocation} · masofa{" "}
                         <strong className="tabular-nums">{formatDistance(distanceMeters!)}</strong>
@@ -716,7 +711,7 @@ export default function ChecklistPage() {
                             ? "Hali belgilangan filialga yetmadingiz"
                             : gpsAsking || gpsWatching
                               ? "Joylashuv olinmoqda…"
-                              : "Filialga borgach lokatsiyaga ruxsat bering"}
+                              : t("checklist.needLocHint")}
                         </p>
                         {gpsError ? (
                           <p className="mt-1 text-xs text-rose-700">{gpsError}</p>
@@ -750,7 +745,7 @@ export default function ChecklistPage() {
                             disabled={gpsAsking}
                           >
                             <Crosshair className="mr-1.5 h-3.5 w-3.5" />
-                            {gpsAsking ? "So‘ralmoqda…" : "Lokatsiyani yoqish"}
+                            {gpsAsking ? t("checklist.askingGps") : t("checklist.enableLoc")}
                           </Button>
                           <a
                             href={`https://www.google.com/maps/dir/?api=1&destination=${selectedBranch.latitude},${selectedBranch.longitude}&travelmode=driving`}
@@ -820,9 +815,9 @@ export default function ChecklistPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {MONTHS.map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
+                  {MONTHS_KEYS.map((key) => (
+                    <SelectItem key={key} value={t(key)}>
+                      {t(key)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -852,7 +847,7 @@ export default function ChecklistPage() {
                 <ClipboardCheck className="h-4 w-4" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold sm:text-base">Audit cheklist</h2>
+                <h2 className="text-sm font-semibold sm:text-base">{t("checklist.title")}</h2>
                 <p className="text-[11px] text-muted-foreground sm:text-xs">
                   Har bir bandni tanlang — boshida tanlanmagan
                 </p>
@@ -1009,7 +1004,7 @@ export default function ChecklistPage() {
             className="min-w-[160px]"
           >
             <Save className="mr-1.5 h-4 w-4" />
-            {createAudit.isPending ? "Saqlanmoqda…" : "Saqlash"}
+            {createAudit.isPending ? t("checklist.saving") : t("checklist.save")}
           </Button>
         </div>
       </div>
@@ -1055,7 +1050,7 @@ export default function ChecklistPage() {
           }
         >
           <Save className="mr-1.5 h-4 w-4" />
-          {createAudit.isPending ? "Saqlanmoqda…" : "Saqlash"}
+          {createAudit.isPending ? t("checklist.saving") : t("checklist.save")}
         </Button>
       </div>
 
@@ -1063,10 +1058,10 @@ export default function ChecklistPage() {
       <Dialog open={historyOpen} onOpenChange={setHistoryOpen}>
         <DialogContent className="max-h-[85vh] w-[calc(100%-1.5rem)] max-w-2xl overflow-y-auto rounded-2xl p-4 sm:p-6">
           <DialogHeader>
-            <DialogTitle>Saqlangan auditlar</DialogTitle>
+            <DialogTitle>{t("checklist.savedAudits")}</DialogTitle>
           </DialogHeader>
           {historyLoading ? (
-            <p className="text-sm text-muted-foreground">Yuklanmoqda…</p>
+            <p className="text-sm text-muted-foreground">{t("ui.loading")}</p>
           ) : history.length === 0 ? (
             <p className="rounded-xl border border-dashed p-6 text-center text-sm text-muted-foreground sm:p-8">
               Hali saqlangan cheklist yo‘q
@@ -1080,7 +1075,7 @@ export default function ChecklistPage() {
                 >
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-foreground">
-                      {a.branchLocation || "Filial"}
+                      {a.branchLocation || t("ui.branch")}
                     </p>
                     <p className="text-xs text-muted-foreground">
                       {a.visitDate} · {a.visitName} · {a.managerName} ·{" "}

@@ -9,7 +9,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 import { format, formatDistanceToNow, isToday, isYesterday } from 'date-fns';
-import { uz } from 'date-fns/locale';
+import { uz, ru } from 'date-fns/locale';
 import {
   Bell,
   CheckCheck,
@@ -26,72 +26,84 @@ import { Card, CardContent } from '../../components/ui/card';
 import { Skeleton } from '../../components/ui/skeleton';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
+import { useI18n } from '../../i18n/I18nProvider';
 
-const TYPE_META: Record<string, { label: string; icon: typeof Bell; color: string; soft: string }> = {
+const TYPE_ICONS: Record<string, { icon: typeof Bell; color: string; soft: string; key: string }> = {
   new_request: {
-    label: 'Yangi ariza',
     icon: FileText,
     color: 'text-sky-700',
     soft: 'bg-sky-100',
+    key: 'notif.type.new_request',
   },
   interview_reminder: {
-    label: 'Suhbat',
     icon: Calendar,
     color: 'text-violet-700',
     soft: 'bg-violet-100',
+    key: 'notif.type.interview_reminder',
   },
   expired_task: {
-    label: 'Vazifa',
     icon: AlertTriangle,
     color: 'text-amber-800',
     soft: 'bg-amber-100',
+    key: 'notif.type.expired_task',
   },
   stage_change: {
-    label: 'Bosqich',
     icon: UserRound,
     color: 'text-indigo-700',
     soft: 'bg-indigo-100',
+    key: 'notif.type.stage_change',
   },
   offer_accepted: {
-    label: 'Offer',
     icon: Briefcase,
     color: 'text-teal-700',
     soft: 'bg-teal-100',
+    key: 'notif.type.offer_accepted',
   },
   hired: {
-    label: 'Ishga qabul',
     icon: Briefcase,
     color: 'text-emerald-700',
     soft: 'bg-emerald-100',
+    key: 'notif.type.hired',
   },
 };
 
-function typeMeta(type: string) {
-  return TYPE_META[type] || {
-    label: 'Bildirishnoma',
-    icon: Bell,
-    color: 'text-foreground',
-    soft: 'bg-slate-100',
-  };
-}
-
-function formatWhen(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '';
-  if (isToday(d)) {
-    return formatDistanceToNow(d, { addSuffix: true, locale: uz });
-  }
-  if (isYesterday(d)) {
-    return `Kecha, ${format(d, 'HH:mm')}`;
-  }
-  return format(d, 'dd.MM.yyyy HH:mm');
-}
-
 export default function NotificationsPage() {
+  const { t, locale } = useI18n();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const dateLocale = locale === 'ru' ? ru : uz;
+
+  const typeMeta = (type: string) => {
+    const meta = TYPE_ICONS[type];
+    if (!meta) {
+      return {
+        label: t('notif.type.default'),
+        icon: Bell,
+        color: 'text-foreground',
+        soft: 'bg-slate-100',
+      };
+    }
+    return {
+      label: t(meta.key),
+      icon: meta.icon,
+      color: meta.color,
+      soft: meta.soft,
+    };
+  };
+
+  const formatWhen = (iso: string): string => {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    if (isToday(d)) {
+      return formatDistanceToNow(d, { addSuffix: true, locale: dateLocale });
+    }
+    if (isYesterday(d)) {
+      return `${t('notif.yesterday')}, ${format(d, 'HH:mm')}`;
+    }
+    return format(d, 'dd.MM.yyyy HH:mm');
+  };
 
   const { data, isLoading } = useGetNotifications(
     filter === 'unread' ? { unreadOnly: true } : undefined,
@@ -136,10 +148,10 @@ export default function NotificationsPage() {
     markAll.mutate(undefined, {
       onSuccess: () => {
         invalidate();
-        toast({ title: 'Barchasi o‘qilgan deb belgilandi' });
+        toast({ title: t('notif.markedAll') });
       },
       onError: () => {
-        toast({ title: 'Xatolik', variant: 'destructive' });
+        toast({ title: t('ui.error'), variant: 'destructive' });
       },
     });
   };
@@ -148,9 +160,9 @@ export default function NotificationsPage() {
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Bildirishnomalar</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('notif.title')}</h1>
           <p className="mt-1 text-muted-foreground">
-            {unreadCount > 0 ? `${unreadCount} ta o‘qilmagan` : 'Barcha bildirishnomalar'}
+            {unreadCount > 0 ? `${unreadCount} ${t('notif.unreadCount')}` : t('notif.allItems')}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -163,7 +175,7 @@ export default function NotificationsPage() {
                 filter === 'all' ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted',
               )}
             >
-              Barchasi
+              {t('notif.filter.all')}
             </button>
             <button
               type="button"
@@ -173,7 +185,7 @@ export default function NotificationsPage() {
                 filter === 'unread' ? 'bg-foreground text-background' : 'text-muted-foreground hover:bg-muted',
               )}
             >
-              O‘qilmagan
+              {t('notif.filter.unread')}
             </button>
           </div>
           <Button
@@ -184,7 +196,7 @@ export default function NotificationsPage() {
             disabled={markAll.isPending || unreadCount === 0}
           >
             <CheckCheck className="h-4 w-4" />
-            Barchasini o‘qish
+            {t('notif.markAll')}
           </Button>
         </div>
       </div>
@@ -202,9 +214,9 @@ export default function NotificationsPage() {
               <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100">
                 <Bell className="h-5 w-5 text-muted-foreground" />
               </div>
-              <p className="font-medium text-foreground">Bildirishnoma yo‘q</p>
+              <p className="font-medium text-foreground">{t('notif.empty')}</p>
               <p className="text-sm text-muted-foreground">
-                {filter === 'unread' ? 'O‘qilmagan bildirishnoma qolmadi' : 'Hali xabar kelmagan'}
+                {filter === 'unread' ? t('notif.emptyUnread') : t('notif.emptyAll')}
               </p>
             </div>
           ) : (
@@ -238,7 +250,7 @@ export default function NotificationsPage() {
                             {meta.label}
                           </Badge>
                           {!n.isRead && (
-                            <span className="h-2 w-2 rounded-full bg-sky-500" title="O‘qilmagan" />
+                            <span className="h-2 w-2 rounded-full bg-sky-500" title={t('notif.filter.unread')} />
                           )}
                           <span className="text-[11px] text-muted-foreground">{formatWhen(n.createdAt)}</span>
                         </div>
@@ -252,7 +264,7 @@ export default function NotificationsPage() {
                         </p>
                         {n.linkUrl && (
                           <p className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-medium text-sky-700">
-                            Ochish <ChevronRight className="h-3.5 w-3.5" />
+                            {t('notif.open')} <ChevronRight className="h-3.5 w-3.5" />
                           </p>
                         )}
                       </div>
@@ -266,7 +278,7 @@ export default function NotificationsPage() {
       </Card>
 
       <p className="text-center text-xs text-muted-foreground">
-        Qo‘ng‘iroqchada ko‘rsatilgan son — o‘qilmagan bildirishnomalar.
+        {t('notif.footer')}
       </p>
     </div>
   );

@@ -14,7 +14,6 @@ import {
   X,
   GraduationCap,
   Store,
-  Kanban,
   ListTodo,
   ClipboardList,
   ClipboardCheck,
@@ -23,6 +22,7 @@ import {
   Network,
   ScanFace,
   ChevronDown,
+  ChevronLeft,
   Pin,
   Video,
   Trophy,
@@ -31,6 +31,9 @@ import {
   Calculator,
   Cpu,
   Wrench,
+  HelpCircle,
+  Layers,
+  Package,
 } from 'lucide-react';
 import {
   useLogout,
@@ -48,8 +51,12 @@ import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
+import { HelpAssistantDialog } from '@/components/HelpAssistantDialog';
+import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
+import { LanguageSwitcher } from '@/components/language-switcher';
+import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, userRoleLabel } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -69,102 +76,93 @@ function splitFullName(full: string): { first: string; last: string } {
   return { first: parts[0]!, last: parts.slice(1).join(' ') };
 }
 
+function profileDisplayName(full: string): string {
+  const parts = full.trim().split(/\s+/).filter(Boolean);
+  if (parts.length < 2) return full.trim() || '—';
+  return `${parts[0]} ${parts[1]!.charAt(0).toUpperCase()}.`;
+}
+
+type NavIcon = React.ComponentType<{ className?: string }>;
+
 type NavItem = {
   name: string;
   path: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: NavIcon;
 };
 
 type NavSection = {
   id: string;
   label: string;
   items: NavItem[];
-  accent: string;
-  line: string;
-  chip: string;
+  icon: NavIcon;
 };
 
 const NAV_SECTIONS: {
   id: string;
   label: string;
-  accent: string;
-  line: string;
-  chip: string;
+  icon: NavIcon;
   paths: string[];
 }[] = [
   {
     id: 'main',
     label: 'Asosiy',
-    accent: 'bg-sky-400',
-    line: 'border-sky-400/55',
-    chip: 'text-sky-700 dark:text-sky-300',
+    icon: Layers,
     paths: ['/dashboard', '/kirish', '/chat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it', '/texnik'],
   },
   {
     id: 'work',
     label: 'Mening ishim',
-    accent: 'bg-amber-400',
-    line: 'border-amber-400/55',
-    chip: 'text-amber-700 dark:text-amber-300',
+    icon: Package,
     paths: ['/vazifalar', '/eslatmalar'],
   },
   {
     id: 'requests',
     label: 'Arizalar',
-    accent: 'bg-blue-400',
-    line: 'border-blue-400/55',
-    chip: 'text-blue-700 dark:text-blue-300',
+    icon: FileText,
     paths: ['/requests'],
   },
   {
     id: 'staff',
     label: 'Xodimlar',
-    accent: 'bg-violet-400',
-    line: 'border-violet-400/55',
-    chip: 'text-violet-700 dark:text-violet-300',
+    icon: Users,
     paths: ['/employees'],
   },
   {
     id: 'recruitment',
     label: 'Ishga qabul',
-    accent: 'bg-indigo-400',
-    line: 'border-indigo-400/55',
-    chip: 'text-indigo-700 dark:text-indigo-300',
+    icon: Briefcase,
     paths: [
       '/vacancies',
       '/candidates',
       '/interviews',
-      '/pipeline',
       '/internships',
     ],
   },
   {
     id: 'attendance',
     label: 'Davomat',
-    accent: 'bg-teal-400',
-    line: 'border-teal-400/55',
-    chip: 'text-teal-700 dark:text-teal-300',
+    icon: AlarmClock,
     paths: ['/davomat/analytics', '/davomat-face', '/davomat', '/smena-filial', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
     label: "Apteka tarmog'i",
-    accent: 'bg-emerald-400',
-    line: 'border-emerald-400/55',
-    chip: 'text-emerald-700 dark:text-emerald-300',
+    icon: Store,
     paths: ['/pharmacy-network', '/checklist', '/ehtiyoj'],
   },
   {
     id: 'admin',
     label: 'Sozlamalar',
-    accent: 'bg-rose-400',
-    line: 'border-rose-400/55',
-    chip: 'text-rose-700 dark:text-rose-300',
+    icon: Settings,
     paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces'],
   },
 ];
 
-function groupNavItems(items: NavItem[], role?: string): NavSection[] {
+function groupNavItems(
+  items: NavItem[],
+  role: string | undefined,
+  t: (key: string, fallback?: string) => string,
+): NavSection[] {
   const byPath = new Map(items.map((item) => [item.path, item]));
   const used = new Set<string>();
   const groups: NavSection[] = [];
@@ -179,10 +177,8 @@ function groupNavItems(items: NavItem[], role?: string): NavSection[] {
     if (!list.length) continue;
     groups.push({
       id: sec.id,
-      label: sec.label,
-      accent: sec.accent,
-      line: sec.line,
-      chip: sec.chip,
+      label: t(`nav.section.${sec.id}`, sec.label),
+      icon: sec.icon,
       items: list,
     });
     for (const item of list) used.add(item.path);
@@ -191,10 +187,8 @@ function groupNavItems(items: NavItem[], role?: string): NavSection[] {
   if (rest.length) {
     groups.push({
       id: 'other',
-      label: 'Boshqa',
-      accent: 'bg-slate-400',
-      line: 'border-slate-400/55',
-      chip: 'text-muted-foreground',
+      label: t('nav.section.other', 'Boshqa'),
+      icon: HelpCircle,
       items: rest,
     });
   }
@@ -222,7 +216,6 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
-  if (path.startsWith('/pipeline')) return '/pipeline';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
   if (path.startsWith('/eslatmalar')) return '/eslatmalar';
   if (path.startsWith('/chat')) return '/chat';
@@ -252,18 +245,23 @@ function NavBadge({
   count,
   collapsed,
   pulse,
+  tone = 'rose',
 }: {
   count: number;
   collapsed?: boolean;
   pulse?: boolean;
+  tone?: 'rose' | 'soft' | 'section';
 }) {
   if (count <= 0) return null;
   const label = count > 99 ? '99+' : String(count);
   return (
     <span
       className={cn(
-        'inline-flex items-center justify-center rounded-full bg-red-500 text-white font-semibold leading-none',
-        pulse && 'animate-pulse ring-2 ring-red-300/80',
+        'inline-flex items-center justify-center rounded-full font-semibold leading-none',
+        pulse && 'animate-pulse ring-2 ring-violet-300/50',
+        tone === 'soft' && 'bg-white text-[#5b4cdb] shadow-sm',
+        tone === 'section' && 'bg-white/15 text-white/90',
+        tone === 'rose' && 'bg-rose-500 text-white',
         collapsed
           ? 'absolute -top-1 -right-1 min-w-[16px] h-4 px-1 text-[10px]'
           : 'ml-auto min-w-[20px] h-5 px-1.5 text-[11px]',
@@ -276,6 +274,7 @@ function NavBadge({
 
 export const Layout = ({ children }: { children: React.ReactNode }) => {
   useTelegramMiniAppChrome();
+  const { t } = useI18n();
   const { user, isAuthenticated, isLoading, setUser } = useAuth();
   const [location, setLocation] = useLocation();
   const logout = useLogout();
@@ -286,7 +285,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const [openSectionId, setOpenSectionId] = React.useState<string | null>(null);
   const [pinnedIds, setPinnedIds] = React.useState<string[]>(() => {
     try {
-      const raw = localStorage.getItem('vaksina-nav-pins');
+      const raw = localStorage.getItem('vaksina-nav-pins-v2');
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
     } catch {
@@ -302,6 +301,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const [profilePassword, setProfilePassword] = React.useState('');
   const [profilePassword2, setProfilePassword2] = React.useState('');
   const [profileSaving, setProfileSaving] = React.useState(false);
+  const [helpOpen, setHelpOpen] = React.useState(false);
 
   const onFaceStatusChange = React.useCallback(
     (status: { registered: boolean; photoUrl?: string | null }) => {
@@ -321,15 +321,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const saveProfile = async () => {
     if (!profileFirst.trim() || !profileLast.trim()) {
-      toast({ title: 'Ism va familiyani kiriting', variant: 'destructive' });
+      toast({ title: t('common.enterName'), variant: 'destructive' });
       return;
     }
     if (!profilePassword.trim()) {
-      toast({ title: 'Yangi parolni kiriting', variant: 'destructive' });
+      toast({ title: t('common.enterNewPassword'), variant: 'destructive' });
       return;
     }
     if (profilePassword !== profilePassword2) {
-      toast({ title: 'Parollar mos kelmadi', variant: 'destructive' });
+      toast({ title: t('common.passwordMismatch'), variant: 'destructive' });
       return;
     }
     setProfileSaving(true);
@@ -349,13 +349,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       }
       setProfileOpen(false);
       toast({
-        title: 'Saqlandi',
-        description: 'Ism/familiya va yangi parol bazaga yozildi (Excelda ham shu chiqadi)',
+        title: t('common.saved'),
+        description: t('common.profileSavedDesc'),
       });
     } catch (err: unknown) {
       toast({
-        title: 'Saqlanmadi',
-        description: err instanceof Error ? err.message : 'Xatolik',
+        title: t('common.notSaved'),
+        description: err instanceof Error ? err.message : t('common.error'),
         variant: 'destructive',
       });
     } finally {
@@ -368,6 +368,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     setMobileOpen(false);
   }, [location]);
 
+  // Yangi sahifaga o‘tganda tegishli bo‘limni ochish (faqat o‘sha bo‘lim)
   useEffect(() => {
     const sec = NAV_SECTIONS.find((s) => s.paths.some((p) => pathIsActive(location, p)));
     if (sec) setOpenSectionId(sec.id);
@@ -375,20 +376,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     try {
-      localStorage.setItem('vaksina-nav-pins', JSON.stringify(pinnedIds));
+      localStorage.setItem('vaksina-nav-pins-v2', JSON.stringify(pinnedIds));
     } catch {
       /* ignore */
     }
   }, [pinnedIds]);
-
-  useEffect(() => {
-    if (!hasHrOversightNav(user?.role)) return;
-    const allIds = NAV_SECTIONS.map((section) => section.id);
-    setPinnedIds((prev) => {
-      const missing = allIds.filter((id) => !prev.includes(id));
-      return missing.length ? [...prev, ...missing] : prev;
-    });
-  }, [user?.role]);
 
   // Mobil menyu ochiq bo‘lsa body scrollni bloklash
   useEffect(() => {
@@ -681,7 +673,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ];
 
@@ -701,7 +692,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
     { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
-    { name: 'Pipeline', path: '/pipeline', icon: Kanban },
     { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     davomatAnalyticsNav,
     davomatFaceNav,
@@ -743,7 +733,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
-      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
     ],
     recruiter: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -759,7 +748,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
     ],
     director: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -798,7 +786,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
-      { name: 'Pipeline', path: '/pipeline', icon: Kanban },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     mentor: [
@@ -1015,17 +1002,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const navSections = groupNavItems(navItems, userRole);
+  const navSections = groupNavItems(navItems, userRole, t);
   const pinnedSet = new Set(pinnedIds);
 
   const togglePin = (id: string) => {
-    setPinnedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+    setPinnedIds((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      return next;
+    });
     setOpenSectionId(id);
+  };
+
+  const toggleSection = (id: string, pinned: boolean) => {
+    if (pinned) return;
+    setOpenSectionId((prev) => (prev === id ? null : id));
   };
 
   const renderNavItem = (
     item: NavItem,
-    opts: { collapsed: boolean; onNavigate?: () => void; nested?: boolean; accentDot?: string },
+    opts: { collapsed: boolean; onNavigate?: () => void; nested?: boolean },
   ) => {
     const count = badgeByPath[item.path] ?? 0;
     const active = pathIsActive(location, item.path);
@@ -1036,34 +1031,58 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           role="link"
           onClick={opts.onNavigate}
           className={cn(
-            'group relative flex items-center gap-3 rounded-xl cursor-pointer transition-all duration-200',
-            opts.nested ? 'px-3 py-2.5 md:py-2' : 'px-3 py-3',
-            active ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item active:scale-[0.99]',
+            'group relative flex items-center gap-2.5 cursor-pointer transition-all duration-200',
+            opts.nested
+              ? cn(
+                  'rounded-lg px-2 py-1.5',
+                  active
+                    ? 'app-sidebar-nested-item-active'
+                    : 'app-sidebar-nested-item',
+                )
+              : cn(
+                  'rounded-lg px-2.5 py-2',
+                  active ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item active:scale-[0.99]',
+                ),
           )}
         >
-          {active ? (
-            <span
-              className={cn(
-                'absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full',
-                opts.accentDot || 'bg-sky-400',
-              )}
-            />
-          ) : null}
-          <span className="relative shrink-0">
+          <span
+            className={cn(
+              'relative flex shrink-0 items-center justify-center transition-colors',
+              opts.nested &&
+                cn(
+                  'h-7 w-7 rounded-md',
+                  active
+                    ? 'bg-violet-500/25 text-violet-100'
+                    : 'bg-white/[0.06] text-white/55 group-hover:bg-white/10 group-hover:text-white',
+                ),
+            )}
+          >
             <item.icon
               className={cn(
-                'h-5 w-5 min-w-[20px] transition-colors',
-                active ? 'text-sidebar-foreground dark:text-white' : 'text-sidebar-foreground/55 group-hover:text-sidebar-foreground dark:text-white/55 dark:group-hover:text-white/90',
+                'transition-colors',
+                opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
+                !opts.nested &&
+                  (active ? 'text-white' : 'text-white/55 group-hover:text-white/90'),
               )}
             />
-            {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} />}
+            {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} tone="soft" />}
           </span>
           {!opts.collapsed && (
             <>
-              <span className="min-w-0 flex-1 text-[13px] font-medium leading-snug break-words">
-                {item.name}
+              <span
+                className={cn(
+                  'min-w-0 flex-1 text-[12px] font-medium leading-snug break-words',
+                  opts.nested && active && 'font-semibold text-white',
+                  opts.nested && !active && 'text-white/72 group-hover:text-white',
+                )}
+              >
+                {navLabelForPath(item.path, t, item.name)}
               </span>
-              <NavBadge count={count} pulse={pulse} />
+              {opts.nested && active ? (
+                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(196,181,253,0.9)]" aria-hidden />
+              ) : (
+                <NavBadge count={count} pulse={pulse} tone={opts.nested ? 'soft' : 'rose'} />
+              )}
             </>
           )}
         </div>
@@ -1076,85 +1095,76 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const badgeSum = section.items.reduce((sum, item) => sum + (badgeByPath[item.path] ?? 0), 0);
       const hasActive = section.items.some((item) => pathIsActive(location, item.path));
       const pinned = pinnedSet.has(section.id);
-      const open =
-        opts.collapsed ||
-        pinned ||
-        oversightNav ||
-        openSectionId === section.id ||
-        (opts.mobile && hasActive);
+      const open = opts.collapsed || pinned || openSectionId === section.id;
+      const SectionIcon = section.icon;
 
       if (opts.collapsed) {
         return (
           <div key={section.id} className="flex flex-col gap-0.5">
             {section.id !== navSections[0]?.id ? (
-              <div className={cn('mx-2.5 my-1.5 h-px rounded-full opacity-40', section.accent)} />
+              <div className="mx-2.5 my-1.5 h-px rounded-full bg-white/10" />
             ) : null}
-            {section.items.map((item) =>
-              renderNavItem(item, { ...opts, accentDot: section.accent }),
-            )}
+            {section.items.map((item) => renderNavItem(item, opts))}
           </div>
         );
       }
 
       return (
-        <div
-          key={section.id}
-          className={cn(
-            'mb-1.5 overflow-hidden rounded-2xl transition-all duration-200',
-            open ? 'app-sidebar-section-open' : 'app-sidebar-section-closed',
-          )}
-        >
-          <div className="flex items-center gap-0.5 pr-1.5">
+        <div key={section.id} className="mb-1">
+          <div className="flex items-center gap-0.5">
             <button
               type="button"
-              onClick={() =>
-                setOpenSectionId((prev) => (prev === section.id && !pinned ? null : section.id))
-              }
+              onClick={() => toggleSection(section.id, pinned)}
+              aria-expanded={open}
               className={cn(
-                'flex min-w-0 flex-1 items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left md:py-2',
-                hasActive || open ? section.chip : 'text-muted-foreground dark:text-white/45',
+                'app-sidebar-section-trigger flex min-w-0 flex-1 items-center gap-2 rounded-xl px-2 py-1.5 text-left transition-all duration-200',
+                open && 'app-sidebar-section-trigger-open',
+                hasActive && !open && 'ring-1 ring-violet-400/25',
               )}
             >
-              <span className={cn('h-5 w-1 shrink-0 rounded-full shadow-sm', section.accent)} />
-              <span className="min-w-0 flex-1 truncate text-[10px] font-bold uppercase tracking-[0.16em]">
+              <span className="app-sidebar-section-icon flex h-7 w-7 shrink-0 items-center justify-center rounded-lg">
+                <SectionIcon className="h-3.5 w-3.5" />
+              </span>
+              <span className="min-w-0 flex-1 truncate text-[12.5px] font-semibold text-white">
                 {section.label}
               </span>
-              {badgeSum > 0 ? (
-                <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-bold leading-none text-white shadow-sm shadow-rose-900/40">
-                  {badgeSum > 99 ? '99+' : badgeSum}
-                </span>
-              ) : null}
+              {badgeSum > 0 ? <NavBadge count={badgeSum} tone="section" /> : null}
               <ChevronDown
                 className={cn(
-                  'h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200 dark:text-white/40',
-                  open && 'rotate-180',
+                  'h-3.5 w-3.5 shrink-0 text-white/45 transition-transform duration-200',
+                  open && 'rotate-180 text-white/80',
                 )}
               />
             </button>
-            {!opts.mobile ? (
-              <button
-                type="button"
-                onClick={() => togglePin(section.id)}
-                title={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
-                aria-label={pinned ? 'Pinni yechish' : 'Ochiq tutib turish'}
-                className={cn(
-                  'shrink-0 rounded-lg p-1.5 transition-colors',
-                  pinned
-                    ? 'bg-amber-400/20 text-amber-700 dark:text-amber-300'
-                    : 'text-muted-foreground/40 hover:bg-sidebar-accent hover:text-sidebar-foreground dark:text-white/25 dark:hover:bg-white/10 dark:hover:text-white/65',
-                )}
-              >
-                <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
-              </button>
-            ) : null}
-          </div>
-          {open ? (
-            <div className="mb-2 ml-3.5 mr-2 flex flex-col gap-0.5 border-l border-sidebar-border pl-2 dark:border-white/10">
-              {section.items.map((item) =>
-                renderNavItem(item, { ...opts, nested: true, accentDot: section.accent }),
+            <button
+              type="button"
+              onClick={() => togglePin(section.id)}
+              title={pinned ? t('common.unpinPin') : t('common.pinKeep')}
+              aria-label={pinned ? t('common.unpinPin') : t('common.pinKeep')}
+              className={cn(
+                'shrink-0 rounded-lg p-1.5 transition-colors',
+                pinned
+                  ? 'bg-violet-400/30 text-violet-100'
+                  : 'text-white/70 hover:bg-white/10 hover:text-white',
               )}
+            >
+              <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
+            </button>
+          </div>
+          <div
+            className={cn(
+              'grid transition-[grid-template-rows,opacity] duration-200 ease-out',
+              open ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0',
+            )}
+          >
+            <div className="overflow-hidden">
+              <div className="app-sidebar-nested-panel mt-1 ml-0.5 mr-0.5 flex flex-col gap-0.5 p-1">
+                {section.items.map((item) =>
+                  renderNavItem(item, { ...opts, nested: true }),
+                )}
+              </div>
             </div>
-          ) : null}
+          </div>
         </div>
       );
     });
@@ -1165,8 +1175,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {mobileOpen ? (
         <button
           type="button"
-          aria-label="Menyuni yopish"
-          className="fixed inset-0 z-40 bg-foreground/30 backdrop-blur-[2px] dark:bg-[#06101c]/65 md:hidden"
+          aria-label={t('common.closeMenu')}
+          className="fixed inset-0 z-40 bg-[#06101c]/55 backdrop-blur-[2px] md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       ) : null}
@@ -1174,46 +1184,50 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       {/* Sidebar: mobilda drawer, desktopda doimiy */}
       <aside
         className={cn(
-          'app-sidebar text-sidebar-foreground flex flex-col transition-[transform,width] duration-300 ease-out',
+          'app-sidebar flex flex-col transition-[transform,width] duration-300 ease-out',
           'fixed inset-y-0 left-0 z-50 w-[min(19.5rem,92vw)]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           'md:static md:z-auto md:translate-x-0',
-          desktopCollapsed ? 'md:w-[4.75rem]' : 'md:w-[16.5rem]',
-          'border-r border-sidebar-border shadow-sm dark:border-white/[0.06] dark:shadow-[8px_0_40px_-20px_rgba(0,0,0,0.55)]',
-          'rounded-none md:rounded-none',
+          desktopCollapsed ? 'md:w-[4.75rem]' : 'md:w-[17rem]',
           mobileOpen && 'rounded-r-[1.35rem]',
         )}
       >
-        <div className="relative shrink-0 overflow-hidden border-b border-sidebar-border px-3.5 pt-[max(0.85rem,env(safe-area-inset-top))] pb-3.5 md:px-3 md:pt-4 dark:border-white/[0.06]">
-          <div
-            className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-primary/10 blur-2xl dark:bg-sky-500/15"
-            aria-hidden
-          />
-          <div className="relative flex items-center justify-between gap-2">
-            <div className={cn('min-w-0', desktopCollapsed && 'md:hidden')}>
-              <p className="text-[15px] font-bold tracking-tight text-sidebar-foreground dark:text-white">VAKSINA MED</p>
-              <p className="mt-0.5 text-[11px] font-medium tracking-wide text-sidebar-foreground/60 dark:text-sky-200/55">
-                HR platforma
-              </p>
+        <div className="app-sidebar-brand relative shrink-0 pt-[env(safe-area-inset-top)]">
+          <div className="relative flex items-center gap-1 px-2.5 py-2 md:px-3">
+            <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
+              <img
+                src={`${import.meta.env.BASE_URL}logo3d-light.png`}
+                alt="VAKSINA MED HR"
+                width={800}
+                height={220}
+                decoding="async"
+                className="app-sidebar-logo"
+              />
             </div>
             {desktopCollapsed ? (
-              <div className="mx-auto hidden h-9 w-9 items-center justify-center rounded-xl bg-sidebar-accent text-[11px] font-bold text-primary dark:bg-white/10 dark:text-sky-200 md:flex">
-                VM
+              <div className="mx-auto hidden h-10 w-10 items-center justify-center rounded-xl bg-white/90 shadow-sm ring-1 ring-violet-200/60 md:flex">
+                <img
+                  src={`${import.meta.env.BASE_URL}faviconni.png`}
+                  alt="VM"
+                  width={72}
+                  height={72}
+                  decoding="async"
+                  className="h-8 w-8 object-contain"
+                />
               </div>
             ) : null}
             <button
               type="button"
               onClick={() => setMobileOpen(false)}
-              className="rounded-xl p-2 text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground md:hidden dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
+              className="shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-800 md:hidden"
               aria-label="Yopish"
             >
-              <X className="h-5 w-5" />
+              <X className="h-4 w-4" />
             </button>
           </div>
         </div>
 
-        <nav className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-3 md:px-2.5">
-          {/* Mobil: kattaroq touch, pin yo‘q */}
+        <nav className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2 md:px-2.5">
           <div className="flex flex-col gap-1 md:hidden">
             {renderNavLinks({
               collapsed: false,
@@ -1221,73 +1235,92 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               onNavigate: () => setMobileOpen(false),
             })}
           </div>
-          {/* Desktop */}
           <div className="hidden md:flex md:flex-col md:gap-0.5">
             {renderNavLinks({ collapsed: desktopCollapsed })}
           </div>
         </nav>
 
-        <div className="app-sidebar-profile-footer">
+        <div className={cn('shrink-0 space-y-1.5 px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]', desktopCollapsed && 'md:px-2')}>
           <div
             className={cn(
-              'app-sidebar-profile-card flex items-center gap-2',
-              desktopCollapsed && 'md:justify-center md:p-2',
+              'app-sidebar-profile-card flex items-center gap-1.5',
+              desktopCollapsed && 'md:justify-center md:p-1.5',
             )}
           >
-            <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:flex-none')}>
-              <button
-                type="button"
-                onClick={openProfileEditor}
-                className={cn(
-                  'flex w-full min-w-0 items-center gap-2.5 rounded-xl text-left transition-colors hover:bg-sidebar-accent/70 dark:hover:bg-white/[0.06]',
-                  desktopCollapsed && 'md:justify-center',
-                )}
-                title="Profilni tahrirlash"
-              >
-                <div
-                  className={cn(
-                    'app-sidebar-profile-avatar ring-1',
-                    desktopCollapsed && 'md:h-8 md:w-8',
-                  )}
-                >
-                  {facePhotoUrl ? (
-                    <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    (user.fullName || 'U').slice(0, 1).toUpperCase()
-                  )}
-                </div>
-                <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
-                  <span className="app-sidebar-profile-name">{user.fullName}</span>
-                  <span className="app-sidebar-profile-role">
-                    {user.role.replace(/_/g, ' ')}
-                  </span>
-                </div>
-              </button>
-              {user.role !== 'director' ? (
-                <div className={cn('px-0.5', desktopCollapsed && 'md:hidden')}>
-                  <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
-                </div>
-              ) : null}
-            </div>
-            <ThemeToggle
-              variant="sidebar"
-              className="app-sidebar-profile-action h-9 w-9 rounded-xl border"
-            />
             <button
-              onClick={handleLogout}
-              className="app-sidebar-profile-action"
-              title="Chiqish"
+              type="button"
+              onClick={openProfileEditor}
+              className={cn(
+                'flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-white/[0.06]',
+                desktopCollapsed && 'md:justify-center md:flex-none',
+              )}
+              title={t('common.profileEdit')}
             >
-              <LogOut className="h-[18px] w-[18px]" />
+              <div
+                className={cn(
+                  'app-sidebar-profile-avatar ring-1 ring-white/15',
+                  desktopCollapsed && 'md:h-8 md:w-8',
+                )}
+              >
+                {facePhotoUrl ? (
+                  <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  (user.fullName || 'U').slice(0, 1).toUpperCase()
+                )}
+              </div>
+              <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
+                <span className="app-sidebar-profile-name">{profileDisplayName(user.fullName)}</span>
+                <span className="mt-px flex min-w-0 items-center gap-1.5">
+                  <span className="truncate text-[10px] text-white/50">{userRoleLabel(user.role)}</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                    {t('common.online')}
+                  </span>
+                </span>
+              </div>
             </button>
+            <div className={cn('flex shrink-0 items-center', desktopCollapsed && 'md:flex-col')}>
+              <ThemeToggle
+                variant="sidebar"
+                className="app-sidebar-profile-action h-7 w-7 rounded-md border-0"
+              />
+              <button
+                onClick={handleLogout}
+                className="app-sidebar-profile-action"
+                title={t('common.logout')}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
+
+          {user.role !== 'director' ? (
+            <div className={cn(desktopCollapsed && 'md:hidden')}>
+              <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
+            </div>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={toggleNav}
+            className={cn(
+              'app-sidebar-collapse-btn flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-white/65 transition-colors hover:bg-white/10 hover:text-white',
+              desktopCollapsed && 'md:px-0',
+            )}
+            aria-label={desktopCollapsed ? t('common.expandMenu') : t('common.collapseMenu')}
+          >
+            <ChevronLeft className={cn('h-3.5 w-3.5 transition-transform', desktopCollapsed && 'rotate-180')} />
+            <span className={cn(desktopCollapsed && 'md:hidden')}>{t('common.collapseMenu')}</span>
+          </button>
         </div>
       </aside>
+
+      <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
 
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
           <DialogHeader>
-            <DialogTitle>Profil va parol</DialogTitle>
+            <DialogTitle>{t('common.profile')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="flex items-center gap-3 rounded-xl border bg-muted p-3">
@@ -1305,82 +1338,95 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
-                <Label htmlFor="profile-first">Ism</Label>
+                <Label htmlFor="profile-first">{t('common.firstName')}</Label>
                 <Input
                   id="profile-first"
                   value={profileFirst}
                   onChange={(e) => setProfileFirst(e.target.value)}
-                  placeholder="Ism"
+                  placeholder={t('common.firstName')}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="profile-last">Familiya</Label>
+                <Label htmlFor="profile-last">{t('common.lastName')}</Label>
                 <Input
                   id="profile-last"
                   value={profileLast}
                   onChange={(e) => setProfileLast(e.target.value)}
-                  placeholder="Familiya"
+                  placeholder={t('common.lastName')}
                 />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="profile-pass">Yangi parol</Label>
+              <Label htmlFor="profile-pass">{t('common.newPassword')}</Label>
               <Input
                 id="profile-pass"
                 type="text"
                 autoComplete="new-password"
                 value={profilePassword}
                 onChange={(e) => setProfilePassword(e.target.value)}
-                placeholder="Yangi parol"
+                placeholder={t('common.newPassword')}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="profile-pass2">Parolni tasdiqlang</Label>
+              <Label htmlFor="profile-pass2">{t('common.confirmPassword')}</Label>
               <Input
                 id="profile-pass2"
                 type="text"
                 autoComplete="new-password"
                 value={profilePassword2}
                 onChange={(e) => setProfilePassword2(e.target.value)}
-                placeholder="Qayta yozing"
+                placeholder={t('common.retype')}
               />
             </div>
             <p className="text-[11px] text-muted-foreground">
-              Saqlaganda ism/familiya va parol foydalanuvchilar bazasiga yoziladi. Excel eksportida yangi parol
-              chiqadi.
+              {t('common.profileHint')}
             </p>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setProfileOpen(false)}>
-              Bekor
+              {t('common.cancelShort')}
             </Button>
             <Button type="button" disabled={profileSaving} onClick={() => void saveProfile()}>
-              {profileSaving ? 'Saqlanmoqda…' : 'Parolni almashtirish'}
+              {profileSaving ? t('common.saving') : t('common.changePassword')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden w-full">
-        <header className="safe-top z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md sm:h-16 sm:px-5">
-          <div className="flex min-w-0 flex-1 items-center gap-2">
+        <header className="safe-top z-10 flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border bg-card/95 px-3 backdrop-blur-md sm:h-14 sm:px-5">
+          <div className="flex min-w-0 items-center gap-2">
             <button
               type="button"
               onClick={toggleNav}
               className="shrink-0 -ml-1 rounded-xl p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              aria-label="Menyu"
+              aria-label={t('common.menu')}
               aria-expanded={mobileOpen || !desktopCollapsed}
             >
               <Menu className="h-6 w-6" />
             </button>
-            <img
-              src={`${import.meta.env.BASE_URL}logo3d.png`}
-              alt="VAKSINA MED HR"
-              className="h-8 w-auto max-w-[min(48vw,168px)] object-contain object-left sm:h-10 sm:max-w-[200px]"
-            />
           </div>
 
-          <div className="flex shrink-0 items-center gap-0.5">
+          <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
+            <LanguageSwitcher />
+            <button
+              type="button"
+              onClick={() => setHelpOpen(true)}
+              className="shrink-0"
+              aria-label={t('common.help')}
+            >
+              <span className="app-header-help-chip group inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1 sm:gap-2 sm:pl-1.5 sm:pr-3">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-white ring-1 ring-white/20 transition group-hover:bg-white/20">
+                  <OperatorHeadsetIcon className="h-5 w-5" />
+                </span>
+                <span className="flex min-w-0 flex-col leading-none text-left">
+                  <span className="text-[11px] font-semibold text-white sm:text-[12px]">{t('common.help')}</span>
+                  <span className="mt-0.5 hidden text-[9px] font-medium text-violet-100/75 sm:block">
+                    {t('common.contact')}
+                  </span>
+                </span>
+              </span>
+            </button>
             <ThemeToggle />
             <Link href="/notifications">
               <div className="relative cursor-pointer rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
@@ -1402,7 +1448,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             'min-h-0 min-w-0 flex-1',
             'pb-[calc(4.85rem+env(safe-area-inset-bottom))] md:pb-0',
             location === '/vazifalar' ||
-              location === '/pipeline' ||
               location.startsWith('/chat') ||
               location.startsWith('/kirish') ||
               location.startsWith('/tashkiliy-tuzilma')
@@ -1413,8 +1458,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           <div
             className={cn(
               'mx-auto w-full min-w-0',
-              location === '/pipeline' ||
-                location === '/vazifalar' ||
+              location === '/vazifalar' ||
                 location === '/davomat' ||
                 location.startsWith('/davomat/analytics') ||
                 (location === '/dashboard' && user.role === 'director') ||

@@ -43,32 +43,33 @@ import {
   UserCog,
 } from "lucide-react";
 import type { OrgEmployeeView } from "@/lib/kuzatuv-api";
+import { useI18n } from "../../i18n/I18nProvider";
 
-const STAGE_LABELS: Record<string, string> = {
-  phone_interview: "Tanishuv",
-  online_interview: "Onlayn suhbat",
-  preboarding: "Pre-boarding",
-  offline_interview: "Offline suhbat",
-  final_decision: "Yakuniy qaror",
-  offer: "Job offer",
-  documents: "Hujjatlar",
-  internship: "Stajirovka",
-  hired: "Ishga qabul",
+const STAGE_KEYS: Record<string, string> = {
+  phone_interview: "kuzatuv.stage.phone_interview",
+  online_interview: "kuzatuv.stage.online_interview",
+  preboarding: "kuzatuv.stage.preboarding",
+  offline_interview: "kuzatuv.stage.offline_interview",
+  final_decision: "kuzatuv.stage.final_decision",
+  offer: "kuzatuv.stage.offer",
+  documents: "kuzatuv.stage.documents",
+  internship: "kuzatuv.stage.internship",
+  hired: "kuzatuv.stage.hired",
 };
 
-const STATUS_LABEL: Record<string, string> = {
-  todo: "Yangi",
-  in_progress: "Jarayonda",
-  done: "Bajarildi",
-  verified: "Tasdiqlangan",
-  cancelled: "Bekor",
+const STATUS_KEYS: Record<string, string> = {
+  todo: "kuzatuv.task.todo",
+  in_progress: "kuzatuv.task.in_progress",
+  done: "kuzatuv.task.done",
+  verified: "kuzatuv.task.verified",
+  cancelled: "kuzatuv.task.cancelled",
 };
 
-const PRIORITY_LABEL: Record<string, string> = {
-  low: "Past",
-  normal: "Oddiy",
-  high: "Yuqori",
-  urgent: "Shoshilinch",
+const PRIORITY_KEYS: Record<string, string> = {
+  low: "kuzatuv.prio.low",
+  normal: "kuzatuv.prio.normal",
+  high: "kuzatuv.prio.high",
+  urgent: "kuzatuv.prio.urgent",
 };
 
 const ROLE_LABELS: Record<string, string> = {
@@ -132,8 +133,8 @@ function formatDt(iso: string | null | undefined) {
   });
 }
 
-function formatDue(iso: string | null) {
-  if (!iso) return "Muddat yo‘q";
+function formatDue(iso: string | null, noDue = "Muddat yo‘q") {
+  if (!iso) return noDue;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString("uz-UZ", {
@@ -255,6 +256,7 @@ function TaskRow({
   full: boolean;
   onOpenPerson?: (id: number) => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="rounded-xl border border-border bg-card px-4 py-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -290,14 +292,14 @@ function TaskRow({
         </div>
         <div className="flex flex-wrap gap-1.5">
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-foreground">
-            {STATUS_LABEL[task.status] || task.status}
+            {t(STATUS_KEYS[task.status] || task.status)}
           </span>
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-            {PRIORITY_LABEL[task.priority] || task.priority}
+            {t(PRIORITY_KEYS[task.priority] || task.priority)}
           </span>
         </div>
       </div>
-      <p className="mt-2 text-[11px] text-muted-foreground">Muddat: {formatDue(task.dueAt)}</p>
+      <p className="mt-2 text-[11px] text-muted-foreground">{t("kuzatuv.due")} {formatDue(task.dueAt, t("kuzatuv.noDue"))}</p>
     </div>
   );
 }
@@ -311,6 +313,7 @@ function PersonDossier({
   onBack: () => void;
   full: boolean;
 }) {
+  const { t } = useI18n();
   const { data, isLoading, error } = useKuzatuvPerson(personId, true);
   const [tab, setTab] = useState<
     "all" | "org" | "branches" | "audits" | "needs" | "tasks" | "vacancies" | "candidates" | "interviews"
@@ -333,10 +336,10 @@ function PersonDossier({
     return (
       <div className="space-y-4">
         <Button type="button" variant="outline" onClick={onBack} className="gap-2">
-          <ArrowLeft className="h-4 w-4" /> Orqaga
+          <ArrowLeft className="h-4 w-4" /> {t("kuzatuv.back")}
         </Button>
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-          {(error as Error)?.message || "Yuklanmadi"}
+          {(error as Error)?.message || t("kuzatuv.loadFail")}
         </div>
       </div>
     );
@@ -370,30 +373,30 @@ function PersonDossier({
   }
 
   const tabs = [
-    { id: "all" as const, label: "Hammasi" },
+    { id: "all" as const, label: t("kuzatuv.tab.all") },
     ...(hasNetwork
       ? [
           {
             id: "branches" as const,
-            label: `Filiallar / mudirlar (${p.summary.branchesCount ?? branches.length})`,
+            label: `${t("kuzatuv.tab.branches")} (${p.summary.branchesCount ?? branches.length})`,
           },
           {
             id: "audits" as const,
-            label: `Checklist (${p.summary.auditsCount ?? audits.length})`,
+            label: `${t("kuzatuv.tab.audits")} (${p.summary.auditsCount ?? audits.length})`,
           },
           {
             id: "needs" as const,
-            label: `Ehtiyoj (${p.summary.needsOpen ?? 0}/${p.summary.needsTotal ?? needs.length})`,
+            label: `${t("kuzatuv.tab.needs")} (${p.summary.needsOpen ?? 0}/${p.summary.needsTotal ?? needs.length})`,
           },
           {
             id: "org" as const,
-            label: `Xodimlar (${staff.length})`,
+            label: `${t("kuzatuv.tab.staff")} (${staff.length})`,
           },
         ]
       : []),
     {
       id: "tasks" as const,
-      label: `Topshiriqlar (${
+      label: `${t("kuzatuv.tab.tasks")} (${
         isCoordOrMudir
           ? (p.summary.networkTasksOpen ?? 0) + (p.summary.networkTasksDone ?? 0) +
             p.summary.tasksAssignedOpen +
@@ -403,11 +406,11 @@ function PersonDossier({
     },
     ...(!isCoordOrMudir
       ? [
-          { id: "vacancies" as const, label: `Vakansiyalar (${p.summary.vacanciesTotal})` },
-          { id: "candidates" as const, label: `Nomzodlar (${p.summary.candidatesTotal})` },
+          { id: "vacancies" as const, label: `${t("kuzatuv.tab.vacancies")} (${p.summary.vacanciesTotal})` },
+          { id: "candidates" as const, label: `${t("kuzatuv.tab.candidates")} (${p.summary.candidatesTotal})` },
           {
             id: "interviews" as const,
-            label: `Suhbatlar (${p.summary.phoneInterviews + p.summary.onlineInterviews + p.summary.offlineInterviews})`,
+            label: `${t("kuzatuv.tab.interviews")} (${p.summary.phoneInterviews + p.summary.onlineInterviews + p.summary.offlineInterviews})`,
           },
         ]
       : []),
@@ -467,7 +470,7 @@ function PersonDossier({
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
             {isCoordOrMudir
               ? "Shu koordinator/mudirga bog‘liq filiallar, mudirlar, checklist holati, ehtiyojlar va topshiriqlar — to‘liq kuzatuv."
-              : "Bo‘lim, vazifalar, vakansiyalar, nomzodlar va suhbatlar — to‘liq ko‘rinish."}
+              : t("kuzatuv.dossier.hint")}
           </p>
         </div>
       </div>
@@ -476,49 +479,49 @@ function PersonDossier({
         {isCoordOrMudir ? (
           <>
             <StatCard
-              label="Filiallar / mudirlar"
+              label={t("kuzatuv.stat.branches")}
               value={p.summary.branchesCount ?? branches.length}
               icon={Building2}
             />
             <StatCard
-              label="Checklist tashriflari"
+              label={t("kuzatuv.stat.audits")}
               value={p.summary.auditsCount ?? audits.length}
               icon={FileText}
             />
             <StatCard
-              label="O‘rtacha checklist %"
+              label={t("kuzatuv.stat.avgCheck")}
               value={p.summary.auditsAvgScore != null ? `${p.summary.auditsAvgScore}%` : "—"}
               icon={CheckCircle2}
             />
             <StatCard
-              label="Ehtiyoj (ochiq / jami)"
+              label={t("kuzatuv.stat.needs")}
               value={`${p.summary.needsOpen ?? 0} / ${p.summary.needsTotal ?? 0}`}
               icon={Briefcase}
             />
             <StatCard
-              label="Mudir topshiriqlari"
+              label={t("kuzatuv.stat.mudirTasks")}
               value={`${p.summary.networkTasksOpen ?? 0} / ${p.summary.networkTasksDone ?? 0}`}
               icon={ListTodo}
             />
-            <StatCard label="Xodimlar" value={p.summary.staffCount ?? staff.length} icon={Users} />
+            <StatCard label={t("kuzatuv.tab.staff")} value={p.summary.staffCount ?? staff.length} icon={Users} />
             {(p.summary.staffNeedHire ?? 0) > 0 ? (
-              <StatCard label="Xodim kerak" value={p.summary.staffNeedHire!} icon={UserCog} />
+              <StatCard label={t("kuzatuv.stat.staffNeed")} value={p.summary.staffNeedHire!} icon={UserCog} />
             ) : null}
           </>
         ) : (
           <>
             {p.person.departmentName ? (
-              <StatCard label="Bo‘lim" value={p.person.departmentName} icon={Building2} />
+              <StatCard label={t("kuzatuv.stat.dept")} value={p.person.departmentName} icon={Building2} />
             ) : null}
-            <StatCard label="Vakansiyalar" value={p.summary.vacanciesTotal} icon={Briefcase} />
-            <StatCard label="Faol vakansiya" value={p.summary.vacanciesPublished} icon={Briefcase} />
-            <StatCard label="Nomzodlar" value={p.summary.candidatesTotal} icon={Users} />
-            <StatCard label="Ishga olingan" value={p.summary.candidatesHired} icon={CheckCircle2} />
-            <StatCard label="Telefon suhbat" value={p.summary.phoneInterviews} icon={Phone} />
-            <StatCard label="Onlayn suhbat" value={p.summary.onlineInterviews} icon={Phone} />
-            <StatCard label="Offline suhbat" value={p.summary.offlineInterviews} icon={GraduationCap} />
+            <StatCard label={t("kuzatuv.stat.vacancies")} value={p.summary.vacanciesTotal} icon={Briefcase} />
+            <StatCard label={t("kuzatuv.stat.activeVacancy")} value={p.summary.vacanciesPublished} icon={Briefcase} />
+            <StatCard label={t("kuzatuv.stat.candidates")} value={p.summary.candidatesTotal} icon={Users} />
+            <StatCard label={t("kuzatuv.stat.hired")} value={p.summary.candidatesHired} icon={CheckCircle2} />
+            <StatCard label={t("kuzatuv.stat.phoneOne")} value={p.summary.phoneInterviews} icon={Phone} />
+            <StatCard label={t("kuzatuv.stat.onlineOne")} value={p.summary.onlineInterviews} icon={Phone} />
+            <StatCard label={t("kuzatuv.stat.offlineOne")} value={p.summary.offlineInterviews} icon={GraduationCap} />
             <StatCard
-              label="Vazifa (ochiq / bajarilgan)"
+              label={t("kuzatuv.stat.taskOpenDone")}
               value={`${p.summary.tasksAssignedOpen} / ${p.summary.tasksAssignedDone}`}
               icon={ListTodo}
             />
@@ -527,28 +530,28 @@ function PersonDossier({
       </div>
 
       <div className="flex flex-wrap gap-2 border-b border-border pb-2">
-        {tabs.map((t) => (
+        {tabs.map((tabItem) => (
           <button
-            key={t.id}
+            key={tabItem.id}
             type="button"
-            onClick={() => setTab(t.id)}
+            onClick={() => setTab(tabItem.id)}
             className={cn(
               "rounded-full px-3 py-1.5 text-sm font-medium transition-colors",
-              tab === t.id
+              tab === tabItem.id
                 ? "bg-primary text-primary-foreground"
                 : "bg-slate-100 text-muted-foreground hover:bg-slate-200",
             )}
           >
-            {t.label}
+            {tabItem.label}
           </button>
         ))}
       </div>
 
       {(tab === "all" || tab === "branches") && hasNetwork ? (
         <Section
-          title="Filiallar va mudirlar"
+          title={t("kuzatuv.sec.branches")}
           count={branches.length || managers.length}
-          empty="Bu koordinatorga bog‘liq filial/mudir topilmadi"
+          empty={t("kuzatuv.sec.branchesEmpty")}
         >
           {(branches.length ? branches : managers.map((m) => ({
             managerEmployeeId: m.id,
@@ -578,9 +581,9 @@ function PersonDossier({
                         <MapPin className="h-3 w-3" /> {b.location}
                       </span>
                     ) : (
-                      <span>Filial ko‘rsatilmagan</span>
+                      <span>{t("kuzatuv.noBranchShown")}</span>
                     )}
-                    <span>Xodimlar: {b.staffCount}</span>
+                    <span>{t("kuzatuv.staffLabel")} {b.staffCount}</span>
                     <span>Smena: {b.shiftDisplay}</span>
                   </p>
                 </div>
@@ -631,9 +634,9 @@ function PersonDossier({
 
       {(tab === "all" || tab === "audits") && hasNetwork ? (
         <Section
-          title="Checklist tashriflari"
+          title={t("kuzatuv.sec.audits")}
           count={audits.length}
-          empty="Checklist tashrifi yo‘q"
+          empty={t("kuzatuv.sec.auditsEmpty")}
         >
           {audits.map((a) => (
             <div
@@ -642,7 +645,7 @@ function PersonDossier({
             >
               <div>
                 <p className="font-medium text-foreground">
-                  {a.branchLocation || "Filial"} · {a.managerName || "Mudir"}
+                  {a.branchLocation || t("ui.branch")} · {a.managerName || t("admin.holatDash.mudir")}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {a.visitDate} · {a.visitName}
@@ -670,7 +673,7 @@ function PersonDossier({
       ) : null}
 
       {(tab === "all" || tab === "needs") && hasNetwork ? (
-        <Section title="Ehtiyojlar" count={needs.length} empty="Ehtiyoj yo‘q">
+        <Section title={t("kuzatuv.sec.needs")} count={needs.length} empty={t("kuzatuv.sec.needsEmpty")}>
           {needs.map((n) => (
             <div
               key={n.id}
@@ -702,7 +705,7 @@ function PersonDossier({
             <section className="rounded-2xl border border-border bg-card p-4 shadow-sm">
               <h3 className="mb-3 flex items-center gap-2 text-base font-semibold text-foreground">
                 <Building2 className="h-4 w-4 text-[#0b3a5c]" />
-                Bo‘lim va apteka profili
+                {t("kuzatuv.profileTitle")}
               </h3>
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 text-sm">
                 <div>
@@ -769,9 +772,9 @@ function PersonDossier({
 
           {managers.length > 0 ? (
             <Section
-              title="Qo‘shgan / boshqaradigan mudirlar"
+              title={t("kuzatuv.sec.managers")}
               count={managers.length}
-              empty="Mudir biriktirilmagan"
+              empty={t("kuzatuv.sec.managersEmpty")}
             >
               {managers.map((m) => {
                 const under = staffByManager.get(m.id) ?? [];
@@ -800,9 +803,9 @@ function PersonDossier({
 
           {managers.length === 0 && staff.length > 0 ? (
             <Section
-              title="Boshqaradigan xodimlar (farmasevt / stajyor)"
+              title={t("kuzatuv.sec.managedStaff")}
               count={staff.length}
-              empty="Xodim yo‘q"
+              empty={t("kuzatuv.sec.managedEmpty")}
             >
               {staff.map((s) => (
                 <OrgPersonCard key={s.id} e={s} />
@@ -812,7 +815,7 @@ function PersonDossier({
 
           {managers.length > 0 && (staffByManager.get("other")?.length ?? 0) > 0 ? (
             <Section
-              title="Boshqa bog‘langan xodimlar"
+              title={t("kuzatuv.sec.otherStaff")}
               count={staffByManager.get("other")!.length}
               empty=""
             >
@@ -828,31 +831,31 @@ function PersonDossier({
         <>
           {networkTasks.length > 0 || isCoordOrMudir ? (
             <Section
-              title="Mudirlarning topshiriqlari (shu tarmoq)"
+              title={t("kuzatuv.sec.networkTasks")}
               count={networkTasks.length}
-              empty="Mudirlarga topshiriq biriktirilmagan"
+              empty={t("kuzatuv.sec.networkEmpty")}
             >
-              {networkTasks.map((t) => (
-                <div key={t.id} className="rounded-xl border border-border bg-card px-4 py-3">
+              {networkTasks.map((task) => (
+                <div key={task.id} className="rounded-xl border border-border bg-card px-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="font-medium text-foreground">{t.title}</p>
+                      <p className="font-medium text-foreground">{task.title}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Mudir: <span className="font-medium text-foreground">{t.assigneeName}</span>
+                        Mudir: <span className="font-medium text-foreground">{task.assigneeName}</span>
                         {" · "}
-                        Kimdan: {t.createdByName}
+                        Kimdan: {task.createdByName}
                       </p>
-                      {t.completionNote ? (
-                        <p className="mt-1 text-xs text-emerald-700">Natija: {t.completionNote}</p>
+                      {task.completionNote ? (
+                        <p className="mt-1 text-xs text-emerald-700">Natija: {task.completionNote}</p>
                       ) : null}
                     </div>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium">
-                      {t.statusLabel}
+                      {task.statusLabel}
                     </span>
                   </div>
                   <p className="mt-2 text-[11px] text-muted-foreground">
-                    Muddat: {formatDue(t.dueAt)}
-                    {t.completedAt ? ` · Bajarilgan: ${formatDt(t.completedAt)}` : ""}
+                    {t("kuzatuv.due")} {formatDue(task.dueAt, t("kuzatuv.noDue"))}
+                    {task.completedAt ? ` · Bajarilgan: ${formatDt(task.completedAt)}` : ""}
                   </p>
                 </div>
               ))}
@@ -860,41 +863,41 @@ function PersonDossier({
           ) : null}
 
           <Section
-            title="Biriktirilgan vazifalar (unga qo‘yilgan)"
+            title={t("kuzatuv.sec.assigned")}
             count={p.tasksAssigned.length}
-            empty="Bu odamga vazifa biriktirilmagan"
+            empty={t("kuzatuv.sec.assignedEmpty")}
           >
-            {p.tasksAssigned.map((t) => (
-              <div key={t.id} className="rounded-xl border border-border bg-card px-4 py-3">
+            {p.tasksAssigned.map((task) => (
+              <div key={task.id} className="rounded-xl border border-border bg-card px-4 py-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div className="min-w-0 flex-1">
-                    <p className="font-medium text-foreground">{t.title}</p>
+                    <p className="font-medium text-foreground">{task.title}</p>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      Kimdan: <span className="font-medium text-foreground">{t.createdByName}</span>
+                      Kimdan: <span className="font-medium text-foreground">{task.createdByName}</span>
                     </p>
-                    {t.description ? (
-                      <p className="mt-1 text-sm text-muted-foreground">{t.description}</p>
+                    {task.description ? (
+                      <p className="mt-1 text-sm text-muted-foreground">{task.description}</p>
                     ) : null}
-                    {t.completionNote ? (
+                    {task.completionNote ? (
                       <p className="mt-1 rounded-lg bg-emerald-50 px-2 py-1 text-xs text-emerald-800">
-                        Natija / hisobot: {t.completionNote}
+                        Natija / hisobot: {task.completionNote}
                       </p>
                     ) : null}
                   </div>
                   <div className="flex flex-col items-end gap-1">
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium text-foreground">
-                      {t.statusLabel}
+                      {task.statusLabel}
                     </span>
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800">
-                      {PRIORITY_LABEL[t.priority] || t.priority}
+                      {t(PRIORITY_KEYS[task.priority] || task.priority)}
                     </span>
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                  <span>Muddat: {formatDue(t.dueAt)}</span>
-                  <span>Yaratilgan: {formatDt(t.createdAt)}</span>
-                  {t.acceptedAt ? <span>Qabul: {formatDt(t.acceptedAt)}</span> : null}
-                  {t.completedAt ? <span>Bajarilgan: {formatDt(t.completedAt)}</span> : null}
+                  <span>{t("kuzatuv.due")} {formatDue(task.dueAt, t("kuzatuv.noDue"))}</span>
+                  <span>Yaratilgan: {formatDt(task.createdAt)}</span>
+                  {task.acceptedAt ? <span>Qabul: {formatDt(task.acceptedAt)}</span> : null}
+                  {task.completedAt ? <span>Bajarilgan: {formatDt(task.completedAt)}</span> : null}
                 </div>
               </div>
             ))}
@@ -902,30 +905,30 @@ function PersonDossier({
 
           {full ? (
             <Section
-              title="U bergan vazifalar (boshqalarga)"
+              title={t("kuzatuv.sec.given")}
               count={p.tasksCreated.length}
-              empty="Bu odam boshqalarga vazifa bermagan"
+              empty={t("kuzatuv.sec.givenEmpty")}
             >
-              {p.tasksCreated.map((t) => (
-                <div key={t.id} className="rounded-xl border border-border bg-card px-4 py-3">
+              {p.tasksCreated.map((task) => (
+                <div key={task.id} className="rounded-xl border border-border bg-card px-4 py-3">
                   <div className="flex flex-wrap items-start justify-between gap-2">
                     <div>
-                      <p className="font-medium text-foreground">{t.title}</p>
+                      <p className="font-medium text-foreground">{task.title}</p>
                       <p className="mt-0.5 text-xs text-muted-foreground">
-                        Kimga: <span className="font-medium text-foreground">{t.assigneeName}</span>
+                        Kimga: <span className="font-medium text-foreground">{task.assigneeName}</span>
                       </p>
-                      {t.description ? (
-                        <p className="mt-1 text-sm text-muted-foreground">{t.description}</p>
+                      {task.description ? (
+                        <p className="mt-1 text-sm text-muted-foreground">{task.description}</p>
                       ) : null}
-                      {t.completionNote ? (
-                        <p className="mt-1 text-xs text-emerald-700">Natija: {t.completionNote}</p>
+                      {task.completionNote ? (
+                        <p className="mt-1 text-xs text-emerald-700">Natija: {task.completionNote}</p>
                       ) : null}
                     </div>
                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-medium">
-                      {t.statusLabel}
+                      {task.statusLabel}
                     </span>
                   </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">Muddat: {formatDue(t.dueAt)}</p>
+                  <p className="mt-2 text-[11px] text-muted-foreground">{t("kuzatuv.due")} {formatDue(task.dueAt, t("kuzatuv.noDue"))}</p>
                 </div>
               ))}
             </Section>
@@ -935,9 +938,9 @@ function PersonDossier({
 
       {!isCoordOrMudir && (tab === "all" || tab === "vacancies") && (
         <Section
-          title="Vakansiyalar"
+          title={t("kuzatuv.sec.vacancies")}
           count={p.vacancies.length}
-          empty="Vakansiya biriktirilmagan"
+          empty={t("kuzatuv.sec.vacanciesEmpty")}
         >
           {p.vacancies.map((v) => (
             <div
@@ -976,7 +979,7 @@ function PersonDossier({
       )}
 
       {!isCoordOrMudir && (tab === "all" || tab === "candidates") && (
-        <Section title="Nomzodlar" count={p.candidates.length} empty="Nomzod yo‘q">
+        <Section title={t("kuzatuv.sec.candidates")} count={p.candidates.length} empty={t("kuzatuv.sec.candidatesEmpty")}>
           {p.candidates.map((c) => (
             <div
               key={c.id}
@@ -994,7 +997,7 @@ function PersonDossier({
                   {c.phone ? ` · ${c.phone}` : ""}
                 </p>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Yangilangan: {formatDt(c.updatedAt)}
+                  {t("kuzatuv.updated")} {formatDt(c.updatedAt)}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-1">
@@ -1022,9 +1025,9 @@ function PersonDossier({
       {!isCoordOrMudir && (tab === "all" || tab === "interviews") && (
         <>
           <Section
-            title="Telefon suhbatlar"
+            title={t("kuzatuv.sec.phone")}
             count={p.phoneInterviews.length}
-            empty="Telefon suhbat yo‘q"
+            empty={t("kuzatuv.sec.phoneEmpty")}
           >
             {p.phoneInterviews.map((i) => (
               <div key={i.id} className="rounded-xl border border-border bg-card px-4 py-3">
@@ -1053,9 +1056,9 @@ function PersonDossier({
           </Section>
 
           <Section
-            title="Onlayn suhbatlar"
+            title={t("kuzatuv.sec.online")}
             count={p.onlineInterviews.length}
-            empty="Onlayn suhbat yo‘q"
+            empty={t("kuzatuv.sec.onlineEmpty")}
           >
             {p.onlineInterviews.map((i) => (
               <div key={i.id} className="rounded-xl border border-border bg-card px-4 py-3">
@@ -1084,9 +1087,9 @@ function PersonDossier({
           </Section>
 
           <Section
-            title="Offline suhbatlar"
+            title={t("kuzatuv.sec.offline")}
             count={p.offlineInterviews.length}
-            empty="Offline suhbat yo‘q"
+            empty={t("kuzatuv.sec.offlineEmpty")}
           >
             {p.offlineInterviews.map((i) => (
               <div key={`${i.roleInInterview}-${i.id}`} className="rounded-xl border border-border bg-card px-4 py-3">
@@ -1103,7 +1106,7 @@ function PersonDossier({
                       {i.scheduledDate}
                       {i.scheduledTime ? ` ${i.scheduledTime}` : ""}
                       {" · "}
-                      Rol: {i.roleInInterview === "hr" ? "HR" : "Trener"}
+                      {t("kuzatuv.roleIn")} {i.roleInInterview === "hr" ? "HR" : "Trener"}
                     </p>
                     {i.resultNotes ? (
                       <p className="mt-1 text-sm text-muted-foreground">{i.resultNotes}</p>
@@ -1118,8 +1121,8 @@ function PersonDossier({
                         {i.result}
                       </span>
                     ) : null}
-                    {i.hrScore != null ? <span>HR ball: {i.hrScore}</span> : null}
-                    {i.trainerScore != null ? <span>Trener ball: {i.trainerScore}</span> : null}
+                    {i.hrScore != null ? <span>{t("kuzatuv.hrScore")} {i.hrScore}</span> : null}
+                    {i.trainerScore != null ? <span>{t("kuzatuv.trainerScore")} {i.trainerScore}</span> : null}
                   </div>
                 </div>
               </div>
@@ -1132,6 +1135,7 @@ function PersonDossier({
 }
 
 export default function KuzatuvPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const allowed = isHrOversight(user?.role) || user?.role === "admin";
@@ -1157,7 +1161,7 @@ export default function KuzatuvPage() {
   }, [user, allowed, setLocation]);
 
   if (!user || !allowed) {
-    return <div className="p-8 text-center text-muted-foreground">Ruxsat yo‘q…</div>;
+    return <div className="p-8 text-center text-muted-foreground">{t("kuzatuv.noAccess")}</div>;
   }
 
   if (selectedPersonId != null) {
@@ -1181,23 +1185,21 @@ export default function KuzatuvPage() {
         <div className="mb-1 flex items-center gap-2 text-[#0b3a5c]">
           <Eye className="h-5 w-5" />
           <span className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-            {full ? "HR Direktor" : "HR Auditor"}
+            {full ? t("kuzatuv.eyebrow.dir") : t("kuzatuv.eyebrow.aud")}
           </span>
         </div>
-        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">Kuzatuv</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">{t("kuzatuv.title")}</h1>
         <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-          Istalgan xodimni ismi, lavozimi yoki bo‘limi bo‘yicha toping — tanlanganda bo‘limi,
-          apteka tarmog‘idagi mudir/farmasevt/stajyorlari va holatlari, vazifalar, vakansiyalar
-          va suhbatlar to‘liq ochiladi.
+          {t("kuzatuv.subtitle")}
         </p>
       </div>
 
       {/* Xodim tanlash */}
       <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-foreground">Xodimni tanlash</h2>
+          <h2 className="text-base font-semibold text-foreground">{t("kuzatuv.pickStaff")}</h2>
           <span className="text-xs text-muted-foreground">
-            {peopleLoading ? "Yuklanmoqda…" : `${people.length} ta xodim`}
+            {peopleLoading ? t("ui.loading") : `${people.length} ${t("kuzatuv.staffCount")}`}
           </span>
         </div>
         <div className="flex flex-col gap-3 sm:flex-row">
@@ -1206,16 +1208,16 @@ export default function KuzatuvPage() {
             <Input
               value={peopleQ}
               onChange={(e) => setPeopleQ(e.target.value)}
-              placeholder="Ism yoki lavozim bo‘yicha qidirish…"
+              placeholder={t("kuzatuv.search")}
               className="h-11 pl-9"
             />
           </div>
           <Select value={peopleRole} onValueChange={setPeopleRole}>
             <SelectTrigger className="h-11 w-full sm:w-[220px]">
-              <SelectValue placeholder="Lavozim" />
+              <SelectValue placeholder={t("ui.position")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Barcha lavozimlar</SelectItem>
+              <SelectItem value="all">{t("ui.allPositions")}</SelectItem>
               {roleOptions.map((r) => (
                 <SelectItem key={r.value} value={r.value}>
                   {r.label}
@@ -1234,7 +1236,7 @@ export default function KuzatuvPage() {
             </div>
           ) : people.length === 0 ? (
             <p className="px-4 py-8 text-center text-sm text-muted-foreground">
-              Mos xodim topilmadi
+              {t("kuzatuv.noStaff")}
             </p>
           ) : (
             people.map((p: KuzatuvPersonListItem) => (
@@ -1266,7 +1268,7 @@ export default function KuzatuvPage() {
                     ) : null}
                     {full && p.login ? <span>@{p.login}</span> : null}
                     <span>
-                      Vazifa:{" "}
+                      {t("kuzatuv.tasksShort")}{" "}
                       <span className="text-amber-700">{p.tasksOpen}</span>
                       {" / "}
                       <span className="text-emerald-700">{p.tasksDone}</span>
@@ -1274,7 +1276,7 @@ export default function KuzatuvPage() {
                   </span>
                 </span>
                 <span className="hidden shrink-0 text-xs font-medium text-[#0b3a5c] sm:inline">
-                  To‘liq ochish →
+                  {t("kuzatuv.openFull")}
                 </span>
               </button>
             ))
@@ -1295,71 +1297,71 @@ export default function KuzatuvPage() {
       ) : data ? (
         <>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard label="Ochiq arizalar" value={data.summary.openRequests} icon={Briefcase} />
+            <StatCard label={t("kuzatuv.stat.openReq")} value={data.summary.openRequests} icon={Briefcase} />
             <StatCard
-              label="Faol vakansiyalar"
+              label={t("kuzatuv.stat.activeVac")}
               value={data.summary.activeVacancies}
               icon={Briefcase}
             />
             <StatCard
-              label="Faol nomzodlar"
+              label={t("kuzatuv.stat.activeCand")}
               value={data.summary.activeCandidates}
               icon={Users}
             />
             <StatCard
-              label="Ishga olingan"
+              label={t("kuzatuv.stat.hired")}
               value={data.summary.hiredCandidates}
               icon={CheckCircle2}
             />
             <StatCard
-              label="Telefon suhbatlar"
+              label={t("kuzatuv.stat.phone")}
               value={data.summary.phoneInterviews}
               icon={Phone}
             />
             {full && data.summary.onlineInterviews != null ? (
               <StatCard
-                label="Onlayn suhbatlar"
+                label={t("kuzatuv.stat.online")}
                 value={data.summary.onlineInterviews}
                 icon={Phone}
               />
             ) : null}
             {full && data.summary.offlineInterviews != null ? (
               <StatCard
-                label="Offline suhbatlar"
+                label={t("kuzatuv.stat.offline")}
                 value={data.summary.offlineInterviews}
                 icon={Users}
               />
             ) : null}
-            <StatCard label="Ochiq vazifalar" value={data.summary.tasksOpen} icon={ListTodo} />
-            <StatCard label="Bajarilgan vazifalar" value={data.summary.tasksDone} icon={Clock3} />
+            <StatCard label={t("kuzatuv.stat.tasksOpen")} value={data.summary.tasksOpen} icon={ListTodo} />
+            <StatCard label={t("kuzatuv.stat.tasksDone")} value={data.summary.tasksDone} icon={Clock3} />
             <StatCard
-              label="Rekruterlar"
+              label={t("kuzatuv.stat.recruiters")}
               value={data.summary.recruitersCount}
               icon={UserRound}
             />
           </div>
 
           <section className="space-y-3">
-            <h2 className="text-lg font-semibold text-foreground">Rekruterlar ishi</h2>
-            <p className="text-xs text-muted-foreground">Qatorni bosing — to‘liq dossier ochiladi</p>
+            <h2 className="text-lg font-semibold text-foreground">{t("kuzatuv.recruitersTitle")}</h2>
+            <p className="text-xs text-muted-foreground">{t("kuzatuv.recruitersHint")}</p>
             <div className="overflow-x-auto rounded-2xl border border-border bg-card shadow-sm">
               <table className="min-w-full text-left text-sm">
                 <thead className="border-b bg-muted text-xs uppercase tracking-wide text-muted-foreground">
                   <tr>
-                    <th className="px-4 py-3 font-medium">Rekruter</th>
-                    <th className="px-4 py-3 font-medium">Vakansiya</th>
-                    <th className="px-4 py-3 font-medium">Faol</th>
-                    <th className="px-4 py-3 font-medium">Suhbat</th>
-                    <th className="px-4 py-3 font-medium">Ishga olindi</th>
-                    <th className="px-4 py-3 font-medium">Vazifa</th>
-                    {full ? <th className="px-4 py-3 font-medium">Qo‘shimcha</th> : null}
+                    <th className="px-4 py-3 font-medium">{t("kuzatuv.col.recruiter")}</th>
+                    <th className="px-4 py-3 font-medium">{t("kuzatuv.col.vacancy")}</th>
+                    <th className="px-4 py-3 font-medium">{t("kuzatuv.col.active")}</th>
+                    <th className="px-4 py-3 font-medium">{t("kuzatuv.col.interview")}</th>
+                    <th className="px-4 py-3 font-medium">{t("kuzatuv.col.hired")}</th>
+                    <th className="px-4 py-3 font-medium">{t("kuzatuv.col.task")}</th>
+                    {full ? <th className="px-4 py-3 font-medium">{t("kuzatuv.col.extra")}</th> : null}
                   </tr>
                 </thead>
                 <tbody>
                   {data.recruiters.length === 0 ? (
                     <tr>
                       <td colSpan={full ? 7 : 6} className="px-4 py-8 text-center text-muted-foreground">
-                        Rekruter topilmadi
+                        {t("kuzatuv.noRecruiter")}
                       </td>
                     </tr>
                   ) : (
@@ -1413,7 +1415,7 @@ export default function KuzatuvPage() {
                     key={p.stage}
                     className="rounded-xl border border-border bg-card px-4 py-3 shadow-sm"
                   >
-                    <p className="text-xs text-muted-foreground">{STAGE_LABELS[p.stage] || p.stage}</p>
+                    <p className="text-xs text-muted-foreground">{t(STAGE_KEYS[p.stage] || p.stage)}</p>
                     <p className="mt-1 text-xl font-semibold text-foreground">{p.count}</p>
                   </div>
                 ))}
@@ -1433,10 +1435,10 @@ export default function KuzatuvPage() {
                   Vazifa yo‘q
                 </p>
               ) : (
-                data.tasks.map((t) => (
+                data.tasks.map((task) => (
                   <TaskRow
-                    key={t.id}
-                    task={t}
+                    key={task.id}
+                    task={task}
                     full={full}
                     onOpenPerson={setSelectedPersonId}
                   />

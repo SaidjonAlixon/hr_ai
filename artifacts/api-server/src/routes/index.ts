@@ -38,6 +38,7 @@ import telegramRouter from "./telegram";
 import reviziyaRouter from "./reviziya";
 import opsDeptRouter from "./ops-dept";
 import deptStaffRouter from "./dept-staff";
+import helpRouter from "./help";
 
 const router: IRouter = Router();
 
@@ -64,6 +65,7 @@ router.use(telegramRouter);
 router.use(reviziyaRouter);
 router.use(opsDeptRouter);
 router.use(deptStaffRouter);
+router.use(helpRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

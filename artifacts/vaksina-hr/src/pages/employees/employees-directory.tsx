@@ -34,31 +34,43 @@ import { AddDeptStaffButton } from "../../components/dept/AddDeptStaffDialog";
 import { fetchStaff, staffQueryKey, type StaffGroup } from "../../lib/staff-api";
 import { formatPersonName } from "../../lib/person-name";
 import { EmployeesTabs } from "./employees-tabs";
+import { useI18n } from "../../i18n/I18nProvider";
 
-const ORG_ROLE_UZ: Record<string, string> = {
-  coordinator: "Koordinator",
-  manager: "Mudir",
-  pharmacist: "Farmasevt",
-  intern: "Stajyor",
-  supervisor: "Nazoratchi",
-};
+type TFn = (key: string, fallback?: string) => string;
 
-const STAFF_STATUSES = [
-  { value: "working", label: "Ishlayapti" },
-  { value: "dismissed", label: "Bo‘shatilgan" },
-  { value: "on_leave", label: "Ta’tilda" },
-] as const;
+function orgRoleLabel(t: TFn, role?: string | null) {
+  if (!role) return "";
+  const map: Record<string, string> = {
+    coordinator: t("emp.role.coord"),
+    manager: t("emp.role.manager"),
+    pharmacist: t("emp.role.pharm"),
+    intern: t("emp.role.intern"),
+    supervisor: t("emp.role.supervisor"),
+  };
+  return map[role] || role;
+}
 
-const STATUS_UZ: Record<string, string> = {
-  working: "Ishlayapti",
-  new: "Yangi",
-  dismissed: "Bo‘shatilgan",
-  on_leave: "Ta’tilda",
-  need_hire: "Yollash kerak",
-  searching: "Qidiruvda",
-  no_manager: "Mudir yo‘q",
-  closed: "Yopilgan",
-};
+function statusLabel(t: TFn, st: string) {
+  const map: Record<string, string> = {
+    working: t("emp.working"),
+    new: t("emp.new"),
+    dismissed: t("emp.dismissed"),
+    on_leave: t("emp.leave"),
+    need_hire: t("emp.needHire"),
+    searching: t("emp.searching"),
+    no_manager: t("emp.noManager"),
+    closed: t("emp.closed"),
+  };
+  return map[st] || st;
+}
+
+function staffStatuses(t: TFn) {
+  return [
+    { value: "working", label: t("emp.working") },
+    { value: "dismissed", label: t("emp.dismissed") },
+    { value: "on_leave", label: t("emp.leave") },
+  ] as const;
+}
 
 const STATUS_STYLE: Record<string, string> = {
   working: "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-300",
@@ -87,6 +99,7 @@ function initials(name: string) {
 }
 
 function StaffAvatar({ employee }: { employee: Employee }) {
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const name = formatPersonName(employee.fullName) || "?";
   const photoUrl = employee.photoUrl?.trim() || null;
@@ -122,7 +135,7 @@ function StaffAvatar({ employee }: { employee: Employee }) {
         <DialogContent className="max-w-sm gap-0 overflow-hidden border-0 p-0 sm:max-w-md">
           <DialogHeader className="sr-only">
             <DialogTitle>{name}</DialogTitle>
-            <DialogDescription>Xodim rasmi</DialogDescription>
+            <DialogDescription>{t("emp.photoAlt")}</DialogDescription>
           </DialogHeader>
           <img
             src={photoUrl}
@@ -153,10 +166,10 @@ function canEditEmploymentStatus(role?: string | null) {
   ].includes(role || "");
 }
 
-function shiftLabel(e: Employee): string {
+function shiftLabel(e: Employee, t: TFn): string {
   if (e.shiftType === "custom" && e.shiftLabel) return e.shiftLabel;
-  if (e.shiftType === "one") return "1 smena";
-  if (e.shiftType === "two") return "2 smena";
+  if (e.shiftType === "one") return t("emp.shift1");
+  if (e.shiftType === "two") return t("emp.shift2");
   return e.shiftType || "—";
 }
 
@@ -178,8 +191,10 @@ function StatusControl({
   pendingId: number | null;
   onChange: (id: number, status: string) => void;
 }) {
+  const { t } = useI18n();
+  const statuses = staffStatuses(t);
   const st = employee.employmentStatus || "working";
-  const known = STAFF_STATUSES.some((s) => s.value === st);
+  const known = statuses.some((s) => s.value === st);
   if (!canEdit) {
     return (
       <span
@@ -188,7 +203,7 @@ function StatusControl({
           STATUS_STYLE[st] || "border-border bg-muted text-foreground",
         )}
       >
-        {STATUS_UZ[st] || st}
+        {statusLabel(t, st)}
       </span>
     );
   }
@@ -207,35 +222,23 @@ function StatusControl({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {STAFF_STATUSES.map((s) => (
+        {statuses.map((s) => (
           <SelectItem key={s.value} value={s.value}>
             {s.label}
           </SelectItem>
         ))}
-        {!known ? <SelectItem value={st}>{STATUS_UZ[st] || st}</SelectItem> : null}
+        {!known ? <SelectItem value={st}>{statusLabel(t, st)}</SelectItem> : null}
       </SelectContent>
     </Select>
   );
 }
 
-const PAGE_META: Record<
-  StaffGroup,
-  { title: string; subtitle: string; empty: string }
-> = {
-  active: {
-    title: "Faol xodimlar",
-    subtitle: "Foydalanuvchilar bazasidan — faqat faol holatdagilar",
-    empty: "Faol xodimlar topilmadi",
-  },
-  other: {
-    title: "Boshqa holatdagi xodimlar",
-    subtitle: "Ta’til, bo‘sh, tugatilgan va boshqa holatlar",
-    empty: "Boshqa holatdagi xodimlar topilmadi",
-  },
-};
-
 export function EmployeesDirectory({ group }: { group: StaffGroup }) {
-  const meta = PAGE_META[group];
+  const { t } = useI18n();
+  const meta =
+    group === "active"
+      ? { title: t("emp.activeTitle"), subtitle: t("emp.activeSub"), empty: t("emp.activeEmpty") }
+      : { title: t("emp.otherTitle"), subtitle: t("emp.otherSub"), empty: t("emp.otherEmpty") };
   const { toast } = useToast();
   const { user } = useAuth();
   const allowed = canViewEmployees(user?.role);
@@ -287,7 +290,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           e.departmentName,
           e.location,
           e.mentorName,
-          e.orgRole && ORG_ROLE_UZ[e.orgRole],
+          e.orgRole && orgRoleLabel(t, e.orgRole),
           staffContact(e).phone,
           staffContact(e).login,
         ]
@@ -297,7 +300,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         return hay.includes(q);
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
-  }, [employees, search, deptFilter, statusFilter]);
+  }, [employees, search, deptFilter, statusFilter, t]);
 
   const setStatus = (id: number, employmentStatus: string) => {
     setPendingId(id);
@@ -308,11 +311,11 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           void qc.invalidateQueries({ queryKey: staffQueryKey(group, search, deptFilter) });
           void qc.invalidateQueries({ queryKey: getGetEmployeesQueryKey() });
           void qc.invalidateQueries({ queryKey: ["staff"] });
-          toast({ title: "Holat saqlandi" });
+          toast({ title: t("emp.statusSaved") });
         },
         onError: (err) => {
           toast({
-            title: "Holat o‘zgarmadi",
+            title: t("emp.statusFail"),
             description: (err as Error)?.message || "Qayta urinib ko‘ring",
             variant: "destructive",
           });
@@ -335,7 +338,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
+        throw new Error((body as { error?: string }).error || t("emp.excelFail"));
       }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -346,10 +349,10 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       a.click();
       a.remove();
       URL.revokeObjectURL(url);
-      toast({ title: "Excel yuklandi" });
+      toast({ title: t("emp.excelOk") });
     } catch (err) {
       toast({
-        title: "Excel yuklanmadi",
+        title: t("emp.excelFail"),
         description: (err as Error)?.message || "Qayta urinib ko‘ring",
         variant: "destructive",
       });
@@ -361,7 +364,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   if (!allowed) {
     return (
       <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-10 text-center text-sm text-amber-900">
-        Xodimlar ro‘yxatini ko‘rish uchun ruxsat yo‘q.
+        {t("emp.noAccess")}
       </div>
     );
   }
@@ -375,7 +378,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
             {meta.title}
           </h1>
           <p className="surface-brand-subtle mt-1 text-sm">
-            {meta.subtitle} · {isLoading ? "…" : `${list.length} ta ko‘rsatilmoqda`}
+            {meta.subtitle} · {isLoading ? "…" : `${list.length} ${t("emp.showing")}`}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
@@ -390,7 +393,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
             onClick={() => void onExportExcel()}
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            Excel
+            {t("ui.excel")}
           </Button>
         </div>
       </div>
@@ -398,10 +401,10 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       {group === "active" ? (
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
           {[
-            { l: "Jami", n: counts.total, filter: "all", accent: "border-l-primary" },
-            { l: "Ishlayapti", n: counts.working, filter: "working", accent: "border-l-emerald-500" },
-            { l: "Ta’tilda", n: counts.on_leave, filter: "on_leave", accent: "border-l-amber-500" },
-            { l: "Bo‘shatilgan", n: counts.dismissed, filter: "dismissed", accent: "border-l-rose-500" },
+            { l: t("ui.total"), n: counts.total, filter: "all", accent: "border-l-primary" },
+            { l: t("emp.working"), n: counts.working, filter: "working", accent: "border-l-emerald-500" },
+            { l: t("emp.leave"), n: counts.on_leave, filter: "on_leave", accent: "border-l-amber-500" },
+            { l: t("emp.dismissed"), n: counts.dismissed, filter: "dismissed", accent: "border-l-rose-500" },
           ].map((c) => (
             <button
               key={c.l}
@@ -423,23 +426,23 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
 
       <Card className="overflow-hidden rounded-2xl border-border shadow-sm">
         <CardHeader className="space-y-3 border-b bg-muted/40 px-3 py-3 sm:px-5">
-          <CardTitle className="text-sm font-medium text-foreground">Ro‘yxat</CardTitle>
+          <CardTitle className="text-sm font-medium text-foreground">{t("emp.list")}</CardTitle>
           <div className="flex flex-col gap-2 lg:flex-row lg:items-center">
             <div className="relative min-w-0 flex-1">
               <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Ism, lavozim, filial…"
+                placeholder={t("emp.searchPh")}
                 className="h-9 border-border bg-background pl-8 text-sm"
               />
             </div>
             <Select value={deptFilter} onValueChange={setDeptFilter}>
               <SelectTrigger className="h-9 w-full text-sm lg:w-[200px]">
-                <SelectValue placeholder="Bo‘lim" />
+                <SelectValue placeholder={t("ui.department")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Barcha bo‘limlar</SelectItem>
+                <SelectItem value="all">{t("ui.allDepartments")}</SelectItem>
                 {(departments ?? []).map((d) => (
                   <SelectItem key={d.id} value={String(d.id)}>
                     {d.name}
@@ -450,11 +453,11 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
             {group === "active" ? (
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="h-9 w-full text-sm lg:w-[180px]">
-                  <SelectValue placeholder="Holat" />
+                  <SelectValue placeholder={t("ui.status")} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Barcha holat</SelectItem>
-                  {STAFF_STATUSES.map((s) => (
+                  <SelectItem value="all">{t("emp.allStatuses")}</SelectItem>
+                  {staffStatuses(t).map((s) => (
                     <SelectItem key={s.value} value={s.value}>
                       {s.label}
                     </SelectItem>
@@ -473,10 +476,10 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
             </div>
           ) : isError ? (
             <div className="space-y-3 px-4 py-10 text-center">
-              <p className="text-sm text-red-600">{(error as Error)?.message || "Xodimlar yuklanmadi"}</p>
+              <p className="text-sm text-red-600">{(error as Error)?.message || t("emp.loadFail")}</p>
               <Button type="button" size="sm" variant="outline" disabled={isFetching} onClick={() => void refetch()}>
                 {isFetching ? <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" /> : null}
-                Qayta urinish
+                {t("emp.retry")}
               </Button>
             </div>
           ) : list.length === 0 ? (
@@ -488,15 +491,15 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                   <thead>
                     <tr className="surface-brand border-b text-[11px] uppercase tracking-wide">
                       <th className="w-10 px-3 py-3 font-medium">№</th>
-                      <th className="w-14 px-2 py-3 font-medium">Rasm</th>
-                      <th className="px-3 py-3 font-medium">F.I.Sh.</th>
-                      <th className="px-3 py-3 font-medium">Lavozim</th>
-                      <th className="px-3 py-3 font-medium">Rol</th>
-                      <th className="px-3 py-3 font-medium">Bo‘lim</th>
-                      <th className="px-3 py-3 font-medium">Filial</th>
-                      <th className="px-3 py-3 font-medium">Holat</th>
-                      <th className="px-3 py-3 font-medium">Smena</th>
-                      <th className="px-3 py-3 font-medium">Ishga olingan</th>
+                      <th className="w-14 px-2 py-3 font-medium">{t("emp.col.photo")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.name")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.position")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.role")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.dept")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.branch")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.status")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.shift")}</th>
+                      <th className="px-3 py-3 font-medium">{t("emp.col.hired")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -520,14 +523,14 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                         </td>
                         <td className="px-3 py-2.5 text-foreground">{e.position}</td>
                         <td className="px-3 py-2.5 text-muted-foreground">
-                          {(e.orgRole && ORG_ROLE_UZ[e.orgRole]) || e.orgRole || "—"}
+                          {(e.orgRole && orgRoleLabel(t, e.orgRole)) || e.orgRole || "—"}
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground">{e.departmentName || "—"}</td>
                         <td className="max-w-[180px] truncate px-3 py-2.5 text-muted-foreground">{e.location || "—"}</td>
                         <td className="px-3 py-2">
                           <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
                         </td>
-                        <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{shiftLabel(e)}</td>
+                        <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{shiftLabel(e, t)}</td>
                         <td className="whitespace-nowrap px-3 py-2.5 text-muted-foreground">{formatHired(e.hiredAt)}</td>
                       </tr>
                     ))}
@@ -552,11 +555,11 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                         <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
                       </div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                        <span>Rol: {(e.orgRole && ORG_ROLE_UZ[e.orgRole]) || "—"}</span>
-                        <span>Smena: {shiftLabel(e)}</span>
-                        <span className="truncate">Bo‘lim: {e.departmentName || "—"}</span>
-                        <span>Ishga: {formatHired(e.hiredAt)}</span>
-                        <span className="col-span-2 truncate">Filial: {e.location || "—"}</span>
+                        <span>{t("emp.col.role")}: {(e.orgRole && orgRoleLabel(t, e.orgRole)) || "—"}</span>
+                        <span>{t("emp.col.shift")}: {shiftLabel(e, t)}</span>
+                        <span className="truncate">{t("emp.col.dept")}: {e.departmentName || "—"}</span>
+                        <span>{t("emp.col.hired")}: {formatHired(e.hiredAt)}</span>
+                        <span className="col-span-2 truncate">{t("emp.col.branch")}: {e.location || "—"}</span>
                       </div>
                     </div>
                   </div>

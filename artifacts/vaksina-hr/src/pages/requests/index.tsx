@@ -12,6 +12,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
 import { isHrManager, isHrRole } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,6 +29,7 @@ const OPEN_STATUS_SET = new Set(['submitted', 'reviewing', 'accepted', 'announce
 
 export default function RequestsList() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const isViewerOnly = user?.role === 'director';
@@ -106,17 +108,15 @@ export default function RequestsList() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Arizalar</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t("requests.title")}</h1>
           <p className="text-muted-foreground mt-1">
-            {isHrLike
-              ? "Arizalar va nazorat — status, muddat va e'lon vaqtlari bilan"
-              : "Kadrlar bo'yicha ehtiyojlar ro'yxati"}
+            {isHrLike ? t("requests.sub.hr") : t("requests.sub.dept")}
           </p>
         </div>
         {!isViewerOnly && (
           <Link href="/requests/new">
             <Button className="gap-2">
-              <Plus className="w-4 h-4" /> Yangi Ariza
+              <Plus className="w-4 h-4" /> {t("requests.new")}
             </Button>
           </Link>
         )}
@@ -321,7 +321,7 @@ export default function RequestsList() {
                           )}
                           <Button variant="ghost" size="sm" className="h-8 gap-1 pointer-events-none">
                             <Eye className="w-4 h-4 text-primary" />
-                            <span className="hidden sm:inline">Ko'rish</span>
+                            <span className="hidden sm:inline">{t("requests.view")}</span>
                           </Button>
                         </div>
                       </td>

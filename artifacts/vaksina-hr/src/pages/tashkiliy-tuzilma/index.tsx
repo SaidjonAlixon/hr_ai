@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useGetEmployees, useGetUsers, type Employee, type User } from "@workspace/api-client-react";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
+import { useI18n } from "@/i18n/I18nProvider";
 import {
   Network,
   ZoomIn,
@@ -1125,6 +1126,7 @@ const MAX_ZOOM = 2.4;
 
 export default function TashkiliyTuzilmaPage() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [, setLocation] = useLocation();
   const [selectedId, setSelectedId] = useState<string | null>("tasischi");
   const [focusPath, setFocusPath] = useState<string[]>([]);
@@ -1354,7 +1356,7 @@ export default function TashkiliyTuzilmaPage() {
           <Network className="h-3.5 w-3.5 text-[#0b3a5c]" />
           VAKSINA MED
         </div>
-        <h1 className="text-xl font-semibold tracking-tight text-[#0b3a5c] sm:text-2xl">Tashkiliy tuzilma</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-[#0b3a5c] sm:text-2xl">{t("org.title")}</h1>
         <div className="mt-3 flex flex-nowrap items-center gap-2 overflow-x-auto pb-0.5 text-[12px] font-medium sm:text-[13px]">
           <span className="shrink-0 rounded-full bg-[#071E33] px-2.5 py-1 text-white">Ta’sischi</span>
           <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />

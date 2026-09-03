@@ -24,6 +24,7 @@ import {
   Presentation,
   Video,
 } from "lucide-react";
+import { useI18n } from "../../i18n/I18nProvider";
 
 function stageState(
   stages: Record<string, KirishStageState> | undefined,
@@ -41,11 +42,12 @@ function stageState(
   );
 }
 
-function correctCountText(correct: number, total: number) {
-  return `${total} ta savoldan ${correct} tasiga to‘g‘ri javob berildi`;
+function correctCountText(t: (k: string, f?: string) => string, correct: number, total: number) {
+  return `${total} ${t("kirish.correctOf")} ${correct} ${t("kirish.correctAns")}`;
 }
 
 export default function KirishPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const me = useKirishMe();
   const completeVideo = useCompleteKirishVideo();
@@ -113,7 +115,7 @@ export default function KirishPage() {
   if (!canAccessKirish(user?.role)) {
     return (
       <div className="h-full flex items-center justify-center p-8 text-muted-foreground">
-        Bu bo‘lim faqat stajyor uchun.
+        {t("kirish.stajyorOnly")}
       </div>
     );
   }
@@ -121,7 +123,7 @@ export default function KirishPage() {
   if (me.isLoading) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">
-        Yuklanmoqda...
+        {t("ui.loading")}
       </div>
     );
   }
@@ -129,7 +131,7 @@ export default function KirishPage() {
   if (me.isError) {
     return (
       <div className="h-full flex items-center justify-center text-red-600 p-6">
-        {(me.error as Error)?.message || "Xato"}
+        {(me.error as Error)?.message || t("ui.error")}
       </div>
     );
   }
@@ -139,18 +141,18 @@ export default function KirishPage() {
       await completeVideo.mutateAsync(viewStage);
       await completeSlides.mutateAsync(viewStage);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Xato");
+      alert(e instanceof Error ? e.message : t("ui.error"));
     }
   };
 
   const onSubmit = async () => {
     if (!stageContent) return;
     if (!st.videoDone) {
-      alert("Avval videoni oxirigacha ko‘ring");
+      alert(t("kirish.watchFirst"));
       return;
     }
     if (answeredCount < stageContent.questions.length) {
-      alert("Barcha savollarga javob bering");
+      alert(t("kirish.answerAll"));
       return;
     }
     try {
@@ -169,7 +171,7 @@ export default function KirishPage() {
         failAlertRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
       }, 80);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Xato");
+      alert(e instanceof Error ? e.message : t("ui.error"));
     }
   };
 
@@ -178,7 +180,7 @@ export default function KirishPage() {
       const res = await finish.mutateAsync();
       setReport(res.report);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Xato");
+      alert(e instanceof Error ? e.message : t("ui.error"));
     }
   };
 
@@ -191,8 +193,8 @@ export default function KirishPage() {
             role="alert"
             className="rounded-2xl border border-red-400 bg-red-600 px-4 py-3 text-center text-sm font-semibold text-foreground dark:text-white shadow-sm sm:text-base"
           >
-            Test o‘tilmadi: {correctCountText(lastResult.correct, lastResult.total)}.
-            Kamida 50% kerak — videoni qayta ko‘ring.
+            {t("kirish.failBanner")} {correctCountText(t, lastResult.correct, lastResult.total)}.
+            {t("kirish.failNeed50")}
           </div>
         ) : null}
         {finished || report ? (
@@ -203,11 +205,11 @@ export default function KirishPage() {
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-foreground">
-                  {(report || { statusLabel: "Ishga qabulga tayyor" }).statusLabel}
+                  {(report || { statusLabel: t("kirish.readyHire") }).statusLabel}
                 </h2>
                 <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
                   {report?.message ||
-                    "Barcha bosqichlar yakunlangan. HR/admin ishga olishni ko‘rib chiqishi mumkin."}
+                    t("kirish.readyMsg")}
                 </p>
               </div>
             </div>
@@ -223,19 +225,19 @@ export default function KirishPage() {
                   key={row.stage}
                   className="rounded-2xl bg-muted border border-slate-100 p-4"
                 >
-                  <div className="text-xs text-muted-foreground">Bosqich {row.stage}</div>
+                  <div className="text-xs text-muted-foreground">{t("kirish.stage")} {row.stage}</div>
                   <div className="text-2xl font-semibold text-foreground mt-1">
                     {row.score ?? "—"}%
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    Urinishlar: {row.attempts}
+                    {t("kirish.attempts")} {row.attempts}
                   </div>
                 </div>
               ))}
             </div>
             {report && (
               <p className="mt-4 text-sm font-medium text-emerald-700">
-                O‘rtacha natija: {report.averageScore}%
+                {t("kirish.avgScore")} {report.averageScore}%
               </p>
             )}
           </section>
@@ -283,7 +285,7 @@ export default function KirishPage() {
             >
               <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
                 <Video className="h-4 w-4 text-[#2AABEE]" />
-                <h3 className="text-sm font-semibold text-foreground">Video</h3>
+                <h3 className="text-sm font-semibold text-foreground">{t("kirish.video")}</h3>
                 {sessionWatched || st.passed ? (
                   <CheckCircle2 className="ml-auto h-4 w-4 text-emerald-500" />
                 ) : (
@@ -314,17 +316,17 @@ export default function KirishPage() {
                       </div>
                       <p className="font-medium text-foreground dark:text-white">{stageContent.videoPosterHint}</p>
                       <p className="mt-2 max-w-sm text-sm text-muted-foreground">
-                        Video hali biriktirilmagan. Admin YouTube havolasini qo‘shgach shu yerda ochiladi.
+                        {t("kirish.videoMissing")}
                       </p>
                     </div>
                   )}
                 </div>
                 {stageContent.youtubeId ? (
                   <p className="mt-3 text-xs text-muted-foreground">
-                    Play / pauza va orqaga qaytish mumkin. Oldinga o‘tkazish o‘chiq.
+                    {t("kirish.videoHint")}
                     {sessionWatched
-                      ? " Video tugadi — pastda test ochildi. Videoni qayta ko‘rishingiz mumkin."
-                      : ` Test ochilishi uchun videoni 100% ko‘ring (${watchPercent}%).`}
+                      ? t("kirish.videoDone")
+                      : ` ${t("kirish.videoNeed100")} (${watchPercent}%).`}
                   </p>
                 ) : null}
               </div>
@@ -333,7 +335,7 @@ export default function KirishPage() {
             <section className="rounded-3xl border border-border bg-card shadow-sm overflow-hidden">
               <div className="flex items-center gap-2 border-b border-slate-100 px-5 py-3">
                 <Presentation className="h-4 w-4 text-[#2AABEE]" />
-                <h3 className="text-sm font-semibold text-foreground">Slaydlar</h3>
+                <h3 className="text-sm font-semibold text-foreground">{t("kirish.slides")}</h3>
               </div>
               <div className="p-4 sm:p-5">
                 {stageContent.driveFileId ? (
@@ -341,9 +343,9 @@ export default function KirishPage() {
                 ) : (
                   <div className="flex min-h-[240px] flex-col items-center justify-center rounded-xl border border-dashed bg-muted px-4 py-8 text-center text-muted-foreground">
                     <Presentation className="mb-2 h-8 w-8 text-muted-foreground" />
-                    <p className="text-sm font-medium text-foreground">PDF hali biriktirilmagan</p>
+                    <p className="text-sm font-medium text-foreground">{t("kirish.pdfMissing")}</p>
                     <p className="mt-1 max-w-sm text-xs">
-                      Admin Google Drive havolasini qo‘shgach slayd shu yerda ochiladi.
+                      {t("kirish.pdfHint")}
                     </p>
                   </div>
                 )}
@@ -357,7 +359,7 @@ export default function KirishPage() {
             >
               <div className="flex shrink-0 items-center gap-2 border-b border-slate-100 px-5 py-3">
                 <ClipboardList className="h-4 w-4 text-[#2AABEE]" />
-                <h3 className="text-sm font-semibold text-foreground">Test</h3>
+                <h3 className="text-sm font-semibold text-foreground">{t("kirish.test")}</h3>
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
                 {(lastResult || st.passed) && (
@@ -372,11 +374,11 @@ export default function KirishPage() {
                     >
                       {lastResult
                         ? `${lastResult.correct}/${lastResult.total}`
-                        : `${lastResult?.score ?? st.score ?? 0}%`}
+                        : `${st.score ?? 0}%`}
                     </div>
                     <p className="mt-3 text-base font-semibold text-foreground">
                       {lastResult
-                        ? correctCountText(lastResult.correct, lastResult.total)
+                        ? correctCountText(t, lastResult.correct, lastResult.total)
                         : `${st.score ?? 0}%`}
                     </p>
                     {lastResult ? (
@@ -384,15 +386,15 @@ export default function KirishPage() {
                     ) : null}
                     <h3 className="mt-3 text-lg font-semibold text-foreground">
                       {(lastResult?.passed ?? st.passed)
-                        ? "Tabriklaymiz — bosqich o‘tildi!"
-                        : "Test o‘tilmadi — videoni qayta ko‘ring"}
+                        ? t("kirish.passCongrats")
+                        : t("kirish.failRetry")}
                     </h3>
                     <p className="mt-1 text-sm text-muted-foreground">
                       {(lastResult?.passed ?? st.passed)
                         ? viewStage < (progress?.stageCount ?? 8)
-                          ? "Keyingi bosqich ochildi."
-                          : "Barcha bosqichlar tayyor — pastda «Tugatish»."
-                        : "Kamida 50% (masalan 6 tadan 3 tasi) kerak."}
+                          ? t("kirish.nextOpened")
+                          : t("kirish.allReady")
+                        : t("kirish.need50ex")}
                     </p>
                     <div className="mt-4 flex flex-wrap justify-center gap-2">
                       {(lastResult?.passed ?? st.passed) &&
@@ -401,7 +403,7 @@ export default function KirishPage() {
                             className="rounded-full bg-[#0B1B2B] hover:bg-muted dark:bg-slate-800"
                             onClick={() => setViewStage(viewStage + 1)}
                           >
-                            Keyingi bosqich
+                            {t("kirish.nextStage")}
                           </Button>
                         )}
                     </div>
@@ -453,7 +455,7 @@ export default function KirishPage() {
                     onClick={() => void onSubmit()}
                     disabled={submitTest.isPending}
                   >
-                    {submitTest.isPending ? "Tekshirilmoqda..." : "Javoblarni yuborish"}
+                    {submitTest.isPending ? t("kirish.checking") : t("kirish.submitAnswers")}
                   </Button>
                 </div>
               ) : null}
@@ -465,16 +467,16 @@ export default function KirishPage() {
         {!finished && locked && (
           <div className="rounded-3xl border border-dashed border-slate-300 bg-white/70 p-10 text-center text-muted-foreground">
             <Lock className="mx-auto mb-3 h-8 w-8 opacity-50" />
-            Avval {viewStage - 1}-bosqichni kamida 50% natija bilan yakunlang.
+            {t("kirish.lockPrev").replace("{n}", String(viewStage - 1))}
           </div>
         )}
 
         {!finished && canFinish && (
           <div className="flex flex-col items-center justify-between gap-4 rounded-3xl border border-[#2AABEE]/30 bg-gradient-to-r from-[#e8f6fd] to-white p-6 sm:flex-row">
             <div>
-              <h3 className="font-semibold text-foreground">Barcha bosqichlar yakunlandi</h3>
+              <h3 className="font-semibold text-foreground">{t("kirish.allDone")}</h3>
               <p className="text-sm text-muted-foreground">
-                «Tugatish» — to‘liq holatni tizimga chiqaradi (ishga qabulga tayyor).
+                {t("kirish.finishHint")}
               </p>
             </div>
             <Button
@@ -482,7 +484,7 @@ export default function KirishPage() {
               onClick={() => void onFinish()}
               disabled={finish.isPending}
             >
-              {finish.isPending ? "..." : "Tugatish"}
+              {finish.isPending ? "..." : t("kirish.finish")}
             </Button>
           </div>
         )}

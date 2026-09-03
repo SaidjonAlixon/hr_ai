@@ -13,11 +13,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateReadOnlyBanner';
 import { canManageCandidate } from '../../lib/candidate-access';
 import { nextStageFormHref } from '../../lib/stage-routes';
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function OfferPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
 
   const { data: candidate, isLoading } = useGetCandidate(candidateId, { query: { enabled: !!candidateId } });
@@ -49,18 +51,18 @@ export default function OfferPage({ params }: { params: { id: string } }) {
   const createNew = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) {
-      toast({ title: 'Ruxsat yo\'q', description: 'Faqat mas\'ul va HR o\'zgartira oladi', variant: 'destructive' });
+      toast({ title: t('ui.noAccess'), description: t('hire.noPermEdit'), variant: 'destructive' });
       return;
     }
     if (!position.trim() || !salary.trim()) {
-      toast({ title: 'Xatolik', description: 'Lavozim va maosh majburiy', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.offerNeedFields'), variant: 'destructive' });
       return;
     }
     createOffer.mutate(
       { data: { candidateId, position, salary, workConditions: workConditions || undefined } },
       {
-        onSuccess: () => toast({ title: 'Job offer yaratildi', description: 'Endi qabul yoki rad etishingiz mumkin' }),
-        onError: () => toast({ title: 'Xatolik', description: 'Saqlashda xato', variant: 'destructive' }),
+        onSuccess: () => toast({ title: t('hire.offerCreated'), description: t('hire.offerCreatedDesc') }),
+        onError: () => toast({ title: t('ui.error'), description: t('hire.saveFail'), variant: 'destructive' }),
       },
     );
   };
@@ -72,8 +74,8 @@ export default function OfferPage({ params }: { params: { id: string } }) {
       {
         onSuccess: () => {
           toast({
-            title: status === 'accepted' ? 'Qabul qilindi' : 'Rad etildi',
-            description: status === 'accepted' ? 'Keyingi bosqich: Hujjatlar' : 'Nomzod jarayondan chiqarildi',
+            title: status === 'accepted' ? t('hire.offerAccepted') : t('hire.offerRejected'),
+            description: status === 'accepted' ? t('hire.offerAcceptedDesc') : t('hire.offerRejectedDesc'),
           });
           if (status === 'accepted') {
             setLocation(nextStageFormHref(candidateId, 'offer')!);
@@ -81,13 +83,13 @@ export default function OfferPage({ params }: { params: { id: string } }) {
             setLocation(`/candidates/${candidateId}`);
           }
         },
-        onError: () => toast({ title: 'Xatolik', description: 'Yangilashda xato', variant: 'destructive' }),
+        onError: () => toast({ title: t('ui.error'), description: t('hire.offerUpdateFail'), variant: 'destructive' }),
       },
     );
   };
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div className="p-8">Nomzod topilmadi</div>;
+  if (!candidate) return <div className="p-8">{t('hire.notFound')}</div>;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -97,8 +99,8 @@ export default function OfferPage({ params }: { params: { id: string } }) {
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Job Offer</h1>
-          <p className="text-muted-foreground mt-1">{candidate.fullName} — rasmiy taklif</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.offerTitle')}</h1>
+          <p className="text-muted-foreground mt-1">{candidate.fullName} — {t('hire.offerSub')}</p>
         </div>
       </div>
 
@@ -106,45 +108,45 @@ export default function OfferPage({ params }: { params: { id: string } }) {
         <fieldset disabled={!canEdit} className="disabled:opacity-80">
         <form onSubmit={createNew} className="space-y-6">
           <Card>
-            <CardHeader><CardTitle>Taklif shartlari</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t('hire.offerTerms')}</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label>Lavozim *</Label>
+                <Label>{t('hire.offerPosition')}</Label>
                 <Input value={position} onChange={(e) => setPosition(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Ish haqi *</Label>
-                <Input value={salary} onChange={(e) => setSalary(e.target.value)} placeholder="Masalan: 8 000 000 so'm" />
+                <Label>{t('hire.offerSalary')}</Label>
+                <Input value={salary} onChange={(e) => setSalary(e.target.value)} placeholder={t('hire.offerSalaryPh')} />
               </div>
               <div className="space-y-2">
-                <Label>Ish sharoitlari</Label>
+                <Label>{t('hire.offerConditions')}</Label>
                 <Textarea value={workConditions} onChange={(e) => setWorkConditions(e.target.value)} className="min-h-[100px]" />
               </div>
             </CardContent>
           </Card>
           <div className="flex justify-end gap-3">
-            <Link href={`/candidates/${candidateId}`}><Button type="button" variant="ghost">Bekor</Button></Link>
-            <Button type="submit" disabled={isPending || !canEdit}>{isPending ? 'Saqlanmoqda...' : 'Offer yaratish'}</Button>
+            <Link href={`/candidates/${candidateId}`}><Button type="button" variant="ghost">{t('ui.cancel')}</Button></Link>
+            <Button type="submit" disabled={isPending || !canEdit}>{isPending ? t('ui.saving') : t('hire.offerCreate')}</Button>
           </div>
         </form>
         </fieldset>
       ) : (
         <Card>
-          <CardHeader><CardTitle>Taklif #{existing.id}</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('hire.offerNum')} #{existing.id}</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div><p className="text-sm text-muted-foreground">Lavozim</p><p className="font-semibold">{existing.position}</p></div>
-            <div><p className="text-sm text-muted-foreground">Maosh</p><p className="font-semibold">{existing.salary}</p></div>
-            <div><p className="text-sm text-muted-foreground">Sharoitlar</p><p>{existing.workConditions || '—'}</p></div>
-            <div><p className="text-sm text-muted-foreground">Status</p><p className="font-medium">{existing.status}</p></div>
+            <div><p className="text-sm text-muted-foreground">{t('ui.position')}</p><p className="font-semibold">{existing.position}</p></div>
+            <div><p className="text-sm text-muted-foreground">{t('ui.salary')}</p><p className="font-semibold">{existing.salary}</p></div>
+            <div><p className="text-sm text-muted-foreground">{t('hire.offerConditionsShort')}</p><p>{existing.workConditions || '—'}</p></div>
+            <div><p className="text-sm text-muted-foreground">{t('ui.status')}</p><p className="font-medium">{existing.status}</p></div>
             {existing.status === 'pending' && (
               <div className="flex gap-3 pt-4 border-t">
-                <Button variant="destructive" disabled={isPending || !canEdit} onClick={() => decide('rejected')}>Rad etish</Button>
-                <Button disabled={isPending || !canEdit} onClick={() => decide('accepted')}>Qabul qilindi → Hujjatlar</Button>
+                <Button variant="destructive" disabled={isPending || !canEdit} onClick={() => decide('rejected')}>{t('hire.offerReject')}</Button>
+                <Button disabled={isPending || !canEdit} onClick={() => decide('accepted')}>{t('hire.offerAcceptBtn')}</Button>
               </div>
             )}
             {existing.status === 'accepted' && (
               <Link href={`/candidates/${candidateId}/documents`}>
-                <Button className="w-full">Hujjatlar bosqichiga o'tish</Button>
+                <Button className="w-full">{t('hire.offerToDocs')}</Button>
               </Link>
             )}
           </CardContent>

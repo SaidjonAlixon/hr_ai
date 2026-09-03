@@ -31,6 +31,7 @@ import { DeadlineCountdown } from '../../components/DeadlineCountdown';
 import { sortByDeadlineAsc } from '../../lib/deadline-countdown';
 import { useToast } from '../../hooks/use-toast';
 import { isHrManager, isHrRole } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +45,7 @@ import {
 } from '../../components/ui/alert-dialog';
 
 export default function VacanciesList() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -75,7 +77,7 @@ export default function VacanciesList() {
       case 'draft':
         return (
           <Badge variant="secondary" className="bg-amber-100 text-amber-800 border-amber-200">
-            Yangi
+            {t("hire.vacancyNew")}
           </Badge>
         );
       case 'published':
@@ -144,7 +146,7 @@ export default function VacanciesList() {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Ish o'rinlari</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t("hire.vacancies")}</h1>
           <p className="text-muted-foreground mt-1">E'lon qilingan va tayyorlanayotgan ish o'rinlari</p>
         </div>
         {canCreate && (
@@ -160,7 +162,7 @@ export default function VacanciesList() {
         <div className="relative flex-1 w-full">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
           <Input
-            placeholder="Ish o'rni nomini qidiring..."
+            placeholder={t("hire.searchVacancy")}
             className="pl-9 bg-background border-transparent focus-visible:bg-card"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

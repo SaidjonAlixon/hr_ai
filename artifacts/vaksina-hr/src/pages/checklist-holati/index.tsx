@@ -45,6 +45,7 @@ import {
 import { CoveragePanel } from "./coverage-panel";
 import { ChecklistDashboard, type ChecklistDashNav } from "./dashboard-panel";
 import { CoordinatorRankingBoard } from "./ranking-panel";
+import { useI18n } from "@/i18n/I18nProvider";
 
 function scoreTone(pct: number) {
   if (pct >= 85) return "text-emerald-600";
@@ -115,6 +116,7 @@ function FilterField({
 }
 
 export default function ChecklistHolatiPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
   const allowedFull = canViewChecklistStatus(user?.role);
@@ -145,7 +147,7 @@ export default function ChecklistHolatiPage() {
     const map = new Map<number, string>();
     for (const a of audits) {
       if (!map.has(a.coordinatorId)) {
-        map.set(a.coordinatorId, a.coordinatorName || `Koordinator #${a.coordinatorId}`);
+        map.set(a.coordinatorId, a.coordinatorName || `${t("checklist.coord")} #${a.coordinatorId}`);
       }
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
@@ -156,7 +158,7 @@ export default function ChecklistHolatiPage() {
     for (const a of audits) {
       if (coordinatorId !== "all" && String(a.coordinatorId) !== coordinatorId) continue;
       const key = String(a.managerEmployeeId);
-      const label = a.branchLocation || a.managerName || "Filial";
+      const label = a.branchLocation || a.managerName || t("ui.branch");
       if (!map.has(key)) map.set(key, label);
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
@@ -206,7 +208,7 @@ export default function ChecklistHolatiPage() {
       const key = String(a.coordinatorId);
       const cur = map.get(key) ?? {
         id: key,
-        name: a.coordinatorName || "Koordinator",
+        name: a.coordinatorName || t("checklist.coord"),
         visits: 0,
         avg: 0,
         last: a.visitDate,
@@ -242,7 +244,7 @@ export default function ChecklistHolatiPage() {
       const key = String(a.managerEmployeeId);
       const cur = map.get(key) ?? {
         id: key,
-        name: a.branchLocation || "Filial",
+        name: a.branchLocation || t("ui.branch"),
         manager: a.managerName || "—",
         visits: 0,
         stamps: [],
@@ -340,7 +342,7 @@ export default function ChecklistHolatiPage() {
               <ClipboardCheck className="h-3.5 w-3.5" />
               Nazorat · Tashriflar
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-white sm:text-3xl">Cheklist holati</h1>
+            <h1 className="text-xl font-bold tracking-tight text-white sm:text-3xl">{t("checklist.statusTitle")}</h1>
             <p className="mt-1.5 max-w-xl text-xs text-white/80 sm:text-sm">
               Dashboard, tashriflar, reyting va har bir koordinatorning filial qamrovi.
             </p>
@@ -353,7 +355,7 @@ export default function ChecklistHolatiPage() {
               disabled={exporting || filtered.length === 0}
             >
               <Download className="mr-1.5 h-4 w-4" />
-              {exporting ? "Yuklanmoqda…" : "Excel eksport"}
+              {exporting ? t("ui.loading") : t("checklist.excelExport")}
             </Button>
           )}
         </div>
@@ -363,20 +365,20 @@ export default function ChecklistHolatiPage() {
         <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 sm:max-w-3xl">
           <TabsTrigger value="dashboard" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
-            Dashboard
+            {t("checklist.tab.dashboard")}
           </TabsTrigger>
           <TabsTrigger value="reyting" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <Trophy className="h-3.5 w-3.5 shrink-0" />
-            Reyting
+            {t("checklist.tab.ranking")}
           </TabsTrigger>
           <TabsTrigger value="tashriflar" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
-            Tashriflar
+            {t("checklist.tab.visits")}
           </TabsTrigger>
           <TabsTrigger value="qamrov" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <Store className="h-3.5 w-3.5 shrink-0" />
-            <span className="sm:hidden">Qamrov</span>
-            <span className="hidden sm:inline">Filial qamrovi</span>
+            <span className="sm:hidden">{t("checklist.tab.coverage")}</span>
+            <span className="hidden sm:inline">{t("checklist.tab.coverageFull")}</span>
           </TabsTrigger>
         </TabsList>
         <TabsContent value="dashboard" className="mt-0">
@@ -399,30 +401,30 @@ export default function ChecklistHolatiPage() {
         </TabsContent>
         <TabsContent value="tashriflar" className="mt-0 space-y-4 sm:space-y-6">
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-        <Stat label="Tashriflar" value={String(stats.visits)} />
-        <Stat label="Filiallar" value={String(stats.branches)} />
-        <Stat label="Koordinatorlar" value={String(stats.coordinators)} />
-        <Stat label="O‘rtacha ball" value={`${stats.avg}%`} valueClass={scoreTone(stats.avg)} />
+        <Stat label={t("checklist.stat.visits")} value={String(stats.visits)} />
+        <Stat label={t("checklist.stat.branches")} value={String(stats.branches)} />
+        <Stat label={t("checklist.stat.coords")} value={String(stats.coordinators)} />
+        <Stat label={t("checklist.stat.avg")} value={`${stats.avg}%`} valueClass={scoreTone(stats.avg)} />
       </div>
 
       <div className="rounded-2xl border bg-card p-3 shadow-sm sm:p-4">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           <Filter className="h-3.5 w-3.5" />
-          Filter
+          {t("checklist.filter")}
         </div>
         <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-7">
-          <FilterField label="Qidiruv">
+          <FilterField label={t("ui.search")}>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Qidirish…"
+                placeholder={t("ui.search")}
                 className="h-11 pl-9"
               />
             </div>
           </FilterField>
-          <FilterField label="Koordinator">
+          <FilterField label={t("checklist.coord")}>
             <Select
               value={coordinatorId}
               onValueChange={(v) => {
@@ -431,10 +433,10 @@ export default function ChecklistHolatiPage() {
               }}
             >
               <SelectTrigger className="h-11 w-full">
-                <SelectValue placeholder="Koordinator" />
+                <SelectValue placeholder={t("checklist.coord")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Barcha koordinatorlar</SelectItem>
+                <SelectItem value="all">{t("pharmacy.allCoords")}</SelectItem>
                 {coordinators.map(([id, name]) => (
                   <SelectItem key={id} value={String(id)}>
                     {name}
@@ -443,13 +445,13 @@ export default function ChecklistHolatiPage() {
               </SelectContent>
             </Select>
           </FilterField>
-          <FilterField label="Filial">
+          <FilterField label={t("ui.branch")}>
             <Select value={branchKey} onValueChange={setBranchKey}>
               <SelectTrigger className="h-11 w-full">
-                <SelectValue placeholder="Filial" />
+                <SelectValue placeholder={t("ui.branch")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Barcha filiallar</SelectItem>
+                <SelectItem value="all">{t("ui.allBranches")}</SelectItem>
                 {branches.map(([id, name]) => (
                   <SelectItem key={id} value={id}>
                     {name}
@@ -458,13 +460,13 @@ export default function ChecklistHolatiPage() {
               </SelectContent>
             </Select>
           </FilterField>
-          <FilterField label="Dan">
+          <FilterField label={t("checklist.from")}>
             <Input type="date" className="h-11" value={from} onChange={(e) => setFrom(e.target.value)} />
           </FilterField>
-          <FilterField label="Gacha">
+          <FilterField label={t("checklist.to")}>
             <Input type="date" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
           </FilterField>
-          <FilterField label="Ball">
+          <FilterField label={t("checklist.score")}>
             <Select value={scoreBand} onValueChange={(v) => setScoreBand(v as typeof scoreBand)}>
               <SelectTrigger className="h-11 w-full">
                 <SelectValue placeholder="Ball" />
@@ -604,7 +606,7 @@ export default function ChecklistHolatiPage() {
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <p className="font-semibold text-foreground">
-                            {a.branchLocation || "Filial"}
+                            {a.branchLocation || t("ui.branch")}
                           </p>
                           <Badge className={cn("font-bold", scoreBadge(a.scorePercent))}>
                             {a.scorePercent}%
@@ -624,7 +626,7 @@ export default function ChecklistHolatiPage() {
                           </span>
                           <span className="inline-flex items-center gap-1">
                             <User className="h-3.5 w-3.5" />
-                            {a.coordinatorName || "Koordinator"}
+                            {a.coordinatorName || t("checklist.coord")}
                           </span>
                         </p>
                         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
@@ -684,7 +686,7 @@ export default function ChecklistHolatiPage() {
                   <span className="font-semibold text-foreground">Mudir:</span> {viewing.managerName}
                 </p>
                 <p>
-                  <span className="font-semibold text-foreground">Koordinator:</span>{" "}
+                  <span className="font-semibold text-foreground">{t("checklist.coord")}:</span>{" "}
                   {viewing.coordinatorName}
                 </p>
                 {viewing.checkLatitude != null && viewing.checkLongitude != null ? (

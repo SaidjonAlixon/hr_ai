@@ -57,25 +57,8 @@ import {
 import { Checkbox } from '../../components/ui/checkbox';
 import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
+import { useI18n } from '../../i18n/I18nProvider';
 
-const STAGE_LABELS: Record<string, string> = {
-  phone_interview: 'Tanishuv',
-  online_interview: 'Onlayn suhbat',
-  preboarding: 'Pre-boarding',
-  offline_interview: 'Offline suhbat',
-  final_decision: 'Yakuniy qaror',
-  offer: 'Job offer',
-  documents: 'Hujjatlar',
-  internship: 'Stajirovka',
-  hired: 'Ishga qabul',
-  rejected: 'Rad etilgan',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  active: 'Faol',
-  hired: 'Ishga olingan',
-  rejected: 'Rad etilgan',
-};
 
 function toLocalInput(iso?: string | null) {
   const d = iso ? new Date(iso) : new Date();
@@ -101,7 +84,11 @@ function formatMaybeDate(iso?: string | null) {
   }
 }
 
-function toPdfData(c: Candidate) {
+function toPdfData(
+  c: Candidate,
+  stageLabels: Record<string, string>,
+  statusLabels: Record<string, string>,
+) {
   return {
     fullName: c.fullName,
     phone: c.phone,
@@ -112,9 +99,9 @@ function toPdfData(c: Candidate) {
     expectedSalary: c.expectedSalary,
     notes: c.notes,
     stage: c.stage,
-    stageLabel: STAGE_LABELS[c.stage] || c.stage,
+    stageLabel: stageLabels[c.stage] || c.stage,
     status: c.status,
-    statusLabel: STATUS_LABELS[c.status || ''] || c.status || '—',
+    statusLabel: statusLabels[c.status || ''] || c.status || '—',
     recruiterName: c.recruiterName,
     createdAt: formatMaybeDate(c.createdAt),
   };
@@ -122,6 +109,7 @@ function toPdfData(c: Candidate) {
 
 export default function VacancyDetails({ params }: { params: { id: string } }) {
   const id = parseInt(params.id, 10);
+  const { t } = useI18n();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { data: vacancy, isLoading, refetch } = useGetVacancy(id, { query: { enabled: !!id } });
@@ -155,6 +143,26 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
     vacancy.status !== 'closed' &&
     canExtendVacancy(user?.role);
 
+  const STAGE_LABELS: Record<string, string> = {
+    phone_interview: t('hire.phone'),
+    online_interview: t('hire.online'),
+    preboarding: t('hire.preboarding'),
+    offline_interview: t('hire.offline'),
+    final_decision: t('hire.final'),
+    offer: t('hire.offer'),
+    documents: t('hire.docs'),
+    internship: t('hire.internship'),
+    hired: t('hire.hired'),
+    rejected: t('hire.rejected'),
+  };
+
+  const STATUS_LABELS: Record<string, string> = {
+    active: t('ui.active'),
+    hired: t('hire.hiredBadge'),
+    rejected: t('hire.rejected'),
+  };
+
+
   React.useEffect(() => {
     if (autoPublish && vacancy?.status === 'draft' && canPublish) {
       setPublishOpen(true);
@@ -162,7 +170,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   }, [autoPublish, vacancy?.status, canPublish]);
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!vacancy) return <div>Ish o'rni topilmadi</div>;
+  if (!vacancy) return <div>{t('hire.vacancyNotFound')}</div>;
 
   const vacancyPdfMeta = {
     title: vacancy.title,
@@ -175,22 +183,22 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   const list = candidates ?? [];
 
   const handleExportAllPdf = () => {
-    const ok = openVacancyCandidatesPdf(list.map(toPdfData), vacancyPdfMeta);
+    const ok = openVacancyCandidatesPdf(list.map((c) => toPdfData(c, STAGE_LABELS, STATUS_LABELS)), vacancyPdfMeta);
     if (!ok) {
       toast({
-        title: 'Popup bloklangan',
-        description: 'Brauzerda popup-ni ruxsat qiling',
+        title: t('hire.popupBlocked'),
+        description: t('hire.popupBlockedDesc'),
         variant: 'destructive',
       });
     }
   };
 
   const handleExportOnePdf = (c: Candidate) => {
-    const ok = openCandidatePdf(toPdfData(c), vacancyPdfMeta);
+    const ok = openCandidatePdf(toPdfData(c, STAGE_LABELS, STATUS_LABELS), vacancyPdfMeta);
     if (!ok) {
       toast({
-        title: 'Popup bloklangan',
-        description: 'Brauzerda popup-ni ruxsat qiling',
+        title: t('hire.popupBlocked'),
+        description: t('hire.popupBlockedDesc'),
         variant: 'destructive',
       });
     }
@@ -198,7 +206,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
 
   const handlePublish = () => {
     if (selectedChannels.length === 0) {
-      toast({ title: 'Xatolik', description: "Kamida bitta kanalni tanlang", variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.vacancyNeedChannel'), variant: 'destructive' });
       return;
     }
 
@@ -206,7 +214,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
       { id, data: { channelIds: selectedChannels } },
       {
         onSuccess: () => {
-          toast({ title: 'Qabul qilindi', description: "Ish o'rni faol holatga o'tkazildi" });
+          toast({ title: t('hire.offerAccepted'), description: t('hire.vacancyPublished') });
           setPublishOpen(false);
           setSelectedChannels([]);
           window.history.replaceState({}, '', `/vacancies/${id}`);
@@ -214,8 +222,8 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || "E'lon qilishda xatolik yuz berdi",
+            title: t('ui.error'),
+            description: err?.message || t('hire.vacancyPublishFail'),
             variant: 'destructive',
           });
         },
@@ -228,13 +236,13 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
       { id },
       {
         onSuccess: () => {
-          toast({ title: "O'chirildi", description: "Ish o'rni o'chirildi" });
+          toast({ title: t('ui.deleted'), description: t('hire.vacancyDeleted') });
           setLocation('/vacancies');
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || "O'chirishda xatolik yuz berdi",
+            title: t('ui.error'),
+            description: err?.message || t('hire.deleteFail'),
             variant: 'destructive',
           });
         },
@@ -248,13 +256,13 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
       { id, data: { status: 'closed' } },
       {
         onSuccess: () => {
-          toast({ title: 'Bajarildi', description: "Ish o'rni yopildi — odam olindi" });
+          toast({ title: t('ui.done'), description: t('hire.vacancyClosed') });
           refetch();
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || "Ish o'rinini yopib bo'lmadi",
+            title: t('ui.error'),
+            description: err?.message || t('hire.vacancyCloseFail'),
             variant: 'destructive',
           });
         },
@@ -270,16 +278,16 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
       {
         onSuccess: () => {
           toast({
-            title: 'Muddat cho‘zildi',
-            description: `Yangi muddat: ${format(new Date(deadlineIso), 'dd.MM.yyyy HH:mm')}`,
+            title: t('hire.vacancyExtended'),
+            description: `${t('hire.vacancyNewDeadline')}: ${format(new Date(deadlineIso), 'dd.MM.yyyy HH:mm')}`,
           });
           setExtendOpen(false);
           refetch();
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || "Ish o'rinini cho‘zib bo'lmadi",
+            title: t('ui.error'),
+            description: err?.message || t('hire.vacancyExtendFail'),
             variant: 'destructive',
           });
         },
@@ -320,23 +328,23 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                 }
               >
                 {vacancy.status === 'published' ? (
-                  'Faol'
+                  t('hire.vacancyActive')
                 ) : vacancy.status === 'draft' ? (
-                  'Yangi'
+                  t('hire.vacancyNew')
                 ) : (
                   <>
-                    <CheckCircle2 className="w-3 h-3" /> Bajarildi
+                    <CheckCircle2 className="w-3 h-3" /> {t('hire.vacancyDone')}
                   </>
                 )}
               </Badge>
             </div>
             <p className="text-muted-foreground mt-1">
-              Ariza #{vacancy.requestId}
+              {t('hire.requestHash')} #{vacancy.requestId}
               {vacancy.departmentName ? ` · ${vacancy.departmentName}` : ''}
               {' · '}
               {format(new Date(vacancy.createdAt), 'dd.MM.yyyy')}
               {' · '}
-              {list.length} ta nomzod
+              {list.length} {t('hire.candCount')}
             </p>
           </div>
         </div>
@@ -344,14 +352,14 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
         <div className="flex gap-2 flex-wrap">
           {list.length > 0 && (
             <Button type="button" variant="outline" className="gap-2" onClick={handleExportAllPdf}>
-              <FileDown className="w-4 h-4" /> Barcha nomzodlar PDF
+              <FileDown className="w-4 h-4" /> {t('hire.pdfAll')}
             </Button>
           )}
           {(user?.role === 'recruiter' || isHrRole(user?.role) || user?.role === 'director' || user?.role === 'admin') &&
             vacancy.status !== 'closed' && (
             <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
               <Button variant="outline" className="gap-2">
-                <Users className="w-4 h-4" /> Nomzod qo'shish
+                <Users className="w-4 h-4" /> {t('hire.addCand')}
               </Button>
             </Link>
           )}
@@ -367,18 +375,18 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
               <DialogTrigger asChild>
                 <Button variant="outline" className="gap-2" disabled={isExtending}>
                   <CalendarClock className="w-4 h-4" />
-                  {isExtending ? 'Cho‘zilmoqda...' : "Ish o'rinini cho'zish"}
+                  {isExtending ? t('hire.extending') : t('hire.extendVacancy')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Ish o‘rinini cho‘zish</DialogTitle>
+                  <DialogTitle>{t('hire.extendTitle')}</DialogTitle>
                   <DialogDescription>
-                    Joriy muddat:{' '}
+                    {t('hire.extendCurrent')}:{' '}
                     {(vacancy as any).deadline
                       ? format(new Date((vacancy as any).deadline), 'dd.MM.yyyy HH:mm')
-                      : 'Belgilanmagan'}
-                    . Yangi muddat hozirgisidan keyin bo‘lishi kerak.
+                      : t('ui.notSet')}
+                    . {t('hire.extendHint')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="flex flex-wrap gap-2">
@@ -391,12 +399,12 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                       disabled={isExtending}
                       onClick={() => handleExtend(addDaysIso((vacancy as any).deadline, d))}
                     >
-                      +{d} kun
+                      +{d} {t('hire.extendDays')}
                     </Button>
                   ))}
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Yoki aniq sana va vaqt</Label>
+                  <Label>{t('hire.extendCustom')}</Label>
                   <Input
                     type="datetime-local"
                     value={customDeadline}
@@ -405,14 +413,14 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                 </div>
                 <DialogFooter>
                   <Button type="button" variant="ghost" onClick={() => setExtendOpen(false)}>
-                    Bekor
+                    {t('ui.cancel')}
                   </Button>
                   <Button
                     type="button"
                     disabled={isExtending || !customDeadline}
                     onClick={() => handleExtend(new Date(customDeadline).toISOString())}
                   >
-                    Cho‘zish
+                    {t('hire.extendBtn')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -424,19 +432,19 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
               <AlertDialogTrigger asChild>
                 <Button variant="outline" className="gap-2" disabled={isClosing}>
                   <CheckCircle2 className="w-4 h-4" />
-                  {isClosing ? 'Yopilmoqda...' : "Ish o'rinini yopish"}
+                  {isClosing ? t('hire.closing') : t('hire.closeVacancy')}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Ish o‘rinini yopish?</AlertDialogTitle>
+                  <AlertDialogTitle>{t('hire.closeConfirm')}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Odam olindi deb belgilansin. Status <strong>Bajarildi</strong> bo‘ladi.
+                    {t('hire.closeConfirmDesc')}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Bekor</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleClose}>Ha, yopish</AlertDialogAction>
+                  <AlertDialogCancel>{t('ui.cancel')}</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleClose}>{t('hire.closeYes')}</AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
@@ -446,18 +454,18 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
             <Dialog open={publishOpen} onOpenChange={setPublishOpen}>
               <DialogTrigger asChild>
                 <Button className="gap-2 bg-primary">
-                  <CheckCircle className="w-4 h-4" /> Qabul qildim
+                  <CheckCircle className="w-4 h-4" /> {t('hire.acceptPublish')}
                 </Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Qabul qilish va e'lon qilish</DialogTitle>
+                  <DialogTitle>{t('hire.acceptPublishTitle')}</DialogTitle>
                   <DialogDescription>
-                    Ish o'rnini qabul qiling va qayerlarda e'lon berishingizni tanlang. Tasdiqlangach status Faol bo'ladi.
+                    {t('hire.acceptPublishDesc')}
                   </DialogDescription>
                 </DialogHeader>
                 <div className="py-4 space-y-4">
-                  <p className="text-sm text-muted-foreground">E'lon kanallari:</p>
+                  <p className="text-sm text-muted-foreground">{t('hire.publishChannels')}</p>
                   <div className="space-y-3">
                     {publishChannels.map(channel => (
                       <div key={channel.id} className="flex items-center space-x-2 border p-3 rounded-md hover:bg-muted/50 cursor-pointer" onClick={() => {
@@ -482,9 +490,9 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                   </div>
                 </div>
                 <DialogFooter>
-                  <Button variant="ghost" onClick={() => setPublishOpen(false)}>Bekor qilish</Button>
+                  <Button variant="ghost" onClick={() => setPublishOpen(false)}>{t('ui.cancelFull')}</Button>
                   <Button onClick={handlePublish} disabled={isPublishing || selectedChannels.length === 0}>
-                    {isPublishing ? 'Saqlanmoqda...' : "Qabul qilish va faollashtirish"}
+                    {isPublishing ? t('ui.saving') : t('hire.acceptActivate')}
                   </Button>
                 </DialogFooter>
               </DialogContent>
@@ -495,23 +503,23 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" className="gap-2" disabled={isDeleting}>
-                  <Trash2 className="w-4 h-4" /> O'chirish
+                  <Trash2 className="w-4 h-4" /> {t('ui.delete')}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Ish o'rnini o'chirasizmi?</AlertDialogTitle>
+                  <AlertDialogTitle>{t('hire.deleteVacancy')}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Bu ish o'rni va unga bog'liq barcha nomzodlar butunlay o'chiriladi. Bu amalni qaytarib bo'lmaydi.
+                    {t('hire.deleteVacancyDesc')}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+                  <AlertDialogCancel>{t('ui.cancelFull')}</AlertDialogCancel>
                   <AlertDialogAction
                     onClick={handleDelete}
                     className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
                   >
-                    O'chirish
+                    {t('ui.delete')}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -525,15 +533,15 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
           <div>
             <CardTitle className="flex items-center gap-2">
               <Users className="w-5 h-5 text-[#0b3a5c]" />
-              Nomzodlar
+              {t('hire.candidates')}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
-              Faqat «{vacancy.title}» ish o‘rni uchun — {list.length} ta
+              {t('hire.candsForVacancy')} — {list.length}
             </p>
           </div>
           {list.length > 0 && (
             <Button type="button" size="sm" variant="secondary" className="gap-2" onClick={handleExportAllPdf}>
-              <FileDown className="w-4 h-4" /> PDF yuklab olish
+              <FileDown className="w-4 h-4" /> {t('hire.pdfDownload')}
             </Button>
           )}
         </CardHeader>
@@ -546,10 +554,10 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
             </div>
           ) : list.length === 0 ? (
             <div className="rounded-xl border border-dashed border-border bg-muted/60 px-4 py-10 text-center">
-              <p className="text-sm text-muted-foreground">Bu ish o‘rni uchun hali nomzod yo‘q</p>
+              <p className="text-sm text-muted-foreground">{t('hire.noCandsYet')}</p>
               {vacancy.status !== 'closed' && (
                 <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
-                  <Button className="mt-3" size="sm">Nomzod qo‘shish</Button>
+                  <Button className="mt-3" size="sm">{t('hire.addCand')}</Button>
                 </Link>
               )}
             </div>
@@ -581,7 +589,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                               : 'shrink-0 bg-slate-100 text-foreground'
                         }
                       >
-                        {STATUS_LABELS[c.status || ''] || c.status || 'Faol'}
+                        {STATUS_LABELS[c.status || ''] || c.status || t('ui.active')}
                       </Badge>
                     </div>
 
@@ -592,34 +600,34 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
                         <GraduationCap className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{c.education || 'Taʼlim kiritilmagan'}</span>
+                        <span className="truncate">{c.education || t('hire.noEducation')}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
                         <Briefcase className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{c.experience || 'Tajriba kiritilmagan'}</span>
+                        <span className="truncate">{c.experience || t('hire.noExperience')}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
                         <MapPin className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{c.address || 'Manzil kiritilmagan'}</span>
+                        <span className="truncate">{c.address || t('hire.noAddress')}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate">
                         <DollarSign className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                        <span className="truncate">{c.expectedSalary || 'Maosh kiritilmagan'}</span>
+                        <span className="truncate">{c.expectedSalary || t('hire.noSalary')}</span>
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-muted-foreground">
-                        Tug‘ilgan: {c.birthDate || '—'}
+                        {t('hire.born')}: {c.birthDate || '—'}
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-muted-foreground">
-                        Qo‘shilgan: {formatMaybeDate(c.createdAt)}
+                        {t('hire.addedAt')}: {formatMaybeDate(c.createdAt)}
                       </p>
                       <p className="flex min-h-[20px] items-center gap-1.5 truncate text-xs text-muted-foreground">
-                        Rekruter: {c.recruiterName || vacancy.recruiterName || '—'}
+                        {t('hire.col.recruiter')}: {c.recruiterName || vacancy.recruiterName || '—'}
                       </p>
                     </div>
 
                     <div className="min-h-[52px] rounded-lg bg-muted px-3 py-2">
                       <p className="line-clamp-2 text-sm text-muted-foreground">
-                        {c.notes?.trim() || 'Izoh yo‘q'}
+                        {c.notes?.trim() || t('hire.noComment')}
                       </p>
                     </div>
                   </div>
@@ -636,7 +644,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                     </Button>
                     <Link href={`/candidates/${c.id}`} className="flex-1 sm:flex-none">
                       <Button type="button" size="sm" variant="secondary" className="w-full gap-2">
-                        <ExternalLink className="w-4 h-4" /> Profil
+                        <ExternalLink className="w-4 h-4" /> {t('ui.profile')}
                       </Button>
                     </Link>
                   </div>
@@ -651,43 +659,43 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
         <div className="md:col-span-2 space-y-6">
           <Card className="border-l-4 border-l-primary">
             <CardHeader>
-              <CardTitle>Kim kerak — Ariza ma'lumoti</CardTitle>
+              <CardTitle>{t('hire.requestInfo')}</CardTitle>
             </CardHeader>
             <CardContent className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Lavozim</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('ui.position')}</p>
                 <p className="font-semibold mt-1">{vacancy.requestPosition || vacancy.title}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Bo'lim</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('ui.department')}</p>
                 <p className="font-semibold mt-1">{vacancy.departmentName || '—'}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Kerakli soni</p>
-                <p className="font-semibold mt-1">{vacancy.requestCount ?? '—'} kishi</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('hire.neededCount')}</p>
+                <p className="font-semibold mt-1">{vacancy.requestCount ?? '—'} {t('ui.people')}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Prioritet</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('hire.priority')}</p>
                 <p className="font-semibold mt-1">
-                  {vacancy.requestPriority === 'urgent' ? 'Shoshilinch' : vacancy.requestPriority || '—'}
+                  {vacancy.requestPriority === 'urgent' ? t('hire.urgent') : vacancy.requestPriority || '—'}
                 </p>
               </div>
               <div className="sm:col-span-2">
-                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">Talablar</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">{t('hire.requirements')}</p>
                 <div className="rounded-md bg-muted/40 p-3 whitespace-pre-wrap">
-                  {vacancy.requestRequirements || vacancy.requestDescription || 'Kiritilmagan'}
+                  {vacancy.requestRequirements || vacancy.requestDescription || t('ui.notEntered')}
                 </div>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Mas'ul rekruter</p>
-                <p className="font-semibold mt-1 text-primary">{vacancy.recruiterName || 'Biriktirilmagan'}</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('hire.field.recruiter')}</p>
+                <p className="font-semibold mt-1 text-primary">{vacancy.recruiterName || t('ui.unassigned')}</p>
               </div>
               <div>
-                <p className="text-xs text-muted-foreground uppercase tracking-wide">Kadr topish muddati</p>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">{t('hire.deadlineFind')}</p>
                 <p className="font-semibold mt-1">
                   {vacancy.deadline
                     ? format(new Date(vacancy.deadline), 'dd.MM.yyyy HH:mm')
-                    : 'Belgilanmagan'}
+                    : t('ui.notSet')}
                 </p>
               </div>
             </CardContent>
@@ -695,11 +703,11 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Vaqtlar tarixi</CardTitle>
+              <CardTitle>{t('hire.timeline')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm">
               <div className="flex justify-between gap-4 border-b pb-2">
-                <span className="text-muted-foreground">HR rekruterga yuborgan</span>
+                <span className="text-muted-foreground">{t('hire.hrSent')}</span>
                 <span className="font-medium text-right">
                   {(vacancy as any).assignedAt
                     ? format(new Date((vacancy as any).assignedAt), 'dd.MM.yyyy HH:mm')
@@ -707,19 +715,19 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
                 </span>
               </div>
               <div className="flex justify-between gap-4 border-b pb-2">
-                <span className="text-muted-foreground">Rekruter qabul qilgan</span>
+                <span className="text-muted-foreground">{t('hire.recAccepted')}</span>
                 <span className="font-medium text-right">
                   {(vacancy as any).acceptedAt
                     ? format(new Date((vacancy as any).acceptedAt), 'dd.MM.yyyy HH:mm')
-                    : <span className="italic text-muted-foreground">Hali qabul qilinmagan</span>}
+                    : <span className="italic text-muted-foreground">{t('hire.notAcceptedYet')}</span>}
                 </span>
               </div>
               <div className="flex justify-between gap-4">
-                <span className="text-muted-foreground">E'lon tasdiqlangan (Faol)</span>
+                <span className="text-muted-foreground">{t('hire.pubConfirmed')}</span>
                 <span className="font-medium text-right">
                   {(vacancy as any).publishedAt
                     ? format(new Date((vacancy as any).publishedAt), 'dd.MM.yyyy HH:mm')
-                    : <span className="italic text-muted-foreground">Hali e'lon qilinmagan</span>}
+                    : <span className="italic text-muted-foreground">{t('hire.notPublishedYet')}</span>}
                 </span>
               </div>
             </CardContent>
@@ -727,19 +735,19 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
 
           <Card>
             <CardHeader>
-              <CardTitle>Ish o'rni matni</CardTitle>
+              <CardTitle>{t('hire.vacancyText')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
               <div>
                 <div className="prose prose-sm max-w-none whitespace-pre-wrap">
-                  {vacancy.description || 'Matn kiritilmagan'}
+                  {vacancy.description || t('hire.noText')}
                 </div>
               </div>
 
               {vacancy.benefits && (
                 <div className="pt-4 border-t">
                   <h4 className="flex items-center gap-2 font-semibold text-lg mb-3">
-                    <Gift className="w-5 h-5 text-primary" /> Biz taklif qilamiz:
+                    <Gift className="w-5 h-5 text-primary" /> {t('hire.weOffer')}
                   </h4>
                   <div className="bg-muted/30 p-4 rounded-md text-sm whitespace-pre-wrap">
                     {vacancy.benefits}
@@ -753,28 +761,28 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
         <div className="space-y-6">
           <Card>
             <CardHeader>
-              <CardTitle>Ish sharoitlari</CardTitle>
+              <CardTitle>{t('hire.conditions')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 text-sm">
               <div className="flex items-start gap-3">
                 <MapPin className="w-5 h-5 text-muted-foreground mt-0.5" />
                 <div>
-                  <span className="font-medium block text-foreground">Manzil</span>
-                  <span className="text-muted-foreground">{vacancy.location || 'Kiritilmagan'}</span>
+                  <span className="font-medium block text-foreground">{t('ui.location')}</span>
+                  <span className="text-muted-foreground">{vacancy.location || t('ui.notEntered')}</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <Clock className="w-5 h-5 text-muted-foreground mt-0.5" />
                 <div>
-                  <span className="font-medium block text-foreground">Grafik</span>
-                  <span className="text-muted-foreground">{vacancy.schedule || 'Kiritilmagan'}</span>
+                  <span className="font-medium block text-foreground">{t('ui.schedule')}</span>
+                  <span className="text-muted-foreground">{vacancy.schedule || t('ui.notEntered')}</span>
                 </div>
               </div>
               <div className="flex items-start gap-3">
                 <DollarSign className="w-5 h-5 text-muted-foreground mt-0.5" />
                 <div>
-                  <span className="font-medium block text-foreground">Maosh</span>
-                  <span className="text-muted-foreground">{vacancy.salaryRange || 'Suhbat natijalariga ko\'ra'}</span>
+                  <span className="font-medium block text-foreground">{t('ui.salary')}</span>
+                  <span className="text-muted-foreground">{vacancy.salaryRange || t('hire.salaryByInterview')}</span>
                 </div>
               </div>
             </CardContent>
@@ -783,7 +791,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
           {vacancy.channels && vacancy.channels.length > 0 && (
             <Card>
               <CardHeader>
-                <CardTitle>E'lon qilingan kanallar</CardTitle>
+                <CardTitle>{t('hire.publishedChannels')}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
                 {vacancy.channels.map((channel, i) => (

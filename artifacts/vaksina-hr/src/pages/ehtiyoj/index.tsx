@@ -4,6 +4,7 @@ import { useGetEmployees, type Employee } from '@workspace/api-client-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { isHrManager } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 import {
   formatNeedDt,
   needLabel,
@@ -115,6 +116,7 @@ function NeedTimeline({ n }: { n: BranchNeed }) {
 export default function EhtiyojPage() {
   const { user } = useAuth();
   const { toast } = useToast();
+  const { t } = useI18n();
 
   const canWrite =
     user?.role === 'mudir' ||
@@ -331,7 +333,7 @@ export default function EhtiyojPage() {
       <div>
         <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
           <ClipboardList className="h-7 w-7 text-primary" />
-          Ehtiyoj
+          {t("ehtiyoj.title")}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {isAssigneeOnly
@@ -347,7 +349,7 @@ export default function EhtiyojPage() {
       {canWrite && (
         <div className="rounded-xl border border-border bg-card p-4">
           <p className="mb-1 text-sm font-semibold text-foreground">
-            {isKoordinator ? 'Ehtiyoj belgilash' : 'Yangi ehtiyoj'}
+            {isKoordinator ? t("ehtiyoj.set") : t("ehtiyoj.new")}
           </p>
           {isKoordinator ? (
             <p className="mb-3 text-xs text-muted-foreground">
@@ -686,7 +688,7 @@ export default function EhtiyojPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Ehtiyojni tasdiqlash</DialogTitle>
+            <DialogTitle>{t("ehtiyoj.confirm")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             <p className="text-sm text-foreground">

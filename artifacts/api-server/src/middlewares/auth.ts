@@ -7,41 +7,42 @@ export interface AuthRequest extends Request {
   userRole?: string;
 }
 
-export async function requireAuth(
+async function loadSessionUser(
   req: AuthRequest,
-  res: Response,
-  next: NextFunction,
-): Promise<void> {
+): Promise<{ id: number; role: string } | null> {
   const sessionCookie = req.cookies?.session;
-  if (!sessionCookie) {
-    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
-    return;
-  }
+  if (!sessionCookie) return null;
 
   let decoded: { userId?: number };
   try {
     decoded = JSON.parse(Buffer.from(sessionCookie, "base64").toString());
   } catch {
-    res.status(401).json({ error: "Noto'g'ri sessiya" });
-    return;
+    return null;
   }
+  if (!decoded?.userId) return null;
 
-  if (!decoded?.userId) {
-    res.status(401).json({ error: "Noto'g'ri sessiya" });
-    return;
+  const [user] = await db
+    .select({ id: usersTable.id, role: usersTable.role, status: usersTable.status })
+    .from(usersTable)
+    .where(eq(usersTable.id, decoded.userId));
+
+  if (!user || (user.status !== "active" && user.status !== "on_leave")) {
+    return null;
   }
+  return { id: user.id, role: user.role };
+}
 
+export async function requireAuth(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
   try {
-    const [user] = await db
-      .select({ id: usersTable.id, role: usersTable.role, status: usersTable.status })
-      .from(usersTable)
-      .where(eq(usersTable.id, decoded.userId));
-
-    if (!user || (user.status !== "active" && user.status !== "on_leave")) {
-      res.status(401).json({ error: "Foydalanuvchi topilmadi" });
+    const user = await loadSessionUser(req);
+    if (!user) {
+      res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
       return;
     }
-
     req.userId = user.id;
     req.userRole = user.role;
     next();
@@ -49,4 +50,22 @@ export async function requireAuth(
     console.error("requireAuth db error:", err);
     res.status(503).json({ error: "Server vaqtincha ishlamayapti, qayta urinib ko‘ring" });
   }
+}
+
+/** Sessiya bo‘lsa userId qo‘yadi, bo‘lmasa ham o‘tkazadi (login sahifa yordami). */
+export async function optionalAuth(
+  req: AuthRequest,
+  res: Response,
+  next: NextFunction,
+): Promise<void> {
+  try {
+    const user = await loadSessionUser(req);
+    if (user) {
+      req.userId = user.id;
+      req.userRole = user.role;
+    }
+  } catch (err) {
+    console.error("optionalAuth db error:", err);
+  }
+  next();
 }

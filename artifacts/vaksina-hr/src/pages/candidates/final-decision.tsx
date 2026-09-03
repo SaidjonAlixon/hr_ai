@@ -12,11 +12,13 @@ import { useAuth } from '../../contexts/AuthContext';
 import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateReadOnlyBanner';
 import { canManageCandidate } from '../../lib/candidate-access';
 import { nextStageFormHref } from '../../lib/stage-routes';
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function FinalDecisionPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
   const { data: candidate, isLoading } = useGetCandidate(candidateId, { query: { enabled: !!candidateId } });
   const updateCandidate = useUpdateCandidate();
@@ -25,7 +27,7 @@ export default function FinalDecisionPage({ params }: { params: { id: string } }
 
   const decide = (passed: boolean) => {
     if (!canEdit) {
-      toast({ title: 'Ruxsat yo\'q', description: 'Faqat mas\'ul va HR o\'zgartira oladi', variant: 'destructive' });
+      toast({ title: t('ui.noAccess'), description: t('hire.noPermEdit'), variant: 'destructive' });
       return;
     }
     updateCandidate.mutate(
@@ -38,18 +40,18 @@ export default function FinalDecisionPage({ params }: { params: { id: string } }
       {
         onSuccess: () => {
           toast({
-            title: passed ? "Suhbatdan o'tdi" : "Suhbatdan o'tmadi",
-            description: passed ? 'Keyingi bosqich: Job Offer' : 'Nomzod rad etildi',
+            title: passed ? t('hire.finalPassToast') : t('hire.finalFailToast'),
+            description: passed ? t('hire.finalPassDesc') : t('hire.finalFailDesc'),
           });
           setLocation(passed ? nextStageFormHref(candidateId, 'final_decision')! : `/candidates/${candidateId}`);
         },
-        onError: () => toast({ title: 'Xatolik', description: 'Saqlashda xato', variant: 'destructive' }),
+        onError: () => toast({ title: t('ui.error'), description: t('hire.saveFail'), variant: 'destructive' }),
       },
     );
   };
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div className="p-8">Nomzod topilmadi</div>;
+  if (!candidate) return <div className="p-8">{t('hire.notFound')}</div>;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -59,17 +61,17 @@ export default function FinalDecisionPage({ params }: { params: { id: string } }
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Yakuniy qaror</h1>
-          <p className="text-muted-foreground mt-1">{candidate.fullName} — HR/Trener tasdig'i</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.finalTitle')}</h1>
+          <p className="text-muted-foreground mt-1">{candidate.fullName} — {t('hire.finalSub')}</p>
         </div>
       </div>
 
       <Card>
-        <CardHeader><CardTitle>Qaror</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('hire.finalDecision')}</CardTitle></CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label>Izoh</Label>
-            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Qaror sababi..." className="min-h-[100px]" disabled={!canEdit} />
+            <Label>{t('ui.notes')}</Label>
+            <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder={t('hire.finalNotePh')} className="min-h-[100px]" disabled={!canEdit} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
             <Button
@@ -78,14 +80,14 @@ export default function FinalDecisionPage({ params }: { params: { id: string } }
               disabled={updateCandidate.isPending || !canEdit}
               onClick={() => decide(false)}
             >
-              <XCircle className="w-4 h-4 mr-2" /> O'tmadi
+              <XCircle className="w-4 h-4 mr-2" /> {t('hire.finalFailBtn')}
             </Button>
             <Button
               className="h-12"
               disabled={updateCandidate.isPending || !canEdit}
               onClick={() => decide(true)}
             >
-              <CheckCircle2 className="w-4 h-4 mr-2" /> O'tdi → Job Offer
+              <CheckCircle2 className="w-4 h-4 mr-2" /> {t('hire.finalPassBtn')}
             </Button>
           </div>
         </CardContent>

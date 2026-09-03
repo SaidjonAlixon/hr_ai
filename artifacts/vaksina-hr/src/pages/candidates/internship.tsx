@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   useGetCandidate,
   useGetOffers,
@@ -23,19 +23,24 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { useAuth } from '../../contexts/AuthContext';
 import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateReadOnlyBanner';
 import { canManageCandidate } from '../../lib/candidate-access';
-
-const DEFAULT_TASKS: ChecklistItem[] = [
-  { label: 'Ish joyi bilan tanishish', completed: false },
-  { label: 'Asosiy vazifalarni bajarish', completed: false },
-  { label: 'Jamoa bilan ishlash', completed: false },
-  { label: 'Hisobot topshirish', completed: false },
-];
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function InternshipPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
+
+  const defaultTasks = useMemo<ChecklistItem[]>(
+    () => [
+      { label: t('hire.task.workplace'), completed: false },
+      { label: t('hire.task.duties'), completed: false },
+      { label: t('hire.task.team'), completed: false },
+      { label: t('hire.task.report'), completed: false },
+    ],
+    [t],
+  );
 
   const { data: candidate, isLoading } = useGetCandidate(candidateId, { query: { enabled: !!candidateId } });
   const { data: offers } = useGetOffers({ candidateId });
@@ -54,8 +59,12 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
   const [trainerId, setTrainerId] = useState('');
   const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [endDate, setEndDate] = useState('');
-  const [tasks, setTasks] = useState(DEFAULT_TASKS);
+  const [tasks, setTasks] = useState(defaultTasks);
   const [internshipId, setInternshipId] = useState<number | null>(null);
+
+  useEffect(() => {
+    setTasks(defaultTasks);
+  }, [defaultTasks]);
 
   useEffect(() => {
     if (departments?.length && !departmentId) setDepartmentId(String(departments[0].id));
@@ -67,7 +76,7 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
     e.preventDefault();
     if (!candidate) return;
     if (!departmentId) {
-      toast({ title: 'Xatolik', description: "Bo'limni tanlang", variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.internPickDept'), variant: 'destructive' });
       return;
     }
 
@@ -87,9 +96,9 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
         {
           onSuccess: (created) => {
             setInternshipId(created.id);
-            toast({ title: 'Stajirovka boshlandi', description: 'Vazifalarni belgilab yakunlang' });
+            toast({ title: t('hire.internStarted'), description: t('hire.internStartedDesc') });
           },
-          onError: () => toast({ title: 'Xatolik', description: 'Stajirovka yaratilmadi', variant: 'destructive' }),
+          onError: () => toast({ title: t('ui.error'), description: t('hire.internCreateFail'), variant: 'destructive' }),
         },
       );
     };
@@ -103,7 +112,7 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
       {
         data: {
           fullName: candidate.fullName,
-          position: offer?.position || candidate.vacancyTitle || 'Xodim',
+          position: offer?.position || candidate.vacancyTitle || t('ui.employee'),
           departmentId: Number(departmentId),
           hiredAt: startDate,
           candidateId,
@@ -124,20 +133,20 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
             {
               onSuccess: (created) => {
                 setInternshipId(created.id);
-                toast({ title: 'Stajirovka boshlandi' });
+                toast({ title: t('hire.internStarted') });
               },
-              onError: () => toast({ title: 'Xatolik', description: 'Stajirovka yaratilmadi', variant: 'destructive' }),
+              onError: () => toast({ title: t('ui.error'), description: t('hire.internCreateFail'), variant: 'destructive' }),
             },
           );
         },
-        onError: () => toast({ title: 'Xatolik', description: 'Xodim yaratilmadi', variant: 'destructive' }),
+        onError: () => toast({ title: t('ui.error'), description: t('hire.internEmpFail'), variant: 'destructive' }),
       },
     );
   };
 
   const completeInternship = () => {
     if (!internshipId) {
-      toast({ title: 'Xatolik', description: 'Avval stajirovkani boshlang', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.internNeedStart'), variant: 'destructive' });
       return;
     }
     updateInternship.mutate(
@@ -147,16 +156,16 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
       },
       {
         onSuccess: () => {
-          toast({ title: 'Stajirovka yakunlandi', description: 'Nomzod ishga qabul qilindi' });
+          toast({ title: t('hire.internDone'), description: t('hire.internDoneDesc') });
           setLocation(`/candidates/${candidateId}`);
         },
-        onError: () => toast({ title: 'Xatolik', description: 'Yakunlashda xato', variant: 'destructive' }),
+        onError: () => toast({ title: t('ui.error'), description: t('hire.internFinishFail'), variant: 'destructive' }),
       },
     );
   };
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div className="p-8">Nomzod topilmadi</div>;
+  if (!candidate) return <div className="p-8">{t('hire.notFound')}</div>;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -166,7 +175,7 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Stajirovka</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.internTitle')}</h1>
           <p className="text-muted-foreground mt-1">{candidate.fullName}</p>
         </div>
       </div>
@@ -175,12 +184,12 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
         <fieldset disabled={!canEdit} className="disabled:opacity-80">
         <form onSubmit={startInternship} className="space-y-6">
           <Card>
-            <CardHeader><CardTitle>Stajirovkani boshlash</CardTitle></CardHeader>
+            <CardHeader><CardTitle>{t('hire.internStart')}</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label>Bo'lim *</Label>
+                <Label>{t('hire.internDept')}</Label>
                 <Select value={departmentId} onValueChange={setDepartmentId}>
-                  <SelectTrigger><SelectValue placeholder="Tanlang" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('ui.select')} /></SelectTrigger>
                   <SelectContent className="z-[100]">
                     {(departments ?? []).map((d) => (
                       <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
@@ -189,9 +198,9 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Trener</Label>
+                <Label>{t('hire.internTrainer')}</Label>
                 <Select value={trainerId} onValueChange={setTrainerId}>
-                  <SelectTrigger><SelectValue placeholder="Tanlang" /></SelectTrigger>
+                  <SelectTrigger><SelectValue placeholder={t('ui.select')} /></SelectTrigger>
                   <SelectContent className="z-[100]">
                     {(trainers ?? []).filter((u) => u.status === 'active').map((u) => (
                       <SelectItem key={u.id} value={String(u.id)}>{u.fullName}</SelectItem>
@@ -200,37 +209,37 @@ export default function InternshipPage({ params }: { params: { id: string } }) {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Boshlanish *</Label>
+                <Label>{t('hire.internStartDate')}</Label>
                 <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label>Tugash (reja)</Label>
+                <Label>{t('hire.internEndDate')}</Label>
                 <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
               </div>
             </CardContent>
           </Card>
           <div className="flex justify-end">
-            <Button type="submit" disabled={isPending || !canEdit}>{isPending ? '...' : 'Boshlash'}</Button>
+            <Button type="submit" disabled={isPending || !canEdit}>{isPending ? '...' : t('ui.start')}</Button>
           </div>
         </form>
         </fieldset>
       ) : (
         <Card>
-          <CardHeader><CardTitle>Stajirovka vazifalari</CardTitle></CardHeader>
+          <CardHeader><CardTitle>{t('hire.internTasks')}</CardTitle></CardHeader>
           <CardContent className="space-y-3">
             {tasks.map((task, index) => (
-              <label key={task.label} className="flex items-start gap-3 p-3 rounded-md border cursor-pointer">
+              <label key={`${task.label}-${index}`} className="flex items-start gap-3 p-3 rounded-md border cursor-pointer">
                 <Checkbox
                   checked={task.completed}
                   onCheckedChange={() =>
-                    setTasks((prev) => prev.map((t, i) => (i === index ? { ...t, completed: !t.completed } : t)))
+                    setTasks((prev) => prev.map((item, i) => (i === index ? { ...item, completed: !item.completed } : item)))
                   }
                 />
                 <span>{task.label}</span>
               </label>
             ))}
             <Button className="w-full mt-4" onClick={completeInternship} disabled={isPending || !canEdit}>
-              Stajirovkani yakunlash → Ishga qabul
+              {t('hire.internFinishBtn')}
             </Button>
           </CardContent>
         </Card>

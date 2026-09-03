@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+﻿import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "wouter";
 import {
   AlertTriangle,
@@ -32,6 +32,7 @@ import {
   YAxis,
 } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
+import { useI18n } from "@/i18n/I18nProvider";
 import { canViewDavomat } from "@/lib/roles";
 import {
   type DavomatAnalytics,
@@ -57,17 +58,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 type RangePreset = AnalyticsRangePreset | "custom";
 
-const PRESET_BUTTONS: { key: AnalyticsRangePreset; label: string }[] = [
-  { key: "today", label: "Bugun" },
-  { key: "7d", label: "7 kun" },
-  { key: "30d", label: "30 kun" },
-  { key: "month", label: "Oy" },
+const PRESET_BUTTONS: { key: AnalyticsRangePreset; labelKey: string }[] = [
+  { key: "today", labelKey: "ui.today" },
+  { key: "7d", labelKey: "davomat.days7" },
+  { key: "30d", labelKey: "davomat.days30" },
+  { key: "month", labelKey: "ui.month" },
 ];
 
-const SEGMENT_OPTIONS: { key: DavomatSegment; label: string; hint: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { key: "all", label: "Hammasi", hint: "Barcha xodimlar", icon: Users },
-  { key: "office", label: "Ofis", hint: "Ofis xodimlari", icon: Building2 },
-  { key: "pharmacy", label: "Apteka tarmog'i", hint: "Mudir, farmasevt, stajyor, koordinator", icon: Store },
+const SEGMENT_OPTIONS: { key: DavomatSegment; labelKey: string; hintKey: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { key: "all", labelKey: "davomat.segAll", hintKey: "davomat.segAllHint", icon: Users },
+  { key: "office", labelKey: "davomat.segOffice", hintKey: "davomat.segOfficeHint", icon: Building2 },
+  { key: "pharmacy", labelKey: "davomat.segPharm", hintKey: "davomat.segPharmHint", icon: Store },
 ];
 
 const PIE_COLORS = ["#34d399", "#fbbf24", "#f87171", "#a78bfa", "#60a5fa"];
@@ -103,6 +104,7 @@ function KpiCard({
   accent: string;
   loading?: boolean;
 }) {
+  const { t } = useI18n();
   if (loading) return <Skeleton className="analytics-kpi h-[108px]" />;
   return (
     <div className="analytics-kpi">
@@ -120,7 +122,7 @@ function KpiCard({
         <div className={cn("mt-2 flex items-center gap-1 text-xs font-medium", delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
           {delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
           {delta >= 0 ? "+" : ""}
-          {delta}% oldingi davrga nisbatan
+          {delta}% {t("davomat.vsPrev")}
         </div>
       ) : null}
     </div>
@@ -170,11 +172,11 @@ function branchStatusStyle(status: "on_time" | "late" | "absent" | "leave") {
   return "border-rose-500/40 bg-rose-500/10 text-rose-800 dark:text-rose-300";
 }
 
-function onTimeWindowLabel(expectedOpen: string, graceUntil: string) {
+function onTimeWindowLabel(expectedOpen: string, graceUntil: string, t: (k: string) => string) {
   if (graceUntil && graceUntil !== expectedOpen) {
-    return `Norma: ${expectedOpen}–${graceUntil}`;
+    return `${t("davomat.normaUntil")}: ${expectedOpen}–${graceUntil}`;
   }
-  return `Norma: ${expectedOpen} gacha`;
+  return `${t("davomat.normaUntil")}: ${expectedOpen} ${t("davomat.normaTo")}`;
 }
 
 function staffStatusStyle(status: string) {
@@ -198,6 +200,7 @@ function BranchStaffDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const { t } = useI18n();
   if (!branch) return null;
   const staff = branch.staff ?? [];
 
@@ -207,7 +210,7 @@ function BranchStaffDialog({
         <DialogHeader className="border-b border-border px-4 py-3">
           <DialogTitle className="text-left text-base">{branch.branchName}</DialogTitle>
           <p className="text-left text-xs text-muted-foreground">
-            Mudir: {branch.managerName} · {branch.shiftLabel} · {onTimeWindowLabel(branch.expectedOpen, branch.graceUntil)}
+            {t("davomat.mudir")}: {branch.managerName} · {branch.shiftLabel} · {onTimeWindowLabel(branch.expectedOpen, branch.graceUntil, t)}
           </p>
         </DialogHeader>
         <div className="max-h-[60vh] overflow-y-auto p-3">
@@ -215,11 +218,11 @@ function BranchStaffDialog({
             <table className="analytics-table w-full text-sm">
               <thead>
                 <tr>
-                  <th>Xodim</th>
-                  <th>Smena</th>
-                  <th>Keldi</th>
-                  <th>Ketdi</th>
-                  <th>Holat</th>
+                  <th>{t("ui.employee")}</th>
+                  <th>{t("davomat.shift")}</th>
+                  <th>{t("davomat.came")}</th>
+                  <th>{t("davomat.btnOut")}</th>
+                  <th>{t("ui.status")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -243,7 +246,7 @@ function BranchStaffDialog({
               </tbody>
             </table>
           ) : (
-            <p className="py-8 text-center text-sm text-muted-foreground">Bu filialda xodim topilmadi</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">{t("davomat.noStaffBranch")}</p>
           )}
         </div>
       </DialogContent>
@@ -252,8 +255,9 @@ function BranchStaffDialog({
 }
 
 function BranchRow({ b, onSelect }: { b: BranchOpening; onSelect: (b: BranchOpening) => void }) {
+  const { t } = useI18n();
   const opened = b.checkIn && b.checkIn !== "—" ? b.checkIn : null;
-  const windowLabel = onTimeWindowLabel(b.expectedOpen, b.graceUntil);
+  const windowLabel = onTimeWindowLabel(b.expectedOpen, b.graceUntil, t);
 
   return (
     <button
@@ -269,18 +273,18 @@ function BranchRow({ b, onSelect }: { b: BranchOpening; onSelect: (b: BranchOpen
         <p className="truncate text-xs font-semibold leading-tight">{b.branchName}</p>
         <p className="truncate text-[10px] leading-tight opacity-75">{b.managerName}</p>
         {(b.staff?.length ?? 0) > 1 ? (
-          <p className="text-[9px] opacity-60">{b.staff.length} xodim · batafsil</p>
+          <p className="text-[9px] opacity-60">{b.staff.length} {t("davomat.staffDetail")}</p>
         ) : null}
       </div>
       <div className="shrink-0 text-right leading-tight">
-        <p className="text-[9px] font-medium uppercase tracking-wide opacity-60">Ochildi</p>
+        <p className="text-[9px] font-medium uppercase tracking-wide opacity-60">{t("davomat.opened")}</p>
         {opened ? (
           <>
             <p className="text-sm font-bold tabular-nums">{opened}</p>
             <p className="text-[9px] tabular-nums opacity-60">{windowLabel}</p>
             {b.lateMinutes > 0 ? (
               <p className="text-[9px] font-semibold tabular-nums text-amber-700 dark:text-amber-300">
-                +{b.lateMinutes} daq
+                +{b.lateMinutes} {t("davomat.minShort")}
               </p>
             ) : null}
           </>
@@ -353,6 +357,7 @@ function BranchOpeningsPanel({
   loading?: boolean;
   rangeLabel?: string;
 }) {
+  const { t } = useI18n();
   const [tab, setTab] = useState<BranchStatusTab>("late");
   const [selectedBranch, setSelectedBranch] = useState<BranchOpening | null>(null);
   const [staffOpen, setStaffOpen] = useState(false);
@@ -380,13 +385,13 @@ function BranchOpeningsPanel({
   }
 
   if (!summary) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">Ma’lumot yo‘q</p>;
+    return <p className="py-6 text-center text-sm text-muted-foreground">{t("ui.empty")}</p>;
   }
 
   const tabs: { key: BranchStatusTab; label: string; count: number; tone: "emerald" | "amber" | "rose"; items: DavomatAnalytics["branchOpenings"]; empty: string }[] = [
-    { key: "on_time", label: "Vaqtida", count: summary.onTime, tone: "emerald", items: grouped.onTime, empty: "Vaqtida ochilgan filial yo‘q" },
-    { key: "late", label: "Kech", count: summary.late, tone: "amber", items: grouped.late, empty: "Kech ochilgan filial yo‘q" },
-    { key: "absent", label: "Ochilmagan", count: summary.absent + summary.leave, tone: "rose", items: grouped.absent, empty: "Barcha filiallar ochilgan" },
+    { key: "on_time", label: t("davomat.onTime"), count: summary.onTime, tone: "emerald", items: grouped.onTime, empty: t("davomat.emptyOnTime") },
+    { key: "late", label: t("davomat.lateShort"), count: summary.late, tone: "amber", items: grouped.late, empty: t("davomat.emptyLate") },
+    { key: "absent", label: t("davomat.notOpened"), count: summary.absent + summary.leave, tone: "rose", items: grouped.absent, empty: t("davomat.emptyAllOpen") },
   ];
 
   return (
@@ -400,50 +405,49 @@ function BranchOpeningsPanel({
           {rangeLabel ? <span>{rangeLabel}</span> : null}
         </div>
         <div className="flex gap-1 md:hidden">
-          {tabs.map((t) => (
+          {tabs.map((tb) => (
             <button
-              key={t.key}
+              key={tb.key}
               type="button"
-              onClick={() => setTab(t.key)}
+              onClick={() => setTab(tb.key)}
               className={cn(
                 "rounded-lg px-2 py-1 text-[11px] font-semibold transition",
-                tab === t.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+                tab === tb.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
               )}
             >
-              {t.label} ({t.count})
+              {tb.label} ({tb.count})
             </button>
           ))}
         </div>
       </div>
-
       {!openings.length ? (
-        <p className="py-4 text-center text-sm text-muted-foreground">Mudir biriktirilgan filial topilmadi</p>
+        <p className="py-4 text-center text-sm text-muted-foreground">{t("davomat.noMudirBranch")}</p>
       ) : (
         <>
           <div className="hidden gap-3 md:grid md:grid-cols-3">
-            {tabs.map((t) => (
+            {tabs.map((tb) => (
               <BranchStatusColumn
-                key={t.key}
-                title={t.label}
-                count={t.count}
-                tone={t.tone}
-                items={t.items}
-                empty={t.empty}
+                key={tb.key}
+                title={tb.label}
+                count={tb.count}
+                tone={tb.tone}
+                items={tb.items}
+                empty={tb.empty}
                 onSelectBranch={openBranchStaff}
               />
             ))}
           </div>
           <div className="md:hidden">
             {tabs
-              .filter((t) => t.key === tab)
-              .map((t) => (
+              .filter((tb) => tb.key === tab)
+              .map((tb) => (
                 <BranchStatusColumn
-                  key={t.key}
-                  title={t.label}
-                  count={t.count}
-                  tone={t.tone}
-                  items={t.items}
-                  empty={t.empty}
+                  key={tb.key}
+                  title={tb.label}
+                  count={tb.count}
+                  tone={tb.tone}
+                  items={tb.items}
+                  empty={tb.empty}
                   onSelectBranch={openBranchStaff}
                 />
               ))}
@@ -463,6 +467,7 @@ export function DavomatAnalyticsDashboard({
   initialSegment?: DavomatSegment;
 }) {
   const { user } = useAuth();
+  const { t } = useI18n();
   const search = useSearch();
   const segmentFromUrl = useMemo(() => {
     if (embedded) return initialSegment;
@@ -502,8 +507,8 @@ export function DavomatAnalyticsDashboard({
           <div>
             {embedded ? (
               <>
-                <p className="text-xs font-medium uppercase tracking-wider text-primary">Boshqaruv paneli</p>
-                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Davomat tahlili</h1>
+                <p className="text-xs font-medium uppercase tracking-wider text-primary">{t("davomat.panel")}</p>
+                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("davomat.analyticsShort")}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
                   {user?.fullName}
                   {data ? ` · ${data.from} — ${data.to}` : ""}
@@ -514,28 +519,28 @@ export function DavomatAnalyticsDashboard({
                 <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
                   <Link href="/dashboard" className="inline-flex items-center gap-1 hover:text-foreground">
                     <ArrowLeft className="h-4 w-4" />
-                    Boshqaruv
+                    {t("davomat.dashboard")}
                   </Link>
                   <span>/</span>
-                  <span className="text-muted-foreground">Davomat tahlili</span>
+                  <span className="text-muted-foreground">{t("davomat.analyticsShort")}</span>
                 </div>
-                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">Davomat analitikasi</h1>
+                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("davomat.analytics")}</h1>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  {data ? `${data.from} — ${data.to}` : "Yuklanmoqda…"} · To‘liq KPI, diagramma va solishtirma
+                  {data ? `${data.from} — ${data.to}` : t("ui.loading")} · {t("davomat.analyticsDesc")}
                 </p>
               </>
             )}
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              {PRESET_BUTTONS.map(({ key, label }) => (
+              {PRESET_BUTTONS.map(({ key, labelKey }) => (
                 <Button
                   key={key}
                   size="sm"
                   variant={preset === key ? "default" : "outline"}
                   onClick={() => setPreset(key)}
                 >
-                  {label}
+                  {t(labelKey)}
                 </Button>
               ))}
               <Button
@@ -544,22 +549,22 @@ export function DavomatAnalyticsDashboard({
                 onClick={() => setPreset("custom")}
               >
                 <CalendarDays className="mr-1.5 h-4 w-4" />
-                Davr
+                {t("davomat.period")}
               </Button>
               <Button size="sm" variant="outline" onClick={() => refetch()}>
                 <Download className="mr-1.5 h-4 w-4" />
-                Yangilash
+                {t("ui.refresh")}
               </Button>
               <Link href="/davomat">
                 <Button size="sm" variant="outline">
-                  Batafsil jadval
+                  {t("davomat.detailTable")}
                 </Button>
               </Link>
             </div>
             {preset === "custom" ? (
               <div className="flex flex-wrap items-end gap-2 rounded-xl border border-border bg-card/60 p-2.5 dark:border-slate-600/40 dark:bg-slate-800/40">
                 <label className="flex flex-col gap-1 text-xs">
-                  <span className="font-medium text-muted-foreground">Dan</span>
+                  <span className="font-medium text-muted-foreground">{t("davomat.fromShort")}</span>
                   <Input
                     type="date"
                     value={customFrom}
@@ -569,7 +574,7 @@ export function DavomatAnalyticsDashboard({
                   />
                 </label>
                 <label className="flex flex-col gap-1 text-xs">
-                  <span className="font-medium text-muted-foreground">Gacha</span>
+                  <span className="font-medium text-muted-foreground">{t("davomat.toShort")}</span>
                   <Input
                     type="date"
                     value={customTo}
@@ -612,13 +617,13 @@ export function DavomatAnalyticsDashboard({
                     <Icon className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-medium">{opt.label}</p>
-                    <p className="text-xs text-muted-foreground">{opt.hint}</p>
+                    <p className="font-medium">{t(opt.labelKey)}</p>
+                    <p className="text-xs text-muted-foreground">{t(opt.hintKey)}</p>
                   </div>
                 </div>
                 {segStats && opt.key !== "all" ? (
                   <p className="mt-2 text-xs text-muted-foreground">
-                    {segStats.headcount} xodim · <span className="font-semibold text-emerald-600 dark:text-emerald-400">{segStats.attendanceRate}%</span> davomat
+                    {segStats.headcount} {t("ui.employees").toLowerCase()} · <span className="font-semibold text-emerald-600 dark:text-emerald-400">{segStats.attendanceRate}%</span> {t("davomat.attRate")}
                   </p>
                 ) : null}
               </button>
@@ -628,32 +633,32 @@ export function DavomatAnalyticsDashboard({
 
         {isError ? (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-rose-500/25 bg-rose-500/10 p-6 text-center text-rose-700 dark:text-rose-200">
-            <p>{error instanceof Error ? error.message : "Ma'lumot yuklanmadi. Qayta urinib ko‘ring."}</p>
+            <p>{error instanceof Error ? error.message : t("davomat.loadFail")}</p>
             <Button size="sm" variant="outline" onClick={() => refetch()}>
-              Qayta urinish
+              {t("davomat.retry")}
             </Button>
           </div>
         ) : null}
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-          <KpiCard title="Jami xodim" value={data?.kpis.headcount ?? "—"} icon={Users} accent="bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" loading={isLoading} />
+          <KpiCard title={t("davomat.totalStaff")} value={data?.kpis.headcount ?? "—"} icon={Users} accent="bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200" loading={isLoading} />
           <KpiCard
-            title="O‘rtacha davomat"
+            title={t("davomat.avgAtt")}
             value={data ? `${data.kpis.attendanceRate}%` : "—"}
             delta={data?.kpis.deltaRate}
-            sub={`Maqsad: ${data?.kpis.targetRate ?? 95}%`}
+            sub={`${t("davomat.target")}: ${data?.kpis.targetRate ?? 95}%`}
             icon={BarChart3}
             accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
             loading={isLoading}
           />
-          <KpiCard title="Kelgan" value={data?.kpis.presentPersonDays ?? "—"} sub="kun-xodim" icon={TrendingUp} accent="bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-200" loading={isLoading} />
-          <KpiCard title="Kechikkan" value={data?.kpis.latePersonDays ?? "—"} sub={`${data?.kpis.totalLateMinutes ?? 0} daqiqa`} icon={Clock} accent="bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200" loading={isLoading} />
-          <KpiCard title="Kelmagan" value={data?.kpis.absentPersonDays ?? "—"} icon={AlertTriangle} accent="bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200" loading={isLoading} />
-          <KpiCard title="Ta'til" value={data?.kpis.leavePersonDays ?? "—"} icon={CalendarDays} accent="bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200" loading={isLoading} />
+          <KpiCard title={t("davomat.arrived")} value={data?.kpis.presentPersonDays ?? "—"} sub={t("davomat.personDays")} icon={TrendingUp} accent="bg-teal-100 text-teal-700 dark:bg-teal-500/20 dark:text-teal-200" loading={isLoading} />
+          <KpiCard title={t("davomat.latePeople")} value={data?.kpis.latePersonDays ?? "—"} sub={`${data?.kpis.totalLateMinutes ?? 0} ${t("davomat.minutes")}`} icon={Clock} accent="bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200" loading={isLoading} />
+          <KpiCard title={t("davomat.absent")} value={data?.kpis.absentPersonDays ?? "—"} icon={AlertTriangle} accent="bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200" loading={isLoading} />
+          <KpiCard title={t("davomat.leaveShort")} value={data?.kpis.leavePersonDays ?? "—"} icon={CalendarDays} accent="bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200" loading={isLoading} />
           <KpiCard
-            title="Bugun davomat"
+            title={t("davomat.todayAtt")}
             value={data?.today ? `${data.today.attendanceRate}%` : "—"}
-            sub={data?.today ? `${data.today.present} keldi · ${data.today.late} kech` : undefined}
+            sub={data?.today ? `${data.today.present} ${t("davomat.cameLate")} ${data.today.late} ${t("davomat.lateWord")}` : undefined}
             icon={MapPin}
             accent="bg-indigo-100 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-200"
             loading={isLoading}
@@ -661,7 +666,7 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <div className="grid gap-4 xl:grid-cols-3">
-          <Panel title="Kunlik dinamika" className="xl:col-span-2">
+          <Panel title={t("davomat.dailyTrend")} className="xl:col-span-2">
             {isLoading ? (
               <Skeleton className="h-64 w-full rounded-xl" />
             ) : (
@@ -678,15 +683,15 @@ export function DavomatAnalyticsDashboard({
                   <YAxis tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
                   <Legend wrapperStyle={{ color: chart.legend, fontSize: 12 }} />
-                  <Area type="monotone" dataKey="attendanceRate" name="Davomat %" stroke={chart.area} fill={`url(#${fillId})`} strokeWidth={2} />
-                  <Line type="monotone" dataKey="late" name="Kechikish" stroke={chart.lineLate} strokeWidth={2} dot={false} />
-                  <Line type="monotone" dataKey="absent" name="Kelmagan" stroke={chart.lineAbsent} strokeWidth={2} dot={false} />
+                  <Area type="monotone" dataKey="attendanceRate" name={t("davomat.chartAtt")} stroke={chart.area} fill={`url(#${fillId})`} strokeWidth={2} />
+                  <Line type="monotone" dataKey="late" name={t("davomat.chartLate")} stroke={chart.lineLate} strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="absent" name={t("davomat.absent")} stroke={chart.lineAbsent} strokeWidth={2} dot={false} />
                 </AreaChart>
               </ResponsiveContainer>
             )}
           </Panel>
 
-          <Panel title="Holat taqsimoti">
+          <Panel title={t("davomat.statusDist")}>
             {isLoading ? (
               <Skeleton className="mx-auto h-64 w-64 rounded-full" />
             ) : (
@@ -706,7 +711,7 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-          <Panel title="Bo‘limlar bo‘yicha">
+          <Panel title={t("davomat.byDept")}>
             {isLoading ? (
               <Skeleton className="h-56 w-full rounded-xl" />
             ) : (
@@ -716,13 +721,13 @@ export function DavomatAnalyticsDashboard({
                   <XAxis type="number" domain={[0, 100]} tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis type="category" dataKey="name" width={90} tick={{ fill: chart.tick, fontSize: 10 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
-                  <Bar dataKey="attendanceRate" name="Davomat %" fill={chart.barPrimary} radius={[0, 4, 4, 0]} />
+                  <Bar dataKey="attendanceRate" name={t("davomat.chartAtt")} fill={chart.barPrimary} radius={[0, 4, 4, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </Panel>
 
-          <Panel title="Smena bo‘yicha">
+          <Panel title={t("davomat.byShift")}>
             {isLoading ? (
               <Skeleton className="h-56 w-full rounded-xl" />
             ) : (
@@ -732,14 +737,14 @@ export function DavomatAnalyticsDashboard({
                   <XAxis dataKey="label" tick={{ fill: chart.tick, fontSize: 10 }} interval={0} angle={-12} textAnchor="end" height={50} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
-                  <Bar dataKey="attendanceRate" name="Davomat %" fill={chart.barSecondary} radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="late" name="Kechikish" fill={chart.lineLate} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="attendanceRate" name={t("davomat.chartAtt")} fill={chart.barSecondary} radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="late" name={t("davomat.chartLate")} fill={chart.lineLate} radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             )}
           </Panel>
 
-          <Panel title="Oylik solishtirma">
+          <Panel title={t("davomat.monthCompare")}>
             {isLoading ? (
               <Skeleton className="h-56 w-full rounded-xl" />
             ) : (
@@ -749,7 +754,7 @@ export function DavomatAnalyticsDashboard({
                   <XAxis dataKey="label" tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <YAxis domain={[0, 100]} tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
-                  <Line type="monotone" dataKey="attendanceRate" name="Davomat %" stroke={chart.area} strokeWidth={2} dot={false} />
+                  <Line type="monotone" dataKey="attendanceRate" name={t("davomat.chartAtt")} stroke={chart.area} strokeWidth={2} dot={false} />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -757,7 +762,7 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <div className="grid gap-4 lg:grid-cols-12">
-          <Panel title="Lavozim / rol bo‘yicha" className="lg:col-span-3">
+          <Panel title={t("davomat.byRole")} className="lg:col-span-3">
             <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
               {(data?.byRole ?? []).map((r) => (
                 <div key={r.key} className="analytics-inset !py-1.5 !px-2.5">
@@ -766,49 +771,49 @@ export function DavomatAnalyticsDashboard({
                     <span className="shrink-0 tabular-nums text-emerald-600 dark:text-emerald-400">{r.attendanceRate}%</span>
                   </div>
                   <div className="mt-0.5 flex justify-between text-[10px] text-muted-foreground">
-                    <span>{r.headcount} xodim</span>
-                    <span>{r.late} kech</span>
+                    <span>{r.headcount} {t("ui.employees").toLowerCase()}</span>
+                    <span>{r.late} {t("davomat.lateWord")}</span>
                   </div>
                   <Progress value={r.attendanceRate} className="mt-1 h-1" />
                 </div>
               ))}
               {!isLoading && !(data?.byRole ?? []).length ? (
-                <p className="text-sm text-muted-foreground">Ma'lumot yo‘q</p>
+                <p className="text-sm text-muted-foreground">{t("ui.empty")}</p>
               ) : null}
             </div>
           </Panel>
 
-          <Panel title="Filiallar ochilishi" className="lg:col-span-6">
+          <Panel title={t("davomat.branchOpen")} className="lg:col-span-6">
             <BranchOpeningsPanel
               openings={data?.branchOpenings ?? []}
               summary={data?.branchOpeningSummary ?? null}
               loading={isLoading}
               rangeLabel={
-                range.from !== range.to ? `Davr oxirgi kuni · ${formatYmdUz(range.to)}` : undefined
+                range.from !== range.to ? `${t("davomat.periodLastDay")} · ${formatYmdUz(range.to)}` : undefined
               }
             />
           </Panel>
 
-          <Panel title="Ko‘rsatkichlar" className="lg:col-span-3">
+          <Panel title={t("davomat.metrics")} className="lg:col-span-3">
             <div className="space-y-3 text-sm">
               <div className="analytics-inset">
-                <p className="text-muted-foreground">Eng yaxshi kun</p>
+                <p className="text-muted-foreground">{t("davomat.bestDay")}</p>
                 <p className="font-medium text-emerald-600 dark:text-emerald-400">
                   {data?.bestDay ? `${data.bestDay.date} · ${data.bestDay.rate}%` : "—"}
                 </p>
               </div>
               <div className="analytics-inset">
-                <p className="text-muted-foreground">Eng past kun</p>
+                <p className="text-muted-foreground">{t("davomat.worstDay")}</p>
                 <p className="font-medium text-rose-600 dark:text-rose-400">
                   {data?.worstDay ? `${data.worstDay.date} · ${data.worstDay.rate}%` : "—"}
                 </p>
               </div>
               <div className="analytics-inset">
-                <p className="text-muted-foreground">Ishlangan soat (jami)</p>
-                <p className="font-medium">{data?.kpis.totalWorkedHours ?? "—"} soat</p>
+                <p className="text-muted-foreground">{t("davomat.hoursTotal")}</p>
+                <p className="font-medium">{data?.kpis.totalWorkedHours ?? "—"} {t("davomat.hourShort")}</p>
               </div>
               <div className="analytics-inset">
-                <p className="mb-1 text-muted-foreground">Maqsadga erishish</p>
+                <p className="mb-1 text-muted-foreground">{t("davomat.targetReach")}</p>
                 <Progress value={data?.kpis.attendanceRate ?? 0} className="h-2" />
                 <p className="mt-1 text-xs text-muted-foreground">
                   {data?.kpis.attendanceRate ?? 0}% / {data?.kpis.targetRate ?? 95}%
@@ -819,15 +824,15 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title="Top 10 kechikuvchilar" bodyClassName="p-0">
+          <Panel title={t("davomat.topLate")} bodyClassName="p-0">
             <div className="overflow-x-auto">
               <table className="analytics-table w-full text-sm">
                 <thead>
                   <tr>
-                    <th>Xodim</th>
-                    <th>Bo‘lim</th>
-                    <th className="text-right">Kun</th>
-                    <th className="text-right">Daqiqa</th>
+                    <th>{t("ui.employee")}</th>
+                    <th>{t("ui.department")}</th>
+                    <th className="text-right">{t("davomat.col.day")}</th>
+                    <th className="text-right">{t("davomat.col.min")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -844,15 +849,15 @@ export function DavomatAnalyticsDashboard({
             </div>
           </Panel>
 
-          <Panel title="So‘nggi kelishlar" bodyClassName="p-0">
+          <Panel title={t("davomat.recentArrivals")} bodyClassName="p-0">
             <div className="max-h-80 overflow-y-auto overflow-x-auto">
               <table className="analytics-table w-full text-sm">
                 <thead className="sticky top-0 z-10">
                   <tr>
-                    <th>Xodim</th>
-                    <th>Bo‘lim</th>
-                    <th>Vaqt</th>
-                    <th className="text-right">Holat</th>
+                    <th>{t("ui.employee")}</th>
+                    <th>{t("ui.department")}</th>
+                    <th>{t("davomat.col.time")}</th>
+                    <th className="text-right">{t("ui.status")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -881,17 +886,17 @@ export function DavomatAnalyticsDashboard({
           </Panel>
         </div>
 
-        <Panel title="Bo‘limlar jadvali" bodyClassName="p-0">
+        <Panel title={t("davomat.deptTable")} bodyClassName="p-0">
           <div className="overflow-x-auto">
             <table className="analytics-table w-full text-sm">
               <thead>
                 <tr>
-                  <th>Bo‘lim</th>
-                  <th className="text-right">Xodim</th>
-                  <th className="text-right">Kelgan</th>
-                  <th className="text-right">Kech</th>
-                  <th className="text-right">Kelmagan</th>
-                  <th className="text-right">Davomat %</th>
+                  <th>{t("ui.department")}</th>
+                  <th className="text-right">{t("ui.employee")}</th>
+                  <th className="text-right">{t("davomat.arrived")}</th>
+                  <th className="text-right">{t("davomat.lateShort")}</th>
+                  <th className="text-right">{t("davomat.absent")}</th>
+                  <th className="text-right">{t("davomat.chartAtt")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -916,8 +921,9 @@ export function DavomatAnalyticsDashboard({
 
 export default function DavomatAnalyticsPage() {
   const { user } = useAuth();
+  const { t } = useI18n();
   if (!canViewDavomat(user?.role)) {
-    return <div className="p-8 text-center text-muted-foreground">Bu sahifa uchun ruxsat yo‘q.</div>;
+    return <div className="p-8 text-center text-muted-foreground">{t("davomat.noAccess")}</div>;
   }
   return <DavomatAnalyticsDashboard />;
 }

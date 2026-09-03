@@ -25,6 +25,7 @@ import {
   type CoordinatorCoverage,
   type CoverageResponse,
 } from "@/lib/branch-audits-api";
+import { useI18n } from "@/i18n/I18nProvider";
 
 function formatDate(ymd: string | null) {
   if (!ymd) return "—";
@@ -169,6 +170,7 @@ export function CoveragePanel({
   enabled: boolean;
   focusCoordinator?: string;
 }) {
+  const { t } = useI18n();
   const { toast } = useToast();
   const { user } = useAuth();
   const canExport = canExportChecklistStatus(user?.role);
@@ -268,7 +270,7 @@ export function CoveragePanel({
       </div>
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 sm:gap-3">
-        <MiniStat label="Koordinatorlar" value={String(totals?.coordinators ?? "—")} />
+        <MiniStat label={t("checklist.stat.coords")} value={String(totals?.coordinators ?? "—")} />
         <MiniStat label="Jami filial" value={String(totals?.branches ?? "—")} />
         <MiniStat
           label="Kiritilgan"
@@ -290,7 +292,7 @@ export function CoveragePanel({
             </Label>
             <Select value={coordKey} onValueChange={setCoordKey}>
               <SelectTrigger className="h-11 w-full">
-                <SelectValue placeholder="Koordinator" />
+                <SelectValue placeholder={t("checklist.coord")} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Barcha koordinatorlar</SelectItem>
@@ -316,7 +318,7 @@ export function CoveragePanel({
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
-                placeholder="Filial / mudir…"
+                placeholder={t("checklist.branchMudirPh")}
                 className="h-11 pl-9"
                 disabled={coordKey === "all"}
               />

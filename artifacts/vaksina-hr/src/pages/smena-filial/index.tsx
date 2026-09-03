@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { useToast } from "../../hooks/use-toast";
+import { useI18n } from "../../i18n/I18nProvider";
 import { cn } from "../../lib/utils";
 import {
   assignSmenaBranch,
@@ -44,6 +45,7 @@ function CompactList({ children }: { children: React.ReactNode }) {
 
 export default function SmenaFilialPage() {
   const { toast } = useToast();
+  const { t } = useI18n();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ["smena-me"], queryFn: fetchSmenaMe });
   const data = q.data;
@@ -143,8 +145,8 @@ export default function SmenaFilialPage() {
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4 pb-28">
       <div>
-        <h1 className="text-xl font-semibold text-foreground">Smena va filial</h1>
-        <p className="mt-1 text-sm text-muted-foreground">Xodimni tanlang, pastdan filial va smenani belgilang, Saqlash.</p>
+        <h1 className="text-xl font-semibold text-foreground">{t("smena.title")}</h1>
+        <p className="mt-1 text-sm text-muted-foreground">{t("smena.subtitle")}</p>
       </div>
 
       {data.canPickShift ? (
@@ -185,7 +187,7 @@ export default function SmenaFilialPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
-            <SearchBox value={peopleQ} onChange={setPeopleQ} placeholder="Ism yozib qidirish…" />
+            <SearchBox value={peopleQ} onChange={setPeopleQ} placeholder={t("smena.searchName")} />
             <CompactList>
               {people.map((p) => {
                 const on = pickedPersonId === p.id;
@@ -227,7 +229,7 @@ export default function SmenaFilialPage() {
                     <MapPin className="h-3.5 w-3.5" />
                     Filial {pickedBranch ? `· ${pickedBranch.name}` : ""}
                   </p>
-                  <SearchBox value={branchQ} onChange={setBranchQ} placeholder="Filial qidirish…" />
+                  <SearchBox value={branchQ} onChange={setBranchQ} placeholder={t("smena.searchBranch")} />
                   <CompactList>
                     {branches.map(renderBranchRow)}
                     {branches.length === 0 ? (
@@ -256,7 +258,7 @@ export default function SmenaFilialPage() {
                 </div>
               </div>
             ) : (
-              <p className="text-center text-xs text-muted-foreground">Xodimni bosing — pastda filial ochiladi</p>
+              <p className="text-center text-xs text-muted-foreground">{t("smena.pickHint")}</p>
             )}
           </CardContent>
         </Card>
@@ -272,7 +274,7 @@ export default function SmenaFilialPage() {
             <p className="text-xs text-muted-foreground">
               Face ID: <b className="text-foreground">{data.employee?.assignedBranchName || "—"}</b>
             </p>
-            <SearchBox value={branchQ} onChange={setBranchQ} placeholder="Filial qidirish…" />
+            <SearchBox value={branchQ} onChange={setBranchQ} placeholder={t("smena.searchBranch")} />
             <CompactList>{branches.map(renderBranchRow)}</CompactList>
             <div className="grid grid-cols-2 gap-2">
               <Button variant="outline" onClick={() => { setPickedBranchId(data.employee?.assignedBranchId ?? null); setBranchQ(""); }}>

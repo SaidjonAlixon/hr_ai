@@ -26,6 +26,7 @@ import {
   type SettlementLine,
 } from "@/lib/hisobkitob-api";
 import { formatMoney, formatMoneyInput, parseMoney } from "@/lib/money-format";
+import { useI18n } from "@/i18n/I18nProvider";
 
 function CellInput({
   value,
@@ -72,19 +73,21 @@ function roleLabel(p?: string | null) {
 }
 
 function FormulaHint() {
+  const { t } = useI18n();
   return (
     <div className="dept-panel text-[11px] leading-relaxed text-muted-foreground">
-      <p className="font-semibold dept-accent-value">Hisoblash (serverda, barcha lavozimlar)</p>
-      <p className="mt-1">Rejadan ortiq = max(0, savdo − joriy reja). Reja % = savdo / reja × 100.</p>
-      <p>Foiz summasi = savdo × savdo foizi. Reja bonusi faqat reja bajarilsa (aks holda 0).</p>
-      <p>Hisoblangan = fiks + foiz + reja bonusi + KPI. Qo‘lga = max(0, hisoblangan − avans − jarimalar).</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">Fiks Oylikdan keladi va shu yerdan xodim kartochkasiga yoziladi. Savdo yo‘q lavozimda faqat fiks va KPI.</p>
+      <p className="font-semibold dept-accent-value">{t("hisob.formulaTitle")}</p>
+      <p className="mt-1">{t("hisob.formula1")}</p>
+      <p>{t("hisob.formula2")}</p>
+      <p>{t("hisob.formula3")}</p>
+      <p className="mt-1 text-[11px] text-muted-foreground">{t("hisob.formula4")}</p>
     </div>
   );
 }
 
 export default function HisobkitobPage() {
   const { user } = useAuth();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
   const allowed = canViewHisobkitob(user?.role);
   const [month, setMonth] = useState("2026-08");
@@ -99,6 +102,7 @@ export default function HisobkitobPage() {
   const detail = useHisobSheet(sheetId);
   const mut = useHisobMutations();
   const creatingRef = React.useRef(false);
+  const ml = (ym: string) => monthLabelUz(ym, locale);
 
   useEffect(() => {
     const items = sheets.data?.items ?? [];
@@ -108,7 +112,7 @@ export default function HisobkitobPage() {
       if (!creatingRef.current && !mut.create.isPending) {
         creatingRef.current = true;
         mut.create.mutate(
-          { branchName: "Oylik hisob", month },
+          { branchName: t("hisob.sheetName"), month },
           { onSettled: () => { creatingRef.current = false; } },
         );
       }
@@ -116,13 +120,13 @@ export default function HisobkitobPage() {
     }
     creatingRef.current = false;
     if (!sheetId || !items.some((s) => s.id === sheetId)) setSheetId(items[0]!.id);
-  }, [sheets.data, sheets.isLoading, sheets.isFetching, sheetId, month, mut.create]);
+  }, [sheets.data, sheets.isLoading, sheets.isFetching, sheetId, month, mut.create, t]);
 
   if (!allowed) {
     return (
       <div className="mx-auto max-w-lg py-16 text-center">
-        <h1 className="text-xl font-bold">Hisob-kitob</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Faqat admin, direktor va moliyachi ko‘radi.</p>
+        <h1 className="text-xl font-bold">{t("hisob.subtitle")}</h1>
+        <p className="mt-2 text-sm text-muted-foreground">{t("hisob.accessDenied")}</p>
       </div>
     );
   }
@@ -163,7 +167,7 @@ export default function HisobkitobPage() {
   const saveLine = (id: number, body: Record<string, unknown>) => {
     mut.patchLine.mutate(
       { id, body },
-      { onError: (e) => toast({ title: "Saqlanmadi", description: (e as Error).message, variant: "destructive" }) },
+      { onError: (e) => toast({ title: t("common.notSaved"), description: (e as Error).message, variant: "destructive" }) },
     );
   };
 
@@ -173,19 +177,19 @@ export default function HisobkitobPage() {
         <div className="dept-hero-glow" />
         <div className="dept-hero-body flex flex-wrap items-center justify-between gap-3">
           <div>
-            <p className="dept-eyebrow">Moliya · savdo</p>
+            <p className="dept-eyebrow">{t("hisob.finance")}</p>
             <h1 className="dept-title flex items-center gap-2">
-              <Calculator className="h-6 w-6" /> Xodimlar oylik hisobi
+              <Calculator className="h-6 w-6" /> {t("hisob.title")}
             </h1>
             <p className="dept-desc">
-              Savdo, reja, fiks, bonus va jarimalar — barcha lavozimlar. Oylik (KPI) bilan bog‘langan.
+              {t("hisob.desc")}
             </p>
           </div>
           <div className="dept-month-nav">
             <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, -1))}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <span className="min-w-[120px] px-1 text-center text-[13px] font-semibold text-white">{monthLabelUz(month)}</span>
+            <span className="min-w-[120px] px-1 text-center text-[13px] font-semibold text-white">{ml(month)}</span>
             <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => setMonth(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey() && month >= "2026-08"}>
               <ChevronRight className="h-4 w-4" />
             </Button>
@@ -200,18 +204,18 @@ export default function HisobkitobPage() {
       ) : detail.error ? (
         <p className="text-sm text-rose-700">{(detail.error as Error).message}</p>
       ) : !d ? (
-        <p className="dept-empty">{monthLabelUz(month)} uchun ma’lumot yo‘q.</p>
+        <p className="dept-empty">{ml(month)} {t("hisob.empty")}</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 lg:grid-cols-7">
             {[
-              { l: "Xodimlar", v: `${d.lines.length} ta` },
-              { l: `${monthLabelUz(d.month)} reja`, v: formatSom(d.planCurrent) },
-              { l: `${monthLabelUz(shiftMonthKey(d.month, -1))} reja`, v: formatSom(d.planPrev) },
-              { l: "Bir oylik savdo", v: formatSom(d.totals.salesTotal) },
-              { l: "Rejadan ortiq", v: formatSom((d.totals as { overPlanTotal?: number }).overPlanTotal ?? d.totals.overPrev) },
-              { l: `${monthLabelUz(shiftMonthKey(d.month, -1))}ga %`, v: `${d.totals.vsPrevPct}%` },
-              { l: "Qo‘lga / karta", v: formatSom(d.totals.cardTotal) },
+              { l: t("hisob.employees"), v: `${d.lines.length} ${t("hisob.count")}` },
+              { l: `${ml(d.month)} ${t("hisob.plan")}`, v: formatSom(d.planCurrent) },
+              { l: `${ml(shiftMonthKey(d.month, -1))} ${t("hisob.plan")}`, v: formatSom(d.planPrev) },
+              { l: t("hisob.monthSales"), v: formatSom(d.totals.salesTotal) },
+              { l: t("hisob.overPlan"), v: formatSom((d.totals as { overPlanTotal?: number }).overPlanTotal ?? d.totals.overPrev) },
+              { l: `${ml(shiftMonthKey(d.month, -1))}${t("hisob.vsPrev")}`, v: `${d.totals.vsPrevPct}%` },
+              { l: t("hisob.cashCard"), v: formatSom(d.totals.cardTotal) },
             ].map((c) => (
               <div key={c.l} className="dept-kpi !p-3">
                 <p className="dept-kpi-label !mt-0">{c.l}</p>
@@ -226,7 +230,7 @@ export default function HisobkitobPage() {
               <input
                 value={nameQuery}
                 onChange={(e) => setNameQuery(e.target.value)}
-                placeholder="Ism familiya"
+                placeholder={t("hisob.searchName")}
                 className="h-8 w-48 rounded-lg border border-border bg-card pl-7 pr-2 text-sm outline-none focus:ring-1 focus:ring-[#0b3a5c]/30"
               />
             </div>
@@ -235,21 +239,21 @@ export default function HisobkitobPage() {
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
             >
-              <option value="">Barcha lavozimlar</option>
+              <option value="">{t("ui.allPositions")}</option>
               {roles.map((p) => (
                 <option key={p} value={p}>{p}</option>
               ))}
             </select>
             {edit ? (
               <>
-                <span className="text-xs text-muted-foreground">Fiksa</span>
+                <span className="text-xs text-muted-foreground">{t("hisob.fiksa")}</span>
                 <input
                   inputMode="numeric"
                   value={bulkFiks}
                   onChange={(e) => setBulkFiks(formatMoneyInput(e.target.value) || "0")}
                   className="h-8 w-36 rounded-lg border border-border px-2 text-sm tabular-nums"
                 />
-                <span className="text-xs text-muted-foreground">Bonus %</span>
+                <span className="text-xs text-muted-foreground">{t("hisob.bonusPct")}</span>
                 <input
                   value={bulkBonus}
                   onChange={(e) => setBulkBonus(e.target.value)}
@@ -262,7 +266,7 @@ export default function HisobkitobPage() {
                   disabled={mut.applyPosition.isPending || !roleFilter}
                   onClick={() => {
                     if (!roleFilter) {
-                      toast({ title: "Avval lavozim tanlang", variant: "destructive" });
+                      toast({ title: t("hisob.pickPosition"), variant: "destructive" });
                       return;
                     }
                     mut.applyPosition.mutate(
@@ -273,27 +277,27 @@ export default function HisobkitobPage() {
                         bonusPercent: parseMoney(bulkBonus),
                       },
                       {
-                        onSuccess: () => toast({ title: `${roleFilter} uchun yozildi` }),
-                        onError: (e) => toast({ title: "Yozilmadi", description: (e as Error).message, variant: "destructive" }),
+                        onSuccess: () => toast({ title: `${roleFilter} ${t("hisob.writtenFor")}` }),
+                        onError: (e) => toast({ title: t("hisob.notWritten"), description: (e as Error).message, variant: "destructive" }),
                       },
                     );
                   }}
                 >
-                  Lavozimga yozish
+                  {t("ui.writeToPosition")}
                 </Button>
               </>
             ) : null}
             <div className="ml-auto flex flex-wrap gap-2">
               <Button type="button" size="sm" className="h-8" onClick={() => { window.location.href = `/api/hisobkitob/sheets/${d.id}/export`; }}>
-                <Download className="mr-1 h-3.5 w-3.5" /> Excel
+                <Download className="mr-1 h-3.5 w-3.5" /> {t("ui.excel")}
               </Button>
               {d.status !== "approved" ? (
-                <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => mut.approve.mutate(d.id, { onSuccess: () => toast({ title: "Tasdiqlandi" }) })}>
-                  <Lock className="mr-1 h-3.5 w-3.5" /> Tasdiqlash
+                <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => mut.approve.mutate(d.id, { onSuccess: () => toast({ title: t("hisob.approved") }) })}>
+                  <Lock className="mr-1 h-3.5 w-3.5" /> {t("ui.approve")}
                 </Button>
               ) : admin ? (
                 <Button type="button" size="sm" variant="outline" className="h-8" onClick={() => mut.unlock.mutate(d.id)}>
-                  <Unlock className="mr-1 h-3.5 w-3.5" /> Qayta ochish
+                  <Unlock className="mr-1 h-3.5 w-3.5" /> {t("ui.reopen")}
                 </Button>
               ) : null}
             </div>
@@ -305,26 +309,26 @@ export default function HisobkitobPage() {
                 <thead className="sticky top-0 z-10">
                   <tr>
                     {[
-                      { t: "№", a: "center", k: "num" },
-                      { t: "Xodim", a: "left", k: "name" },
-                      { t: "Lavozim", a: "left", k: "role" },
-                      { t: "Telefon", a: "left", k: "phone" },
-                      { t: "Joriy reja", a: "right" },
-                      { t: "Oldingi reja", a: "right" },
-                      { t: "Haqiqiy savdo", a: "right" },
-                      { t: "Rejadan ortiq", a: "right" },
-                      { t: "Reja %", a: "right" },
-                      { t: "Savdo foizi", a: "right" },
-                      { t: "Foiz summasi", a: "right" },
-                      { t: "Fiks maosh", a: "right" },
-                      { t: "Reja bonusi", a: "right" },
-                      { t: "KPI bonus", a: "right" },
-                      { t: "Avans", a: "right" },
-                      { t: "Qayta hisob", a: "right" },
-                      { t: "Vaqt jarimasi", a: "right" },
-                      { t: "Muddat jarimasi", a: "right" },
-                      { t: "Hisoblangan", a: "right" },
-                      { t: "Qo‘lga / karta", a: "right", k: "card" },
+                      { t: t("hisob.col.num"), a: "center", k: "num" },
+                      { t: t("hisob.col.employee"), a: "left", k: "name" },
+                      { t: t("hisob.col.position"), a: "left", k: "role" },
+                      { t: t("hisob.col.phone"), a: "left", k: "phone" },
+                      { t: t("hisob.col.plan"), a: "right" },
+                      { t: t("hisob.col.planPrev"), a: "right" },
+                      { t: t("hisob.col.actual"), a: "right" },
+                      { t: t("hisob.col.overPlan"), a: "right" },
+                      { t: t("hisob.col.planPct"), a: "right" },
+                      { t: t("hisob.col.salesPct"), a: "right" },
+                      { t: t("hisob.col.pctSum"), a: "right" },
+                      { t: t("hisob.col.fixed"), a: "right" },
+                      { t: t("hisob.col.planBonus"), a: "right" },
+                      { t: t("hisob.col.kpiBonus"), a: "right" },
+                      { t: t("hisob.col.advance"), a: "right" },
+                      { t: t("hisob.col.recalc"), a: "right" },
+                      { t: t("hisob.col.timeFine"), a: "right" },
+                      { t: t("hisob.col.expiryFine"), a: "right" },
+                      { t: t("hisob.col.calc"), a: "right" },
+                      { t: t("hisob.cashCard"), a: "right", k: "card" },
                     ].map((h) => (
                       <th
                         key={h.k || h.t}
@@ -408,8 +412,8 @@ export default function HisobkitobPage() {
                 <tfoot className="sticky bottom-0">
                   <tr>
                     <td className="px-1 py-0 text-center">—</td>
-                    <td className="px-1 py-0">Jami</td>
-                    <td className="px-1 py-0 text-[11px] text-muted-foreground">{rows.length} / {d.lines.length} xodim</td>
+                    <td className="px-1 py-0">{t("ui.total")}</td>
+                    <td className="px-1 py-0 text-[11px] text-muted-foreground">{rows.length} / {d.lines.length} {t("hisob.employeesOf")}</td>
                     <td />
                     <td />
                     <td />

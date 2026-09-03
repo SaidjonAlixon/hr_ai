@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useGetCandidate, useGetOffers, useUpdateOffer, useUpdateCandidate, ChecklistItem } from '@workspace/api-client-react';
 import { Link, useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -11,20 +11,25 @@ import { useAuth } from '../../contexts/AuthContext';
 import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateReadOnlyBanner';
 import { canManageCandidate } from '../../lib/candidate-access';
 import { nextStageFormHref } from '../../lib/stage-routes';
-
-const DEFAULT_DOCS: ChecklistItem[] = [
-  { label: 'Pasport nusxasi', completed: false },
-  { label: "Diplom / Ta'lim hujjati", completed: false },
-  { label: 'Mehnat daftarchasi', completed: false },
-  { label: 'Tibbiy ma\'lumotnoma', completed: false },
-  { label: '2 dona 3x4 rasm', completed: false },
-];
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function DocumentsPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
+
+  const defaultDocs = useMemo<ChecklistItem[]>(
+    () => [
+      { label: t('hire.doc.passport'), completed: false },
+      { label: t('hire.doc.diploma'), completed: false },
+      { label: t('hire.doc.workbook'), completed: false },
+      { label: t('hire.doc.medical'), completed: false },
+      { label: t('hire.doc.photo'), completed: false },
+    ],
+    [t],
+  );
 
   const { data: candidate, isLoading } = useGetCandidate(candidateId, { query: { enabled: !!candidateId } });
   const { data: offers, refetch } = useGetOffers({ candidateId });
@@ -33,13 +38,15 @@ export default function DocumentsPage({ params }: { params: { id: string } }) {
   const canEdit = canManageCandidate(user, candidate?.recruiterId);
 
   const offer = offers?.[0];
-  const [docs, setDocs] = useState<ChecklistItem[]>(DEFAULT_DOCS);
+  const [docs, setDocs] = useState<ChecklistItem[]>(defaultDocs);
 
   useEffect(() => {
     if (offer?.documentsChecklist?.length) {
       setDocs(offer.documentsChecklist as ChecklistItem[]);
+    } else {
+      setDocs(defaultDocs);
     }
-  }, [offer]);
+  }, [offer, defaultDocs]);
 
   const toggle = (index: number) => {
     setDocs((prev) => prev.map((d, i) => (i === index ? { ...d, completed: !d.completed } : d)));
@@ -47,7 +54,7 @@ export default function DocumentsPage({ params }: { params: { id: string } }) {
 
   const save = () => {
     if (!offer) {
-      toast({ title: 'Xatolik', description: 'Avval Job Offer yarating', variant: 'destructive' });
+      toast({ title: t('ui.error'), description: t('hire.docsNeedOffer'), variant: 'destructive' });
       return;
     }
     const allDone = docs.every((d) => d.completed);
@@ -60,23 +67,23 @@ export default function DocumentsPage({ params }: { params: { id: string } }) {
               { id: candidateId, data: { stage: 'internship' } },
               {
                 onSuccess: () => {
-                  toast({ title: 'Hujjatlar to\'liq', description: 'Stajirovka bosqichiga o\'tdi' });
+                  toast({ title: t('hire.docsComplete'), description: t('hire.docsToIntern') });
                   setLocation(nextStageFormHref(candidateId, 'documents')!);
                 },
               },
             );
           } else {
-            toast({ title: 'Saqlandi', description: 'Hujjatlar checklisti yangilandi' });
+            toast({ title: t('ui.saved'), description: t('hire.docsSaved') });
             refetch();
           }
         },
-        onError: () => toast({ title: 'Xatolik', description: 'Saqlashda xato', variant: 'destructive' }),
+        onError: () => toast({ title: t('ui.error'), description: t('hire.saveFail'), variant: 'destructive' }),
       },
     );
   };
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div className="p-8">Nomzod topilmadi</div>;
+  if (!candidate) return <div className="p-8">{t('hire.notFound')}</div>;
 
   const doneCount = docs.filter((d) => d.completed).length;
 
@@ -88,17 +95,17 @@ export default function DocumentsPage({ params }: { params: { id: string } }) {
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Hujjatlar</h1>
-          <p className="text-muted-foreground mt-1">{candidate.fullName} — {doneCount}/{docs.length} tayyor</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.docsTitle')}</h1>
+          <p className="text-muted-foreground mt-1">{candidate.fullName} — {doneCount}/{docs.length} {t('hire.docsReady')}</p>
         </div>
       </div>
 
       <fieldset disabled={!canEdit} className="space-y-6 disabled:opacity-80">
       <Card>
-        <CardHeader><CardTitle>Kerakli hujjatlar checklisti</CardTitle></CardHeader>
+        <CardHeader><CardTitle>{t('hire.docsChecklist')}</CardTitle></CardHeader>
         <CardContent className="space-y-3">
           {docs.map((item, index) => (
-            <label key={item.label} className="flex items-start gap-3 p-3 rounded-md border bg-muted/20 cursor-pointer hover:bg-muted/40">
+            <label key={`${item.label}-${index}`} className="flex items-start gap-3 p-3 rounded-md border bg-muted/20 cursor-pointer hover:bg-muted/40">
               <Checkbox checked={item.completed} onCheckedChange={() => toggle(index)} className="mt-0.5" />
               <span className={item.completed ? 'line-through text-muted-foreground' : ''}>{item.label}</span>
             </label>
@@ -107,9 +114,9 @@ export default function DocumentsPage({ params }: { params: { id: string } }) {
       </Card>
 
       <div className="flex justify-end gap-3">
-        <Link href={`/candidates/${candidateId}`}><Button variant="ghost">Bekor</Button></Link>
+        <Link href={`/candidates/${candidateId}`}><Button variant="ghost">{t('ui.cancel')}</Button></Link>
         <Button onClick={save} disabled={!canEdit || updateOffer.isPending || updateCandidate.isPending}>
-          {docs.every((d) => d.completed) ? 'Yakunlash → Stajirovka' : 'Saqlash'}
+          {docs.every((d) => d.completed) ? t('hire.docsFinish') : t('ui.save')}
         </Button>
       </div>
       </fieldset>

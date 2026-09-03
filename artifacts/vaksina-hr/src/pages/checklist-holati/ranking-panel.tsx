@@ -8,6 +8,7 @@ import {
   type CoordinatorRankRow,
   type RankingPeriod,
 } from "@/lib/branch-audits-api";
+import { useI18n } from "@/i18n/I18nProvider";
 
 const PERIOD_LABEL: Record<RankingPeriod, string> = {
   day: "Kunlik",
@@ -54,6 +55,7 @@ function RankRow({
   compact: boolean;
   onOpen?: (coordinatorId: string) => void;
 }) {
+  const { t } = useI18n();
   const body = (
     <>
       <div className="flex items-start gap-3">
@@ -87,11 +89,11 @@ function RankRow({
             <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
               <Factor label="Tashrif" value={String(row.visits)} />
               <Factor label="Ball" value={`${row.avgScore}%`} />
-              <Factor label="Qamrov" value={`${row.coveragePct}%`} />
+              <Factor label={t("checklist.coverage")} value={`${row.coveragePct}%`} />
               <Factor label="GPS" value={`${row.gpsPct}%`} />
               <Factor label="A’lo" value={`${row.excellentPct}%`} />
               <Factor
-                label="Filial"
+                label={t("ui.branch")}
                 value={
                   row.assignedBranches > 0
                     ? `${row.coveredBranches}/${row.assignedBranches}`

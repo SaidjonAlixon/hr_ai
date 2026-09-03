@@ -55,28 +55,29 @@ import {
   useReviziyaMutations,
   useReviziyaTransit,
 } from "@/lib/reviziya-api";
+import { useI18n } from "../../i18n/I18nProvider";
 
 const TABS = [
-  { id: "dash", label: "Boshqaruv", icon: LayoutDashboard },
-  { id: "docs", label: "Hujjatlar", icon: FileStack },
-  { id: "new", label: "Yangi forma", icon: Plus },
-  { id: "cash", label: "Yo‘ldagi pul", icon: Truck },
-  { id: "dict", label: "Spravochnik", icon: BookOpen },
-  { id: "mobile", label: "Mobil", icon: Smartphone },
+  { id: "dash", labelKey: "reviziya.tab.dash", icon: LayoutDashboard },
+  { id: "docs", labelKey: "reviziya.tab.docs", icon: FileStack },
+  { id: "new", labelKey: "reviziya.tab.new", icon: Plus },
+  { id: "cash", labelKey: "reviziya.tab.cash", icon: Truck },
+  { id: "dict", labelKey: "reviziya.tab.dict", icon: BookOpen },
+  { id: "mobile", labelKey: "reviziya.tab.mobile", icon: Smartphone },
 ] as const;
 
-const STATUS_UZ: Record<string, string> = {
-  planned: "Rejalashtirilgan",
-  en_route: "Yo‘lda",
-  inspecting: "Tekshiruvda",
-  reconciling: "Solishtirish",
-  signed: "Imzolangan",
-  accounting_approved: "Buxgalteriya tasdig‘i",
-  closed: "Yopilgan",
-  awaiting_explanation: "Tushuntirish kutilmoqda",
-  sb_review: "SB tekshiruvi",
-  recovery: "Undirish",
-  storno: "Storno",
+const STATUS_KEYS: Record<string, string> = {
+  planned: "reviziya.status.planned",
+  en_route: "reviziya.status.en_route",
+  inspecting: "reviziya.status.inspecting",
+  reconciling: "reviziya.status.reconciling",
+  signed: "reviziya.status.signed",
+  accounting_approved: "reviziya.status.accounting_approved",
+  closed: "reviziya.status.closed",
+  awaiting_explanation: "reviziya.status.awaiting_explanation",
+  sb_review: "reviziya.status.sb_review",
+  recovery: "reviziya.status.recovery",
+  storno: "reviziya.status.storno",
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -104,15 +105,15 @@ const DOC_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   protocol: Gavel,
 };
 
-const DOC_HINT: Record<string, string> = {
-  assignment: "Rejali yoki navbatdan tashqari topshiriq",
-  inventory_act: "Tovar: shtrix, hisob vs haqiqiy, farq",
-  cash_act: "Smena tushumi, kupyuralar, farq",
-  cash_receipt: "Filialdan revizor balansiga",
-  cash_handover: "Markaziy kassa / bankka",
-  goods_transfer: "Muddati o‘tgan va brak",
-  explanation: "Filial mas’ulidan tushuntirish",
-  protocol: "Yakuniy bayonnoma",
+const DOC_HINT_KEYS: Record<string, string> = {
+  assignment: "reviziya.hint.assignment",
+  inventory_act: "reviziya.hint.inventory_act",
+  cash_act: "reviziya.hint.cash_act",
+  cash_receipt: "reviziya.hint.cash_receipt",
+  cash_handover: "reviziya.hint.cash_handover",
+  goods_transfer: "reviziya.hint.goods_transfer",
+  explanation: "reviziya.hint.explanation",
+  protocol: "reviziya.hint.protocol",
 };
 
 function money(n: number) {
@@ -120,6 +121,7 @@ function money(n: number) {
 }
 
 export default function ReviziyaPage() {
+  const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -166,8 +168,8 @@ export default function ReviziyaPage() {
       <div className="flex min-h-[50vh] items-center justify-center p-8">
         <div className="max-w-sm rounded-2xl border bg-card p-8 text-center shadow-sm">
           <Lock className="mx-auto h-8 w-8 text-muted-foreground" />
-          <p className="mt-3 font-semibold text-foreground">Kirish cheklangan</p>
-          <p className="mt-1 text-sm text-muted-foreground">Reviziya bo‘limi faqat tegishli rollar uchun.</p>
+          <p className="mt-3 font-semibold text-foreground">{t("reviziya.noAccess")}</p>
+          <p className="mt-1 text-sm text-muted-foreground">{t("reviziya.noAccessHint")}</p>
         </div>
       </div>
     );
@@ -210,14 +212,14 @@ export default function ReviziyaPage() {
     try {
       if (!navigator.onLine) {
         enqueueOffline(body);
-        toast({ title: "Offline navbatga qo‘yildi" });
+        toast({ title: t("reviziya.offlineQueued") });
         return;
       }
       const created: { docNo?: string; id?: number } = await mut.create.mutateAsync(body);
-      toast({ title: "Hujjat yaratildi", description: created.docNo });
+      toast({ title: t("reviziya.docCreated"), description: created.docNo });
       if (created.id) setLocation(`/reviziya/hujjat/${created.id}`);
     } catch (e: unknown) {
-      toast({ title: e instanceof Error ? e.message : "Xatolik", variant: "destructive" });
+      toast({ title: e instanceof Error ? e.message : t("ui.error"), variant: "destructive" });
     }
   };
 
@@ -232,11 +234,10 @@ export default function ReviziyaPage() {
         <div className="dept-hero-body">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="dept-eyebrow">Ichki audit · yig‘uv</p>
-              <h1 className="dept-title">Reviziya bo‘limi</h1>
+              <p className="dept-eyebrow">{t("reviziya.eyebrow")}</p>
+              <h1 className="dept-title">{t("reviziya.title")}</h1>
               <p className="dept-desc">
-                Filial qoldig‘i, inventarizatsiya, kassa va inkassatsiya. Hujjatlar: rahbar → bosh buxgalter.
-                Taqiq: narx, vozvrat, qo‘lda qoldiq, o‘chirish — faqat storno.
+                {t("reviziya.desc")}
               </p>
             </div>
             <div className="flex flex-col items-end gap-2">
@@ -247,28 +248,28 @@ export default function ReviziyaPage() {
                 <span className="dept-badge">
                 {isReviziyaRole(user?.role)
                   ? user?.role === "reviziya_rahbar"
-                    ? "Bo‘lim rahbari"
-                    : "Revizor-yig‘uvchi"
+                    ? t("reviziya.role.head")
+                    : t("reviziya.role.revizor")
                   : userRoleLabel(user?.role)}
               </span>
               </div>
               <div className="flex gap-2 text-[11px] text-white/70">
-                <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">O‘chirish ✕</span>
-                <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">Storno ✓</span>
+                <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">{t("reviziya.badge.delete")}</span>
+                <span className="rounded-md bg-black/25 px-2 py-1 backdrop-blur-sm">{t("reviziya.badge.storno")}</span>
               </div>
             </div>
           </div>
 
           <div className="dept-tabs">
-            {TABS.map((t) => (
+            {TABS.map((tabItem) => (
               <button
-                key={t.id}
+                key={tabItem.id}
                 type="button"
-                onClick={() => setTab(t.id)}
-                className={cn("dept-tab", tab === t.id ? "dept-tab--active" : "dept-tab--idle")}
+                onClick={() => setTab(tabItem.id)}
+                className={cn("dept-tab", tab === tabItem.id ? "dept-tab--active" : "dept-tab--idle")}
               >
-                <t.icon className="h-3.5 w-3.5" />
-                {t.label}
+                <tabItem.icon className="h-3.5 w-3.5" />
+                {t(tabItem.labelKey)}
               </button>
             ))}
           </div>
@@ -280,54 +281,54 @@ export default function ReviziyaPage() {
           <div className="space-y-5">
             <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
               <MetricCard
-                label="Bugun yopilgan"
+                label={t("reviziya.metric.closedToday")}
                 value={dash.isLoading ? null : d?.daily?.closedCount ?? 0}
-                hint="Tekshiruvlar"
+                hint={t("reviziya.metric.inspections")}
                 icon={CheckCircle2}
                 tone="emerald"
               />
               <MetricCard
-                label="Yig‘ilgan (kun)"
+                label={t("reviziya.metric.collected")}
                 value={dash.isLoading ? null : money(d?.daily?.collected || 0)}
-                hint="so‘m"
+                hint={t("reviziya.metric.som")}
                 icon={Banknote}
                 tone="sky"
               />
               <MetricCard
-                label="Yo‘ldagi pul"
+                label={t("reviziya.metric.inTransit")}
                 value={dash.isLoading ? null : money(d?.inTransit?.amount || 0)}
-                hint={d?.inTransit?.overdue ? `${d.inTransit.overdue} ta 4 soatdan oshgan` : "revizor balansida"}
+                hint={d?.inTransit?.overdue ? `${d.inTransit.overdue} ${t("reviziya.metric.overdue")}` : t("reviziya.metric.onBalance")}
                 icon={Truck}
                 tone={d?.inTransit?.overdue ? "amber" : "violet"}
                 warn={!!d?.inTransit?.overdue}
                 onClick={() => setTab("cash")}
               />
               <MetricCard
-                label="Nazorat"
+                label={t("reviziya.metric.watch")}
                 value={dash.isLoading ? null : d?.watchlist?.length ?? 0}
-                hint="ketma-ket kamomad"
+                hint={t("reviziya.metric.watchHint")}
                 icon={AlertTriangle}
                 tone="rose"
               />
               <MetricCard
-                label="Yaroqlilik 90/60/30"
+                label={t("reviziya.metric.expiry")}
                 value={dash.isLoading ? null : `${d?.expiry?.d90 ?? 0} / ${d?.expiry?.d60 ?? 0} / ${d?.expiry?.d30 ?? 0}`}
-                hint="kun qolgan tovar"
+                hint={t("reviziya.metric.expiryHint")}
                 icon={CalendarDays}
                 tone="indigo"
               />
             </div>
 
             <div className="grid gap-3 md:grid-cols-3">
-              <MiniStat icon={Clock} title="Tekshiruvda" value={d?.daily?.inspecting ?? 0} />
-              <MiniStat icon={FileText} title="Haftalik hujjat" value={d?.weekly?.docs ?? 0} />
-              <MiniStat icon={Ban} title="O‘tkazilmagan reja" value={d?.missedPlan ?? 0} />
+              <MiniStat icon={Clock} title={t("reviziya.mini.inspecting")} value={d?.daily?.inspecting ?? 0} />
+              <MiniStat icon={FileText} title={t("reviziya.mini.weekly")} value={d?.weekly?.docs ?? 0} />
+              <MiniStat icon={Ban} title={t("reviziya.mini.missed")} value={d?.missedPlan ?? 0} />
             </div>
 
             <div className="grid gap-4 lg:grid-cols-2">
               <Panel
-                title="Filiallar reytingi"
-                subtitle="Kamomad summasi — oylik"
+                title={t("reviziya.panel.ranking")}
+                subtitle={t("reviziya.panel.rankingSub")}
                 icon={Trophy}
               >
                 {dash.isLoading ? (
@@ -358,10 +359,10 @@ export default function ReviziyaPage() {
                     })}
                   </div>
                 ) : (
-                  <Empty hint="Hali kamomad statistikasi yo‘q" />
+                  <Empty hint={t("reviziya.panel.rankingEmpty")} />
                 )}
               </Panel>
-              <Panel title="Revizorlar yuklamasi" subtitle="Hujjat soni" icon={Users}>
+              <Panel title={t("reviziya.panel.load")} subtitle={t("reviziya.panel.loadSub")} icon={Users}>
                 {dash.isLoading ? (
                   <Skeleton className="h-32" />
                 ) : (d?.revizorLoad || []).length ? (
@@ -379,12 +380,12 @@ export default function ReviziyaPage() {
                     ))}
                   </div>
                 ) : (
-                  <Empty hint="Hali yuklama yo‘q" />
+                  <Empty hint={t("reviziya.panel.loadEmpty")} />
                 )}
               </Panel>
             </div>
 
-            <Panel title="Ketma-ket kamomad — alohida nazorat" subtitle="Bir filialda 2 marta ketma-ket" icon={AlertTriangle}>
+            <Panel title={t("reviziya.panel.watch")} subtitle={t("reviziya.panel.watchSub")} icon={AlertTriangle}>
               {(d?.watchlist || []).length ? (
                 <div className="grid gap-2 sm:grid-cols-2">
                   {(d.watchlist as Array<{ id: number; branchName: string; reason: string }>).map((w) => (
@@ -398,21 +399,21 @@ export default function ReviziyaPage() {
                   ))}
                 </div>
               ) : (
-                <Empty hint="Nazorat ro‘yxati hozircha bo‘sh — bu yaxshi belgi." />
+                <Empty hint={t("reviziya.panel.watchEmpty")} />
               )}
             </Panel>
 
             <div className="rounded-2xl border border-violet-100 bg-gradient-to-r from-violet-50 to-slate-50 p-4">
-              <p className="text-sm font-semibold text-foreground">Status oqimi</p>
+              <p className="text-sm font-semibold text-foreground">{t("reviziya.flowTitle")}</p>
               <div className="mt-3 flex flex-wrap items-center gap-1.5 text-[11px]">
-                {["Rejalashtirilgan", "Yo‘lda", "Tekshiruvda", "Solishtirish", "Imzolangan", "Buxgalteriya", "Yopilgan"].map((s, i) => (
+                {[t("reviziya.status.planned"), t("reviziya.status.en_route"), t("reviziya.status.inspecting"), t("reviziya.status.reconciling"), t("reviziya.status.signed"), t("reviziya.flow.accounting"), t("reviziya.status.closed")].map((s, i) => (
                   <React.Fragment key={s}>
                     {i > 0 ? <ArrowRight className="h-3 w-3 text-muted-foreground" /> : null}
                     <span className="rounded-full bg-card px-2.5 py-1 font-medium text-foreground shadow-sm">{s}</span>
                   </React.Fragment>
                 ))}
               </div>
-              <p className="mt-3 text-xs text-muted-foreground">Kamomad: Tushuntirish kutilmoqda → SB tekshiruvi → Undirish / hisobdan chiqarish</p>
+              <p className="mt-3 text-xs text-muted-foreground">{t("reviziya.flowShortage")}</p>
             </div>
           </div>
         )}
@@ -422,22 +423,22 @@ export default function ReviziyaPage() {
             <div className="flex flex-wrap gap-2 rounded-2xl border bg-card p-3 shadow-sm">
               <div className="relative min-w-[200px] flex-1">
                 <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input className="border-border pl-9" placeholder="Raqam, filial, mas’ul…" value={q} onChange={(e) => setQ(e.target.value)} />
+                <Input className="border-border pl-9" placeholder={t("reviziya.searchDocs")} value={q} onChange={(e) => setQ(e.target.value)} />
               </div>
               <select
                 className="rounded-lg border border-border bg-card px-3 py-2 text-sm"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
               >
-                <option value="">Barcha turlar</option>
-                {(meta.data?.docTypes || []).map((t: { value: string; label: string }) => (
-                  <option key={t.value} value={t.value}>
-                    {t.label}
+                <option value="">{t("reviziya.allTypes")}</option>
+                {(meta.data?.docTypes || []).map((dt: { value: string; label: string }) => (
+                  <option key={dt.value} value={dt.value}>
+                    {dt.label}
                   </option>
                 ))}
               </select>
               <Button onClick={() => setTab("new")}>
-                <Plus className="h-4 w-4" /> Yangi
+                <Plus className="h-4 w-4" /> {t("reviziya.new")}
               </Button>
             </div>
             <div className="grid gap-3">
@@ -453,9 +454,9 @@ export default function ReviziyaPage() {
                         <div className="min-w-0">
                           <p className="font-semibold text-foreground">{row.docNo}</p>
                           <p className="truncate text-xs text-muted-foreground">
-                            {meta.data?.docTypes?.find((t: { value: string }) => t.value === row.docType)?.label || row.docType}
+                            {meta.data?.docTypes?.find((dt: { value: string }) => dt.value === row.docType)?.label || row.docType}
                             {" · "}
-                            {row.branchName || "Filial belgilanmagan"}
+                            {row.branchName || t("reviziya.noBranch")}
                           </p>
                         </div>
                       </div>
@@ -464,7 +465,7 @@ export default function ReviziyaPage() {
                           <span className="hidden text-xs font-medium text-rose-600 sm:block">{money(row.shortageAmount)}</span>
                         ) : null}
                         <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", STATUS_TONE[row.status] || "bg-slate-100")}>
-                          {STATUS_UZ[row.status] || row.status}
+                          {t(STATUS_KEYS[row.status] || row.status)}
                         </span>
                       </div>
                     </div>
@@ -472,7 +473,7 @@ export default function ReviziyaPage() {
                 );
               })}
               {!docs.data?.length ? (
-                <Empty hint="Hujjat yo‘q. «Yangi forma»dan birinchi dalolatnomani oching." />
+                <Empty hint={t("reviziya.docsEmpty")} />
               ) : null}
             </div>
           </div>
@@ -480,16 +481,16 @@ export default function ReviziyaPage() {
 
         {tab === "new" && (
           <div className="space-y-4">
-            <p className="text-sm text-muted-foreground">Hujjat turini tanlang — har biri alohida forma.</p>
+            <p className="text-sm text-muted-foreground">{t("reviziya.pickType")}</p>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-              {(meta.data?.docTypes || []).map((t: { value: string; label: string }) => {
-                const Icon = DOC_ICONS[t.value] || FileText;
-                const active = form.docType === t.value;
+              {(meta.data?.docTypes || []).map((dt: { value: string; label: string }) => {
+                const Icon = DOC_ICONS[dt.value] || FileText;
+                const active = form.docType === dt.value;
                 return (
                   <button
-                    key={t.value}
+                    key={dt.value}
                     type="button"
-                    onClick={() => setForm({ ...form, docType: t.value })}
+                    onClick={() => setForm({ ...form, docType: dt.value })}
                     className={cn(
                       "rounded-2xl border p-3 text-left transition",
                       active
@@ -498,23 +499,23 @@ export default function ReviziyaPage() {
                     )}
                   >
                     <Icon className={cn("h-5 w-5", active ? "text-violet-700" : "text-muted-foreground")} />
-                    <p className="mt-2 text-[13px] font-semibold leading-snug text-foreground">{t.label}</p>
-                    <p className="mt-0.5 text-[11px] text-muted-foreground">{DOC_HINT[t.value]}</p>
+                    <p className="mt-2 text-[13px] font-semibold leading-snug text-foreground">{dt.label}</p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">{t(DOC_HINT_KEYS[dt.value] || "")}</p>
                   </button>
                 );
               })}
             </div>
 
             <div className="rounded-2xl border bg-card p-5 shadow-sm">
-              <p className="mb-4 text-sm font-semibold text-foreground">Asosiy maydonlar</p>
+              <p className="mb-4 text-sm font-semibold text-foreground">{t("reviziya.mainFields")}</p>
               <div className="grid gap-3 sm:grid-cols-2">
-                <Field label="Filial">
+                <Field label={t("reviziya.field.branch")}>
                   <select
                     className="w-full rounded-lg border px-3 py-2 text-sm"
                     value={form.branchName}
                     onChange={(e) => setForm({ ...form, branchName: e.target.value })}
                   >
-                    <option value="">Tanlang</option>
+                    <option value="">{t("reviziya.pick")}</option>
                     {(branches.data || []).map((b) => (
                       <option key={b.id} value={b.branchName}>
                         {b.branchName}
@@ -522,42 +523,42 @@ export default function ReviziyaPage() {
                     ))}
                   </select>
                 </Field>
-                <Field label="Sana / vaqt">
+                <Field label={t("reviziya.field.date")}>
                   <Input type="date" value={form.plannedDate} onChange={(e) => setForm({ ...form, plannedDate: e.target.value })} />
                 </Field>
-                <Field label="Ishtirokchi mas’ul">
-                  <Input value={form.responsibleName} onChange={(e) => setForm({ ...form, responsibleName: e.target.value })} placeholder="Filial mudiri" />
+                <Field label={t("reviziya.field.responsible")}>
+                  <Input value={form.responsibleName} onChange={(e) => setForm({ ...form, responsibleName: e.target.value })} placeholder={t("reviziya.ph.manager")} />
                 </Field>
                 {form.docType === "assignment" && (
-                  <Field label="Reja turi">
+                  <Field label={t("reviziya.field.planKind")}>
                     <select
                       className="w-full rounded-lg border px-3 py-2 text-sm"
                       value={form.assignmentKind}
                       onChange={(e) => setForm({ ...form, assignmentKind: e.target.value })}
                     >
-                      <option value="planned">Rejali</option>
-                      <option value="unplanned">Navbatdan tashqari</option>
+                      <option value="planned">{t("reviziya.plan.planned")}</option>
+                      <option value="unplanned">{t("reviziya.plan.unplanned")}</option>
                     </select>
                   </Field>
                 )}
                 {(form.docType === "inventory_act" || form.docType === "goods_transfer") && (
                   <>
-                    <Field label="Shtrix-kod">
+                    <Field label={t("reviziya.field.barcode")}>
                       <Input value={form.barcode} onChange={(e) => setForm({ ...form, barcode: e.target.value })} />
                     </Field>
-                    <Field label="Hisobdagi qoldiq">
+                    <Field label={t("reviziya.field.bookQty")}>
                       <Input value={form.bookQty} onChange={(e) => setForm({ ...form, bookQty: e.target.value })} />
                     </Field>
-                    <Field label="Haqiqiy qoldiq">
+                    <Field label={t("reviziya.field.actualQty")}>
                       <Input value={form.actualQty} onChange={(e) => setForm({ ...form, actualQty: e.target.value })} />
                     </Field>
-                    <Field label="Tan narx (faqat o‘qish)">
+                    <Field label={t("reviziya.field.cost")}>
                       <Input value={form.costPrice} onChange={(e) => setForm({ ...form, costPrice: e.target.value })} />
                     </Field>
-                    <Field label="Sotuv narxi (o‘zgarmaydi)">
+                    <Field label={t("reviziya.field.sale")}>
                       <Input value={form.salePrice} onChange={(e) => setForm({ ...form, salePrice: e.target.value })} />
                     </Field>
-                    <Field label="Sabab kodi">
+                    <Field label={t("reviziya.field.reason")}>
                       <select
                         className="w-full rounded-lg border px-3 py-2 text-sm"
                         value={form.reasonCode}
@@ -571,55 +572,55 @@ export default function ReviziyaPage() {
                       </select>
                     </Field>
                     <div className="rounded-xl bg-muted p-3 text-sm sm:col-span-2">
-                      Farq: <b>{invDiff}</b> dona · summa (sotuv):{" "}
-                      <b>{money(invDiff * (Number(form.salePrice) || 0))}</b> · tan:{" "}
+                      {t("reviziya.diff")} <b>{invDiff}</b> {t("reviziya.diffPcs")}{" "}
+                      <b>{money(invDiff * (Number(form.salePrice) || 0))}</b> {t("reviziya.diffCost")}{" "}
                       <b>{money(invDiff * (Number(form.costPrice) || 0))}</b>
                     </div>
                   </>
                 )}
                 {form.docType === "cash_act" && (
                   <>
-                    <Field label="Tizim bo‘yicha tushum">
+                    <Field label={t("reviziya.field.systemCash")}>
                       <Input value={form.systemCash} onChange={(e) => setForm({ ...form, systemCash: e.target.value })} />
                     </Field>
-                    <Field label="Kassadagi naqd">
+                    <Field label={t("reviziya.field.actualCash")}>
                       <Input value={form.actualCash} onChange={(e) => setForm({ ...form, actualCash: e.target.value })} />
                     </Field>
                     <div className="rounded-xl bg-muted p-3 text-sm sm:col-span-2">
-                      Kassa farqi: <b className={cashDiff < 0 ? "text-rose-600" : "text-emerald-700"}>{money(cashDiff)}</b> so‘m
+                      {t("reviziya.cashDiff")} <b className={cashDiff < 0 ? "text-rose-600" : "text-emerald-700"}>{money(cashDiff)}</b> {t("reviziya.metric.som")}
                     </div>
                   </>
                 )}
                 {(form.docType === "cash_receipt" || form.docType === "cash_handover") && (
                   <>
-                    <Field label="Summa">
+                    <Field label={t("reviziya.field.amount")}>
                       <Input value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
                     </Field>
-                    <Field label="Marshrut">
+                    <Field label={t("reviziya.field.route")}>
                       <Input value={form.route} onChange={(e) => setForm({ ...form, route: e.target.value })} />
                     </Field>
-                    <Field label="Kim topshirdi">
+                    <Field label={t("reviziya.field.handed")}>
                       <Input value={form.handedBy} onChange={(e) => setForm({ ...form, handedBy: e.target.value })} />
                     </Field>
-                    <Field label="Kim qabul qildi">
+                    <Field label={t("reviziya.field.received")}>
                       <Input value={form.receivedBy} onChange={(e) => setForm({ ...form, receivedBy: e.target.value })} />
                     </Field>
                     {form.docType === "cash_receipt" ? (
                       <p className="text-xs text-amber-800 sm:col-span-2">
-                        Bu summa filial kassasidan chiqib, markazga yetmaguncha <b>revizor balansida</b> («yo‘ldagi pul») turadi.
+                        {t("reviziya.cashReceiptHint")}
                       </p>
                     ) : null}
                   </>
                 )}
-                <Field label="Izoh" className="sm:col-span-2">
+                <Field label={t("reviziya.field.note")} className="sm:col-span-2">
                   <Input value={form.note} onChange={(e) => setForm({ ...form, note: e.target.value })} />
                 </Field>
               </div>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
-                <p className="text-xs text-muted-foreground">Yopilgandan keyin tahrir imkonsiz. O‘chirish o‘rniga storno.</p>
+                <p className="text-xs text-muted-foreground">{t("reviziya.saveHint")}</p>
                 <Button onClick={createDoc} disabled={mut.create.isPending} className="bg-violet-700 hover:bg-violet-800">
                   <Plus className="h-4 w-4" />
-                  Hujjatni saqlash
+                  {t("reviziya.saveDoc")}
                 </Button>
               </div>
             </div>
@@ -629,9 +630,9 @@ export default function ReviziyaPage() {
         {tab === "cash" && (
           <div className="space-y-4">
             <div className="grid gap-3 sm:grid-cols-3">
-              <MetricCard label="Ochiq" value={openTransit.length} hint="revizor zimmasida" icon={CircleDot} tone="violet" />
-              <MetricCard label="Jami yo‘lda" value={money(openTransit.reduce((s: number, t: { amount?: number }) => s + Number(t.amount || 0), 0))} hint="so‘m" icon={Banknote} tone="sky" />
-              <MetricCard label="4 soatdan oshgan" value={overdueTransit.length} hint="rahbariyat ogohlantiriladi" icon={Clock} tone="amber" warn={overdueTransit.length > 0} />
+              <MetricCard label={t("reviziya.cash.open")} value={openTransit.length} hint={t("reviziya.cash.openHint")} icon={CircleDot} tone="violet" />
+              <MetricCard label={t("reviziya.cash.total")} value={money(openTransit.reduce((s: number, t: { amount?: number }) => s + Number(t.amount || 0), 0))} hint={t("reviziya.metric.som")} icon={Banknote} tone="sky" />
+              <MetricCard label={t("reviziya.cash.over4")} value={overdueTransit.length} hint={t("reviziya.cash.over4Hint")} icon={Clock} tone="amber" warn={overdueTransit.length > 0} />
             </div>
             <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
               <div className="flex items-center gap-3 border-b bg-gradient-to-r from-violet-50 to-white px-5 py-4">
@@ -639,8 +640,8 @@ export default function ReviziyaPage() {
                   <Truck className="h-5 w-5" />
                 </span>
                 <div>
-                  <p className="font-semibold text-foreground">Yo‘ldagi pul hisobi</p>
-                  <p className="text-xs text-muted-foreground">Filial kassasi → revizor → markaziy kassa. Oraliqda mas’uliyat aniq.</p>
+                  <p className="font-semibold text-foreground">{t("reviziya.cash.title")}</p>
+                  <p className="text-xs text-muted-foreground">{t("reviziya.cash.sub")}</p>
                 </div>
               </div>
               {(transit.data || []).length ? (
@@ -653,27 +654,27 @@ export default function ReviziyaPage() {
                     status: string;
                     overdue?: boolean;
                     routeNote?: string;
-                  }>).map((t) => (
-                    <div key={t.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
+                  }>).map((tr) => (
+                    <div key={tr.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                       <div>
-                        <p className="text-lg font-semibold tabular-nums text-foreground">{money(t.amount)} <span className="text-sm font-normal text-muted-foreground">so‘m</span></p>
+                        <p className="text-lg font-semibold tabular-nums text-foreground">{money(tr.amount)} <span className="text-sm font-normal text-muted-foreground">{t("reviziya.metric.som")}</span></p>
                         <p className="text-xs text-muted-foreground">
-                          {t.branchName || "Filial"} · {t.hoursOpen} soat · {t.routeNote || "marshrut"}
+                          {tr.branchName || t("ui.branch")} · {tr.hoursOpen} {t("reviziya.cash.hours")} · {tr.routeNote || t("reviziya.cash.route")}
                         </p>
                         <div className="mt-2 h-1.5 w-48 overflow-hidden rounded-full bg-slate-100">
                           <div
-                            className={cn("h-full rounded-full", t.overdue ? "bg-amber-500" : "bg-violet-500")}
-                            style={{ width: `${Math.min(100, (t.hoursOpen / 4) * 100)}%` }}
+                            className={cn("h-full rounded-full", tr.overdue ? "bg-amber-500" : "bg-violet-500")}
+                            style={{ width: `${Math.min(100, (tr.hoursOpen / 4) * 100)}%` }}
                           />
                         </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">4 soatlik limit</p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">{t("reviziya.cash.limit")}</p>
                       </div>
-                      {t.status === "open" ? (
-                        <Button size="sm" className="bg-violet-700" onClick={() => mut.handover.mutate(t.id)}>
-                          Markazga topshirildi
+                      {tr.status === "open" ? (
+                        <Button size="sm" className="bg-violet-700" onClick={() => mut.handover.mutate(tr.id)}>
+                          {t("reviziya.cash.handover")}
                         </Button>
                       ) : (
-                        <Badge className="bg-emerald-100 text-emerald-800">Markazda</Badge>
+                        <Badge className="bg-emerald-100 text-emerald-800">{t("reviziya.cash.atCenter")}</Badge>
                       )}
                     </div>
                   ))}
@@ -683,12 +684,12 @@ export default function ReviziyaPage() {
                   <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-violet-50">
                     <Truck className="h-8 w-8 text-violet-400" />
                   </div>
-                  <p className="mt-4 font-semibold text-foreground">Ochiq qoldiq yo‘q</p>
+                  <p className="mt-4 font-semibold text-foreground">{t("reviziya.cash.emptyTitle")}</p>
                   <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
-                    Naqd qabul qilish hujjati yaratilganda pul avtomatik revizor balansiga tushadi. Markazga topshirilguncha shu yerda turadi.
+                    {t("reviziya.cash.emptyHint")}
                   </p>
                   <Button className="mt-4" variant="secondary" onClick={() => { setForm((f) => ({ ...f, docType: "cash_receipt" })); setTab("new"); }}>
-                    Qabul hujjati ochish
+                    {t("reviziya.cash.openReceipt")}
                   </Button>
                 </div>
               )}
@@ -699,9 +700,9 @@ export default function ReviziyaPage() {
         {tab === "dict" && (
           <div className="grid gap-4 md:grid-cols-3">
             {[
-              { kind: "shortage_reason", title: "Kamomad sabablari", desc: "Sanoq, sotuv, o‘g‘irlik, brak, muddat, hujjatsiz" },
-              { kind: "violation", title: "Buzilish turlari", desc: "Statistika klassifikatori" },
-              { kind: "product_category", title: "Tovar kategoriyalari", desc: "Hisobot kesimi" },
+              { kind: "shortage_reason", title: t("reviziya.dict.shortage"), desc: t("reviziya.dict.shortageDesc") },
+              { kind: "violation", title: t("reviziya.dict.violation"), desc: t("reviziya.dict.violationDesc") },
+              { kind: "product_category", title: t("reviziya.dict.category"), desc: t("reviziya.dict.categoryDesc") },
             ].map((block) => (
               <Panel key={block.kind} title={block.title} subtitle={block.desc} icon={BookOpen}>
                 <div className="space-y-1.5">
@@ -727,20 +728,20 @@ export default function ReviziyaPage() {
             }}
             onGps={() => {
               if (!navigator.geolocation) {
-                toast({ title: "GPS yo‘q", variant: "destructive" });
+                toast({ title: t("reviziya.gpsMissing"), variant: "destructive" });
                 return;
               }
               navigator.geolocation.getCurrentPosition(
-                (p) => toast({ title: "GPS check-in", description: `${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}` }),
-                () => toast({ title: "GPS olinmadi", variant: "destructive" }),
+                (p) => toast({ title: t("reviziya.gpsOk"), description: `${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}` }),
+                () => toast({ title: t("reviziya.gpsFail"), variant: "destructive" }),
               );
             }}
             onFlush={async () => {
               try {
                 const n = await flushOffline();
-                toast({ title: `${n} ta offline hujjat sinxronlandi` });
+                toast({ title: `${n} ${t("reviziya.offlineSynced")}` });
               } catch (e: unknown) {
-                toast({ title: e instanceof Error ? e.message : "Xatolik", variant: "destructive" });
+                toast({ title: e instanceof Error ? e.message : t("ui.error"), variant: "destructive" });
               }
             }}
           />
@@ -855,42 +856,43 @@ function MobileTools({
   onGps: () => void;
   onFlush: () => void;
 }) {
+  const { t } = useI18n();
   const [manual, setManual] = useState("");
   const offline = useMemo(() => peekOfflineCount(), []);
   const tiles = [
-    { title: "Shtrix-kod", desc: "Kamera yoki qo‘lda — inventarizatsiyaga", icon: ScanLine },
-    { title: "GPS check-in", desc: "Filialga kelganda joylashuv", icon: MapPin },
-    { title: "Foto", desc: "Muddat, kassa, javon", icon: Camera },
-    { title: "Offline", desc: `Navbat: ${offline} ta — keyin sinxron`, icon: WifiOff },
-    { title: "Integratsiya", desc: "1C, ombor, POS, HR, SB — eksport rahbariyatda", icon: Shield },
-    { title: "OTP / imzo", desc: "Hujjat sahifasida SMS-OTP", icon: ScrollText },
+    { id: "barcode", title: t("reviziya.mobile.barcode"), desc: t("reviziya.mobile.barcodeDesc"), icon: ScanLine },
+    { id: "gps", title: t("reviziya.mobile.gps"), desc: t("reviziya.mobile.gpsDesc"), icon: MapPin },
+    { id: "photo", title: t("reviziya.mobile.photo"), desc: t("reviziya.mobile.photoDesc"), icon: Camera },
+    { id: "offline", title: t("reviziya.mobile.offline"), desc: t("reviziya.mobile.offlineDesc").replace("{n}", String(offline)), icon: WifiOff },
+    { id: "integ", title: t("reviziya.mobile.integ"), desc: t("reviziya.mobile.integDesc"), icon: Shield },
+    { id: "otp", title: t("reviziya.mobile.otp"), desc: t("reviziya.mobile.otpDesc"), icon: ScrollText },
   ];
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-      {tiles.map((t) => (
-        <div key={t.title} className="dept-panel">
+      {tiles.map((tile) => (
+        <div key={tile.id} className="dept-panel">
           <span className="dept-panel-icon">
-            <t.icon className="h-5 w-5" />
+            <tile.icon className="h-5 w-5" />
           </span>
-          <p className="mt-3 font-semibold">{t.title}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{t.desc}</p>
-          {t.title === "Shtrix-kod" ? (
+          <p className="mt-3 font-semibold">{tile.title}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{tile.desc}</p>
+          {tile.id === "barcode" ? (
             <div className="mt-3 flex gap-2">
-              <Input placeholder="Kod" value={manual} onChange={(e) => setManual(e.target.value)} />
+              <Input placeholder={t("reviziya.mobile.code")} value={manual} onChange={(e) => setManual(e.target.value)} />
               <Button variant="secondary" onClick={() => manual && onScan(manual)}>OK</Button>
             </div>
           ) : null}
-          {t.title === "GPS check-in" ? (
-            <Button className="mt-3" variant="secondary" onClick={onGps}>Filialga keldim</Button>
+          {tile.id === "gps" ? (
+            <Button className="mt-3" variant="secondary" onClick={onGps}>{t("reviziya.mobile.arrived")}</Button>
           ) : null}
-          {t.title === "Foto" ? (
+          {tile.id === "photo" ? (
             <label className="mt-3 inline-flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm">
-              <Camera className="h-4 w-4" /> Yuklash
+              <Camera className="h-4 w-4" /> {t("reviziya.mobile.upload")}
               <input type="file" accept="image/*" capture="environment" className="hidden" />
             </label>
           ) : null}
-          {t.title === "Offline" ? (
-            <Button className="mt-3" variant="secondary" onClick={onFlush}>Sinxronlash</Button>
+          {tile.id === "offline" ? (
+            <Button className="mt-3" variant="secondary" onClick={onFlush}>{t("reviziya.mobile.sync")}</Button>
           ) : null}
         </div>
       ))}

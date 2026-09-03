@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'wouter';
 import { cn } from '@/lib/utils';
+import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 
 export type MobileNavItem = {
   name: string;
@@ -43,25 +44,31 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   reviziya_rahbar: ['/dashboard', '/vazifalar', '/reviziya', '/employees', '/davomat-face', '/chat'],
 };
 
-const SHORT_LABELS: Record<string, string> = {
-  Boshqaruv: 'Asosiy',
-  'Davomat hisobot': 'Hisobot',
-  'Davomat tahlili': 'Tahlil',
-  "Ish o'rinlari": 'Vakansiya',
-  "Aptekalar tarmog'i": 'Tarmoq',
-  'Cheklist holati': 'Cheklist',
-  'Smena va filial': 'Smena',
-  'Oylik hisob': 'Hisob',
-  'Tashkiliy tuzilma': 'Tuzilma',
-  'Topshiriqlar': 'Vazifa',
-  Eslatmalarim: 'Eslatma',
-  Kirish: 'Kirish',
-  Reyting: 'Reyting',
-  Nomzodlar: 'Nomzod',
-  Suhbatlar: 'Suhbat',
-  Stajirovkalar: 'Staj',
-  Foydalanuvchilar: 'Userlar',
-  "Bo'limlar": 'Bo‘lim',
+/** Path → short mobile label key (mobile.*) */
+const MOBILE_SHORT_KEYS: Record<string, string> = {
+  '/dashboard': 'mobile.main',
+  '/davomat': 'mobile.report',
+  '/davomat/analytics': 'mobile.analytics',
+  '/pharmacy-network': 'mobile.network',
+  '/vazifalar': 'mobile.task',
+  '/eslatmalar': 'mobile.reminder',
+  '/checklist-holati': 'mobile.checklist',
+  '/checklist': 'mobile.checklist',
+  '/hisobkitob': 'mobile.payroll',
+  '/oylik': 'mobile.payroll',
+  '/admin/users': 'mobile.users',
+  '/admin/departments': 'mobile.dept',
+  '/vacancies': 'mobile.vacancy',
+  '/candidates': 'mobile.candidate',
+  '/interviews': 'mobile.interview',
+  '/internships': 'mobile.intern',
+  '/kirish': 'mobile.kirish',
+  '/reyting': 'mobile.rating',
+  '/smena-filial': 'mobile.shift',
+  '/employees': 'mobile.employees',
+  '/chat': 'mobile.chat',
+  '/davomat-face': 'mobile.face',
+  '/tashkiliy-tuzilma': 'mobile.org',
 };
 
 function pathIsActive(location: string, path: string) {
@@ -100,8 +107,13 @@ function pickMobileItems(role: string, navItems: MobileNavItem[]): MobileNavItem
   return picked;
 }
 
-function labelFor(item: MobileNavItem): string {
-  return SHORT_LABELS[item.name] || item.name;
+function labelFor(
+  item: MobileNavItem,
+  t: (key: string, fallback?: string) => string,
+): string {
+  const shortKey = MOBILE_SHORT_KEYS[item.path];
+  if (shortKey) return t(shortKey);
+  return navLabelForPath(item.path, t, item.name);
 }
 
 type Props = {
@@ -112,12 +124,13 @@ type Props = {
 };
 
 export function MobileBottomNav({ role, location, navItems, hidden }: Props) {
+  const { t } = useI18n();
   const items = React.useMemo(() => pickMobileItems(role, navItems), [role, navItems]);
   if (!items.length) return null;
 
   return (
     <nav
-      aria-label="Tezkor navigatsiya"
+      aria-label={t('mobile.nav')}
       className={cn(
         'pointer-events-none fixed inset-x-0 bottom-0 z-30 px-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] md:hidden',
         'transition-all duration-300 ease-out',
@@ -157,7 +170,7 @@ export function MobileBottomNav({ role, location, navItems, hidden }: Props) {
                     active ? 'text-primary dark:text-foreground dark:text-white' : 'text-muted-foreground dark:text-white/75',
                   )}
                 >
-                  {labelFor(item)}
+                  {labelFor(item, t)}
                 </span>
               </div>
             </Link>

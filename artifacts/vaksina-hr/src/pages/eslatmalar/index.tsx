@@ -40,83 +40,84 @@ import {
   Trash2,
   CalendarClock,
 } from "lucide-react";
+import { useI18n } from "@/i18n/I18nProvider";
 
 type BoardCol = "missed" | "today" | "tomorrow" | "week" | "later" | "done";
 
 const COLUMNS: {
   id: BoardCol;
-  label: string;
-  hint: string;
+  labelKey: string;
+  hintKey: string;
   top: string;
   countBg: string;
-  empty: string;
+  emptyKey: string;
   allowCreate: boolean;
 }[] = [
   {
     id: "missed",
-    label: "Bajarilmadi",
-    hint: "Muddat o‘tgan",
+    labelKey: "reminders.undone",
+    hintKey: "reminders.overdueHint",
     top: "bg-rose-500",
     countBg: "bg-rose-100 text-rose-800",
-    empty: "Kechikkan eslatma yo‘q",
+    emptyKey: "reminders.empty.overdue",
     allowCreate: false,
   },
   {
     id: "today",
-    label: "Bugun",
-    hint: "Shu kun",
+    labelKey: "ui.today",
+    hintKey: "reminders.todayHint",
     top: "bg-amber-500",
     countBg: "bg-amber-100 text-amber-900",
-    empty: "Bugungi eslatma yo‘q",
+    emptyKey: "reminders.empty.today",
     allowCreate: true,
   },
   {
     id: "tomorrow",
-    label: "Ertaga",
-    hint: "Kelasi kun",
+    labelKey: "reminders.tomorrow",
+    hintKey: "reminders.tomorrowHint",
     top: "bg-sky-500",
     countBg: "bg-sky-100 text-sky-800",
-    empty: "Ertangi eslatma yo‘q",
+    emptyKey: "reminders.empty.tomorrow",
     allowCreate: true,
   },
   {
     id: "week",
-    label: "1 hafta",
-    hint: "2–7 kun ichida",
+    labelKey: "reminders.week",
+    hintKey: "reminders.weekHint",
     top: "bg-emerald-500",
     countBg: "bg-emerald-100 text-emerald-800",
-    empty: "Haftalik eslatma yo‘q",
+    emptyKey: "reminders.empty.week",
     allowCreate: true,
   },
   {
     id: "later",
-    label: "Keyinroq",
-    hint: "Maxsus sana",
+    labelKey: "reminders.later",
+    hintKey: "reminders.laterHint",
     top: "bg-indigo-500",
     countBg: "bg-indigo-100 text-indigo-800",
-    empty: "Uzoq muddatli yo‘q",
+    emptyKey: "reminders.empty.later",
     allowCreate: true,
   },
   {
     id: "done",
-    label: "Bajarilgan",
-    hint: "Yakunlanganlar",
+    labelKey: "reminders.done",
+    hintKey: "reminders.doneHint",
     top: "bg-violet-500",
     countBg: "bg-violet-100 text-violet-800",
-    empty: "Bajarilgan yo‘q",
+    emptyKey: "reminders.empty.done",
     allowCreate: false,
   },
 ];
 
-const INTERVALS = [
-  { value: "none", label: "Faqat bir marta" },
-  { value: "15", label: "Har 15 daqiqa" },
-  { value: "30", label: "Har 30 daqiqa" },
-  { value: "60", label: "Har 1 soat" },
-  { value: "120", label: "Har 2 soat" },
-  { value: "360", label: "Har 6 soat" },
-  { value: "720", label: "Har 12 soat" },
-  { value: "1440", label: "Har kun" },
+const INTERVAL_KEYS: { value: string; labelKey: string }[] = [
+  { value: "none", labelKey: "reminders.once" },
+  { value: "15", labelKey: "reminders.every15" },
+  { value: "30", labelKey: "reminders.every30" },
+  { value: "60", labelKey: "reminders.every1h" },
+  { value: "120", labelKey: "reminders.every2h" },
+  { value: "360", labelKey: "reminders.every6h" },
+  { value: "720", labelKey: "reminders.every12h" },
+  { value: "1440", labelKey: "reminders.daily" },
 ];
 
 function startOfDay(d: Date) {
@@ -203,6 +204,7 @@ const EVENT_LABELS: Record<string, string> = {
 
 export default function EslatmalarPage() {
   const { toast } = useToast();
+  const { t } = useI18n();
   const { data: reminders = [], isLoading } = useGetReminders();
   const createMut = useCreateReminder();
   const postponeMut = usePostponeReminder();
@@ -307,19 +309,18 @@ export default function EslatmalarPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="mb-1 text-xs font-medium uppercase tracking-wider text-amber-700/80">
-              Shaxsiy nazorat
+              {t("reminders.eyebrow")}
             </p>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">
-              Eslatmalarim
+              {t("reminders.title")}
             </h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              O‘zingizga vazifa, muddat, ogohlantirish va qayta eslatish.
-              Muddat o‘tsa — «Bajarilmadi». Ko‘chirishlar tarixda saqlanadi.
+              {t("reminders.subtitle")}
             </p>
           </div>
           <Button onClick={() => openCreate("today")} className="gap-2 shadow-sm">
             <Plus className="h-4 w-4" />
-            Yangi eslatma
+            {t("reminders.new")}
           </Button>
         </div>
       </div>
@@ -343,8 +344,8 @@ export default function EslatmalarPage() {
                   <div className={cn("h-1.5", col.top)} />
                   <div className="flex items-start justify-between gap-2 border-b border-slate-100 px-3 py-2.5">
                     <div>
-                      <p className="text-sm font-semibold text-foreground">{col.label}</p>
-                      <p className="text-[11px] text-muted-foreground">{col.hint}</p>
+                      <p className="text-sm font-semibold text-foreground">{t(col.labelKey)}</p>
+                      <p className="text-[11px] text-muted-foreground">{t(col.hintKey)}</p>
                     </div>
                     <span
                       className={cn(
@@ -358,7 +359,7 @@ export default function EslatmalarPage() {
 
                   <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-2.5">
                     {items.length === 0 ? (
-                      <p className="px-1 py-6 text-center text-xs text-muted-foreground">{col.empty}</p>
+                      <p className="px-1 py-6 text-center text-xs text-muted-foreground">{t(col.emptyKey)}</p>
                     ) : (
                       items.map((r) => (
                         <button
@@ -438,29 +439,29 @@ export default function EslatmalarPage() {
           }}
         >
           <DialogHeader>
-            <DialogTitle>Yangi eslatma</DialogTitle>
+            <DialogTitle>{t("reminders.new")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="space-y-1.5">
-              <p className="text-sm font-medium">Sarlavha *</p>
+              <p className="text-sm font-medium">{t("reminders.field.title")}</p>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Nima qilish kerak?"
+                placeholder={t("reminders.ph.title")}
               />
             </div>
             <div className="space-y-1.5">
-              <p className="text-sm font-medium">Izoh</p>
+              <p className="text-sm font-medium">{t("reminders.field.note")}</p>
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Batafsil..."
+                placeholder={t("reminders.ph.note")}
                 rows={3}
               />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <p className="text-sm font-medium">Qachon bajarish *</p>
+                <p className="text-sm font-medium">{t("reminders.field.due")}</p>
                 <Input
                   type="datetime-local"
                   value={dueAt}
@@ -468,7 +469,7 @@ export default function EslatmalarPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <p className="text-sm font-medium">Qachon ogohlantirish</p>
+                <p className="text-sm font-medium">{t("reminders.field.alert")}</p>
                 <Input
                   type="datetime-local"
                   value={notifyAt}
@@ -477,15 +478,15 @@ export default function EslatmalarPage() {
               </div>
             </div>
             <div className="space-y-1.5">
-              <p className="text-sm font-medium">Qancha vaqtda eslatish</p>
+              <p className="text-sm font-medium">{t("reminders.field.repeat")}</p>
               <Select value={interval} onValueChange={setInterval}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {INTERVALS.map((i) => (
+                  {INTERVAL_KEYS.map((i) => (
                     <SelectItem key={i.value} value={i.value}>
-                      {i.label}
+                      {t(i.labelKey)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -519,10 +520,10 @@ export default function EslatmalarPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCreateOpen(false)}>
-              Bekor
+              {t("ui.cancel")}
             </Button>
             <Button onClick={submitCreate} disabled={createMut.isPending}>
-              Saqlash
+              {t("ui.save")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -544,22 +545,24 @@ export default function EslatmalarPage() {
 
               <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="rounded-lg border bg-muted px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">Muddat</p>
+                  <p className="text-[11px] text-muted-foreground">{t("reminders.detail.due")}</p>
                   <p className="font-medium">{formatDate(detail.dueAt)}</p>
                 </div>
                 <div className="rounded-lg border bg-muted px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">Qolgan vaqt</p>
+                  <p className="text-[11px] text-muted-foreground">{t("reminders.detail.remaining")}</p>
                   <p className="font-medium">{detail.remainingLabel}</p>
                 </div>
                 <div className="rounded-lg border bg-muted px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">Ogohlantirish</p>
+                  <p className="text-[11px] text-muted-foreground">{t("reminders.detail.alert")}</p>
                   <p className="font-medium">{formatDate(detail.notifyAt)}</p>
                 </div>
                 <div className="rounded-lg border bg-muted px-3 py-2">
-                  <p className="text-[11px] text-muted-foreground">Qayta eslatish</p>
+                  <p className="text-[11px] text-muted-foreground">{t("reminders.detail.repeat")}</p>
                   <p className="font-medium">
-                    {INTERVALS.find((i) => i.value === String(detail.remindIntervalMinutes ?? "none"))
-                      ?.label || "Faqat bir marta"}
+                    {t(
+                      INTERVAL_KEYS.find((i) => i.value === String(detail.remindIntervalMinutes ?? "none"))
+                        ?.labelKey || "reminders.once",
+                    )}
                   </p>
                 </div>
               </div>
@@ -644,7 +647,7 @@ export default function EslatmalarPage() {
                     }}
                   >
                     <Check className="h-3.5 w-3.5" />
-                    Bajarildi
+                    {t("reminders.doneBtn")}
                   </Button>
                 )}
                 <Button
@@ -658,21 +661,21 @@ export default function EslatmalarPage() {
                   }}
                 >
                   <CalendarClock className="h-3.5 w-3.5" />
-                  Muddatni ko‘chirish
+                  {t("reminders.postpone")}
                 </Button>
                 <Button
                   size="sm"
                   variant="ghost"
                   className="gap-1.5 text-rose-600"
                   onClick={async () => {
-                    if (!confirm("Eslatmani o‘chirasizmi?")) return;
+                    if (!confirm(t("reminders.confirmDelete"))) return;
                     try {
                       await deleteMut.mutateAsync(detail.id);
                       setDetailId(null);
-                      toast({ title: "O‘chirildi" });
+                      toast({ title: t("ui.delete") });
                     } catch (e: any) {
                       toast({
-                        title: "Xato",
+                        title: t("ui.error"),
                         description: e.message,
                         variant: "destructive",
                       });
@@ -680,7 +683,7 @@ export default function EslatmalarPage() {
                   }}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
-                  O‘chirish
+                  {t("ui.delete")}
                 </Button>
               </div>
             </div>
@@ -692,11 +695,11 @@ export default function EslatmalarPage() {
       <Dialog open={postponeOpen} onOpenChange={setPostponeOpen}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Muddatni ko‘chirish</DialogTitle>
+            <DialogTitle>{t("reminders.postpone")}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-1">
             <div className="space-y-1.5">
-              <p className="text-sm font-medium">Yangi muddat</p>
+              <p className="text-sm font-medium">{t("tasks.newDeadline")}</p>
               <Input
                 type="datetime-local"
                 value={newDue}
@@ -704,11 +707,11 @@ export default function EslatmalarPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <p className="text-sm font-medium">Izoh (ixtiyoriy)</p>
+              <p className="text-sm font-medium">{t("reminders.field.note")}</p>
               <Textarea
                 value={postponeNote}
                 onChange={(e) => setPostponeNote(e.target.value)}
-                placeholder="Nima uchun ko‘chirilyapti?"
+                placeholder={t("reminders.ph.note")}
                 rows={2}
               />
             </div>
@@ -718,10 +721,10 @@ export default function EslatmalarPage() {
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setPostponeOpen(false)}>
-              Bekor
+              {t("ui.cancel")}
             </Button>
             <Button onClick={submitPostpone} disabled={postponeMut.isPending}>
-              Saqlash
+              {t("ui.save")}
             </Button>
           </DialogFooter>
         </DialogContent>

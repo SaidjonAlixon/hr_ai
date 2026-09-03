@@ -4,6 +4,7 @@ import { useAuth } from "../contexts/AuthContext";
 import { useToast } from "../hooks/use-toast";
 import type { User } from "@workspace/api-client-react";
 import { Loader2, RefreshCw } from "lucide-react";
+import { useI18n } from "../i18n/I18nProvider";
 
 declare global {
   interface Window {
@@ -64,10 +65,10 @@ function prepareTelegramUi() {
   return true;
 }
 
-async function miniAuth(payload: {
-  initData?: string;
-  token?: string;
-}): Promise<{ user: User; ok?: boolean }> {
+async function miniAuth(
+  payload: { initData?: string; token?: string },
+  authFailMsg: string,
+): Promise<{ user: User; ok?: boolean }> {
   const res = await fetch("/api/telegram/mini-auth", {
     method: "POST",
     credentials: "include",
@@ -76,7 +77,7 @@ async function miniAuth(payload: {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    const err = new Error(body?.error || "Kirish muvaffaqiyatsiz") as Error & {
+    const err = new Error(body?.error || authFailMsg) as Error & {
       code?: string;
     };
     err.code = body?.code;
@@ -86,7 +87,6 @@ async function miniAuth(payload: {
 }
 
 function redirectAfterLogin(user: User, next: string | null, setLocation: (path: string) => void) {
-  // Token URL da qolmasin — qayta yuklashda chalkashmasin
   const clean =
     next === "davomat-face" ? "/davomat-face?tg=1" : user.role === "stajyor" ? "/kirish" : "/dashboard";
   window.history.replaceState({}, "", clean);
@@ -100,6 +100,7 @@ function redirectAfterLogin(user: User, next: string | null, setLocation: (path:
  * 3) Cookie sessiya
  */
 export default function TgEntryPage() {
+  const { t } = useI18n();
   const { switchToUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -112,42 +113,40 @@ export default function TgEntryPage() {
       switchToUser(u);
       redirectAfterLogin(u, readNextFromUrl(), setLocation);
       toast({
-        title: "Xush kelibsiz",
+        title: t("tg.welcome"),
         description: `${u.fullName} · ${label}`,
       });
     },
-    [switchToUser, setLocation, toast],
+    [switchToUser, setLocation, toast, t],
   );
 
   const tryEnter = useCallback(async () => {
     prepareTelegramUi();
     const token = readTokenFromUrl();
     const initData = window.Telegram?.WebApp?.initData?.trim() || "";
+    const authFail = t("tg.authFail");
 
-    // 1) URL token — yangi akkaunt / qayta ochish (muddat ichida)
     if (token) {
       try {
-        const { user } = await miniAuth({ token });
-        finish(user, "Telegram");
+        const { user } = await miniAuth({ token }, authFail);
+        finish(user, t("tg.label.telegram"));
         return true;
       } catch {
-        // Token eskirgan — initData ga o‘tamiz (botda bog‘langan akkaunt)
+        // Token eskirgan — initData ga o‘tamiz
       }
     }
 
-    // 2) Mini App initData — bir marta login/parol yuborgan Telegram user
     if (initData) {
       try {
-        const { user } = await miniAuth({ initData });
-        finish(user, "Mini App");
+        const { user } = await miniAuth({ initData }, authFail);
+        finish(user, t("tg.label.mini"));
         return true;
       } catch (e) {
-        setError((e as Error).message || "Telegram orqali kirib bo‘lmadi");
+        setError((e as Error).message || t("tg.initFail"));
         return false;
       }
     }
 
-    // 3) Mavjud cookie
     try {
       const res = await fetch("/api/auth/me", {
         credentials: "include",
@@ -156,7 +155,7 @@ export default function TgEntryPage() {
       if (res.ok) {
         const existing = (await res.json()) as User;
         if (existing?.id) {
-          finish(existing, "Sessiya");
+          finish(existing, t("tg.label.session"));
           return true;
         }
       }
@@ -164,11 +163,9 @@ export default function TgEntryPage() {
       /* ignore */
     }
 
-    setError(
-      "Sessiya topilmadi. Botda /kirish yoki «Yangi kirish havolasi» ni bosing, yoki login/parol yuboring.",
-    );
+    setError(t("tg.noSession"));
     return false;
-  }, [finish]);
+  }, [finish, t]);
 
   useEffect(() => {
     let cancelled = false;
@@ -192,14 +189,14 @@ export default function TgEntryPage() {
       const initData = window.Telegram?.WebApp?.initData?.trim() || "";
       if (!initData) {
         setPhase("error");
-        setError("Telegram Mini App ichida oching — initData yo‘q.");
+        setError(t("tg.noInitData"));
         return;
       }
-      const { user } = await miniAuth({ initData });
-      finish(user, "Qayta kirish");
+      const { user } = await miniAuth({ initData }, t("tg.authFail"));
+      finish(user, t("tg.label.retry"));
     } catch (e) {
       setPhase("error");
-      setError((e as Error).message || "Qayta urinish muvaffaqiyatsiz");
+      setError((e as Error).message || t("tg.retryFail"));
     } finally {
       setRetrying(false);
     }
@@ -220,13 +217,13 @@ export default function TgEntryPage() {
         <>
           <Loader2 className="h-10 w-10 animate-spin text-[#0b3a5c]" />
           <p className="mt-4 text-sm font-medium text-foreground">
-            Telegram orqali kirilmoqda…
+            {t("tg.loading")}
           </p>
-          <p className="mt-1 text-xs text-muted-foreground">Sessiyangiz tekshirilmoqda</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("tg.checking")}</p>
         </>
       ) : (
         <>
-          <p className="text-base font-semibold text-rose-700">Kirish amalga oshmadi</p>
+          <p className="text-base font-semibold text-rose-700">{t("tg.failed")}</p>
           <p className="mt-2 max-w-sm text-sm text-muted-foreground">{error}</p>
           <div className="mt-6 flex w-full max-w-xs flex-col gap-2">
             <button
@@ -240,25 +237,24 @@ export default function TgEntryPage() {
               ) : (
                 <RefreshCw className="h-4 w-4" />
               )}
-              Telegram orqali qayta kirish
+              {t("tg.retryBtn")}
             </button>
             <button
               type="button"
               onClick={openBotForNewToken}
               className="inline-flex items-center justify-center gap-2 rounded-lg border border-[#0b3a5c]/30 bg-card px-4 py-2.5 text-sm font-medium text-[#0b3a5c]"
             >
-              Yangi token / botga o‘tish
+              {t("tg.newToken")}
             </button>
             <a
               href="/login"
               className="inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-muted-foreground underline-offset-2 hover:underline"
             >
-              Oddiy login
+              {t("tg.plainLogin")}
             </a>
           </div>
           <p className="mt-4 max-w-xs text-[11px] text-muted-foreground">
-            Botda: <code className="rounded bg-slate-100 px-1">/kirish</code> yoki «Yangi kirish
-            havolasi» — yangi «Platformaga kirish» chiqadi.
+            {t("tg.botHint")}
           </p>
         </>
       )}

@@ -199,12 +199,11 @@ export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);
 }
 
-/** Ish o‘rinlari, nomzod, suhbat, pipeline, stajirovka — faqat HR oilasi + admin/rekruter/trener */
+/** Ish o‘rinlari, nomzod, suhbat, stajirovka — faqat HR oilasi + admin/rekruter/trener */
 export const HR_RECRUITMENT_PATHS = [
   "/vacancies",
   "/candidates",
   "/interviews",
-  "/pipeline",
   "/internships",
 ] as const;
 

@@ -46,6 +46,7 @@ import {
   type DavomatReport,
 } from "../../lib/davomat-api";
 import { useAuth } from "../../contexts/AuthContext";
+import { useI18n } from "../../i18n/I18nProvider";
 import { canViewChecklistStatus, canViewDavomat } from "../../lib/roles";
 import {
   type DavomatStaffFilter,
@@ -92,42 +93,50 @@ function lastOfMonth(ymd: string): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
 }
 
-const MONTHS_UZ = [
-  "Yanvar",
-  "Fevral",
-  "Mart",
-  "Aprel",
-  "May",
-  "Iyun",
-  "Iyul",
-  "Avgust",
-  "Sentabr",
-  "Oktabr",
-  "Noyabr",
-  "Dekabr",
-];
+const MONTH_KEYS = [
+  "month.1",
+  "month.2",
+  "month.3",
+  "month.4",
+  "month.5",
+  "month.6",
+  "month.7",
+  "month.8",
+  "month.9",
+  "month.10",
+  "month.11",
+  "month.12",
+] as const;
 
-function monthLabelUz(ymd: string): string {
+function monthLabelUz(ymd: string, t: (k: string) => string): string {
   const [y, m] = ymd.split("-").map(Number);
-  const name = MONTHS_UZ[(m ?? 1) - 1] ?? `Oy ${m}`;
+  const name = t(MONTH_KEYS[(m ?? 1) - 1] ?? "ui.month");
   return `${name} ${y}`;
 }
 
-const WEEKDAY_UZ = ["Du", "Se", "Cho", "Pay", "Ju", "Sha", "Yak"];
+const WEEKDAY_KEYS = [
+  "ui.weekday.mon",
+  "ui.weekday.tue",
+  "ui.weekday.wed",
+  "ui.weekday.thu",
+  "ui.weekday.fri",
+  "ui.weekday.sat",
+  "ui.weekday.sun",
+] as const;
 
-function weekdayShort(ymd: string): string {
+function weekdayShort(ymd: string, t: (k: string) => string): string {
   const [y, m, d] = ymd.split("-").map(Number);
   const dow = new Date(Date.UTC(y!, m! - 1, d!)).getUTCDay();
   const idx = dow === 0 ? 6 : dow - 1;
-  return WEEKDAY_UZ[idx] ?? "";
+  return t(WEEKDAY_KEYS[idx] ?? "ui.weekday.mon");
 }
 
-const STATUS_UZ: Record<string, string> = {
-  present: "Kelgan",
-  late: "Kechikdi",
-  incomplete: "Ketish yozilmagan",
-  absent: "Kelmagan",
-  leave: "Ta'tilda",
+const STATUS_KEYS: Record<string, string> = {
+  present: "davomat.arrived",
+  late: "davomat.late",
+  incomplete: "davomat.incomplete",
+  absent: "davomat.absent",
+  leave: "davomat.leave",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -147,12 +156,12 @@ const STATUS_DOT: Record<string, string> = {
 };
 
 /** Haftalik jadval kataklari — qisqa matn */
-const WEEK_CELL_STATUS: Record<string, string> = {
-  present: "Keldi",
-  late: "Kechikdi",
-  incomplete: "Ketish —",
-  absent: "Kelmagan",
-  leave: "Ta'til",
+const WEEK_CELL_STATUS_KEYS: Record<string, string> = {
+  present: "davomat.came",
+  late: "davomat.late",
+  incomplete: "davomat.incompleteShort",
+  absent: "davomat.absent",
+  leave: "davomat.leaveShort",
 };
 
 function compactDuration(label: string): string {
@@ -199,7 +208,8 @@ const STATUS_ROW: Record<string, string> = {
 };
 
 function StatusPill({ status }: { status: string }) {
-  const label = STATUS_UZ[status] || status;
+  const { t } = useI18n();
+  const label = t(STATUS_KEYS[status] || status, status);
   return (
     <span
       className={cn(
@@ -231,6 +241,7 @@ type CalMode = "day" | "week" | "month" | "range";
 
 export default function DavomatPage() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const { toast } = useToast();
   const allowed = canViewDavomat(user?.role);
 
@@ -385,29 +396,29 @@ export default function DavomatPage() {
 
   const periodTitle = useMemo(() => {
     if (calMode === "week") {
-      return `Haftalik hisobot · ${weekStart} — ${addDaysYmd(weekStart, 6)}`;
+      return `${t("davomat.weekReport")} · ${weekStart} — ${addDaysYmd(weekStart, 6)}`;
     }
     if (calMode === "month") {
-      return `Oylik hisobot · ${monthLabelUz(monthAnchor)}`;
+      return `${t("davomat.monthReport")} · ${monthLabelUz(monthAnchor, t)}`;
     }
     if (calMode === "range") {
-      return `Tanlangan davr · ${from} — ${to}`;
+      return `${t("davomat.rangeReport")} · ${from} — ${to}`;
     }
-    return `Kunlik hisobot · ${selectedDay}`;
-  }, [calMode, weekStart, monthAnchor, from, to, selectedDay]);
+    return `${t("davomat.dayReport")} · ${selectedDay}`;
+  }, [calMode, weekStart, monthAnchor, from, to, selectedDay, t]);
 
   const periodSubtitle = useMemo(() => {
     if (calMode === "month") {
-      return `${firstOfMonth(monthAnchor)} dan ${lastOfMonth(monthAnchor)} gacha · har bir kun ustunda`;
+      return `${firstOfMonth(monthAnchor)} ${t("davomat.rangeSub")} ${lastOfMonth(monthAnchor)} ${t("davomat.rangeSub2")}`;
     }
     if (calMode === "week") {
-      return `7 kun · ism chapda, sanalar o‘ngda`;
+      return t("davomat.weekSub");
     }
     if (calMode === "range") {
-      return `Filterdagi barcha kunlar · o‘ngga surib ko‘ring`;
+      return t("davomat.monthSub");
     }
-    return `Bir kunlik ro‘yxat`;
-  }, [calMode, monthAnchor]);
+    return t("davomat.daySub");
+  }, [calMode, monthAnchor, t]);
 
   const setCalModeSafe = (mode: CalMode) => {
     setCalMode(mode);
@@ -547,9 +558,9 @@ export default function DavomatPage() {
   if (!allowed) {
     return (
       <div className="mx-auto max-w-lg py-16 text-center text-muted-foreground">
-        <p>Umumiy hisobot faqat Direktor va HR uchun.</p>
+        <p>{t("davomat.accessDenied")}</p>
         <a href="/davomat-face" className="mt-3 inline-block text-[#0b3a5c] underline underline-offset-2 dark:text-sky-400">
-          O‘z davomatingiz →
+          {t("davomat.goMy")}
         </a>
       </div>
     );
@@ -570,7 +581,7 @@ export default function DavomatPage() {
       {section === "schedule" && calMode === "range" ? (
         <>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">Sanadan</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -584,7 +595,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">Sanagacha</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -689,7 +700,7 @@ export default function DavomatPage() {
       ) : (
         <>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">Sanadan</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -698,7 +709,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">Sanagacha</Label>
+            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -709,13 +720,13 @@ export default function DavomatPage() {
         </>
       )}
       <div>
-        <Label className="text-[11px] font-medium text-muted-foreground">Bo‘lim</Label>
+        <Label className="text-[11px] font-medium text-muted-foreground">{t("ui.department")}</Label>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
           <SelectTrigger className={cn(fieldClass, "px-3")}>
-            <SelectValue placeholder="Barcha bo‘limlar" />
+            <SelectValue placeholder={t("ui.allDepartments")} />
           </SelectTrigger>
           <SelectContent position="popper" className="z-[90]">
-            <SelectItem value="all">Barcha bo‘limlar</SelectItem>
+            <SelectItem value="all">{t("ui.allDepartments")}</SelectItem>
             {(departments ?? []).map((d) => (
               <SelectItem key={d.id} value={String(d.id)}>
                 {d.name}
@@ -725,10 +736,10 @@ export default function DavomatPage() {
         </Select>
       </div>
       <div>
-        <Label className="text-[11px] font-medium text-muted-foreground">Xodimlar guruhi</Label>
+        <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.staffGroup")}</Label>
         <Select value={staffFilter} onValueChange={(v) => setStaffFilter(v as DavomatStaffFilter)}>
           <SelectTrigger className={cn(fieldClass, "px-3")}>
-            <SelectValue placeholder="Hammasi" />
+            <SelectValue placeholder={t("ui.all")} />
           </SelectTrigger>
           <SelectContent position="popper" className="z-[90]">
             {STAFF_FILTER_OPTIONS.map((opt) => (
@@ -740,12 +751,12 @@ export default function DavomatPage() {
         </Select>
       </div>
       <div className={cn(section === "schedule" && calMode !== "range" ? "sm:col-span-2 lg:col-span-1" : "sm:col-span-2 xl:col-span-1")}>
-        <Label className="text-[11px] font-medium text-muted-foreground">Qidiruv</Label>
+        <Label className="text-[11px] font-medium text-muted-foreground">{t("ui.search")}</Label>
         <div className="relative">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             className={cn(fieldClass, "pl-9")}
-            placeholder="Ism, lavozim…"
+            placeholder={t("davomat.searchName")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -759,10 +770,10 @@ export default function DavomatPage() {
       <div className="dv-report-hero">
         <div className="flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-6">
           <div className="min-w-0">
-            <p className="dv-report-hero-label">Hisobot</p>
-            <h1 className="dv-report-hero-title">Davomat</h1>
+            <p className="dv-report-hero-label">{t("davomat.report")}</p>
+            <h1 className="dv-report-hero-title">{t("davomat.title")}</h1>
             <p className="dv-report-hero-sub">
-              Ish vaqti:{" "}
+              {t("davomat.workTime")}:{" "}
               <span className="dv-report-hero-strong">
                 {staffFilter === "all"
                   ? "Ofis 09:00–18:00 · 1-smena 08:00–17:00 · 2-smena 17:00–23:45"
@@ -774,14 +785,14 @@ export default function DavomatPage() {
             <a href="/davomat-face" className="min-w-0">
               <Button type="button" variant="ghost" className="dv-report-btn-primary">
                 <UserCheck className="h-4 w-4 shrink-0" />
-                Keldim / Ketdim
+                {t("davomat.inOut")}
               </Button>
             </a>
             {canViewChecklistStatus(user?.role) && (
               <Link href="/checklist-holati" className="min-w-0">
                 <Button type="button" variant="ghost" className="dv-report-btn-ghost">
                   <ClipboardCheck className="h-4 w-4 shrink-0" />
-                  Cheklist
+                  {t("davomat.checklist")}
                 </Button>
               </Link>
             )}
@@ -793,7 +804,7 @@ export default function DavomatPage() {
               disabled={announcing || (loading && !report)}
             >
               {announcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4 shrink-0" />}
-              Xabar
+              {t("davomat.message")}
             </Button>
             <Button
               type="button"
@@ -803,7 +814,7 @@ export default function DavomatPage() {
               disabled={exporting || (loading && !report)}
             >
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 shrink-0" />}
-              Excel
+              {t("ui.excel")}
             </Button>
           </div>
         </div>
@@ -822,8 +833,8 @@ export default function DavomatPage() {
             className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-sky-500 dark:data-[state=active]:text-slate-950 sm:h-11 sm:text-sm"
           >
             <CalendarDays className="h-4 w-4 shrink-0" />
-            <span className="truncate sm:hidden">Jadval</span>
-            <span className="hidden truncate sm:inline">Jadval (kun / hafta / oy)</span>
+            <span className="truncate sm:hidden">{t("davomat.table")}</span>
+            <span className="hidden truncate sm:inline">{t("davomat.tableHint")}</span>
           </TabsTrigger>
           <TabsTrigger
             value="totals"
@@ -845,10 +856,10 @@ export default function DavomatPage() {
                 <div className="dv-period-bar">
                   {(
                     [
-                      { id: "day" as const, short: "Kun", label: "Kunlik", hint: "1 kun" },
-                      { id: "week" as const, short: "Hafta", label: "Haftalik", hint: "7 kun" },
-                      { id: "month" as const, short: "Oy", label: "Oylik", hint: "1 oy" },
-                      { id: "range" as const, short: "Davr", label: "Sanadan–gacha", hint: "O‘zingiz tanlang" },
+                      { id: "day" as const, short: t("davomat.dayShort"), label: t("davomat.daily"), hint: t("davomat.hint1d") },
+                      { id: "week" as const, short: t("ui.week"), label: t("davomat.weekly"), hint: t("davomat.hint7d") },
+                      { id: "month" as const, short: t("ui.month"), label: t("davomat.monthly"), hint: t("davomat.hint1m") },
+                      { id: "range" as const, short: t("davomat.period"), label: t("ui.fromTo"), hint: t("davomat.hintCustom") },
                     ] as const
                   ).map((m) => (
                     <button
@@ -880,7 +891,7 @@ export default function DavomatPage() {
 
           {loading && !report ? (
             <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" /> Yuklanmoqda…
+              <Loader2 className="h-5 w-5 animate-spin" /> {t("ui.loading")}
             </div>
           ) : report ? (
             calMode === "day" ? (
@@ -1024,7 +1035,7 @@ export default function DavomatPage() {
 
           {loading && !report ? (
             <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" /> Yuklanmoqda…
+              <Loader2 className="h-5 w-5 animate-spin" /> {t("ui.loading")}
             </div>
           ) : report ? (
             <>
@@ -1170,7 +1181,7 @@ export default function DavomatPage() {
       <Dialog open={Boolean(edit)} onOpenChange={(o) => !o && setEdit(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>Davomat yozish</DialogTitle>
+            <DialogTitle>{t("davomat.editTitle")}</DialogTitle>
           </DialogHeader>
           {edit ? (
             <div className="space-y-3">
@@ -1348,6 +1359,7 @@ function PeriodAttendanceGrid({
   staffFilter: DavomatStaffFilter;
   onEdit: (emp: DavomatEmployee, date: string) => void;
 }) {
+  const { t } = useI18n();
   const topBarRef = useRef<HTMLDivElement>(null);
   const mainRef = useRef<HTMLDivElement>(null);
   const bottomBarRef = useRef<HTMLDivElement>(null);
@@ -1510,7 +1522,7 @@ function PeriodAttendanceGrid({
                       style={{ width: COL_W, minWidth: COL_W }}
                     >
                       <div className="text-[10px] uppercase tracking-wide text-sky-200/90">
-                        {weekdayShort(date)}
+                        {weekdayShort(date, t)}
                       </div>
                       <div className="tabular-nums text-[11px]">{date.slice(5)}</div>
                     </th>
@@ -1582,25 +1594,25 @@ function PeriodAttendanceGrid({
   );
 }
 
-function dayCellTooltip(day: DavomatDayMetrics, hours?: { start: string; end: string }) {
+function dayCellTooltip(day: DavomatDayMetrics, hours: { start: string; end: string } | undefined, t: (k: string) => string) {
   const h = hours ?? { start: "09:00", end: "18:00" };
-  const lines = [STATUS_UZ[day.status] || day.status];
-  lines.push(`Keldim: ${day.checkIn} (reja ${h.start})`);
-  lines.push(`Ketdim: ${day.checkOut} (reja ${h.end})`);
+  const lines = [t(STATUS_KEYS[day.status] || day.status, day.status)];
+  lines.push(`${t("davomat.btnIn")}: ${day.checkIn} (${t("davomat.plan")} ${h.start})`);
+  lines.push(`${t("davomat.btnOut")}: ${day.checkOut} (${t("davomat.plan")} ${h.end})`);
   if (day.workedHours && day.workedHours !== "0:00" && day.workedHours !== "—") {
-    lines.push(`Ishlangan: ${day.workedHours}`);
+    lines.push(`${t("davomat.workedHours")}: ${day.workedHours}`);
   }
   if (day.lateArrivalLabel && day.lateArrivalLabel !== "—") {
-    lines.push(`Kechikish: ${day.lateArrivalLabel}`);
+    lines.push(`${t("davomat.lateIn")}: ${day.lateArrivalLabel}`);
   }
   if (day.earlyArrivalLabel && day.earlyArrivalLabel !== "—") {
-    lines.push(`Erta kelish: ${day.earlyArrivalLabel}`);
+    lines.push(`${t("davomat.earlyIn")}: ${day.earlyArrivalLabel}`);
   }
   if (day.earlyLeaveLabel && day.earlyLeaveLabel !== "—") {
-    lines.push(`Erta ketish: ${day.earlyLeaveLabel}`);
+    lines.push(`${t("davomat.earlyOut")}: ${day.earlyLeaveLabel}`);
   }
   if (day.overtimeLabel && day.overtimeLabel !== "—") {
-    lines.push(`Qo'shimcha ish: ${day.overtimeLabel}`);
+    lines.push(`+${day.overtimeLabel}`);
   }
   return lines.join("\n");
 }
@@ -1614,10 +1626,11 @@ function WeekCell({
   onClick: () => void;
   hours?: { start: string; end: string };
 }) {
+  const { t } = useI18n();
   const status = day?.status || "absent";
   const hasIn = Boolean(day?.checkIn && day.checkIn !== "—");
   const hasOut = Boolean(day?.checkOut && day.checkOut !== "—");
-  const statusLabel = WEEK_CELL_STATUS[status] || STATUS_UZ[status] || status;
+  const statusLabel = t(WEEK_CELL_STATUS_KEYS[status] || STATUS_KEYS[status] || status, status);
   const showTimes = status !== "absent" && status !== "leave" && (hasIn || hasOut || status === "incomplete");
   const subline = day ? weekCellSublineParts(day) : null;
 
@@ -1629,7 +1642,7 @@ function WeekCell({
         "mx-auto flex h-[62px] w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20",
         STATUS_STYLE[status] || "bg-muted",
       )}
-      title={day ? dayCellTooltip(day, hours) : "Yozish"}
+      title={day ? dayCellTooltip(day, hours, t) : t("ui.edit")}
     >
       <span className="w-full whitespace-nowrap text-center text-[10px] font-bold leading-none">
         {statusLabel}

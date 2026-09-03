@@ -40,6 +40,7 @@ import { Button } from '../components/ui/button';
 import { format } from 'date-fns';
 import { useAuth } from '../contexts/AuthContext';
 import { Link, useLocation } from 'wouter';
+import { useI18n } from '../i18n/I18nProvider';
 import { PipelineFunnel } from '../components/dashboard/PipelineFunnel';
 import { RecentActivityFeed } from '../components/dashboard/RecentActivityFeed';
 import { DeadlineCountdown } from '../components/DeadlineCountdown';
@@ -191,6 +192,7 @@ function requestStatusBadge(status: RequestStatus | string) {
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [, setLocation] = useLocation();
   const role = user?.role;
   const kind = dashKindFor(role);
@@ -512,7 +514,7 @@ export default function Dashboard() {
     <div className="space-y-5">
       <div className="page-hero">
         <div className="min-w-0 flex-1">
-          <h1 className="page-hero-title">Boshqaruv paneli</h1>
+          <h1 className="page-hero-title">{t('dashboard.title')}</h1>
           <p className="text-muted-foreground mt-1 text-sm break-words dark:text-slate-300">
             {user?.fullName}
             {subtitle ? (
@@ -521,7 +523,7 @@ export default function Dashboard() {
               </span>
             ) : null}
           </p>
-          <p className="page-hero-hint">Kartochkani bosing — tezkor ma&apos;lumot ochiladi</p>
+          <p className="page-hero-hint">{t('dashboard.cardHint')}</p>
         </div>
       </div>
 
@@ -533,7 +535,7 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
             {(role === 'admin' || isHrRole(role)) && (
               <DashTile
-                title="Ochiq arizalar"
+                title={t('dashboard.openRequests')}
                 value={stats?.openRequests}
                 icon={FileText}
                 loading={statsLoading}
@@ -608,12 +610,12 @@ export default function Dashboard() {
                 </Link>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
-                <DashTile title="Koordinator" value={holat?.pharmacyCounts.coordinators} icon={Users} loading={holatLoading} color="text-teal-600" accent="bg-teal-50" onClick={() => openDetail('holat_coord')} active={detail === 'holat_coord'} />
-                <DashTile title="Mudir" value={holat?.pharmacyCounts.mudirs} icon={Store} loading={holatLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('holat_mudir')} active={detail === 'holat_mudir'} />
-                <DashTile title="Farmasevt" value={holat?.pharmacyCounts.pharmacists} icon={Users} loading={holatLoading} color="text-emerald-600" accent="bg-emerald-50" onClick={() => openDetail('holat_pharm')} active={detail === 'holat_pharm'} />
-                <DashTile title="Stajyor" value={holat?.pharmacyCounts.interns} icon={GraduationCap} loading={holatLoading} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('holat_intern')} active={detail === 'holat_intern'} />
-                <DashTile title="Jamoa bor" value={holat?.branchesWithStaff.length} icon={Store} loading={holatLoading} color="text-indigo-600" accent="bg-indigo-50" onClick={() => openDetail('holat_with')} active={detail === 'holat_with'} />
-                <DashTile title="Jamoa yo‘q" value={holat?.branchesWithoutStaff.length} icon={AlertCircle} loading={holatLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('holat_without')} active={detail === 'holat_without'} />
+                <DashTile title={t('dashboard.coordinator')} value={holat?.pharmacyCounts.coordinators} icon={Users} loading={holatLoading} color="text-teal-600" accent="bg-teal-50" onClick={() => openDetail('holat_coord')} active={detail === 'holat_coord'} />
+                <DashTile title={t('dashboard.mudir')} value={holat?.pharmacyCounts.mudirs} icon={Store} loading={holatLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('holat_mudir')} active={detail === 'holat_mudir'} />
+                <DashTile title={t('dashboard.pharmacist')} value={holat?.pharmacyCounts.pharmacists} icon={Users} loading={holatLoading} color="text-emerald-600" accent="bg-emerald-50" onClick={() => openDetail('holat_pharm')} active={detail === 'holat_pharm'} />
+                <DashTile title={t('dashboard.intern')} value={holat?.pharmacyCounts.interns} icon={GraduationCap} loading={holatLoading} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('holat_intern')} active={detail === 'holat_intern'} />
+                <DashTile title={t('dashboard.withTeam')} value={holat?.branchesWithStaff.length} icon={Store} loading={holatLoading} color="text-indigo-600" accent="bg-indigo-50" onClick={() => openDetail('holat_with')} active={detail === 'holat_with'} />
+                <DashTile title={t('dashboard.withoutTeam')} value={holat?.branchesWithoutStaff.length} icon={AlertCircle} loading={holatLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('holat_without')} active={detail === 'holat_without'} />
               </div>
             </div>
           )}
@@ -655,10 +657,10 @@ export default function Dashboard() {
       {kind === 'department' && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <DashTile title="Ochiq arizalar" value={openRequests.length} icon={FileText} loading={requestsLoading} color="text-blue-600" accent="bg-blue-50" onClick={() => openDetail('open_requests')} active={detail === 'open_requests'} />
-            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
-            <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} hint={unreadChats ? 'o‘qilmagan' : undefined} />
+            <DashTile title={t('dashboard.openRequests')} value={openRequests.length} icon={FileText} loading={requestsLoading} color="text-blue-600" accent="bg-blue-50" onClick={() => openDetail('open_requests')} active={detail === 'open_requests'} />
+            <DashTile title={t('dashboard.tasks')} value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title={t('dashboard.reminders')} value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
+            <DashTile title={t('dashboard.chat')} value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} hint={unreadChats ? t('dashboard.unread') : undefined} />
           </div>
           {deadlineVacancies.length > 0 && <DeadlineBlock loading={false} items={deadlineVacancies} />}
           <DashActionBar

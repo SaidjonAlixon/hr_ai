@@ -17,6 +17,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { PhoneInput } from '../../components/ui/phone-input';
 import { isCompleteUzPhone, normalizeUzPhone, UZ_PHONE_HINT } from '../../lib/phone';
 import { isHrManager } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 
 const formSchema = z.object({
   fullName: z.string().min(5, "To'liq ismni kiriting"),
@@ -36,6 +37,7 @@ const formSchema = z.object({
 export default function NewCandidate() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
   const { mutate, isPending } = useCreateCandidate();
 
@@ -73,11 +75,11 @@ export default function NewCandidate() {
       },
       {
       onSuccess: (data) => {
-        toast({ title: 'Muvaffaqiyatli', description: 'Yangi nomzod qo\'shildi' });
+        toast({ title: t('ui.success'), description: t('hire.newOk') });
         setLocation(`/candidates/${data.id}`);
       },
       onError: () => {
-        toast({ title: 'Xatolik', description: 'Nomzod qo\'shishda xatolik', variant: 'destructive' });
+        toast({ title: t('ui.error'), description: t('hire.newFail'), variant: 'destructive' });
       }
     });
   };
@@ -85,12 +87,12 @@ export default function NewCandidate() {
   if (!canAdd) {
     return (
       <div className="max-w-lg mx-auto rounded-xl border bg-card p-8 text-center">
-        <h1 className="text-lg font-semibold">Ruxsat yoʻq</h1>
+        <h1 className="text-lg font-semibold">{t('ui.noAccess')}</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Nomzod qoʻshish faqat rekruter, HR va direktor uchun.
+          {t('hire.newNoAccess')}
         </p>
         <Link href="/candidates">
-          <Button className="mt-4" variant="outline">Orqaga</Button>
+          <Button className="mt-4" variant="outline">{t('ui.back')}</Button>
         </Link>
       </div>
     );
@@ -103,9 +105,9 @@ export default function NewCandidate() {
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">1-qadam</p>
-          <h1 className="text-3xl font-bold tracking-tight">Tanishuv</h1>
-          <p className="text-muted-foreground mt-1">Yangi nomzodni tizimga kiritish — asosiy ma'lumotlar</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-sky-700">{t('hire.newStep')}</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.newTitle')}</h1>
+          <p className="text-muted-foreground mt-1">{t('hire.newSub')}</p>
         </div>
       </div>
 
@@ -115,16 +117,16 @@ export default function NewCandidate() {
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-8">
               
               <div className="space-y-4">
-                <h3 className="text-lg font-medium border-b pb-2">Asosiy ma'lumotlar</h3>
+                <h3 className="text-lg font-medium border-b pb-2">{t('hire.section.basic')}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <FormField
                     control={form.control}
                     name="fullName"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>F.I.Sh *</FormLabel>
+                        <FormLabel>{t('hire.field.fullName')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="Abdullayev Abdulla" {...field} />
+                          <Input placeholder={t('hire.ph.fullName')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -136,7 +138,7 @@ export default function NewCandidate() {
                     name="phone"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Telefon raqam *</FormLabel>
+                        <FormLabel>{t('hire.field.phone')}</FormLabel>
                         <FormControl>
                           <PhoneInput
                             value={field.value}
@@ -157,11 +159,11 @@ export default function NewCandidate() {
                     name="vacancyId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Ish o'rni *</FormLabel>
+                        <FormLabel>{t('hire.field.vacancy')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value?.toString() || ''}>
                           <FormControl>
                             <SelectTrigger disabled={vacsLoading}>
-                              <SelectValue placeholder="Ish o'rnini tanlang" />
+                              <SelectValue placeholder={t('hire.ph.vacancy')} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -180,11 +182,11 @@ export default function NewCandidate() {
                     name="recruiterId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Mas'ul rekruter</FormLabel>
+                        <FormLabel>{t('hire.field.recruiter')}</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value?.toString() || ''}>
                           <FormControl>
                             <SelectTrigger disabled={recsLoading}>
-                              <SelectValue placeholder="Rekruterni tanlang" />
+                              <SelectValue placeholder={t('hire.ph.recruiter')} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -203,7 +205,7 @@ export default function NewCandidate() {
                     name="birthDate"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Tug'ilgan sana (ixtiyoriy)</FormLabel>
+                        <FormLabel>{t('hire.field.birthOpt')}</FormLabel>
                         <FormControl>
                           <Input type="date" {...field} />
                         </FormControl>
@@ -217,9 +219,9 @@ export default function NewCandidate() {
                     name="expectedSalary"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Kutilayotgan maosh (ixtiyoriy)</FormLabel>
+                        <FormLabel>{t('hire.field.salaryOpt')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="Masalan: 5 000 000 so'm" {...field} />
+                          <Input placeholder={t('hire.ph.salary')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -229,16 +231,16 @@ export default function NewCandidate() {
               </div>
 
               <div className="space-y-4">
-                <h3 className="text-lg font-medium border-b pb-2">Qo'shimcha ma'lumotlar</h3>
+                <h3 className="text-lg font-medium border-b pb-2">{t('hire.section.extra')}</h3>
                 <div className="grid grid-cols-1 gap-6">
                   <FormField
                     control={form.control}
                     name="address"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Yashash manzili (ixtiyoriy)</FormLabel>
+                        <FormLabel>{t('hire.field.addressOpt')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="Toshkent sh., ..." {...field} />
+                          <Input placeholder={t('hire.ph.address')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -250,9 +252,9 @@ export default function NewCandidate() {
                     name="experience"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Ish tajribasi (ixtiyoriy)</FormLabel>
+                        <FormLabel>{t('hire.field.expOpt')}</FormLabel>
                         <FormControl>
-                          <Textarea className="h-24" placeholder="Avvalgi ish joylari..." {...field} />
+                          <Textarea className="h-24" placeholder={t('hire.ph.experience')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -264,9 +266,9 @@ export default function NewCandidate() {
                     name="education"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Ma'lumoti (ixtiyoriy)</FormLabel>
+                        <FormLabel>{t('hire.field.eduOpt')}</FormLabel>
                         <FormControl>
-                          <Textarea className="h-24" placeholder="Qaysi OTM/Kollejni tamomlagan..." {...field} />
+                          <Textarea className="h-24" placeholder={t('hire.ph.education')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -278,9 +280,9 @@ export default function NewCandidate() {
                     name="notes"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Qaydlar (ixtiyoriy)</FormLabel>
+                        <FormLabel>{t('hire.field.notesOpt')}</FormLabel>
                         <FormControl>
-                          <Textarea className="h-20" placeholder="Nomzod haqida qo'shimcha fikrlar..." {...field} />
+                          <Textarea className="h-20" placeholder={t('hire.ph.notes')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -291,10 +293,10 @@ export default function NewCandidate() {
 
               <div className="flex justify-end gap-4 pt-4 border-t">
                 <Link href="/candidates">
-                  <Button variant="ghost" type="button">Bekor qilish</Button>
+                  <Button variant="ghost" type="button">{t('ui.cancelFull')}</Button>
                 </Link>
                 <Button type="submit" disabled={isPending}>
-                  {isPending ? 'Saqlanmoqda...' : 'Nomzodni qo\'shish'}
+                  {isPending ? t('ui.saving') : t('hire.addCandidate')}
                 </Button>
               </div>
             </form>

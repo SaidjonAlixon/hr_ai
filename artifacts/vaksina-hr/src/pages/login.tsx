@@ -11,15 +11,21 @@ import { useToast } from '../hooks/use-toast';
 import type { User } from '@workspace/api-client-react';
 import { compactCredential } from '../lib/utils';
 import { ThemeToggle } from '../components/theme-toggle';
+import { LanguageSwitcher } from '../components/language-switcher';
+import { HelpAssistantDialog } from '../components/HelpAssistantDialog';
+import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
+import { useI18n } from '../i18n/I18nProvider';
 
 export default function Login() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { mutate, isPending } = useLogin();
   const { switchToUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
 
   const goAfterLogin = (user: User) => {
     switchToUser(user);
@@ -45,9 +51,9 @@ export default function Login() {
           (typeof (err as { message?: string })?.message === 'string'
             ? String((err as { message?: string }).message).replace(/^HTTP \d+ [^:]+:\s*/, '')
             : null) ||
-          "Login yoki parol noto'g'ri";
+          t('login.errorDefault');
         toast({
-          title: 'Xatolik',
+          title: t('login.errorTitle'),
           description: msg,
           variant: 'destructive',
         });
@@ -70,9 +76,27 @@ export default function Login() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="absolute right-4 top-4 safe-top">
+      <div className="absolute right-4 top-4 safe-top z-20 flex items-center gap-2">
+        <LanguageSwitcher />
         <ThemeToggle />
       </div>
+
+      <button
+        type="button"
+        onClick={() => setHelpOpen(true)}
+        className="fixed z-40 flex h-16 w-16 items-center justify-center rounded-full bg-violet-600 text-white shadow-xl shadow-violet-600/40 ring-[6px] ring-violet-500/25 transition hover:bg-violet-700 hover:scale-105 active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
+        style={{
+          right: "max(1.25rem, env(safe-area-inset-right))",
+          bottom: "max(1.5rem, env(safe-area-inset-bottom))",
+        }}
+        aria-label={t('login.helpAria')}
+        title={t('common.help')}
+      >
+        <OperatorHeadsetIcon className="h-9 w-9 sm:h-10 sm:w-10" />
+      </button>
+
+      <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} variant="login" />
+
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img
@@ -84,15 +108,15 @@ export default function Login() {
 
         <Card className="border-t-4 border-t-primary shadow-xl">
           <CardHeader>
-            <CardTitle>Tizimga kirish</CardTitle>
+            <CardTitle>{t('login.title')}</CardTitle>
             <CardDescription>
-              O'z profilingizga kirish uchun ma'lumotlarni kiriting.
+              {t('login.subtitle')}
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleLogin} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="login">Login</Label>
+                <Label htmlFor="login">{t('login.login')}</Label>
                 <Input 
                   id="login" 
                   value={login} 
@@ -102,13 +126,13 @@ export default function Login() {
                     e.preventDefault();
                     setLogin(compactCredential(e.clipboardData.getData('text')));
                   }}
-                  placeholder="Loginni kiriting"
+                  placeholder={t('login.loginPlaceholder')}
                   autoComplete="username"
                   required 
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password">Parol</Label>
+                <Label htmlFor="password">{t('login.password')}</Label>
                 <div className="relative">
                   <Input
                     id="password"
@@ -120,7 +144,7 @@ export default function Login() {
                       e.preventDefault();
                       setPassword(compactCredential(e.clipboardData.getData('text')));
                     }}
-                    placeholder="Parolni kiriting"
+                    placeholder={t('login.passwordPlaceholder')}
                     className="pr-10"
                     autoComplete="current-password"
                     required
@@ -129,7 +153,7 @@ export default function Login() {
                     type="button"
                     className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
                     onClick={() => setShowPassword((v) => !v)}
-                    aria-label={showPassword ? 'Parolni yashirish' : "Parolni ko'rsatish"}
+                    aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
                   >
                     {showPassword ? (
                       <EyeOff className="h-4 w-4" />
@@ -140,7 +164,7 @@ export default function Login() {
                 </div>
               </div>
               <Button type="submit" className="w-full" disabled={isPending}>
-                {isPending ? 'Kirilmoqda...' : 'Kirish'}
+                {isPending ? t('login.submitting') : t('login.submit')}
               </Button>
             </form>
           </CardContent>
@@ -148,7 +172,7 @@ export default function Login() {
           {import.meta.env.DEV && (
             <CardFooter className="flex flex-col items-stretch pt-0 border-t mt-6 bg-background/50">
               <div className="text-sm font-medium text-center text-gray-500 py-4">
-                Demo akkauntlar (tanlang):
+                {t('login.demoTitle')}
               </div>
               <div className="grid grid-cols-2 gap-2 pb-4">
                 {demoAccounts.map((acc) => (

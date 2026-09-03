@@ -14,6 +14,7 @@ import { ArrowLeft, AlertCircle } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { isHrManager } from '../../lib/roles';
+import { useI18n } from '../../i18n/I18nProvider';
 
 const formSchema = z.object({
   requestId: z.coerce.number({ required_error: "Arizani tanlang" }).min(1, "Arizani tanlang"),
@@ -29,6 +30,7 @@ const formSchema = z.object({
 
 export default function NewVacancy() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const searchParams = new URLSearchParams(window.location.search);
@@ -84,9 +86,9 @@ export default function NewVacancy() {
     return (
       <div className="max-w-xl mx-auto py-16 text-center space-y-4">
         <AlertCircle className="w-10 h-10 mx-auto text-muted-foreground" />
-        <h1 className="text-xl font-semibold">Ruxsat yo'q</h1>
-        <p className="text-muted-foreground">Ish o'rnini faqat HR yoki admin yaratishi mumkin.</p>
-        <Link href="/vacancies"><Button variant="outline">Orqaga</Button></Link>
+        <h1 className="text-xl font-semibold">{t('ui.noAccess')}</h1>
+        <p className="text-muted-foreground">{t('hire.vacancyNoAccess')}</p>
+        <Link href="/vacancies"><Button variant="outline">{t('ui.back')}</Button></Link>
       </div>
     );
   }
@@ -95,8 +97,8 @@ export default function NewVacancy() {
     const selected = acceptedRequests.find((r) => r.id === values.requestId);
     if (!selected) {
       toast({
-        title: 'Xatolik',
-        description: "Faqat qabul qilingan ariza asosida ish o'rni yaratiladi",
+        title: t('ui.error'),
+        description: t('hire.vacancyNeedAccepted'),
         variant: 'destructive',
       });
       return;
@@ -121,15 +123,15 @@ export default function NewVacancy() {
       {
         onSuccess: (data) => {
           toast({
-            title: 'Muvaffaqiyatli',
-            description: "Ish o'rni yaratildi va rekruterga biriktirildi",
+            title: t('ui.success'),
+            description: t('hire.vacancyCreated'),
           });
           setLocation(`/vacancies/${data.id}`);
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || "Ish o'rni yaratishda xatolik",
+            title: t('ui.error'),
+            description: err?.message || t('hire.vacancyCreateFail'),
             variant: 'destructive',
           });
         },
@@ -144,9 +146,9 @@ export default function NewVacancy() {
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Yangi ish o'rni</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.vacancyNewTitle')}</h1>
           <p className="text-muted-foreground mt-1">
-            Barcha bo'limlar Arizalari asosida — rekruter biriktirish va muddat belgilash
+            {t('hire.vacancyNewSub')}
           </p>
         </div>
       </div>
@@ -156,12 +158,12 @@ export default function NewVacancy() {
           {!reqsLoading && acceptedRequests.length === 0 ? (
             <div className="py-10 text-center space-y-3">
               <AlertCircle className="w-8 h-8 mx-auto text-amber-500" />
-              <p className="font-medium">Qabul qilingan Ariza yo'q</p>
+              <p className="font-medium">{t('hire.vacancyNoAccepted')}</p>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Avval istalgan bo'lim yoki rol bergan arizani «Qabul qilish» qiling — keyin shu yerda ish o'rni ochiladi.
+                {t('hire.vacancyNoAcceptedDesc')}
               </p>
               <Link href="/requests">
-                <Button variant="outline">Arizalarga o'tish</Button>
+                <Button variant="outline">{t('hire.vacancyGoRequests')}</Button>
               </Link>
             </div>
           ) : (
@@ -173,7 +175,7 @@ export default function NewVacancy() {
                     name="requestId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Asos (qabul qilingan Ariza) *</FormLabel>
+                        <FormLabel>{t('hire.vacancyBase')}</FormLabel>
                         <Select
                           onValueChange={(v) => {
                             const id = Number(v);
@@ -184,7 +186,7 @@ export default function NewVacancy() {
                         >
                           <FormControl>
                             <SelectTrigger disabled={reqsLoading}>
-                              <SelectValue placeholder="Qabul qilingan Arizani tanlang" />
+                              <SelectValue placeholder={t('hire.vacancyBasePh')} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -195,7 +197,7 @@ export default function NewVacancy() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <FormDescription>Barcha rollar/bo'limlar bergan Arizalar shu yerda</FormDescription>
+                        <FormDescription>{t('hire.vacancyBaseHint')}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -206,14 +208,14 @@ export default function NewVacancy() {
                     name="recruiterId"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Mas'ul rekruter *</FormLabel>
+                        <FormLabel>{t('hire.vacancyRecruiter')}</FormLabel>
                         <Select
                           onValueChange={(v) => field.onChange(Number(v))}
                           value={field.value?.toString() || ''}
                         >
                           <FormControl>
                             <SelectTrigger disabled={recsLoading}>
-                              <SelectValue placeholder="Rekruterni tanlang" />
+                              <SelectValue placeholder={t('hire.ph.recruiter')} />
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
@@ -224,7 +226,7 @@ export default function NewVacancy() {
                             ))}
                           </SelectContent>
                         </Select>
-                        <FormDescription>Faqat rekruterlar ro'yxati</FormDescription>
+                        <FormDescription>{t('hire.vacancyRecruiterHint')}</FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -235,12 +237,12 @@ export default function NewVacancy() {
                     name="deadline"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Kadr topish muddati *</FormLabel>
+                        <FormLabel>{t('hire.vacancyDeadline')}</FormLabel>
                         <FormControl>
                           <Input type="datetime-local" {...field} />
                         </FormControl>
                         <FormDescription>
-                          Shu muddatgacha biriktirilgan rekruterga har 10 daqiqada ogohlantirish ketadi
+                          {t('hire.vacancyDeadlineHint')}
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -252,9 +254,9 @@ export default function NewVacancy() {
                     name="title"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>E'lon sarlavhasi *</FormLabel>
+                        <FormLabel>{t('hire.vacancyTitleField')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="Masalan: Tajribali Kardiolog shifokor" {...field} />
+                          <Input placeholder={t('hire.vacancyTitlePh')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -266,9 +268,9 @@ export default function NewVacancy() {
                     name="location"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Manzil</FormLabel>
+                        <FormLabel>{t('hire.vacancyLocation')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="Manzil" {...field} />
+                          <Input placeholder={t('ui.location')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -280,9 +282,9 @@ export default function NewVacancy() {
                     name="schedule"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Ish grafigi</FormLabel>
+                        <FormLabel>{t('hire.vacancySchedule')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="Grafik" {...field} />
+                          <Input placeholder={t('hire.vacancySchedulePh')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -294,9 +296,9 @@ export default function NewVacancy() {
                     name="salaryRange"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Maosh (ixtiyoriy)</FormLabel>
+                        <FormLabel>{t('hire.vacancySalaryOpt')}</FormLabel>
                         <FormControl>
-                          <Input placeholder="5 mln so'mdan boshlab..." {...field} />
+                          <Input placeholder={t('hire.vacancySalaryPh')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -310,9 +312,9 @@ export default function NewVacancy() {
                     name="description"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Ish o'rni to'liq matni *</FormLabel>
+                        <FormLabel>{t('hire.vacancyDesc')}</FormLabel>
                         <FormControl>
-                          <Textarea className="h-40" placeholder="E'lon matnini kiriting..." {...field} />
+                          <Textarea className="h-40" placeholder={t('hire.vacancyDescPh')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -324,9 +326,9 @@ export default function NewVacancy() {
                     name="benefits"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Kompaniya taklif qiladi</FormLabel>
+                        <FormLabel>{t('hire.vacancyBenefits')}</FormLabel>
                         <FormControl>
-                          <Textarea className="h-24" placeholder="Ijtimoiy paket, bonuslar..." {...field} />
+                          <Textarea className="h-24" placeholder={t('hire.vacancyBenefitsPh')} {...field} />
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -336,10 +338,10 @@ export default function NewVacancy() {
 
                 <div className="flex justify-end gap-4 pt-4 border-t">
                   <Link href="/vacancies">
-                    <Button variant="ghost" type="button">Bekor qilish</Button>
+                    <Button variant="ghost" type="button">{t('ui.cancelFull')}</Button>
                   </Link>
                   <Button type="submit" disabled={isPending || acceptedRequests.length === 0}>
-                    {isPending ? 'Saqlanmoqda...' : 'Yaratish va rekruterga biriktirish'}
+                    {isPending ? t('ui.saving') : t('hire.vacancyCreateBtn')}
                   </Button>
                 </div>
               </form>

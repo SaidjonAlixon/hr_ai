@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import { useI18n } from "@/i18n/I18nProvider";
 import {
   canViewCoordinatorRanking,
   canViewPharmacyReyting,
@@ -46,6 +47,7 @@ function formatWhen(visitDate: string, createdAt?: string) {
 
 export default function ReytingPage() {
   const { user } = useAuth();
+  const { t } = useI18n();
   const role = user?.role;
   const pharmacyView = canViewPharmacyReyting(role);
   const coordView = canViewCoordinatorRanking(role);
@@ -69,8 +71,8 @@ export default function ReytingPage() {
     return (
       <div className="mx-auto max-w-3xl space-y-4 pb-10">
         <Header
-          title="Reyting"
-          subtitle="Koordinatorlar reytingi — kunlik, haftalik va oylik natija."
+          title={t("reyting.title")}
+          subtitle={t("reyting.subtitle")}
         />
         <CoordinatorRankingBoard enabled={coordView} />
         <p className="text-center text-xs text-muted-foreground">
@@ -87,7 +89,7 @@ export default function ReytingPage() {
     return (
       <div className="rounded-2xl border bg-card p-8 text-center shadow-sm">
         <Info className="mx-auto h-10 w-10 text-muted-foreground" />
-        <h2 className="mt-3 text-lg font-semibold">Reyting mavjud emas</h2>
+        <h2 className="mt-3 text-lg font-semibold">{t("reyting.empty")}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
           Filial reytingi mudir, farmasevt va stajyorlar uchun ko‘rsatiladi.
         </p>
@@ -98,21 +100,21 @@ export default function ReytingPage() {
   return (
     <div className="mx-auto max-w-3xl space-y-5 pb-10">
       <Header
-        title="Filial reytingi"
-        subtitle="Koordinator tashriflari bo‘yicha filial ballari — faqat sizning filialingiz."
+        title={t("reyting.branchTitle")}
+        subtitle={t("reyting.subtitle")}
       />
 
       <div className="grid grid-cols-3 gap-3">
         <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <p className="text-[11px] text-muted-foreground">Filial</p>
+          <p className="text-[11px] text-muted-foreground">{t("ui.branch")}</p>
           <p className="mt-1 truncate text-sm font-semibold">{stats.branch || "—"}</p>
         </div>
         <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <p className="text-[11px] text-muted-foreground">Tashriflar</p>
+          <p className="text-[11px] text-muted-foreground">{t("reyting.visits")}</p>
           <p className="mt-1 text-2xl font-bold tabular-nums">{stats.visits}</p>
         </div>
         <div className="rounded-xl border bg-card p-3 shadow-sm">
-          <p className="text-[11px] text-muted-foreground">O‘rtacha ball</p>
+          <p className="text-[11px] text-muted-foreground">{t("reyting.avgScore")}</p>
           <p className={cn("mt-1 text-2xl font-bold tabular-nums", scoreTone(stats.avg))}>
             {stats.avg}%
           </p>

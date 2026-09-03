@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useGetCandidate, useCreatePreboarding } from '@workspace/api-client-react';
 import { Link, useLocation } from 'wouter';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
@@ -14,20 +14,25 @@ import { useAuth } from '../../contexts/AuthContext';
 import { CandidateReadOnlyBanner } from '../../components/candidates/CandidateReadOnlyBanner';
 import { canManageCandidate } from '../../lib/candidate-access';
 import { nextStageFormHref } from '../../lib/stage-routes';
-
-const DEFAULT_CHECKLIST = [
-  { label: 'Lavozim vazifalari bilan tanishtirish', completed: false },
-  { label: 'Ish tartibi va qoidalar', completed: false },
-  { label: 'Kompaniya qadriyatlari', completed: false },
-  { label: 'Xavfsizlik qoidalari', completed: false },
-  { label: 'Jamoaviy tuzilma', completed: false },
-];
+import { useI18n } from '../../i18n/I18nProvider';
 
 export default function PreboardingPage({ params }: { params: { id: string } }) {
   const candidateId = parseInt(params.id, 10);
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const { t } = useI18n();
   const { user } = useAuth();
+
+  const defaultChecklist = useMemo(
+    () => [
+      { label: t('hire.pre.c1'), completed: false },
+      { label: t('hire.pre.c2'), completed: false },
+      { label: t('hire.pre.c3'), completed: false },
+      { label: t('hire.pre.c4'), completed: false },
+      { label: t('hire.pre.c5'), completed: false },
+    ],
+    [t],
+  );
 
   const { data: candidate, isLoading } = useGetCandidate(candidateId, {
     query: { enabled: !!candidateId },
@@ -35,12 +40,16 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
   const { mutate, isPending } = useCreatePreboarding();
   const canEdit = canManageCandidate(user, candidate?.recruiterId);
 
-  const [checklist, setChecklist] = useState(DEFAULT_CHECKLIST);
+  const [checklist, setChecklist] = useState(defaultChecklist);
   const [notes, setNotes] = useState('');
   const [scheduledDate, setScheduledDate] = useState(() =>
     new Date().toISOString().slice(0, 10),
   );
   const [scheduledTime, setScheduledTime] = useState('10:00');
+
+  React.useEffect(() => {
+    setChecklist(defaultChecklist);
+  }, [defaultChecklist]);
 
   const toggleItem = (index: number) => {
     setChecklist((prev) =>
@@ -51,22 +60,22 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) {
-      toast({ title: 'Ruxsat yo\'q', description: 'Faqat mas\'ul va HR o\'zgartira oladi', variant: 'destructive' });
+      toast({ title: t('ui.noAccess'), description: t('hire.noPermEdit'), variant: 'destructive' });
       return;
     }
     const done = checklist.filter((i) => i.completed).length;
     if (done === 0) {
       toast({
-        title: 'Xatolik',
-        description: 'Kamida bitta checklist bandini belgilang',
+        title: t('ui.error'),
+        description: t('hire.preboardNeedCheck'),
         variant: 'destructive',
       });
       return;
     }
     if (!scheduledDate) {
       toast({
-        title: 'Xatolik',
-        description: 'Offline suhbat sanasini belgilang — bu HR topshirig‘i muddati bo‘ladi',
+        title: t('ui.error'),
+        description: t('hire.preboardNeedDate'),
         variant: 'destructive',
       });
       return;
@@ -85,15 +94,15 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
       {
         onSuccess: () => {
           toast({
-            title: 'Saqlandi',
-            description: `Pre-boarding yakunlandi. HR ga offline suhbat topshirig‘i ketdi (${scheduledDate} ${scheduledTime || ''})`,
+            title: t('ui.saved'),
+            description: `${t('hire.preboardSaved')} (${scheduledDate} ${scheduledTime || ''})`,
           });
           setLocation(nextStageFormHref(candidateId, 'preboarding')!);
         },
         onError: (err: any) => {
           toast({
-            title: 'Xatolik',
-            description: err?.message || 'Saqlashda xatolik',
+            title: t('ui.error'),
+            description: err?.message || t('hire.saveFail'),
             variant: 'destructive',
           });
         },
@@ -102,7 +111,7 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
   };
 
   if (isLoading) return <div className="p-8"><Skeleton className="h-64 w-full" /></div>;
-  if (!candidate) return <div className="p-8">Nomzod topilmadi</div>;
+  if (!candidate) return <div className="p-8">{t('hire.notFound')}</div>;
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -112,8 +121,8 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
           <Button variant="outline" size="icon"><ArrowLeft className="w-4 h-4" /></Button>
         </Link>
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Pre-boarding</h1>
-          <p className="text-muted-foreground mt-1">{candidate.fullName} — lavozim va qoidalar bilan tanishtirish</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t('hire.preboardTitle')}</h1>
+          <p className="text-muted-foreground mt-1">{candidate.fullName} — {t('hire.preboardSub')}</p>
         </div>
       </div>
 
@@ -121,12 +130,12 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
       <form onSubmit={onSubmit} className="space-y-6">
         <Card>
           <CardHeader>
-            <CardTitle>Checklist</CardTitle>
+            <CardTitle>{t('hire.preboardChecklist')}</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             {checklist.map((item, index) => (
               <label
-                key={item.label}
+                key={`${item.label}-${index}`}
                 className="flex items-start gap-3 p-3 rounded-md border bg-muted/20 cursor-pointer hover:bg-muted/40"
               >
                 <Checkbox
@@ -144,11 +153,11 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
 
         <Card>
           <CardHeader>
-            <CardTitle>Offline suhbat vaqti (HR uchun)</CardTitle>
+            <CardTitle>{t('hire.preboardOffline')}</CardTitle>
           </CardHeader>
           <CardContent className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
-              <Label>Sana *</Label>
+              <Label>{t('hire.preboardDate')}</Label>
               <Input
                 type="date"
                 value={scheduledDate}
@@ -157,7 +166,7 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
               />
             </div>
             <div className="space-y-2">
-              <Label>Vaqt *</Label>
+              <Label>{t('hire.preboardTime')}</Label>
               <Input
                 type="time"
                 value={scheduledTime}
@@ -166,21 +175,21 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
               />
             </div>
             <p className="md:col-span-2 text-sm text-muted-foreground">
-              Bu vaqt HR (direktor, auditor, menejer) topshirig‘ining muddati bo‘ladi — «Vazifalar» sahifasida chiqadi.
+              {t('hire.preboardHint')}
             </p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Izoh</CardTitle>
+            <CardTitle>{t('ui.notes')}</CardTitle>
           </CardHeader>
           <CardContent>
-            <Label className="sr-only">Izoh</Label>
+            <Label className="sr-only">{t('ui.notes')}</Label>
             <Textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Pre-boarding bo'yicha qaydlar..."
+              placeholder={t('hire.preboardNotePh')}
               className="min-h-[100px]"
             />
           </CardContent>
@@ -188,10 +197,10 @@ export default function PreboardingPage({ params }: { params: { id: string } }) 
 
         <div className="flex justify-end gap-3">
           <Link href={`/candidates/${candidateId}`}>
-            <Button type="button" variant="ghost">Bekor qilish</Button>
+            <Button type="button" variant="ghost">{t('ui.cancelFull')}</Button>
           </Link>
           <Button type="submit" disabled={isPending || !canEdit}>
-            {isPending ? 'Saqlanmoqda...' : 'Yakunlash → Offline suhbat'}
+            {isPending ? t('ui.saving') : t('hire.preboardFinish')}
           </Button>
         </div>
       </form>

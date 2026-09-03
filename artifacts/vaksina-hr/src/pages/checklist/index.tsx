@@ -25,13 +25,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Accordion,
   AccordionContent,
   AccordionItem,
@@ -107,6 +100,26 @@ function formatDistance(meters: number) {
   if (meters >= 1000) return `${(meters / 1000).toFixed(2)} km`;
   return `${meters} m`;
 }
+
+function tf(
+  t: (key: string, fallback?: string) => string,
+  key: string,
+  vars: Record<string, string | number>,
+) {
+  return Object.entries(vars).reduce(
+    (s, [k, v]) => s.replaceAll(`{${k}}`, String(v)),
+    t(key),
+  );
+}
+
+function visitLabelKey(n: number) {
+  if (n === 1) return "checklist.visit1";
+  if (n === 2) return "checklist.visit2";
+  if (n === 3) return "checklist.visit3";
+  return "checklist.visit4";
+}
+
+const MAX_VISITS_PER_MONTH = 4;
 
 type PickerBranch = AuditBranchOption & { hasGps: boolean; label: string };
 
@@ -270,13 +283,6 @@ export default function ChecklistPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
-  const VISIT_NAMES = [
-    { value: "1-tashrif", label: t("checklist.visit1") },
-    { value: "2-tashrif", label: t("checklist.visit2") },
-    { value: "3-tashrif", label: t("checklist.visit3") },
-    { value: "nazorat", label: t("checklist.visit") },
-    { value: "qayta-tekshiruv", label: t("checklist.recheck") },
-  ];
   const { data: rawBranches = [], isLoading: branchesLoading } = useAuditBranches();
   const branches = useMemo(() => normalizeAuditBranches(rawBranches), [rawBranches]);
   const { data: history = [], isLoading: historyLoading } = useBranchAudits();
@@ -285,8 +291,6 @@ export default function ChecklistPage() {
 
   const [managerId, setManagerId] = useState<string>("");
   const [visitDate, setVisitDate] = useState(todayIso());
-  const [visitName, setVisitName] = useState("1-tashrif");
-  const [monthLabel, setMonthLabel] = useState(() => t(MONTHS_KEYS[new Date().getMonth()]));
   const [generalNote, setGeneralNote] = useState("");
   const [categories, setCategories] = useState<AuditCategory[]>(() =>
     createEmptyAuditTemplate(),
@@ -310,6 +314,27 @@ export default function ChecklistPage() {
     [branches, managerId],
   );
 
+  const monthKey = visitDate.slice(0, 7);
+  const monthLabel = useMemo(() => {
+    const m = Number(visitDate.slice(5, 7));
+    if (!m || m < 1 || m > 12) return t(MONTHS_KEYS[new Date().getMonth()]);
+    return t(MONTHS_KEYS[m - 1]);
+  }, [visitDate, t]);
+
+  const visitsThisMonth = useMemo(() => {
+    if (!managerId) return [] as BranchAudit[];
+    return history.filter(
+      (a) =>
+        String(a.managerEmployeeId) === managerId &&
+        String(a.visitDate || "").startsWith(monthKey),
+    );
+  }, [history, managerId, monthKey]);
+
+  const doneVisits = visitsThisMonth.length;
+  const monthFull = doneVisits >= MAX_VISITS_PER_MONTH;
+  const nextVisitNum = monthFull ? MAX_VISITS_PER_MONTH : doneVisits + 1;
+  const visitName = `${nextVisitNum}-tashrif`;
+
   useEffect(() => {
     setGpsError(null);
   }, [managerId]);
@@ -331,7 +356,8 @@ export default function ChecklistPage() {
     distanceMeters != null && distanceMeters <= AUDIT_GEOFENCE_METERS;
 
   const canFillChecklist =
-    user?.role === "admin" || (Boolean(selectedBranch) && withinGeofence);
+    !monthFull &&
+    (user?.role === "admin" || (Boolean(selectedBranch) && withinGeofence));
 
   const remainMeters =
     distanceMeters != null
@@ -457,10 +483,30 @@ export default function ChecklistPage() {
   function resetForm() {
     setManagerId("");
     setVisitDate(todayIso());
-    setVisitName("1-tashrif");
-    setMonthLabel(t(MONTHS_KEYS[new Date().getMonth()]));
     setGeneralNote("");
     setCategories(createEmptyAuditTemplate());
+  }
+
+  function readFreshGps(): Promise<{ lat: number; lng: number; accuracy: number | null }> {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error(t("checklist.needLoc")));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          const next = {
+            lat: pos.coords.latitude,
+            lng: pos.coords.longitude,
+            accuracy: pos.coords.accuracy ?? null,
+          };
+          setGps(next);
+          resolve(next);
+        },
+        () => reject(new Error(t("checklist.needLoc"))),
+        { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
+      );
+    });
   }
 
   async function handleSave() {
@@ -476,37 +522,53 @@ export default function ChecklistPage() {
       toast({ title: t("checklist.pickDate"), variant: "destructive" });
       return;
     }
+    if (monthFull) {
+      toast({ title: t("checklist.visitFull"), variant: "destructive" });
+      return;
+    }
     if (live.answered === 0) {
       toast({
         title: t("checklist.pickAnswer"),
-        description: "Kamida bitta talabga Ha yoki Yo‘q tanlang",
+        description: t("checklist.checklistHint"),
         variant: "destructive",
       });
       return;
     }
 
+    let saveGps = gps;
     const mustGps = user?.role === "koordinator";
     if (mustGps) {
       if (!branchHasCoords) {
         toast({
           title: t("checklist.noGps"),
-          description: "Avval Aptekalar tarmog‘ida shu mudirga koordinata saqlang",
+          description: t("checklist.gateNoGps"),
           variant: "destructive",
         });
         return;
       }
-      if (!gps) {
+      try {
+        saveGps = await readFreshGps();
+      } catch {
         toast({
           title: t("checklist.needLoc"),
-          description: "«Lokatsiyani yoqish» ni bosing — GPS so‘raladi",
+          description: t("checklist.enableLoc"),
           variant: "destructive",
         });
         return;
       }
-      if (!withinGeofence) {
+      const dist = haversineMeters(
+        saveGps.lat,
+        saveGps.lng,
+        selectedBranch!.latitude!,
+        selectedBranch!.longitude!,
+      );
+      if (dist > AUDIT_GEOFENCE_METERS) {
         toast({
           title: t("checklist.tooFar"),
-          description: `Hozir ${formatDistance(distanceMeters ?? 0)}. Cheklist faqat ${AUDIT_GEOFENCE_METERS} m ichida ochiladi.`,
+          description: tf(t, "checklist.gateFar", {
+            dist: formatDistance(dist),
+            m: AUDIT_GEOFENCE_METERS,
+          }),
           variant: "destructive",
         });
         return;
@@ -521,19 +583,19 @@ export default function ChecklistPage() {
         monthLabel,
         generalNote: generalNote.trim() || null,
         categories,
-        ...(gps
-          ? { checkLatitude: gps.lat, checkLongitude: gps.lng }
+        ...(saveGps
+          ? { checkLatitude: saveGps.lat, checkLongitude: saveGps.lng }
           : {}),
       });
       toast({
         title: t("checklist.savedOk"),
-        description: `Umumiy ball: ${live.scorePercent}% (${live.yes} Ha / ${live.no} Yo‘q)`,
+        description: `${t(visitLabelKey(nextVisitNum))} · ${live.scorePercent}%`,
       });
       resetForm();
     } catch (e: any) {
       toast({
         title: t("checklist.saveFail"),
-        description: e?.message || "Xato",
+        description: e?.message || t("ui.error"),
         variant: "destructive",
       });
     }
@@ -617,16 +679,16 @@ export default function ChecklistPage() {
         </div>
 
         {/* Meta form */}
-        <div className="border-b px-3 py-4 sm:px-6 sm:py-5">
-          <div className="mb-4 flex items-start justify-between gap-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-foreground dark:text-white sm:h-9 sm:w-9">
-                <Store className="h-4 w-4" />
+        <div className="border-b bg-gradient-to-b from-slate-50/80 to-transparent px-3 py-5 sm:px-6 sm:py-6 dark:from-slate-900/40">
+          <div className="mb-5 flex items-start justify-between gap-2">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-900 text-white shadow-md shadow-slate-900/20">
+                <Store className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <h2 className="text-sm font-semibold sm:text-base">{t("checklist.visitInfo")}</h2>
+                <h2 className="text-base font-semibold tracking-tight sm:text-lg">{t("checklist.visitInfo")}</h2>
                 <p className="text-[11px] text-muted-foreground sm:text-xs">
-                  {t("checklist.visitHint")}
+                  {t("checklist.monthQuota")} · {AUDIT_GEOFENCE_METERS} m
                 </p>
               </div>
             </div>
@@ -634,7 +696,7 @@ export default function ChecklistPage() {
               type="button"
               variant="outline"
               size="sm"
-              className="shrink-0"
+              className="shrink-0 rounded-full"
               onClick={resetForm}
             >
               <RotateCcw className="h-3.5 w-3.5 sm:mr-1.5" />
@@ -643,15 +705,14 @@ export default function ChecklistPage() {
           </div>
 
           {!branchesLoading && branches.length === 0 && (
-            <p className="mb-4 rounded-xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800">
-              Sizga biriktirilgan filial topilmadi. Aptekalar tarmog‘ida mudirlar sizning
-              koordinatoringizga bog‘langan bo‘lishi kerak.
+            <p className="mb-4 rounded-2xl border border-dashed border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+              {t("checklist.gatePick")}
             </p>
           )}
 
-          <div className="grid gap-3 sm:grid-cols-2 sm:gap-4">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {t("checklist.pickBranch")}
               </Label>
               <BranchPicker
@@ -667,10 +728,10 @@ export default function ChecklistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {t("checklist.branchManager")}
               </Label>
-              <div className="flex h-11 items-center gap-2 rounded-md border bg-muted px-3 text-sm">
+              <div className="flex h-11 items-center gap-2 rounded-xl border bg-muted/60 px-3 text-sm">
                 <User className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <span className={cn("truncate", !selectedBranch && "text-muted-foreground")}>
                   {selectedBranch?.managerName || t("checklist.autoFill")}
@@ -678,62 +739,102 @@ export default function ChecklistPage() {
               </div>
             </div>
 
+            {selectedBranch ? (
+              <div className="space-y-3 rounded-2xl border border-border/80 bg-card p-3 shadow-sm sm:col-span-2 sm:p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      {t("checklist.visitAuto")}
+                    </p>
+                    <p className="mt-0.5 text-sm font-medium text-foreground">
+                      {tf(t, "checklist.visitProgress", { done: doneVisits })}
+                    </p>
+                  </div>
+                  {!monthFull ? (
+                    <Badge className="rounded-full bg-slate-900 px-3 py-1 text-white hover:bg-slate-900">
+                      {tf(t, "checklist.visitNext", { name: t(visitLabelKey(nextVisitNum)) })}
+                    </Badge>
+                  ) : (
+                    <Badge variant="destructive" className="rounded-full">
+                      {t("checklist.visitFull")}
+                    </Badge>
+                  )}
+                </div>
+                <div className="grid grid-cols-4 gap-2">
+                  {[1, 2, 3, 4].map((n) => {
+                    const done = n <= doneVisits;
+                    const next = !monthFull && n === nextVisitNum;
+                    return (
+                      <div
+                        key={n}
+                        className={cn(
+                          "flex flex-col items-center rounded-xl border px-2 py-2.5 text-center transition",
+                          done && "border-emerald-300 bg-emerald-50 text-emerald-900",
+                          next && "border-slate-900 bg-slate-900 text-white shadow-md",
+                          !done && !next && "border-dashed border-border bg-muted/40 text-muted-foreground",
+                        )}
+                      >
+                        <span className="text-lg font-bold tabular-nums leading-none">{n}</span>
+                        <span className="mt-1 text-[10px] font-medium opacity-80">
+                          {done ? t("ui.yes") : next ? t("checklist.visitName") : "—"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : null}
+
             {selectedBranch && (
               <div className="space-y-2 sm:col-span-2">
-                <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                   {t("checklist.liveLoc")} · {AUDIT_GEOFENCE_METERS} m
                 </Label>
 
                 {!branchHasCoords ? (
-                  <div className="rounded-xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-                    Bu filialga GPS saqlanmagan. Aptekalar tarmog‘ida mudir kartasiga
-                    koordinata kiriting — keyin masofa hisoblanadi.
+                  <div className="rounded-2xl border border-amber-300 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                    {t("checklist.gateNoGps")}
                   </div>
                 ) : withinGeofence ? (
-                  <div className="flex items-start gap-2 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900">
+                  <div className="flex items-start gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-3 py-3 text-sm text-emerald-900">
                     <Check className="mt-0.5 h-4 w-4 shrink-0" />
                     <div>
                       <p className="font-semibold">{t("checklist.inZone")}</p>
                       <p className="mt-0.5 text-xs text-emerald-800/80">
-                        {selectedBranch.branchLocation} · masofa{" "}
+                        {selectedBranch.branchLocation} ·{" "}
                         <strong className="tabular-nums">{formatDistance(distanceMeters!)}</strong>
-                        {gps?.accuracy != null ? ` · aniqlik ±${Math.round(gps.accuracy)} m` : ""}
+                        {gps?.accuracy != null ? ` · ±${Math.round(gps.accuracy)} m` : ""}
                       </p>
                     </div>
                   </div>
                 ) : (
-                  <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-3 text-sm text-rose-900">
+                  <div className="rounded-2xl border border-rose-300 bg-rose-50 px-3 py-3 text-sm text-rose-900">
                     <div className="flex items-start gap-2">
                       <Navigation className="mt-0.5 h-4 w-4 shrink-0" />
                       <div className="min-w-0 flex-1">
                         <p className="font-semibold">
                           {gps
-                            ? "Hali belgilangan filialga yetmadingiz"
+                            ? t("checklist.notYet")
                             : gpsAsking || gpsWatching
-                              ? "Joylashuv olinmoqda…"
+                              ? t("checklist.gettingGps")
                               : t("checklist.needLocHint")}
                         </p>
                         {gpsError ? (
                           <p className="mt-1 text-xs text-rose-700">{gpsError}</p>
                         ) : distanceMeters != null ? (
                           <p className="mt-1 text-sm">
-                            Sizdan filialgacha:{" "}
                             <strong className="text-base tabular-nums">
                               {formatDistance(distanceMeters)}
                             </strong>
                             {remainMeters != null && remainMeters > 0 ? (
                               <span className="ml-1 text-xs">
-                                · yana {formatDistance(remainMeters)} yaqinlashish kerak
+                                · {formatDistance(remainMeters)}
                               </span>
                             ) : null}
                           </p>
-                        ) : (
-                          <p className="mt-1 text-xs text-rose-700">
-                            Ruxsat bersangiz, jonli masofa shu yerda chiqadi.
-                          </p>
-                        )}
+                        ) : null}
                         <p className="mt-1 text-[11px] text-rose-700/80">
-                          Cheklist faqat {AUDIT_GEOFENCE_METERS} m ichida avtomatik ochiladi.
+                          {tf(t, "checklist.gateGo", { m: AUDIT_GEOFENCE_METERS })}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2">
                           <Button
@@ -754,7 +855,7 @@ export default function ChecklistPage() {
                             className="inline-flex h-8 items-center gap-1 rounded-md border border-rose-300 bg-card px-2.5 text-xs font-semibold text-rose-900"
                           >
                             <MapPin className="h-3.5 w-3.5" />
-                            Xaritada ochish
+                            {t("checklist.openMaps")}
                           </a>
                         </div>
                       </div>
@@ -765,14 +866,14 @@ export default function ChecklistPage() {
             )}
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Tashrif sanasi
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("checklist.visitDate")}
               </Label>
               <div className="relative">
                 <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   type="date"
-                  className="h-11 pl-9"
+                  className="h-11 rounded-xl pl-9"
                   value={visitDate}
                   onChange={(e) => setVisitDate(e.target.value)}
                 />
@@ -780,60 +881,48 @@ export default function ChecklistPage() {
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Tashrif nomi
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("checklist.visitName")}
               </Label>
-              <Select value={visitName} onValueChange={setVisitName}>
-                <SelectTrigger className="h-11">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {VISIT_NAMES.map((v) => (
-                    <SelectItem key={v.value} value={v.value}>
-                      {v.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex h-11 items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm dark:border-slate-700 dark:bg-slate-900/50">
+                <span className="font-semibold text-foreground">
+                  {managerId ? t(visitLabelKey(nextVisitNum)) : "—"}
+                </span>
+                <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  {t("checklist.visitAuto")}
+                </span>
+              </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Koordinator F.I.Sh
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("checklist.coordName")}
               </Label>
-              <div className="flex h-11 items-center rounded-md border bg-muted px-3 text-sm font-medium">
+              <div className="flex h-11 items-center rounded-xl border bg-muted/60 px-3 text-sm font-medium">
                 <span className="truncate">{user?.fullName || "—"}</span>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Oy
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("checklist.month")}
               </Label>
-              <Select value={monthLabel} onValueChange={setMonthLabel}>
-                <SelectTrigger className="h-11">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {MONTHS_KEYS.map((key) => (
-                    <SelectItem key={key} value={t(key)}>
-                      {t(key)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <div className="flex h-11 items-center rounded-xl border bg-muted/60 px-3 text-sm font-medium">
+                {monthLabel}
+              </div>
             </div>
 
             <div className="space-y-1.5 sm:col-span-2">
-              <Label className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                Umumiy izoh / eslatma
+              <Label className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {t("checklist.note")}
               </Label>
               <Textarea
                 rows={3}
                 value={generalNote}
                 onChange={(e) => setGeneralNote(e.target.value)}
-                placeholder="Masalan: Konditsionerdan suv oqyapti — ustalarga aytilgan"
-                className="min-h-[80px] text-base sm:text-sm"
+                placeholder={t("checklist.notePh")}
+                className="min-h-[80px] rounded-xl text-base sm:text-sm"
+                disabled={!canFillChecklist && user?.role === "koordinator"}
               />
             </div>
           </div>
@@ -849,7 +938,7 @@ export default function ChecklistPage() {
               <div className="min-w-0">
                 <h2 className="text-sm font-semibold sm:text-base">{t("checklist.title")}</h2>
                 <p className="text-[11px] text-muted-foreground sm:text-xs">
-                  Har bir bandni tanlang — boshida tanlanmagan
+                  {t("checklist.checklistHint")}
                 </p>
               </div>
             </div>
@@ -861,21 +950,26 @@ export default function ChecklistPage() {
               onClick={clearAnswers}
               disabled={!canFillChecklist}
             >
-              Tozalash
+              {t("checklist.reset")}
             </Button>
           </div>
 
           {!canFillChecklist && (
-            <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-              {!selectedBranch
-                ? "Avval o‘z filialingizni tanlang — keyin jonli lokatsiya so‘raladi."
-                : !branchHasCoords
-                  ? "Bu filialga GPS saqlanmagan — cheklist yopiq."
-                  : gpsError
-                    ? "Joylashuv ruxsati kerak — «Lokatsiyani yoqish» ni bosing."
-                    : distanceMeters != null
-                      ? `Cheklist yopiq: filialdan ${formatDistance(distanceMeters)}. ${AUDIT_GEOFENCE_METERS} m ichiga kirganda avtomatik ochiladi.`
-                      : "Filialga boring va lokatsiyaga ruxsat bering — 50 m ichida cheklist ochiladi."}
+            <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+              {monthFull
+                ? t("checklist.visitFull")
+                : !selectedBranch
+                  ? t("checklist.gatePick")
+                  : !branchHasCoords
+                    ? t("checklist.gateNoGps")
+                    : gpsError
+                      ? t("checklist.gateNeedPerm")
+                      : distanceMeters != null
+                        ? tf(t, "checklist.gateFar", {
+                            dist: formatDistance(distanceMeters),
+                            m: AUDIT_GEOFENCE_METERS,
+                          })
+                        : tf(t, "checklist.gateGo", { m: AUDIT_GEOFENCE_METERS })}
             </div>
           )}
 
@@ -935,12 +1029,12 @@ export default function ChecklistPage() {
                               className={cn(
                                 "inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition-all active:scale-[0.98]",
                                 item.answer === "yes"
-                                  ? "border-emerald-600 bg-emerald-600 text-foreground dark:text-white shadow-sm"
+                                  ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
                                   : "border-border bg-card text-muted-foreground hover:border-emerald-300 hover:bg-emerald-50",
                               )}
                             >
                               <Check className="h-4 w-4" />
-                              Ha
+                              {t("ui.yes")}
                             </button>
                             <button
                               type="button"
@@ -948,12 +1042,12 @@ export default function ChecklistPage() {
                               className={cn(
                                 "inline-flex h-11 items-center justify-center gap-1.5 rounded-xl border text-sm font-semibold transition-all active:scale-[0.98]",
                                 item.answer === "no"
-                                  ? "border-rose-600 bg-rose-600 text-foreground dark:text-white shadow-sm"
+                                  ? "border-rose-600 bg-rose-600 text-white shadow-sm"
                                   : "border-border bg-card text-muted-foreground hover:border-rose-300 hover:bg-rose-50",
                               )}
                             >
                               <X className="h-4 w-4" />
-                              Yo‘q
+                              {t("ui.no")}
                             </button>
                           </div>
                           {item.answer === "no" && (
@@ -990,7 +1084,7 @@ export default function ChecklistPage() {
               {live.scorePercent}%
             </span>
             <span className="ml-2 text-xs text-muted-foreground">
-              ({live.yes} Ha · {live.no} Yo‘q · {live.total - live.answered} kutilyapti)
+              ({live.yes} {t("ui.yes")} · {live.no} {t("ui.no")} · {live.total - live.answered})
             </span>
           </div>
           <Button
@@ -999,9 +1093,10 @@ export default function ChecklistPage() {
             disabled={
               createAudit.isPending ||
               !canWrite ||
+              monthFull ||
               (user?.role === "koordinator" && !canFillChecklist)
             }
-            className="min-w-[160px]"
+            className="min-w-[160px] rounded-full"
           >
             <Save className="mr-1.5 h-4 w-4" />
             {createAudit.isPending ? t("checklist.saving") : t("checklist.save")}
@@ -1013,7 +1108,6 @@ export default function ChecklistPage() {
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:hidden">
         <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
           <span>
-            Natija:{" "}
             <span className={cn("text-base font-bold", scoreTone(live.scorePercent))}>
               {live.scorePercent}%
             </span>
@@ -1027,25 +1121,28 @@ export default function ChecklistPage() {
                   : "text-rose-600",
               )}
             >
-              {canFillChecklist
-                ? "Hududdasiz · ochiq"
-                : distanceMeters != null
-                  ? formatDistance(distanceMeters)
-                  : "GPS kutilmoqda"}
+              {monthFull
+                ? t("checklist.visitFull")
+                : canFillChecklist
+                  ? t("checklist.inZoneShort")
+                  : distanceMeters != null
+                    ? formatDistance(distanceMeters)
+                    : t("checklist.waitingGps")}
             </span>
           ) : (
             <span>
-              {live.yes} Ha · {live.no} Yo‘q · {live.total - live.answered} qoldi
+              {live.yes} {t("ui.yes")} · {live.no} {t("ui.no")}
             </span>
           )}
         </div>
         <Button
           size="lg"
-          className="h-12 w-full text-base"
+          className="h-12 w-full rounded-full text-base"
           onClick={() => void handleSave()}
           disabled={
             createAudit.isPending ||
             !canWrite ||
+            monthFull ||
             (user?.role === "koordinator" && !canFillChecklist)
           }
         >

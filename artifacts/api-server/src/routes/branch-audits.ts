@@ -1095,7 +1095,6 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
 
   const managerEmployeeId = parseInt(String(req.body?.managerEmployeeId ?? ""), 10);
   const visitDate = String(req.body?.visitDate || "").trim();
-  const visitName = String(req.body?.visitName || "1-tashrif").trim();
   const monthLabel = req.body?.monthLabel ? String(req.body.monthLabel).trim() : null;
   const generalNote = req.body?.generalNote ? String(req.body.generalNote).trim() : null;
   const categories = sanitizeCategories(req.body?.categories);
@@ -1106,7 +1105,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     res.status(400).json({ error: "Filialni tanlang" });
     return;
   }
-  if (!visitDate) {
+  if (!visitDate || !/^\d{4}-\d{2}-\d{2}$/.test(visitDate)) {
     res.status(400).json({ error: "Tashrif sanasini belgilang" });
     return;
   }
@@ -1151,6 +1150,26 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     }
   }
 
+  /** Oyiga 1 filialga max 4 tashrif — tizim o‘zi raqamlaydi */
+  const monthPrefix = visitDate.slice(0, 7);
+  const monthAudits = await db
+    .select({ id: branchAuditsTable.id, visitDate: branchAuditsTable.visitDate })
+    .from(branchAuditsTable)
+    .where(eq(branchAuditsTable.managerEmployeeId, managerEmployeeId));
+  const visitsThisMonth = monthAudits.filter((a) =>
+    String(a.visitDate || "").startsWith(monthPrefix),
+  );
+  if (visitsThisMonth.length >= 4) {
+    res.status(400).json({
+      error: "Bu oyda ushbu filialga 4 ta tashrif allaqachon saqlangan",
+      code: "month_visit_limit",
+      visitCount: visitsThisMonth.length,
+      maxVisits: 4,
+    });
+    return;
+  }
+  const visitName = `${visitsThisMonth.length + 1}-tashrif`;
+
   let distanceMeters: number | null = null;
   let savedCheckLat: number | null = null;
   let savedCheckLng: number | null = null;
@@ -1159,7 +1178,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
   const branchLat = manager.latitude ?? fromLoc?.lat ?? null;
   const branchLng = manager.longitude ?? fromLoc?.lng ?? null;
 
-  // Koordinator: filial GPS dan 50 m ichida bo‘lishi shart
+  // Koordinator: filial GPS dan 70 m ichida bo‘lishi shart
   if (req.userRole === "koordinator") {
     if (branchLat == null || branchLng == null) {
       res.status(400).json({

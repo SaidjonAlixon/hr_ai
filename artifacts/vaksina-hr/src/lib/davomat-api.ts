@@ -357,7 +357,7 @@ export async function fetchMyDavomat(): Promise<{
   return apiJson("/davomat/me");
 }
 
-export const DAVOMAT_GEOFENCE_METERS = 35;
+export const DAVOMAT_GEOFENCE_METERS = 70;
 /** Asosiy ofis — 100 m atrofida ham qabul qilinadi */
 export const DAVOMAT_OFFICE_GEOFENCE_METERS = 100;
 /** 41°13'09.3"N 69°16'22.9"E */

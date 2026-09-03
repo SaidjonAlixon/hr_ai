@@ -35,8 +35,8 @@ const VIEW_ROLES = new Set([
 ]);
 const WRITE_ROLES = new Set(["koordinator", "admin"]);
 
-/** Koordinator filialga 50 m dan yaqin bo‘lishi shart */
-export const AUDIT_GEOFENCE_METERS = 50;
+/** Koordinator filialga 70 m dan yaqin bo‘lishi shart */
+export const AUDIT_GEOFENCE_METERS = 70;
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number) {
   const toRad = (d: number) => (d * Math.PI) / 180;

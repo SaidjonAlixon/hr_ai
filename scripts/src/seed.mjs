@@ -5,11 +5,11 @@ const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
 const departments = ["Rekruting", "HR", "Trening", "Koordinator", "Farmasevt", "Laboratoriya"];
 
 const users = [
-  ["System Admin", "admin", null, "admin", "admin123", "+998901000001"],
+  ["System Admin", "admin", null, "vaksina_admin", "VmHr#Admin26", "+998901000001"],
   ["Aziza Recruiter", "recruiter", "Rekruting", "recruiter1", "pass123", "+998901000002"],
   ["Dilnoza HR", "hr", "HR", "hr1", "pass123", "+998901000003"],
   ["Jasur Trener", "trainer", "Trening", "trainer1", "pass123", "+998901000004"],
-  ["Bahodir Direktor", "director", null, "director1", "pass123", "+998901000005"],
+  ["Bahodir Direktor", "director", null, "vaksina_direktor", "VmHr#Dir26", "+998901000005"],
   ["Madina Bo'lim boshlig'i", "department_head", "HR", "dept_head1", "pass123", "+998901000006"],
   ["Sardor Mudir", "mudir", "Farmasevt", "mudir1", "pass123", "+998901000007"],
   ["Rustamova Lola", "koordinator", "Koordinator", "koordinator1", "pass123", "+998901000008"],

@@ -29,7 +29,7 @@ import {
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
-import { canViewEmployees, canAddDeptStaff } from "../../lib/roles";
+import { canViewEmployees, canAddDeptStaff, canChangeStaffStatus } from "../../lib/roles";
 import { AddDeptStaffButton } from "../../components/dept/AddDeptStaffDialog";
 import { fetchStaff, staffQueryKey, type StaffGroup } from "../../lib/staff-api";
 import { formatPersonName } from "../../lib/person-name";
@@ -152,20 +152,6 @@ function StaffAvatar({ employee }: { employee: Employee }) {
   );
 }
 
-function canEditEmploymentStatus(role?: string | null) {
-  return [
-    "admin",
-    "director",
-    "hr_direktor",
-    "hr_kadr_rahbar",
-    "hr_menejer",
-    "hr",
-    "moliya",
-    "koordinator",
-    "mudir",
-  ].includes(role || "");
-}
-
 function shiftLabel(e: Employee, t: TFn): string {
   if (e.shiftType === "custom" && e.shiftLabel) return e.shiftLabel;
   if (e.shiftType === "one") return t("emp.shift1");
@@ -243,7 +229,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const { user } = useAuth();
   const allowed = canViewEmployees(user?.role);
   const qc = useQueryClient();
-  const canEdit = canEditEmploymentStatus(user?.role);
+  const canEdit = canChangeStaffStatus(user?.role);
   const canAddStaff = canAddDeptStaff(user?.role);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");

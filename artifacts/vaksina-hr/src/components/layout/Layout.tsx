@@ -1028,6 +1028,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           onClick={opts.onNavigate}
           className={cn(
             'group relative flex items-center gap-2.5 cursor-pointer transition-all duration-200',
+            opts.collapsed && 'justify-center px-0 py-2',
             opts.nested
               ? cn(
                   'rounded-lg px-2 py-1.5',
@@ -1036,7 +1037,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                     : 'app-sidebar-nested-item',
                 )
               : cn(
-                  'rounded-lg px-2.5 py-2',
+                  !opts.collapsed && 'rounded-lg px-2.5 py-2',
+                  opts.collapsed && 'rounded-xl',
                   active ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item active:scale-[0.99]',
                 ),
           )}
@@ -1236,35 +1238,73 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           </div>
         </nav>
 
-        <div className={cn('shrink-0 space-y-1.5 px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]', desktopCollapsed && 'md:px-2')}>
+        <div
+          className={cn(
+            'shrink-0 space-y-1.5 px-2.5 pb-[max(0.5rem,env(safe-area-inset-bottom))]',
+            desktopCollapsed && 'md:space-y-2 md:px-1.5',
+          )}
+        >
+          {/* Collapsed rail: vertical stack — no overflow */}
+          {desktopCollapsed ? (
+            <div className="hidden md:flex md:flex-col md:items-center md:gap-1">
+              <button
+                type="button"
+                onClick={openProfileEditor}
+                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full ring-2 ring-white/20 transition hover:ring-white/40"
+                title={t('common.profileEdit')}
+              >
+                {facePhotoUrl ? (
+                  <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                  <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-violet-500 to-sky-400 text-sm font-bold text-white">
+                    {(user.fullName || 'U').slice(0, 1).toUpperCase()}
+                  </span>
+                )}
+              </button>
+              <ThemeToggle
+                variant="sidebar"
+                className="h-8 w-8 rounded-lg text-white/70 hover:bg-white/10 hover:text-white [&_svg]:h-3.5 [&_svg]:w-3.5"
+              />
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="flex h-8 w-8 items-center justify-center rounded-lg text-white/70 transition hover:bg-white/10 hover:text-white"
+                title={t('common.logout')}
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={toggleNav}
+                className="mt-0.5 flex h-8 w-full items-center justify-center rounded-lg border border-white/10 bg-white/5 text-white/65 transition hover:bg-white/10 hover:text-white"
+                aria-label={t('common.expandMenu')}
+              >
+                <ChevronLeft className="h-3.5 w-3.5 rotate-180" />
+              </button>
+            </div>
+          ) : null}
+
+          {/* Expanded / mobile profile card */}
           <div
             className={cn(
               'app-sidebar-profile-card flex items-center gap-1.5',
-              desktopCollapsed && 'md:justify-center md:p-1.5',
+              desktopCollapsed && 'md:hidden',
             )}
           >
             <button
               type="button"
               onClick={openProfileEditor}
-              className={cn(
-                'flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-white/[0.06]',
-                desktopCollapsed && 'md:justify-center md:flex-none',
-              )}
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg text-left transition-colors hover:bg-white/[0.06]"
               title={t('common.profileEdit')}
             >
-              <div
-                className={cn(
-                  'app-sidebar-profile-avatar ring-1 ring-white/15',
-                  desktopCollapsed && 'md:h-8 md:w-8',
-                )}
-              >
+              <div className="app-sidebar-profile-avatar ring-1 ring-white/15">
                 {facePhotoUrl ? (
                   <img src={facePhotoUrl} alt="" className="h-full w-full object-cover" />
                 ) : (
                   (user.fullName || 'U').slice(0, 1).toUpperCase()
                 )}
               </div>
-              <div className={cn('min-w-0 flex-1', desktopCollapsed && 'md:hidden')}>
+              <div className="min-w-0 flex-1">
                 <span className="app-sidebar-profile-name">{profileDisplayName(user.fullName)}</span>
                 <span className="mt-px flex min-w-0 items-center gap-1.5">
                   <span className="truncate text-[10px] text-white/50">{userRoleLabel(user.role)}</span>
@@ -1275,12 +1315,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 </span>
               </div>
             </button>
-            <div className={cn('flex shrink-0 items-center', desktopCollapsed && 'md:flex-col')}>
+            <div className="flex shrink-0 items-center gap-0.5">
               <ThemeToggle
                 variant="sidebar"
-                className="app-sidebar-profile-action h-7 w-7 rounded-md border-0"
+                className="app-sidebar-profile-action h-7 w-7 rounded-md border-0 [&_svg]:h-3.5 [&_svg]:w-3.5"
               />
               <button
+                type="button"
                 onClick={handleLogout}
                 className="app-sidebar-profile-action"
                 title={t('common.logout')}
@@ -1301,12 +1342,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             onClick={toggleNav}
             className={cn(
               'app-sidebar-collapse-btn flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-white/65 transition-colors hover:bg-white/10 hover:text-white',
-              desktopCollapsed && 'md:px-0',
+              desktopCollapsed && 'md:hidden',
             )}
-            aria-label={desktopCollapsed ? t('common.expandMenu') : t('common.collapseMenu')}
+            aria-label={t('common.collapseMenu')}
           >
-            <ChevronLeft className={cn('h-3.5 w-3.5 transition-transform', desktopCollapsed && 'rotate-180')} />
-            <span className={cn(desktopCollapsed && 'md:hidden')}>{t('common.collapseMenu')}</span>
+            <ChevronLeft className="h-3.5 w-3.5" />
+            <span>{t('common.collapseMenu')}</span>
           </button>
         </div>
       </aside>

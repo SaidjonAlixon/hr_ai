@@ -31,6 +31,8 @@ import {
   CloudUpload,
   FileSpreadsheet,
   FileImage,
+  CheckCircle2,
+  UserRound,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -66,7 +68,7 @@ import {
 } from "@/components/ui/command";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n/I18nProvider";
-import { isSbRole } from "@/lib/roles";
+import { isSbRole, userRoleLabel } from "@/lib/roles";
 import { SB_TASK_TEMPLATES } from "@/lib/sb";
 import {
   fileToAttachment,
@@ -99,6 +101,11 @@ type Props = {
   branchOptions: string[];
   currentUserName?: string | null;
   currentUserRole?: string | null;
+  /** manage = yaratish/tahrirlash; work = ijrochi (asoslar o‘qish) */
+  mode?: "manage" | "work";
+  /** Ijrochi rejimida beruvchi ismi / lavozimi */
+  assignerName?: string | null;
+  assignerRole?: string | null;
   saving?: boolean;
   defaultDueAt?: string | null;
   onSave: (payload: VazifaInput) => Promise<void>;
@@ -107,6 +114,11 @@ type Props = {
     meta: TaskMeta;
     attachments: TaskAttachment[];
   }) => Promise<void>;
+  onWorkAccept?: () => Promise<void>;
+  onWorkComplete?: (note: string, files: TaskAttachment[]) => Promise<void>;
+  onWorkExtend?: () => void;
+  onTaskUpdated?: (task: Vazifa) => void;
+  onVerify?: (action: "approve" | "rework") => Promise<void> | void;
 };
 
 const TITLE_MAX = 200;
@@ -161,10 +173,12 @@ function SectionCard({
   title,
   tint,
   children,
+  className,
 }: {
   title: string;
-  tint?: "blue" | "teal" | "violet" | "amber";
+  tint?: "blue" | "teal" | "violet" | "amber" | "emerald";
   children: React.ReactNode;
+  className?: string;
 }) {
   const tintBar =
     tint === "teal"
@@ -173,15 +187,174 @@ function SectionCard({
         ? "from-violet-400 to-fuchsia-500"
         : tint === "amber"
           ? "from-amber-400 to-orange-500"
-          : "from-[#0b5fff] to-sky-400";
+          : tint === "emerald"
+            ? "from-emerald-500 to-teal-400"
+            : "from-[#0b5fff] to-sky-400";
+  const titleTone =
+    tint === "emerald"
+      ? "text-emerald-800 dark:text-emerald-300"
+      : "text-[#0a2540]/65 dark:text-slate-400";
   return (
-    <section className={cn(CARD, "relative overflow-hidden")}>
+    <section className={cn(CARD, "relative overflow-hidden", className)}>
       <div className={cn("absolute inset-y-0 left-0 w-1 bg-gradient-to-b", tintBar)} />
-      <p className="mb-3.5 pl-2 text-[11px] font-bold uppercase tracking-[0.14em] text-[#0a2540]/65 dark:text-slate-400">
+      <p className={cn("mb-3.5 pl-2 text-[11px] font-bold uppercase tracking-[0.14em]", titleTone)}>
         {title}
       </p>
       <div className="space-y-3.5 pl-2">{children}</div>
     </section>
+  );
+}
+
+function isImageAtt(a?: TaskAttachment | null) {
+  if (!a) return false;
+  return a.kind === "image" || (a.mimeType || "").startsWith("image/");
+}
+
+/** Beruvchi / bajaruvchi uchun yuborilgan natijani aniq ko‘rsatish */
+function SubmittedResultView({
+  note,
+  files,
+  assigneeName,
+  completedAt,
+  awaitingReview,
+  onOpenImage,
+  onVerify,
+  t,
+}: {
+  note?: string | null;
+  files?: TaskAttachment[] | null;
+  assigneeName?: string | null;
+  completedAt?: string | null;
+  awaitingReview?: boolean;
+  onOpenImage?: (url: string) => void;
+  onVerify?: (action: "approve" | "rework") => void;
+  t: (k: string) => string;
+}) {
+  const list = files || [];
+  const images = list.filter((a) => isImageAtt(a));
+  const docs = list.filter((a) => !isImageAtt(a));
+
+  return (
+    <div className="overflow-hidden rounded-2xl border border-emerald-200/90 bg-gradient-to-br from-emerald-50 via-white to-teal-50/60 shadow-sm dark:border-emerald-800/60 dark:from-emerald-950/40 dark:via-slate-900 dark:to-teal-950/30">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-100 bg-emerald-600/95 px-3.5 py-2.5 text-white dark:border-emerald-800 dark:bg-emerald-700">
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-4 w-4 shrink-0" />
+          <p className="text-[12px] font-bold uppercase tracking-[0.12em]">
+            {t("tasks.form.assigneeResult")}
+          </p>
+        </div>
+        {awaitingReview ? (
+          <span className="rounded-full bg-white/20 px-2 py-0.5 text-[10px] font-bold">
+            {t("tasks.badge.awaitingReview")}
+          </span>
+        ) : null}
+      </div>
+
+      <div className="space-y-3 p-3.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-slate-600 dark:text-slate-300">
+          {assigneeName ? (
+            <span className="inline-flex items-center gap-1.5 font-semibold text-[#0a2540] dark:text-slate-100">
+              <UserRound className="h-3.5 w-3.5 text-emerald-600" />
+              {assigneeName}
+            </span>
+          ) : null}
+          {completedAt ? (
+            <span className="inline-flex items-center gap-1.5 tabular-nums">
+              <Clock className="h-3.5 w-3.5 text-slate-400" />
+              {formatStatusTime(completedAt)}
+            </span>
+          ) : null}
+        </div>
+
+        <div>
+          <p className="mb-1 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            {t("tasks.resultText")}
+          </p>
+          {note?.trim() ? (
+            <div className="whitespace-pre-wrap rounded-xl border border-emerald-100 bg-white/90 px-3.5 py-3 text-sm leading-relaxed text-slate-800 dark:border-emerald-900 dark:bg-slate-950/60 dark:text-slate-100">
+              {note}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-dashed border-slate-200 bg-slate-50/80 px-3 py-2 text-sm text-muted-foreground dark:border-slate-700 dark:bg-slate-900">
+              {t("tasks.form.resultNoText")}
+            </p>
+          )}
+        </div>
+
+        {(images.length > 0 || docs.length > 0) && (
+          <div className="space-y-2">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+              {t("tasks.form.resultFiles")}
+              <span className="ml-1 font-semibold normal-case text-emerald-700">
+                ({list.length})
+              </span>
+            </p>
+            {images.length > 0 && (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {images.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => onOpenImage?.(a.url)}
+                    className="group relative overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm transition hover:ring-2 hover:ring-emerald-400 dark:border-emerald-900 dark:bg-slate-950"
+                  >
+                    <img
+                      src={a.url}
+                      alt={a.name}
+                      className="aspect-[4/3] w-full object-cover"
+                    />
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
+                      {a.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {docs.length > 0 && (
+              <ul className="space-y-1.5">
+                {docs.map((a) => (
+                  <li key={a.id}>
+                    <a
+                      href={a.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-[#0a2540] transition hover:border-emerald-300 hover:bg-emerald-50/60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                    >
+                      <FileText className="h-4 w-4 shrink-0 text-emerald-600" />
+                      <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground">
+                        {formatSize(a.size) || "ochish"}
+                      </span>
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {awaitingReview && onVerify ? (
+          <div className="flex flex-col gap-2 border-t border-emerald-100 pt-3 sm:flex-row dark:border-emerald-900">
+            <Button
+              type="button"
+              className="flex-1 gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700"
+              onClick={() => onVerify("approve")}
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              {t("ui.approve")}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1 gap-1.5 rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50"
+              onClick={() => onVerify("rework")}
+            >
+              {t("tasks.rework")}
+            </Button>
+          </div>
+        ) : null}
+      </div>
+    </div>
   );
 }
 
@@ -382,17 +555,27 @@ export function TaskFormDialog({
   branchOptions: _branchOptions,
   currentUserName,
   currentUserRole,
+  mode = "manage",
+  assignerName,
+  assignerRole,
   saving,
   defaultDueAt,
   onSave,
   onPersistChat,
+  onWorkAccept,
+  onWorkComplete,
+  onWorkExtend,
+  onTaskUpdated,
+  onVerify,
 }: Props) {
   const { t } = useI18n();
   const { toast } = useToast();
   const sendTaskMessage = useSendTaskMessage();
+  const isWork = mode === "work";
   const descRef = useRef<HTMLTextAreaElement>(null);
   const tagInputRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const workFileRef = useRef<HTMLInputElement>(null);
 
   const [expanded, setExpanded] = useState(false);
   const [title, setTitle] = useState("");
@@ -430,6 +613,10 @@ export function TaskFormDialog({
   } | null>(null);
   const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+  const [workNote, setWorkNote] = useState("");
+  const [workFiles, setWorkFiles] = useState<TaskAttachment[]>([]);
+  const [workBusy, setWorkBusy] = useState(false);
+  const [workUploading, setWorkUploading] = useState(false);
   const chatFileRef = useRef<HTMLInputElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef<TaskChatMessage[]>([]);
@@ -452,6 +639,7 @@ export function TaskFormDialog({
     };
   }, [pendingPreview?.url]);
 
+  // To‘liq hydrate — faqat ochilganda / vazifa id o‘zgaganda (chat yangilanishi natija matnini o‘chirmasin)
   useEffect(() => {
     if (!open) return;
     if (editing) {
@@ -488,6 +676,8 @@ export function TaskFormDialog({
       setChatDraft("");
       setSideTab("chat");
       setExpanded(false);
+      setWorkNote(editing.completionNote || "");
+      setWorkFiles(editing.completionAttachments || []);
       return;
     }
     setTitle("");
@@ -515,6 +705,8 @@ export function TaskFormDialog({
     setChatDraft("");
     setSideTab("chat");
     setExpanded(false);
+    setWorkNote("");
+    setWorkFiles([]);
     const due = splitDue(toDatetimeLocalValue(defaultDueAt || null));
     if (due.date) {
       setDueDate(due.date);
@@ -526,7 +718,30 @@ export function TaskFormDialog({
       setDueDate(d.date);
       setDueTime(d.time || "18:00");
     }
-  }, [open, editing, defaultDueAt]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: hydrate by id only
+  }, [open, editing?.id, defaultDueAt]);
+
+  // Status / natija / chat serverdan yangilanganda (id o‘zgarmasa ham)
+  useEffect(() => {
+    if (!open || !editing) return;
+    const meta = (editing.meta || {}) as TaskMeta;
+    if (Array.isArray(meta.messages)) setMessages(meta.messages);
+    if (Array.isArray(meta.history) && meta.history.length) setHistory(meta.history);
+    setAttachments(editing.attachments || []);
+    if (editing.completionNote) setWorkNote(editing.completionNote);
+    if ((editing.completionAttachments?.length ?? 0) > 0) {
+      setWorkFiles(editing.completionAttachments || []);
+    }
+  }, [
+    open,
+    editing?.id,
+    editing?.status,
+    editing?.completionNote,
+    editing?.completedAt,
+    editing?.meta,
+    editing?.attachments,
+    editing?.completionAttachments,
+  ]);
 
   const selectedAssignee = useMemo(
     () => assigneeOptions.find((o) => o.key === assigneeKey),
@@ -742,7 +957,7 @@ export function TaskFormDialog({
       id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       text: body,
       authorName: currentUserName || t("tasks.form.you"),
-      authorRole: "assigner",
+      authorRole: isWork ? "assignee" : "assigner",
       createdAt: new Date().toISOString(),
       attachment: attachment || null,
     };
@@ -777,6 +992,7 @@ export function TaskFormDialog({
         setMessages(Array.isArray(meta.messages) ? meta.messages : nextMessages);
         setHistory(Array.isArray(meta.history) ? meta.history : nextHistory);
         setAttachments(updated.attachments || nextAttachments);
+        onTaskUpdated?.(updated);
       } catch {
         // Eski API / 404 bo‘lsa — meta orqali saqlash
         await persistChatNow(nextMessages, nextHistory, nextAttachments);
@@ -841,9 +1057,68 @@ export function TaskFormDialog({
     await sendChat(chatDraft);
   }
 
-  const roleLabel = (currentUserRole || "").replace(/_/g, " ");
+  const roleLabel = userRoleLabel(currentUserRole) || (currentUserRole || "").replace(/_/g, " ");
+  const assignerDisplayName = assignerName || editing?.createdByName || t("tasks.form.you");
+  const assignerDisplayRole =
+    userRoleLabel(assignerRole) || (assignerRole || "").replace(/_/g, " ");
   const assigneeLabel = selectedAssignee?.name || t("tasks.form.assignee");
+  const chatPartnerName = isWork ? assignerDisplayName : assigneeLabel;
+  const chatPartnerReady = isWork ? !!assignerDisplayName : !!selectedAssignee;
   const EMOJIS = ["👍", "✅", "🙏", "😊", "🔥", "📎", "📷", "⏰", "❗", "👏"];
+  const canWorkComplete = isWork && editing?.status === "in_progress";
+  const needsWorkAccept = isWork && editing?.status === "todo";
+  const workDoneLocked =
+    isWork &&
+    (editing?.status === "done" ||
+      editing?.status === "verified" ||
+      (!!editing?.completionNote && editing?.status !== "in_progress"));
+
+  async function pickWorkFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setWorkUploading(true);
+    try {
+      const next = [...workFiles];
+      for (const file of Array.from(files)) {
+        if (next.length >= 8) break;
+        if (file.size > 10 * 1024 * 1024) {
+          toast({
+            title: t("tasks.form.fileFail"),
+            description: `«${file.name}» 10 MB dan katta`,
+            variant: "destructive",
+          });
+          continue;
+        }
+        next.push(await fileToAttachment(file));
+      }
+      setWorkFiles(next);
+    } catch (e: any) {
+      toast({
+        title: t("tasks.form.fileFail"),
+        description: e?.message || "Xato",
+        variant: "destructive",
+      });
+    } finally {
+      setWorkUploading(false);
+    }
+  }
+
+  async function submitWorkComplete() {
+    if (!onWorkComplete) return;
+    if (!workNote.trim() && workFiles.length === 0) {
+      toast({
+        title: "Natija qo‘shing",
+        description: "Matn, rasm yoki fayl majburiy",
+        variant: "destructive",
+      });
+      return;
+    }
+    setWorkBusy(true);
+    try {
+      await onWorkComplete(workNote.trim(), workFiles);
+    } finally {
+      setWorkBusy(false);
+    }
+  }
 
   function formatMsgTime(iso: string) {
     try {
@@ -854,13 +1129,11 @@ export function TaskFormDialog({
     }
   }
 
-  function isImageAtt(a?: TaskAttachment | null) {
-    if (!a) return false;
-    return a.kind === "image" || (a.mimeType || "").startsWith("image/");
-  }
-
   const CHAT_BG =
     "https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1200&q=70";
+
+  const hasSubmittedResult =
+    !!editing?.completionNote || (editing?.completionAttachments?.length ?? 0) > 0;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -872,19 +1145,57 @@ export function TaskFormDialog({
             : "max-h-[94vh] w-[96vw] max-w-7xl sm:max-w-7xl",
         )}
       >
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border border-slate-200/60 bg-gradient-to-br from-[#eef4ff] via-[#f7f9fc] to-[#e8fff7] shadow-[0_24px_80px_rgba(10,37,64,0.18)] dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
-          <div className="h-1.5 w-full bg-gradient-to-r from-[#0a2540] via-[#0b5fff] to-teal-400" />
+        <div
+          className={cn(
+            "flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border shadow-[0_24px_80px_rgba(10,37,64,0.18)]",
+            isWork
+              ? "border-teal-200/70 bg-gradient-to-br from-teal-50 via-emerald-50/40 to-slate-50 dark:border-teal-900 dark:from-slate-950 dark:via-emerald-950/30 dark:to-slate-950"
+              : "border-slate-200/60 bg-gradient-to-br from-[#eef4ff] via-[#f7f9fc] to-[#e8fff7] dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950",
+          )}
+        >
+          <div
+            className={cn(
+              "h-1.5 w-full bg-gradient-to-r",
+              isWork
+                ? "from-teal-700 via-emerald-500 to-cyan-400"
+                : "from-[#0a2540] via-[#0b5fff] to-teal-400",
+            )}
+          />
           <DialogHeader className="space-y-1 border-b border-slate-200/70 bg-white/75 px-5 py-4 pr-14 text-left backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
-              <DialogTitle className="bg-gradient-to-r from-[#0a2540] to-[#0b5fff] bg-clip-text text-lg font-bold tracking-tight text-transparent sm:text-xl dark:from-white dark:to-sky-300">
-                {editing ? t("tasks.edit") : t("tasks.form.createTitle")}
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
+                    isWork
+                      ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-800"
+                      : "bg-sky-100 text-sky-800 ring-1 ring-sky-200 dark:bg-sky-950 dark:text-sky-200 dark:ring-sky-800",
+                  )}
+                >
+                  {isWork ? t("tasks.work.roleBadge") : t("tasks.form.assignerBadge")}
+                </span>
+              </div>
+              <DialogTitle
+                className={cn(
+                  "bg-clip-text text-lg font-bold tracking-tight text-transparent sm:text-xl",
+                  isWork
+                    ? "bg-gradient-to-r from-teal-800 to-emerald-600 dark:from-emerald-200 dark:to-teal-300"
+                    : "bg-gradient-to-r from-[#0a2540] to-[#0b5fff] dark:from-white dark:to-sky-300",
+                )}
+              >
+                {isWork
+                  ? t("tasks.work.title")
+                  : editing
+                    ? t("tasks.edit")
+                    : t("tasks.form.createTitle")}
               </DialogTitle>
               <DialogDescription className="text-sm text-slate-500 dark:text-slate-400">
-                {t("tasks.form.createSubtitle")}
+                {isWork ? t("tasks.work.subtitle") : t("tasks.form.createSubtitle")}
               </DialogDescription>
             </div>
             <div className="flex items-center gap-2">
+              {!isWork && (
               <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -947,6 +1258,7 @@ export function TaskFormDialog({
                   </Command>
                 </PopoverContent>
               </Popover>
+              )}
               <Button
                 type="button"
                 variant="ghost"
@@ -970,12 +1282,32 @@ export function TaskFormDialog({
           {/* LEFT */}
           <div className="space-y-3.5 overflow-y-auto border-b border-slate-200/60 bg-transparent p-3.5 sm:p-4 xl:border-b-0 xl:border-r xl:border-slate-200/60 dark:border-slate-800">
             {editing && (
-              <div className={cn(CARD, "border-l-4 border-l-sky-500 p-3")}>
+              <div
+                className={cn(
+                  CARD,
+                  "border-l-4 p-3",
+                  isWork ? "border-l-emerald-500" : "border-l-sky-500",
+                )}
+              >
                 <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-bold uppercase tracking-wide text-sky-700 dark:text-sky-300">
-                    {t("tasks.form.tracking")}
+                  <p
+                    className={cn(
+                      "text-[11px] font-bold uppercase tracking-wide",
+                      isWork
+                        ? "text-emerald-700 dark:text-emerald-300"
+                        : "text-sky-700 dark:text-sky-300",
+                    )}
+                  >
+                    {isWork ? t("tasks.work.roleBadge") : t("tasks.form.tracking")}
                   </p>
-                  <span className="rounded-full bg-sky-100 px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide text-sky-800 dark:bg-sky-950 dark:text-sky-200">
+                  <span
+                    className={cn(
+                      "rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase tracking-wide",
+                      isWork
+                        ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-200"
+                        : "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200",
+                    )}
+                  >
                     {t(
                       editing.status === "todo"
                         ? "tasks.status.todo"
@@ -998,6 +1330,35 @@ export function TaskFormDialog({
             )}
 
             <SectionCard title={t("tasks.form.section.main")} tint="blue">
+            {isWork ? (
+              <div className="space-y-3">
+                <div>
+                  <p className={cn(LABEL, "mb-1")}>{t("tasks.form.taskName")}</p>
+                  <p className="rounded-xl border border-slate-200/80 bg-slate-50/80 px-3.5 py-2.5 text-sm font-semibold text-[#0a2540] dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50">
+                    {title || "—"}
+                  </p>
+                </div>
+                <div>
+                  <p className={cn(LABEL, "mb-1")}>{t("tasks.field.desc")}</p>
+                  <div className="min-h-[100px] whitespace-pre-wrap rounded-xl border border-slate-200/80 bg-slate-50/80 px-3.5 py-3 text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+                    {description || "Tavsif yo‘q"}
+                  </div>
+                </div>
+                {checklist.length > 0 && (
+                  <ul className="space-y-1.5 rounded-xl border border-slate-200/70 bg-white/70 p-3 dark:border-slate-700 dark:bg-slate-900/60">
+                    {checklist.map((c) => (
+                      <li key={c.id} className="flex items-start gap-2 text-sm">
+                        <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#0b5fff]" />
+                        <span className={cn(c.done && "text-muted-foreground line-through")}>
+                          {c.text}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : (
+              <>
             <div className="space-y-1.5">
               <div className="flex items-center justify-between gap-2">
                 <Label className={LABEL}>{t("tasks.form.taskName")}</Label>
@@ -1068,8 +1429,149 @@ export function TaskFormDialog({
                 />
               </div>
             </div>
+              </>
+            )}
             </SectionCard>
 
+            {isWork ? (
+              <>
+                <SectionCard title={t("tasks.form.assigner")} tint="teal">
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white shadow-md">
+                      {assignerDisplayName.trim().charAt(0).toUpperCase() || "B"}
+                    </span>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-bold text-[#0a2540] dark:text-slate-50">
+                        {assignerDisplayName}
+                      </p>
+                      {assignerDisplayRole ? (
+                        <p className="truncate text-[12px] font-medium capitalize text-slate-500">
+                          {assignerDisplayRole}
+                        </p>
+                      ) : null}
+                    </div>
+                  </div>
+                </SectionCard>
+
+                <SectionCard title={t("tasks.form.section.schedule")} tint="amber">
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <p className={cn(LABEL, "mb-1")}>{t("tasks.deadline")}</p>
+                      <p className="inline-flex items-center gap-2 rounded-xl border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-sm font-semibold text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {editing?.dueAt
+                          ? formatStatusTime(editing.dueAt) || "—"
+                          : t("tasks.noDue")}
+                      </p>
+                    </div>
+                    <div>
+                      <p className={cn(LABEL, "mb-1")}>{t("tasks.priorityLabel")}</p>
+                      <span
+                        className={cn(
+                          "inline-flex rounded-lg border px-2.5 py-1.5 text-xs font-bold",
+                          PRIORITIES.find((p) => p.value === priority)?.idle,
+                        )}
+                      >
+                        {t(PRIORITIES.find((p) => p.value === priority)?.labelKey || "tasks.priority.normal")}
+                      </span>
+                    </div>
+                  </div>
+                </SectionCard>
+
+                {canWorkComplete ? (
+                  <SectionCard
+                    title={t("tasks.result")}
+                    tint="emerald"
+                    className="ring-1 ring-emerald-200/80 dark:ring-emerald-800/50"
+                  >
+                    <div className="space-y-3">
+                      <p className="text-xs leading-snug text-slate-600 dark:text-slate-300">
+                        {t("tasks.work.resultHint")}
+                      </p>
+                      <div className="space-y-1.5">
+                        <Label className={LABEL}>{t("tasks.resultText")}</Label>
+                        <Textarea
+                          value={workNote}
+                          onChange={(e) => setWorkNote(e.target.value)}
+                          rows={4}
+                          placeholder={t("tasks.ph.result")}
+                          className="min-h-[110px] resize-y rounded-xl border-slate-300 bg-white text-sm shadow-none focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/25 dark:border-slate-600 dark:bg-slate-950"
+                        />
+                      </div>
+                      <input
+                        ref={workFileRef}
+                        type="file"
+                        multiple
+                        accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                        className="hidden"
+                        onChange={(e) => {
+                          void pickWorkFiles(e.target.files);
+                          e.target.value = "";
+                        }}
+                      />
+                      <button
+                        type="button"
+                        disabled={workUploading}
+                        onClick={() => workFileRef.current?.click()}
+                        className="flex w-full flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-teal-400/80 bg-white px-3 py-5 text-sm text-teal-800 transition hover:border-teal-500 hover:bg-teal-50/50 dark:border-teal-500/50 dark:bg-slate-950 dark:text-teal-200"
+                      >
+                        <Paperclip className="h-5 w-5 text-teal-600" />
+                        <span className="font-bold">
+                          {workUploading ? t("ui.loading") : t("tasks.work.attachFile")}
+                        </span>
+                        <span className="text-[11px] font-medium text-slate-500">
+                          {t("tasks.work.attachHint")}
+                        </span>
+                      </button>
+                      {workFiles.length > 0 && (
+                        <ul className="space-y-1.5">
+                          {workFiles.map((a) => (
+                            <li
+                              key={a.id}
+                              className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/50 px-2.5 py-1.5 text-xs dark:border-emerald-900 dark:bg-emerald-950/30"
+                            >
+                              {isImageAtt(a) ? (
+                                <img
+                                  src={a.url}
+                                  alt=""
+                                  className="h-8 w-8 rounded object-cover"
+                                />
+                              ) : (
+                                <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+                              )}
+                              <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setWorkFiles((prev) => prev.filter((x) => x.id !== a.id))
+                                }
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </SectionCard>
+                ) : workDoneLocked || hasSubmittedResult ? (
+                  <SubmittedResultView
+                    note={editing?.completionNote || workNote}
+                    files={
+                      (editing?.completionAttachments?.length
+                        ? editing.completionAttachments
+                        : workFiles) || []
+                    }
+                    assigneeName={editing?.assigneeName || currentUserName}
+                    completedAt={editing?.completedAt}
+                    awaitingReview={editing?.status === "done"}
+                    onOpenImage={setLightboxUrl}
+                    t={t}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <>
             <SectionCard title={t("tasks.form.section.assign")} tint="teal">
               <div className="space-y-1.5">
                 <Label className={LABEL}>{t("tasks.form.assignee")}</Label>
@@ -1247,6 +1749,23 @@ export function TaskFormDialog({
             </div>
             </SectionCard>
 
+            {hasSubmittedResult && (
+              <SubmittedResultView
+                note={editing?.completionNote}
+                files={editing?.completionAttachments}
+                assigneeName={editing?.assigneeName || selectedAssignee?.name}
+                completedAt={editing?.completedAt}
+                awaitingReview={editing?.status === "done"}
+                onOpenImage={setLightboxUrl}
+                onVerify={
+                  editing?.status === "done" && onVerify
+                    ? (action) => void onVerify(action)
+                    : undefined
+                }
+                t={t}
+              />
+            )}
+
             <SectionCard title={t("tasks.form.section.files")} tint="violet">
               <div className="space-y-4">
                 <div className="space-y-2">
@@ -1403,52 +1922,74 @@ export function TaskFormDialog({
               </div>
             </SectionCard>
 
-            {editing?.completionNote || (editing?.completionAttachments?.length ?? 0) > 0 ? (
-              <div className="space-y-2 rounded-xl border border-emerald-200 bg-emerald-50/80 p-3 dark:border-emerald-900 dark:bg-emerald-950/30">
-                <p className="text-xs font-semibold text-emerald-800 dark:text-emerald-200">
-                  {t("tasks.form.assigneeResult")}
-                </p>
-                {editing?.completionNote && (
-                  <p className="whitespace-pre-wrap text-sm text-emerald-900 dark:text-emerald-100">
-                    {editing.completionNote}
-                  </p>
-                )}
-              </div>
-            ) : null}
+              </>
+            )}
           </div>
 
           {/* MIDDLE (settings) */}
           <div className="flex min-h-0 flex-col overflow-y-auto border-b border-slate-200/60 bg-transparent p-3.5 sm:p-4 dark:border-slate-800 xl:border-b-0 xl:border-r">
+            {!isWork && hasSubmittedResult && (
+              <div className="mb-3 rounded-xl border border-emerald-200 bg-emerald-50/90 px-3 py-2.5 dark:border-emerald-800 dark:bg-emerald-950/40">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-emerald-800 dark:text-emerald-200">
+                  {t("tasks.form.assigneeResult")}
+                </p>
+                <p className="mt-1 line-clamp-3 text-xs leading-relaxed text-emerald-950 dark:text-emerald-100">
+                  {editing?.completionNote?.trim() ||
+                    t("tasks.form.resultNoText")}
+                </p>
+                {(editing?.completionAttachments?.length ?? 0) > 0 && (
+                  <p className="mt-1 text-[11px] font-semibold text-emerald-700">
+                    {t("tasks.form.resultFiles")}: {editing!.completionAttachments.length}
+                  </p>
+                )}
+              </div>
+            )}
             <div className={cn(CARD, "mb-3 relative shrink-0 !p-3")}>
-              <div className="pointer-events-none absolute inset-y-0 left-0 w-1.5 rounded-l-2xl bg-gradient-to-b from-[#0a2540] to-[#0b5fff]" />
+              <div
+                className={cn(
+                  "pointer-events-none absolute inset-y-0 left-0 w-1.5 rounded-l-2xl bg-gradient-to-b",
+                  isWork ? "from-teal-700 to-emerald-500" : "from-[#0a2540] to-[#0b5fff]",
+                )}
+              />
               <div className="flex items-center gap-3 pl-2.5">
                 <span
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white shadow-md shadow-blue-500/25 ring-2 ring-white dark:ring-slate-800"
                   aria-hidden
                 >
-                  {(currentUserName || t("tasks.form.you")).trim().charAt(0).toUpperCase() || "S"}
+                  {(isWork ? assignerDisplayName : currentUserName || t("tasks.form.you"))
+                    .trim()
+                    .charAt(0)
+                    .toUpperCase() || "S"}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
                     <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#0b5fff]">
                       {t("tasks.form.assigner")}
                     </p>
-                    <span className="rounded-full bg-emerald-50 px-1.5 py-px text-[9px] font-bold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800">
-                      {t("tasks.form.auto")}
-                    </span>
+                    {!isWork && (
+                      <span className="rounded-full bg-emerald-50 px-1.5 py-px text-[9px] font-bold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800">
+                        {t("tasks.form.auto")}
+                      </span>
+                    )}
                   </div>
                   <p className="truncate text-sm font-bold leading-tight text-[#0a2540] dark:text-slate-50">
-                    {t("tasks.form.you")}
-                    {currentUserName ? (
-                      <span className="font-semibold text-slate-700 dark:text-slate-200">
-                        {" · "}
-                        {currentUserName}
-                      </span>
-                    ) : null}
+                    {isWork ? (
+                      assignerDisplayName
+                    ) : (
+                      <>
+                        {t("tasks.form.you")}
+                        {currentUserName ? (
+                          <span className="font-semibold text-slate-700 dark:text-slate-200">
+                            {" · "}
+                            {currentUserName}
+                          </span>
+                        ) : null}
+                      </>
+                    )}
                   </p>
-                  {roleLabel ? (
+                  {(isWork ? assignerDisplayRole : roleLabel) ? (
                     <p className="truncate text-[11px] font-medium capitalize text-slate-500 dark:text-slate-400">
-                      {roleLabel}
+                      {isWork ? assignerDisplayRole : roleLabel}
                     </p>
                   ) : null}
                 </div>
@@ -1543,6 +2084,8 @@ export function TaskFormDialog({
               </ol>
             </div>
 
+            {!isWork && (
+              <>
             <div className={cn(CARD, "mb-3 space-y-2")}>
               <label className="flex items-center gap-2 text-sm font-semibold text-[#0a2540] dark:text-slate-100">
                 <Checkbox checked={reminderEnabled} onCheckedChange={(v) => setReminderEnabled(!!v)} />
@@ -1626,8 +2169,82 @@ export function TaskFormDialog({
                 {t("tasks.form.extraSettingsHint")}
               </div>
             )}
+              </>
+            )}
+
+            {isWork && editing?.dueAt && (
+              <div className={cn(CARD, "mb-3 space-y-2")}>
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+                  {t("tasks.deadline")}
+                </p>
+                <p className="flex items-center gap-2 text-sm font-semibold text-[#0a2540] dark:text-slate-50">
+                  <Calendar className="h-4 w-4 text-[#0b5fff]" />
+                  {formatStatusTime(editing.dueAt)}
+                </p>
+                {editing.status !== "verified" && editing.status !== "cancelled" && (
+                  <DeadlineCountdown deadline={editing.dueAt} showDate className="!mt-1" />
+                )}
+              </div>
+            )}
 
             <div className="mt-auto flex flex-col gap-2 border-t border-slate-200/80 pt-4 dark:border-slate-800 sm:flex-row">
+              {isWork ? (
+                <>
+                  {needsWorkAccept && (
+                    <Button
+                      type="button"
+                      className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff] shadow-md shadow-blue-500/25 hover:bg-[#0a54e6]"
+                      disabled={workBusy}
+                      onClick={() => {
+                        void (async () => {
+                          if (!onWorkAccept) return;
+                          setWorkBusy(true);
+                          try {
+                            await onWorkAccept();
+                          } finally {
+                            setWorkBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      {t("tasks.accept")}
+                    </Button>
+                  )}
+                  {canWorkComplete && (
+                    <>
+                      <Button
+                        type="button"
+                        className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff] shadow-md shadow-blue-500/25 hover:bg-[#0a54e6]"
+                        disabled={workBusy || saving}
+                        onClick={() => void submitWorkComplete()}
+                      >
+                        <Send className="h-4 w-4" />
+                        {t("tasks.markDone")}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="rounded-xl border-slate-200 px-4"
+                        onClick={() => onWorkExtend?.()}
+                      >
+                        <Clock className="h-4 w-4" />
+                        {t("tasks.deadline")}
+                      </Button>
+                    </>
+                  )}
+                  {!needsWorkAccept && !canWorkComplete && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="flex-1 rounded-xl"
+                      onClick={() => onOpenChange(false)}
+                    >
+                      {t("ui.close") !== "ui.close" ? t("ui.close") : "Yopish"}
+                    </Button>
+                  )}
+                </>
+              ) : (
+                <>
               <Button
                 type="button"
                 variant="outline"
@@ -1651,6 +2268,8 @@ export function TaskFormDialog({
                   </>
                 )}
               </Button>
+                </>
+              )}
             </div>
           </div>
 
@@ -1705,14 +2324,14 @@ export function TaskFormDialog({
 
                   <div className="relative z-[1] flex items-center gap-2 border-b border-white/50 bg-white/70 px-3 py-2 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/70">
                     <span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-600 text-xs font-bold text-white shadow">
-                      {(assigneeLabel || "?").slice(0, 1).toUpperCase()}
+                      {(chatPartnerName || "?").slice(0, 1).toUpperCase()}
                     </span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-semibold text-foreground">
-                        {selectedAssignee ? assigneeLabel : t("tasks.form.chat.pickFirst")}
+                        {chatPartnerReady ? chatPartnerName : t("tasks.form.chat.pickFirst")}
                       </p>
                       <p className="truncate text-[10px] text-muted-foreground">
-                        {selectedAssignee
+                        {chatPartnerReady
                           ? t("tasks.form.chat.withAssignee")
                           : t("tasks.form.chat.emptyHint")}
                       </p>
@@ -1734,15 +2353,17 @@ export function TaskFormDialog({
                         <MessageCircle className="mx-auto mb-2 h-8 w-8 text-slate-400" />
                         <p className="text-sm font-semibold text-foreground">{t("tasks.form.chat.empty")}</p>
                         <p className="mt-1 text-[11px] text-muted-foreground">
-                          {selectedAssignee
-                            ? t("tasks.form.chat.emptyWith").replace("{name}", assigneeLabel)
+                          {chatPartnerReady
+                            ? t("tasks.form.chat.emptyWith").replace("{name}", chatPartnerName)
                             : t("tasks.form.chat.emptyHint")}
                         </p>
                       </div>
                     )}
 
                     {messages.map((m) => {
-                      const mine = m.authorRole !== "assignee" && m.authorRole !== "system";
+                      const mine = isWork
+                        ? m.authorRole === "assignee"
+                        : m.authorRole !== "assignee" && m.authorRole !== "system";
                       const img = isImageAtt(m.attachment);
                       return (
                         <div
@@ -1859,8 +2480,8 @@ export function TaskFormDialog({
                         }}
                         rows={2}
                         placeholder={
-                          selectedAssignee
-                            ? t("tasks.form.chat.phTo").replace("{name}", assigneeLabel)
+                          chatPartnerReady
+                            ? t("tasks.form.chat.phTo").replace("{name}", chatPartnerName)
                             : t("tasks.form.chat.ph")
                         }
                         className="w-full resize-none bg-transparent px-1 py-1 text-sm outline-none placeholder:text-muted-foreground"

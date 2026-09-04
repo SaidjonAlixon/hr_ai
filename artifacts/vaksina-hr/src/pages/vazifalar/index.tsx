@@ -340,8 +340,6 @@ export default function VazifalarPage() {
 
   const [extendDue, setExtendDue] = useState("");
   const [extendNote, setExtendNote] = useState("");
-  const [viewChatDraft, setViewChatDraft] = useState("");
-  const [viewChatBusy, setViewChatBusy] = useState(false);
 
   useEffect(() => {
     if (deepQ && !deepAssigneeKind) setSearch(deepQ);
@@ -453,6 +451,15 @@ export default function VazifalarPage() {
   const isCreatorOf = (t: Vazifa) => !!user && t.createdById === user.id;
   const isAssigneeOf = (t: Vazifa) =>
     !!user && t.assigneeKind === "user" && t.assigneeId === user.id;
+
+  const assignerOf = (t: Vazifa | null) => {
+    if (!t) return { name: null as string | null, role: null as string | null };
+    const u = (users as any[]).find((x) => Number(x?.id) === Number(t.createdById));
+    return {
+      name: (u?.fullName as string) || t.createdByName || null,
+      role: (u?.role as string) || null,
+    };
+  };
 
   const filtered = useMemo(() => {
     let list = tasks.filter((t) => t.status !== "cancelled");
@@ -635,9 +642,7 @@ export default function VazifalarPage() {
 
   function openComplete(task: Vazifa) {
     setActiveTask(task);
-    setCompletionNote("");
-    setCompletionFiles([]);
-    setCompleteOpen(true);
+    setViewOpen(true);
   }
 
   function openExtend(task: Vazifa) {
@@ -1822,261 +1827,80 @@ export default function VazifalarPage() {
         defaultDueAt={createDueAt}
         onSave={handleSave}
         onPersistChat={handlePersistChat}
+        onVerify={async (action) => {
+          if (!editing) return;
+          await handleVerify(editing, action);
+          setEditOpen(false);
+        }}
+        onTaskUpdated={(updated) => setEditing(updated)}
       />
 
-      {/* Ijrochi: faqat ko'rish */}
-      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{activeTask?.title}</DialogTitle>
-          </DialogHeader>
-          {activeTask && (
-            <div className="space-y-3 text-sm">
-              <p className="text-muted-foreground whitespace-pre-wrap">
-                {activeTask.description || "Tavsif yo'q"}
-              </p>
-              <p className="text-muted-foreground">
-                Belgilagan: {activeTask.createdByName || "—"}
-              </p>
-              <p className="text-muted-foreground">
-                Muddat: {formatDate(activeTask.dueAt)}
-              </p>
-              {!!(activeTask.meta as any)?.branchOrDept && (
-                <p className="text-muted-foreground">
-                  Filial: {String((activeTask.meta as any).branchOrDept)}
-                </p>
-              )}
-              {Array.isArray((activeTask.meta as any)?.tags) &&
-                (activeTask.meta as any).tags.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {((activeTask.meta as any).tags as string[]).map((tag) => (
-                      <Badge key={tag} variant="secondary" className="text-[10px]">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              {Array.isArray((activeTask.meta as any)?.checklist) &&
-                (activeTask.meta as any).checklist.length > 0 && (
-                  <ul className="space-y-1 rounded-lg border border-border bg-muted/40 p-2">
-                    {((activeTask.meta as any).checklist as Array<{ id: string; text: string; done: boolean }>).map(
-                      (c) => (
-                        <li key={c.id} className="flex items-center gap-2 text-xs">
-                          <CheckCircle2
-                            className={cn(
-                              "h-3.5 w-3.5",
-                              c.done ? "text-emerald-600" : "text-muted-foreground/40",
-                            )}
-                          />
-                          <span className={cn(c.done && "line-through text-muted-foreground")}>
-                            {c.text}
-                          </span>
-                        </li>
-                      ),
-                    )}
-                  </ul>
-                )}
-              <AttachmentList items={activeTask.attachments || []} readOnly />
+      <TaskFormDialog
+        open={viewOpen}
+        onOpenChange={setViewOpen}
+        mode="work"
+        editing={activeTask}
+        assigneeOptions={assigneeOptions}
+        branchOptions={branchOptions}
+        currentUserName={user?.fullName}
+        currentUserRole={user?.role}
+        assignerName={assignerOf(activeTask).name}
+        assignerRole={assignerOf(activeTask).role}
+        saving={completeTask.isPending || acceptTask.isPending}
+        onSave={async () => {}}
+        onPersistChat={async (patch) => {
+          if (!activeTask) return;
+          const updated = await updateTask.mutateAsync({
+            id: activeTask.id,
+            data: {
+              meta: patch.meta,
+              attachments: patch.attachments,
+            },
+          });
+          setActiveTask(updated);
+        }}
+        onWorkAccept={async () => {
+          if (!activeTask) return;
+          try {
+            const updated = await acceptTask.mutateAsync(activeTask.id);
+            setActiveTask(updated);
+            toast({ title: "Vazifa qabul qilindi" });
+          } catch (e: any) {
+            toast({
+              title: "Qabul qilinmadi",
+              description: e?.message,
+              variant: "destructive",
+            });
+          }
+        }}
+        onWorkComplete={async (note, files) => {
+          if (!activeTask) return;
+          try {
+            const updated = await completeTask.mutateAsync({
+              id: activeTask.id,
+              completionNote: note || null,
+              completionAttachments: files,
+            });
+            setActiveTask(updated);
+            toast({ title: "Bajarildi — belgilovchiga yuborildi" });
+            setViewOpen(false);
+          } catch (e: any) {
+            toast({
+              title: "Yuborilmadi",
+              description: e?.message,
+              variant: "destructive",
+            });
+          }
+        }}
+        onWorkExtend={() => {
+          if (!activeTask) return;
+          setViewOpen(false);
+          openExtend(activeTask);
+        }}
+        onTaskUpdated={(updated) => setActiveTask(updated)}
+      />
 
-              {/* Task chat (beruvchi / ijrochi) */}
-              <div className="space-y-2 rounded-xl border border-border overflow-hidden">
-                <div
-                  className="relative max-h-56 space-y-2 overflow-y-auto p-3"
-                  style={{
-                    backgroundImage:
-                      "linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.88)), url(https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=60)",
-                    backgroundSize: "cover",
-                    backgroundPosition: "center",
-                  }}
-                >
-                  <p className="text-center text-[10px] font-semibold text-slate-600">Chat</p>
-                  {(!Array.isArray((activeTask.meta as any)?.messages) ||
-                    (activeTask.meta as any).messages.length === 0) && (
-                    <p className="rounded-lg bg-white/95 px-2 py-4 text-center text-xs text-muted-foreground shadow-sm">
-                      Hali xabar yo‘q
-                    </p>
-                  )}
-                  {Array.isArray((activeTask.meta as any)?.messages) &&
-                    ((activeTask.meta as any).messages as Array<{
-                      id: string;
-                      text: string;
-                      authorName: string;
-                      authorRole?: string;
-                      createdAt: string;
-                      attachment?: TaskAttachment | null;
-                    }>).map((m) => {
-                      const mine =
-                        (m.authorRole === "assignee" && isAssigneeOf(activeTask)) ||
-                        (m.authorRole !== "assignee" &&
-                          (isCreatorOf(activeTask) || user?.role === "admin"));
-                      return (
-                        <div
-                          key={m.id}
-                          className={cn(
-                            "max-w-[90%] rounded-2xl px-2.5 py-1.5 text-xs shadow-sm",
-                            mine
-                              ? "ml-auto rounded-br-md bg-[#0b5fff] text-white"
-                              : "rounded-bl-md bg-white text-foreground",
-                          )}
-                        >
-                          {!mine && (
-                            <p className="mb-0.5 text-[10px] font-semibold opacity-80">
-                              {m.authorName}
-                            </p>
-                          )}
-                          {m.text ? <p className="whitespace-pre-wrap">{m.text}</p> : null}
-                          {m.attachment?.url && (
-                            m.attachment.kind === "image" ||
-                            (m.attachment.mimeType || "").startsWith("image/") ? (
-                              <a href={m.attachment.url} target="_blank" rel="noreferrer">
-                                <img
-                                  src={m.attachment.url}
-                                  alt={m.attachment.name}
-                                  className="mt-1 max-h-28 rounded-md object-cover"
-                                />
-                              </a>
-                            ) : (
-                              <a
-                                href={m.attachment.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="mt-1 block underline"
-                              >
-                                {m.attachment.name}
-                              </a>
-                            )
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-                {(isAssigneeOf(activeTask) || isCreatorOf(activeTask) || user?.role === "admin") && (
-                  <div className="flex gap-2 border-t border-border bg-background p-2">
-                    <Input
-                      value={viewChatDraft}
-                      onChange={(e) => setViewChatDraft(e.target.value)}
-                      placeholder="Xabar yozing..."
-                      className="h-9"
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          void (async () => {
-                            if (!viewChatDraft.trim() || !activeTask) return;
-                            setViewChatBusy(true);
-                            try {
-                              const updated = await sendTaskMessage.mutateAsync({
-                                id: activeTask.id,
-                                text: viewChatDraft.trim(),
-                              });
-                              setActiveTask(updated);
-                              setViewChatDraft("");
-                            } catch (err: any) {
-                              toast({
-                                title: "Chat yuborilmadi",
-                                description: err?.message || "Xato",
-                                variant: "destructive",
-                              });
-                            } finally {
-                              setViewChatBusy(false);
-                            }
-                          })();
-                        }
-                      }}
-                    />
-                    <Button
-                      size="sm"
-                      className="h-9 shrink-0"
-                      disabled={viewChatBusy || !viewChatDraft.trim()}
-                      onClick={() => {
-                        void (async () => {
-                          if (!viewChatDraft.trim() || !activeTask) return;
-                          setViewChatBusy(true);
-                          try {
-                            const updated = await sendTaskMessage.mutateAsync({
-                              id: activeTask.id,
-                              text: viewChatDraft.trim(),
-                            });
-                            setActiveTask(updated);
-                            setViewChatDraft("");
-                          } catch (err: any) {
-                            toast({
-                              title: "Chat yuborilmadi",
-                              description: err?.message || "Xato",
-                              variant: "destructive",
-                            });
-                          } finally {
-                            setViewChatBusy(false);
-                          }
-                        })();
-                      }}
-                    >
-                      <Send className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                )}
-              </div>
-
-              {(activeTask.status === "done" ||
-                activeTask.completionNote ||
-                (activeTask.completionAttachments?.length ?? 0) > 0) && (
-                <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3 space-y-2">
-                  <p className="text-xs font-semibold text-emerald-800">
-                    Sizning natijangiz
-                  </p>
-                  {activeTask.completionNote && (
-                    <p className="whitespace-pre-wrap">
-                      {activeTask.completionNote}
-                    </p>
-                  )}
-                  <AttachmentList
-                    items={activeTask.completionAttachments || []}
-                    readOnly
-                  />
-                </div>
-              )}
-              {isAssigneeOf(activeTask) && activeTask.status === "todo" && (
-                <Button
-                  className="w-full"
-                  onClick={() => {
-                    setViewOpen(false);
-                    void handleAccept(activeTask);
-                  }}
-                  disabled={acceptTask.isPending}
-                >
-                  Qabul qilish
-                </Button>
-              )}
-              {isAssigneeOf(activeTask) &&
-                activeTask.status === "in_progress" && (
-                  <div className="flex gap-2 pt-2">
-                    <Button
-                      className="flex-1"
-                      onClick={() => {
-                        setViewOpen(false);
-                        openComplete(activeTask);
-                      }}
-                    >
-                      <Send className="h-4 w-4 mr-1.5" />
-                      Bajarildi
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setViewOpen(false);
-                        openExtend(activeTask);
-                      }}
-                    >
-                      <Clock className="h-4 w-4 mr-1.5" />
-                      Muddat
-                    </Button>
-                  </div>
-                )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Ijrochi: bajarish */}
+      {/* Ijrochi: bajarish — legacy fallback (kartadan ochilmasa) */}
       <Dialog open={completeOpen} onOpenChange={setCompleteOpen}>
         <DialogContent
           className="max-w-lg"

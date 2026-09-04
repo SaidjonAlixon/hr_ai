@@ -5,7 +5,7 @@ import { db, usersTable, departmentsTable, employeesTable } from "@workspace/db"
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
-import { canManageSettings } from "../lib/roles";
+import { canManageSettings, canDeleteUsers, canChangeStaffStatus } from "../lib/roles";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
 
@@ -84,9 +84,17 @@ const STATUS_UZ: Record<string, string> = {
   blocked: "Bo‘sh",
 };
 
-function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
+function requireAdminOrDirector(req: AuthRequest, res: import("express").Response): boolean {
   if (!canManageSettings(req.userRole)) {
     res.status(403).json({ error: "Faqat admin yoki direktor foydalanuvchi boshqarishi mumkin" });
+    return false;
+  }
+  return true;
+}
+
+function requireAdminOnly(req: AuthRequest, res: import("express").Response): boolean {
+  if (!canDeleteUsers(req.userRole)) {
+    res.status(403).json({ error: "Foydalanuvchini faqat admin o‘chira oladi" });
     return false;
   }
   return true;
@@ -356,7 +364,7 @@ router.get("/users/export", requireAuth, async (req: AuthRequest, res): Promise<
 });
 
 router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireAdminOrDirector(req, res)) return;
 
   const { fullName, role, departmentId, login, password, phone, status } = req.body ?? {};
   if (!fullName?.trim() || !role) {
@@ -454,7 +462,7 @@ router.get("/users/:id", async (req, res): Promise<void> => {
 });
 
 router.post("/users/:id/regenerate-login", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireAdminOrDirector(req, res)) return;
 
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   if (!Number.isFinite(id)) {
@@ -492,7 +500,7 @@ router.post("/users/:id/regenerate-login", requireAuth, async (req: AuthRequest,
 });
 
 router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireAdminOrDirector(req, res)) return;
 
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const [existing] = await db
@@ -509,6 +517,10 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) updates[key] = req.body[key];
+  }
+  if (updates.status !== undefined && !canChangeStaffStatus(req.userRole)) {
+    res.status(403).json({ error: "Holatni faqat admin yoki direktor o‘zgartira oladi" });
+    return;
   }
   if (updates.role && !ALLOWED_ROLES.includes(updates.role as typeof ALLOWED_ROLES[number])) {
     res.status(400).json({ error: "Noto'g'ri rol" });
@@ -562,7 +574,7 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
 });
 
 router.delete("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireAdminOnly(req, res)) return;
 
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   if (req.userId === id) {

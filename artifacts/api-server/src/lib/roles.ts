@@ -56,6 +56,16 @@ export function canManageSettings(role?: string | null): boolean {
   return role === "admin" || role === "director";
 }
 
+/** Xodim / foydalanuvchi HOLAT — faqat admin va direktor */
+export function canChangeStaffStatus(role?: string | null): boolean {
+  return role === "admin" || role === "director";
+}
+
+/** Foydalanuvchini o‘chirish — faqat admin */
+export function canDeleteUsers(role?: string | null): boolean {
+  return role === "admin";
+}
+
 /** Davomat: direktor, HR direktor, HR menejer (+ admin) */
 export function canViewDavomat(role?: string | null): boolean {
   return (

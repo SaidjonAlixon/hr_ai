@@ -35,7 +35,7 @@ import {
   normalizeUzPhone,
   UZ_PHONE_HINT,
 } from '../../lib/phone';
-import { userRoleLabel, canManageSettings } from '../../lib/roles';
+import { userRoleLabel, canManageSettings, canDeleteUsers, canChangeStaffStatus } from '../../lib/roles';
 import { useI18n } from '../../i18n/I18nProvider';
 
 const ROLES = [
@@ -137,7 +137,10 @@ export default function AdminUsersPage() {
   const updateMutation = useUpdateUser();
   const deleteMutation = useDeleteUser();
 
-  const isAdmin = canManageSettings(me?.role);
+  const canManage = canManageSettings(me?.role);
+  const canChangeStatus = canChangeStaffStatus(me?.role);
+  const canDelete = canDeleteUsers(me?.role);
+  const isAdmin = canManage;
 
   const sorted = useMemo(() => {
     let list = [...(users ?? [])];
@@ -344,7 +347,7 @@ export default function AdminUsersPage() {
   };
 
   const setUserStatus = (u: User, next: string) => {
-    if (!isAdmin) return;
+    if (!canChangeStatus) return;
     if (u.id === me?.id && next !== 'active') {
       toast({ title: 'O‘zingizni faoldan chiqara olmaysiz', variant: 'destructive' });
       return;
@@ -409,7 +412,7 @@ export default function AdminUsersPage() {
   };
 
   const onDelete = (u: User) => {
-    if (!isAdmin) return;
+    if (!canDelete) return;
     if (u.id === me?.id) {
       toast({ title: 'O‘zingizni o‘chira olmaysiz', variant: 'destructive' });
       return;
@@ -586,27 +589,38 @@ export default function AdminUsersPage() {
                       <td className="px-4 py-3 font-mono text-xs">{u.login}</td>
                       <td className="px-4 py-3 text-muted-foreground">{u.departmentName || '—'}</td>
                       <td className="px-4 py-3">
-                        <Select
-                          value={normalizeUserStatus(u.status)}
-                          onValueChange={(v) => setUserStatus(u, v)}
-                          disabled={u.id === me?.id}
-                        >
-                          <SelectTrigger
+                        {canChangeStatus ? (
+                          <Select
+                            value={normalizeUserStatus(u.status)}
+                            onValueChange={(v) => setUserStatus(u, v)}
+                            disabled={u.id === me?.id}
+                          >
+                            <SelectTrigger
+                              className={cn(
+                                'h-8 w-[132px] rounded-full border-0 px-2.5 text-xs font-semibold shadow-none focus:ring-0',
+                                statusClass(u.status),
+                              )}
+                            >
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {STATUSES.map((s) => (
+                                <SelectItem key={s.value} value={s.value}>
+                                  {t(s.labelKey)}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <span
                             className={cn(
-                              'h-8 w-[132px] rounded-full border-0 px-2.5 text-xs font-semibold shadow-none focus:ring-0',
+                              'inline-flex h-8 items-center rounded-full px-2.5 text-xs font-semibold',
                               statusClass(u.status),
                             )}
                           >
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {STATUSES.map((s) => (
-                              <SelectItem key={s.value} value={s.value}>
-                                {t(s.labelKey)}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                            {t(statusLabelKey(u.status))}
+                          </span>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-0.5">
@@ -631,16 +645,18 @@ export default function AdminUsersPage() {
                               <KeyRound className="h-4 w-4" />
                             )}
                           </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-destructive hover:text-destructive"
-                            onClick={() => onDelete(u)}
-                            disabled={u.id === me?.id}
-                            title="O‘chirish"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
+                          {canDelete ? (
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="text-destructive hover:text-destructive"
+                              onClick={() => onDelete(u)}
+                              disabled={u.id === me?.id}
+                              title="O‘chirish"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

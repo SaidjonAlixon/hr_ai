@@ -4,7 +4,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
-import { isHrManager, isHrRole, isSbRole } from '../../lib/roles';
+import { isHrManager, isHrRole, isSbRole, canChangeStaffStatus } from '../../lib/roles';
 import {
   EMPLOYMENT_STATUS_LABELS,
   PIPELINE_STEPS,
@@ -372,12 +372,7 @@ export default function PharmacyNetworkPage() {
     user?.role === 'mudir' ||
     user?.role === 'koordinator';
 
-  const canEditStatus =
-    user?.role === 'mudir' ||
-    isHrRole(user?.role) ||
-    user?.role === 'admin' ||
-    user?.role === 'director' ||
-    user?.role === 'koordinator';
+  const canEditStatus = canChangeStaffStatus(user?.role);
 
   const canSeeAlerts =
     user?.role === 'koordinator' ||
@@ -388,17 +383,10 @@ export default function PharmacyNetworkPage() {
 
   const canConfirmAlerts = user?.role === 'koordinator' || isHrManager(user?.role);
   const canSetBranchGps = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
-  const canSetNoManager =
-    user?.role === 'koordinator' ||
-    user?.role === 'admin' ||
-    user?.role === 'director' ||
-    isHrRole(user?.role);
+  const canSetNoManager = canChangeStaffStatus(user?.role);
 
-  /** Filialni «Yopilgan» qilish — faqat Admin / Direktor / HR menejer / HR direktor */
-  const canCloseBranch =
-    user?.role === 'admin' ||
-    user?.role === 'director' ||
-    isHrRole(user?.role);
+  /** Filialni «Yopilgan» qilish — faqat Admin / Direktor */
+  const canCloseBranch = canChangeStaffStatus(user?.role);
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);

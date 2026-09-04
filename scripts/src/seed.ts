@@ -11,11 +11,11 @@ const departments = [
 ];
 
 const users = [
-  { fullName: "System Admin", role: "admin", login: "admin", password: "admin123", phone: "+998901000001" },
+  { fullName: "System Admin", role: "admin", login: "vaksina_admin", password: "VmHr#Admin26", phone: "+998901000001" },
   { fullName: "Aziza Recruiter", role: "recruiter", login: "recruiter1", password: "pass123", phone: "+998901000002", dept: "Rekruting" },
   { fullName: "Dilnoza HR", role: "hr", login: "hr1", password: "pass123", phone: "+998901000003", dept: "HR" },
   { fullName: "Jasur Trener", role: "trainer", login: "trainer1", password: "pass123", phone: "+998901000004", dept: "Trening" },
-  { fullName: "Bahodir Direktor", role: "director", login: "director1", password: "pass123", phone: "+998901000005" },
+  { fullName: "Bahodir Direktor", role: "director", login: "vaksina_direktor", password: "VmHr#Dir26", phone: "+998901000005" },
   { fullName: "Madina Bo'lim boshlig'i", role: "department_head", login: "dept_head1", password: "pass123", phone: "+998901000006", dept: "HR" },
 ];
 

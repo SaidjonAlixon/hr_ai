@@ -12,7 +12,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
-import { HR_ROLES, isHrManager, canViewEmployees, isSbRole } from "../lib/roles";
+import { HR_ROLES, isHrManager, canViewEmployees, isSbRole, canChangeStaffStatus } from "../lib/roles";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from "../lib/dedupe-employees";
 import {
@@ -617,7 +617,7 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     "mudir",
     "koordinator",
   ].includes(role);
-  const canEditStatus = ["mudir", ...HR_ROLES, "admin", "director", "koordinator"].includes(role);
+  const canEditStatus = canChangeStaffStatus(role);
   const canEditIdentity = canEditStatus;
 
   const scopeErr = await pharmacyEditDenied(role, req.userId, before);
@@ -662,8 +662,8 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
         return;
       }
       if (req.body[key] === "no_manager") {
-        if (role === "mudir") {
-          res.status(400).json({ error: "Mudir yo‘q holatini faqat koordinator belgilaydi" });
+        if (!canChangeStaffStatus(role)) {
+          res.status(403).json({ error: "Mudir yo‘q holatini faqat admin yoki direktor belgilaydi" });
           return;
         }
         if (before.orgRole !== "manager") {
@@ -672,10 +672,9 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
         }
       }
       if (req.body[key] === "closed") {
-        const canCloseBranch = ["admin", "director", "hr_direktor", "hr_kadr_rahbar", "hr_menejer", "hr"].includes(role);
-        if (!canCloseBranch) {
+        if (!canChangeStaffStatus(role)) {
           res.status(403).json({
-            error: "Filialni yopish faqat Admin, Direktor, HR menejer yoki HR direktor uchun",
+            error: "Filialni yopish faqat Admin yoki Direktor uchun",
           });
           return;
         }

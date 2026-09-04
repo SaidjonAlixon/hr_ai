@@ -43,8 +43,10 @@ export function isReviziyaRole(role?: string | null): boolean {
   return role === "revizor" || role === "reviziya_rahbar";
 }
 
+export const IT_ROLES = ["it", "it_rahbar", "it_dasturchi", "it_tarmoq"] as const;
+
 export function isItRole(role?: string | null): boolean {
-  return role === "it" || role === "it_rahbar";
+  return !!role && (IT_ROLES as readonly string[]).includes(role);
 }
 
 export function isTexnikRole(role?: string | null): boolean {
@@ -241,8 +243,10 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   koordinator: "Koordinator",
   texnik: "Texnik",
   texnik_rahbar: "Texnik bo‘limi rahbari",
-  it: "IT mutaxassisi",
-  it_rahbar: "IT bo‘limi rahbari",
+  it: "AyTi mutaxassisi",
+  it_rahbar: "AyTi bo‘lim boshlig‘i",
+  it_dasturchi: "Dasturchi",
+  it_tarmoq: "Tarmoq administratori",
   ombor: "Ombor",
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",

@@ -52,7 +52,13 @@ function isCreator(row: typeof tasksTable.$inferSelect, userId?: number) {
 
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
   if (role === "admin" || isHrManager(role)) return true;
-  return isCreator(row, userId) || isAssignee(row, userId);
+  if (isCreator(row, userId) || isAssignee(row, userId)) return true;
+  const meta = (row.meta && typeof row.meta === "object" ? row.meta : {}) as Record<
+    string,
+    unknown
+  >;
+  if (meta.visibility === "private") return false;
+  return false;
 }
 
 function isAllowedAttachmentUrl(url: string) {
@@ -62,6 +68,62 @@ function isAllowedAttachmentUrl(url: string) {
   // Eski vazifalar (data URL) — o‘qish uchun qoldiriladi
   if (url.startsWith("data:")) return true;
   return false;
+}
+
+function sanitizeMeta(raw: unknown): Record<string, unknown> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const src = raw as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+
+  if (Array.isArray(src.checklist)) {
+    out.checklist = src.checklist.slice(0, 40).map((item: any, i: number) => ({
+      id: String(item?.id || `c-${i}`).slice(0, 64),
+      text: String(item?.text || "").slice(0, 300),
+      done: !!item?.done,
+    })).filter((x: { text: string }) => x.text.trim());
+  }
+  if (Array.isArray(src.tags)) {
+    out.tags = src.tags
+      .map((t) => String(t || "").trim().slice(0, 40))
+      .filter(Boolean)
+      .slice(0, 20);
+  }
+  if (src.taskType != null) out.taskType = String(src.taskType).slice(0, 80);
+  if (src.branchOrDept != null) out.branchOrDept = String(src.branchOrDept).slice(0, 120);
+  if (src.reminderEnabled != null) out.reminderEnabled = !!src.reminderEnabled;
+  if (src.reminderOffset != null) out.reminderOffset = String(src.reminderOffset).slice(0, 40);
+  if (src.recurrence != null) out.recurrence = String(src.recurrence).slice(0, 40);
+  if (src.visibility === "all" || src.visibility === "private") {
+    out.visibility = src.visibility;
+  }
+  if (src.notes != null) out.notes = String(src.notes).slice(0, 500);
+  if (src.formStatus != null) out.formStatus = String(src.formStatus).slice(0, 40);
+  if (src.verifiedAt != null) out.verifiedAt = String(src.verifiedAt).slice(0, 40);
+  if (Array.isArray(src.messages)) {
+    out.messages = src.messages.slice(0, 200).map((m: any, i: number) => ({
+      id: String(m?.id || `m-${i}`).slice(0, 64),
+      text: String(m?.text || "").slice(0, 2000),
+      authorName: String(m?.authorName || "").slice(0, 120),
+      authorRole:
+        m?.authorRole === "assignee" || m?.authorRole === "system"
+          ? m.authorRole
+          : "assigner",
+      createdAt: String(m?.createdAt || new Date().toISOString()).slice(0, 40),
+      attachment:
+        m?.attachment && typeof m.attachment === "object" && m.attachment.url
+          ? sanitizeAttachments([m.attachment], 1)[0] || null
+          : null,
+    }));
+  }
+  if (Array.isArray(src.history)) {
+    out.history = src.history.slice(0, 100).map((h: any, i: number) => ({
+      id: String(h?.id || `h-${i}`).slice(0, 64),
+      text: String(h?.text || "").slice(0, 300),
+      createdAt: String(h?.createdAt || new Date().toISOString()).slice(0, 40),
+    }));
+  }
+
+  return out;
 }
 
 function sanitizeAttachments(raw: unknown, max = 10): TaskAttachment[] {
@@ -114,6 +176,10 @@ async function enrichTask(row: typeof tasksTable.$inferSelect) {
     ...row,
     attachments: (row.attachments ?? []) as TaskAttachment[],
     completionAttachments: (row.completionAttachments ?? []) as TaskAttachment[],
+    meta: (row.meta && typeof row.meta === "object" ? row.meta : {}) as Record<
+      string,
+      unknown
+    >,
     assigneeName,
     createdByName: creator?.fullName ?? null,
     dueAt: row.dueAt ? row.dueAt.toISOString() : null,
@@ -158,6 +224,7 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
     assigneeKind,
     assigneeId,
     attachments,
+    meta,
   } = req.body ?? {};
 
   if (!title || typeof title !== "string" || !title.trim()) {
@@ -178,18 +245,24 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
     return;
   }
 
+  const statusVal = status || "todo";
   const [created] = await db
     .insert(tasksTable)
     .values({
       title: title.trim(),
       description: description ? String(description) : null,
-      status: status || "todo",
+      status: statusVal,
       priority: priority || "normal",
       dueAt: dueAt ? new Date(dueAt) : null,
       assigneeKind: kind,
       assigneeId: aid,
       createdById: req.userId!,
       attachments: sanitizeAttachments(attachments),
+      meta: sanitizeMeta(meta),
+      acceptedAt:
+        statusVal === "in_progress" || statusVal === "done" || statusVal === "verified"
+          ? new Date()
+          : null,
     })
     .returning();
 
@@ -218,6 +291,110 @@ router.get("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<voi
   }
   res.json(await enrichTask(row));
 });
+
+/** Beruvchi yoki ijrochi — chat xabar qo'shish (tez) */
+router.post(
+  "/tasks/:id/messages",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    const id = parseId(req.params.id);
+    const [existing] = await db.select().from(tasksTable).where(eq(tasksTable.id, id));
+    if (!existing) {
+      res.status(404).json({ error: "Vazifa topilmadi" });
+      return;
+    }
+    if (!canViewTask(existing, req.userId, req.userRole)) {
+      res.status(403).json({ error: "Ruxsat yo'q" });
+      return;
+    }
+    if (
+      !isCreator(existing, req.userId) &&
+      !isAssignee(existing, req.userId) &&
+      req.userRole !== "admin"
+    ) {
+      res.status(403).json({ error: "Faqat beruvchi yoki ijrochi yozishi mumkin" });
+      return;
+    }
+
+    const text = String(req.body?.text || "").trim().slice(0, 2000);
+    const attachmentRaw = req.body?.attachment;
+    const attachments = attachmentRaw
+      ? sanitizeAttachments([attachmentRaw], 1)
+      : [];
+    const attachment = attachments[0] || null;
+    if (!text && !attachment) {
+      res.status(400).json({ error: "Xabar yoki fayl kerak" });
+      return;
+    }
+
+    const [me] = await db
+      .select({ fullName: usersTable.fullName })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!));
+
+    const role: "assigner" | "assignee" = isAssignee(existing, req.userId)
+      ? "assignee"
+      : "assigner";
+
+    const prevMeta =
+      existing.meta && typeof existing.meta === "object" && !Array.isArray(existing.meta)
+        ? (existing.meta as Record<string, unknown>)
+        : {};
+    const prevMessages = Array.isArray(prevMeta.messages) ? prevMeta.messages : [];
+    const prevHistory = Array.isArray(prevMeta.history) ? prevMeta.history : [];
+    const now = new Date().toISOString();
+    const msg = {
+      id: `m-${Date.now()}`,
+      text,
+      authorName: me?.fullName || "Foydalanuvchi",
+      authorRole: role,
+      createdAt: now,
+      attachment,
+    };
+    const hist = {
+      id: `h-${Date.now()}`,
+      text: attachment ? "Chatga fayl yuborildi" : "Chatga xabar yuborildi",
+      createdAt: now,
+    };
+
+    const nextMeta = sanitizeMeta({
+      ...prevMeta,
+      messages: [...prevMessages, msg].slice(-200),
+      history: [...prevHistory, hist].slice(-80),
+    });
+
+    let nextAttachments = (existing.attachments as TaskAttachment[]) || [];
+    if (attachment) {
+      nextAttachments = sanitizeAttachments([...nextAttachments, attachment], 12);
+    }
+
+    const [updated] = await db
+      .update(tasksTable)
+      .set({
+        meta: nextMeta,
+        attachments: nextAttachments,
+      })
+      .where(eq(tasksTable.id, id))
+      .returning();
+
+    const notifyId =
+      role === "assigner"
+        ? existing.assigneeKind === "user"
+          ? existing.assigneeId
+          : null
+        : existing.createdById;
+    if (notifyId && notifyId !== req.userId) {
+      await notifyUser({
+        userId: notifyId,
+        text: `Vazifa chat: «${existing.title}» — yangi xabar`,
+        type: "expired_task",
+        linkUrl: "/vazifalar",
+      });
+    }
+
+    res.json(await enrichTask(updated));
+  },
+);
 
 /** Beruvchi — to'liq tahrirlash */
 router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -249,6 +426,9 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   }
   if (body.attachments !== undefined) {
     updates.attachments = sanitizeAttachments(body.attachments);
+  }
+  if (body.meta !== undefined) {
+    updates.meta = sanitizeMeta(body.meta);
   }
   if (body.assigneeKind !== undefined || body.assigneeId !== undefined) {
     const kind =
@@ -409,9 +589,17 @@ router.post("/tasks/:id/verify", requireAuth, async (req: AuthRequest, res): Pro
   const reviewNote = req.body?.note ? String(req.body.note) : null;
 
   if (action === "approve") {
+    const prevMeta =
+      existing.meta && typeof existing.meta === "object" && !Array.isArray(existing.meta)
+        ? (existing.meta as Record<string, unknown>)
+        : {};
+    const nowIso = new Date().toISOString();
     const [updated] = await db
       .update(tasksTable)
-      .set({ status: "verified" })
+      .set({
+        status: "verified",
+        meta: sanitizeMeta({ ...prevMeta, verifiedAt: nowIso }),
+      })
       .where(eq(tasksTable.id, id))
       .returning();
 

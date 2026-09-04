@@ -180,7 +180,7 @@ const DEPT_META: Array<{
   { id: "taminot", label: "Ta’minot", hint: "Logistika", tone: "taminot", icon: Truck, keys: ["taminot", "logistika"], head: "Ta’minot rahbari", staff: "Logistika" },
   { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet, keys: ["moliya", "moliyachi", "hisob"], head: "Moliya rahbari", staff: "Moliyachi" },
   { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, keys: ["hr", "kadr"], head: "HR rahbari", staff: "Kadrlar" },
-  { id: "cb-it", label: "IT", hint: "IT bo‘limi", tone: "cbit", icon: Cpu, keys: ["it", "cb"], head: "IT rahbari", staff: "IT mutaxassisi" },
+  { id: "cb-it", label: "AyTi", hint: "AyTi bo‘limi", tone: "cbit", icon: Cpu, keys: ["it", "cb"], head: "AyTi bo‘lim boshlig‘i", staff: "AyTi mutaxassisi" },
   { id: "texnik", label: "Texnik", hint: "Servis / ta’mir", tone: "texnikDept", icon: Wrench, keys: ["texnik", "texnika"], head: "Texnik rahbari", staff: "Texnik" },
   { id: "xavfsizlik", label: "Xavfsizlik (SB)", hint: "Ob’ekt / navbatchilik", tone: "sb", icon: ShieldCheck, keys: ["xavfsizlik", "sb", "security"], head: "SB bo‘limi boshlig‘i", staff: "SB operatori" },
   { id: "reviziya", label: "Reviziya", hint: "Ichki audit / yig‘uv", tone: "reviziya", icon: ClipboardCheck, keys: ["reviziya", "audit"], head: "Reviziya rahbari", staff: "Revizor-yig‘uvchi" },
@@ -233,7 +233,7 @@ function officePeopleForDept(
       const u = e.userId != null ? usersById.get(e.userId) : undefined;
       if (keys.includes("sb") && (u?.role === "sb" || u?.role === "sb_boshliq")) return true;
       if (keys.includes("reviziya") && (u?.role === "revizor" || u?.role === "reviziya_rahbar")) return true;
-      if (keys.includes("it") && (u?.role === "it" || u?.role === "it_rahbar")) return true;
+      if (keys.includes("it") && (u?.role === "it" || u?.role === "it_rahbar" || u?.role === "it_dasturchi" || u?.role === "it_tarmoq")) return true;
       if (keys.includes("texnik") && (u?.role === "texnik" || u?.role === "texnik_rahbar")) return true;
       const name = normDept(String(e.departmentName || ""));
       return keys.some((k) => name.includes(k));
@@ -605,13 +605,34 @@ function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode
           if (d.id === "cb-it") {
             const linked = new Set(people.filter((e) => e.userId != null).map((e) => e.userId as number));
             const extra = (users ?? [])
-              .filter((u) => (u.role === "it" || u.role === "it_rahbar") && (u.status === "active" || u.status === "on_leave"))
+              .filter((u) =>
+                (u.role === "it" ||
+                  u.role === "it_rahbar" ||
+                  u.role === "it_dasturchi" ||
+                  u.role === "it_tarmoq") &&
+                (u.status === "active" || u.status === "on_leave"),
+              )
               .filter((u) => !linked.has(u.id))
-              .sort((a, b) => (a.role === b.role ? a.fullName.localeCompare(b.fullName, "uz") : a.role === "it_rahbar" ? -1 : 1))
+              .sort((a, b) =>
+                a.role === b.role
+                  ? a.fullName.localeCompare(b.fullName, "uz")
+                  : a.role === "it_rahbar"
+                    ? -1
+                    : b.role === "it_rahbar"
+                      ? 1
+                      : a.fullName.localeCompare(b.fullName, "uz"),
+              )
               .map((u) => ({
                 id: `user-${u.id}`,
                 label: u.fullName,
-                hint: u.role === "it_rahbar" ? "IT bo‘limi rahbari" : "IT mutaxassisi",
+                hint:
+                  u.role === "it_rahbar"
+                    ? "AyTi bo‘lim boshlig‘i"
+                    : u.role === "it_dasturchi"
+                      ? "Dasturchi"
+                      : u.role === "it_tarmoq"
+                        ? "Tarmoq administratori"
+                        : "AyTi mutaxassisi",
                 tone: d.tone,
                 icon: Cpu,
               }));
@@ -1114,7 +1135,7 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
   { label: "Ta’minot", tone: "taminot" },
   { label: "Moliya", tone: "moliya" },
   { label: "HR bo‘limi", tone: "hrDept" },
-  { label: "IT", tone: "cbit" },
+  { label: "AyTi", tone: "cbit" },
   { label: "Texnik", tone: "texnikDept" },
   { label: "Xavfsizlik (SB)", tone: "sb" },
   { label: "Reviziya", tone: "reviziya" },

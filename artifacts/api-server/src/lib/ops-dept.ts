@@ -1,5 +1,7 @@
+import { isItRole as isItUserRole } from "./roles";
+
 export function isItRole(role?: string | null) {
-  return role === "it" || role === "it_rahbar";
+  return isItUserRole(role);
 }
 
 export function isTexnikRole(role?: string | null) {

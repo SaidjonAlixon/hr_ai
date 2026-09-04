@@ -23,8 +23,10 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   trainer: "Trening",
   mentor: "Trening",
   koordinator: "Koordinator",
-  it: "IT",
-  it_rahbar: "IT",
+  it: "AyTi",
+  it_rahbar: "AyTi",
+  it_dasturchi: "AyTi",
+  it_tarmoq: "AyTi",
   texnik: "Texnik",
   texnik_rahbar: "Texnik",
   revizor: "Reviziya",
@@ -70,6 +72,9 @@ export async function resolveDepartmentIdForRole(role: string): Promise<number |
 
 /** Barcha rollarni o‘z bo‘limiga; faqat apteka tarmog‘i — Farmasevt. */
 export async function syncAllRoleDepartmentAssignments(): Promise<void> {
+  const { ensureItDepartmentId } = await import("./it-department");
+  await ensureItDepartmentId();
+
   const farmId = await ensureDepartmentByName(FARMASEVT_DEPARTMENT_NAME);
 
   for (const [role, deptName] of Object.entries(ROLE_DEPARTMENT_NAME)) {

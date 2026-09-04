@@ -57,8 +57,10 @@ const ROLE_POSITION: Record<string, string> = {
   koordinator: "Koordinator",
   texnik: "Texnik",
   texnik_rahbar: "Texnik bo‘limi rahbari",
-  it: "IT mutaxassisi",
-  it_rahbar: "IT bo‘limi rahbari",
+  it: "AyTi mutaxassisi",
+  it_rahbar: "AyTi bo‘lim boshlig‘i",
+  it_dasturchi: "Dasturchi",
+  it_tarmoq: "Tarmoq administratori",
   ombor: "Ombor",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
@@ -68,6 +70,14 @@ const ROLE_POSITION: Record<string, string> = {
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",
 };
+
+function orgRoleFromUserRole(role?: string | null): string | null {
+  if (role === "mudir") return "manager";
+  if (role === "farmasevt") return "pharmacist";
+  if (role === "stajyor") return "intern";
+  if (role === "koordinator") return "coordinator";
+  return null;
+}
 
 const EMP_LIST_SELECT = {
   id: employeesTable.id,
@@ -243,6 +253,7 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
         phone: u.phone ?? null,
         userStatus,
         userRole: u.role,
+        orgRole: emp.orgRole || orgRoleFromUserRole(u.role),
         employmentStatus: emp.employmentStatus || employmentFromUserStatus(u.status),
         photoUrl: staffPhotoUrl(u.id, hasFace, emp.photoUrl),
         fixedSalary: Math.max(0, Math.round(Number(emp.fixedSalary ?? 0))),
@@ -257,7 +268,7 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
       mentorId: null,
       hiredAt: today,
       candidateId: null,
-      orgRole: null,
+      orgRole: orgRoleFromUserRole(u.role),
       reportsToId: null,
       location: null,
       latitude: null,
@@ -277,4 +288,86 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
       updatedAt: u.createdAt,
     };
   });
+}
+
+const PHARMACY_ORG_ROLES = ["coordinator", "manager", "pharmacist", "intern", "supervisor"] as const;
+
+/** Apteka tarmog‘i — employees jadvalidan orgRole bo‘yicha (login bo‘lmasa ham). */
+export async function loadPharmacyNetworkEmployees(): Promise<StaffRow[]> {
+  let rows: StaffRow[] = [];
+  try {
+    rows = (await db
+      .select(EMP_LIST_SELECT)
+      .from(employeesTable)
+      .where(inArray(employeesTable.orgRole, [...PHARMACY_ORG_ROLES]))
+      .orderBy(asc(employeesTable.fullName))) as StaffRow[];
+  } catch (err) {
+    console.error("loadPharmacyNetworkEmployees:", err);
+    return [];
+  }
+
+  const userIds = [
+    ...new Set(rows.map((r) => r.userId).filter((id): id is number => id != null)),
+  ];
+  const userMap = new Map<number, { login: string | null; phone: string | null; role: string; status: string }>();
+  if (userIds.length) {
+    const users = await db
+      .select({
+        id: usersTable.id,
+        login: usersTable.login,
+        phone: usersTable.phone,
+        role: usersTable.role,
+        status: usersTable.status,
+      })
+      .from(usersTable)
+      .where(inArray(usersTable.id, userIds));
+    for (const u of users) {
+      userMap.set(u.id, {
+        login: u.login,
+        phone: u.phone,
+        role: u.role,
+        status: u.status,
+      });
+    }
+  }
+
+  return rows.map((r) => {
+    const u = r.userId != null ? userMap.get(r.userId) : undefined;
+    return {
+      ...r,
+      fullName: formatPersonName(r.fullName),
+      login: u?.login ?? null,
+      phone: u?.phone ?? null,
+      userStatus: u ? normalizeUserStatus(u.status) : null,
+      userRole: u?.role ?? null,
+      employmentStatus: r.employmentStatus || "working",
+      fixedSalary: Math.max(0, Math.round(Number(r.fixedSalary ?? 0))),
+      bonusPercent: Math.max(0, Number(r.bonusPercent ?? 30)),
+    };
+  });
+}
+
+/** Users + apteka tarmog‘i xodimlarini birlashtirish (id bo‘yicha). */
+export function mergeStaffRows(primary: StaffRow[], extra: StaffRow[]): StaffRow[] {
+  const byId = new Map<number, StaffRow>();
+  for (const r of primary) byId.set(r.id, r);
+  for (const r of extra) {
+    const prev = byId.get(r.id);
+    if (!prev) {
+      byId.set(r.id, r);
+      continue;
+    }
+    byId.set(r.id, {
+      ...prev,
+      ...r,
+      orgRole: r.orgRole || prev.orgRole,
+      reportsToId: r.reportsToId ?? prev.reportsToId,
+      location: r.location || prev.location,
+      login: prev.login || r.login,
+      phone: prev.phone || r.phone,
+      userRole: prev.userRole || r.userRole,
+      userStatus: prev.userStatus || r.userStatus,
+    });
+  }
+  return [...byId.values()].sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
 }

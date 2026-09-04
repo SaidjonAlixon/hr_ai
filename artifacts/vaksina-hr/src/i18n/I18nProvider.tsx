@@ -74,6 +74,7 @@ export function useI18n(): I18nContextValue {
 export const NAV_PATH_KEYS: Record<string, string> = {
   "/dashboard": "nav.dashboard",
   "/vazifalar": "nav.tasks",
+  "/vazifalar/tahlil": "nav.taskAnalytics",
   "/eslatmalar": "nav.reminders",
   "/chat": "nav.chat",
   "/tashkiliy-tuzilma": "nav.org",

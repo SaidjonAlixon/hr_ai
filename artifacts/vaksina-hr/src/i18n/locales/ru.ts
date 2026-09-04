@@ -54,6 +54,7 @@ export const ru: Messages = {
 
   "nav.dashboard": "Панель",
   "nav.tasks": "Задачи",
+  "nav.taskAnalytics": "Анализ задач",
   "nav.reminders": "Мои напоминания",
   "nav.chat": "Чат",
   "nav.org": "Оргструктура",
@@ -76,7 +77,7 @@ export const ru: Messages = {
   "nav.hisobkitob": "Расчёт зарплаты",
   "nav.reyting": "Рейтинг",
   "nav.reviziya": "Ревизия",
-  "nav.it": "IT",
+  "nav.it": "AyTi",
   "nav.texnik": "Технический",
   "nav.users": "Пользователи",
   "nav.departments": "Отделы",

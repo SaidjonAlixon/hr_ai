@@ -14,6 +14,43 @@ export type TaskAttachment = {
   size?: number;
 };
 
+export type TaskChecklistItem = {
+  id: string;
+  text: string;
+  done: boolean;
+};
+
+export type TaskChatMessage = {
+  id: string;
+  text: string;
+  authorName: string;
+  authorRole?: "assigner" | "assignee" | "system";
+  createdAt: string;
+  attachment?: TaskAttachment | null;
+};
+
+export type TaskHistoryEvent = {
+  id: string;
+  text: string;
+  createdAt: string;
+};
+
+export type TaskMeta = {
+  checklist?: TaskChecklistItem[];
+  tags?: string[];
+  taskType?: string;
+  branchOrDept?: string;
+  reminderEnabled?: boolean;
+  reminderOffset?: string;
+  recurrence?: string;
+  visibility?: "all" | "private";
+  notes?: string;
+  formStatus?: string;
+  verifiedAt?: string;
+  messages?: TaskChatMessage[];
+  history?: TaskHistoryEvent[];
+};
+
 export type Vazifa = {
   id: number;
   title: string;
@@ -36,6 +73,7 @@ export type Vazifa = {
   extensionStatus: "pending" | "approved" | "rejected" | null;
   candidateId?: number | null;
   pipelineStage?: string | null;
+  meta?: TaskMeta | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -49,6 +87,7 @@ export type VazifaInput = {
   assigneeKind: "user" | "employee";
   assigneeId: number;
   attachments?: TaskAttachment[];
+  meta?: TaskMeta | null;
 };
 
 export type VazifaUpdate = Partial<VazifaInput>;
@@ -114,6 +153,28 @@ export function useCreateTask() {
       apiFetch<Vazifa>("/tasks", {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+}
+
+export function useSendTaskMessage() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      id,
+      text,
+      attachment,
+    }: {
+      id: number;
+      text?: string;
+      attachment?: TaskAttachment | null;
+    }) =>
+      apiFetch<Vazifa>(`/tasks/${id}/messages`, {
+        method: "POST",
+        body: JSON.stringify({ text: text || "", attachment: attachment || null }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });

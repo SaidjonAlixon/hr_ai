@@ -32,8 +32,8 @@ import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import TashkiliyTuzilmaPage from './pages/tashkiliy-tuzilma/index';
 import VazifalarPage from './pages/vazifalar/index';
+import VazifalarTahlilPage from './pages/vazifalar/tahlil';
 import EslatmalarPage from './pages/eslatmalar/index';
-import ChatPage from './pages/chat/index';
 import KirishPage from './pages/kirish/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import ChecklistPage from './pages/checklist/index';
@@ -134,9 +134,12 @@ function Router() {
       <Route path="/pipeline">
         <Redirect to="/candidates" />
       </Route>
+      <ProtectedRoute path="/vazifalar/tahlil" component={VazifalarTahlilPage} />
       <ProtectedRoute path="/vazifalar" component={VazifalarPage} />
       <ProtectedRoute path="/eslatmalar" component={EslatmalarPage} />
-      <ProtectedRoute path="/chat" component={ChatPage} />
+      <Route path="/chat">
+        <Redirect to="/dashboard" />
+      </Route>
       <ProtectedRoute path="/kirish" component={KirishPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />

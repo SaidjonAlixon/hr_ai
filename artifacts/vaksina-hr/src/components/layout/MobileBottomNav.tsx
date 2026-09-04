@@ -17,31 +17,31 @@ function ensureVazifalar(paths: string[], byPath: Map<string, MobileNavItem>): s
 }
 
 const ROLE_MOBILE_PATHS: Record<string, string[]> = {
-  admin: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
-  director: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat', '/chat'],
-  hr: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
-  hr_menejer: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face', '/chat'],
-  hr_direktor: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face', '/chat'],
-  hr_kadr_rahbar: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face', '/chat'],
-  hr_auditor: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face', '/chat'],
-  recruiter: ['/dashboard', '/vazifalar', '/davomat-face', '/candidates', '/vacancies', '/chat'],
-  trainer: ['/dashboard', '/vazifalar', '/davomat-face', '/candidates', '/internships', '/chat'],
-  mentor: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/chat'],
-  department_head: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/pharmacy-network', '/chat'],
+  admin: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face'],
+  director: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat'],
+  hr: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face'],
+  hr_menejer: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face'],
+  hr_direktor: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face'],
+  hr_kadr_rahbar: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face'],
+  hr_auditor: ['/dashboard', '/vazifalar', '/employees', '/davomat/analytics', '/davomat-face'],
+  recruiter: ['/dashboard', '/vazifalar', '/davomat-face', '/candidates', '/vacancies'],
+  trainer: ['/dashboard', '/vazifalar', '/davomat-face', '/candidates', '/internships'],
+  mentor: ['/dashboard', '/vazifalar', '/davomat-face', '/employees'],
+  department_head: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/pharmacy-network'],
   mudir: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/pharmacy-network'],
   koordinator: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/pharmacy-network', '/checklist'],
-  farmasevt: ['/dashboard', '/vazifalar', '/davomat-face', '/ehtiyoj', '/chat'],
+  farmasevt: ['/dashboard', '/vazifalar', '/davomat-face', '/ehtiyoj'],
   stajyor: ['/kirish', '/vazifalar', '/davomat-face', '/checklist-holati', '/dashboard'],
-  moliya: ['/dashboard', '/vazifalar', '/oylik', '/employees', '/davomat', '/chat'],
-  sb: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/davomat', '/chat'],
-  sb_boshliq: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/davomat', '/chat'],
+  moliya: ['/dashboard', '/vazifalar', '/oylik', '/employees', '/davomat'],
+  sb: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/davomat'],
+  sb_boshliq: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/davomat'],
   texnik: ['/dashboard', '/vazifalar', '/texnik', '/davomat-face', '/pharmacy-network'],
-  texnik_rahbar: ['/dashboard', '/vazifalar', '/texnik', '/employees', '/davomat-face', '/chat'],
-  it: ['/dashboard', '/vazifalar', '/it', '/davomat-face', '/pharmacy-network', '/chat'],
-  it_rahbar: ['/dashboard', '/vazifalar', '/it', '/employees', '/davomat-face', '/chat'],
-  ombor: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/ehtiyoj', '/chat'],
+  texnik_rahbar: ['/dashboard', '/vazifalar', '/texnik', '/employees', '/davomat-face'],
+  it: ['/dashboard', '/vazifalar', '/it', '/davomat-face', '/pharmacy-network'],
+  it_rahbar: ['/dashboard', '/vazifalar', '/it', '/employees', '/davomat-face'],
+  ombor: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/ehtiyoj'],
   revizor: ['/dashboard', '/vazifalar', '/reviziya', '/davomat-face', '/pharmacy-network'],
-  reviziya_rahbar: ['/dashboard', '/vazifalar', '/reviziya', '/employees', '/davomat-face', '/chat'],
+  reviziya_rahbar: ['/dashboard', '/vazifalar', '/reviziya', '/employees', '/davomat-face'],
 };
 
 /** Path → short mobile label key (mobile.*) */
@@ -66,7 +66,6 @@ const MOBILE_SHORT_KEYS: Record<string, string> = {
   '/reyting': 'mobile.rating',
   '/smena-filial': 'mobile.shift',
   '/employees': 'mobile.employees',
-  '/chat': 'mobile.chat',
   '/davomat-face': 'mobile.face',
   '/tashkiliy-tuzilma': 'mobile.org',
 };
@@ -84,9 +83,8 @@ function pickMobileItems(role: string, navItems: MobileNavItem[]): MobileNavItem
       '/davomat-face',
       '/employees',
       '/davomat',
-      '/chat',
     ];
-  const preferred = ensureVazifalar(base, byPath);
+  const preferred = ensureVazifalar(base, byPath).filter((p) => p !== '/chat');
   const maxItems = 6;
 
   const picked: MobileNavItem[] = [];

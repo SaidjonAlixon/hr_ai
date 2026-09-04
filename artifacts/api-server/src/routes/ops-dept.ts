@@ -10,6 +10,7 @@ import {
   canManageOpsDept,
   canViewOpsDept,
 } from "../lib/ops-dept";
+import { IT_ROLES } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -23,7 +24,7 @@ router.get("/ops-tickets/meta", requireAuth, async (req: AuthRequest, res): Prom
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }
-  const roles = dept === "it" ? ["it", "it_rahbar"] : ["texnik", "texnik_rahbar"];
+  const roles = dept === "it" ? [...IT_ROLES] : ["texnik", "texnik_rahbar"];
   const staff = await db
     .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role })
     .from(usersTable)

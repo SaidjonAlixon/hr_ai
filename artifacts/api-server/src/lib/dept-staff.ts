@@ -21,7 +21,7 @@ export const DEPT_HEAD_ROLES = [
 ] as const;
 
 const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
-  it_rahbar: ["it"],
+  it_rahbar: ["it_rahbar", "it", "it_dasturchi", "it_tarmoq"],
   texnik_rahbar: ["texnik"],
   reviziya_rahbar: ["revizor"],
   sb_boshliq: ["sb"],
@@ -53,7 +53,10 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   recruiter: "Rekruter",
   trainer: "Trener",
   mentor: "Mentor",
-  it: "IT mutaxassisi",
+  it_rahbar: "AyTi bo‘lim boshlig‘i",
+  it: "AyTi mutaxassisi",
+  it_dasturchi: "Dasturchi",
+  it_tarmoq: "Tarmoq administratori",
   texnik: "Texnik",
   revizor: "Revizor-yig‘uvchi",
   sb: "SB operatori",
@@ -100,6 +103,14 @@ export async function resolveDeptHeadContext(userId: number, role: string): Prom
   if (!departmentName) return null;
 
   let departmentId = actor?.departmentId ?? null;
+
+  if (role === "it_rahbar" || departmentName === "IT") {
+    const { ensureItDepartmentId, IT_DEPARTMENT_NAME } = await import("./it-department");
+    const itId = await ensureItDepartmentId();
+    departmentName = IT_DEPARTMENT_NAME;
+    departmentId = itId;
+  }
+
   if (!departmentId) {
     departmentId = await ensureDepartmentByName(departmentName);
   }

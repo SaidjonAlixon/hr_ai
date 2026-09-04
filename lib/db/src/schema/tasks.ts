@@ -35,6 +35,11 @@ export const tasksTable = pgTable("tasks", {
   pipelineStage: text("pipeline_stage"),
   /** Beruvchi qo'shgan fayllar */
   attachments: jsonb("attachments").notNull().default([]),
+  /**
+   * Qo'shimcha forma maydonlari:
+   * checklist, tags, taskType, branchOrDept, reminder, recurrence, visibility, notes
+   */
+  meta: jsonb("meta").notNull().default({}),
   /** Ijrochi bajarish natijasi */
   completionNote: text("completion_note"),
   completionAttachments: jsonb("completion_attachments").notNull().default([]),

@@ -1,4 +1,5 @@
-import React, { useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useLocation } from "wouter";
 import {
   useGetUsers,
   useGetEmployees,
@@ -19,6 +20,7 @@ import {
   ChevronsUpDown,
   Clock,
   Send,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -32,13 +34,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Popover,
   PopoverContent,
@@ -67,14 +62,15 @@ import {
   useRequestExtension,
   useResolveExtension,
   useVerifyTask,
+  useSendTaskMessage,
   fileToAttachment,
   type Vazifa,
   type TaskAttachment,
 } from "@/lib/vazifalar-api";
 
-import { HR_ROLES, isSbRole } from "@/lib/roles";
-import { SB_TASK_TEMPLATES } from "@/lib/sb";
+import { HR_ROLES, userRoleLabel } from "@/lib/roles";
 import { useI18n } from "@/i18n/I18nProvider";
+import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 
 type BoardCol = "past" | "today" | "tomorrow" | "week" | "completed";
 
@@ -216,9 +212,29 @@ export default function VazifalarPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { t } = useI18n();
+  const [location] = useLocation();
+  const deepLinkParams = useMemo(() => {
+    const qs = typeof window !== "undefined" ? window.location.search : "";
+    return new URLSearchParams(qs.startsWith("?") ? qs.slice(1) : qs);
+  }, [location]);
+  const deepTaskId = deepLinkParams.get("task");
+  const deepQ = deepLinkParams.get("q");
+  const deepAssigneeKind = deepLinkParams.get("assigneeKind");
+  const deepAssigneeId = deepLinkParams.get("assigneeId");
   const canAssign = !!user && ASSIGNER_ROLES.has(user.role);
 
-  const { data: tasks = [], isLoading } = useGetTasks({ board: "active" });
+  const [search, setSearch] = useState(deepQ || "");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [assigneeFilter, setAssigneeFilter] = useState<{
+    kind: "user" | "employee";
+    id: number;
+    name: string;
+  } | null>(null);
+
+  const needsAllBoard = !!(deepTaskId || deepAssigneeKind || assigneeFilter);
+  const { data: tasks = [], isLoading } = useGetTasks({
+    board: needsAllBoard ? "all" : "active",
+  });
   const { data: users = [] } = useGetUsers({ status: "active" } as any);
   const { data: employees = [] } = useGetEmployees(undefined as any);
 
@@ -230,25 +246,16 @@ export default function VazifalarPage() {
   const requestExtension = useRequestExtension();
   const resolveExtension = useResolveExtension();
   const verifyTask = useVerifyTask();
+  const sendTaskMessage = useSendTaskMessage();
 
-  const [search, setSearch] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [editing, setEditing] = useState<Vazifa | null>(null);
   const [activeTask, setActiveTask] = useState<Vazifa | null>(null);
-
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [priority, setPriority] = useState("normal");
-  const [status, setStatus] = useState("todo");
-  const [dueAt, setDueAt] = useState("");
-  const [assigneeKey, setAssigneeKey] = useState("");
-  const [assigneeOpen, setAssigneeOpen] = useState(false);
-  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
-  const [attachUploading, setAttachUploading] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [createDueAt, setCreateDueAt] = useState<string | null>(null);
+  const deepLinkHandled = useRef<string | null>(null);
 
   const [completionNote, setCompletionNote] = useState("");
   const [completionFiles, setCompletionFiles] = useState<TaskAttachment[]>([]);
@@ -257,45 +264,154 @@ export default function VazifalarPage() {
 
   const [extendDue, setExtendDue] = useState("");
   const [extendNote, setExtendNote] = useState("");
+  const [viewChatDraft, setViewChatDraft] = useState("");
+  const [viewChatBusy, setViewChatBusy] = useState(false);
+
+  useEffect(() => {
+    if (deepQ && !deepAssigneeKind) setSearch(deepQ);
+  }, [deepQ, deepAssigneeKind]);
+
+  useEffect(() => {
+    if (!deepTaskId || !tasks.length) return;
+    if (deepLinkHandled.current === deepTaskId) return;
+    const found = tasks.find((t) => String(t.id) === deepTaskId);
+    if (!found) return;
+    deepLinkHandled.current = deepTaskId;
+    setActiveTask(found);
+    setViewOpen(true);
+  }, [deepTaskId, tasks]);
 
   const assigneeOptions = useMemo(() => {
-    const u = (users as any[])
-      .filter((x) => x.status !== "inactive")
-      .map((x) => ({
+    const normName = (s: string) =>
+      String(s || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+
+    const activeUserStatuses = new Set(["active", "on_leave"]);
+    const activeEmpStatuses = new Set(["working", "new", "on_leave"]);
+
+    const activeUsers = (users as any[]).filter((x) =>
+      activeUserStatuses.has(String(x.status || "")),
+    );
+    const linkedUserIds = new Set<number>(
+      activeUsers.map((x) => Number(x.id)).filter((id) => Number.isFinite(id)),
+    );
+    const linkedNames = new Set(
+      activeUsers.map((x) => normName(x.fullName)).filter(Boolean),
+    );
+
+    const u = activeUsers.map((x) => {
+      const roleMeta = userRoleLabel(x.role) || String(x.role || "").replace(/_/g, " ");
+      return {
         key: `user:${x.id}`,
-        label: `${x.fullName} · ${String(x.role).replace("_", " ")}`,
+        name: String(x.fullName || "").trim(),
+        label: `${x.fullName} · ${roleMeta}`,
         kind: "user" as const,
         id: x.id as number,
+        meta: roleMeta,
+      };
+    });
+
+    const e = (employees as any[])
+      .filter((x) => activeEmpStatuses.has(String(x.employmentStatus || "working")))
+      .filter((x) => {
+        const uid = x.userId != null ? Number(x.userId) : null;
+        if (uid != null && linkedUserIds.has(uid)) return false;
+        const name = normName(x.fullName);
+        if (name && linkedNames.has(name)) return false;
+        return true;
+      })
+      .map((x) => ({
+        key: `employee:${x.id}`,
+        name: String(x.fullName || "").trim(),
+        label: `${x.fullName} · ${x.position || ""}${x.location ? ` (${x.location})` : ""}`,
+        kind: "employee" as const,
+        id: x.id as number,
+        meta: `${x.position || ""}${x.location ? ` · ${x.location}` : ""}`.trim(),
       }));
-    const e = (employees as any[]).map((x) => ({
-      key: `employee:${x.id}`,
-      label: `${x.fullName} · ${x.position}${x.location ? ` (${x.location})` : ""}`,
-      kind: "employee" as const,
-      id: x.id as number,
-    }));
-    return [...u, ...e];
+
+    return [...u, ...e].filter((o) => o.name);
   }, [users, employees]);
 
-  const selectedAssignee = useMemo(
-    () => assigneeOptions.find((o) => o.key === assigneeKey),
-    [assigneeOptions, assigneeKey],
-  );
+  useEffect(() => {
+    if (!deepAssigneeKind || !deepAssigneeId) return;
+    if (deepAssigneeKind !== "user" && deepAssigneeKind !== "employee") return;
+    const id = Number(deepAssigneeId);
+    if (!Number.isFinite(id)) return;
+    const opt = assigneeOptions.find((o) => o.kind === deepAssigneeKind && o.id === id);
+    if (opt) {
+      setAssigneeFilter({ kind: opt.kind, id: opt.id, name: opt.name });
+      setSearch(opt.name);
+      return;
+    }
+    setAssigneeFilter((prev) =>
+      prev && prev.kind === deepAssigneeKind && prev.id === id
+        ? prev
+        : { kind: deepAssigneeKind, id, name: deepQ || prev?.name || `#${id}` },
+    );
+  }, [deepAssigneeKind, deepAssigneeId, deepQ, assigneeOptions]);
+
+  const branchOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of employees as any[]) {
+      const loc = String(e?.location || "").trim();
+      if (loc) set.add(loc);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "uz"));
+  }, [employees]);
+
+  const searchStaffList = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return assigneeOptions.slice(0, 80);
+    return assigneeOptions
+      .filter(
+        (o) =>
+          o.name.toLowerCase().includes(q) ||
+          o.label.toLowerCase().includes(q) ||
+          o.meta.toLowerCase().includes(q),
+      )
+      .slice(0, 80);
+  }, [assigneeOptions, search]);
 
   const isCreatorOf = (t: Vazifa) => !!user && t.createdById === user.id;
   const isAssigneeOf = (t: Vazifa) =>
     !!user && t.assigneeKind === "user" && t.assigneeId === user.id;
 
   const filtered = useMemo(() => {
+    let list = tasks;
+    if (assigneeFilter) {
+      list = list.filter(
+        (t) =>
+          t.assigneeKind === assigneeFilter.kind && t.assigneeId === assigneeFilter.id,
+      );
+      const q = search.trim().toLowerCase();
+      // When assignee is locked, only further filter by title/description (not creator name)
+      if (q && q !== assigneeFilter.name.toLowerCase()) {
+        list = list.filter(
+          (t) =>
+            t.title.toLowerCase().includes(q) ||
+            (t.description || "").toLowerCase().includes(q) ||
+            String(t.id).includes(q),
+        );
+      }
+      return list;
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return tasks;
-    return tasks.filter(
+    if (!q) return list;
+    return list.filter(
       (t) =>
         t.title.toLowerCase().includes(q) ||
         (t.assigneeName || "").toLowerCase().includes(q) ||
-        (t.createdByName || "").toLowerCase().includes(q) ||
-        (t.description || "").toLowerCase().includes(q),
+        (t.description || "").toLowerCase().includes(q) ||
+        String(t.id).includes(q),
     );
-  }, [tasks, search]);
+  }, [tasks, search, assigneeFilter]);
+
+  function clearSearchFilter() {
+    setSearch("");
+    setAssigneeFilter(null);
+  }
 
   const byColumn = useMemo(() => {
     const map: Record<BoardCol, Vazifa[]> = {
@@ -325,19 +441,13 @@ export default function VazifalarPage() {
 
   function openCreate(presetCol?: BoardCol) {
     setEditing(null);
-    setTitle("");
-    setDescription("");
-    setPriority("normal");
-    setStatus("todo");
-    setAttachments([]);
-    setAssigneeKey("");
     const base = startOfDay(new Date());
     let target = base;
     if (presetCol === "tomorrow") target = addDays(base, 1);
     if (presetCol === "week") target = addDays(base, 3);
     if (presetCol === "past") target = addDays(base, -1);
     target.setHours(18, 0, 0, 0);
-    setDueAt(toDatetimeLocalValue(target.toISOString()));
+    setCreateDueAt(target.toISOString());
     setEditOpen(true);
   }
 
@@ -348,13 +458,7 @@ export default function VazifalarPage() {
       return;
     }
     setEditing(task);
-    setTitle(task.title);
-    setDescription(task.description || "");
-    setPriority(task.priority);
-    setStatus(task.status);
-    setDueAt(toDatetimeLocalValue(task.dueAt));
-    setAssigneeKey(`${task.assigneeKind}:${task.assigneeId}`);
-    setAttachments(task.attachments || []);
+    setCreateDueAt(null);
     setEditOpen(true);
   }
 
@@ -410,27 +514,7 @@ export default function VazifalarPage() {
     }
   }
 
-  async function handleSave() {
-    if (!title.trim()) {
-      toast({ title: "Sarlavha kiriting", variant: "destructive" });
-      return;
-    }
-    if (!assigneeKey) {
-      toast({ title: "Ijrochini tanlang", variant: "destructive" });
-      return;
-    }
-    const [kind, idStr] = assigneeKey.split(":");
-    const payload = {
-      title: title.trim(),
-      description: description.trim() || null,
-      priority,
-      status,
-      dueAt: dueAt ? new Date(dueAt).toISOString() : null,
-      assigneeKind: kind as "user" | "employee",
-      assigneeId: parseInt(idStr, 10),
-      attachments,
-    };
-
+  async function handleSave(payload: import("@/lib/vazifalar-api").VazifaInput) {
     try {
       if (editing) {
         await updateTask.mutateAsync({ id: editing.id, data: payload });
@@ -447,6 +531,21 @@ export default function VazifalarPage() {
         variant: "destructive",
       });
     }
+  }
+
+  async function handlePersistChat(patch: {
+    meta: import("@/lib/vazifalar-api").TaskMeta;
+    attachments: import("@/lib/vazifalar-api").TaskAttachment[];
+  }) {
+    if (!editing) return;
+    const updated = await updateTask.mutateAsync({
+      id: editing.id,
+      data: {
+        meta: patch.meta,
+        attachments: patch.attachments,
+      },
+    });
+    setEditing(updated);
   }
 
   async function handleComplete() {
@@ -578,25 +677,151 @@ export default function VazifalarPage() {
               {t("tasks.subtitle")}
             </p>
           </div>
-          {canAssign && (
-            <Button
-              onClick={() => openCreate("today")}
-              className="gap-2 shadow-sm"
-            >
-              <Plus className="h-4 w-4" />
-              {t("tasks.new")}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" className="gap-2 shadow-sm">
+              <Link href="/vazifalar/tahlil">
+                <BarChart3 className="h-4 w-4" />
+                {t("nav.taskAnalytics")}
+              </Link>
             </Button>
-          )}
+            {canAssign && (
+              <Button
+                onClick={() => openCreate("today")}
+                className="gap-2 shadow-sm"
+              >
+                <Plus className="h-4 w-4" />
+                {t("tasks.new")}
+              </Button>
+            )}
+          </div>
         </div>
 
-        <div className="mt-4 relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder={t("tasks.search")}
-            className="pl-9 bg-card"
-          />
+        <div className="mt-4 max-w-md space-y-2">
+          <Popover open={searchOpen} onOpenChange={setSearchOpen}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  "flex h-10 w-full items-center gap-2 rounded-md border border-input bg-card px-3 text-left text-sm shadow-sm transition",
+                  "hover:border-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30",
+                  (searchOpen || assigneeFilter) && "border-sky-400 ring-2 ring-sky-500/20",
+                )}
+              >
+                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <span
+                  className={cn(
+                    "min-w-0 flex-1 truncate",
+                    search || assigneeFilter ? "text-foreground" : "text-muted-foreground",
+                  )}
+                >
+                  {assigneeFilter?.name || search || t("tasks.search")}
+                </span>
+                {search || assigneeFilter ? (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      clearSearchFilter();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        clearSearchFilter();
+                      }
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </span>
+                ) : (
+                  <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="z-[80] w-[var(--radix-popover-trigger-width)] p-0"
+              align="start"
+              sideOffset={6}
+            >
+              <Command shouldFilter={false}>
+                <CommandInput
+                  value={search}
+                  onValueChange={(v) => {
+                    setSearch(v);
+                    setAssigneeFilter(null);
+                  }}
+                  placeholder={t("tasks.searchEmployee")}
+                />
+                <CommandList className="max-h-72">
+                  <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
+                  <CommandGroup heading={t("tasks.filterByAssignee")}>
+                    {searchStaffList.map((o) => {
+                      const initials = o.name
+                        .split(/\s+/)
+                        .filter(Boolean)
+                        .slice(0, 2)
+                        .map((p) => p[0]?.toUpperCase() || "")
+                        .join("");
+                      const active =
+                        !!assigneeFilter &&
+                        assigneeFilter.kind === o.kind &&
+                        assigneeFilter.id === o.id;
+                      return (
+                        <CommandItem
+                          key={o.key}
+                          value={o.label}
+                          onSelect={() => {
+                            setAssigneeFilter({ kind: o.kind, id: o.id, name: o.name });
+                            setSearch(o.name);
+                            setSearchOpen(false);
+                          }}
+                          className="gap-2.5 py-2"
+                        >
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 text-[10px] font-bold text-white">
+                            {initials || "?"}
+                          </span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-sm font-medium">{o.name}</span>
+                            <span className="block truncate text-[11px] text-muted-foreground">
+                              {o.meta}
+                            </span>
+                          </span>
+                          <Check
+                            className={cn(
+                              "h-4 w-4 shrink-0 text-sky-600",
+                              active ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
+          {assigneeFilter ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-medium text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
+                <User className="h-3 w-3" />
+                {t("tasks.assigneeOnly")}: {assigneeFilter.name}
+                <button
+                  type="button"
+                  className="ml-0.5 rounded-full p-0.5 hover:bg-sky-100 dark:hover:bg-sky-500/20"
+                  onClick={clearSearchFilter}
+                  aria-label={t("ui.clear")}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+              <span className="text-muted-foreground">
+                {filtered.length} {t("tasks.filteredCount")}
+              </span>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -684,285 +909,19 @@ export default function VazifalarPage() {
         )}
       </div>
 
-      {/* Beruvchi: yaratish / tahrirlash */}
-      <Dialog open={editOpen} onOpenChange={setEditOpen}>
-        <DialogContent className="max-w-lg sm:max-w-xl">
-          <DialogHeader>
-            <DialogTitle>
-              {editing ? t("tasks.edit") : t("tasks.new")}
-            </DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 py-1">
-            {editing && (
-              <div className="rounded-xl border border-border bg-muted/80 p-3 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-xs font-semibold text-foreground uppercase tracking-wide">
-                    Kuzatuv
-                  </p>
-                  <span
-                    className={cn(
-                      "text-[11px] font-semibold rounded-full px-2.5 py-0.5",
-                      editing.status === "todo" && "bg-sky-100 text-sky-800",
-                      editing.status === "in_progress" &&
-                        "bg-amber-100 text-amber-900",
-                      editing.status === "done" &&
-                        "bg-emerald-100 text-emerald-800",
-                      editing.status === "verified" &&
-                        "bg-violet-100 text-violet-800",
-                      editing.status === "cancelled" &&
-                        "bg-slate-200 text-muted-foreground",
-                    )}
-                  >
-                    {editing.status === "todo"
-                      ? "Qabul kutilmoqda"
-                      : editing.status === "in_progress"
-                        ? "Bajarilmoqda"
-                        : editing.status === "done"
-                          ? "Tasdiq kutilmoqda"
-                          : editing.status === "verified"
-                            ? "Tasdiqlangan"
-                            : editing.status === "cancelled"
-                              ? "Bekor"
-                              : editing.status}
-                  </span>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  <span className="text-muted-foreground">Qabul qilingan: </span>
-                  {editing.acceptedAt ? (
-                    <span className="font-medium text-sky-800">
-                      {formatDate(editing.acceptedAt)}
-                    </span>
-                  ) : editing.status === "todo" ? (
-                    <span className="text-amber-700 font-medium">
-                      Hali qabul qilinmagan
-                    </span>
-                  ) : (
-                    <span className="font-medium text-sky-800">
-                      Qabul qilingan
-                      {editing.updatedAt
-                        ? ` · ${formatDate(editing.updatedAt)}`
-                        : ""}
-                    </span>
-                  )}
-                </div>
-                {editing.dueAt &&
-                  editing.status !== "verified" &&
-                  editing.status !== "cancelled" && (
-                    <DeadlineCountdown
-                      deadline={editing.dueAt}
-                      showDate
-                      className="!mt-1"
-                    />
-                  )}
-                {editing.status === "verified" && (
-                  <p className="text-sm text-violet-700 font-medium">
-                    Vazifa tasdiqlangan
-                    {editing.completedAt
-                      ? ` · Yakun: ${formatDate(editing.completedAt)}`
-                      : ""}
-                  </p>
-                )}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <Label>{t("tasks.field.title")}</Label>
-              {isSbRole(user?.role) && !editing && (
-                <div className="space-y-1.5">
-                  <Select
-                    onValueChange={(v) => {
-                      const t = SB_TASK_TEMPLATES[Number(v)];
-                      if (!t) return;
-                      setTitle(t.title);
-                      setDescription(t.description);
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="SB shablon: kunlik / hodisa / oylik" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {SB_TASK_TEMPLATES.map((t, i) => (
-                        <SelectItem key={`${t.group}-${t.title}`} value={String(i)}>
-                          {t.group}: {t.title}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <p className="text-xs text-muted-foreground">
-                    Eskalatsiya: SB operatori → SB boshlig‘i → Direktor. Boshqa bo‘limlarga (IT, Ombor, Logistika, AXO, HR, Reviziya) ijrochi sifatida yuboring.
-                  </p>
-                </div>
-              )}
-              <Input
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Masalan: Nomzod bilan qo‘ng‘iroq"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>{t("tasks.field.desc")}</Label>
-              <Textarea
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={3}
-                placeholder="Batafsil matn..."
-              />
-            </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>{t("tasks.assignee")}</Label>
-                <Popover modal open={assigneeOpen} onOpenChange={setAssigneeOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      role="combobox"
-                      className="w-full justify-between font-normal h-10 px-3"
-                    >
-                      <span
-                        className={cn(
-                          "truncate",
-                          !selectedAssignee && "text-muted-foreground",
-                        )}
-                      >
-                        {selectedAssignee?.label || t("tasks.pickEmployee")}
-                      </span>
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent
-                    className="z-[100] w-[var(--radix-popover-trigger-width)] p-0"
-                    align="start"
-                  >
-                    <Command
-                      filter={(value, searchQ) => {
-                        const q = searchQ.trim().toLowerCase();
-                        if (!q) return 1;
-                        return value.toLowerCase().includes(q) ? 1 : 0;
-                      }}
-                    >
-                      <CommandInput placeholder={t("tasks.searchEmployee")} />
-                      <CommandList className="max-h-56">
-                        <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
-                        <CommandGroup>
-                          {assigneeOptions.map((o) => (
-                            <CommandItem
-                              key={o.key}
-                              value={o.label}
-                              onSelect={() => {
-                                setAssigneeKey(o.key);
-                                setAssigneeOpen(false);
-                              }}
-                            >
-                              <Check
-                                className={cn(
-                                  "mr-2 h-4 w-4 shrink-0",
-                                  assigneeKey === o.key
-                                    ? "opacity-100"
-                                    : "opacity-0",
-                                )}
-                              />
-                              <span className="truncate">{o.label}</span>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("tasks.deadline")}</Label>
-                <Input
-                  type="datetime-local"
-                  value={dueAt}
-                  onChange={(e) => setDueAt(e.target.value)}
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>{t("tasks.priorityLabel")}</Label>
-                <Select value={priority} onValueChange={setPriority}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="low">{t("tasks.priority.low")}</SelectItem>
-                    <SelectItem value="normal">{t("tasks.priority.normal")}</SelectItem>
-                    <SelectItem value="high">{t("tasks.priority.high")}</SelectItem>
-                    <SelectItem value="urgent">{t("tasks.priority.urgent")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {editing && (
-                <div className="space-y-1.5">
-                  <Label>{t("ui.status")}</Label>
-                  <Select value={status} onValueChange={setStatus}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="todo">Qabul kutilmoqda</SelectItem>
-                      <SelectItem value="in_progress">Bajarilmoqda (Jarayonda)</SelectItem>
-                      <SelectItem value="done">Tasdiq kutilmoqda</SelectItem>
-                      <SelectItem value="verified">Tasdiqlangan</SelectItem>
-                      <SelectItem value="cancelled">Bekor</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <FileDropzone
-                inputRef={fileRef}
-                label="RASM / FAYL (ixtiyoriy)"
-                title="Rasm yoki fayl biriktiring"
-                hint="PDF, DOCX, rasm — 10 MB gacha. Bosib tanlang yoki shu yerga tortib tashlang"
-                uploading={attachUploading}
-                uploadedCount={attachments.length}
-                onPick={(files) =>
-                  void onPickFiles(files, setAttachments, setAttachUploading)
-                }
-              />
-              <AttachmentList
-                items={attachments}
-                onRemove={(id) =>
-                  setAttachments((prev) => prev.filter((x) => x.id !== id))
-                }
-              />
-            </div>
-            {editing?.completionNote ||
-            (editing?.completionAttachments?.length ?? 0) > 0 ? (
-              <div className="rounded-lg border border-emerald-200 bg-emerald-50/80 p-3 space-y-2">
-                <p className="text-xs font-semibold text-emerald-800">
-                  Ijrochi natijasi
-                </p>
-                {editing?.completionNote && (
-                  <p className="text-sm text-emerald-900 whitespace-pre-wrap">
-                    {editing.completionNote}
-                  </p>
-                )}
-                <AttachmentList
-                  items={editing?.completionAttachments || []}
-                  readOnly
-                />
-              </div>
-            ) : null}
-          </div>
-
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setEditOpen(false)}>
-              {t("ui.cancel")}
-            </Button>
-            <Button
-              onClick={() => void handleSave()}
-              disabled={createTask.isPending || updateTask.isPending}
-            >
-              {editing ? t("ui.save") : t("ui.create")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <TaskFormDialog
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        editing={editing}
+        assigneeOptions={assigneeOptions}
+        branchOptions={branchOptions}
+        currentUserName={user?.fullName}
+        currentUserRole={user?.role}
+        saving={createTask.isPending || updateTask.isPending}
+        defaultDueAt={createDueAt}
+        onSave={handleSave}
+        onPersistChat={handlePersistChat}
+      />
 
       {/* Ijrochi: faqat ko'rish */}
       <Dialog open={viewOpen} onOpenChange={setViewOpen}>
@@ -981,7 +940,181 @@ export default function VazifalarPage() {
               <p className="text-muted-foreground">
                 Muddat: {formatDate(activeTask.dueAt)}
               </p>
+              {!!(activeTask.meta as any)?.branchOrDept && (
+                <p className="text-muted-foreground">
+                  Filial: {String((activeTask.meta as any).branchOrDept)}
+                </p>
+              )}
+              {Array.isArray((activeTask.meta as any)?.tags) &&
+                (activeTask.meta as any).tags.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {((activeTask.meta as any).tags as string[]).map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-[10px]">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              {Array.isArray((activeTask.meta as any)?.checklist) &&
+                (activeTask.meta as any).checklist.length > 0 && (
+                  <ul className="space-y-1 rounded-lg border border-border bg-muted/40 p-2">
+                    {((activeTask.meta as any).checklist as Array<{ id: string; text: string; done: boolean }>).map(
+                      (c) => (
+                        <li key={c.id} className="flex items-center gap-2 text-xs">
+                          <CheckCircle2
+                            className={cn(
+                              "h-3.5 w-3.5",
+                              c.done ? "text-emerald-600" : "text-muted-foreground/40",
+                            )}
+                          />
+                          <span className={cn(c.done && "line-through text-muted-foreground")}>
+                            {c.text}
+                          </span>
+                        </li>
+                      ),
+                    )}
+                  </ul>
+                )}
               <AttachmentList items={activeTask.attachments || []} readOnly />
+
+              {/* Task chat (beruvchi / ijrochi) */}
+              <div className="space-y-2 rounded-xl border border-border overflow-hidden">
+                <div
+                  className="relative max-h-56 space-y-2 overflow-y-auto p-3"
+                  style={{
+                    backgroundImage:
+                      "linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.88)), url(https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=800&q=60)",
+                    backgroundSize: "cover",
+                    backgroundPosition: "center",
+                  }}
+                >
+                  <p className="text-center text-[10px] font-semibold text-slate-600">Chat</p>
+                  {(!Array.isArray((activeTask.meta as any)?.messages) ||
+                    (activeTask.meta as any).messages.length === 0) && (
+                    <p className="rounded-lg bg-white/95 px-2 py-4 text-center text-xs text-muted-foreground shadow-sm">
+                      Hali xabar yo‘q
+                    </p>
+                  )}
+                  {Array.isArray((activeTask.meta as any)?.messages) &&
+                    ((activeTask.meta as any).messages as Array<{
+                      id: string;
+                      text: string;
+                      authorName: string;
+                      authorRole?: string;
+                      createdAt: string;
+                      attachment?: TaskAttachment | null;
+                    }>).map((m) => {
+                      const mine =
+                        (m.authorRole === "assignee" && isAssigneeOf(activeTask)) ||
+                        (m.authorRole !== "assignee" &&
+                          (isCreatorOf(activeTask) || user?.role === "admin"));
+                      return (
+                        <div
+                          key={m.id}
+                          className={cn(
+                            "max-w-[90%] rounded-2xl px-2.5 py-1.5 text-xs shadow-sm",
+                            mine
+                              ? "ml-auto rounded-br-md bg-[#0b5fff] text-white"
+                              : "rounded-bl-md bg-white text-foreground",
+                          )}
+                        >
+                          {!mine && (
+                            <p className="mb-0.5 text-[10px] font-semibold opacity-80">
+                              {m.authorName}
+                            </p>
+                          )}
+                          {m.text ? <p className="whitespace-pre-wrap">{m.text}</p> : null}
+                          {m.attachment?.url && (
+                            m.attachment.kind === "image" ||
+                            (m.attachment.mimeType || "").startsWith("image/") ? (
+                              <a href={m.attachment.url} target="_blank" rel="noreferrer">
+                                <img
+                                  src={m.attachment.url}
+                                  alt={m.attachment.name}
+                                  className="mt-1 max-h-28 rounded-md object-cover"
+                                />
+                              </a>
+                            ) : (
+                              <a
+                                href={m.attachment.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-1 block underline"
+                              >
+                                {m.attachment.name}
+                              </a>
+                            )
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+                {(isAssigneeOf(activeTask) || isCreatorOf(activeTask) || user?.role === "admin") && (
+                  <div className="flex gap-2 border-t border-border bg-background p-2">
+                    <Input
+                      value={viewChatDraft}
+                      onChange={(e) => setViewChatDraft(e.target.value)}
+                      placeholder="Xabar yozing..."
+                      className="h-9"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          void (async () => {
+                            if (!viewChatDraft.trim() || !activeTask) return;
+                            setViewChatBusy(true);
+                            try {
+                              const updated = await sendTaskMessage.mutateAsync({
+                                id: activeTask.id,
+                                text: viewChatDraft.trim(),
+                              });
+                              setActiveTask(updated);
+                              setViewChatDraft("");
+                            } catch (err: any) {
+                              toast({
+                                title: "Chat yuborilmadi",
+                                description: err?.message || "Xato",
+                                variant: "destructive",
+                              });
+                            } finally {
+                              setViewChatBusy(false);
+                            }
+                          })();
+                        }
+                      }}
+                    />
+                    <Button
+                      size="sm"
+                      className="h-9 shrink-0"
+                      disabled={viewChatBusy || !viewChatDraft.trim()}
+                      onClick={() => {
+                        void (async () => {
+                          if (!viewChatDraft.trim() || !activeTask) return;
+                          setViewChatBusy(true);
+                          try {
+                            const updated = await sendTaskMessage.mutateAsync({
+                              id: activeTask.id,
+                              text: viewChatDraft.trim(),
+                            });
+                            setActiveTask(updated);
+                            setViewChatDraft("");
+                          } catch (err: any) {
+                            toast({
+                              title: "Chat yuborilmadi",
+                              description: err?.message || "Xato",
+                              variant: "destructive",
+                            });
+                          } finally {
+                            setViewChatBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      <Send className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
+              </div>
+
               {(activeTask.status === "done" ||
                 activeTask.completionNote ||
                 (activeTask.completionAttachments?.length ?? 0) > 0) && (
@@ -1421,13 +1554,34 @@ function TaskCard({
                   ? "Tasdiqlangan"
                   : isAccepted
                     ? "Bajarilmoqda"
-                    : task.status}
+                    : task.status === "cancelled"
+                      ? "Bekor qilingan"
+                      : "Yangi"}
         </span>
       </div>
 
       <h3 className="text-[13px] font-semibold text-foreground leading-snug mb-1">
         {task.title}
       </h3>
+
+      {Array.isArray(task.meta?.tags) && task.meta!.tags!.length > 0 && (
+        <div className="mb-1.5 flex flex-wrap gap-1">
+          {task.meta!.tags!.slice(0, 3).map((tag) => (
+            <span
+              key={tag}
+              className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-200"
+            >
+              {tag}
+            </span>
+          ))}
+        </div>
+      )}
+      {Array.isArray(task.meta?.checklist) && task.meta!.checklist!.length > 0 && (
+        <p className="mb-1.5 text-[10px] text-muted-foreground">
+          Checklist: {task.meta!.checklist!.filter((c) => c.done).length}/
+          {task.meta!.checklist!.length}
+        </p>
+      )}
 
       {task.candidateId && task.pipelineStage && (
         <a
@@ -1471,40 +1625,54 @@ function TaskCard({
       <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground mb-1.5">
         <div className="flex items-center gap-1.5">
           <User className="h-2.5 w-2.5 shrink-0" />
-          <span className="truncate">{task.assigneeName || "—"}</span>
+          <span className="truncate">
+            {t("tasks.assignee")}: {task.assigneeName || "—"}
+          </span>
         </div>
-        {task.createdByName && (
-          <div className="truncate pl-4 text-muted-foreground">
-            Bergan: {task.createdByName}
+        {task.createdByName ? (
+          <div className="truncate pl-4">
+            {t("tasks.givenBy")}: {task.createdByName}
           </div>
-        )}
+        ) : null}
       </div>
 
-      {hideCountdown ? (
-        <div
-          className={cn(
-            "mb-1.5 rounded-md border px-2 py-1 text-[10px] font-semibold",
-            isVerified
-              ? "border-violet-200 bg-violet-50 text-violet-900"
-              : "border-emerald-200 bg-emerald-50 text-emerald-900",
-          )}
-        >
-          <div className="flex items-center gap-1">
-            <CheckCircle2 className="h-3 w-3 shrink-0" />
-            {isVerified ? "Bajarilgan va tasdiqlangan" : "Bajarilgan — tasdiq kutilmoqda"}
+      <div className="mb-1.5 space-y-1">
+        {task.dueAt ? (
+          <div
+            className={cn(
+              "flex items-center gap-1 text-[10px]",
+              overdue && !hideCountdown
+                ? "font-semibold text-rose-600"
+                : "text-muted-foreground",
+            )}
+          >
+            <Calendar className="h-3 w-3 shrink-0" />
+            <span>
+              {t("tasks.deadline")}: {formatDate(task.dueAt)}
+            </span>
           </div>
-        </div>
-      ) : task.dueAt ? (
-        <div className="mb-1.5 text-[10px] text-muted-foreground flex items-center gap-1">
-          <Calendar className="h-3 w-3 shrink-0" />
-          <span>{formatDate(task.dueAt)}</span>
-        </div>
-      ) : (
-        <div className="flex items-center gap-1 text-[10px] text-muted-foreground mb-1.5">
-          <Calendar className="h-3 w-3" />
-          Muddat yo‘q
-        </div>
-      )}
+        ) : (
+          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
+            <Calendar className="h-3 w-3" />
+            {t("tasks.noDue")}
+          </div>
+        )}
+        {hideCountdown ? (
+          <div
+            className={cn(
+              "rounded-md border px-2 py-1 text-[10px] font-semibold",
+              isVerified
+                ? "border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200"
+                : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200",
+            )}
+          >
+            <div className="flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3 shrink-0" />
+              {isVerified ? t("tasks.status.verifiedFull") : t("tasks.status.awaitingFull")}
+            </div>
+          </div>
+        ) : null}
+      </div>
 
       {(awaitingReview || isVerified) &&
         (task.completionNote || (task.completionAttachments?.length ?? 0) > 0) && (

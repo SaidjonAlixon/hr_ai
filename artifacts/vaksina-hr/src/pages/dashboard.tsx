@@ -24,7 +24,6 @@ import {
   ClipboardCheck,
   ListTodo,
   AlarmClock,
-  MessageCircle,
   GraduationCap,
   Calendar,
   Shield,
@@ -50,14 +49,12 @@ import { useBranchNeeds } from '../lib/branch-needs-api';
 import { useGetTasks } from '../lib/vazifalar-api';
 import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
-import { useChatList } from '../lib/chat-api';
 import { cn } from '../lib/utils';
 import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole } from '../lib/roles';
 import { DavomatAnalyticsDashboard } from '../pages/davomat/analytics';
 import { useHolat } from '../lib/holat-api';
 import {
   BranchListRows,
-  ChatListRows,
   DashActionBar,
   DashDetailDialog,
   DashListRow,
@@ -85,8 +82,10 @@ const ROLE_LABELS: Record<string, string> = {
   koordinator: 'Koordinator',
   texnik: 'Texnik',
   texnik_rahbar: 'Texnik bo‘limi rahbari',
-  it: 'IT mutaxassisi',
-  it_rahbar: 'IT bo‘limi rahbari',
+  it: 'AyTi mutaxassisi',
+  it_rahbar: 'AyTi bo‘lim boshlig‘i',
+  it_dasturchi: 'Dasturchi',
+  it_tarmoq: 'Tarmoq administratori',
   ombor: 'Ombor',
   sb: 'SB operatori',
   sb_boshliq: "SB bo‘limi boshlig‘i",
@@ -118,7 +117,6 @@ type DashDetailKey =
   | 'needs'
   | 'tasks'
   | 'reminders'
-  | 'chat'
   | 'mudirs'
   | 'pharmacists'
   | 'interns'
@@ -252,7 +250,6 @@ export default function Dashboard() {
   const { data: reminders, isLoading: remindersLoading } = useGetReminders({
     query: { enabled: kind !== 'intern' },
   });
-  const { data: chats } = useChatList({ enabled: kind !== 'intern' } as any);
   const holatOn = canViewHolat(role) && !isDirector;
   const { data: holat, isLoading: holatLoading } = useHolat(holatOn);
 
@@ -303,10 +300,6 @@ export default function Dashboard() {
     () => (reminders ?? []).filter((r: any) => r.status === 'active').length,
     [reminders],
   );
-  const unreadChats = useMemo(
-    () => (chats?.chats ?? []).reduce((a, c) => a + (c.unreadCount || 0), 0),
-    [chats],
-  );
   const pendingNeeds = useMemo(() => {
     const list = branchNeeds ?? [];
     if (role === 'koordinator') {
@@ -343,7 +336,6 @@ export default function Dashboard() {
     () => (reminders ?? []).filter((r: any) => r.status === 'active'),
     [reminders],
   );
-  const chatItems = useMemo(() => chats?.chats ?? [], [chats]);
 
   if (kind === 'intern') {
     return (
@@ -368,9 +360,7 @@ export default function Dashboard() {
               ? 'Topshiriqlar'
               : detail === 'reminders'
                 ? 'Eslatmalar'
-                : detail === 'chat'
-                  ? 'Chatlar'
-                  : detail === 'mudirs'
+                : detail === 'mudirs'
                     ? 'Mening mudirlarim'
                     : detail === 'pharmacists'
                       ? 'Farmasevtlar'
@@ -418,9 +408,7 @@ export default function Dashboard() {
               ? '/vazifalar'
               : detail === 'reminders'
                 ? '/eslatmalar'
-                : detail === 'chat'
-                  ? '/chat'
-                  : detail === 'mudirs' || detail === 'pharmacists' || detail === 'interns' || detail === 'no_staff'
+                : detail === 'mudirs' || detail === 'pharmacists' || detail === 'interns' || detail === 'no_staff'
                     ? '/pharmacy-network'
                     : detail === 'open_requests'
                       ? '/requests'
@@ -439,7 +427,6 @@ export default function Dashboard() {
       {detail === 'needs' ? <NeedListRows needs={filteredNeedsList.slice(0, 20)} /> : null}
       {detail === 'tasks' ? <TaskListRows tasks={openTasksList.slice(0, 20)} /> : null}
       {detail === 'reminders' ? <ReminderListRows reminders={activeRemindersList.slice(0, 20)} /> : null}
-      {detail === 'chat' ? <ChatListRows chats={chatItems.slice(0, 20)} /> : null}
       {detail === 'vacancies' ? (
         <p className="py-6 text-center text-sm text-muted-foreground">
           Faol ish o‘rinlari: <strong>{stats?.activeVacancies ?? 0}</strong> ta
@@ -589,16 +576,6 @@ export default function Dashboard() {
               onClick={() => openDetail('tasks')}
               active={detail === 'tasks'}
             />
-            <DashTile
-              title="Chat"
-              value={unreadChats || undefined}
-              icon={MessageCircle}
-              color="text-violet-600"
-              accent="bg-violet-50"
-              onClick={() => openDetail('chat')}
-              active={detail === 'chat'}
-              hint={unreadChats ? 'o‘qilmagan' : undefined}
-            />
           </div>
 
           {canViewHolatFull(role) && (
@@ -660,7 +637,6 @@ export default function Dashboard() {
             <DashTile title={t('dashboard.openRequests')} value={openRequests.length} icon={FileText} loading={requestsLoading} color="text-blue-600" accent="bg-blue-50" onClick={() => openDetail('open_requests')} active={detail === 'open_requests'} />
             <DashTile title={t('dashboard.tasks')} value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
             <DashTile title={t('dashboard.reminders')} value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
-            <DashTile title={t('dashboard.chat')} value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} hint={unreadChats ? t('dashboard.unread') : undefined} />
           </div>
           {deadlineVacancies.length > 0 && <DeadlineBlock loading={false} items={deadlineVacancies} />}
           <DashActionBar
@@ -670,8 +646,7 @@ export default function Dashboard() {
               { href: '/pharmacy-network', title: 'Aptekalar', desc: 'Tarmoq holati', icon: Store },
               ...(canViewChecklistStatus(role) ? [{ href: '/checklist-holati', title: 'Cheklist', desc: 'Tashriflar', icon: ClipboardCheck }] : []),
               { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Jamoa vazifalari', icon: ListTodo },
-              { href: '/chat', title: 'Chat', desc: 'Xodimlar bilan aloqa', icon: MessageCircle },
-            ]}
+              ]}
           />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
@@ -686,7 +661,6 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
             <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
           <DashActionBar
             items={[
@@ -704,15 +678,13 @@ export default function Dashboard() {
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
             <DashTile title="Xodimlar" value="→" icon={Users} color="text-blue-600" accent="bg-blue-50" hint="Ro‘yxatni ochish" onClick={() => setLocation('/employees')} />
           </div>
           <DashActionBar
             items={[
               { href: '/employees', title: 'Xodimlar', desc: 'Mentorlik', icon: Users },
               { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
-              { href: '/chat', title: 'Chat', desc: 'Jamoa', icon: MessageCircle },
-            ]}
+              ]}
           />
         </>
       )}
@@ -848,8 +820,7 @@ export default function Dashboard() {
                     { href: '/checklist-holati', title: 'Reyting', desc: 'Kunlik / haftalik', icon: TrendingUp },
                   ]
                 : []),
-              { href: '/chat', title: 'Chat', desc: 'Jamoa suhbati', icon: MessageCircle },
-            ]}
+              ]}
           />
 
           {(pendingStaffing > 0 || staffingLoading) && (
@@ -885,16 +856,6 @@ export default function Dashboard() {
               accent="bg-orange-50"
               onClick={() => openDetail('needs')}
               active={detail === 'needs'}
-            />
-            <DashTile
-              title="Chat"
-              value={unreadChats || undefined}
-              icon={MessageCircle}
-              color="text-violet-600"
-              accent="bg-violet-50"
-              onClick={() => openDetail('chat')}
-              active={detail === 'chat'}
-              hint={unreadChats ? 'o‘qilmagan' : undefined}
             />
             <DashTile
               title="Topshiriqlar"
@@ -938,7 +899,6 @@ export default function Dashboard() {
           <DashActionBar
             items={[
               { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'Filial so‘rovi', icon: ClipboardList },
-              { href: '/chat', title: 'Chat', desc: 'Jamoa suhbati', icon: MessageCircle },
               { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ishlar', icon: ListTodo },
               { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
               { href: '/reyting', title: 'Reyting', desc: 'Filial balli', icon: Trophy },
@@ -989,7 +949,6 @@ export default function Dashboard() {
             />
             <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
             <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
           <DashActionBar
             items={[
@@ -1043,7 +1002,6 @@ export default function Dashboard() {
               onClick={() => setLocation('/employees')}
             />
             <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
           <DashActionBar
             items={[
@@ -1072,7 +1030,6 @@ export default function Dashboard() {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             <DashTile title="Reviziya" value="→" icon={ClipboardCheck} color="text-violet-700" accent="bg-violet-50" onClick={() => setLocation('/reviziya')} />
             <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
           <DashActionBar
             items={[
@@ -1089,13 +1046,12 @@ export default function Dashboard() {
       {kind === 'it' && (
         <>
           <div className="dept-banner dept-banner-cyan">
-            <p className="dept-banner-title-cyan">IT bo‘limi</p>
+            <p className="dept-banner-title-cyan">AyTi bo‘limi</p>
             <p className="mt-0.5 text-xs text-cyan-800/80">POS, tarmoq, kamera, kirish huquqi va 1C — arizalar shu yerda.</p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
             <DashTile title="IT ishlar" value="→" icon={Cpu} color="text-cyan-700" accent="bg-cyan-50" onClick={() => setLocation('/it')} />
             <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
           <DashActionBar items={[{ href: '/it', title: 'IT', desc: 'Arizalar', icon: Cpu }, { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Reja', icon: ListTodo }]} />
           <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
@@ -1124,15 +1080,13 @@ export default function Dashboard() {
             <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
             <DashTile title="Ehtiyoj" value={pendingNeeds} icon={ClipboardList} loading={needsLoading} color="text-orange-600" accent="bg-orange-50" onClick={() => openDetail('needs')} active={detail === 'needs'} />
             <DashTile title="Eslatmalar" value={activeReminders} icon={AlarmClock} loading={remindersLoading} color="text-amber-600" accent="bg-amber-50" onClick={() => openDetail('reminders')} active={detail === 'reminders'} />
-            <DashTile title="Chat" value={unreadChats || undefined} icon={MessageCircle} color="text-violet-600" accent="bg-violet-50" onClick={() => openDetail('chat')} active={detail === 'chat'} />
           </div>
           <DashActionBar
             items={[
               { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Berilgan ishlar', icon: ListTodo },
               { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'Filial so‘rovlari', icon: ClipboardList },
               { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
-              { href: '/chat', title: 'Chat', desc: 'Jamoa', icon: MessageCircle },
-            ]}
+              ]}
           />
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />

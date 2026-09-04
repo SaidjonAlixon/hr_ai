@@ -54,6 +54,7 @@ export const uz: Messages = {
 
   "nav.dashboard": "Boshqaruv",
   "nav.tasks": "Topshiriqlar",
+  "nav.taskAnalytics": "Topshiriqlar tahlili",
   "nav.reminders": "Eslatmalarim",
   "nav.chat": "Chat",
   "nav.org": "Tashkiliy tuzilma",
@@ -76,7 +77,7 @@ export const uz: Messages = {
   "nav.hisobkitob": "Oylik hisob",
   "nav.reyting": "Reyting",
   "nav.reviziya": "Reviziya",
-  "nav.it": "IT",
+  "nav.it": "AyTi",
   "nav.texnik": "Texnik",
   "nav.users": "Foydalanuvchilar",
   "nav.departments": "Bo‘limlar",

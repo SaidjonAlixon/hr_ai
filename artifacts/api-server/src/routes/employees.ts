@@ -12,11 +12,13 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
-import { HR_ROLES, isHrManager, canViewEmployees } from "../lib/roles";
+import { HR_ROLES, isHrManager, canViewEmployees, isSbRole } from "../lib/roles";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from "../lib/dedupe-employees";
 import {
   loadStaffFromUsers,
+  loadPharmacyNetworkEmployees,
+  mergeStaffRows,
   userStatusFromEmployment,
   normalizeUserStatus,
   type StaffRow,
@@ -285,10 +287,20 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
 
     const rows = await loadStaffFromUsers(staffGroup);
     let filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
-    if (isDeptHeadRole(role) && userId) {
+    // Bo‘lim rahbarlari — faqat o‘z bo‘limi. SB (xavfsizlik) — barcha xodimlar.
+    if (isDeptHeadRole(role) && userId && !isSbRole(role)) {
       const actorDeptId = await getActorDepartmentId(userId);
       if (actorDeptId) {
         filtered = filtered.filter((e) => e.departmentId === actorDeptId);
+      }
+    }
+    // Apteka tarmog‘i (koordinator/mudir/farmasevt) — to‘liq ko‘ruvchilar uchun employees dan qo‘shiladi
+    if (FULL_NETWORK_ROLES.has(role) || isSbRole(role)) {
+      const pharmacy = await loadPharmacyNetworkEmployees();
+      filtered = mergeStaffRows(filtered, pharmacy);
+      if (departmentId) {
+        const deptId = parseInt(departmentId, 10);
+        filtered = filtered.filter((e) => e.departmentId === deptId);
       }
     }
     res.json(await enrichMany(filtered));
@@ -307,7 +319,21 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
   const staffGroup = group === "other" ? "other" : "active";
 
   const rows = await loadStaffFromUsers(staffGroup);
-  const filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
+  let filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
+  if (isDeptHeadRole(role) && userId && !isSbRole(role)) {
+    const actorDeptId = await getActorDepartmentId(userId);
+    if (actorDeptId) {
+      filtered = filtered.filter((e) => e.departmentId === actorDeptId);
+    }
+  }
+  if (FULL_NETWORK_ROLES.has(role) || isSbRole(role)) {
+    const pharmacy = await loadPharmacyNetworkEmployees();
+    filtered = mergeStaffRows(filtered, pharmacy);
+    if (departmentId) {
+      const deptId = parseInt(departmentId, 10);
+      filtered = filtered.filter((e) => e.departmentId === deptId);
+    }
+  }
   const enriched = await enrichMany(filtered);
 
   const userIds = [...new Set(enriched.map((e) => e.userId).filter((id): id is number => id != null))];

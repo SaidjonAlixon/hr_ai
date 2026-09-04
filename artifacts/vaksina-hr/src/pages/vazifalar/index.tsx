@@ -8,7 +8,6 @@ import {
   Plus,
   Calendar,
   Paperclip,
-  Image as ImageIcon,
   FileText,
   Trash2,
   CheckCircle2,
@@ -21,6 +20,20 @@ import {
   Clock,
   Send,
   BarChart3,
+  LayoutGrid,
+  List,
+  CalendarDays,
+  Folder,
+  MessageSquare,
+  MoreHorizontal,
+  FileSpreadsheet,
+  Archive,
+  LayoutTemplate,
+  AlertTriangle,
+  PlayCircle,
+  CircleDot,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,11 +60,16 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import { CardStack } from "@/components/CardStack";
-import { DeadlineCountdown } from "@/components/DeadlineCountdown";
 import {
   useGetTasks,
   useCreateTask,
@@ -72,7 +90,8 @@ import { HR_ROLES, userRoleLabel } from "@/lib/roles";
 import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 
-type BoardCol = "past" | "today" | "tomorrow" | "week" | "completed";
+type BoardCol = "past" | "today" | "progress" | "review" | "completed";
+type BoardView = "kanban" | "list" | "calendar";
 
 const ASSIGNER_ROLES = new Set([
   "admin",
@@ -95,63 +114,80 @@ const COLUMNS: {
   labelKey: string;
   hintKey: string;
   top: string;
+  headerBg: string;
   countBg: string;
   emptyKey: string;
   allowCreate?: boolean;
+  accentDot: string;
 }[] = [
   {
     id: "past",
     labelKey: "tasks.overdue",
     hintKey: "tasks.overdueHint",
     top: "bg-rose-500",
-    countBg: "bg-rose-100 text-rose-800",
+    headerBg: "bg-rose-50/90 dark:bg-rose-500/10",
+    countBg: "bg-rose-100 text-rose-800 dark:bg-rose-500/20 dark:text-rose-200",
     emptyKey: "tasks.empty.overdue",
     allowCreate: true,
+    accentDot: "bg-rose-500",
   },
   {
     id: "today",
     labelKey: "tasks.today",
     hintKey: "tasks.todayHint",
     top: "bg-amber-500",
-    countBg: "bg-amber-100 text-amber-900",
+    headerBg: "bg-amber-50/90 dark:bg-amber-500/10",
+    countBg: "bg-amber-100 text-amber-900 dark:bg-amber-500/20 dark:text-amber-200",
     emptyKey: "tasks.empty.today",
     allowCreate: true,
+    accentDot: "bg-amber-500",
   },
   {
-    id: "tomorrow",
-    labelKey: "tasks.tomorrow",
-    hintKey: "tasks.tomorrowHint",
+    id: "progress",
+    labelKey: "tasks.inProgress",
+    hintKey: "tasks.inProgressHint",
     top: "bg-sky-500",
-    countBg: "bg-sky-100 text-sky-800",
-    emptyKey: "tasks.empty.tomorrow",
+    headerBg: "bg-sky-50/90 dark:bg-sky-500/10",
+    countBg: "bg-sky-100 text-sky-800 dark:bg-sky-500/20 dark:text-sky-200",
+    emptyKey: "tasks.empty.progress",
     allowCreate: true,
+    accentDot: "bg-sky-500",
   },
   {
-    id: "week",
-    labelKey: "tasks.nextWeek",
-    hintKey: "tasks.weekHint",
-    top: "bg-emerald-500",
-    countBg: "bg-emerald-100 text-emerald-800",
-    emptyKey: "tasks.empty.week",
-    allowCreate: true,
+    id: "review",
+    labelKey: "tasks.review",
+    hintKey: "tasks.reviewHint",
+    top: "bg-violet-500",
+    headerBg: "bg-violet-50/90 dark:bg-violet-500/10",
+    countBg: "bg-violet-100 text-violet-800 dark:bg-violet-500/20 dark:text-violet-200",
+    emptyKey: "tasks.empty.review",
+    allowCreate: false,
+    accentDot: "bg-violet-500",
   },
   {
     id: "completed",
     labelKey: "tasks.done",
     hintKey: "tasks.doneHint",
-    top: "bg-violet-500",
-    countBg: "bg-violet-100 text-violet-800",
+    top: "bg-emerald-500",
+    headerBg: "bg-emerald-50/90 dark:bg-emerald-500/10",
+    countBg: "bg-emerald-100 text-emerald-800 dark:bg-emerald-500/20 dark:text-emerald-200",
     emptyKey: "tasks.empty.done",
     allowCreate: false,
+    accentDot: "bg-emerald-500",
   },
 ];
 
 const PRIORITY_CLASS: Record<string, string> = {
-  low: "bg-slate-100 text-foreground",
-  normal: "bg-blue-50 text-blue-700",
-  high: "bg-orange-100 text-orange-800",
-  urgent: "bg-red-100 text-red-800",
+  low: "bg-sky-50 text-sky-700 border-sky-200/80 dark:bg-sky-500/15 dark:text-sky-200 dark:border-sky-500/30",
+  normal: "bg-amber-50 text-amber-800 border-amber-200/80 dark:bg-amber-500/15 dark:text-amber-200 dark:border-amber-500/30",
+  high: "bg-orange-50 text-orange-800 border-orange-200/80 dark:bg-orange-500/15 dark:text-orange-200 dark:border-orange-500/30",
+  urgent: "bg-rose-50 text-rose-800 border-rose-200/80 dark:bg-rose-500/15 dark:text-rose-200 dark:border-rose-500/30",
 };
+
+const surface =
+  "rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-black/[0.03] dark:shadow-black/20";
+const control =
+  "h-9 border-border bg-muted/40 text-xs text-foreground dark:bg-muted/30";
 
 const PRIORITY_KEYS: Record<string, string> = {
   low: "tasks.priority.low",
@@ -171,21 +207,46 @@ function addDays(d: Date, n: number) {
 }
 
 function boardColumnFor(task: Vazifa, now = new Date()): BoardCol {
-  if (task.status === "verified") return "completed";
-  // Muddat yo‘q bo‘lsa — vazifa berilgan kun (ehtiyoj tasdig‘i) bo‘yicha
+  if (task.status === "verified" || task.status === "cancelled") return "completed";
+  if (task.status === "done") return "review";
+
   const dueAt = task.dueAt || task.createdAt;
-  if (!dueAt) return "week";
-  const due = startOfDay(new Date(dueAt));
-  const today = startOfDay(now);
-  const tomorrow = addDays(today, 1);
-  const weekEnd = addDays(today, 7);
-  if (due.getTime() < today.getTime()) return "past";
-  if (due.getTime() === today.getTime()) return "today";
-  if (due.getTime() === tomorrow.getTime()) return "tomorrow";
-  if (due.getTime() > tomorrow.getTime() && due.getTime() <= weekEnd.getTime()) {
-    return "week";
+  if (dueAt) {
+    const due = startOfDay(new Date(dueAt));
+    const today = startOfDay(now);
+    if (due.getTime() < today.getTime()) return "past";
+    if (due.getTime() === today.getTime()) return "today";
   }
-  return "week";
+  return "progress";
+}
+
+function initialsFromName(name: string | null | undefined) {
+  return String(name || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase() || "")
+    .join("");
+}
+
+function checklistProgress(task: Vazifa) {
+  const list = task.meta?.checklist;
+  if (!Array.isArray(list) || list.length === 0) {
+    if (task.status === "todo") return 10;
+    if (task.status === "in_progress") return 55;
+    if (task.status === "done") return 90;
+    if (task.status === "verified") return 100;
+    return 0;
+  }
+  const done = list.filter((c) => c.done).length;
+  return Math.round((done / list.length) * 100);
+}
+
+function taskTypeLabel(type: string | undefined, t: (k: string) => string) {
+  if (!type) return "";
+  const key = `tasks.form.type.${type}`;
+  const labeled = t(key);
+  return labeled === key ? type : labeled;
 }
 
 function toDatetimeLocalValue(iso: string | null) {
@@ -225,6 +286,21 @@ export default function VazifalarPage() {
 
   const [search, setSearch] = useState(deepQ || "");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [viewMode, setViewMode] = useState<BoardView>(() => {
+    const v = deepLinkParams.get("view");
+    if (v === "list" || v === "calendar" || v === "kanban") return v;
+    return "kanban";
+  });
+  const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [branchFilter, setBranchFilter] = useState<string>("all");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [calMonth, setCalMonth] = useState(() => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), 1);
+  });
+  const [selectedCalDay, setSelectedCalDay] = useState(() => startOfDay(new Date()));
   const [assigneeFilter, setAssigneeFilter] = useState<{
     kind: "user" | "employee";
     id: number;
@@ -379,14 +455,13 @@ export default function VazifalarPage() {
     !!user && t.assigneeKind === "user" && t.assigneeId === user.id;
 
   const filtered = useMemo(() => {
-    let list = tasks;
+    let list = tasks.filter((t) => t.status !== "cancelled");
     if (assigneeFilter) {
       list = list.filter(
         (t) =>
           t.assigneeKind === assigneeFilter.kind && t.assigneeId === assigneeFilter.id,
       );
       const q = search.trim().toLowerCase();
-      // When assignee is locked, only further filter by title/description (not creator name)
       if (q && q !== assigneeFilter.name.toLowerCase()) {
         list = list.filter(
           (t) =>
@@ -395,18 +470,45 @@ export default function VazifalarPage() {
             String(t.id).includes(q),
         );
       }
-      return list;
+    } else {
+      const q = search.trim().toLowerCase();
+      if (q) {
+        list = list.filter(
+          (t) =>
+            t.title.toLowerCase().includes(q) ||
+            (t.assigneeName || "").toLowerCase().includes(q) ||
+            (t.description || "").toLowerCase().includes(q) ||
+            String(t.id).includes(q),
+        );
+      }
     }
-    const q = search.trim().toLowerCase();
-    if (!q) return list;
-    return list.filter(
-      (t) =>
-        t.title.toLowerCase().includes(q) ||
-        (t.assigneeName || "").toLowerCase().includes(q) ||
-        (t.description || "").toLowerCase().includes(q) ||
-        String(t.id).includes(q),
-    );
-  }, [tasks, search, assigneeFilter]);
+    if (priorityFilter !== "all") {
+      list = list.filter((t) => t.priority === priorityFilter);
+    }
+    if (typeFilter !== "all") {
+      list = list.filter((t) => (t.meta?.taskType || "other") === typeFilter);
+    }
+    if (branchFilter !== "all") {
+      list = list.filter(
+        (t) => String(t.meta?.branchOrDept || "").trim() === branchFilter,
+      );
+    }
+    if (dateFrom) {
+      const from = startOfDay(new Date(dateFrom)).getTime();
+      list = list.filter((t) => {
+        const due = t.dueAt || t.createdAt;
+        return due ? new Date(due).getTime() >= from : true;
+      });
+    }
+    if (dateTo) {
+      const to = addDays(startOfDay(new Date(dateTo)), 1).getTime();
+      list = list.filter((t) => {
+        const due = t.dueAt || t.createdAt;
+        return due ? new Date(due).getTime() < to : true;
+      });
+    }
+    return list;
+  }, [tasks, search, assigneeFilter, priorityFilter, typeFilter, branchFilter, dateFrom, dateTo]);
 
   function clearSearchFilter() {
     setSearch("");
@@ -417,8 +519,8 @@ export default function VazifalarPage() {
     const map: Record<BoardCol, Vazifa[]> = {
       past: [],
       today: [],
-      tomorrow: [],
-      week: [],
+      progress: [],
+      review: [],
       completed: [],
     };
     for (const t of filtered) {
@@ -426,7 +528,7 @@ export default function VazifalarPage() {
     }
     for (const k of Object.keys(map) as BoardCol[]) {
       map[k].sort((a, b) => {
-        if (k === "completed") {
+        if (k === "completed" || k === "review") {
           const ca = a.completedAt ? new Date(a.completedAt).getTime() : 0;
           const cb = b.completedAt ? new Date(b.completedAt).getTime() : 0;
           return cb - ca;
@@ -439,16 +541,85 @@ export default function VazifalarPage() {
     return map;
   }, [filtered]);
 
+  const kpi = useMemo(
+    () => ({
+      total: filtered.length,
+      overdue: byColumn.past.length,
+      today: byColumn.today.length,
+      progress: byColumn.progress.length,
+      done: byColumn.completed.length,
+    }),
+    [filtered.length, byColumn],
+  );
+
+  const taskTypes = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of tasks) {
+      if (t.meta?.taskType) set.add(t.meta.taskType);
+    }
+    return Array.from(set).sort();
+  }, [tasks]);
+
+  const topAssignees = useMemo(() => {
+    const map = new Map<string, { name: string; count: number }>();
+    for (const t of filtered) {
+      const name = (t.assigneeName || "").trim() || "—";
+      const prev = map.get(name);
+      if (prev) prev.count += 1;
+      else map.set(name, { name, count: 1 });
+    }
+    return Array.from(map.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+  }, [filtered]);
+
+  const todaySchedule = useMemo(() => {
+    return [...byColumn.today, ...byColumn.past.filter((t) => {
+      if (!t.dueAt) return false;
+      return startOfDay(new Date(t.dueAt)).getTime() === startOfDay(new Date()).getTime();
+    })]
+      .slice(0, 6)
+      .sort((a, b) => {
+        const da = a.dueAt ? new Date(a.dueAt).getTime() : 0;
+        const db = b.dueAt ? new Date(b.dueAt).getTime() : 0;
+        return da - db;
+      });
+  }, [byColumn.today, byColumn.past]);
+
   function openCreate(presetCol?: BoardCol) {
     setEditing(null);
     const base = startOfDay(new Date());
     let target = base;
-    if (presetCol === "tomorrow") target = addDays(base, 1);
-    if (presetCol === "week") target = addDays(base, 3);
     if (presetCol === "past") target = addDays(base, -1);
+    if (presetCol === "progress") target = addDays(base, 2);
     target.setHours(18, 0, 0, 0);
     setCreateDueAt(target.toISOString());
     setEditOpen(true);
+  }
+
+  function exportCsv() {
+    const rows = [
+      ["ID", "Title", "Status", "Priority", "Assignee", "Due", "CreatedBy"].join(","),
+      ...filtered.map((t) =>
+        [
+          t.id,
+          `"${(t.title || "").replace(/"/g, '""')}"`,
+          t.status,
+          t.priority,
+          `"${(t.assigneeName || "").replace(/"/g, '""')}"`,
+          t.dueAt || "",
+          `"${(t.createdByName || "").replace(/"/g, '""')}"`,
+        ].join(","),
+      ),
+    ];
+    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `topshiriqlar-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: t("tasks.exportDone") });
   }
 
   function openEdit(task: Vazifa) {
@@ -662,33 +833,164 @@ export default function VazifalarPage() {
     }
   }
 
+  function renderTaskCard(task: Vazifa, colId: BoardCol) {
+    return (
+      <TaskCard
+        key={task.id}
+        task={task}
+        column={colId}
+        overdue={colId === "past"}
+        isCreator={isCreatorOf(task)}
+        isAssignee={isAssigneeOf(task)}
+        onOpen={() => openEdit(task)}
+        onComplete={() => openComplete(task)}
+        onExtend={() => openExtend(task)}
+        onDelete={() => removeTask(task)}
+        onApproveExt={() => void handleResolveExtension(task, "approve")}
+        onRejectExt={() => void handleResolveExtension(task, "reject")}
+        onVerify={() => void handleVerify(task, "approve")}
+        onRework={() => void handleVerify(task, "rework")}
+        onAccept={() => void handleAccept(task)}
+      />
+    );
+  }
+
+  const viewTabs: { id: BoardView | "analytics"; labelKey: string; icon: React.ReactNode }[] = [
+    { id: "kanban", labelKey: "tasks.view.kanban", icon: <LayoutGrid className="h-3.5 w-3.5" /> },
+    { id: "list", labelKey: "tasks.view.list", icon: <List className="h-3.5 w-3.5" /> },
+    { id: "calendar", labelKey: "tasks.view.calendar", icon: <CalendarDays className="h-3.5 w-3.5" /> },
+    { id: "analytics", labelKey: "tasks.view.analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
+  ];
+
+  const kpiCards = [
+    {
+      key: "total",
+      label: t("tasks.kpi.total"),
+      value: kpi.total,
+      icon: CircleDot,
+      tone: "bg-sky-500/10 text-sky-600 dark:text-sky-300",
+    },
+    {
+      key: "overdue",
+      label: t("tasks.kpi.overdue"),
+      value: kpi.overdue,
+      icon: AlertTriangle,
+      tone: "bg-rose-500/10 text-rose-600 dark:text-rose-300",
+    },
+    {
+      key: "today",
+      label: t("tasks.kpi.today"),
+      value: kpi.today,
+      icon: Calendar,
+      tone: "bg-amber-500/10 text-amber-600 dark:text-amber-300",
+    },
+    {
+      key: "progress",
+      label: t("tasks.kpi.progress"),
+      value: kpi.progress,
+      icon: PlayCircle,
+      tone: "bg-violet-500/10 text-violet-600 dark:text-violet-300",
+    },
+    {
+      key: "done",
+      label: t("tasks.kpi.done"),
+      value: kpi.done,
+      icon: CheckCircle2,
+      tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+    },
+  ];
+
+  const calYear = calMonth.getFullYear();
+  const calMo = calMonth.getMonth();
+  const calDaysInMonth = new Date(calYear, calMo + 1, 0).getDate();
+  const calStartWeekday = (new Date(calYear, calMo, 1).getDay() + 6) % 7;
+  const maxTopCount = Math.max(1, ...topAssignees.map((x) => x.count));
+  const weekDays = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"];
+
+  function switchView(next: BoardView) {
+    setViewMode(next);
+    try {
+      const url = new URL(window.location.href);
+      if (next === "kanban") url.searchParams.delete("view");
+      else url.searchParams.set("view", next);
+      window.history.replaceState({}, "", url.pathname + url.search + url.hash);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  const selectedDayTasks = useMemo(() => {
+    const dayTs = startOfDay(selectedCalDay).getTime();
+    return filtered
+      .filter((task) => {
+        if (!task.dueAt) return false;
+        return startOfDay(new Date(task.dueAt)).getTime() === dayTs;
+      })
+      .sort((a, b) => {
+        const da = a.dueAt ? new Date(a.dueAt).getTime() : 0;
+        const db = b.dueAt ? new Date(b.dueAt).getTime() : 0;
+        return da - db;
+      });
+  }, [filtered, selectedCalDay]);
+
+  function pickCalendarDay(day: Date) {
+    const d = startOfDay(day);
+    setSelectedCalDay(d);
+    setCalMonth(new Date(d.getFullYear(), d.getMonth(), 1));
+  }
+
   return (
-    <div className="h-full flex flex-col min-h-0 bg-gradient-to-br from-slate-50 via-white to-sky-50/40">
-      <div className="shrink-0 px-6 pt-6 pb-4 border-b border-border bg-white/70 backdrop-blur">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wider text-sky-700/80 mb-1">
-              {t("tasks.eyebrow")}
-            </p>
-            <h1 className="text-2xl font-semibold text-foreground tracking-tight">
+    <div className="flex h-full min-h-0 bg-background">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="shrink-0 border-b border-border/70 bg-card/80 px-4 pb-4 pt-5 backdrop-blur-md supports-[backdrop-filter]:bg-card/70 md:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-[1.65rem] font-bold tracking-tight text-foreground md:text-[1.75rem]">
               {t("tasks.title")}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1 max-w-xl">
+            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {t("tasks.subtitle")}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <Button asChild variant="outline" className="gap-2 shadow-sm">
-              <Link href="/vazifalar/tahlil">
-                <BarChart3 className="h-4 w-4" />
-                {t("nav.taskAnalytics")}
-              </Link>
-            </Button>
+            <div
+              role="tablist"
+              aria-label={t("tasks.title")}
+              className="inline-flex rounded-xl border border-border/80 bg-muted/60 p-1 dark:bg-muted/40"
+            >
+              {viewTabs.map((tab) => {
+                const active = tab.id !== "analytics" && viewMode === tab.id;
+                const className = cn(
+                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                  active
+                    ? "bg-card text-foreground shadow-sm ring-1 ring-border/60"
+                    : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
+                );
+                if (tab.id === "analytics") {
+                  return (
+                    <Link key={tab.id} href="/vazifalar/tahlil" className={className}>
+                      {tab.icon}
+                      {t(tab.labelKey)}
+                    </Link>
+                  );
+                }
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={active}
+                    className={className}
+                    onClick={() => switchView(tab.id as BoardView)}
+                  >
+                    {tab.icon}
+                    {t(tab.labelKey)}
+                  </button>
+                );
+              })}
+            </div>
             {canAssign && (
-              <Button
-                onClick={() => openCreate("today")}
-                className="gap-2 shadow-sm"
-              >
+              <Button onClick={() => openCreate("today")} className="gap-2 shadow-sm">
                 <Plus className="h-4 w-4" />
                 {t("tasks.new")}
               </Button>
@@ -696,25 +998,149 @@ export default function VazifalarPage() {
           </div>
         </div>
 
-        <div className="mt-4 max-w-md space-y-2">
+        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-5">
+          {kpiCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <div
+                key={card.key}
+                className={cn(surface, "flex items-center gap-3 px-3.5 py-3")}
+              >
+                <span
+                  className={cn(
+                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                    card.tone,
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                </span>
+                <div className="min-w-0">
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                    {card.label}
+                  </p>
+                  <p className="text-xl font-bold tabular-nums text-foreground">{card.value}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className={cn(surface, "mt-4 flex flex-col gap-2 p-2.5 lg:flex-row lg:items-center")}>
+          <Select value={branchFilter} onValueChange={setBranchFilter}>
+            <SelectTrigger className={cn(control, "w-full lg:w-[150px]")}>
+              <SelectValue placeholder={t("tasks.filter.allBranches")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("tasks.filter.allBranches")}</SelectItem>
+              {branchOptions.map((b) => (
+                <SelectItem key={b} value={b}>
+                  {b}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select
+            value={assigneeFilter ? `${assigneeFilter.kind}:${assigneeFilter.id}` : "all"}
+            onValueChange={(v) => {
+              if (v === "all") {
+                clearSearchFilter();
+                return;
+              }
+              const [kind, idStr] = v.split(":");
+              const opt = assigneeOptions.find(
+                (o) => o.kind === kind && String(o.id) === idStr,
+              );
+              if (opt) {
+                setAssigneeFilter({ kind: opt.kind, id: opt.id, name: opt.name });
+                setSearch(opt.name);
+              }
+            }}
+          >
+            <SelectTrigger className={cn(control, "w-full lg:w-[150px]")}>
+              <SelectValue placeholder={t("tasks.filter.allStaff")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("tasks.filter.allStaff")}</SelectItem>
+              {assigneeOptions.slice(0, 60).map((o) => (
+                <SelectItem key={o.key} value={`${o.kind}:${o.id}`}>
+                  {o.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className={cn(control, "w-full lg:w-[145px]")}>
+              <SelectValue placeholder={t("tasks.filter.allPriority")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("tasks.filter.allPriority")}</SelectItem>
+              <SelectItem value="urgent">{t("tasks.priority.urgent")}</SelectItem>
+              <SelectItem value="high">{t("tasks.priority.high")}</SelectItem>
+              <SelectItem value="normal">{t("tasks.priority.normal")}</SelectItem>
+              <SelectItem value="low">{t("tasks.priority.low")}</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={typeFilter} onValueChange={setTypeFilter}>
+            <SelectTrigger className={cn(control, "w-full lg:w-[140px]")}>
+              <SelectValue placeholder={t("tasks.filter.allTypes")} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">{t("tasks.filter.allTypes")}</SelectItem>
+              {(taskTypes.length
+                ? taskTypes
+                : ["report", "audit", "call", "doc", "other"]
+              ).map((tp) => (
+                <SelectItem key={tp} value={tp}>
+                  {taskTypeLabel(tp, t)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div
+            className={cn(
+              control,
+              "flex items-center gap-1.5 rounded-md border px-2 text-muted-foreground lg:min-w-[210px]",
+            )}
+          >
+            <Calendar className="h-3.5 w-3.5 shrink-0 opacity-60" />
+            <input
+              type="date"
+              value={dateFrom}
+              onChange={(e) => setDateFrom(e.target.value)}
+              className="w-[95px] bg-transparent text-[11px] text-foreground outline-none [color-scheme:light] dark:[color-scheme:dark]"
+            />
+            <span className="opacity-40">–</span>
+            <input
+              type="date"
+              value={dateTo}
+              onChange={(e) => setDateTo(e.target.value)}
+              className="w-[95px] bg-transparent text-[11px] text-foreground outline-none [color-scheme:light] dark:[color-scheme:dark]"
+            />
+          </div>
+
           <Popover open={searchOpen} onOpenChange={setSearchOpen}>
             <PopoverTrigger asChild>
               <button
                 type="button"
                 className={cn(
-                  "flex h-10 w-full items-center gap-2 rounded-md border border-input bg-card px-3 text-left text-sm shadow-sm transition",
-                  "hover:border-sky-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-500/30",
-                  (searchOpen || assigneeFilter) && "border-sky-400 ring-2 ring-sky-500/20",
+                  control,
+                  "flex min-w-0 flex-1 items-center gap-2 rounded-md border px-3 text-left transition",
+                  "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                  (searchOpen || assigneeFilter) && "border-primary/50 ring-2 ring-ring/25",
                 )}
               >
-                <Search className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate",
                     search || assigneeFilter ? "text-foreground" : "text-muted-foreground",
                   )}
                 >
-                  {assigneeFilter?.name || search || t("tasks.search")}
+                  {assigneeFilter?.name || search || t("tasks.searchShort")}
                 </span>
                 {search || assigneeFilter ? (
                   <span
@@ -737,7 +1163,7 @@ export default function VazifalarPage() {
                     <X className="h-3.5 w-3.5" />
                   </span>
                 ) : (
-                  <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/70" />
+                  <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
                 )}
               </button>
             </PopoverTrigger>
@@ -759,12 +1185,7 @@ export default function VazifalarPage() {
                   <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
                   <CommandGroup heading={t("tasks.filterByAssignee")}>
                     {searchStaffList.map((o) => {
-                      const initials = o.name
-                        .split(/\s+/)
-                        .filter(Boolean)
-                        .slice(0, 2)
-                        .map((p) => p[0]?.toUpperCase() || "")
-                        .join("");
+                      const initials = initialsFromName(o.name);
                       const active =
                         !!assigneeFilter &&
                         assigneeFilter.kind === o.kind &&
@@ -780,7 +1201,7 @@ export default function VazifalarPage() {
                           }}
                           className="gap-2.5 py-2"
                         >
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-sky-500 to-indigo-600 text-[10px] font-bold text-white">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
                             {initials || "?"}
                           </span>
                           <span className="min-w-0 flex-1">
@@ -791,7 +1212,7 @@ export default function VazifalarPage() {
                           </span>
                           <Check
                             className={cn(
-                              "h-4 w-4 shrink-0 text-sky-600",
+                              "h-4 w-4 shrink-0 text-primary",
                               active ? "opacity-100" : "opacity-0",
                             )}
                           />
@@ -803,111 +1224,591 @@ export default function VazifalarPage() {
               </Command>
             </PopoverContent>
           </Popover>
-          {assigneeFilter ? (
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 font-medium text-sky-800 dark:border-sky-500/30 dark:bg-sky-500/10 dark:text-sky-200">
-                <User className="h-3 w-3" />
-                {t("tasks.assigneeOnly")}: {assigneeFilter.name}
-                <button
-                  type="button"
-                  className="ml-0.5 rounded-full p-0.5 hover:bg-sky-100 dark:hover:bg-sky-500/20"
-                  onClick={clearSearchFilter}
-                  aria-label={t("ui.clear")}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </span>
-              <span className="text-muted-foreground">
-                {filtered.length} {t("tasks.filteredCount")}
-              </span>
-            </div>
-          ) : null}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 overflow-x-auto overflow-y-hidden p-4 md:p-6">
-        {isLoading ? (
-          <div className="h-full flex items-center justify-center text-muted-foreground">
-            {t("ui.loading")}
-          </div>
-        ) : (
-          <div className="h-full flex gap-4 min-w-max">
-            {COLUMNS.map((col) => (
-              <section
-                key={col.id}
-                className="w-[280px] md:w-[300px] flex flex-col rounded-2xl bg-slate-100/80 border border-border overflow-hidden shadow-sm"
-              >
-                <header className="shrink-0">
-                  <div className={cn("h-1.5", col.top)} />
-                  <div className="px-3 py-3 flex items-start justify-between gap-2">
-                    <div>
-                      <h2 className="font-semibold text-foreground text-[15px]">
-                        {t(col.labelKey)}
-                      </h2>
-                      <p className="text-xs text-muted-foreground">{t(col.hintKey)}</p>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <span
+      <div className="min-h-0 flex-1 overflow-auto p-4 md:p-5">
+        <div key={viewMode} className="min-h-0 min-w-0 animate-in fade-in-0 duration-200">
+          {isLoading ? (
+            <div className="flex h-full items-center justify-center text-muted-foreground">
+              {t("ui.loading")}
+            </div>
+          ) : viewMode === "list" ? (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h2 className="text-sm font-bold text-foreground">{t("tasks.view.list")}</h2>
+                  <p className="text-xs text-muted-foreground">
+                    {filtered.length} {t("tasks.filteredCount")}
+                  </p>
+                </div>
+                {canAssign && (
+                  <Button size="sm" variant="outline" onClick={() => openCreate("today")}>
+                    <Plus className="mr-1 h-3.5 w-3.5" />
+                    {t("tasks.new")}
+                  </Button>
+                )}
+              </div>
+              <div className={cn(surface, "overflow-hidden")}>
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[720px] text-left text-sm">
+                    <thead className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
+                      <tr>
+                        <th className="px-4 py-3 font-semibold">ID</th>
+                        <th className="px-4 py-3 font-semibold">{t("tasks.field.title")}</th>
+                        <th className="px-4 py-3 font-semibold">{t("tasks.assignee")}</th>
+                        <th className="px-4 py-3 font-semibold">{t("tasks.deadline")}</th>
+                        <th className="px-4 py-3 font-semibold">{t("tasks.priorityLabel")}</th>
+                        <th className="px-4 py-3 font-semibold">Status</th>
+                        <th className="px-4 py-3 font-semibold" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((task) => {
+                        const col = boardColumnFor(task);
+                        return (
+                          <tr
+                            key={task.id}
+                            className="cursor-pointer border-b border-border/60 hover:bg-muted/40"
+                            onClick={() => openEdit(task)}
+                          >
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              TK-{task.id}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="font-medium text-foreground">{task.title}</div>
+                              {task.description ? (
+                                <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
+                                  {task.description}
+                                </div>
+                              ) : null}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className="flex items-center gap-2">
+                                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+                                  {initialsFromName(task.assigneeName) || "?"}
+                                </span>
+                                <span className="truncate text-muted-foreground">
+                                  {task.assigneeName || "—"}
+                                </span>
+                              </div>
+                            </td>
+                            <td
+                              className={cn(
+                                "px-4 py-3 text-muted-foreground",
+                                col === "past" && "font-semibold text-rose-600 dark:text-rose-400",
+                              )}
+                            >
+                              {formatDate(task.dueAt)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <span
+                                className={cn(
+                                  "rounded-md border px-2 py-0.5 text-[10px] font-semibold",
+                                  PRIORITY_CLASS[task.priority],
+                                )}
+                              >
+                                {t(PRIORITY_KEYS[task.priority] || PRIORITY_KEYS.normal!)}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground">
+                              {t(`tasks.status.${task.status}`)}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 text-xs"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openEdit(task);
+                                }}
+                              >
+                                {t("tasks.analytics.openTask")}
+                              </Button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {filtered.length === 0 && (
+                  <div className="px-4 py-12 text-center text-sm text-muted-foreground">
+                    {t("tasks.empty.done")}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : viewMode === "calendar" ? (
+            <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
+              <div className={cn(surface, "p-4")}>
+                <div className="mb-4 flex items-center justify-between">
+                  <button
+                    type="button"
+                    className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+                    onClick={() => setCalMonth(new Date(calYear, calMo - 1, 1))}
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <h3 className="text-sm font-semibold capitalize text-foreground">
+                    {calMonth.toLocaleDateString("uz-UZ", { month: "long", year: "numeric" })}
+                  </h3>
+                  <button
+                    type="button"
+                    className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
+                    onClick={() => setCalMonth(new Date(calYear, calMo + 1, 1))}
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+                <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-muted-foreground">
+                  {weekDays.map((d) => (
+                    <div key={d}>{d}</div>
+                  ))}
+                </div>
+                <div className="grid grid-cols-7 gap-1.5">
+                  {Array.from({ length: calStartWeekday }).map((_, i) => (
+                    <div key={`e-${i}`} className="min-h-[88px] rounded-lg bg-muted/20" />
+                  ))}
+                  {Array.from({ length: calDaysInMonth }).map((_, i) => {
+                    const day = i + 1;
+                    const dayStart = startOfDay(new Date(calYear, calMo, day));
+                    const dayTasks = filtered.filter((task) => {
+                      if (!task.dueAt) return false;
+                      return startOfDay(new Date(task.dueAt)).getTime() === dayStart.getTime();
+                    });
+                    const isToday = dayStart.getTime() === startOfDay(new Date()).getTime();
+                    const isSelected = dayStart.getTime() === startOfDay(selectedCalDay).getTime();
+                    return (
+                      <button
+                        key={day}
+                        type="button"
+                        onClick={() => pickCalendarDay(dayStart)}
                         className={cn(
-                          "text-xs font-semibold px-2 py-0.5 rounded-full",
-                          col.countBg,
+                          "min-h-[88px] rounded-lg border border-border/70 bg-card p-1.5 text-left transition hover:border-primary/40 hover:bg-primary/5",
+                          isToday && "border-primary/40",
+                          isSelected && "border-primary bg-primary/10 ring-2 ring-primary/30",
                         )}
                       >
-                        {byColumn[col.id].length}
-                      </span>
-                      {canAssign && col.allowCreate !== false && (
-                        <button
-                          type="button"
-                          onClick={() => openCreate(col.id)}
-                          className="p-1 rounded-md text-muted-foreground hover:bg-card hover:text-foreground transition"
-                          title={t("tasks.addToColumn")}
+                        <div
+                          className={cn(
+                            "mb-1 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
+                            isSelected
+                              ? "bg-primary text-primary-foreground"
+                              : isToday
+                                ? "text-primary"
+                                : "text-foreground",
+                          )}
                         >
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </header>
+                          {day}
+                        </div>
+                        <div className="space-y-0.5">
+                          {dayTasks.slice(0, 2).map((task) => (
+                            <div
+                              key={task.id}
+                              className="truncate rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium text-primary"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openEdit(task);
+                              }}
+                            >
+                              {task.title}
+                            </div>
+                          ))}
+                          {dayTasks.length > 2 && (
+                            <div className="text-[9px] text-muted-foreground">
+                              +{dayTasks.length - 2}
+                            </div>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-                <div className="flex-1 overflow-y-auto px-2.5 pb-3 space-y-2.5">
-                  {byColumn[col.id].length === 0 ? (
-                    <div className="mx-0.5 mt-1 rounded-xl border border-dashed border-slate-300 bg-white/50 px-3 py-8 text-center text-sm text-muted-foreground">
-                      {t(col.emptyKey)}
-                    </div>
-                  ) : (
-                    <CardStack
-                      items={byColumn[col.id]}
-                      stackSize={3}
-                      getKey={(task) => task.id}
-                      renderCard={(task) => (
-                        <TaskCard
-                          task={task}
-                          overdue={col.id === "past"}
-                          isCreator={isCreatorOf(task)}
-                          isAssignee={isAssigneeOf(task)}
-                          onOpen={() => openEdit(task)}
-                          onComplete={() => openComplete(task)}
-                          onExtend={() => openExtend(task)}
-                          onDelete={() => removeTask(task)}
-                          onApproveExt={() =>
-                            void handleResolveExtension(task, "approve")
-                          }
-                          onRejectExt={() =>
-                            void handleResolveExtension(task, "reject")
-                          }
-                          onVerify={() => void handleVerify(task, "approve")}
-                          onRework={() => void handleVerify(task, "rework")}
-                          onAccept={() => void handleAccept(task)}
-                        />
-                      )}
-                    />
+              <div className={cn(surface, "flex flex-col p-4")}>
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <div>
+                    <h3 className="text-sm font-bold text-foreground">
+                      {selectedCalDay.toLocaleDateString("uz-UZ", {
+                        day: "numeric",
+                        month: "long",
+                        year: "numeric",
+                      })}
+                    </h3>
+                    <p className="text-xs text-muted-foreground">
+                      {selectedDayTasks.length} {t("tasks.filteredCount")}
+                    </p>
+                  </div>
+                  {canAssign && (
+                    <Button
+                      size="sm"
+                      className="h-8"
+                      onClick={() => {
+                        const d = new Date(selectedCalDay);
+                        d.setHours(18, 0, 0, 0);
+                        setCreateDueAt(d.toISOString());
+                        setEditing(null);
+                        setEditOpen(true);
+                      }}
+                    >
+                      <Plus className="mr-1 h-3.5 w-3.5" />
+                      {t("tasks.new")}
+                    </Button>
                   )}
                 </div>
-              </section>
-            ))}
-          </div>
-        )}
+                <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
+                  {selectedDayTasks.length === 0 ? (
+                    <div className="rounded-xl border border-dashed border-border px-3 py-10 text-center text-sm text-muted-foreground">
+                      {t("tasks.empty.today")}
+                    </div>
+                  ) : (
+                    selectedDayTasks.map((task) => (
+                      <button
+                        key={task.id}
+                        type="button"
+                        className="w-full rounded-xl border border-border/80 bg-muted/20 p-3 text-left transition hover:border-primary/40 hover:bg-primary/5"
+                        onClick={() => openEdit(task)}
+                      >
+                        <div className="mb-1 flex items-center justify-between gap-2">
+                          <span
+                            className={cn(
+                              "rounded-md border px-1.5 py-0.5 text-[10px] font-bold",
+                              PRIORITY_CLASS[task.priority],
+                            )}
+                          >
+                            {t(PRIORITY_KEYS[task.priority] || PRIORITY_KEYS.normal!)}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">TK-{task.id}</span>
+                        </div>
+                        <div className="text-sm font-semibold text-foreground">{task.title}</div>
+                        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <Clock className="h-3 w-3" />
+                          {formatDate(task.dueAt)}
+                        </div>
+                        <div className="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                          <span className="flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[8px] font-bold text-primary-foreground">
+                            {initialsFromName(task.assigneeName) || "?"}
+                          </span>
+                          {task.assigneeName || "—"}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex h-full min-w-max gap-3 pb-1">
+              {COLUMNS.map((col) => (
+                <section
+                  key={col.id}
+                  className={cn(
+                    surface,
+                    "flex w-[270px] shrink-0 flex-col overflow-hidden md:w-[286px]",
+                  )}
+                >
+                  <header className="shrink-0">
+                    <div className={cn("h-1", col.top)} />
+                    <div
+                      className={cn(
+                        "flex items-start justify-between gap-2 px-3 py-3",
+                        col.headerBg,
+                      )}
+                    >
+                      <div>
+                        <h2 className="text-[14px] font-bold text-foreground">
+                          {t(col.labelKey)}
+                        </h2>
+                        <p className="text-[11px] text-muted-foreground">{t(col.hintKey)}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span
+                          className={cn(
+                            "rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
+                            col.countBg,
+                          )}
+                        >
+                          {byColumn[col.id].length}
+                        </span>
+                        <button
+                          type="button"
+                          className="rounded-md p-1 text-muted-foreground hover:bg-card/80 hover:text-foreground"
+                          aria-label="more"
+                        >
+                          <MoreHorizontal className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </header>
+
+                  <div className="flex-1 space-y-2.5 overflow-y-auto bg-muted/20 px-2.5 py-2.5 dark:bg-muted/10">
+                    {byColumn[col.id].length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-border bg-card/60 px-3 py-10 text-center text-sm text-muted-foreground">
+                        {t(col.emptyKey)}
+                      </div>
+                    ) : (
+                      byColumn[col.id].map((task) => renderTaskCard(task, col.id))
+                    )}
+                  </div>
+
+                  {canAssign && (
+                    <div className="border-t border-border/60 bg-card p-2.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          openCreate(
+                            col.id === "review" || col.id === "completed" ? "today" : col.id,
+                          )
+                        }
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {t("tasks.new")}
+                      </button>
+                    </div>
+                  )}
+                </section>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+      </div>
+
+        <aside className="hidden w-[288px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/70 bg-card/40 px-3 pb-4 pt-5 xl:flex">
+          <div className={cn(surface, "p-3.5")}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="text-sm font-bold capitalize text-foreground">
+                {calMonth.toLocaleDateString("uz-UZ", { month: "long", year: "numeric" })}
+              </h3>
+              <div className="flex gap-0.5">
+                <button
+                  type="button"
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                  onClick={() => setCalMonth(new Date(calYear, calMo - 1, 1))}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
+                  className="rounded-md p-1 text-muted-foreground hover:bg-muted"
+                  onClick={() => setCalMonth(new Date(calYear, calMo + 1, 1))}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+            <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[9px] font-semibold text-muted-foreground">
+              {weekDays.map((d) => (
+                <div key={d}>{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7 gap-0.5">
+              {Array.from({ length: calStartWeekday }).map((_, i) => (
+                <div key={`s-${i}`} className="h-8" />
+              ))}
+              {Array.from({ length: calDaysInMonth }).map((_, i) => {
+                const day = i + 1;
+                const dayStart = startOfDay(new Date(calYear, calMo, day));
+                const dots = filtered.filter((task) => {
+                  if (!task.dueAt) return false;
+                  return startOfDay(new Date(task.dueAt)).getTime() === dayStart.getTime();
+                });
+                const isToday = dayStart.getTime() === startOfDay(new Date()).getTime();
+                const isSelected = dayStart.getTime() === startOfDay(selectedCalDay).getTime();
+                return (
+                  <button
+                    key={day}
+                    type="button"
+                    onClick={() => {
+                      pickCalendarDay(dayStart);
+                      switchView("calendar");
+                    }}
+                    className={cn(
+                      "flex h-8 flex-col items-center justify-center rounded-md text-[11px] text-foreground transition hover:bg-muted",
+                      isSelected && "bg-primary font-bold text-primary-foreground hover:bg-primary",
+                      !isSelected && isToday && "font-bold text-primary",
+                    )}
+                  >
+                    {day}
+                    {dots.length > 0 && !isSelected && (
+                      <span className="mt-0.5 flex gap-0.5">
+                        {dots.slice(0, 3).map((task) => {
+                          const c = boardColumnFor(task);
+                          return (
+                            <span
+                              key={task.id}
+                              className={cn(
+                                "h-1 w-1 rounded-full",
+                                COLUMNS.find((x) => x.id === c)?.accentDot,
+                              )}
+                            />
+                          );
+                        })}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={cn(surface, "p-3.5")}>
+            <h3 className="mb-3 text-sm font-bold text-foreground">
+              {t("tasks.sidebar.schedule")}
+            </h3>
+            <div className="space-y-2.5">
+              {(todaySchedule.length ? todaySchedule : byColumn.today.slice(0, 5)).map(
+                (task) => {
+                  const time = task.dueAt
+                    ? new Date(task.dueAt).toLocaleTimeString("uz-UZ", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    : "—";
+                  const col = boardColumnFor(task);
+                  return (
+                    <button
+                      key={task.id}
+                      type="button"
+                      className="flex w-full gap-2.5 rounded-lg p-1 text-left transition hover:bg-muted/50"
+                      onClick={() => openEdit(task)}
+                    >
+                      <span className="w-10 shrink-0 pt-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground">
+                        {time}
+                      </span>
+                      <span
+                        className={cn(
+                          "mt-1 h-8 w-0.5 shrink-0 rounded-full",
+                          COLUMNS.find((x) => x.id === col)?.accentDot,
+                        )}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs font-semibold text-foreground">
+                          {task.title}
+                        </span>
+                        <span className="block truncate text-[10px] text-muted-foreground">
+                          {task.assigneeName || "—"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                },
+              )}
+              {todaySchedule.length === 0 && byColumn.today.length === 0 && (
+                <p className="text-xs text-muted-foreground">{t("tasks.empty.today")}</p>
+              )}
+            </div>
+          </div>
+
+          <div className={cn(surface, "p-3.5")}>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <h3 className="text-sm font-bold text-foreground">{t("tasks.sidebar.topStaff")}</h3>
+              <span className="text-[10px] font-medium text-muted-foreground">
+                {t("tasks.sidebar.thisWeek")}
+              </span>
+            </div>
+            <div className="space-y-3">
+              {topAssignees.map((person, idx) => (
+                <div key={person.name} className="flex items-center gap-2.5">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                    {initialsFromName(person.name) || idx + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <span className="truncate text-xs font-semibold text-foreground">
+                        {person.name}
+                      </span>
+                      <span className="text-[11px] font-bold tabular-nums text-muted-foreground">
+                        {person.count}
+                      </span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-full rounded-full bg-primary"
+                        style={{
+                          width: `${Math.round((person.count / maxTopCount) * 100)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {topAssignees.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  {t("tasks.analytics.emptyPeople")}
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className={cn(surface, "p-3.5")}>
+            <h3 className="mb-3 text-sm font-bold text-foreground">{t("tasks.sidebar.quick")}</h3>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  {
+                    key: "excel",
+                    icon: FileSpreadsheet,
+                    label: t("tasks.quick.excel"),
+                    tone: "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10",
+                    onClick: exportCsv,
+                  },
+                  {
+                    key: "pdf",
+                    icon: FileText,
+                    label: t("tasks.quick.pdf"),
+                    tone: "text-rose-600 dark:text-rose-400 hover:bg-rose-500/10",
+                    onClick: () => window.print(),
+                  },
+                  {
+                    key: "tpl",
+                    icon: LayoutTemplate,
+                    label: t("tasks.quick.templates"),
+                    tone: "text-sky-600 dark:text-sky-400 hover:bg-sky-500/10",
+                    onClick: () => canAssign && openCreate("today"),
+                  },
+                  {
+                    key: "arch",
+                    icon: Archive,
+                    label: t("tasks.quick.archive"),
+                    tone: "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10",
+                    onClick: () => {
+                      setPriorityFilter("all");
+                      setTypeFilter("all");
+                      setBranchFilter("all");
+                      setDateFrom("");
+                      setDateTo("");
+                      clearSearchFilter();
+                      toast({ title: t("tasks.quick.archiveDone") });
+                    },
+                  },
+                ] as const
+              ).map((action) => {
+                const Icon = action.icon;
+                return (
+                  <button
+                    key={action.key}
+                    type="button"
+                    onClick={action.onClick}
+                    className={cn(
+                      "flex flex-col items-center gap-1.5 rounded-xl border border-border/70 bg-muted/30 px-2 py-3 text-center transition",
+                      action.tone,
+                    )}
+                  >
+                    <Icon className="h-5 w-5" />
+                    <span className="text-[10px] font-semibold text-foreground">
+                      {action.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </aside>
 
       <TaskFormDialog
         open={editOpen}
@@ -1461,6 +2362,7 @@ function AttachmentList({
 
 function TaskCard({
   task,
+  column,
   overdue,
   isCreator,
   isAssignee,
@@ -1475,6 +2377,7 @@ function TaskCard({
   onAccept,
 }: {
   task: Vazifa;
+  column: BoardCol;
   overdue?: boolean;
   isCreator: boolean;
   isAssignee: boolean;
@@ -1491,97 +2394,62 @@ function TaskCard({
   const { t } = useI18n();
   const priClass = PRIORITY_CLASS[task.priority] || PRIORITY_CLASS.normal;
   const priLabel = t(PRIORITY_KEYS[task.priority] || PRIORITY_KEYS.normal!);
-  const images = task.attachments?.filter((a) => a.kind === "image") ?? [];
-  const files = task.attachments?.filter((a) => a.kind === "file") ?? [];
+  const files = task.attachments?.filter((a) => a.kind === "file" || a.kind === "image") ?? [];
   const pendingExt = task.extensionStatus === "pending";
   const awaitingReview = task.status === "done";
   const isVerified = task.status === "verified";
   const needsAccept = task.status === "todo";
   const isAccepted = task.status === "in_progress";
-  const hideCountdown = awaitingReview || isVerified;
+  const progress = checklistProgress(task);
+  const typeLbl = taskTypeLabel(task.meta?.taskType, t);
+  const tag = Array.isArray(task.meta?.tags) && task.meta!.tags!.length > 0 ? task.meta!.tags![0] : typeLbl;
+  const msgCount = Array.isArray(task.meta?.messages) ? task.meta!.messages!.length : 0;
+  const initials = initialsFromName(task.assigneeName);
 
   return (
     <article
       className={cn(
-        "group rounded-lg border bg-card p-2.5 shadow-sm hover:shadow transition cursor-pointer",
-        overdue && !hideCountdown && "border-rose-200 ring-1 ring-rose-100",
-        needsAccept && isAssignee && "border-sky-300 ring-1 ring-sky-100",
-        isAccepted && "border-blue-200 bg-blue-50/20",
-        awaitingReview && "border-emerald-200 bg-emerald-50/30",
-        isVerified && "border-violet-200 bg-violet-50/40",
-        pendingExt && "border-amber-300",
+        "group relative cursor-pointer rounded-xl border border-border/80 bg-card p-3 shadow-sm shadow-black/[0.03] transition",
+        "hover:border-border hover:shadow-md dark:shadow-black/20",
+        overdue && !awaitingReview && !isVerified && "border-rose-300/80 dark:border-rose-500/40",
+        needsAccept && isAssignee && "border-sky-400/80 dark:border-sky-500/40",
+        awaitingReview && "border-violet-300/80 dark:border-violet-500/40",
+        isVerified && "border-emerald-300/80 dark:border-emerald-500/40",
+        pendingExt && "border-amber-400/80 dark:border-amber-500/40",
       )}
       onClick={onOpen}
     >
-      <div className="flex items-start justify-between gap-1.5 mb-1.5">
-        {isVerified ? (
-          <Badge className="text-[9px] h-5 px-1.5 font-medium bg-violet-100 text-violet-800 hover:bg-violet-100">
-            <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
-            Bajarilgan
-          </Badge>
-        ) : awaitingReview ? (
-          <Badge className="text-[9px] h-5 px-1.5 font-medium bg-emerald-100 text-emerald-800 hover:bg-emerald-100">
-            <CheckCircle2 className="h-2.5 w-2.5 mr-0.5" />
-            Bajarilgan
-          </Badge>
-        ) : (
-          <Badge
-            variant="secondary"
-            className={cn("text-[9px] h-5 px-1.5 font-medium", priClass)}
-          >
-            <Flag className="h-2.5 w-2.5 mr-0.5" />
-            {priLabel}
-          </Badge>
-        )}
+      {isVerified && (
+        <span className="absolute right-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
+          <Check className="h-3 w-3" strokeWidth={3} />
+        </span>
+      )}
+
+      <div className="mb-2 flex flex-wrap items-center gap-1.5 pr-6">
         <span
           className={cn(
-            "text-[9px] font-semibold shrink-0 rounded-full px-1.5 py-0.5",
-            awaitingReview && "bg-emerald-100 text-emerald-800",
-            pendingExt && !awaitingReview && "bg-orange-100 text-orange-800",
-            needsAccept && "bg-sky-100 text-sky-800",
-            isAccepted && "bg-amber-100 text-amber-900",
-            isVerified && "bg-violet-100 text-violet-800",
-            task.status === "cancelled" && "bg-slate-200 text-muted-foreground",
+            "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold",
+            priClass,
           )}
         >
-          {awaitingReview
-            ? "Tasdiq kutilmoqda"
-            : pendingExt
-              ? "Muddat so'rovi"
-              : needsAccept
-                ? "Qabul kutilmoqda"
-                : isVerified
-                  ? "Tasdiqlangan"
-                  : isAccepted
-                    ? "Bajarilmoqda"
-                    : task.status === "cancelled"
-                      ? "Bekor qilingan"
-                      : "Yangi"}
+          <Flag className="mr-0.5 h-2.5 w-2.5" />
+          {priLabel}
         </span>
+        {tag ? (
+          <span className="inline-flex items-center gap-0.5 rounded-md border border-border/70 bg-muted/50 px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+            <Folder className="h-2.5 w-2.5 opacity-70" />
+            {tag}
+          </span>
+        ) : null}
       </div>
 
-      <h3 className="text-[13px] font-semibold text-foreground leading-snug mb-1">
-        {task.title}
-      </h3>
+      <h3 className="mb-1 text-[13px] font-bold leading-snug text-foreground">{task.title}</h3>
 
-      {Array.isArray(task.meta?.tags) && task.meta!.tags!.length > 0 && (
-        <div className="mb-1.5 flex flex-wrap gap-1">
-          {task.meta!.tags!.slice(0, 3).map((tag) => (
-            <span
-              key={tag}
-              className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-medium text-sky-800 dark:bg-sky-950 dark:text-sky-200"
-            >
-              {tag}
-            </span>
-          ))}
-        </div>
-      )}
-      {Array.isArray(task.meta?.checklist) && task.meta!.checklist!.length > 0 && (
-        <p className="mb-1.5 text-[10px] text-muted-foreground">
-          Checklist: {task.meta!.checklist!.filter((c) => c.done).length}/
-          {task.meta!.checklist!.length}
+      {task.description ? (
+        <p className="mb-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
+          {task.description}
         </p>
-      )}
+      ) : null}
 
       {task.candidateId && task.pipelineStage && (
         <a
@@ -1596,126 +2464,87 @@ function TaskCard({
                       : task.pipelineStage
                 }`
           }
-          className="inline-flex text-[10px] font-medium text-sky-700 hover:underline mb-1"
+          className="mb-1.5 inline-flex text-[10px] font-medium text-primary hover:underline"
           onClick={(e) => e.stopPropagation()}
         >
           Nomzod formasini ochish →
         </a>
       )}
 
-      {task.description && (
-        <p className="text-[11px] text-muted-foreground line-clamp-2 mb-1.5">
-          {task.description}
-        </p>
-      )}
-
-      {images.length > 0 && (
-        <div className="flex gap-1 mb-1.5 overflow-hidden">
-          {images.slice(0, 3).map((img) => (
-            <img
-              key={img.id}
-              src={img.url}
-              alt=""
-              className="h-9 w-9 rounded object-cover border"
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground mb-1.5">
-        <div className="flex items-center gap-1.5">
-          <User className="h-2.5 w-2.5 shrink-0" />
-          <span className="truncate">
-            {t("tasks.assignee")}: {task.assigneeName || "—"}
-          </span>
-        </div>
-        {task.createdByName ? (
-          <div className="truncate pl-4">
-            {t("tasks.givenBy")}: {task.createdByName}
-          </div>
-        ) : null}
+      <div
+        className={cn(
+          "mb-2 flex items-center gap-1.5 text-[11px]",
+          overdue && !awaitingReview && !isVerified
+            ? "font-semibold text-rose-600 dark:text-rose-400"
+            : "text-muted-foreground",
+        )}
+      >
+        <Calendar className="h-3 w-3 shrink-0" />
+        <span>{task.dueAt ? formatDate(task.dueAt) : t("tasks.noDue")}</span>
       </div>
 
-      <div className="mb-1.5 space-y-1">
-        {task.dueAt ? (
-          <div
-            className={cn(
-              "flex items-center gap-1 text-[10px]",
-              overdue && !hideCountdown
-                ? "font-semibold text-rose-600"
-                : "text-muted-foreground",
-            )}
-          >
-            <Calendar className="h-3 w-3 shrink-0" />
-            <span>
-              {t("tasks.deadline")}: {formatDate(task.dueAt)}
-            </span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
-            <Calendar className="h-3 w-3" />
-            {t("tasks.noDue")}
-          </div>
-        )}
-        {hideCountdown ? (
-          <div
-            className={cn(
-              "rounded-md border px-2 py-1 text-[10px] font-semibold",
-              isVerified
-                ? "border-violet-200 bg-violet-50 text-violet-900 dark:border-violet-500/30 dark:bg-violet-500/10 dark:text-violet-200"
-                : "border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200",
-            )}
-          >
-            <div className="flex items-center gap-1">
-              <CheckCircle2 className="h-3 w-3 shrink-0" />
-              {isVerified ? t("tasks.status.verifiedFull") : t("tasks.status.awaitingFull")}
+      {(column === "progress" || isAccepted || column === "today") &&
+        !awaitingReview &&
+        !isVerified && (
+          <div className="mb-2.5">
+            <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-muted-foreground">
+              <span>{t("tasks.progress")}</span>
+              <span className="tabular-nums text-primary">{progress}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+              <div
+                className="h-full rounded-full bg-primary transition-all"
+                style={{ width: `${progress}%` }}
+              />
             </div>
           </div>
-        ) : null}
-      </div>
+        )}
 
       {(awaitingReview || isVerified) &&
         (task.completionNote || (task.completionAttachments?.length ?? 0) > 0) && (
-        <div className="mb-1.5 rounded-md bg-emerald-50 border border-emerald-100 px-2 py-1 text-[10px] text-emerald-800">
-          <span className="font-semibold">Natija: </span>
-          {task.completionNote
-            ? task.completionNote.slice(0, 60) +
-              (task.completionNote.length > 60 ? "…" : "")
-            : `${task.completionAttachments.length} ta fayl`}
-        </div>
-      )}
+          <div className="mb-2 rounded-lg border border-emerald-200/80 bg-emerald-50/80 px-2 py-1 text-[10px] text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
+            <span className="font-semibold">{t("tasks.result")} </span>
+            {task.completionNote
+              ? task.completionNote.slice(0, 60) +
+                (task.completionNote.length > 60 ? "…" : "")
+              : `${task.completionAttachments.length} ta fayl`}
+          </div>
+        )}
 
       {pendingExt && (
-        <div className="mb-1.5 rounded-md bg-amber-50 border border-amber-200 px-2 py-1 text-[10px] text-amber-900">
+        <div className="mb-2 rounded-lg border border-amber-200/80 bg-amber-50 px-2 py-1 text-[10px] text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
           Muddat so‘ralgan: {formatDate(task.extensionRequestedDueAt)}
         </div>
       )}
 
-      {(images.length > 0 || files.length > 0) && !hideCountdown && (
-        <div className="flex items-center gap-2 text-muted-foreground mb-1">
-          {images.length > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[10px]">
-              <ImageIcon className="h-3 w-3" />
-              {images.length}
-            </span>
-          )}
-          {files.length > 0 && (
-            <span className="inline-flex items-center gap-0.5 text-[10px]">
-              <Paperclip className="h-3 w-3" />
-              {files.length}
-            </span>
-          )}
-        </div>
-      )}
+      <div className="flex items-center gap-2 border-t border-border/60 pt-2">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
+          {initials || "?"}
+        </span>
+        <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
+          {task.assigneeName || "—"}
+        </span>
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+          <MessageSquare className="h-3 w-3" />
+          {msgCount}
+        </span>
+        <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
+          <Paperclip className="h-3 w-3" />
+          {files.length + (task.completionAttachments?.length ?? 0)}
+        </span>
+        <span className="text-[10px] font-medium tabular-nums text-muted-foreground/50">
+          TK-{task.id}
+        </span>
+      </div>
 
       <div
-        className="mt-1.5 pt-1.5 border-t border-slate-100 flex flex-wrap gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition"
+        className="mt-2 flex flex-wrap gap-1 border-t border-border/40 pt-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
         onClick={(e) => e.stopPropagation()}
       >
         {isAssignee && needsAccept && (
           <button
             type="button"
-            className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-sky-600 text-white hover:bg-sky-700"
+            className="flex-1 rounded-md bg-primary py-1.5 text-[11px] font-semibold text-primary-foreground hover:opacity-90"
             onClick={onAccept}
           >
             {t("tasks.accept")}
@@ -1725,7 +2554,7 @@ function TaskCard({
           <>
             <button
               type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 hover:bg-emerald-50 text-emerald-700"
+              className="flex flex-1 items-center justify-center gap-1 rounded-md py-1.5 text-[11px] text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
               onClick={onComplete}
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
@@ -1733,7 +2562,7 @@ function TaskCard({
             </button>
             <button
               type="button"
-              className="inline-flex items-center justify-center gap-1 rounded-md text-[11px] px-2 py-1.5 hover:bg-amber-50 text-amber-800"
+              className="inline-flex items-center justify-center gap-1 rounded-md px-2 py-1.5 text-[11px] text-amber-800 hover:bg-amber-500/10 dark:text-amber-300"
               onClick={onExtend}
             >
               <Clock className="h-3.5 w-3.5" />
@@ -1745,7 +2574,7 @@ function TaskCard({
           <>
             <button
               type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 bg-emerald-600 text-white hover:bg-emerald-700"
+              className="flex flex-1 items-center justify-center gap-1 rounded-md bg-emerald-600 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700"
               onClick={onVerify}
             >
               <CheckCircle2 className="h-3.5 w-3.5" />
@@ -1753,7 +2582,7 @@ function TaskCard({
             </button>
             <button
               type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 hover:bg-amber-50 text-amber-800 border border-amber-200"
+              className="flex flex-1 items-center justify-center rounded-md border border-amber-300/70 py-1.5 text-[11px] text-amber-800 hover:bg-amber-500/10 dark:border-amber-500/40 dark:text-amber-200"
               onClick={onRework}
             >
               {t("tasks.rework")}
@@ -1764,14 +2593,14 @@ function TaskCard({
           <>
             <button
               type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 hover:bg-emerald-50 text-emerald-700"
+              className="flex-1 rounded-md py-1.5 text-[11px] text-emerald-700 hover:bg-emerald-500/10 dark:text-emerald-300"
               onClick={onApproveExt}
             >
               {t("ui.approve")}
             </button>
             <button
               type="button"
-              className="flex-1 inline-flex items-center justify-center gap-1 rounded-md text-[11px] py-1.5 hover:bg-rose-50 text-rose-700"
+              className="flex-1 rounded-md py-1.5 text-[11px] text-rose-700 hover:bg-rose-500/10 dark:text-rose-300"
               onClick={onRejectExt}
             >
               {t("tasks.rejectExt")}
@@ -1781,7 +2610,7 @@ function TaskCard({
         {isCreator && (
           <button
             type="button"
-            className="inline-flex items-center justify-center rounded-md p-1.5 hover:bg-rose-50 text-rose-600 ml-auto"
+            className="ml-auto rounded-md p-1.5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-400"
             onClick={onDelete}
             title={t("ui.delete")}
           >

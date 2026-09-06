@@ -49,12 +49,15 @@ import AdminUsersPage from './pages/admin/users';
 import AdminDepartmentsPage from './pages/admin/departments';
 import AdminKirishVideosPage from './pages/admin/kirish-videos';
 import AdminFacesPage from './pages/admin/faces';
+import AdminSmenaSozlamalarPage from './pages/admin/smena-sozlamalar';
+import AdminDavomatQrPage from './pages/admin/davomat-qr';
 import EmployeesPage from './pages/employees/index';
 import EmployeesOtherPage from './pages/employees/other';
 import EmployeeDuplicatesPage from './pages/employees/duplicates';
 import DavomatPage from './pages/davomat/index';
 import DavomatAnalyticsPage from './pages/davomat/analytics';
 import DavomatFacePage from './pages/davomat/face';
+import DavomatQrPage from './pages/davomat/qr';
 import SmenaFilialPage from './pages/smena-filial/index';
 import NotificationsPage from './pages/notifications/index';
 import TgEntryPage from './pages/tg-entry';
@@ -97,6 +100,7 @@ function Router() {
       <Route path="/login" component={Login} />
       <Route path="/tg" component={TgEntryPage} />
       <Route path="/davomat-face" component={DavomatFacePage} />
+      <ProtectedRoute path="/davomat-qr" component={DavomatQrPage} />
       <Route path="/" component={() => {
         window.location.replace('/dashboard');
         return null;
@@ -167,6 +171,8 @@ function Router() {
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
       <ProtectedRoute path="/admin/faces" component={AdminFacesPage} />
+      <ProtectedRoute path="/admin/smena-sozlamalar" component={AdminSmenaSozlamalarPage} />
+      <ProtectedRoute path="/admin/davomat-qr" component={AdminDavomatQrPage} />
       
       <Route component={NotFound} />
     </Switch>

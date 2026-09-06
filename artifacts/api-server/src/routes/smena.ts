@@ -4,7 +4,8 @@ import { db, employeesTable } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { isHrRole } from "../lib/roles";
 import { notifyUser } from "../lib/notify";
-import { isPharmacyShiftStaff, normalizeShiftType, shiftWindow } from "../lib/shift-hours";
+import { isPharmacyShiftStaff, normalizeShiftType, shiftWindow, parseShiftKeys, encodeShiftKeys, validateShiftCombination } from "../lib/shift-hours";
+import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 
 const router: IRouter = Router();
 
@@ -146,16 +147,45 @@ function canAssignTarget(opts: {
   return false;
 }
 
-function serializeShift(shiftType: string | null) {
-  const w = shiftWindow(shiftType);
+function serializeShift(shiftType: string | null, defs?: Awaited<ReturnType<typeof getEffectiveShiftDefs>>) {
+  const keys = parseShiftKeys(shiftType);
+  const primary = shiftWindow(keys[0] || "one", null, defs);
+  const windows = keys.map((k) => {
+    const w = shiftWindow(k, null, defs);
+    return { type: w.key, label: w.label, start: w.start, end: w.end, overnight: !!w.overnight };
+  });
   return {
-    type: w.key,
-    label: w.label,
-    start: w.start,
-    end: w.end,
-    warnHm: w.warnHm,
-    warnText: w.warnText,
-    hoursNote: `${w.label}: ${w.start}–${w.end}. Kechikish — jarima.`,
+    type: keys.length > 1 ? encodeShiftKeys(keys as any) : primary.key,
+    types: keys,
+    label: windows.map((w) => w.label).join(" + "),
+    start: primary.start,
+    end: windows[windows.length - 1]?.end || primary.end,
+    warnHm: primary.warnHm,
+    warnText: primary.warnText,
+    windows,
+    hoursNote: windows
+      .map((w) => `${w.label}: ${w.start}–${w.end}${w.overnight ? " (keyingi kun)" : ""}`)
+      .join(". "),
+  };
+}
+
+function applyShiftTypePatch(
+  raw: string,
+  defs?: Awaited<ReturnType<typeof getEffectiveShiftDefs>>,
+): { ok: true; shiftType: string; shiftLabel: string } | { ok: false; error: string; warning?: string } {
+  const keys = parseShiftKeys(raw).filter((k) => k === "one" || k === "two" || k === "three");
+  if (!keys.length) return { ok: false, error: "Smena 1, 2, 3 yoki juftlik (one+two, two+three) bo‘lishi kerak" };
+  const check = validateShiftCombination(keys);
+  if (!check.ok) return { ok: false, error: check.error || "Noto‘g‘ri smena juftligi", warning: check.warning };
+  return {
+    ok: true,
+    shiftType: encodeShiftKeys(keys),
+    shiftLabel: keys
+      .map((k) => {
+        const w = shiftWindow(k, null, defs);
+        return `${w.label} ${w.start}–${w.end}`;
+      })
+      .join(" + "),
   };
 }
 
@@ -163,6 +193,8 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
   const role = req.userRole || "";
   const me = await empByUserId(req.userId!);
   const pharmacy = isPharmacyShiftStaff(role, me?.orgRole);
+  const defs = await getEffectiveShiftDefs();
+  const officeW = shiftWindow("office", null, defs);
   const branches = pharmacy || isLeadRole(role) ? await listBranches() : [];
   const assignedId = me?.assignedBranchId || (me?.orgRole === MANAGER_ORG ? me.id : me?.reportsToId) || null;
   const assigned = assignedId ? branches.find((b) => b.id === assignedId) || null : null;
@@ -216,14 +248,30 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
           assignedBranchName: assigned?.name || me.location || null,
         }
       : null,
-    shift: serializeShift(me?.shiftType || "one"),
+    shift: pharmacy
+      ? serializeShift(me?.shiftType || "one", defs)
+      : {
+          type: "office",
+          types: ["office"],
+          label: "Ofis (smena yo‘q)",
+          start: officeW.start,
+          end: officeW.end,
+          warnHm: officeW.warnHm,
+          warnText: officeW.warnText,
+          windows: [{ type: "office", label: "Ofis", start: officeW.start, end: officeW.end, overnight: false }],
+          hoursNote: `Ofis: ${officeW.start}–${officeW.end}. Smena yo‘q — faqat belgilangan vaqt.`,
+        },
     branches,
     assignable,
     rules: {
-      shift1: "1-smena: 08:00–17:00. Ogohlantirish 07:45. Kechiksa — jarima.",
-      shift2: "2-smena: 17:00–23:45. Ogohlantirish 16:45. Kechiksa — jarima.",
+      eligible: "Smena faqat mudir, farmasevt va stajyor uchun",
+      office: `Ofis xodimlari smenasiz: ${officeW.start}–${officeW.end}`,
+      shift1: `1-smena: ${defs.one.startHm}–${defs.one.endHm}`,
+      shift2: `2-smena: ${defs.two.startHm}–${defs.two.endHm}`,
+      shift3: `3-smena: ${defs.three.startHm}–${defs.three.endHm}${defs.three.overnight ? " (tungi)" : ""}`,
+      combo: "Bir kunda max 2 smena: 1+2 va 2+3 ruxsat. 1+2+3 taqiqlangan.",
       branch:
-        "Farmasevt qaysi filialga borishini faqat mudir yoki koordinator belgilaydi. Stajyor lokatsiyasini mudir yoki o‘z farmasevti belgilaydi. Smenani xodim o‘zi tanlaydi. Face ID faqat belgilangan filial GPS (35 m) da o‘tadi.",
+        "Filial ustuvorligi: o‘rniga ishlash → bir kunlik → rotatsiya → doimiy. Face ID belgilangan filial GPS da o‘tadi.",
     },
   });
 });
@@ -243,12 +291,14 @@ router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<vo
       res.status(403).json({ error: "Smena tanlash faqat mudir, farmasevt va stajyor uchun" });
       return;
     }
-    if (body.shiftType !== "one" && body.shiftType !== "two") {
-      res.status(400).json({ error: "Smena 1 yoki 2 bo‘lishi kerak" });
+    const defs = await getEffectiveShiftDefs();
+    const applied = applyShiftTypePatch(String(body.shiftType), defs);
+    if (!applied.ok) {
+      res.status(400).json({ error: applied.error, warning: applied.warning });
       return;
     }
-    patch.shiftType = body.shiftType;
-    patch.shiftLabel = body.shiftType === "two" ? "2-smena 17:00–23:45" : "1-smena 08:00–17:00";
+    patch.shiftType = applied.shiftType;
+    patch.shiftLabel = applied.shiftLabel;
   }
 
   if (body.assignedBranchId !== undefined) {
@@ -301,38 +351,45 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
     res.status(400).json({ error: "Filial GPS kiritilmagan" });
     return;
   }
-  if (body.shiftType != null && body.shiftType !== "one" && body.shiftType !== "two") {
-    res.status(400).json({ error: "Smena 1 yoki 2 bo‘lishi kerak" });
-    return;
+  const patch: Record<string, unknown> = {
+    assignedBranchId: branchId,
+    location: (branch.location || "").split("|")[0].trim() || branch.fullName,
+    updatedAt: new Date(),
+  };
+  if (body.shiftType != null) {
+    if (!isPharmacyShiftStaff(null, target.orgRole)) {
+      res.status(400).json({ error: "Smena faqat mudir, farmasevt va stajyor uchun. Ofis xodimlarida smena yo‘q." });
+      return;
+    }
+    const defs = await getEffectiveShiftDefs();
+    const applied = applyShiftTypePatch(String(body.shiftType), defs);
+    if (!applied.ok) {
+      res.status(400).json({ error: applied.error, warning: applied.warning });
+      return;
+    }
+    patch.shiftType = applied.shiftType;
+    patch.shiftLabel = applied.shiftLabel;
   }
 
-  const loc = (branch.location || "").split("|")[0].trim() || branch.fullName;
-  await db
-    .update(employeesTable)
-    .set({
-      assignedBranchId: branchId,
-      location: loc,
-      ...(body.shiftType
-        ? {
-            shiftType: body.shiftType,
-            shiftLabel: body.shiftType === "two" ? "2-smena 17:00–23:45" : "1-smena 08:00–17:00",
-          }
-        : {}),
-      updatedAt: new Date(),
-    })
-    .where(eq(employeesTable.id, target.id));
+  const loc = String(patch.location);
+  await db.update(employeesTable).set(patch).where(eq(employeesTable.id, target.id));
 
   if (target.userId) {
-    const shiftTxt = body.shiftType === "two" ? "2-smena 17:00–23:45" : body.shiftType === "one" ? "1-smena 08:00–17:00" : "";
+    const shiftTxt = patch.shiftLabel ? String(patch.shiftLabel) : "";
     await notifyUser({
       userId: target.userId,
-      text: `${target.fullName}: ${loc} filialiga biriktirildi${shiftTxt ? `, ${shiftTxt}` : ""}. Face ID faqat shu joydan (35 m).`,
+      text: `${target.fullName}: ${loc} filialiga biriktirildi${shiftTxt ? `, ${shiftTxt}` : ""}. Face ID faqat shu joydan.`,
       type: "smena_branch",
       linkUrl: "/davomat-face",
     });
   }
 
-  res.json({ ok: true, assignedBranchId: branchId, assignedBranchName: loc, shiftType: body.shiftType || target.shiftType });
+  res.json({
+    ok: true,
+    assignedBranchId: branchId,
+    assignedBranchName: loc,
+    shiftType: patch.shiftType || target.shiftType,
+  });
 });
 
 export default router;

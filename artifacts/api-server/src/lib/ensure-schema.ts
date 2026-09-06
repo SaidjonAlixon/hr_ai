@@ -670,6 +670,52 @@ CREATE TABLE IF NOT EXISTS ops_tickets (
 );
 CREATE INDEX IF NOT EXISTS ops_tickets_dept_idx ON ops_tickets (dept);
 CREATE INDEX IF NOT EXISTS ops_tickets_status_idx ON ops_tickets (status);
+
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_method TEXT;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_method TEXT;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS resolved_branch_id INTEGER;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS resolved_branch_label TEXT;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS shift_plan TEXT;
+
+CREATE TABLE IF NOT EXISTS branch_attendance_qr (
+  id SERIAL PRIMARY KEY,
+  qr_id TEXT NOT NULL,
+  branch_id INTEGER NOT NULL,
+  branch_label TEXT,
+  token_hash TEXT NOT NULL,
+  token_payload TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS branch_attendance_qr_qr_id_uidx ON branch_attendance_qr (qr_id);
+CREATE INDEX IF NOT EXISTS branch_attendance_qr_branch_idx ON branch_attendance_qr (branch_id);
+CREATE INDEX IF NOT EXISTS branch_attendance_qr_status_idx ON branch_attendance_qr (status);
+ALTER TABLE branch_attendance_qr ADD COLUMN IF NOT EXISTS token_payload TEXT;
+
+CREATE TABLE IF NOT EXISTS attendance_punch_audit (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER,
+  user_id INTEGER,
+  branch_id INTEGER,
+  verification_method TEXT,
+  action TEXT,
+  gps_result TEXT,
+  gps_distance INTEGER,
+  face_result TEXT,
+  qr_result TEXT,
+  final_result TEXT NOT NULL,
+  failure_reason TEXT,
+  device_id TEXT,
+  ip_address TEXT,
+  meta JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS attendance_punch_audit_emp_idx ON attendance_punch_audit (employee_id);
+CREATE INDEX IF NOT EXISTS attendance_punch_audit_created_idx ON attendance_punch_audit (created_at);
     `);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");

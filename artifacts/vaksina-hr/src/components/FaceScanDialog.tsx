@@ -203,6 +203,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
+            // Mobil: old (selfie) kamera — Face ID uchun
             facingMode: { ideal: "user" },
             width: { ideal: 1280 },
             height: { ideal: 720 },

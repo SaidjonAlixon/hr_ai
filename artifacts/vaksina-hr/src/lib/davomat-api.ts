@@ -330,6 +330,8 @@ export type WorkplaceInfo = {
     checkOut: string;
     checkInAt?: string | null;
     checkOutAt?: string | null;
+    checkInMethod?: string | null;
+    checkOutMethod?: string | null;
     status: string;
     complete: boolean;
     nextAction: "in" | "out" | "done";
@@ -405,6 +407,99 @@ export async function fetchDavomatSite(): Promise<DavomatSite> {
       kind: "office",
     };
   }
+}
+
+export type DavomatMethods = {
+  pharmacyStaff: boolean;
+  /** Faqat admin: istalgan filial QR, lokatsiya shartsiz */
+  adminQrAnywhere?: boolean;
+  methods: Array<"FACE_ID" | "QR">;
+  canManageQr: boolean;
+  assignedBranchId: number | null;
+};
+
+export function fetchDavomatMethods(): Promise<DavomatMethods> {
+  return apiJson<DavomatMethods>("/davomat/methods");
+}
+
+export type QrBranchRow = {
+  id: number;
+  name: string;
+  managerName: string;
+  hasActiveQr: boolean;
+  hasPayload?: boolean;
+  qrId: string | null;
+  version: number | null;
+  createdAt: string | null;
+};
+
+export function fetchQrBranches(): Promise<{ branches: QrBranchRow[] }> {
+  return apiJson("/davomat/qr/branches");
+}
+
+export function fetchActiveBranchQr(branchId: number): Promise<{
+  active: {
+    qrId: string;
+    branchId: number;
+    branchLabel: string | null;
+    version: number;
+    status: string;
+    createdAt: string;
+    expiresAt: string | null;
+    payload: string | null;
+    needsReissue?: boolean;
+  } | null;
+}> {
+  return apiJson(`/davomat/qr/active/${branchId}`);
+}
+
+export function issueBranchQr(branchId: number): Promise<{
+  ok: boolean;
+  qrId: string;
+  branchId: number;
+  branchLabel: string;
+  version: number;
+  payload: string;
+  createdAt: string;
+  note?: string;
+}> {
+  return apiJson("/davomat/qr/issue", {
+    method: "POST",
+    body: JSON.stringify({ branchId }),
+  });
+}
+
+export function revokeBranchQr(branchId: number): Promise<{ ok: boolean; revoked: boolean }> {
+  return apiJson(`/davomat/qr/active/${branchId}`, { method: "DELETE" });
+}
+
+export async function qrPunchDavomat(payload: {
+  payload: string;
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
+  action: "in" | "out";
+  deviceId?: string;
+}): Promise<{
+  ok: boolean;
+  action: "in" | "out";
+  fullName: string;
+  message?: string;
+  checkIn: string;
+  checkOut: string;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
+  workedHours: string;
+  distanceMeters: number;
+  verificationMethod?: string;
+  branchLabel?: string | null;
+  adminQrAnywhere?: boolean;
+  employee?: DavomatEmployee | null;
+}> {
+  return apiJson("/davomat/qr-punch", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function downloadDavomatExcel(params: {

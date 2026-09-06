@@ -1,5 +1,5 @@
 ﻿import { Router, type IRouter } from "express";
-import { and, eq, gte, lte, inArray } from "drizzle-orm";
+import { and, eq, gte, lte, inArray, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import {
   db,
@@ -8,6 +8,7 @@ import {
   attendanceRecordsTable,
   faceProfilesTable,
   usersTable,
+  branchAttendanceQrTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
@@ -16,10 +17,21 @@ import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
 import { setSessionCookie } from "../lib/session";
-import { hoursForStaff, normalizeShiftType, workScheduleForStaff } from "../lib/shift-hours";
+import { hoursForStaff, workScheduleForStaff, normalizeShiftType } from "../lib/shift-hours";
+import { computeDayAttendance, type ShiftKey, type ShiftDefinition, addDaysYmd, DEFAULT_SHIFT_DEFS } from "../lib/attendance-engine";
+import { getEffectiveShiftDefs } from "../lib/shift-schedule";
+import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
 import { loadStaffFromUsers } from "../lib/staff-directory";
 import { buildDavomatAnalytics, type DavomatSegment } from "../lib/davomat-analytics";
 import { matchesDepartmentFilter, resolveDepartmentFilter } from "../lib/department-filter";
+import {
+  encodeQrPayload,
+  getActiveQrForBranch,
+  mintQrSecrets,
+  revokeActiveQrForBranch,
+  verifyBranchQrPayload,
+} from "../lib/branch-attendance-qr";
+import { clientIp, writePunchAudit } from "../lib/punch-audit";
 
 const router: IRouter = Router();
 
@@ -164,46 +176,50 @@ function computeMetrics(
   checkInAt: Date | null | undefined,
   checkOutAt: Date | null | undefined,
   forcedStatus?: string | null,
-  hours?: { start: string; end: string; graceMinutes?: number },
-): Metrics {
+  hours?: { start: string; end: string; graceMinutes?: number; overnight?: boolean; shiftKey?: string },
+): Metrics & {
+  paidWorkedMinutes?: number;
+  unpaidBreakMinutes?: number;
+  nightMinutes?: number;
+  missingCheckout?: boolean;
+  missingCheckoutLabel?: string;
+} {
+  const shiftKey = (hours?.shiftKey as ShiftKey) || "one";
+  const engine = computeDayAttendance({
+    workDate,
+    shiftKeys: [shiftKey],
+    segments: [{ shiftKey, checkInAt: checkInAt ?? null, checkOutAt: checkOutAt ?? null }],
+  });
+
+  // Legacy path for office / forced status — keep schedule-relative OT using overnight-aware end
   const start = atTashkent(workDate, hours?.start ?? WORK_START);
-  const end = atTashkent(workDate, hours?.end ?? WORK_END);
-  const graceMinutes = hours?.graceMinutes ?? 0;
-  const graceEnd =
-    graceMinutes > 0 ? new Date(start.getTime() + graceMinutes * 60_000) : start;
-  let earlyArrivalMin = 0;
-  let lateArrivalMin = 0;
-  let earlyLeaveMin = 0;
-  let overtimeMin = 0;
-  let workedMinutes = 0;
-  let status = forcedStatus || "absent";
-
-  if (checkInAt) {
-    const inDiffFromStart = minutesBetween(start, checkInAt);
-    if (inDiffFromStart < 0) earlyArrivalMin = -inDiffFromStart;
-    const pastGrace =
-      graceMinutes > 0 ? minutesBetween(graceEnd, checkInAt) : inDiffFromStart > 0 ? 1 : 0;
-    if (pastGrace > 0) {
-      lateArrivalMin = inDiffFromStart > 0 ? inDiffFromStart : pastGrace;
-      status = "late";
-    } else {
-      lateArrivalMin = 0;
-      status = "present";
-    }
-    if (!checkOutAt) status = lateArrivalMin > 0 ? "late" : "incomplete";
+  let end = atTashkent(
+    hours?.overnight ? addDaysYmd(workDate, 1) : workDate,
+    hours?.end ?? WORK_END,
+  );
+  if (end.getTime() <= start.getTime()) {
+    end = atTashkent(addDaysYmd(workDate, 1), hours?.end ?? WORK_END);
   }
+  let earlyArrivalMin = engine.earlyArrivalMin;
+  let lateArrivalMin = engine.lateArrivalMin;
+  let earlyLeaveMin = engine.earlyLeaveMin;
+  let overtimeMin = engine.overtimeMin;
+  let workedMinutes = engine.rawWorkedMinutes;
+  let status = forcedStatus || engine.status;
 
-  if (checkInAt && checkOutAt) {
-    workedMinutes = Math.max(0, minutesBetween(checkInAt, checkOutAt));
+  if (checkInAt && checkOutAt && !engine.missingCheckout) {
     const outDiff = minutesBetween(end, checkOutAt);
     if (outDiff < 0) earlyLeaveMin = -outDiff;
     else if (outDiff > 0) overtimeMin = outDiff;
-    if (lateArrivalMin > 0) status = "late";
-    else status = "present";
   }
 
   if (forcedStatus === "leave" || forcedStatus === "absent") {
     status = forcedStatus;
+  }
+
+  if (engine.missingCheckout) {
+    status = "incomplete";
+    workedMinutes = 0;
   }
 
   return {
@@ -220,6 +236,11 @@ function computeMetrics(
     lateArrivalLabel: lateArrivalMin ? fmtSignedMin(lateArrivalMin) : "—",
     earlyLeaveLabel: earlyLeaveMin ? fmtSignedMin(earlyLeaveMin) : "—",
     overtimeLabel: overtimeMin ? fmtSignedMin(overtimeMin) : "—",
+    paidWorkedMinutes: engine.paidWorkedMinutes,
+    unpaidBreakMinutes: engine.unpaidBreakMinutes,
+    nightMinutes: engine.nightMinutes,
+    missingCheckout: engine.missingCheckout,
+    missingCheckoutLabel: engine.missingCheckout ? "Check-out mavjud emas" : undefined,
   };
 }
 
@@ -431,12 +452,15 @@ function buildReport(
   records: Awaited<ReturnType<typeof loadRecords>>,
   from: string,
   to: string,
+  defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ) {
   const dates = eachDateInclusive(from, to);
   const byEmpDate = new Map<string, (typeof records)[0]>();
   for (const r of records) {
     byEmpDate.set(`${r.employeeId}|${r.workDate}`, r);
   }
+  const staffHours = (e: (typeof employees)[0]) =>
+    hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel, defs);
 
   const dayStats = dates.map((date) => {
     let present = 0;
@@ -490,7 +514,7 @@ function buildReport(
         leave += 1;
         continue;
       }
-      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel));
+      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, staffHours(e));
       if (m.status === "late") {
         late += 1;
         lateList.push(e.fullName);
@@ -568,7 +592,7 @@ function buildReport(
             recordId: rec.id,
           };
         }
-        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel));
+        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, staffHours(e));
         return {
           date,
           ...m,
@@ -620,7 +644,7 @@ function buildReport(
         shiftType: normalizeShiftType(e.shiftType, e.shiftLabel),
         shiftLabel: e.shiftLabel,
         ...(() => {
-          const h = hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel);
+          const h = staffHours(e);
           return { workStart: h.start, workEnd: h.end };
         })(),
         days,
@@ -650,8 +674,8 @@ function buildReport(
   };
 
   return {
-    workStart: WORK_START,
-    workEnd: WORK_END,
+    workStart: defs.office.startHm,
+    workEnd: defs.office.endHm,
     from,
     to,
     dates,
@@ -678,7 +702,8 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
       to,
       employees.map((e) => e.id),
     );
-    res.json(buildReport(employees, records, from, to));
+    const defs = await getEffectiveShiftDefs();
+    res.json(buildReport(employees, records, from, to, defs));
   } catch (err) {
     console.error("GET /davomat error:", err);
     res.status(503).json({ error: "Davomat yuklanmadi" });
@@ -695,13 +720,14 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
     const employees = await loadActiveEmployees({});
     const employeeIds = employees.map((e) => e.id);
     const records = await loadRecords(from, to, employeeIds);
-    const report = buildReport(employees, records, from, to);
+    const defs = await getEffectiveShiftDefs();
+    const report = buildReport(employees, records, from, to, defs);
 
     const span = eachDateInclusive(from, to).length;
     const prevTo = addDays(from, -1);
     const prevFrom = addDays(prevTo, -(span - 1));
     const prevRecords = await loadRecords(prevFrom, prevTo, employeeIds);
-    const prevReport = buildReport(employees, prevRecords, prevFrom, prevTo);
+    const prevReport = buildReport(employees, prevRecords, prevFrom, prevTo, defs);
 
     const meta = employees.map((e) => ({
       id: e.id,
@@ -722,7 +748,8 @@ async function ownEmployeeReport(empId: number) {
   const from = addDays(to, -89);
   const employees = await loadActiveEmployees({ employeeId: String(empId) });
   const records = await loadRecords(from, to, [empId]);
-  const report = buildReport(employees, records, from, to);
+  const defs = await getEffectiveShiftDefs();
+  const report = buildReport(employees, records, from, to, defs);
   return {
     from,
     to,
@@ -737,12 +764,13 @@ router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise
     const date = (req.query as { date?: string }).date || todayTashkent();
     const employees = await loadActiveEmployees({});
     const records = await loadRecords(date, date, employees.map((e) => e.id));
-    const report = buildReport(employees, records, date, date);
+    const defs = await getEffectiveShiftDefs();
+    const report = buildReport(employees, records, date, date, defs);
     const day = report.days[0];
     res.json({
       date,
-      workStart: WORK_START,
-      workEnd: WORK_END,
+      workStart: defs.office.startHm,
+      workEnd: defs.office.endHm,
       ...day,
       employees: report.employees.map((e) => ({
         id: e.id,
@@ -807,7 +835,7 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
     const checkOutAt =
       checkOut && /^\d{1,2}:\d{2}$/.test(checkOut) ? atTashkent(workDate, checkOut) : null;
 
-    const hours = hoursForStaff(emp.orgRole, emp.shiftType, emp.userRole, emp.shiftLabel);
+    const hours = hoursForStaff(emp.orgRole, emp.shiftType, emp.userRole, emp.shiftLabel, await getEffectiveShiftDefs());
 
     let nextStatus = status || "absent";
     if (!status || status === "auto") {
@@ -1277,28 +1305,75 @@ async function applyFacePunch(opts: {
   longitude: number;
   distanceMeters: number;
   allowedMeters: number;
-  faceProfileId: number;
+  faceProfileId?: number | null;
   action: "in" | "out";
+  verificationMethod?: "FACE_ID" | "QR";
+  resolvedBranchId?: number | null;
+  resolvedBranchLabel?: string | null;
 }): Promise<
   | { ok: true; payload: Record<string, unknown> }
   | PunchFail
 > {
-  const { emp, userRole, latitude, longitude, distanceMeters, allowedMeters, faceProfileId, action } = opts;
-  const hours = hoursForStaff(emp.orgRole, emp.shiftType, userRole, emp.shiftLabel);
-  const workDate = todayTashkent();
+  const {
+    emp,
+    userRole,
+    latitude,
+    longitude,
+    distanceMeters,
+    allowedMeters,
+    faceProfileId,
+    action,
+    verificationMethod = "FACE_ID",
+    resolvedBranchId = null,
+    resolvedBranchLabel = null,
+  } = opts;
+  const defs = await getEffectiveShiftDefs();
+  const hours = hoursForStaff(emp.orgRole, emp.shiftType, userRole, emp.shiftLabel, defs);
+  const today = todayTashkent();
+  const yesterday = addDaysYmd(today, -1);
+  const [todayRec] = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(
+      and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, today)),
+    )
+    .limit(1);
+  const [yesterdayRec] = await db
+    .select()
+    .from(attendanceRecordsTable)
+    .where(
+      and(
+        eq(attendanceRecordsTable.employeeId, emp.id),
+        eq(attendanceRecordsTable.workDate, yesterday),
+      ),
+    )
+    .limit(1);
+  const resolvedWd = resolveAttendanceWorkDate({
+    todayYmd: today,
+    yesterdayYmd: yesterday,
+    now: new Date(),
+    shiftType: emp.shiftType,
+    shiftLabel: emp.shiftLabel,
+    todayRec,
+    yesterdayRec,
+  });
+  const workDate = resolvedWd.workDate;
   const now = new Date();
   const dateFilter = and(
     eq(attendanceRecordsTable.employeeId, emp.id),
     eq(attendanceRecordsTable.workDate, workDate),
   );
 
+  const source = verificationMethod === "QR" ? ("qr" as const) : ("face" as const);
   const geoFields = {
     checkLatitude: latitude,
     checkLongitude: longitude,
     distanceMeters,
-    source: "face" as const,
+    source,
     userId: emp.userId,
     updatedAt: now,
+    resolvedBranchId: resolvedBranchId ?? undefined,
+    resolvedBranchLabel: resolvedBranchLabel ?? undefined,
   };
 
   try {
@@ -1334,10 +1409,11 @@ async function applyFacePunch(opts: {
       if (action === "in") {
         checkInAt = now;
         const status = computeMetrics(workDate, checkInAt, null, null, hours).status;
+        const methodFields = { checkInMethod: verificationMethod };
         if (existing) {
           await tx
             .update(attendanceRecordsTable)
-            .set({ ...geoFields, checkInAt, status })
+            .set({ ...geoFields, checkInAt, status, ...methodFields })
             .where(eq(attendanceRecordsTable.id, existing.id));
         } else {
           await tx.insert(attendanceRecordsTable).values({
@@ -1347,6 +1423,7 @@ async function applyFacePunch(opts: {
             checkInAt,
             status,
             ...geoFields,
+            ...methodFields,
             createdById: emp.userId,
           });
         }
@@ -1356,14 +1433,16 @@ async function applyFacePunch(opts: {
         const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt, null, hours).status;
         await tx
           .update(attendanceRecordsTable)
-          .set({ ...geoFields, checkOutAt, status })
+          .set({ ...geoFields, checkOutAt, status, checkOutMethod: verificationMethod })
           .where(eq(attendanceRecordsTable.id, existing!.id));
       }
 
-      await tx
-        .update(faceProfilesTable)
-        .set({ lastUsedAt: now })
-        .where(eq(faceProfilesTable.id, faceProfileId));
+      if (faceProfileId) {
+        await tx
+          .update(faceProfilesTable)
+          .set({ lastUsedAt: now })
+          .where(eq(faceProfilesTable.id, faceProfileId));
+      }
 
       const metrics = computeMetrics(workDate, checkInAt, checkOutAt, null, hours);
       return {
@@ -1376,12 +1455,13 @@ async function applyFacePunch(opts: {
           location: emp.location,
           distanceMeters,
           allowedMeters,
+          verificationMethod,
           checkInAt: checkInAt ? checkInAt.toISOString() : null,
           checkOutAt: checkOutAt ? checkOutAt.toISOString() : null,
           message:
             action === "in"
-              ? `${emp.fullName}: Keldim (${metrics.checkIn})`
-              : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours}`,
+              ? `${emp.fullName}: Keldim (${metrics.checkIn}) · ${verificationMethod === "QR" ? "QR" : "Face ID"}`
+              : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours} · ${verificationMethod === "QR" ? "QR" : "Face ID"}`,
           ...metrics,
         },
       };
@@ -1565,6 +1645,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
             checkOut: formatHm(rec.checkOutAt),
             checkInAt: rec.checkInAt ? rec.checkInAt.toISOString() : null,
             checkOutAt: rec.checkOutAt ? rec.checkOutAt.toISOString() : null,
+            checkInMethod: rec.checkInMethod ?? null,
+            checkOutMethod: rec.checkOutMethod ?? null,
             status: rec.status,
             complete: Boolean(rec.checkInAt && rec.checkOutAt),
             nextAction: !rec.checkInAt ? "in" : !rec.checkOutAt ? "out" : "done",
@@ -1574,6 +1656,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
             checkOut: "—",
             checkInAt: null,
             checkOutAt: null,
+            checkInMethod: null,
+            checkOutMethod: null,
             status: "absent",
             complete: false,
             nextAction: "in",
@@ -1894,11 +1978,35 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       allowedMeters: resolved.gate.effectiveRadius,
       faceProfileId: resolved.faceId,
       action,
+      verificationMethod: "FACE_ID",
     });
     if (!punched.ok) {
+      await writePunchAudit({
+        employeeId: resolved.emp.id,
+        userId: resolved.user.id,
+        verificationMethod: "FACE_ID",
+        action,
+        gpsResult: "ok",
+        gpsDistance: resolved.gate.distanceMeters,
+        faceResult: "ok",
+        finalResult: "denied",
+        failureReason: String(punched.body.error || punched.body.code || "denied"),
+        ipAddress: clientIp(req),
+      });
       res.status(punched.status).json(punched.body);
       return;
     }
+    await writePunchAudit({
+      employeeId: resolved.emp.id,
+      userId: resolved.user.id,
+      verificationMethod: "FACE_ID",
+      action,
+      gpsResult: "ok",
+      gpsDistance: resolved.gate.distanceMeters,
+      faceResult: "ok",
+      finalResult: "success",
+      ipAddress: clientIp(req),
+    });
     const own = await ownEmployeeReport(resolved.emp.id);
     const sessionUser = await adoptFaceSession(res, resolved.user.id);
     res.json({
@@ -1982,7 +2090,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       to,
       employees.map((e) => e.id),
     );
-    const report = buildReport(employees, records, from, to);
+    const report = buildReport(employees, records, from, to, await getEffectiveShiftDefs());
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "VAKSINA MED HR";
@@ -2452,6 +2560,532 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
   } catch (err) {
     console.error("GET /davomat/export error:", err);
     res.status(503).json({ error: "Excel yuklanmadi" });
+  }
+});
+
+function assignedBranchIdForEmp(emp: WorkplaceEmp): number | null {
+  if (emp.assignedBranchId) return emp.assignedBranchId;
+  if (emp.orgRole === "manager") return emp.id;
+  return emp.reportsToId ?? null;
+}
+
+function canManageBranchQr(role: string | null | undefined) {
+  return role === "mudir" || role === "koordinator" || role === "admin" || role === "director";
+}
+
+function isQrAdmin(role: string | null | undefined) {
+  return role === "admin" || role === "director";
+}
+
+/** Faqat admin: istalgan filial QR + lokatsiya shartsiz (geofence yo‘q) */
+function isAdminQrAnywhere(role: string | null | undefined) {
+  return role === "admin";
+}
+
+async function assertCanAccessBranchQr(
+  role: string | null | undefined,
+  userId: number,
+  branchId: number,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (isQrAdmin(role)) return { ok: true };
+  const me = await findEmployeeByUserId(userId);
+  const [branch] = await db
+    .select({
+      id: employeesTable.id,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.id, branchId))
+    .limit(1);
+  if (!branch || branch.orgRole !== "manager") {
+    return { ok: false, status: 404, error: "Filial topilmadi" };
+  }
+  if (role === "mudir" && me && branch.id === me.id) return { ok: true };
+  if (role === "koordinator" && me && (branch.reportsToId === me.id || branch.id === me.id)) return { ok: true };
+  return { ok: false, status: 403, error: "Bu filial QR iga ruxsat yo‘q" };
+}
+
+/** QR yaratish/yuklash — faqat mudir va koordinator (admin/direktor ham) */
+router.get("/davomat/qr/branches", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageBranchQr(req.userRole)) {
+    res.status(403).json({ error: "QR yaratish faqat mudir yoki koordinator uchun", code: "qr_forbidden" });
+    return;
+  }
+  try {
+    const me = await findEmployeeByUserId(req.userId!);
+    const managers = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        location: employeesTable.location,
+        latitude: employeesTable.latitude,
+        longitude: employeesTable.longitude,
+        reportsToId: employeesTable.reportsToId,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.orgRole, "manager"));
+
+    let list = managers.filter(
+      (m) => m.latitude != null && m.longitude != null && Number.isFinite(m.latitude) && Number.isFinite(m.longitude),
+    );
+
+    if (req.userRole === "mudir" && me) {
+      list = list.filter((m) => m.id === me.id);
+    } else if (req.userRole === "koordinator" && me) {
+      list = list.filter((m) => m.reportsToId === me.id || m.id === me.id);
+    }
+    // admin/director — barcha filiallar
+
+    const branches = await Promise.all(
+      list.map(async (m) => {
+        const active = await getActiveQrForBranch(m.id);
+        return {
+          id: m.id,
+          name: displayBranchName(m.location) || m.location || m.fullName,
+          managerName: m.fullName,
+          hasActiveQr: Boolean(active),
+          hasPayload: Boolean(active?.tokenPayload),
+          qrId: active?.qrId ?? null,
+          version: active?.version ?? null,
+          createdAt: active?.createdAt?.toISOString() ?? null,
+        };
+      }),
+    );
+    branches.sort((a, b) => a.name.localeCompare(b.name, "uz"));
+    res.json({ branches });
+  } catch (err) {
+    console.error("GET /davomat/qr/branches error:", err);
+    res.status(503).json({ error: "Filiallar yuklanmadi" });
+  }
+});
+
+/** Yangi QR yaratish — eski active bekor; payload DB da saqlanadi (qayta ko‘rinadi) */
+router.post("/davomat/qr/issue", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageBranchQr(req.userRole)) {
+    res.status(403).json({ error: "QR yaratish faqat mudir, koordinator yoki admin uchun", code: "qr_forbidden" });
+    return;
+  }
+  try {
+    const branchId = Number(req.body?.branchId);
+    if (!Number.isFinite(branchId)) {
+      res.status(400).json({ error: "branchId majburiy" });
+      return;
+    }
+    const access = await assertCanAccessBranchQr(req.userRole, req.userId!, branchId);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    const [branch] = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        location: employeesTable.location,
+        orgRole: employeesTable.orgRole,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, branchId))
+      .limit(1);
+    if (!branch || branch.orgRole !== "manager") {
+      res.status(404).json({ error: "Filial (mudir) topilmadi" });
+      return;
+    }
+
+    const prev = await getActiveQrForBranch(branchId);
+    await revokeActiveQrForBranch(branchId);
+    const secrets = mintQrSecrets();
+    const version = (prev?.version ?? 0) + 1;
+    const label = displayBranchName(branch.location) || branch.location || branch.fullName;
+    const payload = encodeQrPayload(secrets.qrId, secrets.rawToken);
+    const [row] = await db
+      .insert(branchAttendanceQrTable)
+      .values({
+        qrId: secrets.qrId,
+        branchId,
+        branchLabel: label,
+        tokenHash: secrets.tokenHash,
+        tokenPayload: payload,
+        version,
+        status: "active",
+        createdById: req.userId!,
+        expiresAt: null,
+      })
+      .returning();
+
+    res.json({
+      ok: true,
+      qrId: row.qrId,
+      branchId,
+      branchLabel: label,
+      version: row.version,
+      status: row.status,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: null,
+      payload,
+      note: "QR saqlandi — mudir/koordinator/admin istalgan vaqtda ko‘ra oladi. Yangi yaratilsa eski o‘chadi.",
+    });
+  } catch (err) {
+    console.error("POST /davomat/qr/issue error:", err);
+    res.status(503).json({ error: "QR yaratilmadi" });
+  }
+});
+
+/** Faol QR + payload — mudir/koordinator/admin qayta ko‘radi */
+router.get("/davomat/qr/active/:branchId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageBranchQr(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
+    return;
+  }
+  const branchId = Number(req.params.branchId);
+  if (!Number.isFinite(branchId)) {
+    res.status(400).json({ error: "branchId noto‘g‘ri" });
+    return;
+  }
+  const access = await assertCanAccessBranchQr(req.userRole, req.userId!, branchId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  const active = await getActiveQrForBranch(branchId);
+  if (!active) {
+    res.json({ active: null });
+    return;
+  }
+  res.json({
+    active: {
+      qrId: active.qrId,
+      branchId: active.branchId,
+      branchLabel: active.branchLabel,
+      version: active.version,
+      status: active.status,
+      createdAt: active.createdAt.toISOString(),
+      expiresAt: active.expiresAt?.toISOString() ?? null,
+      payload: active.tokenPayload || null,
+      needsReissue: !active.tokenPayload,
+    },
+  });
+});
+
+/** Faol QR ni bekor qilish — admin istalgan; mudir/koordinator o‘z doirasida */
+router.delete("/davomat/qr/active/:branchId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageBranchQr(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
+    return;
+  }
+  const branchId = Number(req.params.branchId);
+  if (!Number.isFinite(branchId)) {
+    res.status(400).json({ error: "branchId noto‘g‘ri" });
+    return;
+  }
+  const access = await assertCanAccessBranchQr(req.userRole, req.userId!, branchId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  const before = await getActiveQrForBranch(branchId);
+  if (!before) {
+    res.json({ ok: true, revoked: false });
+    return;
+  }
+  await revokeActiveQrForBranch(branchId);
+  res.json({ ok: true, revoked: true, qrId: before.qrId, version: before.version });
+});
+
+/**
+ * QR orqali davomat — Face ID talab qilinmaydi.
+ * Oddiy xodim: GPS + yashil hudud + o‘z filiali QR.
+ * Admin: istalgan filial QR, lokatsiya qayerda bo‘lishidan qat’i nazar qabul.
+ */
+router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const latitudeRaw = Number(req.body?.latitude);
+  const longitudeRaw = Number(req.body?.longitude);
+  const accuracy = Number(req.body?.accuracy);
+  const actionRaw = String(req.body?.action || "");
+  const action = actionRaw === "out" ? "out" : actionRaw === "in" ? "in" : null;
+  const payload = String(req.body?.payload || req.body?.qr || "").trim();
+  const ip = clientIp(req);
+  const deviceId = req.body?.deviceId ? String(req.body.deviceId).slice(0, 120) : null;
+
+  try {
+    if (!action) {
+      res.status(400).json({ error: "action: in | out", code: "action_required" });
+      return;
+    }
+    if (!payload) {
+      res.status(400).json({ error: "QR payload majburiy", code: "qr_required" });
+      return;
+    }
+
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        status: usersTable.status,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    if (!user || (user.status !== "active" && user.status !== "on_leave")) {
+      res.status(403).json({ error: "Profil faol emas", code: "user_inactive" });
+      return;
+    }
+
+    const adminAnywhere = isAdminQrAnywhere(user.role);
+    const hasGps = Number.isFinite(latitudeRaw) && Number.isFinite(longitudeRaw);
+
+    if (!hasGps && !adminAnywhere) {
+      await writePunchAudit({
+        userId: req.userId,
+        verificationMethod: "QR",
+        action,
+        gpsResult: "missing",
+        finalResult: "denied",
+        failureReason: "gps_required",
+        ipAddress: ip,
+        deviceId,
+      });
+      res.status(400).json({ error: "GPS majburiy — lokatsiyaga ruxsat bering", code: "gps_required" });
+      return;
+    }
+
+    const emp = await ensureEmployeeForUser(user);
+    if (!usesBranchDavomat(user.role, emp.orgRole) && !adminAnywhere) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        verificationMethod: "QR",
+        action,
+        finalResult: "denied",
+        failureReason: "role_not_allowed",
+        ipAddress: ip,
+        deviceId,
+      });
+      res.status(403).json({
+        error: "QR davomat faqat mudir, farmasevt, stajyor yoki admin uchun",
+        code: "role_not_allowed",
+      });
+      return;
+    }
+
+    const myBranchId = assignedBranchIdForEmp(emp);
+    if (!adminAnywhere && !myBranchId) {
+      res.status(400).json({
+        error: "Filial biriktirilmagan — avval smena/filial belgilansin",
+        code: "branch_unassigned",
+      });
+      return;
+    }
+
+    const qr = await verifyBranchQrPayload(payload);
+    if (!qr.ok) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        branchId: myBranchId,
+        verificationMethod: "QR",
+        action,
+        qrResult: qr.code,
+        finalResult: "denied",
+        failureReason: qr.error,
+        ipAddress: ip,
+        deviceId,
+      });
+      res.status(400).json({ error: qr.error, code: qr.code });
+      return;
+    }
+
+    if (!adminAnywhere && qr.row.branchId !== myBranchId) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        branchId: myBranchId,
+        verificationMethod: "QR",
+        action,
+        qrResult: "wrong_branch",
+        finalResult: "denied",
+        failureReason: "QR boshqa filialga tegishli",
+        ipAddress: ip,
+        deviceId,
+        meta: { qrBranchId: qr.row.branchId, myBranchId },
+      });
+      res.status(403).json({
+        error: "Bu QR boshqa filialniki. Faqat o‘z filialingiz QR i bilan davomat qiling.",
+        code: "qr_wrong_branch",
+        myBranchId,
+        qrBranchId: qr.row.branchId,
+      });
+      return;
+    }
+
+    const punchBranchId = adminAnywhere ? qr.row.branchId : myBranchId!;
+    let latitude = hasGps ? latitudeRaw : 0;
+    let longitude = hasGps ? longitudeRaw : 0;
+    let distanceMeters = 0;
+    let allowedMeters = 0;
+    let gpsResult: string = adminAnywhere ? "admin_bypass" : "ok";
+
+    if (!adminAnywhere) {
+      const gate = await geoGate(
+        emp,
+        user.role,
+        latitude,
+        longitude,
+        Number.isFinite(accuracy) ? accuracy : undefined,
+      );
+      if (!gate.ok) {
+        await writePunchAudit({
+          employeeId: emp.id,
+          userId: user.id,
+          branchId: myBranchId,
+          verificationMethod: "QR",
+          action,
+          gpsResult: String(gate.body.code || "outside"),
+          gpsDistance: typeof gate.body.distanceMeters === "number" ? gate.body.distanceMeters : null,
+          qrResult: "ok",
+          finalResult: "denied",
+          failureReason: String(gate.body.error || "geofence"),
+          ipAddress: ip,
+          deviceId,
+        });
+        res.status(gate.status).json(gate.body);
+        return;
+      }
+      distanceMeters = gate.distanceMeters;
+      allowedMeters = gate.effectiveRadius;
+      gpsResult = "ok";
+    } else if (hasGps) {
+      // Admin: masofa faqat audit uchun, rad etilmaydi
+      try {
+        const resolved = await resolveDavomatPoint(emp, user.role);
+        if (resolved.ok) {
+          distanceMeters = haversineMeters(latitude, longitude, resolved.point.latitude, resolved.point.longitude);
+          allowedMeters = geofenceMetersForKind(resolved.point.kind);
+        }
+      } catch {
+        /* ignore */
+      }
+    } else {
+      // GPS yo‘q — filial nuqtasini yozamiz (agar bo‘lsa)
+      const [branch] = await db
+        .select({
+          latitude: employeesTable.latitude,
+          longitude: employeesTable.longitude,
+        })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, punchBranchId))
+        .limit(1);
+      if (
+        branch?.latitude != null &&
+        branch?.longitude != null &&
+        Number.isFinite(branch.latitude) &&
+        Number.isFinite(branch.longitude)
+      ) {
+        latitude = branch.latitude;
+        longitude = branch.longitude;
+      }
+    }
+
+    const punched = await applyFacePunch({
+      emp,
+      userRole: user.role,
+      latitude,
+      longitude,
+      distanceMeters,
+      allowedMeters: adminAnywhere ? Math.max(allowedMeters, 999_999) : allowedMeters,
+      faceProfileId: null,
+      action,
+      verificationMethod: "QR",
+      resolvedBranchId: punchBranchId,
+      resolvedBranchLabel: qr.row.branchLabel || null,
+    });
+    if (!punched.ok) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        branchId: punchBranchId,
+        verificationMethod: "QR",
+        action,
+        gpsResult,
+        gpsDistance: distanceMeters,
+        qrResult: "ok",
+        finalResult: "denied",
+        failureReason: String(punched.body.error || punched.body.code || "denied"),
+        ipAddress: ip,
+        deviceId,
+        meta: adminAnywhere ? { adminQrAnywhere: true } : undefined,
+      });
+      res.status(punched.status).json(punched.body);
+      return;
+    }
+
+    await writePunchAudit({
+      employeeId: emp.id,
+      userId: user.id,
+      branchId: punchBranchId,
+      verificationMethod: "QR",
+      action,
+      gpsResult,
+      gpsDistance: distanceMeters,
+      qrResult: "ok",
+      finalResult: "success",
+      ipAddress: ip,
+      deviceId,
+      meta: adminAnywhere ? { adminQrAnywhere: true, qrBranchId: qr.row.branchId } : undefined,
+    });
+
+    const own = await ownEmployeeReport(emp.id);
+    res.json({
+      ...punched.payload,
+      employee: own.employee,
+      branchId: punchBranchId,
+      branchLabel: qr.row.branchLabel,
+      adminQrAnywhere: adminAnywhere || undefined,
+    });
+  } catch (err) {
+    console.error("POST /davomat/qr-punch error:", err);
+    await writePunchAudit({
+      userId: req.userId,
+      verificationMethod: "QR",
+      action: action || null,
+      finalResult: "error",
+      failureReason: "server_error",
+      ipAddress: ip,
+      deviceId,
+    });
+    res.status(503).json({ error: "QR davomat yozilmadi" });
+  }
+});
+
+/** Workplace: QR usuli mavjudmi (apteka rollari) + admin istalgan joydan */
+router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const [user] = await db
+      .select({ id: usersTable.id, role: usersTable.role, departmentId: usersTable.departmentId, fullName: usersTable.fullName })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    if (!user) {
+      res.status(404).json({ error: "User topilmadi" });
+      return;
+    }
+    const emp = await ensureEmployeeForUser(user);
+    const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
+    const adminQrAnywhere = isAdminQrAnywhere(user.role);
+    const methods: Array<"FACE_ID" | "QR"> = pharmacy || adminQrAnywhere ? ["FACE_ID", "QR"] : ["FACE_ID"];
+    res.json({
+      pharmacyStaff: pharmacy,
+      adminQrAnywhere,
+      methods,
+      canManageQr: canManageBranchQr(user.role),
+      assignedBranchId: assignedBranchIdForEmp(emp),
+    });
+  } catch (err) {
+    console.error("GET /davomat/methods error:", err);
+    res.status(503).json({ error: "Usullar yuklanmadi" });
   }
 });
 

@@ -141,7 +141,7 @@ const NAV_SECTIONS: {
     id: 'attendance',
     label: 'Davomat',
     icon: AlarmClock,
-    paths: ['/davomat/analytics', '/davomat-face', '/davomat', '/smena-filial', '/checklist-holati'],
+    paths: ['/davomat/analytics', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
@@ -153,7 +153,7 @@ const NAV_SECTIONS: {
     id: 'admin',
     label: 'Sozlamalar',
     icon: Settings,
-    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces'],
+    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr'],
   },
 ];
 
@@ -228,6 +228,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/holat')) return '/admin/holat';
   if (path.startsWith('/admin/faces')) return '/admin/faces';
+  if (path.startsWith('/admin/smena-sozlamalar')) return '/admin/smena-sozlamalar';
+  if (path.startsWith('/admin/davomat-qr')) return '/admin/davomat-qr';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
   if (path.startsWith('/dashboard')) return '/dashboard';
@@ -589,6 +591,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/users') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/admin/smena-sozlamalar') && !canManageSettings(user.role)) {
+      setLocation('/dashboard');
+    }
+    if (location.startsWith('/admin/davomat-qr') && !canManageSettings(user.role)) {
+      setLocation('/dashboard');
+    }
   }, [isLoading, isAuthenticated, user, setLocation, location]);
 
   if (isLoading) {
@@ -615,6 +623,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatAnalyticsNav = { name: 'Davomat tahlili', path: '/davomat/analytics', icon: BarChart3 };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
+  const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
@@ -743,6 +752,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
+      { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
+      { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -780,6 +791,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
+      { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
+      { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     hr: hrMenejerNav,
@@ -822,6 +835,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
+      davomatQrNav,
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },
@@ -834,6 +848,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
+      davomatQrNav,
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },

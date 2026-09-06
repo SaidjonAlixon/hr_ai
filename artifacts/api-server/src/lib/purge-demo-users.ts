@@ -1,4 +1,4 @@
-import { ilike, inArray, or } from "drizzle-orm";
+import { eq, ilike, inArray, or } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -11,6 +11,16 @@ import {
 } from "@workspace/db";
 import { purgeEmployeeSideEffects, purgeUserSideEffects } from "./delete-pharmacy-staff";
 
+/** Demo / test ismlar — smena ro‘yxatidagi soxta yozuvlar */
+const DEMO_EXACT_NAMES = ["Salom Salom", "Demo Stajyor"] as const;
+
+function demoNameClause(column: typeof usersTable.fullName | typeof employeesTable.fullName) {
+  return or(
+    ilike(column, "Demo%"),
+    ...DEMO_EXACT_NAMES.map((n) => eq(column, n)),
+  );
+}
+
 export async function purgeDemoUsers(): Promise<{
   deletedUsers: number;
   deletedEmployees: number;
@@ -19,7 +29,7 @@ export async function purgeDemoUsers(): Promise<{
   const demoUsers = await db
     .select({ id: usersTable.id, fullName: usersTable.fullName })
     .from(usersTable)
-    .where(ilike(usersTable.fullName, "Demo%"));
+    .where(demoNameClause(usersTable.fullName));
 
   const demoEmployees = await db
     .select({
@@ -28,7 +38,7 @@ export async function purgeDemoUsers(): Promise<{
       fullName: employeesTable.fullName,
     })
     .from(employeesTable)
-    .where(ilike(employeesTable.fullName, "Demo%"));
+    .where(demoNameClause(employeesTable.fullName));
 
   const userIds = [
     ...new Set([
@@ -64,7 +74,12 @@ export async function purgeDemoUsers(): Promise<{
 
   await db
     .delete(settlementLinesTable)
-    .where(or(ilike(settlementLinesTable.fullName, "Demo%")));
+    .where(
+      or(
+        ilike(settlementLinesTable.fullName, "Demo%"),
+        eq(settlementLinesTable.fullName, "Salom Salom"),
+      ),
+    );
 
   if (employeeIds.length) {
     await db

@@ -54,11 +54,8 @@ const existing = await client.query(
   `SELECT id FROM users WHERE login = 'stajyor1' LIMIT 1`,
 );
 if (!existing.rows.length) {
-  await client.query(
-    `INSERT INTO users (full_name, role, login, password, status)
-     VALUES ('Demo Stajyor', 'stajyor', 'stajyor1', 'pass123', 'active')`,
-  );
-  console.log("seeded stajyor1 / pass123");
+  // Demo Stajyor yaratilmaydi — soxta yozuvlar kerak emas
+  console.log("stajyor1 yo‘q (demo seed o‘chirilgan)");
 } else {
   console.log("stajyor1 already exists");
 }

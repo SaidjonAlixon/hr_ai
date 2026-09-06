@@ -16,6 +16,9 @@ import {
   ArrowDown,
   ArrowLeft,
   Banknote,
+  QrCode,
+  ChevronDown,
+  SwitchCamera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -29,6 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FaceScanDialog } from "@/components/FaceScanDialog";
+import { QrScanDialog } from "@/components/QrScanDialog";
 import { useToast } from "@/hooks/use-toast";
 import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
 import {
@@ -40,10 +44,12 @@ import {
   DavomatApiError,
   facePunchDavomat,
   faceVerifyDavomat,
+  fetchDavomatMethods,
   fetchDavomatSite,
   fetchMyDavomat,
   fetchMyWorkplace,
   haversineMeters,
+  qrPunchDavomat,
   type DavomatDayMetrics,
   type DavomatEmployee,
   type DavomatSite,
@@ -84,6 +90,8 @@ type Verified = {
   checkOutAt?: string | null;
   faceImage?: string;
   liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number };
+  /** QR skan tasdiqlangan — Keldim/Ketdim bosilganda punch */
+  qrPayload?: string;
 };
 
 type GuideStep = "enroll" | "permission" | "zone" | "face" | "keldim" | "ketdim" | "done";
@@ -316,6 +324,43 @@ function MobileStepHint({
   );
 }
 
+function ScrollDownHint({ label }: { label: string }) {
+  const [show, setShow] = useState(true);
+  useEffect(() => {
+    const onScroll = () => {
+      const nearBottom =
+        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
+      setShow(!nearBottom);
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    };
+  }, []);
+  if (!show) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => window.scrollBy({ top: Math.min(420, window.innerHeight * 0.55), behavior: "smooth" })}
+      className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card/95 px-3 py-2 text-xs font-semibold text-foreground shadow-lg backdrop-blur md:hidden"
+    >
+      <ChevronDown className="h-4 w-4 animate-bounce" />
+      {label}
+    </button>
+  );
+}
+
+function FlowArrow() {
+  return (
+    <div className="flex justify-center py-1 text-muted-foreground" aria-hidden>
+      <ArrowDown className="h-5 w-5 animate-bounce" />
+    </div>
+  );
+}
+
 function GuideBoard({
   active,
   faceRegistered,
@@ -324,6 +369,12 @@ function GuideBoard({
   hasIn,
   afterShiftEnd,
   done,
+  pharmacyStaff,
+  canOpenFace,
+  canOpenQr,
+  onOpenFace,
+  onOpenQr,
+  methodsBusy,
 }: {
   active: GuideStep;
   faceRegistered: boolean | null;
@@ -332,8 +383,166 @@ function GuideBoard({
   hasIn: boolean;
   afterShiftEnd: boolean;
   done: boolean;
+  pharmacyStaff: boolean;
+  canOpenFace?: boolean;
+  canOpenQr?: boolean;
+  onOpenFace?: () => void;
+  onOpenQr?: () => void;
+  methodsBusy?: boolean;
 }) {
   const { t } = useI18n();
+
+  if (pharmacyStaff) {
+    const steps = [
+      {
+        id: "permission" as const,
+        n: 1,
+        title: t("davomat.grantPermission"),
+        detail: t("davomat.permissionDetail"),
+      },
+      {
+        id: "zone" as const,
+        n: 2,
+        title: t("davomat.enterZone"),
+        detail: t("davomat.zoneDetail"),
+      },
+      {
+        id: "face" as const,
+        n: 3,
+        title: t("davomat.pickMethodTitle"),
+        detail: t("davomat.pickMethodDetail"),
+      },
+      {
+        id: (hasIn ? "ketdim" : "keldim") as GuideStep,
+        n: 4,
+        title: hasIn ? t("davomat.pressOut") : t("davomat.pressIn"),
+        detail: hasIn ? t("davomat.ketdimDetailMixed") : t("davomat.keldimDetailMixed"),
+      },
+    ];
+
+    return (
+      <section className="dv-card">
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <div>
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {t("davomat.guideTitle")}
+            </p>
+            <h2 className="mt-0.5 text-base font-semibold text-foreground">{t("davomat.guideSteps")}</h2>
+            <p className="mt-1 text-xs text-muted-foreground">{t("davomat.guideHintPharmacy")}</p>
+          </div>
+          {done ? (
+            <span className="dv-tone-emerald rounded-full border px-2.5 py-1 text-[11px] font-semibold">
+              {t("davomat.todayDone")}
+            </span>
+          ) : null}
+        </div>
+
+        <ol className="space-y-0">
+          {steps.map((it, idx) => {
+            const isActive =
+              (it.n === 1 && active === "permission") ||
+              (it.n === 2 && active === "zone") ||
+              (it.n === 3 && active === "face") ||
+              (it.n === 4 && (active === "keldim" || active === "ketdim"));
+            const methodReady = Boolean(hasIn || (active === "keldim" && !done));
+            const passed =
+              done ||
+              (it.n === 1 && hasGps) ||
+              (it.n === 2 && hasGps && inside) ||
+              (it.n === 3 && methodReady) ||
+              (it.n === 4 && done);
+
+            return (
+              <li key={`${it.id}-${it.n}`}>
+                {idx > 0 ? <FlowArrow /> : null}
+                <div
+                  className={cn(
+                    "flex gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
+                    isActive && !passed && it.id !== "zone" && "dv-guide-active",
+                    passed && "dv-guide-passed",
+                    !isActive && !passed && "dv-guide-idle",
+                    it.id === "zone" && isActive && "dv-guide-danger",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                      passed && "dv-step-badge-success",
+                      isActive && !passed && it.id === "zone" && "dv-step-badge-danger",
+                      isActive && !passed && it.id !== "zone" && "dv-step-badge-warn",
+                      !isActive && !passed && "bg-muted text-muted-foreground",
+                    )}
+                  >
+                    {passed ? "✓" : it.n}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-foreground">
+                      {tr(t, "davomat.stepLabel", { n: it.n })}: {it.title}
+                    </p>
+                    <p
+                      className={cn(
+                        "mt-0.5 text-xs leading-snug",
+                        it.id === "zone" && isActive
+                          ? "font-medium text-rose-700 dark:text-rose-300"
+                          : "text-muted-foreground",
+                      )}
+                    >
+                      {it.detail}
+                    </p>
+                    {it.n === 3 && !done ? (
+                      <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-stretch gap-1.5">
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-auto min-h-[3.25rem] flex-col gap-0.5 rounded-xl px-2 py-2 text-primary-foreground"
+                          disabled={!canOpenFace || methodsBusy}
+                          onClick={() => onOpenFace?.()}
+                        >
+                          <span className="flex items-center gap-1 text-[11px] font-bold">
+                            <ScanFace className="h-3.5 w-3.5" />
+                            Face ID
+                          </span>
+                          <span className="text-[10px] font-normal opacity-90">{t("davomat.frontCam")}</span>
+                        </Button>
+                        <span className="self-center text-[10px] font-semibold uppercase text-muted-foreground">
+                          {t("davomat.orWord")}
+                        </span>
+                        <Button
+                          type="button"
+                          size="sm"
+                          className="h-auto min-h-[3.25rem] flex-col gap-0.5 rounded-xl px-2 py-2 text-primary-foreground"
+                          disabled={!canOpenQr || methodsBusy}
+                          onClick={() => onOpenQr?.()}
+                        >
+                          <span className="flex items-center gap-1 text-[11px] font-bold">
+                            <QrCode className="h-3.5 w-3.5" />
+                            {t("davomat.qrScanner")}
+                          </span>
+                          <span className="text-[10px] font-normal opacity-90">{t("davomat.rearCam")}</span>
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+
+        {active === "zone" ? (
+          <p className="dv-tone-rose mt-3 rounded-xl border px-3 py-2 text-center text-sm font-semibold">
+            {t("davomat.zoneWarnBanner")}
+          </p>
+        ) : null}
+        {(active === "ketdim" || (hasIn && !done && afterShiftEnd)) ? (
+          <p className="dv-tone-rose mt-3 rounded-xl border px-3 py-2 text-center text-sm font-semibold">
+            {t("davomat.step4OutBanner")}
+          </p>
+        ) : null}
+      </section>
+    );
+  }
+
   const items: Array<{
     id: GuideStep;
     n: number;
@@ -388,7 +597,6 @@ function GuideBoard({
     return true;
   });
 
-  // Deduplicate permission/zone for board display as sequential unique steps
   const board = (() => {
     const out: typeof items = [];
     const seen = new Set<number>();
@@ -424,9 +632,7 @@ function GuideBoard({
             {t("davomat.guideTitle")}
           </p>
           <h2 className="mt-0.5 text-base font-semibold text-foreground">{t("davomat.guideSteps")}</h2>
-          <p className="mt-1 text-xs text-muted-foreground">
-            {t("davomat.guideHint")}
-          </p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("davomat.guideHint")}</p>
         </div>
         {done ? (
           <span className="dv-tone-emerald rounded-full border px-2.5 py-1 text-[11px] font-semibold">
@@ -434,8 +640,8 @@ function GuideBoard({
           </span>
         ) : null}
       </div>
-      <ol className="space-y-2">
-        {board.map((it) => {
+      <ol className="space-y-0">
+        {board.map((it, idx) => {
           const isActive =
             active === it.id ||
             (active === "zone" && it.id === "zone") ||
@@ -449,39 +655,43 @@ function GuideBoard({
             (it.id === "ketdim" && done);
 
           return (
-            <li
-              key={`${it.id}-${it.n}`}
-              className={cn(
-                "flex gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
-                isActive && !passed && it.id !== "zone" && "dv-guide-active",
-                passed && "dv-guide-passed",
-                !isActive && !passed && "dv-guide-idle",
-                it.id === "zone" && isActive && "dv-guide-danger",
-              )}
-            >
-              <span
+            <li key={`${it.id}-${it.n}`}>
+              {idx > 0 ? <FlowArrow /> : null}
+              <div
                 className={cn(
-                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
-                  passed && "dv-step-badge-success",
-                  isActive && !passed && it.id === "zone" && "dv-step-badge-danger",
-                  isActive && !passed && it.id !== "zone" && "dv-step-badge-warn",
-                  !isActive && !passed && "bg-muted text-muted-foreground",
+                  "flex gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
+                  isActive && !passed && it.id !== "zone" && "dv-guide-active",
+                  passed && "dv-guide-passed",
+                  !isActive && !passed && "dv-guide-idle",
+                  it.id === "zone" && isActive && "dv-guide-danger",
                 )}
               >
-                {passed ? "✓" : it.n === 0 ? "!" : it.n}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-foreground">
-                  {it.n === 0 ? t("davomat.stepFirst") : tr(t, "davomat.stepLabel", { n: it.n })}: {it.title}
-                </p>
-                <p
+                <span
                   className={cn(
-                    "mt-0.5 text-xs leading-snug",
-                    it.id === "zone" && isActive ? "font-medium text-rose-700 dark:text-rose-300" : "text-muted-foreground",
+                    "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+                    passed && "dv-step-badge-success",
+                    isActive && !passed && it.id === "zone" && "dv-step-badge-danger",
+                    isActive && !passed && it.id !== "zone" && "dv-step-badge-warn",
+                    !isActive && !passed && "bg-muted text-muted-foreground",
                   )}
                 >
-                  {it.detail}
-                </p>
+                  {passed ? "✓" : it.n === 0 ? "!" : it.n}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-foreground">
+                    {it.n === 0 ? t("davomat.stepFirst") : tr(t, "davomat.stepLabel", { n: it.n })}: {it.title}
+                  </p>
+                  <p
+                    className={cn(
+                      "mt-0.5 text-xs leading-snug",
+                      it.id === "zone" && isActive
+                        ? "font-medium text-rose-700 dark:text-rose-300"
+                        : "text-muted-foreground",
+                    )}
+                  >
+                    {it.detail}
+                  </p>
+                </div>
               </div>
             </li>
           );
@@ -540,6 +750,12 @@ export default function DavomatFacePage() {
   const [busy, setBusy] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
+  const [pharmacyStaff, setPharmacyStaff] = useState(false);
+  const [adminQrAnywhere, setAdminQrAnywhere] = useState(false);
+  const [methodsReady, setMethodsReady] = useState(false);
+  const [canManageQr, setCanManageQr] = useState(false);
+  const [qrOpen, setQrOpen] = useState(false);
+  const [methodHint, setMethodHint] = useState<"FACE_ID" | "QR" | null>(null);
   const [faceImage, setFaceImage] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem(FACE_SNAP_KEY);
@@ -551,6 +767,7 @@ export default function DavomatFacePage() {
   const punchLockRef = useRef(false);
   const tgBootRef = useRef(false);
   const tgScanRef = useRef(false);
+  const pharmacyGateRef = useRef(false);
 
   const applyHistory = useCallback((emp?: DavomatEmployee | null) => {
     if (!emp?.days?.length) return;
@@ -624,6 +841,33 @@ export default function DavomatFacePage() {
   useEffect(() => {
     void refreshFaceStatus();
   }, [refreshFaceStatus]);
+
+  useEffect(() => {
+    if (!isAuthenticated) {
+      setPharmacyStaff(false);
+      setAdminQrAnywhere(false);
+      setCanManageQr(false);
+      setMethodsReady(true);
+      pharmacyGateRef.current = false;
+      return;
+    }
+    setMethodsReady(false);
+    pharmacyGateRef.current = false;
+    void fetchDavomatMethods()
+      .then((m) => {
+        setPharmacyStaff(m.pharmacyStaff);
+        setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
+        setCanManageQr(m.canManageQr);
+      })
+      .catch(() => {
+        setPharmacyStaff(false);
+        setAdminQrAnywhere(false);
+        setCanManageQr(false);
+      })
+      .finally(() => {
+        setMethodsReady(true);
+      });
+  }, [isAuthenticated]);
 
   useEffect(() => {
     const id = window.setInterval(() => setNowTick(Date.now()), 1000);
@@ -742,17 +986,6 @@ export default function DavomatFacePage() {
   const inside =
     !workplaceGpsMissing && distance != null ? distance <= allowedMeters : false;
 
-  /**
-   * Face ID skani davomat profilini aniqlaydi (tizim login emas).
-   * faceRegistered === false kutish — status 401 bo‘lsa tugma abadiy yopiq qolardi.
-   */
-  const canOpenFace =
-    faceRegistered !== false &&
-    Boolean(gps) &&
-    !gpsError &&
-    isFaceIdSupported() &&
-    inside;
-
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   const done = nextAction === "done" || workplace?.today.complete;
   const hasIn = nextAction === "out" || done || Boolean(checkInAtIso);
@@ -763,15 +996,74 @@ export default function DavomatFacePage() {
   /** Smena tugaganmi — 1-smena 17:00, ofis 18:00, 2-smena 23:45 */
   const afterShiftEnd = isAtOrAfterHm(nowTick, shiftEndHm);
 
+  /**
+   * Face ID skani davomat profilini aniqlaydi (tizim login emas).
+   * faceRegistered === false kutish — status 401 bo‘lsa tugma abadiy yopiq qolardi.
+   */
+  /** Face ID: apteka uchun enroll bo‘lmasa ham tugma ochilsin (avval enroll) */
+  const canOpenFace =
+    methodsReady &&
+    Boolean(gps) &&
+    !gpsError &&
+    isFaceIdSupported() &&
+    inside &&
+    !done &&
+    (pharmacyStaff || faceRegistered !== false);
+
+  /** QR: apteka — GPS + zona; admin — istalgan filial, lokatsiya shartsiz */
+  const canOpenQr =
+    methodsReady &&
+    !done &&
+    (adminQrAnywhere || (pharmacyStaff && Boolean(gps) && !gpsError && inside));
+
+  const showDualMethods = pharmacyStaff || adminQrAnywhere;
+
+  const faceVerifiedReady = Boolean(verified?.descriptor && verified.descriptor.length > 0);
+  const qrVerifiedReady = Boolean(verified?.qrPayload);
+  const methodReady = faceVerifiedReady || qrVerifiedReady;
+
+  const openFaceMethod = useCallback(() => {
+    if (!canOpenFace || busy || qrVerifiedReady || methodHint === "QR") return;
+    setQrOpen(false);
+    if (faceRegistered === false) setEnrollOpen(true);
+    else setScanOpen(true);
+  }, [canOpenFace, busy, faceRegistered, qrVerifiedReady, methodHint]);
+
+  const openQrMethod = useCallback(() => {
+    if (!canOpenQr || busy || faceVerifiedReady) return;
+    setScanOpen(false);
+    setEnrollOpen(false);
+    setQrOpen(true);
+  }, [canOpenQr, busy, faceVerifiedReady]);
+
   const guideStep = useMemo((): GuideStep => {
     if (done) return "done";
-    if (faceRegistered === false) return "enroll";
+    if (!pharmacyStaff && !adminQrAnywhere && faceRegistered === false) return "enroll";
+    if (!adminQrAnywhere && (!gps || gpsError)) return "permission";
+    if (!adminQrAnywhere && !inside) return "zone";
+    if (pharmacyStaff || adminQrAnywhere) {
+      // Apteka/admin: avval Face ID yoki QR; tasdiqdan keyin Keldim/Ketdim
+      if (!hasIn && !methodReady) return "face";
+      if (!hasIn) return "keldim";
+      return "ketdim";
+    }
     if (!gps || gpsError) return "permission";
     if (!inside) return "zone";
     if (!verified) return "face";
     if (!hasIn) return "keldim";
     return "ketdim";
-  }, [done, faceRegistered, gps, gpsError, inside, verified, hasIn]);
+  }, [
+    done,
+    faceRegistered,
+    gps,
+    gpsError,
+    inside,
+    verified,
+    hasIn,
+    pharmacyStaff,
+    adminQrAnywhere,
+    methodReady,
+  ]);
 
   /** Mobil: doim aktiv qadamni ko‘rsat; desktopda ham panel ochiq */
   const showGuide = guideStep !== "done";
@@ -828,13 +1120,24 @@ export default function DavomatFacePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTgMiniApp]);
 
+  /** Faqat ofis (Face-only): TG da avtomatik Face ochilsin. Apteka/admin dual — hech qachon. */
   useEffect(() => {
-    if (!isTgMiniApp || tgScanRef.current || done || verified || faceRegistered === false) return;
+    if (!isTgMiniApp || !methodsReady || showDualMethods) return;
+    if (tgScanRef.current || done || verified || faceRegistered === false) return;
     if (canOpenFace) {
       tgScanRef.current = true;
       setScanOpen(true);
     }
-  }, [isTgMiniApp, canOpenFace, done, verified, faceRegistered]);
+  }, [isTgMiniApp, methodsReady, showDualMethods, canOpenFace, done, verified, faceRegistered]);
+
+  /** Dual method: avvalgi ofis/TG Face auto-open qolmasin (bir marta). */
+  useEffect(() => {
+    if (!methodsReady || !showDualMethods || pharmacyGateRef.current) return;
+    pharmacyGateRef.current = true;
+    setScanOpen(false);
+    setEnrollOpen(false);
+    setQrOpen(false);
+  }, [methodsReady, showDualMethods]);
 
   const geoPayload = () => {
     if (!gps) throw new Error(t("davomat.gpsMissing"));
@@ -888,6 +1191,9 @@ export default function DavomatFacePage() {
         ...geoPayload(),
       });
       saveFaceImage(snapshot);
+      setMethodHint("FACE_ID");
+      setScanOpen(false);
+      setQrOpen(false);
       setVerified({
         descriptor: vec,
         fullName: result.fullName,
@@ -969,11 +1275,48 @@ export default function DavomatFacePage() {
   };
 
   const punch = async (action: "in" | "out") => {
-    if (!verified || !gps) return;
+    if (!verified) return;
+    const usingQr = Boolean(verified.qrPayload) || methodHint === "QR";
+    if (!usingQr && !gps) return;
+    if (!adminQrAnywhere && usingQr && !gps) return;
     if (punchLockRef.current || busy) return;
     punchLockRef.current = true;
     setBusy(true);
     try {
+      if (usingQr && verified.qrPayload) {
+        const result = await qrPunchDavomat({
+          payload: verified.qrPayload,
+          ...(gps
+            ? { latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracy }
+            : {}),
+          action,
+        });
+        setMethodHint("QR");
+        setScanOpen(false);
+        setQrOpen(false);
+        setVerified({
+          ...verified,
+          descriptor: [],
+          qrPayload: verified.qrPayload,
+          nextAction: action === "in" ? "out" : "done",
+          checkIn: result.checkIn,
+          checkOut: result.checkOut,
+          checkInAt: result.checkInAt ?? verified.checkInAt,
+          checkOutAt: result.checkOutAt ?? verified.checkOutAt,
+        });
+        toast({
+          title: action === "in" ? "✓ Keldim (QR)" : "✓ Ketdim (QR)",
+          description: result.branchLabel
+            ? `${result.message || "Qabul qilindi"} · ${result.branchLabel}`
+            : result.message || "Davomat qayd etildi",
+        });
+        applyHistory(result.employee);
+        await loadWorkplace();
+        await loadHistory();
+        return;
+      }
+
+      if (!gps) return;
       const result = await facePunchDavomat({
         descriptor: verified.descriptor,
         ...geoPayload(),
@@ -989,6 +1332,8 @@ export default function DavomatFacePage() {
         checkInAt: result.checkInAt ?? verified.checkInAt,
         checkOutAt: result.checkOutAt ?? verified.checkOutAt,
       });
+      setMethodHint("FACE_ID");
+      setScanOpen(false);
       if (result.user) {
         adoptRecognizedProfile(result.user as User, result.fullName || verified.fullName);
       }
@@ -996,9 +1341,6 @@ export default function DavomatFacePage() {
         title: action === "in" ? t("davomat.btnIn") : t("davomat.leftToast"),
         description: result.message,
       });
-      if (action === "in") {
-        /* guide stays live for Ketdim */
-      }
       applyHistory(result.employee);
       await loadWorkplace();
       await loadHistory();
@@ -1031,6 +1373,39 @@ export default function DavomatFacePage() {
       setConfirmOut(false);
     }
   };
+
+  const onQrDetected = useCallback(
+    async (payload: string) => {
+      if (!adminQrAnywhere) {
+        if (!gps) throw new Error(t("davomat.gpsMissing"));
+        if (!inside) throw new Error(t("davomat.outside"));
+      }
+      const action = (verified?.nextAction || workplace?.today.nextAction || "in") as "in" | "out" | "done";
+      if (action === "done") throw new Error(t("davomat.oncePerDay"));
+      if (!payload.trim()) throw new Error("QR bo‘sh");
+
+      // QR skan = tasdiq. Face ID ochilmasin — keyin Keldim/Ketdim.
+      setScanOpen(false);
+      setEnrollOpen(false);
+      setQrOpen(false);
+      setMethodHint("QR");
+      setVerified({
+        descriptor: [],
+        qrPayload: payload.trim(),
+        fullName: workplace?.employee.fullName || user?.fullName || t("davomat.employee"),
+        nextAction: action === "out" ? "out" : "in",
+        checkIn: workplace?.today.checkIn || "—",
+        checkOut: workplace?.today.checkOut || "—",
+        checkInAt: workplace?.today.checkInAt || null,
+        checkOutAt: workplace?.today.checkOutAt || null,
+      });
+      toast({
+        title: "✓ QR scanner tasdiqlandi",
+        description: action === "out" ? "Endi «Ketdim» ni bosing" : "Endi «Keldim» ni bosing",
+      });
+    },
+    [adminQrAnywhere, gps, inside, verified?.nextAction, workplace, user?.fullName, t],
+  );
 
   const displayName =
     verified?.fullName || workplace?.employee.fullName || user?.fullName || t("davomat.employee");
@@ -1116,7 +1491,14 @@ export default function DavomatFacePage() {
   const showFaceStep =
     faceRegistered !== false &&
     (locationReady || Boolean(verified) || Boolean(gps) || (hasIn && !done));
-  const showPunchStep = Boolean(verified) && !done && !dayComplete;
+  const showPunchStep =
+    Boolean(verified) &&
+    !done &&
+    !dayComplete &&
+    (faceVerifiedReady || qrVerifiedReady || methodHint === "QR");
+
+  /** Usul tanlangach Face/QR tugmalari yashirinadi — faqat Keldim/Ketdim */
+  const showMethodPicker = showDualMethods && !done && !methodReady;
   const canPunchOut = hasIn && !done;
 
   const onEnrollCaptured = async (
@@ -1275,18 +1657,33 @@ export default function DavomatFacePage() {
         </section>
 
         <div className="mt-4">
-          <GuideBoard
-            active={guideStep}
-            faceRegistered={faceRegistered}
-            inside={inside}
-            hasGps={Boolean(gps) && !gpsError}
-            hasIn={hasIn}
-            afterShiftEnd={afterShiftEnd}
-            done={Boolean(done)}
-          />
+          {!methodsReady ? (
+            <section className="dv-card">
+              <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {t("davomat.guideSteps")}…
+              </div>
+            </section>
+          ) : (
+            <GuideBoard
+              active={guideStep}
+              faceRegistered={faceRegistered}
+              inside={inside}
+              hasGps={Boolean(gps) && !gpsError}
+              hasIn={hasIn}
+              afterShiftEnd={afterShiftEnd}
+              done={Boolean(done)}
+              pharmacyStaff={showDualMethods}
+              canOpenFace={canOpenFace}
+              canOpenQr={canOpenQr}
+              onOpenFace={openFaceMethod}
+              onOpenQr={openQrMethod}
+              methodsBusy={busy}
+            />
+          )}
         </div>
 
-        {faceRegistered === false ? (
+        {!pharmacyStaff && faceRegistered === false ? (
           <section className="dv-card dv-tone-info mt-4 border-l-[3px] border-l-primary">
             {showGuide && guideStep === "enroll" ? (
               <MobileStepHint step={0} label={t("davomat.connectFaceHint")} tone="amber" />
@@ -1295,9 +1692,7 @@ export default function DavomatFacePage() {
               <span className="dv-step-badge dv-step-badge-warn">!</span>
               <h2 className="text-sm font-semibold">{t("davomat.enrollFace")}</h2>
             </div>
-            <p className="mb-3 text-sm opacity-90">
-              {t("davomat.enrollBlurb")}
-            </p>
+            <p className="mb-3 text-sm opacity-90">{t("davomat.enrollBlurb")}</p>
             <Button
               type="button"
               size="lg"
@@ -1338,7 +1733,7 @@ export default function DavomatFacePage() {
                   "h-9 shrink-0 gap-1.5 rounded-full border-border text-foreground hover:bg-muted",
                   showGuide && guideStep === "permission" && "dv-focus",
                 )}
-                disabled={gpsSharing || faceRegistered === false}
+                disabled={gpsSharing || (!pharmacyStaff && faceRegistered === false)}
                 onClick={() => void requestLocationPermission()}
               >
                 {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
@@ -1465,7 +1860,207 @@ export default function DavomatFacePage() {
           ) : null}
         </section>
 
-        {showFaceStep ? (
+        <div className="flex justify-center py-1 text-muted-foreground md:hidden" aria-hidden>
+          <ArrowDown className="h-5 w-5 animate-bounce" />
+        </div>
+
+        {/* Mobil: GPS dan keyin 2 usul — old/orqa kamera (admin: QR lokatsiyasiz) */}
+        {methodsReady && showMethodPicker ? (
+          <section className="dv-card mt-2 border-l-[3px] border-l-primary md:hidden" id="davomat-methods">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+                3
+              </span>
+              <SwitchCamera className="h-4 w-4 text-primary" />
+              <h2 className="text-sm font-semibold text-foreground">{t("davomat.pickMethodTitle")}</h2>
+            </div>
+            <p className="mb-3 text-xs text-muted-foreground">
+              {adminQrAnywhere
+                ? "Admin: istalgan filial QR scanner — lokatsiya shart emas"
+                : t("davomat.pickMethodDetail")}
+            </p>
+
+            {adminQrAnywhere ? (
+              <p className="mb-3 text-center text-xs font-medium text-sky-700 dark:text-sky-300">
+                Admin · QR istalgan joydan qabul qilinadi
+              </p>
+            ) : !inside ? (
+              <p className="dv-tone-rose mb-3 rounded-2xl border px-3 py-2 text-center text-sm font-semibold">
+                {t("davomat.methodsLockedOutside")}
+              </p>
+            ) : (
+              <p className="mb-3 text-center text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                🟢 {t("davomat.inZone")}
+                {distance != null ? ` · ${formatDistance(distance, t)}` : ""}
+              </p>
+            )}
+
+            <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+              <Button
+                type="button"
+                size="lg"
+                className={cn(
+                  "h-auto min-h-[4.25rem] w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-3",
+                  guideStep === "face" && canOpenFace && "dv-focus",
+                  !canOpenFace && "opacity-60",
+                )}
+                disabled={!canOpenFace || busy}
+                onClick={openFaceMethod}
+              >
+                <span className="flex items-center gap-1.5 text-sm font-semibold">
+                  <ScanFace className="h-5 w-5" />
+                  Face ID
+                </span>
+                <span className="text-center text-[10px] font-normal opacity-90">
+                  {t("davomat.frontCamHint")}
+                </span>
+              </Button>
+
+              <span className="self-center text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+                {t("davomat.orWord")}
+              </span>
+
+              <Button
+                type="button"
+                size="lg"
+                className={cn(
+                  "h-auto min-h-[4.25rem] w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-3",
+                  guideStep === "face" && canOpenQr && "dv-focus",
+                  !canOpenQr && "opacity-60",
+                )}
+                disabled={!canOpenQr || busy}
+                onClick={openQrMethod}
+              >
+                <span className="flex items-center gap-1.5 text-sm font-semibold">
+                  <QrCode className="h-5 w-5" />
+                  {t("davomat.qrScanner")}
+                </span>
+                <span className="text-center text-[10px] font-normal opacity-90">
+                  {t("davomat.rearCamHint")}
+                </span>
+              </Button>
+            </div>
+
+            {faceRegistered === false ? (
+              <p className="mt-3 text-center text-[11px] text-muted-foreground">
+                {t("davomat.faceOptionalNote")}
+              </p>
+            ) : null}
+
+            {canManageQr ? (
+              <Link
+                href="/davomat-qr"
+                className="mt-3 block text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
+              >
+                Filial QR kodini yaratish / yuklab olish →
+              </Link>
+            ) : null}
+          </section>
+        ) : null}
+
+        {methodsReady && showMethodPicker ? (
+          <section className={cn("dv-card mt-4", "hidden md:block")}>
+            <div className="mb-3 flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
+                3
+              </span>
+              <h2 className="text-sm font-semibold text-foreground">
+                {t("davomat.pickMethodTitle")}
+              </h2>
+            </div>
+            <div className="space-y-3">
+                {adminQrAnywhere ? (
+                  <p className="text-center text-xs font-medium text-sky-700 dark:text-sky-300">
+                    Admin · istalgan filial QR · lokatsiya shart emas
+                  </p>
+                ) : inside ? (
+                  <p className="text-center text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                    🟢 {t("davomat.inZone")}
+                    {distance != null ? ` · ${formatDistance(distance, t)}` : ""}
+                  </p>
+                ) : gps ? (
+                  <p className="dv-tone-rose rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold">
+                    {t("davomat.methodsLockedOutside")}
+                  </p>
+                ) : null}
+
+                {!done ? (
+                  <>
+                    <p className="text-center text-xs text-muted-foreground">{t("davomat.pickMethodDetail")}</p>
+                    <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+                      <Button
+                        type="button"
+                        size="lg"
+                        className={cn(
+                          "h-auto min-h-16 w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-3 py-3",
+                          !canOpenFace && "opacity-50",
+                        )}
+                        disabled={!canOpenFace || busy}
+                        onClick={openFaceMethod}
+                      >
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                          <ScanFace className="h-5 w-5" />
+                          Face ID
+                        </span>
+                        <span className="text-center text-[11px] font-normal opacity-90">{t("davomat.frontCamHint")}</span>
+                      </Button>
+                      <span className="self-center text-[10px] font-bold uppercase text-muted-foreground">
+                        {t("davomat.orWord")}
+                      </span>
+                      <Button
+                        type="button"
+                        size="lg"
+                        className={cn(
+                          "h-auto min-h-16 w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-3 py-3",
+                          !canOpenQr && "opacity-50",
+                        )}
+                        disabled={!canOpenQr || busy}
+                        onClick={openQrMethod}
+                      >
+                        <span className="flex items-center gap-2 text-sm font-semibold">
+                          <QrCode className="h-5 w-5" />
+                          {t("davomat.qrScanner")}
+                        </span>
+                        <span className="text-center text-[11px] font-normal opacity-90">{t("davomat.rearCamHint")}</span>
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-center text-sm text-muted-foreground">{t("davomat.oncePerDay")}</p>
+                )}
+
+                {verified && verified.descriptor.length > 0 ? (
+                  <div className="dv-tone-emerald flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm">
+                    <CheckCircle2 className="h-5 w-5 shrink-0" />
+                    <div>
+                      <p className="font-semibold">{t("davomat.faceVerified")}</p>
+                      <p className="text-xs opacity-80">{verified.fullName}</p>
+                    </div>
+                  </div>
+                ) : null}
+
+                {(workplace?.today.checkInMethod || workplace?.today.checkOutMethod) && (
+                  <p className="text-center text-[11px] text-muted-foreground">
+                    {workplace?.today.checkInMethod ? `Keldi: ${workplace.today.checkInMethod}` : ""}
+                    {workplace?.today.checkInMethod && workplace?.today.checkOutMethod ? " · " : ""}
+                    {workplace?.today.checkOutMethod ? `Ketdi: ${workplace.today.checkOutMethod}` : ""}
+                  </p>
+                )}
+
+                {canManageQr ? (
+                  <Link
+                    href="/davomat-qr"
+                    className="block text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
+                  >
+                    Filial QR kodini yaratish / yuklab olish →
+                  </Link>
+                ) : null}
+            </div>
+          </section>
+        ) : null}
+
+        {/* Ofis: faqat Face ID */}
+        {methodsReady && !showDualMethods && showFaceStep ? (
           <section className="dv-card mt-4">
             <div className="mb-3 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -1473,30 +2068,15 @@ export default function DavomatFacePage() {
               </span>
               <h2 className="text-sm font-semibold text-foreground">Face ID</h2>
             </div>
-            {verified ? (
+            {verified && faceVerifiedReady ? (
               <div className="space-y-3">
                 <div className="dv-tone-emerald flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm">
                   <CheckCircle2 className="h-5 w-5 shrink-0" />
                   <div>
                     <p className="font-semibold">{t("davomat.faceVerified")}</p>
                     <p className="text-xs opacity-80">{verified.fullName}</p>
-                    <p className="mt-0.5 text-[11px] opacity-70">
-                      {t("davomat.switchedProfile")}
-                    </p>
                   </div>
                 </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="h-11 w-full gap-2 rounded-2xl"
-                  onClick={() => {
-                    const role = user?.role;
-                    setLocation(role === "stajyor" ? "/kirish" : "/dashboard");
-                  }}
-                >
-                  <LogIn className="h-4 w-4" />
-                  {tr(t, "davomat.goToProfile", { name: verified.fullName })}
-                </Button>
               </div>
             ) : (
               <div className="space-y-3">
@@ -1516,7 +2096,10 @@ export default function DavomatFacePage() {
                     showGuide && guideStep === "face" && "dv-focus",
                   )}
                   disabled={!canOpenFace}
-                  onClick={() => setScanOpen(true)}
+                  onClick={() => {
+                    setQrOpen(false);
+                    setScanOpen(true);
+                  }}
                 >
                   {canOpenFace ? <ScanFace className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
                   {canOpenFace ? "Face ID" : t("davomat.faceClosed")}
@@ -1535,11 +2118,20 @@ export default function DavomatFacePage() {
           </section>
         ) : null}
 
+        {methodReady && !done ? (
+          <div className="dv-tone-emerald mt-4 rounded-2xl border px-4 py-3 text-center text-sm">
+            <CheckCircle2 className="mr-1 inline h-4 w-4" />
+            {qrVerifiedReady
+              ? "QR scanner tasdiqlandi — Face ID kerak emas. Keldim / Ketdim ni bosing."
+              : t("davomat.faceVerified")}
+          </div>
+        ) : null}
+
         {showPunchStep ? (
           <section className="dv-card mt-4">
             <div className="mb-3 flex items-center gap-2">
               <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                {hasIn ? 4 : 3}
+                {showDualMethods ? 4 : hasIn ? 4 : 3}
               </span>
               <h2 className="text-sm font-semibold text-foreground">
                 {hasIn ? t("davomat.btnOut") : t("davomat.btnIn")}
@@ -1570,7 +2162,11 @@ export default function DavomatFacePage() {
             ) : (
               <div className="space-y-3">
                 {showGuide && guideStep === "keldim" ? (
-                  <MobileStepHint step={3} label={t("davomat.inStepHint")} tone="emerald" />
+                  <MobileStepHint
+                    step={showDualMethods ? 4 : 3}
+                    label={t("davomat.inStepHint")}
+                    tone="emerald"
+                  />
                 ) : null}
                 <Button
                   type="button"
@@ -1946,18 +2542,28 @@ export default function DavomatFacePage() {
         onOpenChange={setEnrollOpen}
         mode="enroll"
         title={t("davomat.enrollTitle")}
-        description={t("davomat.enrollDesc")}
+        description={t("davomat.frontCamHint")}
         onCaptured={onEnrollCaptured}
       />
 
       <FaceScanDialog
-        open={scanOpen}
+        open={scanOpen && methodHint !== "QR" && !qrVerifiedReady}
         onOpenChange={setScanOpen}
         mode="login"
         title={t("davomat.faceTitle")}
-        description={t("davomat.scanDesc")}
+        description={t("davomat.frontCamHint")}
         onCaptured={onCaptured}
       />
+
+      <QrScanDialog
+        open={qrOpen && methodHint !== "FACE_ID" && !faceVerifiedReady}
+        onOpenChange={setQrOpen}
+        title={nextAction === "out" ? "Ketdim — QR scanner" : "Keldim — QR scanner"}
+        description={t("davomat.rearCamHint")}
+        onDetected={onQrDetected}
+      />
+
+      {showDualMethods && !done ? <ScrollDownHint label={t("davomat.scrollDownHint")} /> : null}
 
       <AlertDialog open={confirmOut} onOpenChange={setConfirmOut}>
         <AlertDialogContent>

@@ -1003,18 +1003,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      orgNav,
       davomatFaceNav,
-      smenaNav,
     ],
     distrib_hr: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      orgNav,
       davomatFaceNav,
-      smenaNav,
     ],
     distrib: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -1022,7 +1018,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
-      smenaNav,
     ],
   };
 

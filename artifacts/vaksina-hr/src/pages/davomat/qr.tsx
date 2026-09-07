@@ -150,23 +150,32 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       ? (branchQ.error as Error)?.message
       : (deptQ.error as Error)?.message;
 
-  const branches = branchQ.data?.branches ?? [];
-  const departments = deptQ.data?.departments ?? [];
-  const items: Array<{ id: number; name: string; hasActiveQr: boolean; version: number | null; managerName?: string }> =
-    scope === "branches"
-      ? branches.map((b) => ({
-          id: b.id,
-          name: b.name,
-          hasActiveQr: b.hasActiveQr,
-          version: b.version,
-          managerName: b.managerName,
-        }))
-      : departments.map((d) => ({
-          id: d.id,
-          name: d.name,
-          hasActiveQr: d.hasActiveQr,
-          version: d.version,
-        }));
+  const branches = branchQ.data?.branches;
+  const departments = deptQ.data?.departments;
+
+  const items: Array<{
+    id: number;
+    name: string;
+    hasActiveQr: boolean;
+    version: number | null;
+    managerName?: string;
+  }> = useMemo(() => {
+    if (scope === "branches") {
+      return (branches ?? []).map((b) => ({
+        id: b.id,
+        name: b.name,
+        hasActiveQr: b.hasActiveQr,
+        version: b.version,
+        managerName: b.managerName,
+      }));
+    }
+    return (departments ?? []).map((d) => ({
+      id: d.id,
+      name: d.name,
+      hasActiveQr: d.hasActiveQr,
+      version: d.version,
+    }));
+  }, [scope, branches, departments]);
 
   const selected = useMemo(
     () => items.find((b) => b.id === selectedId) ?? null,
@@ -174,6 +183,16 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   );
 
   const activeCount = useMemo(() => items.filter((b) => b.hasActiveQr).length, [items]);
+
+  /** Stable key — items massivi har renderda yangilanmasin, gallery loop bo‘lmasin */
+  const galleryKey = useMemo(
+    () =>
+      items
+        .filter((b) => b.hasActiveQr)
+        .map((b) => `${b.id}:${b.version ?? 0}`)
+        .join("|"),
+    [items],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -185,47 +204,50 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     }
     setGalleryLoading(true);
     void (async () => {
-      const rows = await Promise.all(
-        withQr.map(async (b) => {
-          try {
-            if (scope === "branches") {
-              const r = await fetchActiveBranchQr(b.id);
+      try {
+        const rows = await Promise.all(
+          withQr.map(async (b) => {
+            try {
+              if (scope === "branches") {
+                const r = await fetchActiveBranchQr(b.id);
+                return {
+                  id: b.id,
+                  name: r.active?.branchLabel || b.name,
+                  version: r.active?.version ?? b.version,
+                  payload: r.active?.payload || null,
+                  needsReissue: Boolean(r.active?.needsReissue || !r.active?.payload),
+                } satisfies GalleryQr;
+              }
+              const r = await fetchActiveDepartmentQr(b.id);
               return {
                 id: b.id,
-                name: r.active?.branchLabel || b.name,
+                name: r.active?.departmentLabel || b.name,
                 version: r.active?.version ?? b.version,
                 payload: r.active?.payload || null,
                 needsReissue: Boolean(r.active?.needsReissue || !r.active?.payload),
               } satisfies GalleryQr;
+            } catch {
+              return {
+                id: b.id,
+                name: b.name,
+                version: b.version,
+                payload: null,
+                needsReissue: true,
+              } satisfies GalleryQr;
             }
-            const r = await fetchActiveDepartmentQr(b.id);
-            return {
-              id: b.id,
-              name: r.active?.departmentLabel || b.name,
-              version: r.active?.version ?? b.version,
-              payload: r.active?.payload || null,
-              needsReissue: Boolean(r.active?.needsReissue || !r.active?.payload),
-            } satisfies GalleryQr;
-          } catch {
-            return {
-              id: b.id,
-              name: b.name,
-              version: b.version,
-              payload: null,
-              needsReissue: true,
-            } satisfies GalleryQr;
-          }
-        }),
-      );
-      if (!cancelled) {
-        setGallery(rows);
-        setGalleryLoading(false);
+          }),
+        );
+        if (!cancelled) setGallery(rows);
+      } finally {
+        if (!cancelled) setGalleryLoading(false);
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [items, galleryTick, scope]);
+    // galleryKey o‘zgaganda qayta yuklash; items shu key bilan sync
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [galleryKey, galleryTick, scope]);
 
   const loadActive = useMutation({
     mutationFn: (id: number) =>
@@ -250,11 +272,31 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   const issue = useMutation({
     mutationFn: (id: number) =>
       scope === "branches" ? issueBranchQr(id) : issueDepartmentQr(id),
-    onSuccess: (r) => {
+    onSuccess: async (r) => {
       setNeedsReissue(false);
       const id = "branchId" in r ? r.branchId : r.departmentId;
       setSelectedId(id);
-      void qc.invalidateQueries({
+      // Galereyaga darhol qo‘shish (kutmasdan)
+      if (r.payload) {
+        const label =
+          "branchLabel" in r
+            ? r.branchLabel
+            : "departmentLabel" in r
+              ? r.departmentLabel
+              : selected?.name || `ID ${id}`;
+        setGallery((prev) => {
+          const next: GalleryQr = {
+            id,
+            name: label,
+            version: r.version ?? null,
+            payload: r.payload,
+            needsReissue: false,
+          };
+          const rest = prev.filter((g) => g.id !== id);
+          return [next, ...rest];
+        });
+      }
+      await qc.invalidateQueries({
         queryKey: scope === "branches" ? ["davomat-qr-branches"] : ["davomat-qr-departments"],
       });
       setGalleryTick((n) => n + 1);
@@ -262,7 +304,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         title: "QR saqlandi",
         description:
           scope === "branches"
-            ? "Endi mudir va koordinator istalgan vaqtda ko‘ra oladi."
+            ? "Filial QR tizimda saqlandi — mudir va koordinator ko‘ra oladi."
             : "Bo‘lim QR saqlandi — istalgan vaqtda ko‘rish mumkin.",
       });
     },

@@ -101,7 +101,7 @@ export function canViewEmployees(role?: string | null): boolean {
   );
 }
 
-/** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR */
+/** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR, rekruter, auditor */
 export function canViewChecklistStatus(role?: string | null): boolean {
   return (
     role === "admin" ||
@@ -110,6 +110,8 @@ export function canViewChecklistStatus(role?: string | null): boolean {
     role === "hr_kadr_rahbar" ||
     role === "hr_menejer" ||
     role === "hr" ||
+    role === "hr_auditor" ||
+    role === "recruiter" ||
     role === "moliya"
   );
 }
@@ -119,14 +121,17 @@ export function canViewCoordinatorRanking(role?: string | null): boolean {
   return canViewChecklistStatus(role) || role === "koordinator";
 }
 
-/** Excel eksport — barcha tashriflar: admin, direktor, HR rahbariyat */
+/** Excel eksport — barcha tashriflar: admin, direktor, HR rahbariyat, auditor, rekruter */
 export function canExportChecklistStatus(role?: string | null): boolean {
   return (
     role === "admin" ||
     role === "director" ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
-    role === "hr"
+    role === "hr" ||
+    role === "hr_auditor" ||
+    role === "hr_kadr_rahbar" ||
+    role === "recruiter"
   );
 }
 

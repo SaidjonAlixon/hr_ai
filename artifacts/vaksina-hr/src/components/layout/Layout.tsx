@@ -783,6 +783,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       orgNav,
       davomatFaceNav,
       smenaNav,
+      { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },

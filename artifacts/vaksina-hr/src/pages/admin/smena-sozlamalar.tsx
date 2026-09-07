@@ -25,9 +25,19 @@ type FormState = {
   unpaidBreakOfficeMin: number;
 };
 
-function fromApi(s: ShiftTimes) {
-  return { start: s.start, end: s.end };
+function fromApi(s?: ShiftTimes | null) {
+  return { start: s?.start || "09:00", end: s?.end || "18:00" };
 }
+
+const DEFAULT_FORM: FormState = {
+  one: { start: "08:00", end: "17:00" },
+  two: { start: "17:00", end: "23:45" },
+  three: { start: "23:00", end: "07:00", overnight: true },
+  office: { start: "09:00", end: "18:00" },
+  graceMinutes: 15,
+  unpaidBreakOneMin: 60,
+  unpaidBreakOfficeMin: 60,
+};
 
 function TimeRow({
   label,
@@ -94,20 +104,24 @@ export default function AdminSmenaSozlamalarPage() {
 
   useEffect(() => {
     if (!q.data) return;
-    const s = q.data.shifts;
-    const settings = q.data.settings as {
-      graceMinutes?: number;
-      unpaidBreakByShift?: { one?: number; office?: number };
-    };
-    setForm({
-      one: fromApi(s.one),
-      two: fromApi(s.two),
-      three: { ...fromApi(s.three), overnight: !!s.three.overnight },
-      office: fromApi(s.office),
-      graceMinutes: Number(settings.graceMinutes ?? 15),
-      unpaidBreakOneMin: Number(settings.unpaidBreakByShift?.one ?? 60),
-      unpaidBreakOfficeMin: Number(settings.unpaidBreakByShift?.office ?? 60),
-    });
+    try {
+      const s = q.data.shifts;
+      const settings = (q.data.settings || {}) as {
+        graceMinutes?: number;
+        unpaidBreakByShift?: { one?: number; office?: number };
+      };
+      setForm({
+        one: fromApi(s?.one),
+        two: fromApi(s?.two),
+        three: { ...fromApi(s?.three), overnight: !!s?.three?.overnight },
+        office: fromApi(s?.office),
+        graceMinutes: Number(settings.graceMinutes ?? 15),
+        unpaidBreakOneMin: Number(settings.unpaidBreakByShift?.one ?? 60),
+        unpaidBreakOfficeMin: Number(settings.unpaidBreakByShift?.office ?? 60),
+      });
+    } catch {
+      setForm(DEFAULT_FORM);
+    }
   }, [q.data]);
 
   const save = useMutation({
@@ -132,6 +146,26 @@ export default function AdminSmenaSozlamalarPage() {
     onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
   });
 
+  if (q.isError && !form) {
+    return (
+      <div className="mx-auto max-w-2xl space-y-3 p-4">
+        <p className="text-sm text-rose-600">
+          Sozlamalar yuklanmadi: {(q.error as Error)?.message || "xato"}
+        </p>
+        <Button type="button" variant="outline" onClick={() => void q.refetch()}>
+          Qayta urinish
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={() => setForm(DEFAULT_FORM)}
+        >
+          Standart qiymatlar bilan ochish
+        </Button>
+      </div>
+    );
+  }
+
   if (q.isLoading || !form) {
     return (
       <div className="mx-auto max-w-2xl space-y-3 p-4">
@@ -140,10 +174,6 @@ export default function AdminSmenaSozlamalarPage() {
         <Skeleton className="h-40 w-full" />
       </div>
     );
-  }
-
-  if (q.isError) {
-    return <p className="p-6 text-sm text-rose-600">Sozlamalar yuklanmadi</p>;
   }
 
   return (

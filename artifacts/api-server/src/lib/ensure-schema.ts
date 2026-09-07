@@ -745,6 +745,62 @@ CREATE TABLE IF NOT EXISTS attendance_punch_audit (
 );
 CREATE INDEX IF NOT EXISTS attendance_punch_audit_emp_idx ON attendance_punch_audit (employee_id);
 CREATE INDEX IF NOT EXISTS attendance_punch_audit_created_idx ON attendance_punch_audit (created_at);
+
+-- Smena / ofis sozlamalari (admin «Smena sozlamalari»)
+CREATE TABLE IF NOT EXISTS attendance_pay_settings (
+  id SERIAL PRIMARY KEY,
+  unpaid_break_one_min INTEGER NOT NULL DEFAULT 60,
+  unpaid_break_two_min INTEGER NOT NULL DEFAULT 0,
+  unpaid_break_three_min INTEGER NOT NULL DEFAULT 0,
+  unpaid_break_office_min INTEGER NOT NULL DEFAULT 60,
+  break_paid BOOLEAN NOT NULL DEFAULT FALSE,
+  night_start_hm TEXT NOT NULL DEFAULT '22:00',
+  night_end_hm TEXT NOT NULL DEFAULT '06:00',
+  night_coefficient DOUBLE PRECISION NOT NULL DEFAULT 1.5,
+  daily_norm_minutes INTEGER NOT NULL DEFAULT 480,
+  overtime_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  grace_minutes INTEGER NOT NULL DEFAULT 15,
+  min_rest_hours INTEGER NOT NULL DEFAULT 12,
+  max_shifts_per_day INTEGER NOT NULL DEFAULT 2,
+  shift_one_start_hm TEXT NOT NULL DEFAULT '08:00',
+  shift_one_end_hm TEXT NOT NULL DEFAULT '17:00',
+  shift_two_start_hm TEXT NOT NULL DEFAULT '17:00',
+  shift_two_end_hm TEXT NOT NULL DEFAULT '23:45',
+  shift_three_start_hm TEXT NOT NULL DEFAULT '23:00',
+  shift_three_end_hm TEXT NOT NULL DEFAULT '07:00',
+  shift_three_overnight BOOLEAN NOT NULL DEFAULT TRUE,
+  office_start_hm TEXT NOT NULL DEFAULT '09:00',
+  office_end_hm TEXT NOT NULL DEFAULT '18:00',
+  updated_by_id INTEGER,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS unpaid_break_one_min INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS unpaid_break_two_min INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS unpaid_break_three_min INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS unpaid_break_office_min INTEGER NOT NULL DEFAULT 60;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS break_paid BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS night_start_hm TEXT NOT NULL DEFAULT '22:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS night_end_hm TEXT NOT NULL DEFAULT '06:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS night_coefficient DOUBLE PRECISION NOT NULL DEFAULT 1.5;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS daily_norm_minutes INTEGER NOT NULL DEFAULT 480;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS overtime_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS grace_minutes INTEGER NOT NULL DEFAULT 15;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS min_rest_hours INTEGER NOT NULL DEFAULT 12;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS max_shifts_per_day INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_one_start_hm TEXT NOT NULL DEFAULT '08:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_one_end_hm TEXT NOT NULL DEFAULT '17:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_start_hm TEXT NOT NULL DEFAULT '17:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_two_end_hm TEXT NOT NULL DEFAULT '23:45';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_start_hm TEXT NOT NULL DEFAULT '23:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_end_hm TEXT NOT NULL DEFAULT '07:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS shift_three_overnight BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS office_start_hm TEXT NOT NULL DEFAULT '09:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS office_end_hm TEXT NOT NULL DEFAULT '18:00';
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS updated_by_id INTEGER;
+ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+INSERT INTO attendance_pay_settings (id)
+SELECT 1
+WHERE NOT EXISTS (SELECT 1 FROM attendance_pay_settings WHERE id = 1);
     `);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");

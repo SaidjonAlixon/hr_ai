@@ -101,21 +101,70 @@ function serializeShifts(row: typeof attendancePaySettingsTable.$inferSelect | u
   };
 }
 
+const SETTINGS_RULES = {
+  maxShiftsPerDay: 2,
+  allowedPairs: ["one+two", "two+three"],
+  warnPairs: ["one+three"],
+  forbidden: ["one+two+three"],
+  shiftEligible: "Faqat mudir, farmasevt, stajyor",
+  office: "Ofis — smena yo‘q, belgilangan vaqt",
+  branchPriority: ["substitute", "temp_one_day", "rotation", "permanent"],
+} as const;
+
+function defaultSettingsPayload() {
+  return {
+    settings: rowToPaySettings(undefined),
+    shifts: serializeShifts(undefined),
+    rules: { ...SETTINGS_RULES },
+  };
+}
+
 router.get("/attendance-settings", requireAuth, async (_req, res): Promise<void> => {
-  const [row] = await db.select().from(attendancePaySettingsTable).where(eq(attendancePaySettingsTable.id, 1)).limit(1);
-  res.json({
-    settings: rowToPaySettings(row),
-    shifts: serializeShifts(row),
-    rules: {
-      maxShiftsPerDay: 2,
-      allowedPairs: ["one+two", "two+three"],
-      warnPairs: ["one+three"],
-      forbidden: ["one+two+three"],
-      shiftEligible: "Faqat mudir, farmasevt, stajyor",
-      office: "Ofis — smena yo‘q, belgilangan vaqt",
-      branchPriority: ["substitute", "temp_one_day", "rotation", "permanent"],
-    },
-  });
+  try {
+    const [row] = await db
+      .select()
+      .from(attendancePaySettingsTable)
+      .where(eq(attendancePaySettingsTable.id, 1))
+      .limit(1);
+    res.json({
+      settings: rowToPaySettings(row),
+      shifts: serializeShifts(row),
+      rules: { ...SETTINGS_RULES },
+    });
+  } catch (err) {
+    console.error("GET /attendance-settings error:", err);
+    try {
+      res.json(defaultSettingsPayload());
+    } catch (err2) {
+      console.error("GET /attendance-settings fallback error:", err2);
+      res.status(200).json({
+        settings: {
+          unpaidBreakByShift: { one: 60, two: 0, three: 0, office: 60 },
+          breakPaid: false,
+          nightStartHm: "22:00",
+          nightEndHm: "06:00",
+          nightCoefficient: 1.5,
+          dailyNormMinutes: 480,
+          overtimeEnabled: true,
+          graceMinutes: 15,
+          minRestHoursBetweenShifts: 12,
+          maxShiftsPerDay: 2,
+          missingCheckoutStatus: "incomplete",
+          shiftSchedule: {},
+        },
+        shifts: {
+          pharmacyOnly: true,
+          pharmacyRoles: ["mudir", "farmasevt", "stajyor"],
+          officeNote: "Ofis xodimlarida smena yo‘q — faqat belgilangan ish vaqti",
+          one: { start: "08:00", end: "17:00", overnight: false, unpaidBreakMin: 60, plannedMinutes: 540 },
+          two: { start: "17:00", end: "23:45", overnight: false, unpaidBreakMin: 0, plannedMinutes: 405 },
+          three: { start: "23:00", end: "07:00", overnight: true, unpaidBreakMin: 0, plannedMinutes: 480 },
+          office: { start: "09:00", end: "18:00", overnight: false, unpaidBreakMin: 60, plannedMinutes: 540 },
+        },
+        rules: { ...SETTINGS_RULES },
+      });
+    }
+  }
 });
 
 router.patch("/attendance-settings", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -123,6 +172,7 @@ router.patch("/attendance-settings", requireAuth, async (req: AuthRequest, res):
     res.status(403).json({ error: "Faqat admin yoki direktor sozlamani o‘zgartira oladi" });
     return;
   }
+  try {
   const b = req.body ?? {};
   const [existing] = await db.select().from(attendancePaySettingsTable).where(eq(attendancePaySettingsTable.id, 1)).limit(1);
 
@@ -169,6 +219,15 @@ router.patch("/attendance-settings", requireAuth, async (req: AuthRequest, res):
   await loadShiftScheduleOverrides(true);
   const [row] = await db.select().from(attendancePaySettingsTable).where(eq(attendancePaySettingsTable.id, 1)).limit(1);
   res.json({ settings: rowToPaySettings(row), shifts: serializeShifts(row) });
+  } catch (err) {
+    console.error("PATCH /attendance-settings error:", err);
+    res.status(503).json({
+      error:
+        err instanceof Error
+          ? err.message
+          : "Smena sozlamalari saqlanmadi — jadval yaratilmagan bo‘lishi mumkin",
+    });
+  }
 });
 
 router.get("/employees/:id/branch-assignments", requireAuth, async (req, res): Promise<void> => {

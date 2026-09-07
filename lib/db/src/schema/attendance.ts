@@ -79,6 +79,34 @@ export const branchAttendanceQrTable = pgTable(
   ],
 );
 
+/**
+ * Ofis bo‘limi davomat QR — faqat shu department xodimlari punch qiladi.
+ * GPS: asosiy ofis geofence.
+ */
+export const departmentAttendanceQrTable = pgTable(
+  "department_attendance_qr",
+  {
+    id: serial("id").primaryKey(),
+    qrId: text("qr_id").notNull(),
+    departmentId: integer("department_id").notNull(),
+    departmentLabel: text("department_label"),
+    tokenHash: text("token_hash").notNull(),
+    tokenPayload: text("token_payload"),
+    version: integer("version").notNull().default(1),
+    /** active | revoked | expired */
+    status: text("status").notNull().default("active"),
+    createdById: integer("created_by_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("department_attendance_qr_qr_id_uidx").on(t.qrId),
+    index("department_attendance_qr_dept_idx").on(t.departmentId),
+    index("department_attendance_qr_status_idx").on(t.status),
+  ],
+);
+
 /** Davomat urinishlari audit log */
 export const attendancePunchAuditTable = pgTable(
   "attendance_punch_audit",

@@ -83,6 +83,11 @@ import {
 } from "@/lib/vazifalar-api";
 import { useToast } from "@/hooks/use-toast";
 import { DeadlineCountdown } from "@/components/DeadlineCountdown";
+import {
+  TaskAttachmentViewer,
+  isImageAtt as isImageAttShared,
+} from "@/components/vazifalar/TaskAttachmentViewer";
+import { isTaskOverdue } from "@/lib/vazifalar-permissions";
 
 export type AssigneeOption = {
   key: string;
@@ -206,8 +211,7 @@ function SectionCard({
 }
 
 function isImageAtt(a?: TaskAttachment | null) {
-  if (!a) return false;
-  return a.kind === "image" || (a.mimeType || "").startsWith("image/");
+  return isImageAttShared(a);
 }
 
 /** Beruvchi / bajaruvchi uchun yuborilgan natijani aniq ko‘rsatish */
@@ -217,7 +221,7 @@ function SubmittedResultView({
   assigneeName,
   completedAt,
   awaitingReview,
-  onOpenImage,
+  onOpenFile,
   onVerify,
   t,
 }: {
@@ -226,7 +230,7 @@ function SubmittedResultView({
   assigneeName?: string | null;
   completedAt?: string | null;
   awaitingReview?: boolean;
-  onOpenImage?: (url: string) => void;
+  onOpenFile?: (file: TaskAttachment) => void;
   onVerify?: (action: "approve" | "rework") => void;
   t: (k: string) => string;
 }) {
@@ -295,7 +299,7 @@ function SubmittedResultView({
                   <button
                     key={a.id}
                     type="button"
-                    onClick={() => onOpenImage?.(a.url)}
+                    onClick={() => onOpenFile?.(a)}
                     className="group relative overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm transition hover:ring-2 hover:ring-emerald-400 dark:border-emerald-900 dark:bg-slate-950"
                   >
                     <img
@@ -312,45 +316,54 @@ function SubmittedResultView({
             )}
             {docs.length > 0 && (
               <ul className="space-y-1.5">
-                {docs.map((a) => (
-                  <li key={a.id}>
-                    <a
-                      href={a.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-xs font-medium text-[#0a2540] transition hover:border-emerald-300 hover:bg-emerald-50/60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
-                    >
-                      <FileText className="h-4 w-4 shrink-0 text-emerald-600" />
-                      <span className="min-w-0 flex-1 truncate">{a.name}</span>
-                      <span className="shrink-0 text-[10px] text-muted-foreground">
-                        {formatSize(a.size) || "ochish"}
-                      </span>
-                    </a>
-                  </li>
-                ))}
+                {docs.map((a) => {
+                  const { Icon, className: iconCls } = attachmentIcon(a);
+                  return (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        onClick={() => onOpenFile?.(a)}
+                        className="flex w-full items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 text-left text-xs font-medium text-[#0a2540] transition hover:border-emerald-300 hover:bg-emerald-50/60 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                      >
+                        <span
+                          className={cn(
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                            iconCls,
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1 truncate">{a.name}</span>
+                        <span className="shrink-0 text-[10px] text-muted-foreground">
+                          {formatSize(a.size) || "ko‘rish"}
+                        </span>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
         )}
 
         {awaitingReview && onVerify ? (
-          <div className="flex flex-col gap-2 border-t border-emerald-100 pt-3 sm:flex-row dark:border-emerald-900">
+          <div className="space-y-2 border-t border-emerald-100 pt-3 dark:border-emerald-900">
             <Button
               type="button"
-              className="flex-1 gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700"
+              size="lg"
+              className="h-11 w-full gap-2 rounded-xl bg-emerald-600 text-base font-bold shadow-md hover:bg-emerald-700"
               onClick={() => onVerify("approve")}
             >
-              <CheckCircle2 className="h-4 w-4" />
-              {t("ui.approve")}
+              <CheckCircle2 className="h-5 w-5" />
+              {t("ui.approve")} — bajarildi
             </Button>
-            <Button
+            <button
               type="button"
-              variant="outline"
-              className="flex-1 gap-1.5 rounded-xl border-rose-200 text-rose-700 hover:bg-rose-50"
+              className="w-full py-1.5 text-center text-xs font-medium text-amber-800 underline-offset-2 hover:underline dark:text-amber-200"
               onClick={() => onVerify("rework")}
             >
               {t("tasks.rework")}
-            </Button>
+            </button>
           </div>
         ) : null}
       </div>
@@ -365,6 +378,8 @@ type StatusStep = {
   done: boolean;
   current: boolean;
   at: string | null;
+  /** Kechikkan bosqich — qizil uslub */
+  danger?: boolean;
 };
 
 function formatStatusTime(iso: string | null | undefined): string {
@@ -375,59 +390,92 @@ function formatStatusTime(iso: string | null | undefined): string {
   return `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function buildStatusTimeline(task: Vazifa | null): StatusStep[] {
-  const status = task?.status || "todo";
-  const meta = (task?.meta || {}) as TaskMeta;
-  const createdAt = task?.createdAt || null;
-  const acceptedAt = task?.acceptedAt || null;
-  const completedAt = task?.completedAt || null;
-  const verifiedAt =
-    meta.verifiedAt || (status === "verified" ? task?.updatedAt || null : null);
+function startOfLocalDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
 
-  if (!task) {
-    return [
-      {
-        key: "new",
-        labelKey: "tasks.form.status.new",
-        hintKey: "tasks.form.status.newHint",
-        done: false,
-        current: true,
-        at: null,
-      },
-      {
-        key: "accepted",
-        labelKey: "tasks.form.status.accepted",
-        hintKey: "tasks.form.status.acceptedHint",
-        done: false,
-        current: false,
-        at: null,
-      },
-      {
-        key: "progress",
-        labelKey: "tasks.form.status.progress",
-        hintKey: "tasks.form.status.progressHint",
-        done: false,
-        current: false,
-        at: null,
-      },
-      {
-        key: "review",
-        labelKey: "tasks.form.status.review",
-        hintKey: "tasks.form.status.reviewHint",
-        done: false,
-        current: false,
-        at: null,
-      },
-      {
-        key: "done",
-        labelKey: "tasks.form.status.done",
-        hintKey: "tasks.form.status.doneHint",
-        done: false,
-        current: false,
-        at: null,
-      },
-    ];
+/** Muddatdan keyin yakunlangan / hozir kechikkan */
+function taskHitOverdue(task: Vazifa): { hit: boolean; currently: boolean; at: string | null } {
+  const dueIso = task.dueAt || null;
+  const currently = isTaskOverdue(task);
+  if (!dueIso) {
+    return { hit: currently, currently, at: currently ? task.createdAt || null : null };
   }
+  let lateCompletion = false;
+  if (task.completedAt) {
+    lateCompletion =
+      startOfLocalDay(new Date(task.completedAt)).getTime() >
+      startOfLocalDay(new Date(dueIso)).getTime();
+  }
+  return {
+    hit: currently || lateCompletion,
+    currently,
+    at: currently || lateCompletion ? dueIso : null,
+  };
+}
+
+function buildStatusTimeline(task: Vazifa | null): StatusStep[] {
+  const empty: StatusStep[] = [
+    {
+      key: "new",
+      labelKey: "tasks.form.status.new",
+      hintKey: "tasks.form.status.newHint",
+      done: false,
+      current: true,
+      at: null,
+    },
+    {
+      key: "accepted",
+      labelKey: "tasks.form.status.accepted",
+      hintKey: "tasks.form.status.acceptedHint",
+      done: false,
+      current: false,
+      at: null,
+    },
+    {
+      key: "progress",
+      labelKey: "tasks.form.status.progress",
+      hintKey: "tasks.form.status.progressHint",
+      done: false,
+      current: false,
+      at: null,
+    },
+    {
+      key: "overdue",
+      labelKey: "tasks.form.status.overdue",
+      hintKey: "tasks.form.status.overdueHint",
+      done: false,
+      current: false,
+      at: null,
+      danger: true,
+    },
+    {
+      key: "review",
+      labelKey: "tasks.form.status.review",
+      hintKey: "tasks.form.status.reviewHint",
+      done: false,
+      current: false,
+      at: null,
+    },
+    {
+      key: "done",
+      labelKey: "tasks.form.status.done",
+      hintKey: "tasks.form.status.doneHint",
+      done: false,
+      current: false,
+      at: null,
+    },
+  ];
+
+  if (!task) return empty;
+
+  const status = task.status || "todo";
+  const meta = (task.meta || {}) as TaskMeta;
+  const createdAt = task.createdAt || null;
+  const acceptedAt = task.acceptedAt || null;
+  const completedAt = task.completedAt || null;
+  const verifiedAt =
+    meta.verifiedAt || (status === "verified" ? task.updatedAt || null : null);
 
   const hasAccepted =
     !!acceptedAt ||
@@ -438,6 +486,7 @@ function buildStatusTimeline(task: Vazifa | null): StatusStep[] {
     status === "in_progress" || status === "done" || status === "verified";
   const hasReview = !!completedAt || status === "done" || status === "verified";
   const hasDone = status === "verified";
+  const overdueInfo = taskHitOverdue(task);
 
   const steps: StatusStep[] = [
     {
@@ -460,9 +509,18 @@ function buildStatusTimeline(task: Vazifa | null): StatusStep[] {
       key: "progress",
       labelKey: "tasks.form.status.progress",
       hintKey: "tasks.form.status.progressHint",
-      done: hasProgress,
+      done: hasProgress || overdueInfo.currently,
       current: false,
-      at: hasProgress ? acceptedAt || createdAt : null,
+      at: hasProgress || overdueInfo.currently ? acceptedAt || createdAt : null,
+    },
+    {
+      key: "overdue",
+      labelKey: "tasks.form.status.overdue",
+      hintKey: "tasks.form.status.overdueHint",
+      done: overdueInfo.hit && !overdueInfo.currently,
+      current: overdueInfo.currently,
+      at: overdueInfo.at,
+      danger: true,
     },
     {
       key: "review",
@@ -482,12 +540,22 @@ function buildStatusTimeline(task: Vazifa | null): StatusStep[] {
     },
   ];
 
-  const allDone = steps.every((s) => s.done);
-  const currentIdx = allDone
-    ? steps.length - 1
-    : Math.max(0, steps.findIndex((s) => !s.done));
+  if (overdueInfo.currently) {
+    return steps.map((s) => ({
+      ...s,
+      current: s.key === "overdue",
+    }));
+  }
 
-  return steps.map((s, i) => ({ ...s, current: i === currentIdx }));
+  const allMainDone = steps.filter((s) => s.key !== "overdue").every((s) => s.done);
+  const currentIdx = allMainDone
+    ? steps.length - 1
+    : Math.max(0, steps.findIndex((s) => s.key !== "overdue" && !s.done));
+
+  return steps.map((s, i) => ({
+    ...s,
+    current: s.key === "overdue" ? false : i === currentIdx,
+  }));
 }
 
 function toDatetimeLocalValue(iso: string | null | undefined): string {
@@ -611,7 +679,7 @@ export function TaskFormDialog({
     url: string;
     kind: "image" | "file";
   } | null>(null);
-  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+  const [viewerFile, setViewerFile] = useState<TaskAttachment | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [workNote, setWorkNote] = useState("");
   const [workFiles, setWorkFiles] = useState<TaskAttachment[]>([]);
@@ -676,6 +744,7 @@ export function TaskFormDialog({
       setChatDraft("");
       setSideTab("chat");
       setExpanded(false);
+      setViewerFile(null);
       setWorkNote(editing.completionNote || "");
       setWorkFiles(editing.completionAttachments || []);
       return;
@@ -705,6 +774,7 @@ export function TaskFormDialog({
     setChatDraft("");
     setSideTab("chat");
     setExpanded(false);
+    setViewerFile(null);
     setWorkNote("");
     setWorkFiles([]);
     const due = splitDue(toDatetimeLocalValue(defaultDueAt || null));
@@ -1065,8 +1135,11 @@ export function TaskFormDialog({
   const chatPartnerName = isWork ? assignerDisplayName : assigneeLabel;
   const chatPartnerReady = isWork ? !!assignerDisplayName : !!selectedAssignee;
   const EMOJIS = ["👍", "✅", "🙏", "😊", "🔥", "📎", "📷", "⏰", "❗", "👏"];
-  const canWorkComplete = isWork && editing?.status === "in_progress";
-  const needsWorkAccept = isWork && editing?.status === "todo";
+  const canWorkComplete =
+    isWork && editing?.status === "in_progress" && !(editing && isTaskOverdue(editing));
+  const needsWorkAccept =
+    isWork && editing?.status === "todo" && !(editing && isTaskOverdue(editing));
+  const workOverdueLocked = isWork && !!editing && isTaskOverdue(editing);
   const workDoneLocked =
     isWork &&
     (editing?.status === "done" ||
@@ -1147,7 +1220,7 @@ export function TaskFormDialog({
       >
         <div
           className={cn(
-            "flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border shadow-[0_24px_80px_rgba(10,37,64,0.18)]",
+            "relative flex h-full min-h-0 flex-col overflow-hidden rounded-2xl border shadow-[0_24px_80px_rgba(10,37,64,0.18)]",
             isWork
               ? "border-teal-200/70 bg-gradient-to-br from-teal-50 via-emerald-50/40 to-slate-50 dark:border-teal-900 dark:from-slate-950 dark:via-emerald-950/30 dark:to-slate-950"
               : "border-slate-200/60 bg-gradient-to-br from-[#eef4ff] via-[#f7f9fc] to-[#e8fff7] dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950",
@@ -1478,6 +1551,15 @@ export function TaskFormDialog({
                   </div>
                 </SectionCard>
 
+                {workOverdueLocked ? (
+                  <div className="rounded-2xl border border-rose-300 bg-rose-50 px-3.5 py-3 text-sm text-rose-900 dark:border-rose-800 dark:bg-rose-950/40 dark:text-rose-100">
+                    <p className="font-bold">Vaqt tugagan</p>
+                    <p className="mt-1 text-xs leading-relaxed opacity-90">
+                      O‘zgartirish yopiq — faqat beruvchi muddatni uzaytirishi mumkin.
+                    </p>
+                  </div>
+                ) : null}
+
                 {canWorkComplete ? (
                   <SectionCard
                     title={t("tasks.result")}
@@ -1530,16 +1612,22 @@ export function TaskFormDialog({
                               key={a.id}
                               className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/50 px-2.5 py-1.5 text-xs dark:border-emerald-900 dark:bg-emerald-950/30"
                             >
-                              {isImageAtt(a) ? (
-                                <img
-                                  src={a.url}
-                                  alt=""
-                                  className="h-8 w-8 rounded object-cover"
-                                />
-                              ) : (
-                                <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
-                              )}
-                              <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
+                              <button
+                                type="button"
+                                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                onClick={() => setViewerFile(a)}
+                              >
+                                {isImageAtt(a) ? (
+                                  <img
+                                    src={a.url}
+                                    alt=""
+                                    className="h-8 w-8 rounded object-cover"
+                                  />
+                                ) : (
+                                  <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+                                )}
+                                <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1565,7 +1653,7 @@ export function TaskFormDialog({
                     assigneeName={editing?.assigneeName || currentUserName}
                     completedAt={editing?.completedAt}
                     awaitingReview={editing?.status === "done"}
-                    onOpenImage={setLightboxUrl}
+                    onOpenFile={setViewerFile}
                     t={t}
                   />
                 ) : null}
@@ -1756,7 +1844,7 @@ export function TaskFormDialog({
                 assigneeName={editing?.assigneeName || selectedAssignee?.name}
                 completedAt={editing?.completedAt}
                 awaitingReview={editing?.status === "done"}
-                onOpenImage={setLightboxUrl}
+                onOpenFile={setViewerFile}
                 onVerify={
                   editing?.status === "done" && onVerify
                     ? (action) => void onVerify(action)
@@ -1856,22 +1944,29 @@ export function TaskFormDialog({
                               key={a.id}
                               className="flex max-w-full items-center gap-2 rounded-xl border border-slate-200/90 bg-white px-2.5 py-2 shadow-sm dark:border-slate-700 dark:bg-slate-900"
                             >
-                              <span
-                                className={cn(
-                                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
-                                  iconCls,
-                                )}
+                              <button
+                                type="button"
+                                className="flex min-w-0 flex-1 items-center gap-2 text-left"
+                                onClick={() => setViewerFile(a)}
+                                title="Ko‘rish"
                               >
-                                <Icon className="h-4 w-4" />
-                              </span>
-                              <span className="min-w-0 max-w-[160px]">
-                                <span className="block truncate text-xs font-semibold text-[#0a2540] dark:text-slate-100">
-                                  {a.name}
+                                <span
+                                  className={cn(
+                                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                                    iconCls,
+                                  )}
+                                >
+                                  <Icon className="h-4 w-4" />
                                 </span>
-                                <span className="block text-[10px] text-slate-500">
-                                  {formatSize(a.size) || a.mimeType || "—"}
+                                <span className="min-w-0 max-w-[160px]">
+                                  <span className="block truncate text-xs font-semibold text-[#0a2540] dark:text-slate-100">
+                                    {a.name}
+                                  </span>
+                                  <span className="block text-[10px] text-slate-500">
+                                    {formatSize(a.size) || a.mimeType || "—"}
+                                  </span>
                                 </span>
-                              </span>
+                              </button>
                               <button
                                 type="button"
                                 className="ml-0.5 rounded-md p-1 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800"
@@ -2010,13 +2105,18 @@ export function TaskFormDialog({
                 {statusTimeline.map((s, idx) => {
                   const isLast = idx === statusTimeline.length - 1;
                   const active = s.done || s.current;
+                  const danger = Boolean(s.danger && (s.done || s.current));
                   return (
                     <li key={s.key} className="relative flex gap-2.5 pb-3 last:pb-0">
                       {!isLast && (
                         <span
                           className={cn(
                             "absolute left-[9px] top-6 bottom-0 w-0.5",
-                            s.done ? "bg-emerald-400" : "bg-slate-200 dark:bg-slate-700",
+                            s.done || (s.danger && s.current)
+                              ? danger
+                                ? "bg-rose-400"
+                                : "bg-emerald-400"
+                              : "bg-slate-200 dark:bg-slate-700",
                           )}
                         />
                       )}
@@ -2024,10 +2124,19 @@ export function TaskFormDialog({
                         className={cn(
                           "relative z-[1] mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border-2 transition-all",
                           s.done &&
+                            !danger &&
                             "border-emerald-500 bg-emerald-500 text-white shadow-sm shadow-emerald-500/30",
+                          s.done &&
+                            danger &&
+                            "border-rose-500 bg-rose-500 text-white shadow-sm shadow-rose-500/30",
                           s.current &&
                             !s.done &&
+                            !danger &&
                             "border-[#0b5fff] bg-white text-[#0b5fff] ring-2 ring-blue-500/20 dark:bg-slate-900",
+                          s.current &&
+                            !s.done &&
+                            danger &&
+                            "border-rose-500 bg-white text-rose-600 ring-2 ring-rose-500/25 dark:bg-slate-900",
                           !s.done &&
                             !s.current &&
                             "border-slate-300 bg-white text-transparent dark:border-slate-600 dark:bg-slate-900",
@@ -2035,36 +2144,57 @@ export function TaskFormDialog({
                       >
                         {s.done ? <Check className="h-3 w-3 stroke-[3]" /> : null}
                         {s.current && !s.done ? (
-                          <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#0b5fff]" />
+                          <span
+                            className={cn(
+                              "h-1.5 w-1.5 animate-pulse rounded-full",
+                              danger ? "bg-rose-500" : "bg-[#0b5fff]",
+                            )}
+                          />
                         ) : null}
                       </span>
                       <div
                         className={cn(
                           "min-w-0 flex-1 rounded-lg px-2.5 py-1.5 transition-colors",
-                          s.current && !s.done
+                          s.current && !s.done && !danger
                             ? "border border-blue-200 bg-[#eef4ff] dark:border-blue-900 dark:bg-blue-950/30"
-                            : s.done
-                              ? "border border-emerald-100/80 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/15"
-                              : "border border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40",
+                            : s.current && !s.done && danger
+                              ? "border border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40"
+                              : s.done && danger
+                                ? "border border-rose-200/90 bg-rose-50/70 dark:border-rose-900/50 dark:bg-rose-950/25"
+                                : s.done
+                                  ? "border border-emerald-100/80 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/15"
+                                  : "border border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40",
                         )}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <p
                             className={cn(
                               "text-[13px] font-semibold leading-tight",
-                              active
-                                ? "text-[#0a2540] dark:text-slate-50"
-                                : "text-slate-500 dark:text-slate-400",
+                              danger && active
+                                ? "text-rose-800 dark:text-rose-200"
+                                : active
+                                  ? "text-[#0a2540] dark:text-slate-50"
+                                  : "text-slate-500 dark:text-slate-400",
                             )}
                           >
                             {t(s.labelKey)}
                           </p>
                           {s.at ? (
-                            <span className="shrink-0 text-[9px] font-semibold tabular-nums text-slate-500">
+                            <span
+                              className={cn(
+                                "shrink-0 text-[9px] font-semibold tabular-nums",
+                                danger ? "text-rose-600 dark:text-rose-300" : "text-slate-500",
+                              )}
+                            >
                               {formatStatusTime(s.at)}
                             </span>
                           ) : s.current ? (
-                            <span className="shrink-0 text-[9px] font-bold text-[#0b5fff]">
+                            <span
+                              className={cn(
+                                "shrink-0 text-[9px] font-bold",
+                                danger ? "text-rose-600" : "text-[#0b5fff]",
+                              )}
+                            >
                               {t("tasks.form.statusNow")}
                             </span>
                           ) : null}
@@ -2072,7 +2202,11 @@ export function TaskFormDialog({
                         <p
                           className={cn(
                             "mt-0.5 text-[10px] leading-snug",
-                            active ? "text-slate-500" : "text-slate-400",
+                            danger && active
+                              ? "text-rose-700/80 dark:text-rose-300/80"
+                              : active
+                                ? "text-slate-500"
+                                : "text-slate-400",
                           )}
                         >
                           {t(s.hintKey)}
@@ -2129,30 +2263,60 @@ export function TaskFormDialog({
 
             <div className={cn(CARD, "mb-3 space-y-2")}>
               <p className="text-sm font-semibold text-[#0a2540] dark:text-slate-100">{t("tasks.form.visibility")}</p>
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="radio"
-                  className="mt-1 accent-[#0b5fff]"
-                  checked={visibility === "all"}
-                  onChange={() => setVisibility("all")}
-                />
-                <span>
-                  <span className="font-medium">{t("tasks.form.vis.all")}</span>
-                  <span className="block text-[11px] text-slate-500">{t("tasks.form.vis.allHint")}</span>
-                </span>
-              </label>
-              <label className="flex items-start gap-2 text-sm">
-                <input
-                  type="radio"
-                  className="mt-1 accent-[#0b5fff]"
-                  checked={visibility === "private"}
-                  onChange={() => setVisibility("private")}
-                />
-                <span>
-                  <span className="font-medium">{t("tasks.form.vis.private")}</span>
-                  <span className="block text-[11px] text-slate-500">{t("tasks.form.vis.privateHint")}</span>
-                </span>
-              </label>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => setVisibility("all")}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
+                    visibility === "all"
+                      ? "border-[#0b5fff]/60 bg-[#0b5fff]/8 ring-1 ring-[#0b5fff]/25"
+                      : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                      visibility === "all"
+                        ? "border-[#0b5fff] bg-[#0b5fff]"
+                        : "border-slate-300 dark:border-slate-600",
+                    )}
+                  >
+                    {visibility === "all" ? (
+                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    ) : null}
+                  </span>
+                  <span className="text-sm font-medium text-[#0a2540] dark:text-slate-100">
+                    {t("tasks.form.vis.all")}
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibility("private")}
+                  className={cn(
+                    "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
+                    visibility === "private"
+                      ? "border-[#0b5fff]/60 bg-[#0b5fff]/8 ring-1 ring-[#0b5fff]/25"
+                      : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900",
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                      visibility === "private"
+                        ? "border-[#0b5fff] bg-[#0b5fff]"
+                        : "border-slate-300 dark:border-slate-600",
+                    )}
+                  >
+                    {visibility === "private" ? (
+                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                    ) : null}
+                  </span>
+                  <span className="text-sm font-medium text-[#0a2540] dark:text-slate-100">
+                    {t("tasks.form.vis.private")}
+                  </span>
+                </button>
+              </div>
             </div>
 
             <button
@@ -2398,7 +2562,7 @@ export function TaskFormDialog({
                                 <button
                                   type="button"
                                   className="mt-1.5 block overflow-hidden rounded-lg"
-                                  onClick={() => setLightboxUrl(m.attachment!.url)}
+                                  onClick={() => setViewerFile(m.attachment!)}
                                 >
                                   <img
                                     src={m.attachment.url}
@@ -2409,24 +2573,18 @@ export function TaskFormDialog({
                                 </button>
                               )}
                               {m.attachment && !img && (
-                                <a
-                                  href={
-                                    m.attachment.url.startsWith("/api/uploads/")
-                                      ? `${m.attachment.url}${m.attachment.url.includes("?") ? "&" : "?"}download=1`
-                                      : m.attachment.url
-                                  }
-                                  target="_blank"
-                                  rel="noreferrer"
+                                <button
+                                  type="button"
                                   className={cn(
-                                    "mt-1.5 flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs font-medium",
+                                    "mt-1.5 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium",
                                     mine ? "bg-white/20 hover:bg-white/30" : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800",
                                   )}
-                                  onClick={(e) => e.stopPropagation()}
+                                  onClick={() => setViewerFile(m.attachment!)}
                                 >
                                   <FileText className="h-3.5 w-3.5 shrink-0" />
                                   <span className="min-w-0 truncate">{m.attachment.name}</span>
                                   <span className="shrink-0 opacity-70">{formatSize(m.attachment.size)}</span>
-                                </a>
+                                </button>
                               )}
                             </div>
                             <div
@@ -2447,6 +2605,12 @@ export function TaskFormDialog({
                 </div>
 
                 <div className="relative z-[2] border-t border-border bg-background p-2.5">
+                  {workOverdueLocked ? (
+                    <p className="rounded-xl bg-rose-50 px-3 py-2 text-center text-[11px] font-medium text-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
+                      Vaqt tugagan — o‘zgartirish yopiq
+                    </p>
+                  ) : (
+                  <>
                   {pendingPreview && (
                     <div className="mb-2 flex items-center gap-2 rounded-xl border border-sky-200 bg-sky-50/90 px-2 py-1.5 dark:border-sky-900 dark:bg-sky-950/50">
                       {pendingPreview.kind === "image" ? (
@@ -2567,30 +2731,9 @@ export function TaskFormDialog({
                       ? t("tasks.form.chat.liveNote")
                       : t("tasks.form.chat.saveNote")}
                   </p>
+                  </>
+                  )}
                 </div>
-
-                {lightboxUrl && (
-                  <div
-                    className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-4"
-                    onClick={() => setLightboxUrl(null)}
-                  >
-                    <img
-                      src={lightboxUrl}
-                      alt=""
-                      className="max-h-[90vh] max-w-[90vw] rounded-lg object-contain shadow-2xl"
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="icon"
-                      className="absolute right-4 top-4"
-                      onClick={() => setLightboxUrl(null)}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
-                )}
               </>
             )}
 
@@ -2601,41 +2744,43 @@ export function TaskFormDialog({
                     {t("tasks.form.filesEmpty")}
                   </p>
                 ) : (
-                  attachments.map((a) => (
-                    <div
-                      key={a.id}
-                      className="flex items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-sm"
-                    >
-                      {isImageAtt(a) ? (
-                        <button
-                          type="button"
-                          className="h-12 w-12 shrink-0 overflow-hidden rounded-lg"
-                          onClick={() => setLightboxUrl(a.url)}
-                        >
-                          <img src={a.url} alt={a.name} className="h-full w-full object-cover" loading="lazy" />
-                        </button>
-                      ) : (
-                        <span className="flex h-12 w-12 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
-                          <FileText className="h-4 w-4" />
-                        </span>
-                      )}
-                      <a
-                        href={
-                          a.url.startsWith("/api/uploads/")
-                            ? `${a.url}${a.url.includes("?") ? "&" : "?"}download=1`
-                            : a.url
-                        }
-                        target="_blank"
-                        rel="noreferrer"
-                        className="min-w-0 flex-1 hover:underline"
+                  attachments.map((a) => {
+                    const { Icon, className: iconCls } = attachmentIcon(a);
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => setViewerFile(a)}
+                        className="flex w-full items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-left text-sm transition hover:border-[#0b5fff]/40 hover:bg-[#0b5fff]/5"
                       >
-                        <span className="block truncate font-medium">{a.name}</span>
-                        <span className="text-[11px] text-muted-foreground">
-                          {formatSize(a.size) || a.mimeType}
+                        {isImageAtt(a) ? (
+                          <span className="h-12 w-12 shrink-0 overflow-hidden rounded-lg">
+                            <img
+                              src={a.url}
+                              alt={a.name}
+                              className="h-full w-full object-cover"
+                              loading="lazy"
+                            />
+                          </span>
+                        ) : (
+                          <span
+                            className={cn(
+                              "flex h-12 w-12 shrink-0 items-center justify-center rounded-lg",
+                              iconCls,
+                            )}
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
+                        )}
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate font-medium">{a.name}</span>
+                          <span className="text-[11px] text-muted-foreground">
+                            {formatSize(a.size) || a.mimeType || "Ko‘rish"}
+                          </span>
                         </span>
-                      </a>
-                    </div>
-                  ))
+                      </button>
+                    );
+                  })
                 )}
               </div>
             )}
@@ -2658,6 +2803,17 @@ export function TaskFormDialog({
             )}
           </div>
         </div>
+
+          {viewerFile ? (
+            <TaskAttachmentViewer
+              file={viewerFile}
+              className="absolute inset-0 z-[80] rounded-2xl"
+              onClose={() => {
+                setViewerFile(null);
+                setSideTab("chat");
+              }}
+            />
+          ) : null}
         </div>
       </DialogContent>
     </Dialog>

@@ -19,14 +19,18 @@ import { useAuth } from "../../contexts/AuthContext";
 import { QrScanDialog, openScanCamera } from "../../components/QrScanDialog";
 import {
   fetchActiveBranchQr,
+  fetchActiveDepartmentQr,
+  fetchDavomatMethods,
   fetchQrBranches,
+  fetchQrDepartments,
   issueBranchQr,
+  issueDepartmentQr,
   qrPunchDavomat,
   revokeBranchQr,
-  type QrBranchRow,
+  revokeDepartmentQr,
 } from "../../lib/davomat-api";
 import { downloadAllQrPdf, downloadQrPdf, downloadQrPng, renderQrToCanvas } from "../../lib/qr-render";
-import { canManageSettings } from "../../lib/roles";
+import { canManageSettings, isDeptHeadRole } from "../../lib/roles";
 import { cn } from "../../lib/utils";
 
 function QrCanvasItem({ payload, size = 240 }: { payload: string; size?: number }) {
@@ -59,15 +63,17 @@ function QrCanvasItem({ payload, size = 240 }: { payload: string; size?: number 
 }
 
 type GalleryQr = {
-  branchId: number;
+  id: number;
   name: string;
   version: number | null;
   payload: string | null;
   needsReissue: boolean;
 };
 
+type Scope = "branches" | "departments";
+
 type Props = {
-  /** Admin: o‘chirish + barcha filiallar */
+  /** Admin: o‘chirish + barcha filiallar/bo‘limlar */
   adminMode?: boolean;
 };
 
@@ -75,6 +81,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
+  const [scope, setScope] = useState<Scope>("branches");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [needsReissue, setNeedsReissue] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
@@ -95,27 +102,82 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   }, [scanOpen]);
 
   const isAdmin = adminMode || canManageSettings(user?.role);
-  /** Faqat admin: istalgan filial QR + lokatsiyasiz skaner */
+  /** Faqat admin: istalgan filial/bo‘lim QR + lokatsiyasiz skaner */
   const adminQrAnywhere = user?.role === "admin";
 
-  const q = useQuery({
-    queryKey: ["davomat-qr-branches"],
-    queryFn: fetchQrBranches,
+  const methodsQ = useQuery({
+    queryKey: ["davomat-methods"],
+    queryFn: fetchDavomatMethods,
     enabled: Boolean(user),
   });
 
-  const branches = q.data?.branches ?? [];
-  const selected: QrBranchRow | null = useMemo(
-    () => branches.find((b) => b.id === selectedId) ?? null,
-    [branches, selectedId],
+  const canBranch =
+    Boolean(methodsQ.data?.canManageBranchQr) ||
+    user?.role === "mudir" ||
+    user?.role === "koordinator" ||
+    isAdmin;
+  const canDept =
+    Boolean(methodsQ.data?.canManageDeptQr) || isDeptHeadRole(user?.role) || isAdmin;
+
+  useEffect(() => {
+    if (methodsQ.isLoading) return;
+    if (canBranch && !canDept) setScope("branches");
+    else if (!canBranch && canDept) setScope("departments");
+  }, [methodsQ.isLoading, canBranch, canDept]);
+
+  useEffect(() => {
+    setSelectedId(null);
+    setNeedsReissue(false);
+    setGallery([]);
+  }, [scope]);
+
+  const branchQ = useQuery({
+    queryKey: ["davomat-qr-branches"],
+    queryFn: fetchQrBranches,
+    enabled: Boolean(user) && scope === "branches" && canBranch,
+  });
+
+  const deptQ = useQuery({
+    queryKey: ["davomat-qr-departments"],
+    queryFn: fetchQrDepartments,
+    enabled: Boolean(user) && scope === "departments" && canDept,
+  });
+
+  const listLoading = scope === "branches" ? branchQ.isLoading : deptQ.isLoading;
+  const listError = scope === "branches" ? branchQ.isError : deptQ.isError;
+  const listErrorMsg =
+    scope === "branches"
+      ? (branchQ.error as Error)?.message
+      : (deptQ.error as Error)?.message;
+
+  const branches = branchQ.data?.branches ?? [];
+  const departments = deptQ.data?.departments ?? [];
+  const items: Array<{ id: number; name: string; hasActiveQr: boolean; version: number | null; managerName?: string }> =
+    scope === "branches"
+      ? branches.map((b) => ({
+          id: b.id,
+          name: b.name,
+          hasActiveQr: b.hasActiveQr,
+          version: b.version,
+          managerName: b.managerName,
+        }))
+      : departments.map((d) => ({
+          id: d.id,
+          name: d.name,
+          hasActiveQr: d.hasActiveQr,
+          version: d.version,
+        }));
+
+  const selected = useMemo(
+    () => items.find((b) => b.id === selectedId) ?? null,
+    [items, selectedId],
   );
 
-  const activeCount = useMemo(() => branches.filter((b) => b.hasActiveQr).length, [branches]);
+  const activeCount = useMemo(() => items.filter((b) => b.hasActiveQr).length, [items]);
 
-  /** Barcha faol QR larni pastki galereya uchun yuklash */
   useEffect(() => {
     let cancelled = false;
-    const withQr = branches.filter((b) => b.hasActiveQr);
+    const withQr = items.filter((b) => b.hasActiveQr);
     if (!withQr.length) {
       setGallery([]);
       setGalleryLoading(false);
@@ -126,17 +188,27 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       const rows = await Promise.all(
         withQr.map(async (b) => {
           try {
-            const r = await fetchActiveBranchQr(b.id);
+            if (scope === "branches") {
+              const r = await fetchActiveBranchQr(b.id);
+              return {
+                id: b.id,
+                name: r.active?.branchLabel || b.name,
+                version: r.active?.version ?? b.version,
+                payload: r.active?.payload || null,
+                needsReissue: Boolean(r.active?.needsReissue || !r.active?.payload),
+              } satisfies GalleryQr;
+            }
+            const r = await fetchActiveDepartmentQr(b.id);
             return {
-              branchId: b.id,
-              name: r.active?.branchLabel || b.name,
+              id: b.id,
+              name: r.active?.departmentLabel || b.name,
               version: r.active?.version ?? b.version,
               payload: r.active?.payload || null,
               needsReissue: Boolean(r.active?.needsReissue || !r.active?.payload),
             } satisfies GalleryQr;
           } catch {
             return {
-              branchId: b.id,
+              id: b.id,
               name: b.name,
               version: b.version,
               payload: null,
@@ -153,10 +225,11 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [branches, galleryTick]);
+  }, [items, galleryTick, scope]);
 
   const loadActive = useMutation({
-    mutationFn: (branchId: number) => fetchActiveBranchQr(branchId),
+    mutationFn: (id: number) =>
+      scope === "branches" ? fetchActiveBranchQr(id) : fetchActiveDepartmentQr(id),
     onSuccess: (r) => {
       setNeedsReissue(Boolean(r.active && (r.active.needsReissue || !r.active.payload)));
     },
@@ -166,48 +239,65 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     if (selectedId == null) return;
     loadActive.mutate(selectedId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedId]);
+  }, [selectedId, scope]);
 
   useEffect(() => {
-    if (selectedId != null || !branches.length) return;
-    const withQr = branches.find((b) => b.hasActiveQr);
-    setSelectedId((withQr || branches[0]!).id);
-  }, [branches, selectedId]);
+    if (selectedId != null || !items.length) return;
+    const withQr = items.find((b) => b.hasActiveQr);
+    setSelectedId((withQr || items[0]!).id);
+  }, [items, selectedId]);
 
   const issue = useMutation({
-    mutationFn: (branchId: number) => issueBranchQr(branchId),
+    mutationFn: (id: number) =>
+      scope === "branches" ? issueBranchQr(id) : issueDepartmentQr(id),
     onSuccess: (r) => {
       setNeedsReissue(false);
-      setSelectedId(r.branchId);
-      qc.invalidateQueries({ queryKey: ["davomat-qr-branches"] });
+      const id = "branchId" in r ? r.branchId : r.departmentId;
+      setSelectedId(id);
+      void qc.invalidateQueries({
+        queryKey: scope === "branches" ? ["davomat-qr-branches"] : ["davomat-qr-departments"],
+      });
       setGalleryTick((n) => n + 1);
-      toast({ title: "QR saqlandi", description: "Endi mudir va koordinator istalgan vaqtda ko‘ra oladi." });
+      toast({
+        title: "QR saqlandi",
+        description:
+          scope === "branches"
+            ? "Endi mudir va koordinator istalgan vaqtda ko‘ra oladi."
+            : "Bo‘lim QR saqlandi — istalgan vaqtda ko‘rish mumkin.",
+      });
     },
     onError: (e: Error) => toast({ title: "Xato", description: e.message, variant: "destructive" }),
   });
 
   const revoke = useMutation({
-    mutationFn: (branchId: number) => revokeBranchQr(branchId),
+    mutationFn: (id: number) =>
+      scope === "branches" ? revokeBranchQr(id) : revokeDepartmentQr(id),
     onSuccess: () => {
       setNeedsReissue(false);
-      qc.invalidateQueries({ queryKey: ["davomat-qr-branches"] });
+      void qc.invalidateQueries({
+        queryKey: scope === "branches" ? ["davomat-qr-branches"] : ["davomat-qr-departments"],
+      });
       setGalleryTick((n) => n + 1);
       toast({ title: "QR o‘chirildi (bekor qilindi)" });
     },
     onError: (e: Error) => toast({ title: "O‘chirilmadi", description: e.message, variant: "destructive" }),
   });
 
-  async function onDownloadPng(text: string, branchId: number) {
+  async function onDownloadPng(text: string, id: number) {
     try {
-      await downloadQrPng(text, `davomat-qr-${branchId}.png`);
+      await downloadQrPng(text, `davomat-qr-${scope}-${id}.png`);
     } catch (e) {
       toast({ title: "PNG yuklanmadi", description: (e as Error).message, variant: "destructive" });
     }
   }
 
-  async function onDownloadPdf(text: string, branchLabel: string, branchId: number) {
+  async function onDownloadPdf(text: string, label: string, id: number) {
     try {
-      await downloadQrPdf(text, branchLabel || "Filial QR", `davomat-qr-${branchId}.pdf`);
+      await downloadQrPdf(
+        text,
+        label || (scope === "branches" ? "Filial QR" : "Bo‘lim QR"),
+        `davomat-qr-${scope}-${id}.pdf`,
+      );
     } catch (e) {
       toast({ title: "PDF ochilmadi", description: (e as Error).message, variant: "destructive" });
     }
@@ -219,7 +309,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       let source = gallery.filter((g) => g.payload?.trim());
 
       if (!source.length) {
-        const withQr = branches.filter((b) => b.hasActiveQr);
+        const withQr = items.filter((b) => b.hasActiveQr);
         if (!withQr.length) {
           toast({
             title: "PDF",
@@ -231,17 +321,27 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         const rows = await Promise.all(
           withQr.map(async (b) => {
             try {
-              const r = await fetchActiveBranchQr(b.id);
+              if (scope === "branches") {
+                const r = await fetchActiveBranchQr(b.id);
+                return {
+                  id: b.id,
+                  name: r.active?.branchLabel || b.name,
+                  version: r.active?.version ?? b.version,
+                  payload: r.active?.payload || null,
+                  needsReissue: Boolean(r.active?.needsReissue || !r.active?.payload),
+                } satisfies GalleryQr;
+              }
+              const r = await fetchActiveDepartmentQr(b.id);
               return {
-                branchId: b.id,
-                name: r.active?.branchLabel || b.name,
+                id: b.id,
+                name: r.active?.departmentLabel || b.name,
                 version: r.active?.version ?? b.version,
                 payload: r.active?.payload || null,
                 needsReissue: Boolean(r.active?.needsReissue || !r.active?.payload),
               } satisfies GalleryQr;
             } catch {
               return {
-                branchId: b.id,
+                id: b.id,
                 name: b.name,
                 version: b.version,
                 payload: null,
@@ -262,9 +362,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         return;
       }
 
-      const items = source
+      const pdfItems = source
         .map((g) => {
-          const idx = branches.findIndex((b) => b.id === g.branchId);
+          const idx = items.findIndex((b) => b.id === g.id);
           return {
             n: idx >= 0 ? idx + 1 : 0,
             title: g.name,
@@ -273,10 +373,19 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         })
         .sort((a, b) => a.n - b.n || a.title.localeCompare(b.title));
 
-      await downloadAllQrPdf(items, isAdmin ? "Admin · Davomat QR" : "Davomat QR");
+      await downloadAllQrPdf(
+        pdfItems,
+        isAdmin
+          ? scope === "branches"
+            ? "Admin · Filial QR"
+            : "Admin · Bo‘lim QR"
+          : scope === "branches"
+            ? "Davomat QR · Filiallar"
+            : "Davomat QR · Bo‘limlar",
+      );
       toast({
         title: "PDF tayyor",
-        description: `${items.length} ta QR · chop etish oynasi ochildi (PDF saqlang). HTML ham yuklandi.`,
+        description: `${pdfItems.length} ta QR · chop etish oynasi ochildi (PDF saqlang). HTML ham yuklandi.`,
       });
     } catch (e) {
       toast({
@@ -314,20 +423,42 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       payload: detected,
       action: scanAction,
     });
+    const place = result.branchLabel || result.departmentLabel || null;
     toast({
       title: result.action === "in" ? "✓ Keldim (QR)" : "✓ Ketdim (QR)",
-      description: result.branchLabel
-        ? `${result.message || "Qabul qilindi"} · ${result.branchLabel}`
+      description: place
+        ? `${result.message || "Qabul qilindi"} · ${place}`
         : result.message || "Admin QR qabul qilindi (lokatsiya shart emas)",
     });
   }
 
-  if (q.isError) {
+  if (!methodsQ.isLoading && !canBranch && !canDept) {
     return (
       <div className="mx-auto max-w-2xl px-4 py-8">
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-5 text-center dark:border-rose-900/50 dark:bg-rose-950/30">
           <p className="text-sm font-medium text-rose-700 dark:text-rose-300">
-            {(q.error as Error)?.message || "QR filiallari yuklanmadi. Faqat mudir / koordinator / admin."}
+            QR yaratishga ruxsat yo‘q. Filial: mudir/koordinator · Bo‘lim: rahbar/admin.
+          </p>
+          <Link
+            href="/davomat-face"
+            className="mt-3 inline-flex text-sm font-semibold text-primary underline-offset-2 hover:underline"
+          >
+            ← Davomat
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  if (listError) {
+    return (
+      <div className="mx-auto max-w-2xl px-4 py-8">
+        <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-5 text-center dark:border-rose-900/50 dark:bg-rose-950/30">
+          <p className="text-sm font-medium text-rose-700 dark:text-rose-300">
+            {listErrorMsg ||
+              (scope === "branches"
+                ? "QR filiallari yuklanmadi."
+                : "QR bo‘limlari yuklanmadi.")}
           </p>
           <Link
             href="/davomat-face"
@@ -342,6 +473,8 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
 
   const canIssue = Boolean(selectedId) && !issue.isPending;
   const canRevoke = Boolean(selectedId && selected?.hasActiveQr) && !revoke.isPending;
+  const entityLabel = scope === "branches" ? "filial" : "bo‘lim";
+  const showTabs = canBranch && canDept;
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 px-4 py-5 pb-28 sm:px-6 lg:px-8">
@@ -356,26 +489,66 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
             </h1>
             <p className="text-sm text-muted-foreground">
               {adminQrAnywhere
-                ? "Filial QR boshqaruvi · istalgan filialni skaner qilish"
-                : "Filial QR yaratish, ko‘rish va yuklab olish"}
+                ? "Filial va bo‘lim QR · istalgan QR skaner"
+                : scope === "branches"
+                  ? "Filial QR yaratish, ko‘rish va yuklab olish"
+                  : "Bo‘lim QR yaratish, ko‘rish va yuklab olish"}
             </p>
           </div>
-          {branches.length > 0 ? (
+          {items.length > 0 ? (
             <div className="flex items-center gap-2 text-[11px] font-medium">
               <span className="rounded-full bg-emerald-500/15 px-2.5 py-1 text-emerald-700 dark:text-emerald-300">
                 Faol {activeCount}
               </span>
               <span className="rounded-full bg-muted px-2.5 py-1 text-muted-foreground">
-                Jami {branches.length}
+                Jami {items.length}
               </span>
             </div>
           ) : null}
         </div>
         <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
-          QR bir marta yaratiladi va saqlanadi — mudir ham, koordinator ham ko‘radi. Yangi yaratilsa eski
-          almashtiriladi. Farmasevt/stajyor yaratolmaydi.
+          {scope === "branches"
+            ? "QR bir marta yaratiladi va saqlanadi — mudir ham, koordinator ham ko‘radi. Yangi yaratilsa eski almashtiriladi."
+            : "Ofis bo‘limi QR — faqat shu bo‘lim xodimlari ofis zonasida (150 m) skaner qiladi. Rahbar faqat o‘z bo‘limini boshqaradi."}
         </p>
       </header>
+
+      {showTabs ? (
+        <div
+          role="tablist"
+          aria-label="QR turi"
+          className="grid grid-cols-2 gap-1 rounded-2xl border border-border bg-muted/30 p-1"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === "branches"}
+            onClick={() => setScope("branches")}
+            className={cn(
+              "rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+              scope === "branches"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Filiallar
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={scope === "departments"}
+            onClick={() => setScope("departments")}
+            className={cn(
+              "rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+              scope === "departments"
+                ? "bg-background text-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            Bo‘limlar
+          </button>
+        </div>
+      ) : null}
 
       {adminQrAnywhere ? (
         <section className="rounded-2xl border border-sky-200/80 bg-sky-50/60 p-4 shadow-sm dark:border-sky-900/40 dark:bg-sky-950/25 sm:p-5">
@@ -387,7 +560,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-foreground">Admin QR scanner</h2>
                 <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-                  Istalgan filial QR · lokatsiya shart emas · faqat admin
+                  Istalgan filial yoki bo‘lim QR · lokatsiya shart emas · faqat admin
                 </p>
               </div>
             </div>
@@ -437,10 +610,11 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         </section>
       ) : null}
 
-      {/* Filial tanlash — tepada */}
       <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-base font-semibold text-foreground">Filialni tanlang</h2>
+          <h2 className="text-base font-semibold text-foreground">
+            {scope === "branches" ? "Filialni tanlang" : "Bo‘limni tanlang"}
+          </h2>
           {selected ? (
             <span
               className={cn(
@@ -455,17 +629,19 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           ) : null}
         </div>
 
-        {q.isLoading ? (
+        {listLoading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
           </div>
-        ) : branches.length === 0 ? (
+        ) : items.length === 0 ? (
           <p className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
-            Filial topilmadi (GPS bo‘lishi shart).
+            {scope === "branches"
+              ? "Filial topilmadi (GPS bo‘lishi shart)."
+              : "Bo‘lim topilmadi yoki ruxsat yo‘q."}
           </p>
         ) : (
           <div className="grid max-h-[16rem] gap-1.5 overflow-y-auto rounded-2xl border border-border/70 bg-muted/20 p-1.5 sm:max-h-none sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {branches.map((b, idx) => {
+            {items.map((b, idx) => {
               const on = selectedId === b.id;
               const n = idx + 1;
               return (
@@ -508,7 +684,11 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                   <span
                     className={cn(
                       "hidden h-5 w-5 shrink-0 items-center justify-center sm:flex",
-                      on ? "text-primary-foreground/80" : b.hasActiveQr ? "text-emerald-600" : "text-muted-foreground/70",
+                      on
+                        ? "text-primary-foreground/80"
+                        : b.hasActiveQr
+                          ? "text-emerald-600"
+                          : "text-muted-foreground/70",
                     )}
                     aria-hidden
                   >
@@ -554,7 +734,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
               disabled={!canRevoke}
               onClick={() => {
                 if (!selectedId) return;
-                if (!window.confirm("Bu filial QR ni butunlay bekor qilasizmi?")) return;
+                if (!window.confirm(`Bu ${entityLabel} QR ni butunlay bekor qilasizmi?`)) return;
                 revoke.mutate(selectedId);
               }}
             >
@@ -565,7 +745,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         </div>
         {needsReissue && selectedId ? (
           <p className="mt-2 text-center text-[11px] text-amber-700 dark:text-amber-300">
-            Tanlangan filialda eski QR payload yo‘q — «Yangi QR» bosing.
+            Tanlangan {entityLabel}da eski QR payload yo‘q — «Yangi QR» bosing.
           </p>
         ) : selected?.hasActiveQr ? (
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
@@ -573,18 +753,17 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           </p>
         ) : selected ? (
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
-            Tanlangan filialda hali QR yo‘q — «QR yaratish» ni bosing.
+            Tanlangan {entityLabel}da hali QR yo‘q — «QR yaratish» ni bosing.
           </p>
         ) : null}
       </section>
 
-      {/* Pastki card: barcha QR lar ketma-ket */}
       <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2 border-b border-border/60 pb-3">
           <div>
             <h2 className="text-base font-semibold text-foreground">Barcha QR kodlar</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Faol filial QR lari ketma-ket · PDF da har sahifada 20 ta
+              Faol {scope === "branches" ? "filial" : "bo‘lim"} QR lari · PDF da har sahifada 20 ta
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -615,17 +794,18 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
               <QrCode className="h-6 w-6" />
             </span>
             <p className="max-w-sm text-sm text-muted-foreground">
-              Hali faol QR yo‘q. Yuqoridan filialni tanlab «QR yaratish» ni bosing — shu yerda chiqadi.
+              Hali faol QR yo‘q. Yuqoridan {entityLabel}ni tanlab «QR yaratish» ni bosing — shu yerda
+              chiqadi.
             </p>
           </div>
         ) : (
           <div className="space-y-4">
             {gallery.map((item, idx) => {
-              const highlighted = selectedId === item.branchId;
+              const highlighted = selectedId === item.id;
               const n = idx + 1;
               return (
                 <article
-                  key={item.branchId}
+                  key={`${scope}-${item.id}`}
                   className={cn(
                     "rounded-2xl border p-4 transition sm:p-5",
                     highlighted
@@ -666,7 +846,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                             type="button"
                             variant="outline"
                             className="h-10 min-w-[5.5rem] flex-1 gap-1.5 rounded-xl"
-                            onClick={() => void onDownloadPng(item.payload!, item.branchId)}
+                            onClick={() => void onDownloadPng(item.payload!, item.id)}
                           >
                             <FileImage className="h-4 w-4" />
                             PNG
@@ -675,7 +855,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                             type="button"
                             variant="outline"
                             className="h-10 min-w-[5.5rem] flex-1 gap-1.5 rounded-xl"
-                            onClick={() => void onDownloadPdf(item.payload!, item.name, item.branchId)}
+                            onClick={() => void onDownloadPdf(item.payload!, item.name, item.id)}
                           >
                             <FileText className="h-4 w-4" />
                             PDF
@@ -684,7 +864,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                         <Button
                           type="button"
                           className="h-10 w-full gap-2 rounded-xl"
-                          onClick={() => void onDownloadPng(item.payload!, item.branchId)}
+                          onClick={() => void onDownloadPng(item.payload!, item.id)}
                         >
                           <Download className="h-4 w-4" />
                           Yuklab olish
@@ -693,15 +873,15 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                           type="button"
                           variant="ghost"
                           className="h-9 text-xs text-muted-foreground"
-                          onClick={() => setSelectedId(item.branchId)}
+                          onClick={() => setSelectedId(item.id)}
                         >
-                          Shu filialni tanlash
+                          Shu {entityLabel}ni tanlash
                         </Button>
                       </div>
                     </div>
                   ) : (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-4 text-center text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-                      Payload yo‘q. Filialni tanlab «Yangi QR» bosing.
+                      Payload yo‘q. {entityLabel}ni tanlab «Yangi QR» bosing.
                     </div>
                   )}
                 </article>
@@ -728,7 +908,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           stream={qrStream}
           onOpenChange={setScanOpen}
           title={scanAction === "out" ? "Ketdim — QR scanner" : "Keldim — QR scanner"}
-          description="Istalgan filial QR · lokatsiya shart emas · skaner qiling"
+          description="Istalgan filial yoki bo‘lim QR · lokatsiya shart emas · skaner qiling"
           onDetected={onAdminScan}
         />
       ) : null}

@@ -36,6 +36,12 @@ import {
   ChevronRight,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  canApproveTaskUi,
+  canDeleteTaskUi,
+  isTaskAdmin,
+  isTaskOverdue,
+} from "@/lib/vazifalar-permissions";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -70,6 +76,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
 import {
   useGetTasks,
   useCreateTask,
@@ -196,8 +203,98 @@ const PRIORITY_KEYS: Record<string, string> = {
   urgent: "tasks.priority.urgent",
 };
 
+function formatFilterDate(ymd: string) {
+  const [y, m, d] = ymd.split("-");
+  if (!y || !m || !d) return ymd;
+  return `${d}.${m}.${y}`;
+}
+
+function toYmdLocal(d: Date) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function parseYmdLocal(ymd: string): Date | undefined {
+  if (!ymd) return undefined;
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+}
+
+/** Brauzer uz-UZ ba'zan "M09" qaytaradi — i18n oy nomlaridan foydalanamiz */
+function monthName(monthIndex0: number, t: (key: string) => string) {
+  const n = Math.min(12, Math.max(1, monthIndex0 + 1));
+  return t(`month.${n}`);
+}
+
+function formatMonthYear(d: Date, t: (key: string) => string) {
+  return `${monthName(d.getMonth(), t)} ${d.getFullYear()}`;
+}
+
+function formatDayMonthYear(d: Date, t: (key: string) => string) {
+  return `${d.getDate()} ${monthName(d.getMonth(), t)} ${d.getFullYear()}`;
+}
+
 function startOfDay(d: Date) {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** Qolgan kunlar: <0 kechikkan, 0 bugun */
+function daysUntilDue(dueAt: string | null | undefined, now = new Date()): number | null {
+  if (!dueAt) return null;
+  const due = startOfDay(new Date(dueAt));
+  const today = startOfDay(now);
+  return Math.round((due.getTime() - today.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Muddat rangi: ≤3 kun qizil, ≤7 kun sariq, ≥10 kun yashil.
+ * Yakunlangan (verified) — oddiy kulrang.
+ */
+function dueDateToneClass(
+  dueAt: string | null | undefined,
+  status?: string | null,
+): string {
+  if (status === "verified" || status === "cancelled") {
+    return "text-muted-foreground";
+  }
+  const days = daysUntilDue(dueAt);
+  if (days == null) return "text-muted-foreground";
+  if (days <= 3) return "font-semibold text-rose-600 dark:text-rose-400";
+  if (days <= 7) return "font-semibold text-amber-600 dark:text-amber-400";
+  if (days >= 10) return "font-semibold text-emerald-600 dark:text-emerald-400";
+  return "font-semibold text-lime-600 dark:text-lime-400";
+}
+
+/** Kalendar chip foni — muddat yaqinligiga qarab */
+function dueDateChipClass(
+  dueAt: string | null | undefined,
+  status?: string | null,
+): string {
+  if (status === "verified" || status === "cancelled") {
+    return "bg-muted text-muted-foreground";
+  }
+  const days = daysUntilDue(dueAt);
+  if (days == null) return "bg-primary/10 text-primary";
+  if (days <= 3) return "bg-rose-500/15 font-medium text-rose-700 dark:text-rose-300";
+  if (days <= 7) return "bg-amber-500/15 font-medium text-amber-800 dark:text-amber-300";
+  if (days >= 10) return "bg-emerald-500/15 font-medium text-emerald-700 dark:text-emerald-300";
+  return "bg-lime-500/15 font-medium text-lime-800 dark:text-lime-300";
+}
+
+function dueDateDotClass(
+  dueAt: string | null | undefined,
+  status?: string | null,
+): string {
+  if (status === "verified" || status === "cancelled") return "bg-muted-foreground/50";
+  const days = daysUntilDue(dueAt);
+  if (days == null) return "bg-primary";
+  if (days <= 3) return "bg-rose-500";
+  if (days <= 7) return "bg-amber-500";
+  if (days >= 10) return "bg-emerald-500";
+  return "bg-lime-500";
 }
 
 function addDays(d: Date, n: number) {
@@ -296,10 +393,13 @@ export default function VazifalarPage() {
   const [branchFilter, setBranchFilter] = useState<string>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [dateFromOpen, setDateFromOpen] = useState(false);
+  const [dateToOpen, setDateToOpen] = useState(false);
   const [calMonth, setCalMonth] = useState(() => {
     const n = new Date();
     return new Date(n.getFullYear(), n.getMonth(), 1);
   });
+  const [calScope, setCalScope] = useState<"month" | "year">("month");
   const [selectedCalDay, setSelectedCalDay] = useState(() => startOfDay(new Date()));
   const [assigneeFilter, setAssigneeFilter] = useState<{
     kind: "user" | "employee";
@@ -630,7 +730,16 @@ export default function VazifalarPage() {
   }
 
   function openEdit(task: Vazifa) {
-    if (!isCreatorOf(task) && user?.role !== "admin") {
+    const admin = isTaskAdmin(user?.role);
+    const creator = isCreatorOf(task);
+    const assignee = isAssigneeOf(task);
+    // Ijrochi — work rejimida ochadi; beruvchi/admin — tahrirlash
+    if (assignee && !creator && !admin) {
+      setActiveTask(task);
+      setViewOpen(true);
+      return;
+    }
+    if (!creator && !admin) {
       setActiveTask(task);
       setViewOpen(true);
       return;
@@ -641,11 +750,27 @@ export default function VazifalarPage() {
   }
 
   function openComplete(task: Vazifa) {
+    if (isTaskOverdue(task)) {
+      toast({
+        title: "Vaqt tugagan",
+        description: "Faqat beruvchi muddatni uzaytirishi mumkin.",
+        variant: "destructive",
+      });
+      return;
+    }
     setActiveTask(task);
     setViewOpen(true);
   }
 
   function openExtend(task: Vazifa) {
+    if (isAssigneeOf(task) && isTaskOverdue(task) && !isCreatorOf(task) && !isTaskAdmin(user?.role)) {
+      toast({
+        title: "Vaqt tugagan",
+        description: "Faqat beruvchi muddatni uzaytirishi mumkin.",
+        variant: "destructive",
+      });
+      return;
+    }
     setActiveTask(task);
     const base = task.dueAt ? new Date(task.dueAt) : new Date();
     base.setDate(base.getDate() + 1);
@@ -771,6 +896,14 @@ export default function VazifalarPage() {
   }
 
   async function handleAccept(task: Vazifa) {
+    if (isTaskOverdue(task)) {
+      toast({
+        title: "Vaqt tugagan",
+        description: "Faqat beruvchi muddatni uzaytirishi mumkin.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       await acceptTask.mutateAsync(task.id);
       toast({ title: "Vazifa qabul qilindi" });
@@ -784,17 +917,26 @@ export default function VazifalarPage() {
   }
 
   async function handleVerify(task: Vazifa, action: "approve" | "rework") {
+    if (!canApproveTaskUi(task, user?.id, user?.role)) {
+      toast({
+        title: "Ruxsat yo‘q",
+        description: "Faqat vazifa qo‘ygan odam (yoki admin) tasdiqlay oladi",
+        variant: "destructive",
+      });
+      return;
+    }
     let note: string | undefined;
     if (action === "rework") {
-      note =
-        prompt("Qayta ishlash sababi (ixtiyoriy):") || undefined;
+      note = window.prompt("Qayta ishlash sababi (ixtiyoriy):") || undefined;
+    } else if (!window.confirm(`«${task.title}» — bajarilganini tasdiqlaysizmi?`)) {
+      return;
     }
     try {
       await verifyTask.mutateAsync({ id: task.id, action, note });
       toast({
         title:
           action === "approve"
-            ? "Tasdiqlandi — vazifa yakunlandi"
+            ? "✓ Tasdiqlandi"
             : "Qayta ishlashga qaytarildi",
       });
     } catch (e: any) {
@@ -825,6 +967,14 @@ export default function VazifalarPage() {
   }
 
   async function removeTask(task: Vazifa) {
+    if (!canDeleteTaskUi(user?.role)) {
+      toast({
+        title: "Ruxsat yo‘q",
+        description: "O‘chirish faqat admin uchun",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!confirm(`«${task.title}» o'chirilsinmi?`)) return;
     try {
       await deleteTask.mutateAsync(task.id);
@@ -839,14 +989,17 @@ export default function VazifalarPage() {
   }
 
   function renderTaskCard(task: Vazifa, colId: BoardCol) {
+    const overdue = colId === "past" || isTaskOverdue(task);
     return (
       <TaskCard
         key={task.id}
         task={task}
         column={colId}
-        overdue={colId === "past"}
+        overdue={overdue}
         isCreator={isCreatorOf(task)}
         isAssignee={isAssigneeOf(task)}
+        canApprove={canApproveTaskUi(task, user?.id, user?.role)}
+        canDelete={canDeleteTaskUi(user?.role)}
         onOpen={() => openEdit(task)}
         onComplete={() => openComplete(task)}
         onExtend={() => openExtend(task)}
@@ -862,9 +1015,9 @@ export default function VazifalarPage() {
 
   const viewTabs: { id: BoardView | "analytics"; labelKey: string; icon: React.ReactNode }[] = [
     { id: "kanban", labelKey: "tasks.view.kanban", icon: <LayoutGrid className="h-3.5 w-3.5" /> },
-    { id: "list", labelKey: "tasks.view.list", icon: <List className="h-3.5 w-3.5" /> },
     { id: "calendar", labelKey: "tasks.view.calendar", icon: <CalendarDays className="h-3.5 w-3.5" /> },
     { id: "analytics", labelKey: "tasks.view.analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
+    { id: "list", labelKey: "tasks.view.list", icon: <List className="h-3.5 w-3.5" /> },
   ];
 
   const kpiCards = [
@@ -1105,26 +1258,130 @@ export default function VazifalarPage() {
             </SelectContent>
           </Select>
 
-          <div
-            className={cn(
-              control,
-              "flex items-center gap-1.5 rounded-md border px-2 text-muted-foreground lg:min-w-[210px]",
-            )}
-          >
-            <Calendar className="h-3.5 w-3.5 shrink-0 opacity-60" />
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="w-[95px] bg-transparent text-[11px] text-foreground outline-none [color-scheme:light] dark:[color-scheme:dark]"
-            />
-            <span className="opacity-40">–</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="w-[95px] bg-transparent text-[11px] text-foreground outline-none [color-scheme:light] dark:[color-scheme:dark]"
-            />
+          <div className="flex w-full items-center gap-1.5 lg:w-auto">
+            <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    control,
+                    "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-left transition lg:w-[148px] lg:flex-none",
+                    "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    dateFrom && "border-primary/40 bg-primary/5",
+                  )}
+                >
+                  <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
+                      !dateFrom && "font-normal text-muted-foreground",
+                    )}
+                  >
+                    {dateFrom ? formatFilterDate(dateFrom) : t("tasks.filter.dateFrom")}
+                  </span>
+                  {dateFrom ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDateFrom("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDateFrom("");
+                        }
+                      }}
+                      aria-label={t("tasks.filter.dateClear")}
+                    >
+                      <X className="h-3 w-3" />
+                    </span>
+                  ) : null}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
+                <DayPickerCalendar
+                  mode="single"
+                  className="rounded-xl"
+                  selected={parseYmdLocal(dateFrom)}
+                  onSelect={(day) => {
+                    const next = day ? toYmdLocal(day) : "";
+                    setDateFrom(next);
+                    if (next && dateTo && next > dateTo) setDateTo(next);
+                    setDateFromOpen(false);
+                  }}
+                  defaultMonth={parseYmdLocal(dateFrom) || new Date()}
+                  disabled={dateTo ? { after: parseYmdLocal(dateTo)! } : undefined}
+                />
+              </PopoverContent>
+            </Popover>
+
+            <span className="shrink-0 text-[11px] text-muted-foreground/70">–</span>
+
+            <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    control,
+                    "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-left transition lg:w-[148px] lg:flex-none",
+                    "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                    dateTo && "border-primary/40 bg-primary/5",
+                  )}
+                >
+                  <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span
+                    className={cn(
+                      "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
+                      !dateTo && "font-normal text-muted-foreground",
+                    )}
+                  >
+                    {dateTo ? formatFilterDate(dateTo) : t("tasks.filter.dateTo")}
+                  </span>
+                  {dateTo ? (
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setDateTo("");
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setDateTo("");
+                        }
+                      }}
+                      aria-label={t("tasks.filter.dateClear")}
+                    >
+                      <X className="h-3 w-3" />
+                    </span>
+                  ) : null}
+                </button>
+              </PopoverTrigger>
+              <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
+                <DayPickerCalendar
+                  mode="single"
+                  className="rounded-xl"
+                  selected={parseYmdLocal(dateTo)}
+                  onSelect={(day) => {
+                    const next = day ? toYmdLocal(day) : "";
+                    setDateTo(next);
+                    if (next && dateFrom && next < dateFrom) setDateFrom(next);
+                    setDateToOpen(false);
+                  }}
+                  defaultMonth={parseYmdLocal(dateTo) || parseYmdLocal(dateFrom) || new Date()}
+                  disabled={dateFrom ? { before: parseYmdLocal(dateFrom)! } : undefined}
+                />
+              </PopoverContent>
+            </Popover>
           </div>
 
           <Popover open={searchOpen} onOpenChange={setSearchOpen}>
@@ -1300,8 +1557,8 @@ export default function VazifalarPage() {
                             </td>
                             <td
                               className={cn(
-                                "px-4 py-3 text-muted-foreground",
-                                col === "past" && "font-semibold text-rose-600 dark:text-rose-400",
+                                "px-4 py-3",
+                                dueDateToneClass(task.dueAt, task.status),
                               )}
                             >
                               {formatDate(task.dueAt)}
@@ -1348,100 +1605,221 @@ export default function VazifalarPage() {
           ) : viewMode === "calendar" ? (
             <div className="grid gap-4 xl:grid-cols-[1fr_320px]">
               <div className={cn(surface, "p-4")}>
-                <div className="mb-4 flex items-center justify-between">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <button
                     type="button"
                     className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
-                    onClick={() => setCalMonth(new Date(calYear, calMo - 1, 1))}
+                    onClick={() =>
+                      setCalMonth(
+                        calScope === "year"
+                          ? new Date(calYear - 1, calMo, 1)
+                          : new Date(calYear, calMo - 1, 1),
+                      )
+                    }
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
-                  <h3 className="text-sm font-semibold capitalize text-foreground">
-                    {calMonth.toLocaleDateString("uz-UZ", { month: "long", year: "numeric" })}
-                  </h3>
+                  <div className="flex flex-col items-center gap-2">
+                    <h3 className="text-sm font-semibold capitalize text-foreground">
+                      {calScope === "year" ? String(calYear) : formatMonthYear(calMonth, t)}
+                    </h3>
+                    <div className="inline-flex rounded-lg border border-border/80 bg-muted/40 p-0.5">
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-2.5 py-1 text-[11px] font-semibold transition",
+                          calScope === "month"
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => setCalScope("month")}
+                      >
+                        {t("tasks.cal.monthly")}
+                      </button>
+                      <button
+                        type="button"
+                        className={cn(
+                          "rounded-md px-2.5 py-1 text-[11px] font-semibold transition",
+                          calScope === "year"
+                            ? "bg-card text-foreground shadow-sm"
+                            : "text-muted-foreground hover:text-foreground",
+                        )}
+                        onClick={() => setCalScope("year")}
+                      >
+                        {t("tasks.cal.yearly")}
+                      </button>
+                    </div>
+                  </div>
                   <button
                     type="button"
                     className="rounded-lg border border-border p-1.5 text-muted-foreground hover:bg-muted"
-                    onClick={() => setCalMonth(new Date(calYear, calMo + 1, 1))}
+                    onClick={() =>
+                      setCalMonth(
+                        calScope === "year"
+                          ? new Date(calYear + 1, calMo, 1)
+                          : new Date(calYear, calMo + 1, 1),
+                      )
+                    }
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
                 </div>
-                <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-muted-foreground">
-                  {weekDays.map((d) => (
-                    <div key={d}>{d}</div>
-                  ))}
-                </div>
-                <div className="grid grid-cols-7 gap-1.5">
-                  {Array.from({ length: calStartWeekday }).map((_, i) => (
-                    <div key={`e-${i}`} className="min-h-[88px] rounded-lg bg-muted/20" />
-                  ))}
-                  {Array.from({ length: calDaysInMonth }).map((_, i) => {
-                    const day = i + 1;
-                    const dayStart = startOfDay(new Date(calYear, calMo, day));
-                    const dayTasks = filtered.filter((task) => {
-                      if (!task.dueAt) return false;
-                      return startOfDay(new Date(task.dueAt)).getTime() === dayStart.getTime();
-                    });
-                    const isToday = dayStart.getTime() === startOfDay(new Date()).getTime();
-                    const isSelected = dayStart.getTime() === startOfDay(selectedCalDay).getTime();
-                    return (
-                      <button
-                        key={day}
-                        type="button"
-                        onClick={() => pickCalendarDay(dayStart)}
-                        className={cn(
-                          "min-h-[88px] rounded-lg border border-border/70 bg-card p-1.5 text-left transition hover:border-primary/40 hover:bg-primary/5",
-                          isToday && "border-primary/40",
-                          isSelected && "border-primary bg-primary/10 ring-2 ring-primary/30",
-                        )}
-                      >
+
+                {calScope === "year" ? (
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                    {Array.from({ length: 12 }).map((_, monthIdx) => {
+                      const daysInM = new Date(calYear, monthIdx + 1, 0).getDate();
+                      const startWd = (new Date(calYear, monthIdx, 1).getDay() + 6) % 7;
+                      const monthLabel = monthName(monthIdx, t);
+                      return (
                         <div
-                          className={cn(
-                            "mb-1 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
-                            isSelected
-                              ? "bg-primary text-primary-foreground"
-                              : isToday
-                                ? "text-primary"
-                                : "text-foreground",
-                          )}
+                          key={monthIdx}
+                          className="rounded-xl border border-border/70 bg-card/60 p-2.5"
                         >
-                          {day}
+                          <button
+                            type="button"
+                            className="mb-1.5 w-full text-left text-[12px] font-bold capitalize text-foreground hover:text-primary"
+                            onClick={() => {
+                              setCalMonth(new Date(calYear, monthIdx, 1));
+                              setCalScope("month");
+                            }}
+                          >
+                            {monthLabel}
+                          </button>
+                          <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[8px] font-semibold uppercase text-muted-foreground">
+                            {weekDays.map((d) => (
+                              <div key={`${monthIdx}-${d}`}>{d.charAt(0)}</div>
+                            ))}
+                          </div>
+                          <div className="grid grid-cols-7 gap-0.5">
+                            {Array.from({ length: startWd }).map((_, i) => (
+                              <div key={`ye-${monthIdx}-${i}`} className="h-7" />
+                            ))}
+                            {Array.from({ length: daysInM }).map((_, i) => {
+                              const day = i + 1;
+                              const dayStart = startOfDay(new Date(calYear, monthIdx, day));
+                              const dayTasks = filtered.filter((task) => {
+                                if (!task.dueAt) return false;
+                                return (
+                                  startOfDay(new Date(task.dueAt)).getTime() === dayStart.getTime()
+                                );
+                              });
+                              const isToday =
+                                dayStart.getTime() === startOfDay(new Date()).getTime();
+                              const isSelected =
+                                dayStart.getTime() === startOfDay(selectedCalDay).getTime();
+                              const toneTask = dayTasks.find(
+                                (x) => x.status !== "verified" && x.status !== "cancelled",
+                              );
+                              return (
+                                <button
+                                  key={day}
+                                  type="button"
+                                  onClick={() => pickCalendarDay(dayStart)}
+                                  className={cn(
+                                    "relative flex h-7 flex-col items-center justify-center rounded-md text-[10px] transition hover:bg-muted",
+                                    isSelected &&
+                                      "bg-primary font-bold text-primary-foreground hover:bg-primary",
+                                    !isSelected && isToday && "font-bold text-primary",
+                                    !isSelected && !isToday && "text-foreground",
+                                  )}
+                                >
+                                  {day}
+                                  {dayTasks.length > 0 && !isSelected && (
+                                    <span
+                                      className={cn(
+                                        "absolute bottom-0.5 h-1 w-1 rounded-full",
+                                        dueDateDotClass(toneTask?.dueAt, toneTask?.status),
+                                      )}
+                                    />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
                         </div>
-                        <div className="space-y-0.5">
-                          {dayTasks.slice(0, 2).map((task) => (
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <>
+                    <div className="mb-2 grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-muted-foreground">
+                      {weekDays.map((d) => (
+                        <div key={d}>{d}</div>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-7 gap-1.5">
+                      {Array.from({ length: calStartWeekday }).map((_, i) => (
+                        <div key={`e-${i}`} className="min-h-[88px] rounded-lg bg-muted/20" />
+                      ))}
+                      {Array.from({ length: calDaysInMonth }).map((_, i) => {
+                        const day = i + 1;
+                        const dayStart = startOfDay(new Date(calYear, calMo, day));
+                        const dayTasks = filtered.filter((task) => {
+                          if (!task.dueAt) return false;
+                          return startOfDay(new Date(task.dueAt)).getTime() === dayStart.getTime();
+                        });
+                        const isToday = dayStart.getTime() === startOfDay(new Date()).getTime();
+                        const isSelected =
+                          dayStart.getTime() === startOfDay(selectedCalDay).getTime();
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => pickCalendarDay(dayStart)}
+                            className={cn(
+                              "min-h-[88px] rounded-lg border border-border/70 bg-card p-1.5 text-left transition hover:border-primary/40 hover:bg-primary/5",
+                              isToday && "border-primary/40",
+                              isSelected && "border-primary bg-primary/10 ring-2 ring-primary/30",
+                            )}
+                          >
                             <div
-                              key={task.id}
-                              className="truncate rounded bg-primary/10 px-1 py-0.5 text-[9px] font-medium text-primary"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openEdit(task);
-                              }}
+                              className={cn(
+                                "mb-1 flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-semibold",
+                                isSelected
+                                  ? "bg-primary text-primary-foreground"
+                                  : isToday
+                                    ? "text-primary"
+                                    : "text-foreground",
+                              )}
                             >
-                              {task.title}
+                              {day}
                             </div>
-                          ))}
-                          {dayTasks.length > 2 && (
-                            <div className="text-[9px] text-muted-foreground">
-                              +{dayTasks.length - 2}
+                            <div className="space-y-0.5">
+                              {dayTasks.slice(0, 2).map((task) => (
+                                <div
+                                  key={task.id}
+                                  className={cn(
+                                    "truncate rounded px-1 py-0.5 text-[9px] font-medium",
+                                    dueDateChipClass(task.dueAt, task.status),
+                                  )}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openEdit(task);
+                                  }}
+                                >
+                                  {task.title}
+                                </div>
+                              ))}
+                              {dayTasks.length > 2 && (
+                                <div className="text-[9px] text-muted-foreground">
+                                  +{dayTasks.length - 2}
+                                </div>
+                              )}
                             </div>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
               </div>
 
               <div className={cn(surface, "flex flex-col p-4")}>
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div>
                     <h3 className="text-sm font-bold text-foreground">
-                      {selectedCalDay.toLocaleDateString("uz-UZ", {
-                        day: "numeric",
-                        month: "long",
-                        year: "numeric",
-                      })}
+                      {formatDayMonthYear(selectedCalDay, t)}
                     </h3>
                     <p className="text-xs text-muted-foreground">
                       {selectedDayTasks.length} {t("tasks.filteredCount")}
@@ -1489,7 +1867,12 @@ export default function VazifalarPage() {
                           <span className="text-[10px] text-muted-foreground">TK-{task.id}</span>
                         </div>
                         <div className="text-sm font-semibold text-foreground">{task.title}</div>
-                        <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
+                        <div
+                          className={cn(
+                            "mt-1 flex items-center gap-2 text-[11px]",
+                            dueDateToneClass(task.dueAt, task.status),
+                          )}
+                        >
                           <Clock className="h-3 w-3" />
                           {formatDate(task.dueAt)}
                         </div>
@@ -1587,7 +1970,7 @@ export default function VazifalarPage() {
           <div className={cn(surface, "p-3.5")}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-sm font-bold capitalize text-foreground">
-                {calMonth.toLocaleDateString("uz-UZ", { month: "long", year: "numeric" })}
+                {formatMonthYear(calMonth, t)}
               </h3>
               <div className="flex gap-0.5">
                 <button
@@ -1641,18 +2024,15 @@ export default function VazifalarPage() {
                     {day}
                     {dots.length > 0 && !isSelected && (
                       <span className="mt-0.5 flex gap-0.5">
-                        {dots.slice(0, 3).map((task) => {
-                          const c = boardColumnFor(task);
-                          return (
-                            <span
-                              key={task.id}
-                              className={cn(
-                                "h-1 w-1 rounded-full",
-                                COLUMNS.find((x) => x.id === c)?.accentDot,
-                              )}
-                            />
-                          );
-                        })}
+                        {dots.slice(0, 3).map((task) => (
+                          <span
+                            key={task.id}
+                            className={cn(
+                              "h-1 w-1 rounded-full",
+                              dueDateDotClass(task.dueAt, task.status),
+                            )}
+                          />
+                        ))}
                       </span>
                     )}
                   </button>
@@ -1827,11 +2207,14 @@ export default function VazifalarPage() {
         defaultDueAt={createDueAt}
         onSave={handleSave}
         onPersistChat={handlePersistChat}
-        onVerify={async (action) => {
-          if (!editing) return;
-          await handleVerify(editing, action);
-          setEditOpen(false);
-        }}
+        onVerify={
+          editing && canApproveTaskUi(editing, user?.id, user?.role)
+            ? async (action) => {
+                await handleVerify(editing, action);
+                setEditOpen(false);
+              }
+            : undefined
+        }
         onTaskUpdated={(updated) => setEditing(updated)}
       />
 
@@ -2190,6 +2573,8 @@ function TaskCard({
   overdue,
   isCreator,
   isAssignee,
+  canApprove,
+  canDelete,
   onOpen,
   onComplete,
   onExtend,
@@ -2205,6 +2590,8 @@ function TaskCard({
   overdue?: boolean;
   isCreator: boolean;
   isAssignee: boolean;
+  canApprove: boolean;
+  canDelete: boolean;
   onOpen: () => void;
   onComplete: () => void;
   onExtend: () => void;
@@ -2224,6 +2611,7 @@ function TaskCard({
   const isVerified = task.status === "verified";
   const needsAccept = task.status === "todo";
   const isAccepted = task.status === "in_progress";
+  const assigneeFrozen = Boolean(overdue && isAssignee && !isCreator && !awaitingReview && !isVerified);
   const progress = checklistProgress(task);
   const typeLbl = taskTypeLabel(task.meta?.taskType, t);
   const tag = Array.isArray(task.meta?.tags) && task.meta!.tags!.length > 0 ? task.meta!.tags![0] : typeLbl;
@@ -2298,9 +2686,7 @@ function TaskCard({
       <div
         className={cn(
           "mb-2 flex items-center gap-1.5 text-[11px]",
-          overdue && !awaitingReview && !isVerified
-            ? "font-semibold text-rose-600 dark:text-rose-400"
-            : "text-muted-foreground",
+          dueDateToneClass(task.dueAt, task.status),
         )}
       >
         <Calendar className="h-3 w-3 shrink-0" />
@@ -2361,11 +2747,26 @@ function TaskCard({
         </span>
       </div>
 
+      {assigneeFrozen ? (
+        <p className="mt-2 w-full rounded-md bg-rose-500/15 px-2 py-1.5 text-center text-[10px] font-bold text-rose-700 ring-1 ring-rose-300/60 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-700/50">
+          Vaqt tugagan — o‘zgartirish yopiq
+        </p>
+      ) : null}
+
+      {(() => {
+        const showAccept = isAssignee && needsAccept && !assigneeFrozen;
+        const showProgress = isAssignee && isAccepted && !assigneeFrozen;
+        const showApprove = canApprove && awaitingReview;
+        const showExtReview = isCreator && pendingExt;
+        const showExtend = isCreator && overdue && !awaitingReview && !isVerified;
+        const hasActions = showAccept || showProgress || showApprove || showExtReview || showExtend || canDelete;
+        if (!hasActions) return null;
+        return (
       <div
         className="mt-2 flex flex-wrap gap-1 border-t border-border/40 pt-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
         onClick={(e) => e.stopPropagation()}
       >
-        {isAssignee && needsAccept && (
+        {showAccept && (
           <button
             type="button"
             className="flex-1 rounded-md bg-primary py-1.5 text-[11px] font-semibold text-primary-foreground hover:opacity-90"
@@ -2374,7 +2775,7 @@ function TaskCard({
             {t("tasks.accept")}
           </button>
         )}
-        {isAssignee && isAccepted && (
+        {showProgress && (
           <>
             <button
               type="button"
@@ -2394,26 +2795,26 @@ function TaskCard({
             </button>
           </>
         )}
-        {isCreator && awaitingReview && (
-          <>
-            <button
-              type="button"
-              className="flex flex-1 items-center justify-center gap-1 rounded-md bg-emerald-600 py-1.5 text-[11px] font-semibold text-white hover:bg-emerald-700"
-              onClick={onVerify}
-            >
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {t("ui.approve")}
-            </button>
-            <button
-              type="button"
-              className="flex flex-1 items-center justify-center rounded-md border border-amber-300/70 py-1.5 text-[11px] text-amber-800 hover:bg-amber-500/10 dark:border-amber-500/40 dark:text-amber-200"
-              onClick={onRework}
-            >
-              {t("tasks.rework")}
-            </button>
-          </>
+        {showApprove && (
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 py-2 text-[12px] font-bold text-white shadow-sm hover:bg-emerald-700"
+            onClick={onVerify}
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            Tasdiqlash
+          </button>
         )}
-        {isCreator && pendingExt && (
+        {showApprove && (
+          <button
+            type="button"
+            className="w-full rounded-md py-1 text-[10px] text-amber-800 underline-offset-2 hover:underline dark:text-amber-200"
+            onClick={onRework}
+          >
+            {t("tasks.rework")}
+          </button>
+        )}
+        {showExtReview && (
           <>
             <button
               type="button"
@@ -2431,7 +2832,17 @@ function TaskCard({
             </button>
           </>
         )}
-        {isCreator && (
+        {showExtend && (
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-1 rounded-md border border-amber-300/80 bg-amber-50 py-1.5 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200"
+            onClick={onOpen}
+          >
+            <Clock className="h-3.5 w-3.5" />
+            Muddatni cho‘zish
+          </button>
+        )}
+        {canDelete && (
           <button
             type="button"
             className="ml-auto rounded-md p-1.5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-400"
@@ -2442,6 +2853,8 @@ function TaskCard({
           </button>
         )}
       </div>
+        );
+      })()}
     </article>
   );
 }

@@ -766,6 +766,7 @@ export default function DavomatFacePage() {
   const [confirmOut, setConfirmOut] = useState(false);
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [pharmacyStaff, setPharmacyStaff] = useState(false);
+  const [officeStaff, setOfficeStaff] = useState(false);
   const [adminQrAnywhere, setAdminQrAnywhere] = useState(false);
   const [methodsReady, setMethodsReady] = useState(false);
   const [canManageQr, setCanManageQr] = useState(false);
@@ -880,11 +881,13 @@ export default function DavomatFacePage() {
     void fetchDavomatMethods()
       .then((m) => {
         setPharmacyStaff(m.pharmacyStaff);
+        setOfficeStaff(Boolean(m.officeStaff) || (m.methods.includes("QR") && !m.pharmacyStaff && !m.adminQrAnywhere));
         setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
         setCanManageQr(m.canManageQr);
       })
       .catch(() => {
         setPharmacyStaff(false);
+        setOfficeStaff(false);
         setAdminQrAnywhere(false);
         setCanManageQr(false);
       })
@@ -1053,7 +1056,7 @@ export default function DavomatFacePage() {
    * Face ID skani davomat profilini aniqlaydi (tizim login emas).
    * faceRegistered === false kutish — status 401 bo‘lsa tugma abadiy yopiq qolardi.
    */
-  /** Face ID: apteka uchun enroll bo‘lmasa ham tugma ochilsin (avval enroll) */
+  /** Face ID: apteka/ofis uchun enroll bo‘lmasa ham tugma ochilsin (avval enroll) */
   const canOpenFace =
     methodsReady &&
     cameraGranted &&
@@ -1062,16 +1065,18 @@ export default function DavomatFacePage() {
     isFaceIdSupported() &&
     inside &&
     !done &&
-    (pharmacyStaff || faceRegistered !== false);
+    (pharmacyStaff || officeStaff || faceRegistered !== false);
 
-  /** QR: apteka — GPS + zona; admin — istalgan filial, lokatsiya shartsiz */
+  /** QR: apteka/ofis — GPS + zona; admin — istalgan QR, lokatsiya shartsiz */
   const canOpenQr =
     methodsReady &&
     cameraGranted &&
     !done &&
-    (adminQrAnywhere || (pharmacyStaff && Boolean(gps) && !gpsError && inside));
+    (adminQrAnywhere ||
+      ((pharmacyStaff || officeStaff) && Boolean(gps) && !gpsError && inside));
 
-  const showDualMethods = pharmacyStaff || adminQrAnywhere;
+  /** Farmasevt va ofis xodimlari: Face ID | QR yonma-yon */
+  const showDualMethods = pharmacyStaff || officeStaff || adminQrAnywhere;
 
   const faceVerifiedReady = Boolean(verified?.descriptor && verified.descriptor.length > 0);
   const qrVerifiedReady = Boolean(verified?.qrPayload);
@@ -1124,13 +1129,13 @@ export default function DavomatFacePage() {
 
   const guideStep = useMemo((): GuideStep => {
     if (done) return "done";
-    if (!pharmacyStaff && !adminQrAnywhere && faceRegistered === false) return "enroll";
+    if (!showDualMethods && faceRegistered === false) return "enroll";
     // Face/QR uchun kamera majburiy (admin ham)
-    if ((pharmacyStaff || adminQrAnywhere) && !cameraGranted) return "permission";
+    if (showDualMethods && !cameraGranted) return "permission";
     if (!adminQrAnywhere && (!gps || gpsError)) return "permission";
     if (!adminQrAnywhere && !inside) return "zone";
-    if (pharmacyStaff || adminQrAnywhere) {
-      // Apteka/admin: avval Face ID yoki QR; tasdiqdan keyin Keldim/Ketdim
+    if (showDualMethods) {
+      // Apteka/ofis/admin: avval Face ID yoki QR; tasdiqdan keyin Keldim/Ketdim
       if (!hasIn && !methodReady) return "face";
       if (!hasIn) return "keldim";
       return "ketdim";
@@ -1148,7 +1153,7 @@ export default function DavomatFacePage() {
     inside,
     verified,
     hasIn,
-    pharmacyStaff,
+    showDualMethods,
     adminQrAnywhere,
     methodReady,
     cameraGranted,
@@ -1774,7 +1779,7 @@ export default function DavomatFacePage() {
           )}
         </div>
 
-        {!pharmacyStaff && faceRegistered === false ? (
+        {!showDualMethods && faceRegistered === false ? (
           <section className="dv-card dv-tone-info mt-4 border-l-[3px] border-l-primary">
             {showGuide && guideStep === "enroll" ? (
               <MobileStepHint step={0} label={t("davomat.connectFaceHint")} tone="amber" />
@@ -1826,7 +1831,7 @@ export default function DavomatFacePage() {
                     : "h-9 shrink-0 gap-1.5 rounded-full border-border text-foreground hover:bg-muted",
                   showGuide && guideStep === "permission" && "dv-focus",
                 )}
-                disabled={gpsSharing || (!pharmacyStaff && !adminQrAnywhere && faceRegistered === false)}
+                disabled={gpsSharing || (!showDualMethods && faceRegistered === false)}
                 onClick={() => void requestLocationPermission()}
               >
                 {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}

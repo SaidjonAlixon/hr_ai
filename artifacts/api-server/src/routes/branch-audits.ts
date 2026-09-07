@@ -1168,6 +1168,16 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     });
     return;
   }
+  const sameDayVisit = visitsThisMonth.some(
+    (a) => String(a.visitDate || "") === visitDate,
+  );
+  if (sameDayVisit) {
+    res.status(400).json({
+      error: "Bugun uchun bu filialga tashrif bo‘ldi — boshqasini tanlang",
+      code: "same_day_visit",
+    });
+    return;
+  }
   const visitName = `${visitsThisMonth.length + 1}-tashrif`;
 
   let distanceMeters: number | null = null;

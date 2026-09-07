@@ -13,7 +13,7 @@ import { syncBranchNeedFromTask } from "../lib/sync-branch-need";
 
 const router: IRouter = Router();
 
-import { HR_ROLES, isHrManager } from "../lib/roles";
+import { HR_ROLES } from "../lib/roles";
 
 /** Rahbar / boshqaruv rollari — vazifa belgilash huquqi */
 const MANAGER_ROLES = new Set([
@@ -30,6 +30,14 @@ const MANAGER_ROLES = new Set([
   "reviziya_rahbar",
   "it_rahbar",
   "texnik_rahbar",
+]);
+
+/** «Barcha uchun» — faqat shu rahbarlar (oddiy xodim / bo‘lim boshlig‘i emas) */
+const TASK_ALL_VISIBILITY_ROLES = new Set([
+  "admin",
+  "director",
+  "hr_direktor",
+  "hr_auditor",
 ]);
 
 function canAssignTasks(role?: string): boolean {
@@ -50,15 +58,75 @@ function isCreator(row: typeof tasksTable.$inferSelect, userId?: number) {
   return !!userId && row.createdById === userId;
 }
 
+function isAdminRole(role?: string | null) {
+  return role === "admin";
+}
+
+/** Tasdiqlash: faqat vazifa qo‘ygan odam yoki admin */
+function canApproveTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
+  return isCreator(row, userId) || isAdminRole(role);
+}
+
+/** To‘liq boshqaruv (o‘chirish va h.k.) — faqat admin */
+function canAdminTaskOps(role?: string | null) {
+  return isAdminRole(role);
+}
+
+function startOfDay(d: Date) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/**
+ * Kechikkan: muddat kuni o‘tgan va hali yakunlanmagan (done/verified emas).
+ * Ijrochi hech narsani o‘zgartira olmaydi — faqat beruvchi muddatni cho‘zgach ochiladi.
+ */
+function isTaskOverdue(row: typeof tasksTable.$inferSelect, now = new Date()) {
+  if (
+    row.status === "verified" ||
+    row.status === "cancelled" ||
+    row.status === "done"
+  ) {
+    return false;
+  }
+  const raw = row.dueAt || row.createdAt;
+  if (!raw) return false;
+  const due = startOfDay(new Date(raw));
+  const today = startOfDay(now);
+  return due.getTime() < today.getTime();
+}
+
+function denyIfAssigneeOverdue(
+  row: typeof tasksTable.$inferSelect,
+  userId?: number,
+  role?: string,
+): { ok: true } | { ok: false; error: string; code: string } {
+  if (isAdminRole(role) || isCreator(row, userId)) return { ok: true };
+  if (isAssignee(row, userId) && isTaskOverdue(row)) {
+    return {
+      ok: false,
+      code: "overdue_locked",
+      error: "Vaqt tugagan — faqat beruvchi muddatni uzaytirishi mumkin.",
+    };
+  }
+  return { ok: true };
+}
+
+/**
+ * Ko‘rinish:
+ * - admin: hammasi
+ * - beruvchi / oluvchi: o‘z vazifasi
+ * - private: faqat yuqoridagilar
+ * - all: + director, hr_direktor, hr_auditor
+ */
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
-  if (role === "admin" || isHrManager(role)) return true;
+  if (isAdminRole(role)) return true;
   if (isCreator(row, userId) || isAssignee(row, userId)) return true;
   const meta = (row.meta && typeof row.meta === "object" ? row.meta : {}) as Record<
     string,
     unknown
   >;
   if (meta.visibility === "private") return false;
-  return false;
+  return !!role && TASK_ALL_VISIBILITY_ROLES.has(role);
 }
 
 function isAllowedAttachmentUrl(url: string) {
@@ -310,9 +378,15 @@ router.post(
     if (
       !isCreator(existing, req.userId) &&
       !isAssignee(existing, req.userId) &&
-      req.userRole !== "admin"
+      !isAdminRole(req.userRole)
     ) {
       res.status(403).json({ error: "Faqat beruvchi yoki ijrochi yozishi mumkin" });
+      return;
+    }
+
+    const overdueGate = denyIfAssigneeOverdue(existing, req.userId, req.userRole);
+    if (!overdueGate.ok) {
+      res.status(403).json({ error: overdueGate.error, code: overdueGate.code });
       return;
     }
 
@@ -405,7 +479,7 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     return;
   }
 
-  if (!isCreator(existing, req.userId) && req.userRole !== "admin") {
+  if (!isCreator(existing, req.userId) && !isAdminRole(req.userRole)) {
     res.status(403).json({
       error: "Vazifa ma'lumotini faqat belgilagan shaxs o'zgartira oladi",
     });
@@ -480,6 +554,11 @@ router.post("/tasks/:id/accept", requireAuth, async (req: AuthRequest, res): Pro
     res.status(403).json({ error: "Faqat ijrochi qabul qila oladi" });
     return;
   }
+  const overdueGate = denyIfAssigneeOverdue(existing, req.userId, req.userRole);
+  if (!overdueGate.ok) {
+    res.status(403).json({ error: overdueGate.error, code: overdueGate.code });
+    return;
+  }
   if (existing.status !== "todo") {
     res.status(400).json({
       error:
@@ -520,6 +599,11 @@ router.post("/tasks/:id/complete", requireAuth, async (req: AuthRequest, res): P
   }
   if (!isAssignee(existing, req.userId)) {
     res.status(403).json({ error: "Faqat ijrochi bajarilgan deb yubora oladi" });
+    return;
+  }
+  const overdueGate = denyIfAssigneeOverdue(existing, req.userId, req.userRole);
+  if (!overdueGate.ok) {
+    res.status(403).json({ error: overdueGate.error, code: overdueGate.code });
     return;
   }
   if (existing.status === "todo") {
@@ -576,8 +660,8 @@ router.post("/tasks/:id/verify", requireAuth, async (req: AuthRequest, res): Pro
     res.status(404).json({ error: "Vazifa topilmadi" });
     return;
   }
-  if (!isCreator(existing, req.userId) && req.userRole !== "admin") {
-    res.status(403).json({ error: "Faqat belgilagan shaxs tasdiqlay oladi" });
+  if (!canApproveTask(existing, req.userId, req.userRole)) {
+    res.status(403).json({ error: "Faqat belgilagan shaxs (yoki admin) tasdiqlay oladi" });
     return;
   }
   if (existing.status !== "done") {
@@ -669,6 +753,11 @@ router.post(
       res.status(403).json({ error: "Faqat ijrochi muddat so'ray oladi" });
       return;
     }
+    const overdueGate = denyIfAssigneeOverdue(existing, req.userId, req.userRole);
+    if (!overdueGate.ok) {
+      res.status(403).json({ error: overdueGate.error, code: overdueGate.code });
+      return;
+    }
     if (existing.status === "todo") {
       res.status(400).json({ error: "Avval vazifani qabul qiling" });
       return;
@@ -727,8 +816,8 @@ router.post(
       res.status(404).json({ error: "Vazifa topilmadi" });
       return;
     }
-    if (!isCreator(existing, req.userId) && req.userRole !== "admin") {
-      res.status(403).json({ error: "Faqat belgilagan shaxs tasdiqlay oladi" });
+    if (!canApproveTask(existing, req.userId, req.userRole)) {
+      res.status(403).json({ error: "Faqat belgilagan shaxs (yoki admin) muddatni tasdiqlay oladi" });
       return;
     }
     if (existing.extensionStatus !== "pending" || !existing.extensionRequestedDueAt) {
@@ -779,8 +868,8 @@ router.delete("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<
     res.status(404).json({ error: "Vazifa topilmadi" });
     return;
   }
-  if (!isCreator(existing, req.userId) && req.userRole !== "admin") {
-    res.status(403).json({ error: "Faqat belgilagan shaxs o'chira oladi" });
+  if (!canAdminTaskOps(req.userRole)) {
+    res.status(403).json({ error: "Vazifani o‘chirish faqat admin uchun" });
     return;
   }
 

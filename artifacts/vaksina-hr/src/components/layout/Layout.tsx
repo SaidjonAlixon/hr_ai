@@ -56,7 +56,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, userRoleLabel } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, isDeptHeadRole, userRoleLabel } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -687,6 +687,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       if (canViewDistribyutsiya(role) && !next.some((i) => i.path === '/distribyutsiya')) {
         next = [...next, distribNav];
       }
+    }
+    if (isDeptHeadRole(role) && !next.some((i) => i.path === '/davomat-qr') && !next.some((i) => i.path === '/admin/davomat-qr')) {
+      const faceIdx = next.findIndex((i) => i.path === '/davomat-face');
+      const at = faceIdx >= 0 ? faceIdx + 1 : next.length;
+      next = [...next.slice(0, at), davomatQrNav, ...next.slice(at)];
     }
     return ensureTaskAnalyticsNav(next);
   }

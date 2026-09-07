@@ -9,6 +9,7 @@ import {
   faceProfilesTable,
   usersTable,
   branchAttendanceQrTable,
+  departmentAttendanceQrTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
@@ -31,6 +32,12 @@ import {
   revokeActiveQrForBranch,
   verifyBranchQrPayload,
 } from "../lib/branch-attendance-qr";
+import {
+  getActiveQrForDepartment,
+  revokeActiveQrForDepartment,
+  verifyDepartmentQrPayload,
+} from "../lib/department-attendance-qr";
+import { isDeptHeadRole } from "../lib/dept-staff";
 import { clientIp, writePunchAudit } from "../lib/punch-audit";
 
 const router: IRouter = Router();
@@ -40,8 +47,8 @@ const WORK_END = "18:00";
 const TZ_OFFSET = "+05:00"; // Asia/Tashkent
 /** Filial davomati Face ID radius (metr) — barcha xodimlar / farmasevtlar */
 export const DAVOMAT_GEOFENCE_METERS = 70;
-/** Asosiy ofis — kengroq zona */
-export const DAVOMAT_OFFICE_GEOFENCE_METERS = 100;
+/** Asosiy ofis — yashil zona 150 m */
+export const DAVOMAT_OFFICE_GEOFENCE_METERS = 150;
 /** Belgilangan ish joyi: 41°13'09.3"N 69°16'22.9"E */
 export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600; // 41.21925
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600; // ≈ 69.273028
@@ -2577,9 +2584,37 @@ function isQrAdmin(role: string | null | undefined) {
   return role === "admin" || role === "director";
 }
 
-/** Faqat admin: istalgan filial QR + lokatsiya shartsiz (geofence yo‘q) */
+/** Ofis bo‘lim QR yaratish: admin/direktor yoki bo‘lim rahbari */
+function canManageDeptQrRole(role: string | null | undefined) {
+  if (!role) return false;
+  if (isQrAdmin(role)) return true;
+  if (isDeptHeadRole(role)) return true;
+  return /_rahbar$/.test(role);
+}
+
+/** Faqat admin: istalgan filial/bo‘lim QR + lokatsiya shartsiz (geofence yo‘q) */
 function isAdminQrAnywhere(role: string | null | undefined) {
   return role === "admin";
+}
+
+async function assertCanAccessDeptQr(
+  role: string | null | undefined,
+  userId: number,
+  departmentId: number,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (isQrAdmin(role)) return { ok: true };
+  if (!canManageDeptQrRole(role)) {
+    return { ok: false, status: 403, error: "Bo‘lim QR iga ruxsat yo‘q" };
+  }
+  const [me] = await db
+    .select({ departmentId: usersTable.departmentId })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  if (!me?.departmentId || me.departmentId !== departmentId) {
+    return { ok: false, status: 403, error: "Faqat o‘z bo‘limingiz QR ini boshqarishingiz mumkin" };
+  }
+  return { ok: true };
 }
 
 async function assertCanAccessBranchQr(
@@ -2793,10 +2828,183 @@ router.delete("/davomat/qr/active/:branchId", requireAuth, async (req: AuthReque
   res.json({ ok: true, revoked: true, qrId: before.qrId, version: before.version });
 });
 
+/** Ofis bo‘limlari — QR yaratish mumkin bo‘lganlar */
+router.get("/davomat/qr/departments", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDeptQrRole(req.userRole)) {
+    res.status(403).json({ error: "Bo‘lim QR yaratishga ruxsat yo‘q", code: "qr_forbidden" });
+    return;
+  }
+  try {
+    const [me] = await db
+      .select({ departmentId: usersTable.departmentId })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+
+    let depts = await db
+      .select({ id: departmentsTable.id, name: departmentsTable.name })
+      .from(departmentsTable)
+      .orderBy(departmentsTable.name);
+
+    if (!isQrAdmin(req.userRole)) {
+      if (!me?.departmentId) {
+        res.json({ departments: [] });
+        return;
+      }
+      depts = depts.filter((d) => d.id === me.departmentId);
+    }
+
+    const departments = await Promise.all(
+      depts.map(async (d) => {
+        const active = await getActiveQrForDepartment(d.id);
+        return {
+          id: d.id,
+          name: d.name,
+          hasActiveQr: Boolean(active),
+          hasPayload: Boolean(active?.tokenPayload),
+          qrId: active?.qrId ?? null,
+          version: active?.version ?? null,
+          createdAt: active?.createdAt?.toISOString() ?? null,
+        };
+      }),
+    );
+    res.json({ departments });
+  } catch (err) {
+    console.error("GET /davomat/qr/departments error:", err);
+    res.status(503).json({ error: "Bo‘limlar yuklanmadi" });
+  }
+});
+
+router.post("/davomat/qr/department/issue", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDeptQrRole(req.userRole)) {
+    res.status(403).json({ error: "Bo‘lim QR yaratishga ruxsat yo‘q", code: "qr_forbidden" });
+    return;
+  }
+  try {
+    const departmentId = Number(req.body?.departmentId);
+    if (!Number.isFinite(departmentId)) {
+      res.status(400).json({ error: "departmentId majburiy" });
+      return;
+    }
+    const access = await assertCanAccessDeptQr(req.userRole, req.userId!, departmentId);
+    if (!access.ok) {
+      res.status(access.status).json({ error: access.error });
+      return;
+    }
+
+    const [dept] = await db
+      .select({ id: departmentsTable.id, name: departmentsTable.name })
+      .from(departmentsTable)
+      .where(eq(departmentsTable.id, departmentId))
+      .limit(1);
+    if (!dept) {
+      res.status(404).json({ error: "Bo‘lim topilmadi" });
+      return;
+    }
+
+    const prev = await getActiveQrForDepartment(departmentId);
+    await revokeActiveQrForDepartment(departmentId);
+    const secrets = mintQrSecrets();
+    const version = (prev?.version ?? 0) + 1;
+    const label = dept.name;
+    const payload = encodeQrPayload(secrets.qrId, secrets.rawToken);
+    const [row] = await db
+      .insert(departmentAttendanceQrTable)
+      .values({
+        qrId: secrets.qrId,
+        departmentId,
+        departmentLabel: label,
+        tokenHash: secrets.tokenHash,
+        tokenPayload: payload,
+        version,
+        status: "active",
+        createdById: req.userId!,
+        expiresAt: null,
+      })
+      .returning();
+
+    res.json({
+      ok: true,
+      qrId: row.qrId,
+      departmentId,
+      departmentLabel: label,
+      version: row.version,
+      status: row.status,
+      createdAt: row.createdAt.toISOString(),
+      expiresAt: null,
+      payload,
+      note: "Bo‘lim QR saqlandi. Yangi yaratilsa eski o‘chadi.",
+    });
+  } catch (err) {
+    console.error("POST /davomat/qr/department/issue error:", err);
+    res.status(503).json({ error: "Bo‘lim QR yaratilmadi" });
+  }
+});
+
+router.get("/davomat/qr/department/active/:departmentId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDeptQrRole(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
+    return;
+  }
+  const departmentId = Number(req.params.departmentId);
+  if (!Number.isFinite(departmentId)) {
+    res.status(400).json({ error: "departmentId noto‘g‘ri" });
+    return;
+  }
+  const access = await assertCanAccessDeptQr(req.userRole, req.userId!, departmentId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  const active = await getActiveQrForDepartment(departmentId);
+  if (!active) {
+    res.json({ active: null });
+    return;
+  }
+  res.json({
+    active: {
+      qrId: active.qrId,
+      departmentId: active.departmentId,
+      departmentLabel: active.departmentLabel,
+      version: active.version,
+      status: active.status,
+      createdAt: active.createdAt.toISOString(),
+      expiresAt: active.expiresAt?.toISOString() ?? null,
+      payload: active.tokenPayload || null,
+      needsReissue: !active.tokenPayload,
+    },
+  });
+});
+
+router.delete("/davomat/qr/department/active/:departmentId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDeptQrRole(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
+    return;
+  }
+  const departmentId = Number(req.params.departmentId);
+  if (!Number.isFinite(departmentId)) {
+    res.status(400).json({ error: "departmentId noto‘g‘ri" });
+    return;
+  }
+  const access = await assertCanAccessDeptQr(req.userRole, req.userId!, departmentId);
+  if (!access.ok) {
+    res.status(access.status).json({ error: access.error });
+    return;
+  }
+  const before = await getActiveQrForDepartment(departmentId);
+  if (!before) {
+    res.json({ ok: true, revoked: false });
+    return;
+  }
+  await revokeActiveQrForDepartment(departmentId);
+  res.json({ ok: true, revoked: true, qrId: before.qrId, version: before.version });
+});
+
 /**
  * QR orqali davomat — Face ID talab qilinmaydi.
- * Oddiy xodim: GPS + yashil hudud + o‘z filiali QR.
- * Admin: istalgan filial QR, lokatsiya qayerda bo‘lishidan qat’i nazar qabul.
+ * Filial QR: farmasevt yo‘li + filial GPS.
+ * Bo‘lim QR: ofis xodimi + ofis GPS (150 m).
+ * Admin: istalgan QR, lokatsiya shartsiz.
  */
 router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const latitudeRaw = Number(req.body?.latitude);
@@ -2853,79 +3061,237 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     }
 
     const emp = await ensureEmployeeForUser(user);
-    if (!usesBranchDavomat(user.role, emp.orgRole) && !adminAnywhere) {
-      await writePunchAudit({
-        employeeId: emp.id,
-        userId: user.id,
-        verificationMethod: "QR",
-        action,
-        finalResult: "denied",
-        failureReason: "role_not_allowed",
-        ipAddress: ip,
-        deviceId,
-      });
-      res.status(403).json({
-        error: "QR davomat faqat mudir, farmasevt, stajyor yoki admin uchun",
-        code: "role_not_allowed",
-      });
-      return;
-    }
-
+    const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const myBranchId = assignedBranchIdForEmp(emp);
-    if (!adminAnywhere && !myBranchId) {
+    const myDeptId = user.departmentId;
+
+    const branchQr = await verifyBranchQrPayload(payload);
+    if (branchQr.ok) {
+      if (!pharmacy && !adminAnywhere) {
+        await writePunchAudit({
+          employeeId: emp.id,
+          userId: user.id,
+          verificationMethod: "QR",
+          action,
+          finalResult: "denied",
+          failureReason: "role_not_allowed",
+          ipAddress: ip,
+          deviceId,
+        });
+        res.status(403).json({
+          error: "Filial QR faqat mudir, farmasevt, stajyor yoki admin uchun",
+          code: "role_not_allowed",
+        });
+        return;
+      }
+      if (!adminAnywhere && !myBranchId) {
+        res.status(400).json({
+          error: "Filial biriktirilmagan — avval smena/filial belgilansin",
+          code: "branch_unassigned",
+        });
+        return;
+      }
+      if (!adminAnywhere && branchQr.row.branchId !== myBranchId) {
+        await writePunchAudit({
+          employeeId: emp.id,
+          userId: user.id,
+          branchId: myBranchId,
+          verificationMethod: "QR",
+          action,
+          qrResult: "wrong_branch",
+          finalResult: "denied",
+          failureReason: "QR boshqa filialga tegishli",
+          ipAddress: ip,
+          deviceId,
+          meta: { qrBranchId: branchQr.row.branchId, myBranchId },
+        });
+        res.status(403).json({
+          error: "Bu QR boshqa filialniki. Faqat o‘z filialingiz QR i bilan davomat qiling.",
+          code: "qr_wrong_branch",
+          myBranchId,
+          qrBranchId: branchQr.row.branchId,
+        });
+        return;
+      }
+
+      const punchBranchId = adminAnywhere ? branchQr.row.branchId : myBranchId!;
+      let latitude = hasGps ? latitudeRaw : 0;
+      let longitude = hasGps ? longitudeRaw : 0;
+      let distanceMeters = 0;
+      let allowedMeters = 0;
+      let gpsResult: string = adminAnywhere ? "admin_bypass" : "ok";
+
+      if (!adminAnywhere) {
+        const gate = await geoGate(
+          emp,
+          user.role,
+          latitude,
+          longitude,
+          Number.isFinite(accuracy) ? accuracy : undefined,
+        );
+        if (!gate.ok) {
+          await writePunchAudit({
+            employeeId: emp.id,
+            userId: user.id,
+            branchId: myBranchId,
+            verificationMethod: "QR",
+            action,
+            gpsResult: String(gate.body.code || "outside"),
+            gpsDistance: typeof gate.body.distanceMeters === "number" ? gate.body.distanceMeters : null,
+            qrResult: "ok",
+            finalResult: "denied",
+            failureReason: String(gate.body.error || "geofence"),
+            ipAddress: ip,
+            deviceId,
+          });
+          res.status(gate.status).json(gate.body);
+          return;
+        }
+        distanceMeters = gate.distanceMeters;
+        allowedMeters = gate.effectiveRadius;
+        gpsResult = "ok";
+      } else if (hasGps) {
+        try {
+          const resolved = await resolveDavomatPoint(emp, user.role);
+          if (resolved.ok) {
+            distanceMeters = haversineMeters(latitude, longitude, resolved.point.latitude, resolved.point.longitude);
+            allowedMeters = geofenceMetersForKind(resolved.point.kind);
+          }
+        } catch {
+          /* ignore */
+        }
+      } else {
+        const [branch] = await db
+          .select({
+            latitude: employeesTable.latitude,
+            longitude: employeesTable.longitude,
+          })
+          .from(employeesTable)
+          .where(eq(employeesTable.id, punchBranchId))
+          .limit(1);
+        if (
+          branch?.latitude != null &&
+          branch?.longitude != null &&
+          Number.isFinite(branch.latitude) &&
+          Number.isFinite(branch.longitude)
+        ) {
+          latitude = branch.latitude;
+          longitude = branch.longitude;
+        }
+      }
+
+      const punched = await applyFacePunch({
+        emp,
+        userRole: user.role,
+        latitude,
+        longitude,
+        distanceMeters,
+        allowedMeters: adminAnywhere ? Math.max(allowedMeters, 999_999) : allowedMeters,
+        faceProfileId: null,
+        action,
+        verificationMethod: "QR",
+        resolvedBranchId: punchBranchId,
+        resolvedBranchLabel: branchQr.row.branchLabel || null,
+      });
+      if (!punched.ok) {
+        await writePunchAudit({
+          employeeId: emp.id,
+          userId: user.id,
+          branchId: punchBranchId,
+          verificationMethod: "QR",
+          action,
+          gpsResult,
+          gpsDistance: distanceMeters,
+          qrResult: "ok",
+          finalResult: "denied",
+          failureReason: String(punched.body.error || punched.body.code || "denied"),
+          ipAddress: ip,
+          deviceId,
+          meta: adminAnywhere ? { adminQrAnywhere: true } : undefined,
+        });
+        res.status(punched.status).json(punched.body);
+        return;
+      }
+
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        branchId: punchBranchId,
+        verificationMethod: "QR",
+        action,
+        gpsResult,
+        gpsDistance: distanceMeters,
+        qrResult: "ok",
+        finalResult: "success",
+        ipAddress: ip,
+        deviceId,
+        meta: adminAnywhere ? { adminQrAnywhere: true, qrBranchId: branchQr.row.branchId } : undefined,
+      });
+
+      const own = await ownEmployeeReport(emp.id);
+      res.json({
+        ...punched.payload,
+        employee: own.employee,
+        branchId: punchBranchId,
+        branchLabel: branchQr.row.branchLabel,
+        adminQrAnywhere: adminAnywhere || undefined,
+      });
+      return;
+    }
+
+    const deptQr = await verifyDepartmentQrPayload(payload);
+    if (!deptQr.ok) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        branchId: myBranchId,
+        verificationMethod: "QR",
+        action,
+        qrResult: deptQr.code !== "qr_unknown" ? deptQr.code : branchQr.code,
+        finalResult: "denied",
+        failureReason: deptQr.code !== "qr_unknown" ? deptQr.error : branchQr.error,
+        ipAddress: ip,
+        deviceId,
+      });
+      const fail = deptQr.code !== "qr_unknown" ? deptQr : branchQr;
+      res.status(400).json({ error: fail.error, code: fail.code });
+      return;
+    }
+
+    if (!adminAnywhere && !myDeptId) {
       res.status(400).json({
-        error: "Filial biriktirilmagan — avval smena/filial belgilansin",
-        code: "branch_unassigned",
+        error: "Bo‘lim biriktirilmagan — QR davomat uchun bo‘lim kerak",
+        code: "department_unassigned",
       });
       return;
     }
 
-    const qr = await verifyBranchQrPayload(payload);
-    if (!qr.ok) {
+    if (!adminAnywhere && deptQr.row.departmentId !== myDeptId) {
       await writePunchAudit({
         employeeId: emp.id,
         userId: user.id,
-        branchId: myBranchId,
         verificationMethod: "QR",
         action,
-        qrResult: qr.code,
+        qrResult: "wrong_department",
         finalResult: "denied",
-        failureReason: qr.error,
+        failureReason: "QR boshqa bo‘limga tegishli",
         ipAddress: ip,
         deviceId,
-      });
-      res.status(400).json({ error: qr.error, code: qr.code });
-      return;
-    }
-
-    if (!adminAnywhere && qr.row.branchId !== myBranchId) {
-      await writePunchAudit({
-        employeeId: emp.id,
-        userId: user.id,
-        branchId: myBranchId,
-        verificationMethod: "QR",
-        action,
-        qrResult: "wrong_branch",
-        finalResult: "denied",
-        failureReason: "QR boshqa filialga tegishli",
-        ipAddress: ip,
-        deviceId,
-        meta: { qrBranchId: qr.row.branchId, myBranchId },
+        meta: { qrDepartmentId: deptQr.row.departmentId, myDeptId },
       });
       res.status(403).json({
-        error: "Bu QR boshqa filialniki. Faqat o‘z filialingiz QR i bilan davomat qiling.",
-        code: "qr_wrong_branch",
-        myBranchId,
-        qrBranchId: qr.row.branchId,
+        error: "Bu QR boshqa bo‘limniki. Faqat o‘z bo‘limingiz QR i bilan davomat qiling.",
+        code: "qr_wrong_department",
+        myDepartmentId: myDeptId,
+        qrDepartmentId: deptQr.row.departmentId,
       });
       return;
     }
 
-    const punchBranchId = adminAnywhere ? qr.row.branchId : myBranchId!;
-    let latitude = hasGps ? latitudeRaw : 0;
-    let longitude = hasGps ? longitudeRaw : 0;
+    let latitude = hasGps ? latitudeRaw : DAVOMAT_SITE_LAT;
+    let longitude = hasGps ? longitudeRaw : DAVOMAT_SITE_LNG;
     let distanceMeters = 0;
-    let allowedMeters = 0;
+    let allowedMeters = DAVOMAT_OFFICE_GEOFENCE_METERS;
     let gpsResult: string = adminAnywhere ? "admin_bypass" : "ok";
 
     if (!adminAnywhere) {
@@ -2940,7 +3306,6 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
-          branchId: myBranchId,
           verificationMethod: "QR",
           action,
           gpsResult: String(gate.body.code || "outside"),
@@ -2950,6 +3315,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           failureReason: String(gate.body.error || "geofence"),
           ipAddress: ip,
           deviceId,
+          meta: { qrKind: "department", departmentId: deptQr.row.departmentId },
         });
         res.status(gate.status).json(gate.body);
         return;
@@ -2958,35 +3324,8 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       allowedMeters = gate.effectiveRadius;
       gpsResult = "ok";
     } else if (hasGps) {
-      // Admin: masofa faqat audit uchun, rad etilmaydi
-      try {
-        const resolved = await resolveDavomatPoint(emp, user.role);
-        if (resolved.ok) {
-          distanceMeters = haversineMeters(latitude, longitude, resolved.point.latitude, resolved.point.longitude);
-          allowedMeters = geofenceMetersForKind(resolved.point.kind);
-        }
-      } catch {
-        /* ignore */
-      }
-    } else {
-      // GPS yo‘q — filial nuqtasini yozamiz (agar bo‘lsa)
-      const [branch] = await db
-        .select({
-          latitude: employeesTable.latitude,
-          longitude: employeesTable.longitude,
-        })
-        .from(employeesTable)
-        .where(eq(employeesTable.id, punchBranchId))
-        .limit(1);
-      if (
-        branch?.latitude != null &&
-        branch?.longitude != null &&
-        Number.isFinite(branch.latitude) &&
-        Number.isFinite(branch.longitude)
-      ) {
-        latitude = branch.latitude;
-        longitude = branch.longitude;
-      }
+      distanceMeters = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+      allowedMeters = DAVOMAT_OFFICE_GEOFENCE_METERS;
     }
 
     const punched = await applyFacePunch({
@@ -2999,14 +3338,13 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       faceProfileId: null,
       action,
       verificationMethod: "QR",
-      resolvedBranchId: punchBranchId,
-      resolvedBranchLabel: qr.row.branchLabel || null,
+      resolvedBranchId: null,
+      resolvedBranchLabel: deptQr.row.departmentLabel || null,
     });
     if (!punched.ok) {
       await writePunchAudit({
         employeeId: emp.id,
         userId: user.id,
-        branchId: punchBranchId,
         verificationMethod: "QR",
         action,
         gpsResult,
@@ -3016,7 +3354,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         failureReason: String(punched.body.error || punched.body.code || "denied"),
         ipAddress: ip,
         deviceId,
-        meta: adminAnywhere ? { adminQrAnywhere: true } : undefined,
+        meta: { qrKind: "department", departmentId: deptQr.row.departmentId },
       });
       res.status(punched.status).json(punched.body);
       return;
@@ -3025,7 +3363,6 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     await writePunchAudit({
       employeeId: emp.id,
       userId: user.id,
-      branchId: punchBranchId,
       verificationMethod: "QR",
       action,
       gpsResult,
@@ -3034,15 +3371,19 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       finalResult: "success",
       ipAddress: ip,
       deviceId,
-      meta: adminAnywhere ? { adminQrAnywhere: true, qrBranchId: qr.row.branchId } : undefined,
+      meta: {
+        qrKind: "department",
+        departmentId: deptQr.row.departmentId,
+        ...(adminAnywhere ? { adminQrAnywhere: true } : {}),
+      },
     });
 
     const own = await ownEmployeeReport(emp.id);
     res.json({
       ...punched.payload,
       employee: own.employee,
-      branchId: punchBranchId,
-      branchLabel: qr.row.branchLabel,
+      departmentId: deptQr.row.departmentId,
+      departmentLabel: deptQr.row.departmentLabel,
       adminQrAnywhere: adminAnywhere || undefined,
     });
   } catch (err) {
@@ -3060,7 +3401,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
   }
 });
 
-/** Workplace: QR usuli mavjudmi (apteka rollari) + admin istalgan joydan */
+/** Workplace: Face ID | QR — apteka yoki ofis (bo‘limi bor) */
 router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const [user] = await db
@@ -3075,13 +3416,21 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
     const emp = await ensureEmployeeForUser(user);
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const adminQrAnywhere = isAdminQrAnywhere(user.role);
-    const methods: Array<"FACE_ID" | "QR"> = pharmacy || adminQrAnywhere ? ["FACE_ID", "QR"] : ["FACE_ID"];
+    const officeStaff = !pharmacy && Boolean(user.departmentId);
+    const manageBranch = canManageBranchQr(user.role);
+    const manageDept = canManageDeptQrRole(user.role);
+    const methods: Array<"FACE_ID" | "QR"> =
+      pharmacy || adminQrAnywhere || officeStaff ? ["FACE_ID", "QR"] : ["FACE_ID"];
     res.json({
       pharmacyStaff: pharmacy,
+      officeStaff,
       adminQrAnywhere,
       methods,
-      canManageQr: canManageBranchQr(user.role),
+      canManageQr: manageBranch || manageDept,
+      canManageBranchQr: manageBranch,
+      canManageDeptQr: manageDept,
       assignedBranchId: assignedBranchIdForEmp(emp),
+      departmentId: user.departmentId,
     });
   } catch (err) {
     console.error("GET /davomat/methods error:", err);

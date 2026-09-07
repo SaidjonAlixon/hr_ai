@@ -153,11 +153,13 @@ function BranchPicker({
   value,
   onChange,
   disabled,
+  visitedTodayIds,
 }: {
   branches: PickerBranch[];
   value: string;
   onChange: (id: string) => void;
   disabled?: boolean;
+  visitedTodayIds?: Set<string>;
 }) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -229,6 +231,7 @@ function BranchPicker({
                 {filtered.map((b) => {
                   const active = String(b.id) === value;
                   const dups = branches.filter((x) => x.label === b.label).length > 1;
+                  const doneToday = visitedTodayIds?.has(String(b.id));
                   return (
                     <li key={b.id}>
                       <button
@@ -240,26 +243,42 @@ function BranchPicker({
                         }}
                         className={cn(
                           "flex w-full items-center gap-2 px-3 py-3 text-left active:opacity-90",
-                          b.hasGps ? "bg-emerald-50/80" : "bg-rose-50/80",
+                          doneToday
+                            ? "bg-amber-50/90"
+                            : b.hasGps
+                              ? "bg-emerald-50/80"
+                              : "bg-rose-50/80",
                           active && "ring-inset ring-2 ring-slate-900/10",
                         )}
                       >
                         <MapPin
                           className={cn(
                             "h-4 w-4 shrink-0",
-                            b.hasGps ? "text-emerald-600" : "text-rose-500",
+                            doneToday
+                              ? "text-amber-600"
+                              : b.hasGps
+                                ? "text-emerald-600"
+                                : "text-rose-500",
                           )}
                         />
                         <span className="min-w-0 flex-1">
                           <span
                             className={cn(
                               "block text-sm font-semibold leading-snug",
-                              b.hasGps ? "text-emerald-800" : "text-rose-800",
+                              doneToday
+                                ? "text-amber-900"
+                                : b.hasGps
+                                  ? "text-emerald-800"
+                                  : "text-rose-800",
                             )}
                           >
                             {b.label}
                           </span>
-                          {dups ? (
+                          {doneToday ? (
+                            <span className="mt-0.5 block text-[11px] font-medium text-amber-700">
+                              {t("checklist.todayVisitedTitle")}
+                            </span>
+                          ) : dups ? (
                             <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
                               {b.managerName}
                             </span>
@@ -335,6 +354,24 @@ export default function ChecklistPage() {
   const nextVisitNum = monthFull ? MAX_VISITS_PER_MONTH : doneVisits + 1;
   const visitName = `${nextVisitNum}-tashrif`;
 
+  const visitedToday = useMemo(() => {
+    if (!managerId || !visitDate) return false;
+    return history.some(
+      (a) =>
+        String(a.managerEmployeeId) === managerId &&
+        String(a.visitDate || "") === visitDate,
+    );
+  }, [history, managerId, visitDate]);
+
+  const visitedTodayIds = useMemo(() => {
+    const day = visitDate || todayIso();
+    return new Set(
+      history
+        .filter((a) => String(a.visitDate || "") === day)
+        .map((a) => String(a.managerEmployeeId)),
+    );
+  }, [history, visitDate]);
+
   useEffect(() => {
     setGpsError(null);
   }, [managerId]);
@@ -357,6 +394,7 @@ export default function ChecklistPage() {
 
   const canFillChecklist =
     !monthFull &&
+    !visitedToday &&
     (user?.role === "admin" || (Boolean(selectedBranch) && withinGeofence));
 
   const remainMeters =
@@ -485,6 +523,24 @@ export default function ChecklistPage() {
     setVisitDate(todayIso());
     setGeneralNote("");
     setCategories(createEmptyAuditTemplate());
+    setGps(null);
+    setGpsError(null);
+  }
+
+  function pickBranch(id: string) {
+    const day = visitDate || todayIso();
+    const alreadyToday = history.some(
+      (a) => String(a.managerEmployeeId) === id && String(a.visitDate || "") === day,
+    );
+    if (alreadyToday) {
+      toast({
+        title: t("checklist.todayVisitedTitle"),
+        description: t("checklist.todayVisitedHint"),
+      });
+      setManagerId("");
+      return;
+    }
+    setManagerId(id);
   }
 
   function readFreshGps(): Promise<{ lat: number; lng: number; accuracy: number | null }> {
@@ -524,6 +580,15 @@ export default function ChecklistPage() {
     }
     if (monthFull) {
       toast({ title: t("checklist.visitFull"), variant: "destructive" });
+      return;
+    }
+    if (visitedToday) {
+      toast({
+        title: t("checklist.todayVisitedTitle"),
+        description: t("checklist.todayVisitedHint"),
+        variant: "destructive",
+      });
+      resetForm();
       return;
     }
     if (live.answered === 0) {
@@ -589,9 +654,10 @@ export default function ChecklistPage() {
       });
       toast({
         title: t("checklist.savedOk"),
-        description: `${t(visitLabelKey(nextVisitNum))} · ${live.scorePercent}%`,
+        description: t("checklist.todayVisitedAfterSave"),
       });
       resetForm();
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (e: any) {
       toast({
         title: t("checklist.saveFail"),
@@ -718,9 +784,15 @@ export default function ChecklistPage() {
               <BranchPicker
                 branches={branches}
                 value={managerId}
-                onChange={setManagerId}
+                onChange={pickBranch}
+                visitedTodayIds={visitedTodayIds}
                 disabled={branchesLoading || branches.length === 0}
               />
+              {visitedToday ? (
+                <p className="rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                  {t("checklist.todayVisitedHint")}
+                </p>
+              ) : null}
               <p className="text-[10px] text-muted-foreground">
                 <span className="font-medium text-emerald-700">{t("checklist.gpsGreen")}</span> — {t("checklist.gpsHas")} ·{" "}
                 <span className="font-medium text-rose-700">{t("checklist.gpsRed")}</span> — {t("checklist.gpsNone")}

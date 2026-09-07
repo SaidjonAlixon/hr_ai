@@ -360,8 +360,8 @@ export async function fetchMyDavomat(): Promise<{
 }
 
 export const DAVOMAT_GEOFENCE_METERS = 70;
-/** Asosiy ofis — 100 m atrofida ham qabul qilinadi */
-export const DAVOMAT_OFFICE_GEOFENCE_METERS = 100;
+/** Asosiy ofis — 150 m atrofida qabul qilinadi */
+export const DAVOMAT_OFFICE_GEOFENCE_METERS = 150;
 /** 41°13'09.3"N 69°16'22.9"E */
 export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600;
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600;
@@ -411,11 +411,16 @@ export async function fetchDavomatSite(): Promise<DavomatSite> {
 
 export type DavomatMethods = {
   pharmacyStaff: boolean;
+  /** Ofis xodimi (bo‘limi bor) — Face ID | QR */
+  officeStaff?: boolean;
   /** Faqat admin: istalgan filial QR, lokatsiya shartsiz */
   adminQrAnywhere?: boolean;
   methods: Array<"FACE_ID" | "QR">;
   canManageQr: boolean;
+  canManageBranchQr?: boolean;
+  canManageDeptQr?: boolean;
   assignedBranchId: number | null;
+  departmentId?: number | null;
 };
 
 export function fetchDavomatMethods(): Promise<DavomatMethods> {
@@ -437,6 +442,20 @@ export function fetchQrBranches(): Promise<{ branches: QrBranchRow[] }> {
   return apiJson("/davomat/qr/branches");
 }
 
+export type QrDepartmentRow = {
+  id: number;
+  name: string;
+  hasActiveQr: boolean;
+  hasPayload?: boolean;
+  qrId: string | null;
+  version: number | null;
+  createdAt: string | null;
+};
+
+export function fetchQrDepartments(): Promise<{ departments: QrDepartmentRow[] }> {
+  return apiJson("/davomat/qr/departments");
+}
+
 export function fetchActiveBranchQr(branchId: number): Promise<{
   active: {
     qrId: string;
@@ -451,6 +470,22 @@ export function fetchActiveBranchQr(branchId: number): Promise<{
   } | null;
 }> {
   return apiJson(`/davomat/qr/active/${branchId}`);
+}
+
+export function fetchActiveDepartmentQr(departmentId: number): Promise<{
+  active: {
+    qrId: string;
+    departmentId: number;
+    departmentLabel: string | null;
+    version: number;
+    status: string;
+    createdAt: string;
+    expiresAt: string | null;
+    payload: string | null;
+    needsReissue?: boolean;
+  } | null;
+}> {
+  return apiJson(`/davomat/qr/department/active/${departmentId}`);
 }
 
 export function issueBranchQr(branchId: number): Promise<{
@@ -469,8 +504,28 @@ export function issueBranchQr(branchId: number): Promise<{
   });
 }
 
+export function issueDepartmentQr(departmentId: number): Promise<{
+  ok: boolean;
+  qrId: string;
+  departmentId: number;
+  departmentLabel: string;
+  version: number;
+  payload: string;
+  createdAt: string;
+  note?: string;
+}> {
+  return apiJson("/davomat/qr/department/issue", {
+    method: "POST",
+    body: JSON.stringify({ departmentId }),
+  });
+}
+
 export function revokeBranchQr(branchId: number): Promise<{ ok: boolean; revoked: boolean }> {
   return apiJson(`/davomat/qr/active/${branchId}`, { method: "DELETE" });
+}
+
+export function revokeDepartmentQr(departmentId: number): Promise<{ ok: boolean; revoked: boolean }> {
+  return apiJson(`/davomat/qr/department/active/${departmentId}`, { method: "DELETE" });
 }
 
 export async function qrPunchDavomat(payload: {
@@ -493,6 +548,7 @@ export async function qrPunchDavomat(payload: {
   distanceMeters: number;
   verificationMethod?: string;
   branchLabel?: string | null;
+  departmentLabel?: string | null;
   adminQrAnywhere?: boolean;
   employee?: DavomatEmployee | null;
 }> {

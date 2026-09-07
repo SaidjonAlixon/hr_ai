@@ -707,6 +707,24 @@ CREATE INDEX IF NOT EXISTS branch_attendance_qr_branch_idx ON branch_attendance_
 CREATE INDEX IF NOT EXISTS branch_attendance_qr_status_idx ON branch_attendance_qr (status);
 ALTER TABLE branch_attendance_qr ADD COLUMN IF NOT EXISTS token_payload TEXT;
 
+CREATE TABLE IF NOT EXISTS department_attendance_qr (
+  id SERIAL PRIMARY KEY,
+  qr_id TEXT NOT NULL,
+  department_id INTEGER NOT NULL,
+  department_label TEXT,
+  token_hash TEXT NOT NULL,
+  token_payload TEXT,
+  version INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'active',
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ,
+  revoked_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS department_attendance_qr_qr_id_uidx ON department_attendance_qr (qr_id);
+CREATE INDEX IF NOT EXISTS department_attendance_qr_dept_idx ON department_attendance_qr (department_id);
+CREATE INDEX IF NOT EXISTS department_attendance_qr_status_idx ON department_attendance_qr (status);
+
 CREATE TABLE IF NOT EXISTS attendance_punch_audit (
   id SERIAL PRIMARY KEY,
   employee_id INTEGER,

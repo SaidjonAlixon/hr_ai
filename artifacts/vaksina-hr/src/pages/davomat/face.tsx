@@ -32,7 +32,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FaceScanDialog } from "@/components/FaceScanDialog";
-import { QrScanDialog } from "@/components/QrScanDialog";
+import { QrScanDialog, openScanCamera } from "@/components/QrScanDialog";
 import { useToast } from "@/hooks/use-toast";
 import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
 import {
@@ -64,7 +64,10 @@ import { roleLabel } from "@/lib/candidate-access";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 import { formatSom, useOylikMe } from "@/lib/oylik-api";
 import { workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
-import { requestDavomatPermissions } from "@/lib/davomat-permissions";
+import {
+  queryCameraPermission,
+  requestDavomatPermissions,
+} from "@/lib/davomat-permissions";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
 
@@ -367,6 +370,8 @@ function GuideBoard({
   faceRegistered,
   inside,
   hasGps,
+  cameraGranted,
+  adminAnywhere,
   hasIn,
   afterShiftEnd,
   done,
@@ -381,6 +386,8 @@ function GuideBoard({
   faceRegistered: boolean | null;
   inside: boolean;
   hasGps: boolean;
+  cameraGranted: boolean;
+  adminAnywhere?: boolean;
   hasIn: boolean;
   afterShiftEnd: boolean;
   done: boolean;
@@ -394,6 +401,8 @@ function GuideBoard({
   const { t } = useI18n();
 
   if (pharmacyStaff) {
+    const permOk = cameraGranted && (adminAnywhere || hasGps);
+    const zoneOk = adminAnywhere || (hasGps && inside);
     const steps = [
       {
         id: "permission" as const,
@@ -448,8 +457,8 @@ function GuideBoard({
             const methodReady = Boolean(hasIn || (active === "keldim" && !done));
             const passed =
               done ||
-              (it.n === 1 && hasGps) ||
-              (it.n === 2 && hasGps && inside) ||
+              (it.n === 1 && permOk) ||
+              (it.n === 2 && zoneOk) ||
               (it.n === 3 && methodReady) ||
               (it.n === 4 && done);
 
@@ -734,6 +743,7 @@ export default function DavomatFacePage() {
   const [gps, setGps] = useState<Gps | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [gpsSharing, setGpsSharing] = useState(false);
+  const [cameraGranted, setCameraGranted] = useState(false);
   const [site, setSite] = useState<DavomatSite>({
     allowedMeters: DAVOMAT_OFFICE_GEOFENCE_METERS,
     label: DAVOMAT_SITE_LABEL,
@@ -756,7 +766,16 @@ export default function DavomatFacePage() {
   const [methodsReady, setMethodsReady] = useState(false);
   const [canManageQr, setCanManageQr] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [qrStream, setQrStream] = useState<MediaStream | null>(null);
   const [methodHint, setMethodHint] = useState<"FACE_ID" | "QR" | null>(null);
+
+  useEffect(() => {
+    if (qrOpen) return;
+    setQrStream((prev) => {
+      prev?.getTracks().forEach((t) => t.stop());
+      return null;
+    });
+  }, [qrOpen]);
   const [faceImage, setFaceImage] = useState<string | null>(() => {
     try {
       return sessionStorage.getItem(FACE_SNAP_KEY);
@@ -904,6 +923,9 @@ export default function DavomatFacePage() {
     if (!navigator.geolocation) {
       setGpsError(t("davomat.gpsUnsupported"));
     }
+    void queryCameraPermission().then((state) => {
+      if (state === "granted") setCameraGranted(true);
+    });
     return () => {
       if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
     };
@@ -913,6 +935,12 @@ export default function DavomatFacePage() {
     setGpsSharing(true);
     try {
       const result = await requestDavomatPermissions();
+
+      if (result.camera) {
+        setCameraGranted(true);
+      } else {
+        setCameraGranted(false);
+      }
 
       if (result.gps) {
         applyGps(result.gps);
@@ -933,12 +961,18 @@ export default function DavomatFacePage() {
             m: Math.round(result.gps.coords.accuracy || 0),
           }),
         });
-      } else if (result.gps && !result.camera) {
+      } else if (result.camera && !result.gps && adminQrAnywhere) {
         toast({
           title: t("davomat.gpsGrantedTitle"),
-          description: `${tr(t, "davomat.gpsGrantedDesc", {
-            m: Math.round(result.gps.coords.accuracy || 0),
-          })} · ${t("davomat.permsCamDenied")}`,
+          description: t("davomat.permsAllOk"),
+        });
+      } else if (result.gps && !result.camera) {
+        toast({
+          title: t("davomat.permsCamBlockedTitle"),
+          description:
+            result.cameraError === "camera_missing"
+              ? t("davomat.permsCamMissing")
+              : t("davomat.permsCamDenied"),
           variant: "destructive",
         });
       } else if (!result.gps && result.camera) {
@@ -948,12 +982,17 @@ export default function DavomatFacePage() {
           variant: "destructive",
         });
       } else {
+        const camMsg =
+          result.cameraError === "camera_missing"
+            ? t("davomat.permsCamMissing")
+            : result.cameraError === "camera_denied"
+              ? t("davomat.permsCamDenied")
+              : null;
         toast({
           title: t("davomat.gpsNotGranted"),
           description:
-            result.gpsError === "gps_denied" || result.cameraError === "camera_denied"
-              ? t("davomat.gpsAskAgain")
-              : t("davomat.gpsFailed"),
+            camMsg ||
+            (result.gpsError === "gps_denied" ? t("davomat.gpsAskAgain") : t("davomat.gpsFailed")),
           variant: "destructive",
         });
       }
@@ -1013,6 +1052,7 @@ export default function DavomatFacePage() {
   /** Face ID: apteka uchun enroll bo‘lmasa ham tugma ochilsin (avval enroll) */
   const canOpenFace =
     methodsReady &&
+    cameraGranted &&
     Boolean(gps) &&
     !gpsError &&
     isFaceIdSupported() &&
@@ -1023,6 +1063,7 @@ export default function DavomatFacePage() {
   /** QR: apteka — GPS + zona; admin — istalgan filial, lokatsiya shartsiz */
   const canOpenQr =
     methodsReady &&
+    cameraGranted &&
     !done &&
     (adminQrAnywhere || (pharmacyStaff && Boolean(gps) && !gpsError && inside));
 
@@ -1040,15 +1081,48 @@ export default function DavomatFacePage() {
   }, [canOpenFace, busy, faceRegistered, qrVerifiedReady, methodHint]);
 
   const openQrMethod = useCallback(() => {
-    if (!canOpenQr || busy || faceVerifiedReady) return;
+    if (!canOpenQr || busy || faceVerifiedReady) {
+      if (!cameraGranted) {
+        toast({
+          title: t("davomat.permsCamBlockedTitle"),
+          description: t("davomat.permsNeedBtn"),
+          variant: "destructive",
+        });
+      }
+      return;
+    }
     setScanOpen(false);
     setEnrollOpen(false);
-    setQrOpen(true);
-  }, [canOpenQr, busy, faceVerifiedReady]);
+    void (async () => {
+      try {
+        const stream = await openScanCamera();
+        setCameraGranted(true);
+        setQrStream((prev) => {
+          prev?.getTracks().forEach((t) => t.stop());
+          return stream;
+        });
+        setQrOpen(true);
+      } catch (e) {
+        const name = e instanceof DOMException ? e.name : "";
+        const msg =
+          name === "NotFoundError" || name === "DevicesNotFoundError"
+            ? t("davomat.permsCamMissing")
+            : t("davomat.permsCamDenied");
+        setCameraGranted(false);
+        toast({
+          title: t("davomat.permsCamBlockedTitle"),
+          description: msg,
+          variant: "destructive",
+        });
+      }
+    })();
+  }, [canOpenQr, busy, faceVerifiedReady, cameraGranted, toast, t]);
 
   const guideStep = useMemo((): GuideStep => {
     if (done) return "done";
     if (!pharmacyStaff && !adminQrAnywhere && faceRegistered === false) return "enroll";
+    // Face/QR uchun kamera majburiy (admin ham)
+    if ((pharmacyStaff || adminQrAnywhere) && !cameraGranted) return "permission";
     if (!adminQrAnywhere && (!gps || gpsError)) return "permission";
     if (!adminQrAnywhere && !inside) return "zone";
     if (pharmacyStaff || adminQrAnywhere) {
@@ -1073,6 +1147,7 @@ export default function DavomatFacePage() {
     pharmacyStaff,
     adminQrAnywhere,
     methodReady,
+    cameraGranted,
   ]);
 
   /** Mobil: doim aktiv qadamni ko‘rsat; desktopda ham panel ochiq */
@@ -1680,6 +1755,8 @@ export default function DavomatFacePage() {
               faceRegistered={faceRegistered}
               inside={inside}
               hasGps={Boolean(gps) && !gpsError}
+              cameraGranted={cameraGranted}
+              adminAnywhere={adminQrAnywhere}
               hasIn={hasIn}
               afterShiftEnd={afterShiftEnd}
               done={Boolean(done)}
@@ -1737,13 +1814,15 @@ export default function DavomatFacePage() {
               </div>
               <Button
                 type="button"
-                size="sm"
-                variant="outline"
+                size={guideStep === "permission" ? "default" : "sm"}
+                variant={guideStep === "permission" ? "default" : "outline"}
                 className={cn(
-                  "h-9 shrink-0 gap-1.5 rounded-full border-border text-foreground hover:bg-muted",
+                  guideStep === "permission"
+                    ? "h-10 shrink-0 gap-1.5 rounded-full px-4 text-primary-foreground"
+                    : "h-9 shrink-0 gap-1.5 rounded-full border-border text-foreground hover:bg-muted",
                   showGuide && guideStep === "permission" && "dv-focus",
                 )}
-                disabled={gpsSharing || (!pharmacyStaff && faceRegistered === false)}
+                disabled={gpsSharing || (!pharmacyStaff && !adminQrAnywhere && faceRegistered === false)}
                 onClick={() => void requestLocationPermission()}
               >
                 {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
@@ -1766,8 +1845,10 @@ export default function DavomatFacePage() {
                   </span>
                   <span className="text-[10px]">{formatDistanceParts(distance, t).unit}</span>
                 </>
-              ) : (
+              ) : gpsSharing ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <ShieldCheck className="h-5 w-5" />
               )}
             </div>
             <div className="min-w-0 text-sm">
@@ -2567,6 +2648,7 @@ export default function DavomatFacePage() {
 
       <QrScanDialog
         open={qrOpen && methodHint !== "FACE_ID" && !faceVerifiedReady}
+        stream={qrStream}
         onOpenChange={setQrOpen}
         title={nextAction === "out" ? "Ketdim — QR scanner" : "Keldim — QR scanner"}
         description={t("davomat.rearCamHint")}

@@ -6,7 +6,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/ca
 import { Button } from "../../components/ui/button";
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
-import { QrScanDialog } from "../../components/QrScanDialog";
+import { QrScanDialog, openScanCamera } from "../../components/QrScanDialog";
 import {
   fetchActiveBranchQr,
   fetchQrBranches,
@@ -35,7 +35,16 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   const [version, setVersion] = useState<number | null>(null);
   const [needsReissue, setNeedsReissue] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [qrStream, setQrStream] = useState<MediaStream | null>(null);
   const [scanAction, setScanAction] = useState<"in" | "out">("in");
+
+  useEffect(() => {
+    if (scanOpen) return;
+    setQrStream((prev) => {
+      prev?.getTracks().forEach((t) => t.stop());
+      return null;
+    });
+  }, [scanOpen]);
   const isAdmin = adminMode || canManageSettings(user?.role);
   /** Faqat admin: istalgan filial QR + lokatsiyasiz skaner */
   const adminQrAnywhere = user?.role === "admin";
@@ -222,7 +231,28 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                 Ketdim
               </Button>
             </div>
-            <Button type="button" className="w-full gap-2" onClick={() => setScanOpen(true)}>
+            <Button
+              type="button"
+              className="w-full gap-2"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const stream = await openScanCamera();
+                    setQrStream((prev) => {
+                      prev?.getTracks().forEach((t) => t.stop());
+                      return stream;
+                    });
+                    setScanOpen(true);
+                  } catch {
+                    toast({
+                      title: "Kamera",
+                      description: "Kameraga ruxsat berilmadi yoki kamera topilmadi",
+                      variant: "destructive",
+                    });
+                  }
+                })();
+              }}
+            >
               <ScanLine className="h-4 w-4" />
               QR scanner — skaner qiling
             </Button>
@@ -359,6 +389,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       {adminQrAnywhere ? (
         <QrScanDialog
           open={scanOpen}
+          stream={qrStream}
           onOpenChange={setScanOpen}
           title={scanAction === "out" ? "Ketdim — QR scanner" : "Keldim — QR scanner"}
           description="Istalgan filial QR · lokatsiya shart emas · skaner qiling"

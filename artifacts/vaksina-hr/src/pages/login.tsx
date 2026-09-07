@@ -12,7 +12,7 @@ import type { User } from '@workspace/api-client-react';
 import { compactCredential } from '../lib/utils';
 import { ThemeToggle } from '../components/theme-toggle';
 import { LanguageSwitcher } from '../components/language-switcher';
-import { HelpAssistantDialog } from '../components/HelpAssistantDialog';
+import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import { useI18n } from '../i18n/I18nProvider';
 
@@ -81,22 +81,25 @@ export default function Login() {
         <ThemeToggle />
       </div>
 
-      <button
-        type="button"
-        onClick={() => setHelpOpen(true)}
-        className="fixed z-40 flex h-16 w-16 items-center justify-center rounded-full bg-violet-600 text-white shadow-xl shadow-violet-600/40 ring-[6px] ring-violet-500/25 transition hover:bg-violet-700 hover:scale-105 active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
-        style={{
-          right: "max(1.25rem, env(safe-area-inset-right))",
-          bottom: "max(1.5rem, env(safe-area-inset-bottom))",
-        }}
-        aria-label={t('login.helpAria')}
-        title={t('common.help')}
-      >
-        <OperatorHeadsetIcon className="h-9 w-9 sm:h-10 sm:w-10" />
-      </button>
+      {HELP_ASSISTANT_ENABLED ? (
+        <>
+          <button
+            type="button"
+            onClick={() => setHelpOpen(true)}
+            className="fixed z-40 flex h-16 w-16 items-center justify-center rounded-full bg-violet-600 text-white shadow-xl shadow-violet-600/40 ring-[6px] ring-violet-500/25 transition hover:bg-violet-700 hover:scale-105 active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
+            style={{
+              right: "max(1.25rem, env(safe-area-inset-right))",
+              bottom: "max(1.5rem, env(safe-area-inset-bottom))",
+            }}
+            aria-label={t('login.helpAria')}
+            title={t('common.help')}
+          >
+            <OperatorHeadsetIcon className="h-9 w-9 sm:h-10 sm:w-10" />
+          </button>
 
-      <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} variant="login" />
-
+          <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} variant="login" />
+        </>
+      ) : null}
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <img

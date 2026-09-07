@@ -183,6 +183,9 @@ function LinkButtons({ links }: { links: HelpLink[] }) {
   );
 }
 
+/** Vaqtincha yashirish. Qayta yoqish: `true` qiling. */
+export const HELP_ASSISTANT_ENABLED = false;
+
 export function HelpAssistantDialog({
   open,
   onOpenChange,

@@ -50,7 +50,7 @@ import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
-import { HelpAssistantDialog } from '@/components/HelpAssistantDialog';
+import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '@/components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
@@ -1367,7 +1367,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </div>
       </aside>
 
-      <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      {HELP_ASSISTANT_ENABLED ? (
+        <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
+      ) : null}
 
       <Dialog open={profileOpen} onOpenChange={setProfileOpen}>
         <DialogContent className="w-[calc(100%-1.25rem)] max-w-md">
@@ -1461,24 +1463,26 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
           <div className="flex shrink-0 items-center gap-1.5 sm:gap-2">
             <LanguageSwitcher />
-            <button
-              type="button"
-              onClick={() => setHelpOpen(true)}
-              className="shrink-0"
-              aria-label={t('common.help')}
-            >
-              <span className="app-header-help-chip group inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1 sm:gap-2 sm:pl-1.5 sm:pr-3">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-white ring-1 ring-white/20 transition group-hover:bg-white/20">
-                  <OperatorHeadsetIcon className="h-5 w-5" />
-                </span>
-                <span className="flex min-w-0 flex-col leading-none text-left">
-                  <span className="text-[11px] font-semibold text-white sm:text-[12px]">{t('common.help')}</span>
-                  <span className="mt-0.5 hidden text-[9px] font-medium text-violet-100/75 sm:block">
-                    {t('common.contact')}
+            {HELP_ASSISTANT_ENABLED ? (
+              <button
+                type="button"
+                onClick={() => setHelpOpen(true)}
+                className="shrink-0"
+                aria-label={t('common.help')}
+              >
+                <span className="app-header-help-chip group inline-flex items-center gap-1.5 rounded-full pl-1.5 pr-2.5 py-1 sm:gap-2 sm:pl-1.5 sm:pr-3">
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/15 text-white ring-1 ring-white/20 transition group-hover:bg-white/20">
+                    <OperatorHeadsetIcon className="h-5 w-5" />
+                  </span>
+                  <span className="flex min-w-0 flex-col leading-none text-left">
+                    <span className="text-[11px] font-semibold text-white sm:text-[12px]">{t('common.help')}</span>
+                    <span className="mt-0.5 hidden text-[9px] font-medium text-violet-100/75 sm:block">
+                      {t('common.contact')}
+                    </span>
                   </span>
                 </span>
-              </span>
-            </button>
+              </button>
+            ) : null}
             <ThemeToggle />
             <Link href="/notifications">
               <div className="relative cursor-pointer rounded-full p-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">

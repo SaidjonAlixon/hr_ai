@@ -34,6 +34,9 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   sb: "Xavfsizlik",
   sb_boshliq: "Xavfsizlik",
   ombor: "Ombor",
+  distrib_rahbar: "Distribyutsiya",
+  distrib_hr: "Distribyutsiya",
+  distrib: "Distribyutsiya",
 };
 
 export function departmentNameForRole(role?: string | null): string | null {
@@ -74,7 +77,12 @@ export async function resolveDepartmentIdForRole(role: string): Promise<number |
 export async function syncAllRoleDepartmentAssignments(): Promise<void> {
   const { ensureItDepartmentId } = await import("./it-department");
   await ensureItDepartmentId();
-
+  try {
+    const { ensureDistribyutsiyaSetup } = await import("./distribyutsiya-department");
+    await ensureDistribyutsiyaSetup();
+  } catch {
+    /* jadval hali yo‘q bo‘lishi mumkin */
+  }
   const farmId = await ensureDepartmentByName(FARMASEVT_DEPARTMENT_NAME);
 
   for (const [role, deptName] of Object.entries(ROLE_DEPARTMENT_NAME)) {

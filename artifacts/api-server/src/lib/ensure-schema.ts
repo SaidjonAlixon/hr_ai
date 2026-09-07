@@ -671,6 +671,17 @@ CREATE TABLE IF NOT EXISTS ops_tickets (
 CREATE INDEX IF NOT EXISTS ops_tickets_dept_idx ON ops_tickets (dept);
 CREATE INDEX IF NOT EXISTS ops_tickets_status_idx ON ops_tickets (status);
 
+CREATE TABLE IF NOT EXISTS department_job_titles (
+  id SERIAL PRIMARY KEY,
+  department_id INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS department_job_titles_dept_idx ON department_job_titles (department_id);
+
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_method TEXT;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_method TEXT;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS resolved_branch_id INTEGER;
@@ -729,5 +740,12 @@ CREATE INDEX IF NOT EXISTS attendance_punch_audit_created_idx ON attendance_punc
     await syncAllRoleDepartmentAssignments();
   } catch (err) {
     logger.warn({ err }, "Role department sync skipped");
+  }
+
+  try {
+    const { ensureDistribyutsiyaSetup } = await import("./distribyutsiya-department");
+    await ensureDistribyutsiyaSetup();
+  } catch (err) {
+    logger.warn({ err }, "Distribyutsiya setup skipped");
   }
 }

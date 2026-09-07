@@ -18,6 +18,8 @@ export const DEPT_HEAD_ROLES = [
   "hr_direktor",
   "hr_kadr_rahbar",
   "hr_menejer",
+  "distrib_rahbar",
+  "distrib_hr",
 ] as const;
 
 const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
@@ -28,6 +30,8 @@ const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   hr_direktor: ["hr", "hr_menejer", "hr_kadr_rahbar", "hr_auditor", "recruiter", "trainer", "mentor"],
   hr_kadr_rahbar: ["hr", "hr_menejer", "hr_auditor", "recruiter", "trainer", "mentor"],
   hr_menejer: ["hr", "recruiter", "trainer", "mentor"],
+  distrib_rahbar: ["distrib", "distrib_hr"],
+  distrib_hr: ["distrib"],
 };
 
 const RAHBAR_SUFFIX = /_rahbar$|^sb_boshliq$|^department_head$|^hr_direktor$|^hr_menejer$/;
@@ -61,6 +65,9 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   revizor: "Revizor-yig‘uvchi",
   sb: "SB operatori",
   ombor: "Ombor",
+  distrib: "Distribyutsiya xodimi",
+  distrib_hr: "Distribyutsiya HR",
+  distrib_rahbar: "Distribyutsiya rahbari",
 };
 
 export function isDeptHeadRole(role?: string | null): boolean {

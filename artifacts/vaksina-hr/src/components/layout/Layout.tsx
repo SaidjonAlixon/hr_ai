@@ -33,6 +33,7 @@ import {
   HelpCircle,
   Layers,
   Package,
+  Truck,
 } from 'lucide-react';
 import {
   useLogout,
@@ -55,7 +56,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, userRoleLabel } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, userRoleLabel } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -148,6 +149,12 @@ const NAV_SECTIONS: {
     label: "Apteka tarmog'i",
     icon: Store,
     paths: ['/pharmacy-network', '/checklist', '/ehtiyoj'],
+  },
+  {
+    id: 'distribution',
+    label: 'Distribyutsiya',
+    icon: Truck,
+    paths: ['/distribyutsiya'],
   },
   {
     id: 'admin',
@@ -629,6 +636,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'IT', path: '/it', icon: Cpu };
+  const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
   const texnikNav = { name: 'Texnik', path: '/texnik', icon: Wrench };
 
   const taskAnalyticsNav: NavItem = {
@@ -676,6 +684,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       if ((user.role === 'admin' || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
         next = [...next, itNav, texnikNav];
       }
+      if (canViewDistribyutsiya(role) && !next.some((i) => i.path === '/distribyutsiya')) {
+        next = [...next, distribNav];
+      }
     }
     return ensureTaskAnalyticsNav(next);
   }
@@ -708,6 +719,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     reviziyaNav,
     itNav,
     texnikNav,
+    distribNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     { name: 'Arizalar', path: '/requests', icon: FileText },
@@ -743,6 +755,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       hisobNav,
       { name: 'IT', path: '/it', icon: Cpu },
       { name: 'Texnik', path: '/texnik', icon: Wrench },
+      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
       smenaNav,
@@ -984,6 +997,32 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    ],
+    distrib_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+    ],
+    distrib_hr: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+    ],
+    distrib: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+      smenaNav,
     ],
   };
 

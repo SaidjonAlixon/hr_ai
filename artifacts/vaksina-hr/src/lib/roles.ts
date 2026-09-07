@@ -115,7 +115,9 @@ export function canViewEmployees(role?: string | null): boolean {
     role === "reviziya_rahbar" ||
     role === "sb_boshliq" ||
     role === "hr_direktor" ||
-    role === "hr_menejer"
+    role === "hr_menejer" ||
+    role === "distrib_rahbar" ||
+    role === "distrib_hr"
   );
 }
 
@@ -128,7 +130,28 @@ export const DEPT_HEAD_ROLES = [
   "hr_direktor",
   "hr_kadr_rahbar",
   "hr_menejer",
+  "distrib_rahbar",
+  "distrib_hr",
 ] as const;
+
+export function isDistribyutsiyaRole(role?: string | null): boolean {
+  return role === "distrib" || role === "distrib_hr" || role === "distrib_rahbar";
+}
+
+export function canViewDistribyutsiya(role?: string | null): boolean {
+  return (
+    canManageSettings(role) ||
+    isDistribyutsiyaRole(role) ||
+    role === "hr" ||
+    role === "hr_direktor" ||
+    role === "hr_menejer" ||
+    role === "hr_kadr_rahbar"
+  );
+}
+
+export function canManageDistribyutsiya(role?: string | null): boolean {
+  return canManageSettings(role) || role === "distrib_rahbar" || role === "distrib_hr";
+}
 
 export function isDeptHeadRole(role?: string | null): boolean {
   return !!role && (DEPT_HEAD_ROLES as readonly string[]).includes(role);
@@ -265,6 +288,9 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   moliya: "Moliyachi",
   revizor: "Revizor-yig‘uvchi",
   reviziya_rahbar: "Reviziya bo‘limi rahbari",
+  distrib: "Distribyutsiya xodimi",
+  distrib_hr: "Distribyutsiya HR",
+  distrib_rahbar: "Distribyutsiya rahbari",
 };
 
 export function userRoleLabel(role?: string | null): string {

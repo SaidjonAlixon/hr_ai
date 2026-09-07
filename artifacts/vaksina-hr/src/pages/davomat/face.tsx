@@ -500,35 +500,39 @@ function GuideBoard({
                       {it.detail}
                     </p>
                     {it.n === 3 && !done ? (
-                      <div className="mt-2 grid grid-cols-[1fr_auto_1fr] items-stretch gap-1.5">
+                      <div className="mt-3 flex items-stretch justify-center gap-2.5">
                         <Button
                           type="button"
                           size="sm"
-                          className="h-auto min-h-[3.25rem] flex-col gap-0.5 rounded-xl px-2 py-2 text-primary-foreground"
+                          className="h-auto min-h-[3.5rem] w-[7.75rem] shrink-0 flex-col gap-0.5 rounded-2xl px-2.5 py-2.5 text-primary-foreground shadow-sm"
                           disabled={!canOpenFace || methodsBusy}
                           onClick={() => onOpenFace?.()}
                         >
-                          <span className="flex items-center gap-1 text-[11px] font-bold">
-                            <ScanFace className="h-3.5 w-3.5" />
+                          <span className="flex items-center justify-center gap-1 text-[11px] font-bold leading-none">
+                            <ScanFace className="h-3.5 w-3.5 shrink-0" />
                             Face ID
                           </span>
-                          <span className="text-[10px] font-normal opacity-90">{t("davomat.frontCam")}</span>
+                          <span className="text-center text-[10px] font-normal leading-tight opacity-90">
+                            {t("davomat.frontCam")}
+                          </span>
                         </Button>
-                        <span className="self-center text-[10px] font-semibold uppercase text-muted-foreground">
+                        <span className="self-center shrink-0 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                           {t("davomat.orWord")}
                         </span>
                         <Button
                           type="button"
                           size="sm"
-                          className="h-auto min-h-[3.25rem] flex-col gap-0.5 rounded-xl px-2 py-2 text-primary-foreground"
+                          className="h-auto min-h-[3.5rem] w-[7.75rem] shrink-0 flex-col gap-0.5 rounded-2xl px-2.5 py-2.5 text-primary-foreground shadow-sm"
                           disabled={!canOpenQr || methodsBusy}
                           onClick={() => onOpenQr?.()}
                         >
-                          <span className="flex items-center gap-1 text-[11px] font-bold">
-                            <QrCode className="h-3.5 w-3.5" />
+                          <span className="flex items-center justify-center gap-1 text-[11px] font-bold leading-none">
+                            <QrCode className="h-3.5 w-3.5 shrink-0" />
                             {t("davomat.qrScanner")}
                           </span>
-                          <span className="text-[10px] font-normal opacity-90">{t("davomat.rearCam")}</span>
+                          <span className="text-center text-[10px] font-normal leading-tight opacity-90">
+                            {t("davomat.rearCam")}
+                          </span>
                         </Button>
                       </div>
                     ) : null}
@@ -1986,28 +1990,28 @@ export default function DavomatFacePage() {
               </p>
             )}
 
-            <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+            <div className="flex items-stretch justify-center gap-3">
               <Button
                 type="button"
                 size="lg"
                 className={cn(
-                  "h-auto min-h-[4.25rem] w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-3",
+                  "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
                   guideStep === "face" && canOpenFace && "dv-focus",
                   !canOpenFace && "opacity-60",
                 )}
                 disabled={!canOpenFace || busy}
                 onClick={openFaceMethod}
               >
-                <span className="flex items-center gap-1.5 text-sm font-semibold">
-                  <ScanFace className="h-5 w-5" />
+                <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
+                  <ScanFace className="h-5 w-5 shrink-0" />
                   Face ID
                 </span>
-                <span className="text-center text-[10px] font-normal opacity-90">
-                  {t("davomat.frontCamHint")}
+                <span className="text-center text-[10px] font-normal leading-tight opacity-90">
+                  {t("davomat.frontCam")}
                 </span>
               </Button>
 
-              <span className="self-center text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <span className="self-center shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                 {t("davomat.orWord")}
               </span>
 
@@ -2015,19 +2019,19 @@ export default function DavomatFacePage() {
                 type="button"
                 size="lg"
                 className={cn(
-                  "h-auto min-h-[4.25rem] w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-2 py-3",
+                  "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
                   guideStep === "face" && canOpenQr && "dv-focus",
                   !canOpenQr && "opacity-60",
                 )}
                 disabled={!canOpenQr || busy}
                 onClick={openQrMethod}
               >
-                <span className="flex items-center gap-1.5 text-sm font-semibold">
-                  <QrCode className="h-5 w-5" />
+                <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
+                  <QrCode className="h-5 w-5 shrink-0" />
                   {t("davomat.qrScanner")}
                 </span>
-                <span className="text-center text-[10px] font-normal opacity-90">
-                  {t("davomat.rearCamHint")}
+                <span className="text-center text-[10px] font-normal leading-tight opacity-90">
+                  {t("davomat.rearCam")}
                 </span>
               </Button>
             </div>
@@ -2078,41 +2082,45 @@ export default function DavomatFacePage() {
                 {!done ? (
                   <>
                     <p className="text-center text-xs text-muted-foreground">{t("davomat.pickMethodDetail")}</p>
-                    <div className="grid grid-cols-[1fr_auto_1fr] items-stretch gap-2">
+                    <div className="flex items-stretch justify-center gap-3">
                       <Button
                         type="button"
                         size="lg"
                         className={cn(
-                          "h-auto min-h-16 w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-3 py-3",
+                          "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
                           !canOpenFace && "opacity-50",
                         )}
                         disabled={!canOpenFace || busy}
                         onClick={openFaceMethod}
                       >
-                        <span className="flex items-center gap-2 text-sm font-semibold">
-                          <ScanFace className="h-5 w-5" />
+                        <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
+                          <ScanFace className="h-5 w-5 shrink-0" />
                           Face ID
                         </span>
-                        <span className="text-center text-[11px] font-normal opacity-90">{t("davomat.frontCamHint")}</span>
+                        <span className="text-center text-[10px] font-normal leading-tight opacity-90">
+                          {t("davomat.frontCam")}
+                        </span>
                       </Button>
-                      <span className="self-center text-[10px] font-bold uppercase text-muted-foreground">
+                      <span className="self-center shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
                         {t("davomat.orWord")}
                       </span>
                       <Button
                         type="button"
                         size="lg"
                         className={cn(
-                          "h-auto min-h-16 w-full flex-col items-center justify-center gap-0.5 rounded-2xl px-3 py-3",
+                          "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
                           !canOpenQr && "opacity-50",
                         )}
                         disabled={!canOpenQr || busy}
                         onClick={openQrMethod}
                       >
-                        <span className="flex items-center gap-2 text-sm font-semibold">
-                          <QrCode className="h-5 w-5" />
+                        <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
+                          <QrCode className="h-5 w-5 shrink-0" />
                           {t("davomat.qrScanner")}
                         </span>
-                        <span className="text-center text-[11px] font-normal opacity-90">{t("davomat.rearCamHint")}</span>
+                        <span className="text-center text-[10px] font-normal leading-tight opacity-90">
+                          {t("davomat.rearCam")}
+                        </span>
                       </Button>
                     </div>
                   </>

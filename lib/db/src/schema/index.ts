@@ -22,3 +22,4 @@ export * from "./payroll";
 export * from "./settlement";
 export * from "./revision";
 export * from "./ops-tickets";
+export * from "./department-job-titles";

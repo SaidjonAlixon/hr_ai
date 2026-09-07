@@ -40,6 +40,9 @@ const ALLOWED_ROLES = [
   "moliya",
   "revizor",
   "reviziya_rahbar",
+  "distrib",
+  "distrib_hr",
+  "distrib_rahbar",
 ] as const;
 
 const ALLOWED_STATUSES = ["active", "vacant", "terminated", "on_leave"] as const;
@@ -73,6 +76,9 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   moliya: "Moliyachi",
   revizor: "Revizor-yig‘uvchi",
   reviziya_rahbar: "Reviziya bo‘limi rahbari",
+  distrib: "Distribyutsiya xodimi",
+  distrib_hr: "Distribyutsiya HR",
+  distrib_rahbar: "Distribyutsiya rahbari",
 };
 
 const STATUS_UZ: Record<string, string> = {

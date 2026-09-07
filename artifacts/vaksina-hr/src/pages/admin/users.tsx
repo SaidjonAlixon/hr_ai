@@ -65,6 +65,9 @@ const ROLES = [
   { value: 'moliya', label: 'Moliyachi' },
   { value: 'revizor', label: 'Revizor-yig‘uvchi (Reviziya)' },
   { value: 'reviziya_rahbar', label: 'Reviziya bo‘limi rahbari' },
+  { value: 'distrib_rahbar', label: 'Distribyutsiya rahbari' },
+  { value: 'distrib_hr', label: 'Distribyutsiya HR' },
+  { value: 'distrib', label: 'Distribyutsiya xodimi' },
 ] as const;
 
 const STATUSES = [

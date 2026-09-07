@@ -49,6 +49,7 @@ export const uz: Messages = {
   "nav.section.recruitment": "Ishga qabul",
   "nav.section.attendance": "Davomat",
   "nav.section.pharmacy": "Apteka tarmog‘i",
+  "nav.section.distribution": "Distribyutsiya",
   "nav.section.admin": "Sozlamalar",
   "nav.section.other": "Boshqa",
 
@@ -78,6 +79,7 @@ export const uz: Messages = {
   "nav.hisobkitob": "Oylik hisob",
   "nav.reyting": "Reyting",
   "nav.reviziya": "Reviziya",
+  "nav.distribyutsiya": "Distribyutsiya",
   "nav.it": "AyTi",
   "nav.texnik": "Texnik",
   "nav.users": "Foydalanuvchilar",

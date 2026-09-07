@@ -30,6 +30,9 @@ const ROLE_POSITION: Record<string, string> = {
   ombor: "Ombor",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  distrib: "Distribyutsiya xodimi",
+  distrib_hr: "Distribyutsiya HR",
+  distrib_rahbar: "Distribyutsiya rahbari",
 };
 
 function orgRoleFromUserRole(role: string): string | null {
@@ -70,6 +73,7 @@ export async function ensureEmployeeForNewUser(user: {
   fullName: string;
   role: string;
   departmentId: number | null;
+  position?: string | null;
 }): Promise<void> {
   const [existing] = await db
     .select({ id: employeesTable.id })
@@ -112,7 +116,7 @@ export async function ensureEmployeeForNewUser(user: {
 
   await db.insert(employeesTable).values({
     fullName: name,
-    position: ROLE_POSITION[user.role] || user.role || "Xodim",
+    position: user.position?.trim() || ROLE_POSITION[user.role] || user.role || "Xodim",
     departmentId,
     hiredAt: todayYmd(),
     userId: user.id,

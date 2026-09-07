@@ -49,6 +49,7 @@ export const ru: Messages = {
   "nav.section.recruitment": "Найм",
   "nav.section.attendance": "Посещаемость",
   "nav.section.pharmacy": "Сеть аптек",
+  "nav.section.distribution": "Дистрибуция",
   "nav.section.admin": "Настройки",
   "nav.section.other": "Другое",
 
@@ -78,6 +79,7 @@ export const ru: Messages = {
   "nav.hisobkitob": "Расчёт зарплаты",
   "nav.reyting": "Рейтинг",
   "nav.reviziya": "Ревизия",
+  "nav.distribyutsiya": "Дистрибуция",
   "nav.it": "AyTi",
   "nav.texnik": "Технический",
   "nav.users": "Пользователи",

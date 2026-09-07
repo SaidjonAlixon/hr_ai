@@ -51,6 +51,7 @@ import AdminKirishVideosPage from './pages/admin/kirish-videos';
 import AdminFacesPage from './pages/admin/faces';
 import AdminSmenaSozlamalarPage from './pages/admin/smena-sozlamalar';
 import AdminDavomatQrPage from './pages/admin/davomat-qr';
+import DistribyutsiyaPage from './pages/distribyutsiya/index';
 import EmployeesPage from './pages/employees/index';
 import EmployeesOtherPage from './pages/employees/other';
 import EmployeeDuplicatesPage from './pages/employees/duplicates';
@@ -163,6 +164,7 @@ function Router() {
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
+      <ProtectedRoute path="/distribyutsiya" component={DistribyutsiyaPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/internships" component={InternshipsPlaceholder} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />

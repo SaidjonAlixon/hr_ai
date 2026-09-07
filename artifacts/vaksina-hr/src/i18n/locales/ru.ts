@@ -69,6 +69,7 @@ export const ru: Messages = {
   "nav.davomatQr": "QR посещаемости",
   "nav.davomatAnalytics": "Аналитика посещаемости",
   "nav.smena": "Смена и филиал",
+  "nav.javobOlish": "Ответ на звонок",
   "nav.checklistStatus": "Статус чек-листа",
   "nav.pharmacy": "Сеть аптек",
   "nav.holat": "Состояние",

@@ -44,26 +44,121 @@ export function departmentNameForRole(role?: string | null): string | null {
   return ROLE_DEPARTMENT_NAME[role] ?? null;
 }
 
+function normalizeDeptName(name: string): string {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("uz");
+}
+
+async function reassignDepartmentRefs(fromId: number, toId: number) {
+  await db.execute(sql`UPDATE users SET department_id = ${toId} WHERE department_id = ${fromId}`);
+  try {
+    await db.execute(sql`UPDATE employees SET department_id = ${toId} WHERE department_id = ${fromId}`);
+  } catch {
+    /* ustun yo‘q bo‘lishi mumkin */
+  }
+  try {
+    await db.execute(sql`UPDATE requests SET department_id = ${toId} WHERE department_id = ${fromId}`);
+  } catch {
+    /* ignore */
+  }
+  try {
+    await db.execute(
+      sql`UPDATE department_job_titles SET department_id = ${toId} WHERE department_id = ${fromId}`,
+    );
+  } catch {
+    /* ignore */
+  }
+  try {
+    await db.execute(
+      sql`UPDATE department_attendance_qr SET department_id = ${toId} WHERE department_id = ${fromId}`,
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Bir xil nomdagi dublikatlarni birlashtirish (masalan 2 ta «Koordinator»). */
+export async function dedupeDepartmentsByName(): Promise<number> {
+  const rows = await db
+    .select({
+      id: departmentsTable.id,
+      name: departmentsTable.name,
+      headId: departmentsTable.headId,
+    })
+    .from(departmentsTable);
+
+  const groups = new Map<string, typeof rows>();
+  for (const r of rows) {
+    const key = normalizeDeptName(r.name);
+    if (!key) continue;
+    const list = groups.get(key) ?? [];
+    list.push(r);
+    groups.set(key, list);
+  }
+
+  let removed = 0;
+  for (const [, list] of groups) {
+    if (list.length < 2) continue;
+    // Saqlanadigan: boshlig‘i bor yoki eng kichik id
+    const sorted = [...list].sort((a, b) => {
+      if ((a.headId != null) !== (b.headId != null)) return a.headId != null ? -1 : 1;
+      return a.id - b.id;
+    });
+    const keep = sorted[0]!;
+    const canonName =
+      Object.values(ROLE_DEPARTMENT_NAME).find(
+        (n) => normalizeDeptName(n) === normalizeDeptName(keep.name),
+      ) || keep.name.trim();
+
+    if (keep.name !== canonName) {
+      await db
+        .update(departmentsTable)
+        .set({ name: canonName })
+        .where(eq(departmentsTable.id, keep.id));
+    }
+
+    for (const dup of sorted.slice(1)) {
+      await reassignDepartmentRefs(dup.id, keep.id);
+      await db.delete(departmentsTable).where(eq(departmentsTable.id, dup.id));
+      removed += 1;
+    }
+  }
+  return removed;
+}
+
 export async function ensureDepartmentByName(name: string): Promise<number> {
+  const trimmed = String(name || "").trim().replace(/\s+/g, " ");
+  if (!trimmed) throw new Error("Bo‘lim nomi bo‘sh");
+
   const [existing] = await db
-    .select({ id: departmentsTable.id })
+    .select({ id: departmentsTable.id, name: departmentsTable.name })
     .from(departmentsTable)
-    .where(eq(departmentsTable.name, name))
+    .where(sql`lower(trim(name)) = ${normalizeDeptName(trimmed)}`)
     .limit(1);
-  if (existing) return existing.id;
+  if (existing) {
+    if (existing.name !== trimmed) {
+      await db
+        .update(departmentsTable)
+        .set({ name: trimmed })
+        .where(eq(departmentsTable.id, existing.id));
+    }
+    return existing.id;
+  }
 
   const [created] = await db
     .insert(departmentsTable)
-    .values({ name })
+    .values({ name: trimmed })
     .returning({ id: departmentsTable.id });
   if (created) return created.id;
 
   const [again] = await db
     .select({ id: departmentsTable.id })
     .from(departmentsTable)
-    .where(eq(departmentsTable.name, name))
+    .where(sql`lower(trim(name)) = ${normalizeDeptName(trimmed)}`)
     .limit(1);
-  if (!again) throw new Error(`«${name}» bo‘limi yaratilmadi`);
+  if (!again) throw new Error(`«${trimmed}» bo‘limi yaratilmadi`);
   return again.id;
 }
 
@@ -75,6 +170,8 @@ export async function resolveDepartmentIdForRole(role: string): Promise<number |
 
 /** Barcha rollarni o‘z bo‘limiga; faqat apteka tarmog‘i — Farmasevt. */
 export async function syncAllRoleDepartmentAssignments(): Promise<void> {
+  await dedupeDepartmentsByName();
+
   const { ensureItDepartmentId } = await import("./it-department");
   await ensureItDepartmentId();
   try {
@@ -128,4 +225,6 @@ export async function syncAllRoleDepartmentAssignments(): Promise<void> {
       )
       AND department_id IS DISTINCT FROM ${farmId}
   `);
+
+  await dedupeDepartmentsByName();
 }

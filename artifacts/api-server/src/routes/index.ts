@@ -41,6 +41,7 @@ import opsDeptRouter from "./ops-dept";
 import deptStaffRouter from "./dept-staff";
 import distribyutsiyaRouter from "./distribyutsiya";
 import helpRouter from "./help";
+import javobOlishRouter from "./javob-olish";
 
 const router: IRouter = Router();
 
@@ -61,6 +62,7 @@ router.use(faceRouter);
 router.use(davomatRouter);
 router.use(smenaRouter);
 router.use(attendanceSettingsRouter);
+router.use(javobOlishRouter);
 router.use(holatRouter);
 router.use(oylikRouter);
 router.use(hisobkitobRouter);

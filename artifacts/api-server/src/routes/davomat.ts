@@ -10,6 +10,8 @@ import {
   usersTable,
   branchAttendanceQrTable,
   departmentAttendanceQrTable,
+  employeeBranchAssignmentsTable,
+  employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
@@ -17,9 +19,23 @@ import { forceBroadcastDavomatToAll, davomatBroadcastTelegramReady, davomatBroad
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
+import { dedupeBranchesWithGps } from "../lib/branch-dedupe";
+import {
+  computeDayAttendance,
+  resolveBranchForDay,
+  type BranchAssignment,
+  type ShiftKey,
+  type ShiftDefinition,
+  addDaysYmd,
+  DEFAULT_SHIFT_DEFS,
+} from "../lib/attendance-engine";
 import { setSessionCookie } from "../lib/session";
-import { hoursForStaff, workScheduleForStaff, normalizeShiftType } from "../lib/shift-hours";
-import { computeDayAttendance, type ShiftKey, type ShiftDefinition, addDaysYmd, DEFAULT_SHIFT_DEFS } from "../lib/attendance-engine";
+import {
+  hoursForStaff,
+  workScheduleForStaff,
+  normalizeShiftType,
+  encodeShiftKeys,
+} from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
 import { loadStaffFromUsers } from "../lib/staff-directory";
@@ -183,7 +199,14 @@ function computeMetrics(
   checkInAt: Date | null | undefined,
   checkOutAt: Date | null | undefined,
   forcedStatus?: string | null,
-  hours?: { start: string; end: string; graceMinutes?: number; overnight?: boolean; shiftKey?: string },
+  hours?: {
+    start: string;
+    end: string;
+    graceMinutes?: number;
+    overnight?: boolean;
+    shiftKey?: string;
+    shiftKeys?: string[];
+  },
 ): Metrics & {
   paidWorkedMinutes?: number;
   unpaidBreakMinutes?: number;
@@ -191,14 +214,23 @@ function computeMetrics(
   missingCheckout?: boolean;
   missingCheckoutLabel?: string;
 } {
-  const shiftKey = (hours?.shiftKey as ShiftKey) || "one";
+  const shiftKeysRaw =
+    Array.isArray(hours?.shiftKeys) && hours!.shiftKeys!.length
+      ? hours!.shiftKeys!
+      : [hours?.shiftKey || "one"];
+  const shiftKeys = shiftKeysRaw
+    .map((k) => String(k))
+    .filter((k): k is ShiftKey => k === "one" || k === "two" || k === "three" || k === "office");
+  const keys = shiftKeys.length ? shiftKeys : (["one"] as ShiftKey[]);
+  const primaryKey = keys[0];
+  // Bitta punch (Keldim/Ketdim) — combo smenada ertalab birinchi smena, ketish oxirgi smena
   const engine = computeDayAttendance({
     workDate,
-    shiftKeys: [shiftKey],
-    segments: [{ shiftKey, checkInAt: checkInAt ?? null, checkOutAt: checkOutAt ?? null }],
+    shiftKeys: keys,
+    segments: [{ shiftKey: primaryKey, checkInAt: checkInAt ?? null, checkOutAt: checkOutAt ?? null }],
   });
 
-  // Legacy path for office / forced status — keep schedule-relative OT using overnight-aware end
+  // Legacy path: OT / erta ketish — to‘liq combo oynasi (1+2 → 08:00…23:45)
   const start = atTashkent(workDate, hours?.start ?? WORK_START);
   let end = atTashkent(
     hours?.overnight ? addDaysYmd(workDate, 1) : workDate,
@@ -214,18 +246,37 @@ function computeMetrics(
   let workedMinutes = engine.rawWorkedMinutes;
   let status = forcedStatus || engine.status;
 
+  // Combo: engine bitta segmentni birinchi smena oxiriga solishtiradi — oxirgi smena tugashiga qayta hisoblaymiz
+  if (checkInAt) {
+    const inDiff = minutesBetween(start, checkInAt);
+    if (inDiff < 0) earlyArrivalMin = -inDiff;
+    else if (inDiff > 0) lateArrivalMin = inDiff;
+    else {
+      earlyArrivalMin = 0;
+      lateArrivalMin = 0;
+    }
+  }
   if (checkInAt && checkOutAt && !engine.missingCheckout) {
     const outDiff = minutesBetween(end, checkOutAt);
     if (outDiff < 0) earlyLeaveMin = -outDiff;
     else if (outDiff > 0) overtimeMin = outDiff;
+    else {
+      earlyLeaveMin = 0;
+      overtimeMin = Math.max(0, overtimeMin);
+    }
   }
 
   if (forcedStatus === "leave" || forcedStatus === "absent") {
     status = forcedStatus;
+  } else if (engine.missingCheckout) {
+    status = "incomplete";
+    workedMinutes = 0;
+  } else if (checkInAt) {
+    const grace = hours?.graceMinutes ?? 15;
+    status = lateArrivalMin > grace ? "late" : "present";
   }
 
   if (engine.missingCheckout) {
-    status = "incomplete";
     workedMinutes = 0;
   }
 
@@ -970,9 +1021,11 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
   let latLng = coordsFromEmp(emp);
   let label = displayBranchName(emp.location) || emp.location || emp.fullName;
 
-  const branchId =
-    emp.assignedBranchId || (emp.orgRole === "manager" ? emp.id : emp.reportsToId);
-  if (branchId && (emp.assignedBranchId || emp.orgRole !== "manager")) {
+  const effective = await effectiveBranchIdForDay(emp);
+  const branchId = effective.branchId;
+  if (effective.branchLabel) label = effective.branchLabel;
+
+  if (branchId) {
     const [mgr] = await db
       .select({
         latitude: employeesTable.latitude,
@@ -1335,9 +1388,14 @@ async function applyFacePunch(opts: {
     resolvedBranchLabel = null,
   } = opts;
   const defs = await getEffectiveShiftDefs();
-  const hours = hoursForStaff(emp.orgRole, emp.shiftType, userRole, emp.shiftLabel, defs);
   const today = todayTashkent();
   const yesterday = addDaysYmd(today, -1);
+  // Kunlik rotatsiya smenasi (doimiy shiftType o‘rniga)
+  const dayShiftType =
+    (await dayShiftTypeFor(emp.id, today)) || (await dayShiftTypeFor(emp.id, yesterday));
+  const effectiveShiftType = dayShiftType || emp.shiftType;
+  const effectiveShiftLabel = dayShiftType ? null : emp.shiftLabel;
+  const hours = hoursForStaff(emp.orgRole, effectiveShiftType, userRole, effectiveShiftLabel, defs);
   const [todayRec] = await db
     .select()
     .from(attendanceRecordsTable)
@@ -1359,12 +1417,19 @@ async function applyFacePunch(opts: {
     todayYmd: today,
     yesterdayYmd: yesterday,
     now: new Date(),
-    shiftType: emp.shiftType,
-    shiftLabel: emp.shiftLabel,
+    shiftType: effectiveShiftType,
+    shiftLabel: effectiveShiftLabel,
     todayRec,
     yesterdayRec,
   });
   const workDate = resolvedWd.workDate;
+  // Ish kuni aniqlangach — shu kun rejasini ustun qo‘yamiz
+  const planForWorkDate = await dayShiftTypeFor(emp.id, workDate);
+  const punchShiftType = planForWorkDate || effectiveShiftType;
+  const punchShiftLabel = planForWorkDate ? null : effectiveShiftLabel;
+  const punchHours = planForWorkDate
+    ? hoursForStaff(emp.orgRole, punchShiftType, userRole, punchShiftLabel, defs)
+    : hours;
   const now = new Date();
   const dateFilter = and(
     eq(attendanceRecordsTable.employeeId, emp.id),
@@ -1415,7 +1480,7 @@ async function applyFacePunch(opts: {
 
       if (action === "in") {
         checkInAt = now;
-        const status = computeMetrics(workDate, checkInAt, null, null, hours).status;
+        const status = computeMetrics(workDate, checkInAt, null, null, punchHours).status;
         const methodFields = { checkInMethod: verificationMethod };
         if (existing) {
           await tx
@@ -1437,7 +1502,7 @@ async function applyFacePunch(opts: {
       } else {
         checkOutAt = now;
         checkInAt = existing!.checkInAt;
-        const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt, null, hours).status;
+        const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt, null, punchHours).status;
         await tx
           .update(attendanceRecordsTable)
           .set({ ...geoFields, checkOutAt, status, checkOutMethod: verificationMethod })
@@ -1451,7 +1516,7 @@ async function applyFacePunch(opts: {
           .where(eq(faceProfilesTable.id, faceProfileId));
       }
 
-      const metrics = computeMetrics(workDate, checkInAt, checkOutAt, null, hours);
+      const metrics = computeMetrics(workDate, checkInAt, checkOutAt, null, punchHours);
       return {
         ok: true as const,
         payload: {
@@ -2576,12 +2641,80 @@ function assignedBranchIdForEmp(emp: WorkplaceEmp): number | null {
   return emp.reportsToId ?? null;
 }
 
+/** Doimiy + kunlik rotatsiya (temp_one_day / substitute / …) */
+async function effectiveBranchIdForDay(
+  emp: WorkplaceEmp,
+  workDate?: string,
+): Promise<{ branchId: number | null; branchLabel: string | null }> {
+  const permanent = assignedBranchIdForEmp(emp);
+  const permanentLabel = displayBranchName(emp.location) || emp.location || emp.fullName || null;
+  try {
+    const date = workDate || todayTashkent();
+    const assignRows = await db
+      .select()
+      .from(employeeBranchAssignmentsTable)
+      .where(eq(employeeBranchAssignmentsTable.employeeId, emp.id));
+    if (!assignRows.length) {
+      return { branchId: permanent, branchLabel: permanentLabel };
+    }
+    const mapped: BranchAssignment[] = assignRows.map((r) => ({
+      kind: r.kind as BranchAssignment["kind"],
+      branchId: r.branchId,
+      branchLabel: r.branchLabel,
+      validFrom: r.validFrom,
+      validTo: r.validTo,
+      replacesEmployeeId: r.replacesEmployeeId,
+    }));
+    const resolved = resolveBranchForDay(
+      date,
+      mapped,
+      permanent ? { branchId: permanent, branchLabel: permanentLabel } : null,
+    );
+    return {
+      branchId: resolved?.branchId ?? permanent,
+      branchLabel: resolved?.branchLabel || permanentLabel,
+    };
+  } catch {
+    return { branchId: permanent, branchLabel: permanentLabel };
+  }
+}
+
+/** Kunlik smena rejasini (rotatsiya) encoded shiftType sifatida qaytaradi */
+async function dayShiftTypeFor(employeeId: number, workDate: string): Promise<string | null> {
+  try {
+    const [plan] = await db
+      .select({ shiftKeys: employeeDayShiftPlansTable.shiftKeys })
+      .from(employeeDayShiftPlansTable)
+      .where(
+        and(
+          eq(employeeDayShiftPlansTable.employeeId, employeeId),
+          eq(employeeDayShiftPlansTable.workDate, workDate),
+        ),
+      )
+      .limit(1);
+    if (!plan?.shiftKeys?.length) return null;
+    const keys = (plan.shiftKeys as string[]).filter((k) => k === "one" || k === "two" || k === "three");
+    if (!keys.length) return null;
+    return encodeShiftKeys(keys as ("one" | "two" | "three")[]);
+  } catch {
+    return null;
+  }
+}
+
 function canManageBranchQr(role: string | null | undefined) {
   return role === "mudir" || role === "koordinator" || role === "admin" || role === "director";
 }
 
 function isQrAdmin(role: string | null | undefined) {
   return role === "admin" || role === "director";
+}
+
+/** Barcha ofis xodimlari uchun bitta umumiy QR (department_id = 0) */
+export const OFFICE_SHARED_QR_DEPARTMENT_ID = 0;
+export const OFFICE_SHARED_QR_LABEL = "Ofis";
+
+function isOfficeSharedQrDepartment(departmentId: number | null | undefined) {
+  return Number(departmentId) === OFFICE_SHARED_QR_DEPARTMENT_ID;
 }
 
 /** Ofis bo‘lim QR yaratish: admin/direktor yoki bo‘lim rahbari */
@@ -2602,6 +2735,12 @@ async function assertCanAccessDeptQr(
   userId: number,
   departmentId: number,
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (isOfficeSharedQrDepartment(departmentId)) {
+    if (!isQrAdmin(role)) {
+      return { ok: false, status: 403, error: "Umumiy Ofis QR faqat admin/direktor yaratadi" };
+    }
+    return { ok: true };
+  }
   if (isQrAdmin(role)) return { ok: true };
   if (!canManageDeptQrRole(role)) {
     return { ok: false, status: 403, error: "Bo‘lim QR iga ruxsat yo‘q" };
@@ -2657,20 +2796,21 @@ router.get("/davomat/qr/branches", requireAuth, async (req: AuthRequest, res): P
         latitude: employeesTable.latitude,
         longitude: employeesTable.longitude,
         reportsToId: employeesTable.reportsToId,
+        userId: employeesTable.userId,
+        employmentStatus: employeesTable.employmentStatus,
       })
       .from(employeesTable)
       .where(eq(employeesTable.orgRole, "manager"));
 
-    let list = managers.filter(
-      (m) => m.latitude != null && m.longitude != null && Number.isFinite(m.latitude) && Number.isFinite(m.longitude),
-    );
+    /** Bo‘shatilgan / dublikat filiallar chiqariladi — faqat haqiqiy ishlaydigan */
+    let list = dedupeBranchesWithGps(managers);
 
     if (req.userRole === "mudir" && me) {
       list = list.filter((m) => m.id === me.id);
     } else if (req.userRole === "koordinator" && me) {
       list = list.filter((m) => m.reportsToId === me.id || m.id === me.id);
     }
-    // admin/director — barcha filiallar
+    // admin/director — barcha (dedupe qilingan) filiallar
 
     const branches = await Promise.all(
       list.map(async (m) => {
@@ -2835,40 +2975,26 @@ router.get("/davomat/qr/departments", requireAuth, async (req: AuthRequest, res)
     return;
   }
   try {
-    const [me] = await db
-      .select({ departmentId: usersTable.departmentId })
-      .from(usersTable)
-      .where(eq(usersTable.id, req.userId!))
-      .limit(1);
-
-    let depts = await db
-      .select({ id: departmentsTable.id, name: departmentsTable.name })
-      .from(departmentsTable)
-      .orderBy(departmentsTable.name);
-
-    if (!isQrAdmin(req.userRole)) {
-      if (!me?.departmentId) {
-        res.json({ departments: [] });
-        return;
-      }
-      depts = depts.filter((d) => d.id === me.departmentId);
+    // Faqat umumiy Ofis QR — alohida bo‘limlar yo‘q
+    if (!canManageDeptQrRole(req.userRole)) {
+      res.status(403).json({ error: "Bo‘lim QR yaratishga ruxsat yo‘q", code: "qr_forbidden" });
+      return;
     }
-
-    const departments = await Promise.all(
-      depts.map(async (d) => {
-        const active = await getActiveQrForDepartment(d.id);
-        return {
-          id: d.id,
-          name: d.name,
-          hasActiveQr: Boolean(active),
-          hasPayload: Boolean(active?.tokenPayload),
-          qrId: active?.qrId ?? null,
-          version: active?.version ?? null,
-          createdAt: active?.createdAt?.toISOString() ?? null,
-        };
-      }),
-    );
-    res.json({ departments });
+    const officeActive = await getActiveQrForDepartment(OFFICE_SHARED_QR_DEPARTMENT_ID);
+    res.json({
+      departments: [
+        {
+          id: OFFICE_SHARED_QR_DEPARTMENT_ID,
+          name: OFFICE_SHARED_QR_LABEL,
+          hasActiveQr: Boolean(officeActive),
+          hasPayload: Boolean(officeActive?.tokenPayload),
+          qrId: officeActive?.qrId ?? null,
+          version: officeActive?.version ?? null,
+          createdAt: officeActive?.createdAt?.toISOString() ?? null,
+          sharedOffice: true,
+        },
+      ],
+    });
   } catch (err) {
     console.error("GET /davomat/qr/departments error:", err);
     res.status(503).json({ error: "Bo‘limlar yuklanmadi" });
@@ -2886,27 +3012,24 @@ router.post("/davomat/qr/department/issue", requireAuth, async (req: AuthRequest
       res.status(400).json({ error: "departmentId majburiy" });
       return;
     }
+    if (!isOfficeSharedQrDepartment(departmentId)) {
+      res.status(400).json({
+        error: "Faqat umumiy Ofis QR yaratiladi. Alohida bo‘lim QR o‘chirilgan.",
+        code: "only_office_qr",
+      });
+      return;
+    }
     const access = await assertCanAccessDeptQr(req.userRole, req.userId!, departmentId);
     if (!access.ok) {
       res.status(access.status).json({ error: access.error });
       return;
     }
 
-    const [dept] = await db
-      .select({ id: departmentsTable.id, name: departmentsTable.name })
-      .from(departmentsTable)
-      .where(eq(departmentsTable.id, departmentId))
-      .limit(1);
-    if (!dept) {
-      res.status(404).json({ error: "Bo‘lim topilmadi" });
-      return;
-    }
-
+    const label = OFFICE_SHARED_QR_LABEL;
     const prev = await getActiveQrForDepartment(departmentId);
     await revokeActiveQrForDepartment(departmentId);
     const secrets = mintQrSecrets();
     const version = (prev?.version ?? 0) + 1;
-    const label = dept.name;
     const payload = encodeQrPayload(secrets.qrId, secrets.rawToken);
     const [row] = await db
       .insert(departmentAttendanceQrTable)
@@ -2933,7 +3056,8 @@ router.post("/davomat/qr/department/issue", requireAuth, async (req: AuthRequest
       createdAt: row.createdAt.toISOString(),
       expiresAt: null,
       payload,
-      note: "Bo‘lim QR saqlandi. Yangi yaratilsa eski o‘chadi.",
+      sharedOffice: true,
+      note: "Ofis QR saqlandi. Faqat ofis xodimlari yashil zonada skaner yoki Face ID qiladi. Mudir/farmasevt/stajyor — filial QR.",
     });
   } catch (err) {
     console.error("POST /davomat/qr/department/issue error:", err);
@@ -3062,12 +3186,15 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
 
     const emp = await ensureEmployeeForUser(user);
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
-    const myBranchId = assignedBranchIdForEmp(emp);
+    const effective = await effectiveBranchIdForDay(emp);
+    const myBranchId = effective.branchId;
     const myDeptId = user.departmentId;
 
     const branchQr = await verifyBranchQrPayload(payload);
     if (branchQr.ok) {
-      if (!pharmacy && !adminAnywhere) {
+      /** Filial QR: apteka yo‘li yoki filial biriktirilgan xodim; ofis — bo‘lim QR */
+      const canUseBranchQr = pharmacy || adminAnywhere || Boolean(myBranchId);
+      if (!canUseBranchQr) {
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
@@ -3079,7 +3206,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           deviceId,
         });
         res.status(403).json({
-          error: "Filial QR faqat mudir, farmasevt, stajyor yoki admin uchun",
+          error: "Filial QR uchun filial biriktirilmagan. Ofis xodimi — bo‘lim QR ini skaner qiling.",
           code: "role_not_allowed",
         });
         return;
@@ -3258,36 +3385,39 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
 
-    if (!adminAnywhere && !myDeptId) {
-      res.status(400).json({
-        error: "Bo‘lim biriktirilmagan — QR davomat uchun bo‘lim kerak",
-        code: "department_unassigned",
+    const sharedOffice =
+      isOfficeSharedQrDepartment(deptQr.row.departmentId) ||
+      String(deptQr.row.departmentLabel || "").trim().toLowerCase() === "ofis";
+
+    if (!sharedOffice) {
+      res.status(403).json({
+        error: "Alohida bo‘lim QR o‘chirilgan. Ofis QR yoki Face ID ishlating.",
+        code: "dept_qr_disabled",
       });
       return;
     }
 
-    if (!adminAnywhere && deptQr.row.departmentId !== myDeptId) {
+    // Ofis QR faqat ofis xodimlari — mudir/farmasevt/stajyor filial QR ishlatadi
+    if (!adminAnywhere && usesBranchDavomat(user.role, emp.orgRole)) {
       await writePunchAudit({
         employeeId: emp.id,
         userId: user.id,
         verificationMethod: "QR",
         action,
-        qrResult: "wrong_department",
+        qrResult: "office_qr_pharmacy_blocked",
         finalResult: "denied",
-        failureReason: "QR boshqa bo‘limga tegishli",
+        failureReason: "Apteka xodimi Ofis QR ishlata olmaydi",
         ipAddress: ip,
         deviceId,
-        meta: { qrDepartmentId: deptQr.row.departmentId, myDeptId },
       });
       res.status(403).json({
-        error: "Bu QR boshqa bo‘limniki. Faqat o‘z bo‘limingiz QR i bilan davomat qiling.",
-        code: "qr_wrong_department",
-        myDepartmentId: myDeptId,
-        qrDepartmentId: deptQr.row.departmentId,
+        error: "Ofis QR faqat ofis xodimlari uchun. O‘z filialingiz QR kodini skaner qiling (yoki Face ID).",
+        code: "office_qr_pharmacy",
       });
       return;
     }
 
+    // Ofis QR: asosiy ofis yashil zonasi (150 m)
     let latitude = hasGps ? latitudeRaw : DAVOMAT_SITE_LAT;
     let longitude = hasGps ? longitudeRaw : DAVOMAT_SITE_LNG;
     let distanceMeters = 0;
@@ -3295,37 +3425,49 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     let gpsResult: string = adminAnywhere ? "admin_bypass" : "ok";
 
     if (!adminAnywhere) {
-      const gate = await geoGate(
-        emp,
-        user.role,
-        latitude,
-        longitude,
-        Number.isFinite(accuracy) ? accuracy : undefined,
-      );
-      if (!gate.ok) {
+      if (!hasGps) {
+        res.status(400).json({
+          error: "Lokatsiya yoqilishi shart — ofis yashil zonasida bo‘ling",
+          code: "gps_required",
+        });
+        return;
+      }
+      distanceMeters = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+      if (distanceMeters > allowedMeters) {
+        const remainMeters = distanceMeters - allowedMeters;
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
           verificationMethod: "QR",
           action,
-          gpsResult: String(gate.body.code || "outside"),
-          gpsDistance: typeof gate.body.distanceMeters === "number" ? gate.body.distanceMeters : null,
+          gpsResult: "outside",
+          gpsDistance: distanceMeters,
           qrResult: "ok",
           finalResult: "denied",
-          failureReason: String(gate.body.error || "geofence"),
+          failureReason: "outside_office_geofence",
           ipAddress: ip,
           deviceId,
-          meta: { qrKind: "department", departmentId: deptQr.row.departmentId },
+          meta: { qrKind: "office_shared" },
         });
-        res.status(gate.status).json(gate.body);
+        res.status(403).json({
+          error: `Hududdan tashqaridasiz (asosiy ofis): ${distanceMeters} m. Ruxsat faqat ${allowedMeters} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
+          code: "outside_geofence",
+          distanceMeters,
+          remainMeters,
+          allowedMeters,
+          workplace: {
+            location: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+            latitude: DAVOMAT_SITE_LAT,
+            longitude: DAVOMAT_SITE_LNG,
+            kind: "office",
+          },
+          fullName: emp.fullName,
+        });
         return;
       }
-      distanceMeters = gate.distanceMeters;
-      allowedMeters = gate.effectiveRadius;
       gpsResult = "ok";
     } else if (hasGps) {
       distanceMeters = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
-      allowedMeters = DAVOMAT_OFFICE_GEOFENCE_METERS;
     }
 
     const punched = await applyFacePunch({
@@ -3339,7 +3481,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       action,
       verificationMethod: "QR",
       resolvedBranchId: null,
-      resolvedBranchLabel: deptQr.row.departmentLabel || null,
+      resolvedBranchLabel: OFFICE_SHARED_QR_LABEL,
     });
     if (!punched.ok) {
       await writePunchAudit({
@@ -3354,7 +3496,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         failureReason: String(punched.body.error || punched.body.code || "denied"),
         ipAddress: ip,
         deviceId,
-        meta: { qrKind: "department", departmentId: deptQr.row.departmentId },
+        meta: { qrKind: "office_shared", departmentId: deptQr.row.departmentId },
       });
       res.status(punched.status).json(punched.body);
       return;
@@ -3372,7 +3514,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       ipAddress: ip,
       deviceId,
       meta: {
-        qrKind: "department",
+        qrKind: "office_shared",
         departmentId: deptQr.row.departmentId,
         ...(adminAnywhere ? { adminQrAnywhere: true } : {}),
       },
@@ -3382,8 +3524,9 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     res.json({
       ...punched.payload,
       employee: own.employee,
-      departmentId: deptQr.row.departmentId,
-      departmentLabel: deptQr.row.departmentLabel,
+      departmentId: OFFICE_SHARED_QR_DEPARTMENT_ID,
+      departmentLabel: OFFICE_SHARED_QR_LABEL,
+      sharedOffice: true,
       adminQrAnywhere: adminAnywhere || undefined,
     });
   } catch (err) {
@@ -3401,7 +3544,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
   }
 });
 
-/** Workplace: Face ID | QR — apteka yoki ofis (bo‘limi bor) */
+/** Workplace: Face ID | QR — barcha xodimlar (apteka, ofis, boshqa) */
 router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const [user] = await db
@@ -3416,11 +3559,11 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
     const emp = await ensureEmployeeForUser(user);
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const adminQrAnywhere = isAdminQrAnywhere(user.role);
-    const officeStaff = !pharmacy && Boolean(user.departmentId);
+    /** Apteka emas — ofis / boshqa rollar (bo‘limi bo‘lmasa ham QR ko‘rinadi) */
+    const officeStaff = !pharmacy;
     const manageBranch = canManageBranchQr(user.role);
     const manageDept = canManageDeptQrRole(user.role);
-    const methods: Array<"FACE_ID" | "QR"> =
-      pharmacy || adminQrAnywhere || officeStaff ? ["FACE_ID", "QR"] : ["FACE_ID"];
+    const methods: Array<"FACE_ID" | "QR"> = ["FACE_ID", "QR"];
     res.json({
       pharmacyStaff: pharmacy,
       officeStaff,

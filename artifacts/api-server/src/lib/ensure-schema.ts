@@ -801,7 +801,68 @@ ALTER TABLE attendance_pay_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAM
 INSERT INTO attendance_pay_settings (id)
 SELECT 1
 WHERE NOT EXISTS (SELECT 1 FROM attendance_pay_settings WHERE id = 1);
-    `);
+
+-- Kunlik / vaqtinchalik filial biriktirish (rotatsiya)
+CREATE TABLE IF NOT EXISTS employee_branch_assignments (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  branch_id INTEGER NOT NULL,
+  branch_label TEXT,
+  kind TEXT NOT NULL,
+  valid_from TEXT NOT NULL,
+  valid_to TEXT,
+  replaces_employee_id INTEGER,
+  note TEXT,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS emp_branch_assign_emp_idx ON employee_branch_assignments (employee_id);
+CREATE INDEX IF NOT EXISTS emp_branch_assign_range_idx ON employee_branch_assignments (valid_from, valid_to);
+
+-- Kunlik smena rejasi
+CREATE TABLE IF NOT EXISTS employee_day_shift_plans (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  work_date TEXT NOT NULL,
+  shift_keys JSONB NOT NULL DEFAULT '[]'::jsonb,
+  created_by_id INTEGER,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS emp_day_shift_plans_uidx ON employee_day_shift_plans (employee_id, work_date);
+
+-- Javob olish so‘rovlari (har sana = alohida yozuv)
+CREATE TABLE IF NOT EXISTS javob_olish_requests (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  user_id INTEGER,
+  work_date TEXT NOT NULL,
+  shift_type TEXT,
+  shift_label TEXT,
+  shift_start_hm TEXT NOT NULL,
+  shift_end_hm TEXT NOT NULL,
+  shift_overnight INTEGER NOT NULL DEFAULT 0,
+  from_hm TEXT NOT NULL,
+  to_hm TEXT NOT NULL,
+  duration_minutes INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending',
+  coordinator_user_id INTEGER,
+  decided_by_id INTEGER,
+  decided_at TIMESTAMPTZ,
+  decision_note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS javob_olish_emp_idx ON javob_olish_requests (employee_id);
+CREATE INDEX IF NOT EXISTS javob_olish_date_idx ON javob_olish_requests (work_date);
+CREATE INDEX IF NOT EXISTS javob_olish_status_idx ON javob_olish_requests (status);
+CREATE INDEX IF NOT EXISTS javob_olish_coord_idx ON javob_olish_requests (coordinator_user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS javob_olish_pending_uidx
+  ON javob_olish_requests (employee_id, work_date)
+  WHERE status = 'pending';
+`);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");
     throw err;

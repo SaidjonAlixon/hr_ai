@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { db, departmentsTable, usersTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { isHrManager } from "../lib/roles";
+import { dedupeDepartmentsByName } from "../lib/role-departments";
 
 const router: IRouter = Router();
 
@@ -27,6 +28,11 @@ async function getDepartmentFull(id: number) {
 }
 
 router.get("/departments", requireAuth, async (_req, res): Promise<void> => {
+  try {
+    await dedupeDepartmentsByName();
+  } catch (err) {
+    console.error("departments dedupe:", err);
+  }
   const rows = await db
     .select({
       id: departmentsTable.id,
@@ -56,6 +62,16 @@ router.post("/departments", requireAuth, async (req: AuthRequest, res): Promise<
     res.status(400).json({ error: "Bo'lim nomi kerak" });
     return;
   }
+  const trimmed = String(name).trim().replace(/\s+/g, " ");
+  const [dup] = await db
+    .select({ id: departmentsTable.id })
+    .from(departmentsTable)
+    .where(sql`lower(trim(name)) = ${trimmed.toLocaleLowerCase("uz")}`)
+    .limit(1);
+  if (dup) {
+    res.status(409).json({ error: `«${trimmed}» bo‘limi allaqachon bor` });
+    return;
+  }
   const hid =
     headId === null || headId === undefined || headId === ""
       ? null
@@ -67,7 +83,7 @@ router.post("/departments", requireAuth, async (req: AuthRequest, res): Promise<
 
   const [dept] = await db
     .insert(departmentsTable)
-    .values({ name: String(name).trim(), headId: hid })
+    .values({ name: trimmed, headId: hid })
     .returning();
   const full = await getDepartmentFull(dept.id);
   res.status(201).json(

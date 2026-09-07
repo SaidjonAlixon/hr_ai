@@ -20,6 +20,7 @@ import {
   isPharmacyBranchRole,
 } from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
+import { dedupeActiveBranches } from "../lib/branch-dedupe";
 
 const router: IRouter = Router();
 
@@ -394,7 +395,7 @@ router.get("/branch-audits/branches", requireAuth, async (req: AuthRequest, res)
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, "manager"));
 
-  let scoped = managers.filter((m) => m.employmentStatus !== "dismissed");
+  let scoped = dedupeActiveBranches(managers.filter((m) => m.employmentStatus !== "dismissed"));
 
   // Koordinator — faqat o‘z mudirlari (reportsToId = coordinator employee id)
   if (req.userRole === "koordinator" && req.userId) {

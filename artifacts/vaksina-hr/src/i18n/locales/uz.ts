@@ -69,6 +69,7 @@ export const uz: Messages = {
   "nav.davomatQr": "Davomat QR",
   "nav.davomatAnalytics": "Davomat tahlili",
   "nav.smena": "Smena va filial",
+  "nav.javobOlish": "Javob olish",
   "nav.checklistStatus": "Cheklist holati",
   "nav.pharmacy": "Aptekalar tarmog‘i",
   "nav.holat": "Holat",

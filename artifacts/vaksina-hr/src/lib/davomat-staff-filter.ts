@@ -1,6 +1,7 @@
 import type { DavomatEmployee } from "./davomat-api";
 import { normalizeShiftType } from "./work-schedule";
 
+/** Hammasi | 1-smena | 2-smena | Ofis (tashqi/reviziya/texnik ham ofis) */
 export type DavomatStaffFilter = "all" | "shift_one" | "shift_two" | "office" | "external";
 
 /** Apteka smenalari — mudir, farmasevt, stajyor */
@@ -13,8 +14,8 @@ const NON_OFFICE_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordin
 const NON_OFFICE_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "coordinator"]);
 const NON_OFFICE_POSITION_RE = /mudir|farmasevt|stajyor|koordinator/i;
 
-/** Maydonda ishlaydiganlar — filial tekshiruvi va servis (ofis emas) */
-const EXTERNAL_USER_ROLES = new Set(["revizor", "reviziya_rahbar", "texnik", "texnik_rahbar"]);
+/** Reviziya / texnik — endi Ofis filtriga kiradi */
+const OFFICE_FIELD_USER_ROLES = new Set(["revizor", "reviziya_rahbar", "texnik", "texnik_rahbar"]);
 
 function orgRoleFromUserRole(role?: string | null): string | null {
   if (role === "mudir") return "manager";
@@ -22,6 +23,10 @@ function orgRoleFromUserRole(role?: string | null): string | null {
   if (role === "stajyor") return "intern";
   if (role === "koordinator") return "coordinator";
   return null;
+}
+
+function isOfficeFieldStaff(emp: { userRole?: string | null }): boolean {
+  return OFFICE_FIELD_USER_ROLES.has(emp.userRole || "");
 }
 
 /** @deprecated isShiftPharmacyStaff yoki isNonOfficeStaff ishlating */
@@ -77,8 +82,8 @@ export function classifyDavomatStaff(emp: {
   shiftLabel?: string | null;
   workStart?: string;
   workEnd?: string;
-}): Exclude<DavomatStaffFilter, "all"> {
-  if (EXTERNAL_USER_ROLES.has(emp.userRole || "")) return "external";
+}): Exclude<DavomatStaffFilter, "all" | "external"> {
+  if (isOfficeFieldStaff(emp)) return "office";
   if (isShiftPharmacyStaff(emp)) {
     return isShiftTwo(emp) ? "shift_two" : "shift_one";
   }
@@ -93,9 +98,8 @@ export function staffFilterLabel(filter: DavomatStaffFilter): string {
     case "shift_two":
       return "2-smena";
     case "office":
-      return "Ofis";
     case "external":
-      return "Tashqi xodimlar";
+      return "Ofis";
     default:
       return "Hammasi";
   }
@@ -103,7 +107,8 @@ export function staffFilterLabel(filter: DavomatStaffFilter): string {
 
 /** Jadval va katak uchun qisqa smena nomi */
 export function smenaLabelShort(emp: DavomatEmployee): string {
-  if (EXTERNAL_USER_ROLES.has(emp.userRole || "")) return "Tashqi xodimlar";
+  if (emp.userRole === "revizor" || emp.userRole === "reviziya_rahbar") return "Reviziya";
+  if (emp.userRole === "texnik" || emp.userRole === "texnik_rahbar") return "Texnik";
   if (emp.userRole === "koordinator" || emp.orgRole === "coordinator") return "Koordinator";
   if (emp.userRole === "mudir" || emp.orgRole === "manager" || /mudir/i.test(emp.position || ""))
     return "Filial mudiri";
@@ -114,11 +119,8 @@ export function smenaLabelShort(emp: DavomatEmployee): string {
     case "shift_two":
       return "2-smena";
     case "office":
-      return "Asosiy ofis";
-    case "external":
-      return "Tashqi xodimlar";
     default:
-      return "Asosiy ofis";
+      return "Ofis";
   }
 }
 
@@ -150,23 +152,24 @@ export function matchesStaffFilter(
 ): boolean {
   if (filter === "all") return true;
 
-  const external = EXTERNAL_USER_ROLES.has(emp.userRole || "");
+  const officeField = isOfficeFieldStaff(emp);
   const shiftPharmacy = isShiftPharmacyStaff(emp);
   const shiftTwo = isShiftTwo(emp);
   const nonOffice = isNonOfficeStaff(emp);
+  const far = Boolean(farOfficeIds?.has(emp.id));
 
-  if (filter === "external") {
-    return external || Boolean(farOfficeIds?.has(emp.id));
+  /** Eski «external» tanlovi Ofis bilan bir xil */
+  if (filter === "office" || filter === "external") {
+    return officeField || far || !nonOffice;
   }
 
   if (filter === "shift_two") return shiftPharmacy && shiftTwo;
   if (filter === "shift_one") return shiftPharmacy && !shiftTwo;
-  if (filter === "office") return !nonOffice;
   return false;
 }
 
 export const STAFF_FILTER_OPTIONS: Array<{
-  key: DavomatStaffFilter;
+  key: Exclude<DavomatStaffFilter, "external">;
   label: string;
   hint: string;
   hours: string;
@@ -177,13 +180,7 @@ export const STAFF_FILTER_OPTIONS: Array<{
   {
     key: "office",
     label: "Ofis",
-    hint: "09:00 – 18:00",
-    hours: "09:00–18:00",
-  },
-  {
-    key: "external",
-    label: "Tashqi xodimlar",
-    hint: "Maydonda — reviziya va texnik xizmat",
+    hint: "09:00 – 18:00 · reviziya va texnik ham",
     hours: "09:00–18:00",
   },
 ];

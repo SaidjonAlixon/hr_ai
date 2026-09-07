@@ -21,6 +21,7 @@ export type SmenaMe = {
   canPickShift: boolean;
   canPickOwnBranch: boolean;
   canAssignOthers: boolean;
+  canDayRotate?: boolean;
   employee: {
     id: number;
     fullName: string;
@@ -52,6 +53,18 @@ export type SmenaMe = {
   };
 };
 
+export type SmenaRotationItem = {
+  id: number;
+  employeeId: number;
+  fullName: string;
+  orgRole: string | null;
+  branchId: number;
+  branchLabel: string | null;
+  shiftKeys: string[];
+  note: string | null;
+  createdAt?: string;
+};
+
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: "include",
@@ -80,13 +93,49 @@ export function saveMySmena(body: { shiftType?: ShiftPick | string; assignedBran
 
 export function assignSmenaBranch(
   employeeId: number,
-  assignedBranchId: number,
+  assignedBranchId: number | null | undefined,
   shiftType?: ShiftPick | string,
 ) {
-  return apiJson<{ ok: boolean; assignedBranchName: string }>(`/smena/assign/${employeeId}`, {
+  const body: Record<string, unknown> = {};
+  if (assignedBranchId != null) body.assignedBranchId = assignedBranchId;
+  if (shiftType != null) body.shiftType = shiftType;
+  return apiJson<{
+    ok: boolean;
+    assignedBranchName: string;
+    shiftOnly?: boolean;
+  }>(`/smena/assign/${employeeId}`, {
     method: "PATCH",
-    body: JSON.stringify({ assignedBranchId, shiftType }),
+    body: JSON.stringify(body),
   });
+}
+
+export function createDayRotation(body: {
+  employeeId: number;
+  branchId: number;
+  workDate: string;
+  shiftType?: ShiftPick | string;
+  note?: string;
+}) {
+  return apiJson<{
+    ok: boolean;
+    workDate: string;
+    branchLabel: string;
+    shiftType: string | null;
+    permanentUnchanged: boolean;
+  }>("/smena/rotation", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function fetchDayRotations(date: string) {
+  return apiJson<{ workDate: string; items: SmenaRotationItem[] }>(
+    `/smena/rotations?date=${encodeURIComponent(date)}`,
+  );
+}
+
+export function deleteDayRotation(id: number) {
+  return apiJson<{ ok: boolean }>(`/smena/rotation/${id}`, { method: "DELETE" });
 }
 
 export function shiftLabelShort(type: string | null | undefined): string {
@@ -97,4 +146,8 @@ export function shiftLabelShort(type: string | null | undefined): string {
   if (s === "two" || s.startsWith("two")) return "2-smena";
   if (s === "office") return "Ofis";
   return "1-smena";
+}
+
+export function todayTashkentYmd() {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
 }

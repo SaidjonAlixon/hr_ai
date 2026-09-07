@@ -83,11 +83,46 @@ const STATUS_STYLE: Record<string, string> = {
   closed: "border-border bg-muted text-muted-foreground",
 };
 
-type StaffRow = Employee & { phone?: string | null; login?: string | null };
+type StaffRow = Employee & {
+  phone?: string | null;
+  login?: string | null;
+  userRole?: string | null;
+};
 
 function staffContact(e: Employee): StaffRow {
   return e as StaffRow;
 }
+
+/** Dorixona: mudir, farmasevt, stajyor (orgRole / userRole / lavozim / bo‘lim) */
+const DORIXONA_ORG = new Set(["manager", "pharmacist", "intern"]);
+const DORIXONA_USER = new Set(["mudir", "farmasevt", "stajyor"]);
+const DORIXONA_POS_RE =
+  /filial\s*mudiri?|^\s*mudir\s*$|farmasevt|stajyor|stajor|фармацевт/i;
+const DORIXONA_DEPT_RE = /^(farmasevt|dorixona|apteka|фармацевт)$/i;
+
+function isDorixonaStaff(e: Employee): boolean {
+  const row = staffContact(e);
+  const org = String(row.orgRole || "")
+    .trim()
+    .toLowerCase();
+  const role = String(row.userRole || "")
+    .trim()
+    .toLowerCase();
+  const pos = String(row.position || "").trim();
+  const dept = String(row.departmentName || "").trim();
+
+  if (org && DORIXONA_ORG.has(org)) return true;
+  if (role && DORIXONA_USER.has(role)) return true;
+  // Ba’zan DB da o‘zbekcha yozuv saqlangan bo‘lishi mumkin
+  if (/^(mudir|farmasevt|stajyor|stajor)$/i.test(org) || /^(mudir|farmasevt|stajyor|stajor)$/i.test(role)) {
+    return true;
+  }
+  if (DORIXONA_POS_RE.test(pos)) return true;
+  if (dept && DORIXONA_DEPT_RE.test(dept)) return true;
+  return false;
+}
+
+type WorkplaceFilter = "all" | "dorixona" | "ofis";
 
 function initials(name: string) {
   return name
@@ -233,6 +268,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const canAddStaff = canAddDeptStaff(user?.role);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
+  const [workplaceFilter, setWorkplaceFilter] = useState<WorkplaceFilter>("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
@@ -253,19 +289,26 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     staleTime: 30_000,
   });
 
-  const counts = useMemo(() => {
+  const workplaceScoped = useMemo(() => {
     const all = employees ?? [];
+    if (workplaceFilter === "dorixona") return all.filter(isDorixonaStaff);
+    if (workplaceFilter === "ofis") return all.filter((e) => !isDorixonaStaff(e));
+    return all;
+  }, [employees, workplaceFilter]);
+
+  const counts = useMemo(() => {
+    const all = workplaceScoped;
     return {
       total: all.length,
       working: all.filter((e) => (e.employmentStatus || "working") === "working").length,
       on_leave: all.filter((e) => e.employmentStatus === "on_leave").length,
       dismissed: all.filter((e) => e.employmentStatus === "dismissed").length,
     };
-  }, [employees]);
+  }, [workplaceScoped]);
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return [...(employees ?? [])]
+    return [...workplaceScoped]
       .filter((e) => {
         if (deptFilter !== "all" && e.departmentId !== Number(deptFilter)) return false;
         if (statusFilter !== "all" && (e.employmentStatus || "working") !== statusFilter) return false;
@@ -286,7 +329,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         return hay.includes(q);
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
-  }, [employees, search, deptFilter, statusFilter, t]);
+  }, [workplaceScoped, search, deptFilter, statusFilter, t]);
 
   const setStatus = (id: number, employmentStatus: string) => {
     setPendingId(id);
@@ -423,6 +466,19 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                 className="h-9 border-border bg-background pl-8 text-sm"
               />
             </div>
+            <Select
+              value={workplaceFilter}
+              onValueChange={(v) => setWorkplaceFilter(v as WorkplaceFilter)}
+            >
+              <SelectTrigger className="h-9 w-full text-sm lg:w-[160px]">
+                <SelectValue placeholder={t("emp.workplace")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("emp.workplaceAll")}</SelectItem>
+                <SelectItem value="dorixona">{t("emp.dorixona")}</SelectItem>
+                <SelectItem value="ofis">{t("emp.ofis")}</SelectItem>
+              </SelectContent>
+            </Select>
             <Select value={deptFilter} onValueChange={setDeptFilter}>
               <SelectTrigger className="h-9 w-full text-sm lg:w-[200px]">
                 <SelectValue placeholder={t("ui.department")} />

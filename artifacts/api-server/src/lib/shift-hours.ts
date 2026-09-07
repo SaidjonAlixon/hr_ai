@@ -64,7 +64,10 @@ export type StaffHours = {
   end: string;
   graceMinutes: number;
   overnight?: boolean;
+  /** Birlamchi smena (kelish nazorati) */
   shiftKey?: ShiftKey;
+  /** Barcha smenalar — 1+2 bo‘lsa ["one","two"] */
+  shiftKeys?: ShiftKey[];
 };
 
 function toWorkSchedule(def: ShiftDefinition): WorkSchedule {
@@ -84,14 +87,52 @@ function toWorkSchedule(def: ShiftDefinition): WorkSchedule {
   };
 }
 
-/** Sync — default yoki berilgan defs */
+function pharmacyKeys(
+  shiftType?: string | null,
+  shiftLabel?: string | null,
+): ShiftKey[] {
+  const keys = parseShiftKeys(shiftType, shiftLabel).filter((k) => k !== "office");
+  if (keys.length) return keys;
+  return [normalizeShiftKey(shiftType, shiftLabel)];
+}
+
+/**
+ * Bitta yoki kombinatsiya smena oynasi.
+ * 1+2 → ertalab 1-smena boshlanishi … 2-smena tugashi (08:00–23:45).
+ * 2+3 → 2 boshlanishi … 3 tugashi (overnight).
+ */
 export function shiftWindow(
   shiftType?: string | null,
   shiftLabel?: string | null,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): WorkSchedule {
-  const key = normalizeShiftKey(shiftType, shiftLabel);
-  return toWorkSchedule(defs[key] || defs.one);
+  const raw = String(shiftType || "").trim().toLowerCase();
+  if (raw === "office" || (!raw && String(shiftLabel || "").toLowerCase().includes("ofis"))) {
+    return toWorkSchedule(defs.office);
+  }
+  const keys = pharmacyKeys(shiftType, shiftLabel);
+  const first = defs[keys[0]] || defs.one;
+  const last = defs[keys[keys.length - 1]] || first;
+  if (keys.length === 1) return toWorkSchedule(first);
+
+  const overnight = keys.some((k) => Boolean(defs[k]?.overnight)) || Boolean(last.overnight);
+  const warnHm = warnHmBefore(first.startHm, first.graceMinutes);
+  const short = keys
+    .map((k) => (k === "one" ? "1" : k === "two" ? "2" : k === "three" ? "3" : k))
+    .join("+");
+  const range = overnight
+    ? `${first.startHm}–${last.endHm} (keyingi kun)`
+    : `${first.startHm}–${last.endHm}`;
+  return {
+    key: first.key,
+    label: `${short}-smena`,
+    start: first.startHm,
+    end: last.endHm,
+    graceMinutes: first.graceMinutes,
+    overnight,
+    warnHm,
+    warnText: `${short}: kelish ${first.startHm}, ketish ${last.endHm}. ${first.graceMinutes} daqiqadan so‘ng kechikish. To‘liq ${range}.`,
+  };
 }
 
 export function workScheduleForStaff(
@@ -130,30 +171,49 @@ export function hoursForStaff(
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): StaffHours {
   const w = workScheduleForStaff(userRole, orgRole, shiftType, shiftLabel, defs);
+  const shiftKeys = isPharmacyShiftStaff(userRole, orgRole)
+    ? pharmacyKeys(shiftType, shiftLabel)
+    : (["office"] as ShiftKey[]);
   return {
     start: w.start,
     end: w.end,
     graceMinutes: w.graceMinutes,
     overnight: w.overnight,
-    shiftKey: w.key,
+    shiftKey: shiftKeys[0] || w.key,
+    shiftKeys,
   };
 }
 
+/** Faqat birlamchi smena oynasi (combo bo‘lsa ham faqat birinchi) */
 export function primaryHoursFromPlan(
   shiftType?: string | null,
   shiftLabel?: string | null,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): StaffHours {
-  const keys = parseShiftKeys(shiftType, shiftLabel).filter((k) => k !== "office");
+  const keys = pharmacyKeys(shiftType, shiftLabel);
   const key = keys[0] || normalizeShiftKey(shiftType, shiftLabel);
-  const w = shiftWindow(key, null, defs);
+  const def = defs[key] || defs.one;
+  const w = toWorkSchedule(def);
   return {
     start: w.start,
     end: w.end,
     graceMinutes: w.graceMinutes,
     overnight: w.overnight,
     shiftKey: w.key,
+    shiftKeys: [w.key],
   };
+}
+
+/** Combo smena diapazon matni (UI/toast) */
+export function shiftSpanNote(
+  shiftType?: string | null,
+  shiftLabel?: string | null,
+  defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
+): string {
+  const w = shiftWindow(shiftType, shiftLabel, defs);
+  const keys = pharmacyKeys(shiftType, shiftLabel);
+  if (keys.length <= 1) return `${w.start}–${w.end}`;
+  return `kelish ${w.start} · ketish ${w.end}`;
 }
 
 /** Legacy named exports — default vaqtlar (admin override dan oldin) */

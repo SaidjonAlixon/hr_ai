@@ -1056,7 +1056,7 @@ export default function DavomatFacePage() {
    * Face ID skani davomat profilini aniqlaydi (tizim login emas).
    * faceRegistered === false kutish — status 401 bo‘lsa tugma abadiy yopiq qolardi.
    */
-  /** Face ID: apteka/ofis uchun enroll bo‘lmasa ham tugma ochilsin (avval enroll) */
+  /** Face ID: barcha xodimlar — enroll bo‘lmasa ham tugma ochilsin */
   const canOpenFace =
     methodsReady &&
     cameraGranted &&
@@ -1064,19 +1064,17 @@ export default function DavomatFacePage() {
     !gpsError &&
     isFaceIdSupported() &&
     inside &&
-    !done &&
-    (pharmacyStaff || officeStaff || faceRegistered !== false);
+    !done;
 
-  /** QR: apteka/ofis — GPS + zona; admin — istalgan QR, lokatsiya shartsiz */
+  /** QR: barcha xodimlar — GPS + zona; admin — lokatsiya shartsiz */
   const canOpenQr =
     methodsReady &&
     cameraGranted &&
     !done &&
-    (adminQrAnywhere ||
-      ((pharmacyStaff || officeStaff) && Boolean(gps) && !gpsError && inside));
+    (adminQrAnywhere || (Boolean(gps) && !gpsError && inside));
 
-  /** Farmasevt va ofis xodimlari: Face ID | QR yonma-yon */
-  const showDualMethods = pharmacyStaff || officeStaff || adminQrAnywhere;
+  /** Face ID | QR — ofis, farmasevt va barcha rollar */
+  const showDualMethods = methodsReady;
 
   const faceVerifiedReady = Boolean(verified?.descriptor && verified.descriptor.length > 0);
   const qrVerifiedReady = Boolean(verified?.qrPayload);
@@ -1964,79 +1962,88 @@ export default function DavomatFacePage() {
           <ArrowDown className="h-5 w-5 animate-bounce" />
         </div>
 
-        {/* Mobil: GPS dan keyin 2 usul — old/orqa kamera (admin: QR lokatsiyasiz) */}
+        {/* Mobil: Face ID | QR — barcha xodimlar */}
         {methodsReady && showMethodPicker ? (
           <section className="dv-card mt-2 border-l-[3px] border-l-primary md:hidden" id="davomat-methods">
             <div className="mb-2 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
+              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
                 3
               </span>
               <SwitchCamera className="h-4 w-4 text-primary" />
-              <h2 className="text-sm font-semibold text-foreground">{t("davomat.pickMethodTitle")}</h2>
+              <h2 className="text-base font-semibold text-foreground">{t("davomat.pickMethodTitle")}</h2>
             </div>
-            <p className="mb-3 text-xs text-muted-foreground">
+            <p className="mb-3 text-sm leading-snug text-muted-foreground">
               {adminQrAnywhere
-                ? "Admin: istalgan filial QR scanner — lokatsiya shart emas"
-                : t("davomat.pickMethodDetail")}
+                ? t("davomat.pickMethodAdmin")
+                : pharmacyStaff
+                  ? t("davomat.pickMethodPharmacy")
+                  : t("davomat.pickMethodOffice")}
             </p>
 
             {adminQrAnywhere ? (
-              <p className="mb-3 text-center text-xs font-medium text-sky-700 dark:text-sky-300">
-                Admin · QR istalgan joydan qabul qilinadi
+              <p className="mb-3 rounded-xl bg-sky-500/10 px-3 py-2 text-center text-xs font-semibold text-sky-700 dark:text-sky-300">
+                {t("davomat.adminQrAnywhere")}
               </p>
             ) : !inside ? (
-              <p className="dv-tone-rose mb-3 rounded-2xl border px-3 py-2 text-center text-sm font-semibold">
+              <p className="dv-tone-rose mb-3 rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold">
                 {t("davomat.methodsLockedOutside")}
               </p>
             ) : (
-              <p className="mb-3 text-center text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                🟢 {t("davomat.inZone")}
+              <p className="mb-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-700 dark:text-emerald-300">
+                {t("davomat.inZone")}
                 {distance != null ? ` · ${formatDistance(distance, t)}` : ""}
               </p>
             )}
 
-            <div className="flex items-stretch justify-center gap-3">
+            <div className="grid grid-cols-1 gap-2.5">
               <Button
                 type="button"
                 size="lg"
                 className={cn(
-                  "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
+                  "h-auto min-h-[3.75rem] w-full flex-row items-center justify-start gap-3 rounded-2xl px-4 py-3.5 text-left shadow-sm",
                   guideStep === "face" && canOpenFace && "dv-focus",
                   !canOpenFace && "opacity-60",
                 )}
                 disabled={!canOpenFace || busy}
                 onClick={openFaceMethod}
               >
-                <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
-                  <ScanFace className="h-5 w-5 shrink-0" />
-                  Face ID
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/15">
+                  <ScanFace className="h-6 w-6" />
                 </span>
-                <span className="text-center text-[10px] font-normal leading-tight opacity-90">
-                  {t("davomat.frontCam")}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base font-semibold leading-tight">Face ID</span>
+                  <span className="mt-0.5 block text-xs font-normal leading-snug opacity-90">
+                    {t("davomat.frontCamHint")}
+                  </span>
                 </span>
               </Button>
 
-              <span className="self-center shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              <p className="text-center text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
                 {t("davomat.orWord")}
-              </span>
+              </p>
 
               <Button
                 type="button"
                 size="lg"
+                variant="secondary"
                 className={cn(
-                  "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
+                  "h-auto min-h-[3.75rem] w-full flex-row items-center justify-start gap-3 rounded-2xl px-4 py-3.5 text-left shadow-sm ring-1 ring-primary/25",
                   guideStep === "face" && canOpenQr && "dv-focus",
                   !canOpenQr && "opacity-60",
                 )}
                 disabled={!canOpenQr || busy}
                 onClick={openQrMethod}
               >
-                <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
-                  <QrCode className="h-5 w-5 shrink-0" />
-                  {t("davomat.qrScanner")}
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
+                  <QrCode className="h-6 w-6" />
                 </span>
-                <span className="text-center text-[10px] font-normal leading-tight opacity-90">
-                  {t("davomat.rearCam")}
+                <span className="min-w-0 flex-1">
+                  <span className="block text-base font-semibold leading-tight text-foreground">
+                    {t("davomat.qrScanner")}
+                  </span>
+                  <span className="mt-0.5 block text-xs font-normal leading-snug text-muted-foreground">
+                    {pharmacyStaff ? t("davomat.rearCamHintBranch") : t("davomat.rearCamHintDept")}
+                  </span>
                 </span>
               </Button>
             </div>
@@ -2052,7 +2059,7 @@ export default function DavomatFacePage() {
                 href="/davomat-qr"
                 className="mt-3 block text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
               >
-                Filial QR kodini yaratish / yuklab olish →
+                {t("davomat.manageQrLink")}
               </Link>
             ) : null}
           </section>
@@ -2071,11 +2078,11 @@ export default function DavomatFacePage() {
             <div className="space-y-3">
                 {adminQrAnywhere ? (
                   <p className="text-center text-xs font-medium text-sky-700 dark:text-sky-300">
-                    Admin · istalgan filial QR · lokatsiya shart emas
+                    {t("davomat.adminQrAnywhere")}
                   </p>
                 ) : inside ? (
                   <p className="text-center text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                    🟢 {t("davomat.inZone")}
+                    {t("davomat.inZone")}
                     {distance != null ? ` · ${formatDistance(distance, t)}` : ""}
                   </p>
                 ) : gps ? (
@@ -2086,13 +2093,15 @@ export default function DavomatFacePage() {
 
                 {!done ? (
                   <>
-                    <p className="text-center text-xs text-muted-foreground">{t("davomat.pickMethodDetail")}</p>
+                    <p className="text-center text-xs text-muted-foreground">
+                      {pharmacyStaff ? t("davomat.pickMethodPharmacy") : t("davomat.pickMethodOffice")}
+                    </p>
                     <div className="flex items-stretch justify-center gap-3">
                       <Button
                         type="button"
                         size="lg"
                         className={cn(
-                          "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
+                          "h-auto min-h-[4.25rem] w-[9.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
                           !canOpenFace && "opacity-50",
                         )}
                         disabled={!canOpenFace || busy}
@@ -2113,7 +2122,7 @@ export default function DavomatFacePage() {
                         type="button"
                         size="lg"
                         className={cn(
-                          "h-auto min-h-[4.25rem] w-[8.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
+                          "h-auto min-h-[4.25rem] w-[9.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
                           !canOpenQr && "opacity-50",
                         )}
                         disabled={!canOpenQr || busy}
@@ -2156,7 +2165,7 @@ export default function DavomatFacePage() {
                     href="/davomat-qr"
                     className="block text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
                   >
-                    Filial QR kodini yaratish / yuklab olish →
+                    {t("davomat.manageQrLink")}
                   </Link>
                 ) : null}
             </div>
@@ -2663,8 +2672,18 @@ export default function DavomatFacePage() {
         open={qrOpen && methodHint !== "FACE_ID" && !faceVerifiedReady}
         stream={qrStream}
         onOpenChange={setQrOpen}
-        title={nextAction === "out" ? "Ketdim — QR scanner" : "Keldim — QR scanner"}
-        description={t("davomat.rearCamHint")}
+        title={
+          nextAction === "out"
+            ? t("davomat.qrScanTitleOut")
+            : t("davomat.qrScanTitleIn")
+        }
+        description={
+          adminQrAnywhere
+            ? t("davomat.qrScanDescAdmin")
+            : pharmacyStaff
+              ? t("davomat.qrScanDescBranch")
+              : t("davomat.qrScanDescDept")
+        }
         onDetected={onQrDetected}
       />
 

@@ -5,6 +5,7 @@ import { db, usersTable, employeesTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { parseGpsText, displayBranchName } from "../lib/geo-location";
+import { dedupeActiveBranches } from "../lib/branch-dedupe";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
 import {
@@ -186,8 +187,8 @@ async function loadOwnMudirCredentials(actorUserId: number): Promise<MudirCreden
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, "manager"));
 
-  const mine = managers.filter(
-    (m) => m.reportsToId === coord.id && m.employmentStatus !== "dismissed",
+  const mine = dedupeActiveBranches(
+    managers.filter((m) => m.reportsToId === coord.id && m.employmentStatus !== "dismissed"),
   );
   const userIds = [...new Set(mine.map((m) => m.userId).filter((id): id is number => id != null))];
   const users = userIds.length

@@ -33,7 +33,7 @@ import {
 const router: IRouter = Router();
 
 function canEdit(role?: string | null) {
-  return canManageSettings(role) || isHrRole(role) || role === "koordinator";
+  return canManageSettings(role) || isHrRole(role) || role === "koordinator" || role === "mudir";
 }
 
 function isHm(v: unknown): string | null {

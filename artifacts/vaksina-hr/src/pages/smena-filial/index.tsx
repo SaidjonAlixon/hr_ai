@@ -1,6 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Clock3, MapPin, Search, Users, X } from "lucide-react";
+import {
+  ArrowRightLeft,
+  CalendarDays,
+  Check,
+  Clock3,
+  MapPin,
+  Search,
+  Trash2,
+  Users,
+  X,
+} from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -9,21 +19,27 @@ import { useI18n } from "../../i18n/I18nProvider";
 import { cn } from "../../lib/utils";
 import {
   assignSmenaBranch,
+  createDayRotation,
+  deleteDayRotation,
+  fetchDayRotations,
   fetchSmenaMe,
   saveMySmena,
   shiftLabelShort,
+  todayTashkentYmd,
   type ShiftPick,
   type SmenaAssignable,
   type SmenaBranch,
 } from "../../lib/smena-api";
 
-const SHIFT_OPTIONS: { value: ShiftPick; label: string }[] = [
-  { value: "one", label: "1-smena" },
-  { value: "two", label: "2-smena" },
-  { value: "three", label: "3-smena" },
-  { value: "one+two", label: "1+2" },
-  { value: "two+three", label: "2+3" },
+const SHIFT_OPTIONS: { value: ShiftPick; label: string; hint: string }[] = [
+  { value: "one", label: "1-smena", hint: "08:00–17:00" },
+  { value: "two", label: "2-smena", hint: "17:00–23:45" },
+  { value: "three", label: "3-smena", hint: "23:00–07:00" },
+  { value: "one+two", label: "1+2", hint: "kelish 08:00 · ketish 23:45" },
+  { value: "two+three", label: "2+3", hint: "kelish 17:00 · ketish 07:00" },
 ];
+
+type Mode = "permanent" | "rotation";
 
 function orgLabel(org: string | null) {
   if (org === "pharmacist") return "Farmasevt";
@@ -39,6 +55,10 @@ function normalizePick(raw?: string | null): ShiftPick {
   if (s === "three" || s.endsWith("three")) return "three";
   if (s === "two" || s.startsWith("two")) return "two";
   return "one";
+}
+
+function shiftHint(value: ShiftPick): string {
+  return SHIFT_OPTIONS.find((o) => o.value === value)?.hint || "";
 }
 
 function SearchBox({
@@ -58,8 +78,12 @@ function SearchBox({
   );
 }
 
-function CompactList({ children }: { children: React.ReactNode }) {
-  return <div className="max-h-44 overflow-y-auto rounded-lg border border-border bg-card">{children}</div>;
+function CompactList({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <div className={cn("max-h-48 overflow-y-auto rounded-xl border border-border bg-card", className)}>
+      {children}
+    </div>
+  );
 }
 
 function ShiftButtons({
@@ -72,19 +96,22 @@ function ShiftButtons({
   disabled?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
-      {SHIFT_OPTIONS.map((opt) => (
-        <Button
-          key={opt.value}
-          size="sm"
-          type="button"
-          variant={value === opt.value ? "default" : "outline"}
-          disabled={disabled}
-          onClick={() => onChange(opt.value)}
-        >
-          {opt.label}
-        </Button>
-      ))}
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+        {SHIFT_OPTIONS.map((opt) => (
+          <Button
+            key={opt.value}
+            size="sm"
+            type="button"
+            variant={value === opt.value ? "default" : "outline"}
+            disabled={disabled}
+            onClick={() => onChange(opt.value)}
+          >
+            {opt.label}
+          </Button>
+        ))}
+      </div>
+      <p className="text-[11px] leading-snug text-muted-foreground">{shiftHint(value)}</p>
     </div>
   );
 }
@@ -96,16 +123,31 @@ export default function SmenaFilialPage() {
   const q = useQuery({ queryKey: ["smena-me"], queryFn: fetchSmenaMe });
   const data = q.data;
 
+  const [mode, setMode] = useState<Mode>("rotation");
   const [branchQ, setBranchQ] = useState("");
   const [peopleQ, setPeopleQ] = useState("");
   const [pickedBranchId, setPickedBranchId] = useState<number | null>(null);
   const [pickedPersonId, setPickedPersonId] = useState<number | null>(null);
   const [pickedShift, setPickedShift] = useState<ShiftPick>("one");
+  const [workDate, setWorkDate] = useState(todayTashkentYmd());
 
-  const staff = useMemo(
-    () => (data?.assignable ?? []).filter((p) => p.orgRole === "pharmacist" || p.orgRole === "intern"),
-    [data?.assignable],
-  );
+  const canRotate = Boolean(data?.canDayRotate);
+  const canAssign = Boolean(data?.canAssignOthers);
+
+  useEffect(() => {
+    if (!data) return;
+    if (!canRotate && canAssign) setMode("permanent");
+  }, [data, canRotate, canAssign]);
+
+  const staff = useMemo(() => {
+    const list = data?.assignable ?? [];
+    if (mode === "rotation") {
+      return list.filter(
+        (p) => p.orgRole === "pharmacist" || p.orgRole === "intern" || p.orgRole === "manager",
+      );
+    }
+    return list.filter((p) => p.orgRole === "pharmacist" || p.orgRole === "intern" || p.orgRole === "manager");
+  }, [data?.assignable, mode]);
 
   const branches = useMemo(() => {
     const list = data?.branches ?? [];
@@ -122,27 +164,65 @@ export default function SmenaFilialPage() {
     );
   }, [staff, peopleQ]);
 
+  const rotationsQ = useQuery({
+    queryKey: ["smena-rotations", workDate],
+    queryFn: () => fetchDayRotations(workDate),
+    enabled: Boolean(canRotate && mode === "rotation"),
+  });
+
   const picked = staff.find((p) => p.id === pickedPersonId) ?? null;
   const pickedBranch = (data?.branches ?? []).find((b) => b.id === pickedBranchId) ?? null;
 
   const saveMine = useMutation({
     mutationFn: (body: { shiftType?: ShiftPick; assignedBranchId?: number }) => saveMySmena(body),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["smena-me"] });
-      toast({ title: "Saqlandi" });
+      void qc.invalidateQueries({ queryKey: ["smena-me"] });
+      toast({ title: t("smena.saved") });
     },
-    onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("smena.saveFail"), description: e.message, variant: "destructive" }),
   });
 
   const saveAssign = useMutation({
-    mutationFn: (p: { id: number; assignedBranchId: number; shiftType: ShiftPick }) =>
+    mutationFn: (p: { id: number; assignedBranchId?: number | null; shiftType: ShiftPick }) =>
       assignSmenaBranch(p.id, p.assignedBranchId, p.shiftType),
     onSuccess: (r) => {
-      qc.invalidateQueries({ queryKey: ["smena-me"] });
-      toast({ title: "Saqlandi", description: r.assignedBranchName });
+      void qc.invalidateQueries({ queryKey: ["smena-me"] });
+      toast({
+        title: r.shiftOnly ? t("smena.shiftOnlySaved") : t("smena.saved"),
+        description: r.assignedBranchName,
+      });
       cancelEdit();
     },
-    onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
+    onError: (e: Error) => toast({ title: t("smena.saveFail"), description: e.message, variant: "destructive" }),
+  });
+
+  const saveRotation = useMutation({
+    mutationFn: (p: { employeeId: number; branchId: number; shiftType: ShiftPick }) =>
+      createDayRotation({
+        employeeId: p.employeeId,
+        branchId: p.branchId,
+        workDate,
+        shiftType: p.shiftType,
+      }),
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["smena-rotations", workDate] });
+      toast({
+        title: t("smena.rotationOk"),
+        description: `${r.workDate} · ${r.branchLabel}`,
+      });
+      cancelEdit();
+    },
+    onError: (e: Error) =>
+      toast({ title: t("smena.rotationFail"), description: e.message, variant: "destructive" }),
+  });
+
+  const removeRotation = useMutation({
+    mutationFn: (id: number) => deleteDayRotation(id),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["smena-rotations", workDate] });
+      toast({ title: t("smena.rotationRemoved") });
+    },
+    onError: (e: Error) => toast({ title: t("smena.saveFail"), description: e.message, variant: "destructive" }),
   });
 
   function pickPerson(p: SmenaAssignable) {
@@ -159,9 +239,49 @@ export default function SmenaFilialPage() {
     setBranchQ("");
   }
 
+  /** Filialni o‘zgartirmasdan faqat smena */
+  function onSaveShiftOnly() {
+    if (!pickedPersonId) {
+      toast({ title: t("smena.pickTitle"), description: t("smena.pickPerson"), variant: "destructive" });
+      return;
+    }
+    if (mode === "rotation") {
+      const branchId = pickedBranchId || picked?.assignedBranchId;
+      if (!branchId) {
+        toast({
+          title: t("smena.pickTitle"),
+          description: t("smena.needBranchForDay"),
+          variant: "destructive",
+        });
+        return;
+      }
+      saveRotation.mutate({ employeeId: pickedPersonId, branchId, shiftType: pickedShift });
+      return;
+    }
+    saveAssign.mutate({
+      id: pickedPersonId,
+      assignedBranchId: null,
+      shiftType: pickedShift,
+    });
+  }
+
   function onSaveTeam() {
-    if (!pickedPersonId || !pickedBranchId) {
-      toast({ title: "Tanlang", description: "Xodim va filialni tanlang.", variant: "destructive" });
+    if (!pickedPersonId) {
+      toast({ title: t("smena.pickTitle"), description: t("smena.pickPerson"), variant: "destructive" });
+      return;
+    }
+    if (mode === "rotation") {
+      const branchId = pickedBranchId || picked?.assignedBranchId;
+      if (!branchId) {
+        toast({ title: t("smena.pickTitle"), description: t("smena.pickPersonBranch"), variant: "destructive" });
+        return;
+      }
+      saveRotation.mutate({ employeeId: pickedPersonId, branchId, shiftType: pickedShift });
+      return;
+    }
+    if (!pickedBranchId) {
+      // Filial tanlanmasa — joriy filialda faqat smena
+      onSaveShiftOnly();
       return;
     }
     saveAssign.mutate({ id: pickedPersonId, assignedBranchId: pickedBranchId, shiftType: pickedShift });
@@ -175,37 +295,229 @@ export default function SmenaFilialPage() {
         type="button"
         onClick={() => setPickedBranchId(b.id)}
         className={cn(
-          "flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-1.5 text-left last:border-0",
-          on ? "bg-sky-50" : "hover:bg-muted",
+          "flex w-full items-center justify-between gap-2 border-b border-border/60 px-3 py-2 text-left last:border-0",
+          on ? "bg-primary/10" : "hover:bg-muted/70",
         )}
       >
-        <span className="min-w-0 truncate text-sm text-foreground">{b.name}</span>
-        {on ? <Check className="h-4 w-4 shrink-0 text-sky-600" /> : null}
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium text-foreground">{b.name}</span>
+          <span className="text-[11px] text-muted-foreground">{b.managerName}</span>
+        </span>
+        {on ? <Check className="h-4 w-4 shrink-0 text-primary" /> : null}
       </button>
     );
   }
 
-  if (q.isLoading) return <p className="p-6 text-sm text-muted-foreground">Yuklanmoqda…</p>;
-  if (!data) return <p className="p-6 text-sm text-rose-600">Ma’lumot yuklanmadi</p>;
+  if (q.isLoading) return <p className="p-6 text-sm text-muted-foreground">{t("ui.loading")}</p>;
+  if (!data) return <p className="p-6 text-sm text-rose-600">{t("smena.loadFail")}</p>;
 
   const myShift = normalizePick(data.shift.type);
+  const showAssignPanel = (mode === "rotation" && canRotate) || (mode === "permanent" && canAssign);
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-4 pb-28">
       <div>
-        <h1 className="text-xl font-semibold text-foreground">{t("smena.title")}</h1>
+        <h1 className="text-xl font-semibold tracking-tight text-foreground">{t("smena.title")}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t("smena.subtitle")}</p>
-        <p className="mt-1 text-xs text-muted-foreground">
-          {data.rules.eligible || "Smena faqat mudir, farmasevt va stajyor uchun"}
-        </p>
       </div>
+
+      {(canRotate || canAssign) && (
+        <div className="grid grid-cols-2 gap-1 rounded-2xl border border-border bg-muted/40 p-1">
+          <button
+            type="button"
+            disabled={!canRotate}
+            onClick={() => {
+              setMode("rotation");
+              cancelEdit();
+            }}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+              mode === "rotation" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
+              !canRotate && "opacity-40",
+            )}
+          >
+            <CalendarDays className="h-4 w-4" />
+            {t("smena.tabRotation")}
+          </button>
+          <button
+            type="button"
+            disabled={!canAssign}
+            onClick={() => {
+              setMode("permanent");
+              cancelEdit();
+            }}
+            className={cn(
+              "flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+              mode === "permanent" ? "bg-card text-foreground shadow-sm" : "text-muted-foreground",
+              !canAssign && "opacity-40",
+            )}
+          >
+            <ArrowRightLeft className="h-4 w-4" />
+            {t("smena.tabPermanent")}
+          </button>
+        </div>
+      )}
+
+      {mode === "rotation" && canRotate ? (
+        <Card className="overflow-hidden border-primary/20 shadow-sm">
+          <CardHeader className="space-y-3 border-b bg-gradient-to-br from-primary/10 via-card to-card py-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CalendarDays className="h-4 w-4 text-primary" />
+              {t("smena.rotationTitle")}
+            </CardTitle>
+            <p className="text-xs leading-relaxed text-muted-foreground">{t("smena.rotationHint")}</p>
+            <div>
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {t("smena.workDate")}
+              </label>
+              <Input
+                type="date"
+                value={workDate}
+                onChange={(e) => setWorkDate(e.target.value || todayTashkentYmd())}
+                className="h-10"
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-4">
+            <p className="text-xs font-medium text-foreground">{t("smena.pickStaff")}</p>
+            <SearchBox value={peopleQ} onChange={setPeopleQ} placeholder={t("smena.searchName")} />
+            <CompactList>
+              {people.map((p) => {
+                const on = pickedPersonId === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => pickPerson(p)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 text-left last:border-0",
+                      on ? "bg-primary/10" : "hover:bg-muted/70",
+                    )}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-foreground">{p.fullName}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {orgLabel(p.orgRole)} · {shiftLabelShort(p.shiftType)} ·{" "}
+                        {p.assignedBranchName || t("smena.noBranch")}
+                      </span>
+                    </span>
+                    {on ? <Check className="h-4 w-4 shrink-0 text-primary" /> : null}
+                  </button>
+                );
+              })}
+              {people.length === 0 ? (
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground">{t("smena.noPeople")}</p>
+              ) : null}
+            </CompactList>
+
+            {picked ? (
+              <div className="space-y-3 rounded-2xl border border-border bg-muted/30 p-3.5">
+                <div>
+                  <p className="truncate text-sm font-semibold text-foreground">{picked.fullName}</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    {orgLabel(picked.orgRole)} · {t("smena.onlyForDate")} {workDate}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {t("smena.targetBranch")}
+                    {pickedBranch ? ` · ${pickedBranch.name}` : ""}
+                  </p>
+                  <SearchBox value={branchQ} onChange={setBranchQ} placeholder={t("smena.searchBranch")} />
+                  <CompactList className="max-h-40">{branches.map(renderBranchRow)}</CompactList>
+                </div>
+
+                <div className="space-y-2">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                    <Clock3 className="h-3.5 w-3.5" />
+                    {t("smena.dayShift")}
+                  </p>
+                  <ShiftButtons value={pickedShift} onChange={setPickedShift} />
+                </div>
+
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" variant="outline" onClick={cancelEdit}>
+                      <X className="mr-1 h-4 w-4" />
+                      {t("ui.cancel")}
+                    </Button>
+                    <Button type="button" disabled={saveRotation.isPending} onClick={onSaveTeam}>
+                      {t("smena.applyRotation")}
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    disabled={saveRotation.isPending || !(pickedBranchId || picked.assignedBranchId)}
+                    onClick={onSaveShiftOnly}
+                  >
+                    {t("smena.keepBranchChangeShift")}
+                  </Button>
+                  <p className="text-[11px] text-muted-foreground">{t("smena.keepBranchHint")}</p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center text-xs text-muted-foreground">{t("smena.pickHint")}</p>
+            )}
+
+            <div className="space-y-2 border-t border-border pt-3">
+              <p className="text-xs font-semibold text-foreground">
+                {t("smena.rotationsFor")} {workDate}
+              </p>
+              {rotationsQ.isLoading ? (
+                <p className="text-xs text-muted-foreground">{t("ui.loading")}</p>
+              ) : (rotationsQ.data?.items.length ?? 0) === 0 ? (
+                <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-xs text-muted-foreground">
+                  {t("smena.noRotations")}
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  {rotationsQ.data!.items.map((r) => (
+                    <div
+                      key={r.id}
+                      className="flex items-start justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-foreground">{r.fullName}</p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {orgLabel(r.orgRole)} → {r.branchLabel || `#${r.branchId}`}
+                          {r.shiftKeys?.length
+                            ? ` · ${r.shiftKeys.map((k) => shiftLabelShort(k)).join("+")}`
+                            : ""}
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="h-8 w-8 shrink-0 text-rose-600"
+                        disabled={removeRotation.isPending}
+                        onClick={() => {
+                          if (window.confirm(t("smena.confirmRemoveRotation"))) {
+                            removeRotation.mutate(r.id);
+                          }
+                        }}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {data.canPickShift ? (
         <Card>
           <CardHeader className="py-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Clock3 className="h-4 w-4" />
-              Mening smenam
+              {t("smena.myShift")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
@@ -222,7 +534,7 @@ export default function SmenaFilialPage() {
           <CardHeader className="py-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Clock3 className="h-4 w-4" />
-              Ofis ish vaqti
+              {t("smena.officeHours")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-1 pt-0">
@@ -230,21 +542,22 @@ export default function SmenaFilialPage() {
               {data.shift.start}–{data.shift.end}
             </p>
             <p className="text-xs text-muted-foreground">
-              {data.rules.office || data.shift.hoursNote || "Ofis xodimlarida smena yo‘q — faqat belgilangan vaqt."}
+              {data.rules.office || data.shift.hoursNote}
             </p>
           </CardContent>
         </Card>
       )}
 
-      {data.canAssignOthers ? (
+      {mode === "permanent" && showAssignPanel ? (
         <Card>
           <CardHeader className="py-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <Users className="h-4 w-4" />
-              Farmasevt va stajyorlar
+              {t("smena.permanentTitle")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 pt-0">
+            <p className="text-xs text-muted-foreground">{t("smena.permanentHint")}</p>
             <SearchBox value={peopleQ} onChange={setPeopleQ} placeholder={t("smena.searchName")} />
             <CompactList>
               {people.map((p) => {
@@ -255,57 +568,63 @@ export default function SmenaFilialPage() {
                     type="button"
                     onClick={() => pickPerson(p)}
                     className={cn(
-                      "flex w-full items-center justify-between gap-2 border-b border-slate-50 px-3 py-2 text-left last:border-0",
-                      on ? "bg-sky-50" : "hover:bg-muted",
+                      "flex w-full items-center justify-between gap-2 border-b border-border/60 px-3 py-2 text-left last:border-0",
+                      on ? "bg-sky-50 dark:bg-sky-950/30" : "hover:bg-muted",
                     )}
                   >
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-medium text-foreground">{p.fullName}</span>
                       <span className="text-[11px] text-muted-foreground">
                         {orgLabel(p.orgRole)} · {shiftLabelShort(p.shiftType)} ·{" "}
-                        {p.assignedBranchName || "filial yo‘q"}
+                        {p.assignedBranchName || t("smena.noBranch")}
                       </span>
                     </span>
                     {on ? <Check className="h-4 w-4 shrink-0 text-sky-600" /> : null}
                   </button>
                 );
               })}
-              {people.length === 0 ? <p className="px-3 py-4 text-center text-sm text-muted-foreground">Xodim topilmadi</p> : null}
+              {people.length === 0 ? (
+                <p className="px-3 py-4 text-center text-sm text-muted-foreground">{t("smena.noPeople")}</p>
+              ) : null}
             </CompactList>
 
             {picked ? (
               <div className="space-y-3 rounded-xl border border-border bg-muted p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold text-foreground">{picked.fullName}</p>
-                    <p className="text-[11px] text-muted-foreground">{orgLabel(picked.orgRole)}</p>
-                  </div>
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{picked.fullName}</p>
+                  <p className="text-[11px] text-muted-foreground">{orgLabel(picked.orgRole)}</p>
                 </div>
-
                 <div className="space-y-2">
                   <p className="flex items-center gap-1.5 text-xs font-medium text-foreground">
                     <MapPin className="h-3.5 w-3.5" />
-                    Filial {pickedBranch ? `· ${pickedBranch.name}` : ""}
+                    {t("ui.branch")} {pickedBranch ? `· ${pickedBranch.name}` : ""}
                   </p>
                   <SearchBox value={branchQ} onChange={setBranchQ} placeholder={t("smena.searchBranch")} />
-                  <CompactList>
-                    {branches.map(renderBranchRow)}
-                    {branches.length === 0 ? (
-                      <p className="px-3 py-3 text-center text-xs text-muted-foreground">Filial topilmadi</p>
-                    ) : null}
-                  </CompactList>
+                  <CompactList>{branches.map(renderBranchRow)}</CompactList>
                 </div>
-
                 <ShiftButtons value={pickedShift} onChange={setPickedShift} />
-
-                <div className="grid grid-cols-2 gap-2">
-                  <Button type="button" variant="outline" onClick={cancelEdit}>
-                    <X className="mr-1 h-4 w-4" />
-                    Bekor qilish
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button type="button" variant="outline" onClick={cancelEdit}>
+                      <X className="mr-1 h-4 w-4" />
+                      {t("ui.cancel")}
+                    </Button>
+                    <Button type="button" disabled={saveAssign.isPending} onClick={onSaveTeam}>
+                      {pickedBranchId && pickedBranchId !== picked.assignedBranchId
+                        ? t("smena.saveBranchAndShift")
+                        : t("ui.save")}
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full"
+                    disabled={saveAssign.isPending}
+                    onClick={onSaveShiftOnly}
+                  >
+                    {t("smena.keepBranchChangeShift")}
                   </Button>
-                  <Button type="button" disabled={saveAssign.isPending} onClick={onSaveTeam}>
-                    Saqlash
-                  </Button>
+                  <p className="text-[11px] text-muted-foreground">{t("smena.keepBranchHint")}</p>
                 </div>
               </div>
             ) : (
@@ -313,38 +632,39 @@ export default function SmenaFilialPage() {
             )}
           </CardContent>
         </Card>
-      ) : data.canPickOwnBranch ? (
+      ) : null}
+
+      {data.canPickOwnBranch && !showAssignPanel ? (
         <Card>
           <CardHeader className="py-3">
             <CardTitle className="flex items-center gap-2 text-base">
               <MapPin className="h-4 w-4" />
-              Mening filiali
+              {t("smena.myBranch")}
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
-            <p className="text-xs text-muted-foreground">
-              Face ID: <b className="text-foreground">{data.employee?.assignedBranchName || "—"}</b>
+            <p className="text-sm text-foreground">
+              {data.employee?.assignedBranchName || t("smena.noBranch")}
             </p>
             <SearchBox value={branchQ} onChange={setBranchQ} placeholder={t("smena.searchBranch")} />
-            <CompactList>{branches.map(renderBranchRow)}</CompactList>
-            <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" onClick={() => { setPickedBranchId(data.employee?.assignedBranchId ?? null); setBranchQ(""); }}>
-                Bekor qilish
-              </Button>
-              <Button
-                disabled={!pickedBranchId || saveMine.isPending}
-                onClick={() => pickedBranchId && saveMine.mutate({ assignedBranchId: pickedBranchId })}
-              >
-                Saqlash
-              </Button>
-            </div>
+            <CompactList>
+              {branches.map((b) => (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => saveMine.mutate({ assignedBranchId: b.id })}
+                  className="flex w-full items-center justify-between gap-2 border-b border-border/60 px-3 py-2 text-left last:border-0 hover:bg-muted"
+                >
+                  <span className="truncate text-sm">{b.name}</span>
+                  {data.employee?.assignedBranchId === b.id ? (
+                    <Check className="h-4 w-4 text-primary" />
+                  ) : null}
+                </button>
+              ))}
+            </CompactList>
           </CardContent>
         </Card>
-      ) : (
-        <p className="text-sm text-muted-foreground">
-          Filialingiz: <b>{data.employee?.assignedBranchName || "belgilanmagan"}</b>
-        </p>
-      )}
+      ) : null}
     </div>
   );
 }

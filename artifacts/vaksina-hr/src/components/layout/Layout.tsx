@@ -33,6 +33,7 @@ import {
   HelpCircle,
   Layers,
   Package,
+  PhoneCall,
   Truck,
 } from 'lucide-react';
 import {
@@ -107,7 +108,7 @@ const NAV_SECTIONS: {
     id: 'main',
     label: 'Asosiy',
     icon: Layers,
-    paths: ['/dashboard', '/kirish', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it', '/texnik'],
+    paths: ['/dashboard', '/kirish', '/javob-olish', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it', '/texnik'],
   },
   {
     id: 'work',
@@ -226,6 +227,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
+  if (path.startsWith('/javob-olish')) return '/javob-olish';
   if (path.startsWith('/vazifalar/tahlil')) return '/vazifalar/tahlil';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
   if (path.startsWith('/eslatmalar')) return '/eslatmalar';
@@ -630,6 +632,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatAnalyticsNav = { name: 'Davomat tahlili', path: '/davomat/analytics', icon: BarChart3 };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
+  const javobNav = { name: 'Javob olish', path: '/javob-olish', icon: PhoneCall };
   const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
@@ -654,6 +657,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   function injectCommonNav(items: NavItem[], role: string): NavItem[] {
     let next = [...items];
+    // Farmasevt / mudir / stajyor / ofis — Javob olish Asosiyda doim ko‘rinsin
+    if (
+      (role === 'farmasevt' ||
+        role === 'mudir' ||
+        role === 'stajyor' ||
+        role === 'koordinator' ||
+        role === 'admin' ||
+        role === 'director') &&
+      !next.some((i) => i.path === '/javob-olish')
+    ) {
+      const dashIdx = next.findIndex((i) => i.path === '/dashboard');
+      const at = dashIdx >= 0 ? dashIdx + 1 : 0;
+      next = [...next.slice(0, at), javobNav, ...next.slice(at)];
+    }
     if (!hasHrOversightNav(role)) {
       if (!next.some((i) => i.path === '/vazifalar')) {
         const dashIdx = next.findIndex((i) => i.path === '/dashboard');
@@ -667,8 +684,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         ];
       }
       if (!next.some((i) => i.path === '/oylik')) {
+        const javobIdx = next.findIndex((i) => i.path === '/javob-olish');
         const dashIdx = next.findIndex((i) => i.path === '/dashboard');
-        const at = dashIdx >= 0 ? dashIdx + 1 : 0;
+        const at = javobIdx >= 0 ? javobIdx + 1 : dashIdx >= 0 ? dashIdx + 1 : 0;
         next = [...next.slice(0, at), oylikNav, ...next.slice(at)];
       }
       if (canViewReviziya(user.role) && !next.some((i) => i.path === '/reviziya')) {
@@ -749,6 +767,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const roleNavigation: Record<string, NavItem[]> = {
     admin: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      javobNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -850,6 +869,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     mudir: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      javobNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -863,6 +883,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     koordinator: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      javobNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -956,10 +977,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     farmasevt: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      javobNav,
+      { name: 'Oylik', path: '/oylik', icon: Banknote },
+      reytingNav,
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      reytingNav,
       davomatFaceNav,
       smenaNav,
     ],
@@ -979,6 +1002,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     stajyor: [
       { name: 'Kirish', path: '/kirish', icon: GraduationCap },
+      javobNav,
       reytingNav,
       davomatFaceNav,
       smenaNav,

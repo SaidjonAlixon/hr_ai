@@ -265,8 +265,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
 
   useEffect(() => {
     if (selectedId != null || !items.length) return;
+    const office = items.find((b) => b.id === 0 || ("sharedOffice" in b && (b as { sharedOffice?: boolean }).sharedOffice));
     const withQr = items.find((b) => b.hasActiveQr);
-    setSelectedId((withQr || items[0]!).id);
+    setSelectedId((office || withQr || items[0]!).id);
   }, [items, selectedId]);
 
   const issue = useMutation({
@@ -305,7 +306,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         description:
           scope === "branches"
             ? "Filial QR tizimda saqlandi — mudir va koordinator ko‘ra oladi."
-            : "Bo‘lim QR saqlandi — istalgan vaqtda ko‘rish mumkin.",
+            : id === 0
+              ? "Ofis QR saqlandi — faqat ofis xodimlari. Apteka xodimlari filial QR ishlatadi."
+              : "Bo‘lim QR saqlandi — istalgan vaqtda ko‘rish mumkin.",
       });
     },
     onError: (e: Error) => toast({ title: "Xato", description: e.message, variant: "destructive" }),
@@ -340,8 +343,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         label || (scope === "branches" ? "Filial QR" : "Bo‘lim QR"),
         `davomat-qr-${scope}-${id}.pdf`,
       );
+      toast({ title: "PDF yuklandi" });
     } catch (e) {
-      toast({ title: "PDF ochilmadi", description: (e as Error).message, variant: "destructive" });
+      toast({ title: "PDF yuklanmadi", description: (e as Error).message, variant: "destructive" });
     }
   }
 
@@ -423,15 +427,15 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
             : "Admin · Bo‘lim QR"
           : scope === "branches"
             ? "Davomat QR · Filiallar"
-            : "Davomat QR · Bo‘limlar",
+            : "Davomat QR · Ofis",
       );
       toast({
-        title: "PDF tayyor",
-        description: `${pdfItems.length} ta QR · chop etish oynasi ochildi (PDF saqlang). HTML ham yuklandi.`,
+        title: "PDF yuklandi",
+        description: `${pdfItems.length} ta QR · .pdf fayl saqlandi (har sahifada 1 ta)`,
       });
     } catch (e) {
       toast({
-        title: "PDF ochilmadi",
+        title: "PDF yuklanmadi",
         description: e instanceof Error ? e.message : "Qayta urinib ko‘ring",
         variant: "destructive",
       });
@@ -513,8 +517,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     );
   }
 
-  const canIssue = Boolean(selectedId) && !issue.isPending;
-  const canRevoke = Boolean(selectedId && selected?.hasActiveQr) && !revoke.isPending;
+  /** Ofis QR id=0 — Boolean(0) false bo‘lmasin */
+  const canIssue = selectedId != null && !issue.isPending;
+  const canRevoke = selectedId != null && Boolean(selected?.hasActiveQr) && !revoke.isPending;
   const entityLabel = scope === "branches" ? "filial" : "bo‘lim";
   const showTabs = canBranch && canDept;
 
@@ -551,7 +556,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
           {scope === "branches"
             ? "QR bir marta yaratiladi va saqlanadi — mudir ham, koordinator ham ko‘radi. Yangi yaratilsa eski almashtiriladi."
-            : "Ofis bo‘limi QR — faqat shu bo‘lim xodimlari ofis zonasida (150 m) skaner qiladi. Rahbar faqat o‘z bo‘limini boshqaradi."}
+            : "Ofis QR — faqat ofis xodimlari (150 m). Mudir, farmasevt, stajyor — o‘z filial QR / Face ID."}
         </p>
       </header>
 
@@ -587,7 +592,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            Bo‘limlar
+            Ofis QR
           </button>
         </div>
       ) : null}
@@ -655,7 +660,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-base font-semibold text-foreground">
-            {scope === "branches" ? "Filialni tanlang" : "Bo‘limni tanlang"}
+            {scope === "branches" ? "Filialni tanlang" : "Ofis QR"}
           </h2>
           {selected ? (
             <span
@@ -679,13 +684,19 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           <p className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
             {scope === "branches"
               ? "Filial topilmadi (GPS bo‘lishi shart)."
-              : "Bo‘lim topilmadi yoki ruxsat yo‘q."}
+              : "Ofis QR yuklanmadi."}
           </p>
         ) : (
           <div className="grid max-h-[16rem] gap-1.5 overflow-y-auto rounded-2xl border border-border/70 bg-muted/20 p-1.5 sm:max-h-none sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {items.map((b, idx) => {
               const on = selectedId === b.id;
-              const n = idx + 1;
+              const sharedOffice =
+                b.id === 0 || Boolean((b as { sharedOffice?: boolean }).sharedOffice);
+              const displayN = sharedOffice
+                ? null
+                : items[0]?.id === 0
+                  ? idx
+                  : idx + 1;
               return (
                 <button
                   key={b.id}
@@ -695,7 +706,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                     "flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition",
                     on
                       ? "bg-primary text-primary-foreground shadow-sm"
-                      : "bg-background/90 text-foreground hover:bg-muted",
+                      : sharedOffice
+                        ? "bg-emerald-50 text-foreground ring-1 ring-emerald-200/80 hover:bg-emerald-100/80 dark:bg-emerald-950/30 dark:ring-emerald-800/50"
+                        : "bg-background/90 text-foreground hover:bg-muted",
                   )}
                 >
                   <span
@@ -705,14 +718,16 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                         ? "bg-white/15"
                         : b.hasActiveQr
                           ? "bg-emerald-500/15 text-emerald-700"
-                          : "bg-muted text-muted-foreground",
+                          : sharedOffice
+                            ? "bg-emerald-500/20 text-emerald-800"
+                            : "bg-muted text-muted-foreground",
                     )}
                   >
-                    {n}
+                    {sharedOffice ? "O" : displayN}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-semibold">
-                      {n}. {b.name}
+                      {sharedOffice ? b.name : `${displayN}. ${b.name}`}
                     </span>
                     <span
                       className={cn(
@@ -720,7 +735,13 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                         on ? "text-primary-foreground/80" : "text-muted-foreground",
                       )}
                     >
-                      {b.hasActiveQr ? `Faol · v${b.version}` : "QR yo‘q"}
+                      {sharedOffice
+                        ? b.hasActiveQr
+                          ? `Umumiy ofis · Faol v${b.version}`
+                          : "Umumiy ofis · QR yo‘q"
+                        : b.hasActiveQr
+                          ? `Faol · v${b.version}`
+                          : "QR yo‘q"}
                     </span>
                   </span>
                   <span
@@ -748,7 +769,10 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
             size="lg"
             className="h-11 w-full max-w-xs gap-2 rounded-2xl sm:w-auto sm:min-w-[12rem]"
             disabled={!canIssue}
-            onClick={() => selectedId && issue.mutate(selectedId)}
+            onClick={() => {
+              if (selectedId == null) return;
+              issue.mutate(selectedId);
+            }}
           >
             {issue.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             {selected?.hasActiveQr ? "Yangi QR" : "QR yaratish"}
@@ -775,7 +799,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
               )}
               disabled={!canRevoke}
               onClick={() => {
-                if (!selectedId) return;
+                if (selectedId == null) return;
                 if (!window.confirm(`Bu ${entityLabel} QR ni butunlay bekor qilasizmi?`)) return;
                 revoke.mutate(selectedId);
               }}
@@ -785,7 +809,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
             </Button>
           ) : null}
         </div>
-        {needsReissue && selectedId ? (
+        {needsReissue && selectedId != null ? (
           <p className="mt-2 text-center text-[11px] text-amber-700 dark:text-amber-300">
             Tanlangan {entityLabel}da eski QR payload yo‘q — «Yangi QR» bosing.
           </p>
@@ -805,7 +829,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           <div>
             <h2 className="text-base font-semibold text-foreground">Barcha QR kodlar</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Faol {scope === "branches" ? "filial" : "bo‘lim"} QR lari · PDF da har sahifada 20 ta
+              Faol {scope === "branches" ? "filial" : "bo‘lim"} QR lari · PDF da har sahifada 1 ta katta QR
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

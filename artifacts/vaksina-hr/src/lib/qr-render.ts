@@ -1,6 +1,7 @@
-/** QR PNG/PDF — local `qrcode` package. */
+/** QR PNG/PDF — `qrcode` + haqiqiy PDF (`jspdf`), kirillcha matn canvas orqali. */
 
 import QRCode from "qrcode";
+import { jsPDF } from "jspdf";
 
 export function downloadDataUrl(dataUrl: string, filename: string) {
   const a = document.createElement("a");
@@ -9,6 +10,12 @@ export function downloadDataUrl(dataUrl: string, filename: string) {
   document.body.appendChild(a);
   a.click();
   a.remove();
+}
+
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  downloadDataUrl(url, filename);
+  window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
 export async function renderQrToCanvas(canvas: HTMLCanvasElement, text: string, size = 280): Promise<void> {
@@ -35,96 +42,166 @@ export async function downloadQrPng(text: string, filename: string) {
   downloadDataUrl(url, filename);
 }
 
-/**
- * Popup kerak emas: iframe orqali chop etish (PDF saqlash).
- * Qo‘shimcha: HTML fayl ham yuklanadi (zaxira).
- */
-function printHtmlAsPdf(html: string, filenameBase: string) {
-  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
-  const blobUrl = URL.createObjectURL(blob);
-
-  // Zaxira: HTML yuklab olish (popup bloklanganda ham qoladi)
-  downloadDataUrl(blobUrl, `${filenameBase}.html`);
-
-  const iframe = document.createElement("iframe");
-  iframe.setAttribute("title", "davomat-qr-print");
-  iframe.setAttribute("aria-hidden", "true");
-  Object.assign(iframe.style, {
-    position: "fixed",
-    right: "0",
-    bottom: "0",
-    width: "0",
-    height: "0",
-    border: "0",
-    opacity: "0",
-    pointerEvents: "none",
-  });
-  document.body.appendChild(iframe);
-
-  const doc = iframe.contentDocument || iframe.contentWindow?.document;
-  if (!doc) {
-    // Brauzer yangi tabda ochishga urinib ko‘radi
-    window.location.assign(blobUrl);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
-    return;
-  }
-
-  doc.open();
-  doc.write(html);
-  doc.close();
-
-  const win = iframe.contentWindow;
-  const imgs = Array.from(doc.images || []);
-  const waitImgs =
-    imgs.length === 0
-      ? Promise.resolve()
-      : Promise.all(
-          imgs.map(
-            (img) =>
-              new Promise<void>((resolve) => {
-                if (img.complete) {
-                  resolve();
-                  return;
-                }
-                img.onload = () => resolve();
-                img.onerror = () => resolve();
-              }),
-          ),
-        );
-
-  void waitImgs.then(() => {
-    window.setTimeout(() => {
-      try {
-        win?.focus();
-        win?.print();
-      } catch {
-        /* print dialog ochilmasa ham HTML yuklangan */
-      } finally {
-        window.setTimeout(() => {
-          iframe.remove();
-          URL.revokeObjectURL(blobUrl);
-        }, 1500);
-      }
-    }, 200);
-  });
+function safeFileBase(name: string): string {
+  return name
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 60)
+    .replace(/-+$/g, "") || "davomat-qr";
 }
 
-export async function downloadQrPdf(text: string, title: string, _filename: string) {
-  const png = await qrPngDataUrl(text, 480);
-  const safeTitle = title.replace(/[<>&]/g, "");
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><title>${safeTitle}</title>
-    <style>
-      body{font-family:system-ui,sans-serif;text-align:center;padding:32px;color:#0b3a5c}
-      img{width:360px;height:360px;border:1px solid #e2e8f0;border-radius:16px}
-      h1{font-size:20px;margin:0 0 8px} p{font-size:13px;color:#64748b}
-      @media print{button{display:none}}
-    </style></head><body>
-    <h1>${safeTitle}</h1>
-    <p>VAKSINA MED · Davomat QR</p>
-    <img src="${png}" alt="QR" />
-    <p style="margin-top:16px;font-size:11px;color:#64748b">Chop etish oynasida «PDF sifatida saqlash» ni tanlang</p>
-    </body></html>`;
-  printHtmlAsPdf(html, `davomat-qr-${safeTitle.slice(0, 40).replace(/\s+/g, "-") || "branch"}`);
+/** A4 mm — har sahifada 1 ta katta QR */
+const PAGE_W = 210;
+const QR_MM = 140;
+const COLOR_DARK = "#0b3a5c";
+const COLOR_MUTED = "#64748b";
+
+/** Brauzer shrifti — kirill / lotin / o‘zbek */
+const UNICODE_FONT =
+  '"Segoe UI", "Noto Sans", "DejaVu Sans", Arial, "Helvetica Neue", sans-serif';
+
+type TextBlock = {
+  dataUrl: string;
+  widthMm: number;
+  heightMm: number;
+};
+
+/**
+ * Matnni PNG ga chizadi — jsPDF Helvetica kirillchani o‘qimaydi.
+ * px → mm: 96dpi taxminan (1 inch = 25.4 mm).
+ */
+function renderUnicodeTextPng(
+  text: string,
+  opts: {
+    fontSizePx: number;
+    fontWeight?: "normal" | "bold";
+    color: string;
+    maxWidthMm: number;
+    align?: "center" | "left";
+  },
+): TextBlock {
+  const dpr = 2;
+  const maxWidthPx = Math.round((opts.maxWidthMm / 25.4) * 96 * dpr);
+  const fontSize = opts.fontSizePx * dpr;
+  const fontWeight = opts.fontWeight || "normal";
+  const lineHeight = fontSize * 1.25;
+  const padX = 4 * dpr;
+  const padY = 2 * dpr;
+
+  const measure = document.createElement("canvas").getContext("2d");
+  if (!measure) throw new Error("Canvas ishlamaydi");
+  measure.font = `${fontWeight} ${fontSize}px ${UNICODE_FONT}`;
+
+  const words = String(text || "").trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    const trial = current ? `${current} ${word}` : word;
+    if (measure.measureText(trial).width <= maxWidthPx - padX * 2) {
+      current = trial;
+    } else {
+      if (current) lines.push(current);
+      current = word;
+    }
+  }
+  if (current) lines.push(current);
+  if (!lines.length) lines.push(" ");
+
+  const contentW = Math.min(
+    maxWidthPx,
+    Math.ceil(Math.max(...lines.map((l) => measure.measureText(l).width)) + padX * 2),
+  );
+  const contentH = Math.ceil(lines.length * lineHeight + padY * 2);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = contentW;
+  canvas.height = contentH;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas ishlamaydi");
+
+  ctx.clearRect(0, 0, contentW, contentH);
+  ctx.font = `${fontWeight} ${fontSize}px ${UNICODE_FONT}`;
+  ctx.fillStyle = opts.color;
+  ctx.textBaseline = "top";
+  const align = opts.align || "center";
+
+  lines.forEach((line, i) => {
+    const tw = ctx.measureText(line).width;
+    const x =
+      align === "center" ? (contentW - tw) / 2 : padX;
+    ctx.fillText(line, x, padY + i * lineHeight);
+  });
+
+  const widthMm = (contentW / dpr / 96) * 25.4;
+  const heightMm = (contentH / dpr / 96) * 25.4;
+  return {
+    dataUrl: canvas.toDataURL("image/png"),
+    widthMm,
+    heightMm,
+  };
+}
+
+function drawQrPage(
+  doc: jsPDF,
+  opts: {
+    png: string;
+    title: string;
+    subtitle?: string;
+    meta?: string;
+  },
+) {
+  const { png, title, subtitle = "VAKSINA MED · Davomat QR", meta } = opts;
+  const cx = PAGE_W / 2;
+  let y = 22;
+  const maxTextW = PAGE_W - 28;
+
+  if (meta) {
+    const block = renderUnicodeTextPng(meta, {
+      fontSizePx: 10,
+      color: COLOR_MUTED,
+      maxWidthMm: maxTextW,
+      align: "center",
+    });
+    doc.addImage(block.dataUrl, "PNG", cx - block.widthMm / 2, y, block.widthMm, block.heightMm);
+    y += block.heightMm + 6;
+  }
+
+  const titleBlock = renderUnicodeTextPng(title.trim() || "Davomat QR", {
+    fontSizePx: 18,
+    fontWeight: "bold",
+    color: COLOR_DARK,
+    maxWidthMm: maxTextW,
+    align: "center",
+  });
+  doc.addImage(
+    titleBlock.dataUrl,
+    "PNG",
+    cx - titleBlock.widthMm / 2,
+    y,
+    titleBlock.widthMm,
+    titleBlock.heightMm,
+  );
+  y += titleBlock.heightMm + 5;
+
+  const subBlock = renderUnicodeTextPng(subtitle, {
+    fontSizePx: 12,
+    color: COLOR_MUTED,
+    maxWidthMm: maxTextW,
+    align: "center",
+  });
+  doc.addImage(subBlock.dataUrl, "PNG", cx - subBlock.widthMm / 2, y, subBlock.widthMm, subBlock.heightMm);
+  y += subBlock.heightMm + 10;
+
+  const qrX = (PAGE_W - QR_MM) / 2;
+  doc.addImage(png, "PNG", qrX, y, QR_MM, QR_MM, undefined, "FAST");
+}
+
+export async function downloadQrPdf(text: string, title: string, filename: string) {
+  const png = await qrPngDataUrl(text, 720);
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  drawQrPage(doc, { png, title: title.trim() || "Davomat QR" });
+  const base = safeFileBase(filename.replace(/\.pdf$/i, "") || title);
+  downloadBlob(doc.output("blob"), `${base}.pdf`);
 }
 
 export type BulkQrItem = {
@@ -133,9 +210,7 @@ export type BulkQrItem = {
   payload: string;
 };
 
-const PER_PAGE = 20;
-
-/** Barcha QR lar — har sahifada 20 ta (4×5). Popup shart emas. */
+/** Barcha QR lar — haqiqiy .pdf, har A4 sahifada 1 ta katta QR. */
 export async function downloadAllQrPdf(items: BulkQrItem[], docTitle = "Davomat QR — barcha filiallar") {
   const list = items.filter((it) => it.payload?.trim());
   if (!list.length) throw new Error("Yuklash uchun faol QR yo‘q");
@@ -143,59 +218,21 @@ export async function downloadAllQrPdf(items: BulkQrItem[], docTitle = "Davomat 
   const pngs = await Promise.all(
     list.map(async (it) => ({
       ...it,
-      png: await qrPngDataUrl(it.payload, 280),
+      png: await qrPngDataUrl(it.payload, 720),
     })),
   );
 
-  const pages: typeof pngs[] = [];
-  for (let i = 0; i < pngs.length; i += PER_PAGE) {
-    pages.push(pngs.slice(i, i + PER_PAGE));
-  }
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const total = pngs.length;
 
-  const safeDoc = docTitle.replace(/[<>&]/g, "");
-  const pagesHtml = pages
-    .map((page, pageIdx) => {
-      const cells = page
-        .map((it) => {
-          const safe = `${it.n}. ${it.title}`.replace(/[<>&]/g, "");
-          return `<div class="cell">
-            <img src="${it.png}" alt="QR ${it.n}" />
-            <div class="label">${safe}</div>
-          </div>`;
-        })
-        .join("");
-      return `<section class="page">
-        <header class="hdr">
-          <div>
-            <h1>${safeDoc}</h1>
-            <p>VAKSINA MED · sahifa ${pageIdx + 1}/${pages.length} · ${list.length} ta QR</p>
-          </div>
-        </header>
-        <div class="grid">${cells}</div>
-      </section>`;
-    })
-    .join("");
+  pngs.forEach((it, idx) => {
+    if (idx > 0) doc.addPage();
+    drawQrPage(doc, {
+      png: it.png,
+      title: `${it.n}. ${it.title}`.trim(),
+      meta: `${docTitle} · ${idx + 1} / ${total}`,
+    });
+  });
 
-  const html = `<!doctype html><html><head><meta charset="utf-8"/><title>${safeDoc}</title>
-    <style>
-      *{box-sizing:border-box}
-      body{margin:0;font-family:system-ui,-apple-system,sans-serif;color:#0b3a5c;background:#fff}
-      .page{padding:10mm 8mm;page-break-after:always;break-after:page}
-      .page:last-child{page-break-after:auto;break-after:auto}
-      .hdr{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:12px;
-        padding-bottom:8px;border-bottom:1px solid #e2e8f0}
-      .hdr h1{margin:0;font-size:16px}
-      .hdr p{margin:4px 0 0;font-size:11px;color:#64748b}
-      .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px 8px}
-      .cell{display:flex;flex-direction:column;align-items:center;text-align:center;
-        padding:6px 4px;border:1px solid #e8eef5;border-radius:10px;background:#fafbfc;break-inside:avoid}
-      .cell img{width:38mm;height:38mm;object-fit:contain}
-      .label{margin-top:4px;font-size:9px;font-weight:600;line-height:1.25;max-width:100%;
-        overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
-      @page{size:A4 portrait;margin:8mm}
-    </style></head><body>
-    ${pagesHtml}
-    </body></html>`;
-
-  printHtmlAsPdf(html, "davomat-qr-barcha");
+  downloadBlob(doc.output("blob"), `${safeFileBase(docTitle)}.pdf`);
 }

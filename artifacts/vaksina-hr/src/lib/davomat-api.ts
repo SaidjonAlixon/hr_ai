@@ -450,7 +450,12 @@ export type QrDepartmentRow = {
   qrId: string | null;
   version: number | null;
   createdAt: string | null;
+  /** Umumiy ofis QR — barcha ofis xodimlari */
+  sharedOffice?: boolean;
 };
+
+/** Sentinel id — serverdagi OFFICE_SHARED_QR_DEPARTMENT_ID bilan mos */
+export const OFFICE_SHARED_QR_DEPARTMENT_ID = 0;
 
 export function fetchQrDepartments(): Promise<{ departments: QrDepartmentRow[] }> {
   return apiJson("/davomat/qr/departments");

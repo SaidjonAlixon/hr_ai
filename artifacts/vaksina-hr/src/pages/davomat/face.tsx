@@ -64,6 +64,7 @@ import { roleLabel } from "@/lib/candidate-access";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 import { formatSom, useOylikMe } from "@/lib/oylik-api";
 import { workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
+import { requestDavomatPermissions } from "@/lib/davomat-permissions";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
 
@@ -909,47 +910,56 @@ export default function DavomatFacePage() {
   }, [t]);
 
   const requestLocationPermission = async () => {
-    if (!navigator.geolocation) {
-      toast({ title: t("davomat.gpsMissing"), description: t("davomat.browserNoGps"), variant: "destructive" });
-      return;
-    }
     setGpsSharing(true);
     try {
-      const permissions = navigator.permissions;
-      if (permissions?.query) {
-        const status = await permissions.query({ name: "geolocation" });
-        if (status.state === "denied") {
-          const msg = t("davomat.gpsBlocked");
-          setGpsError(msg);
-          toast({ title: t("davomat.gpsNoPermTitle"), description: msg, variant: "destructive" });
-          setGpsSharing(false);
-          return;
-        }
-      }
-    } catch {
-      /* Permissions API yo‘q — getCurrentPosition o‘zi so‘raydi */
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        applyGps(pos);
+      const result = await requestDavomatPermissions();
+
+      if (result.gps) {
+        applyGps(result.gps);
         startWatch();
-        setGpsSharing(false);
+        setGpsError(null);
+      } else if (result.gpsError === "gps_unsupported") {
+        setGpsError(t("davomat.gpsUnsupported"));
+      } else if (result.gpsError === "gps_denied") {
+        setGpsError(t("davomat.gpsDenied"));
+      } else if (result.gpsError) {
+        setGpsError(t("davomat.gpsFailed"));
+      }
+
+      if (result.gps && result.camera) {
         toast({
           title: t("davomat.gpsGrantedTitle"),
-          description: tr(t, "davomat.gpsGrantedDesc", { m: Math.round(pos.coords.accuracy || 0) }),
+          description: tr(t, "davomat.gpsGrantedDesc", {
+            m: Math.round(result.gps.coords.accuracy || 0),
+          }),
         });
-      },
-      (err) => {
-        setGpsSharing(false);
-        const msg =
-          err.code === 1
-            ? t("davomat.gpsAskAgain")
-            : t("davomat.gpsFailed");
-        setGpsError(msg);
-        toast({ title: t("davomat.gpsNotGranted"), description: msg, variant: "destructive" });
-      },
-      { enableHighAccuracy: true, maximumAge: 0, timeout: 20_000 },
-    );
+      } else if (result.gps && !result.camera) {
+        toast({
+          title: t("davomat.gpsGrantedTitle"),
+          description: `${tr(t, "davomat.gpsGrantedDesc", {
+            m: Math.round(result.gps.coords.accuracy || 0),
+          })} · ${t("davomat.permsCamDenied")}`,
+          variant: "destructive",
+        });
+      } else if (!result.gps && result.camera) {
+        toast({
+          title: t("davomat.gpsNotGranted"),
+          description: result.gpsError === "gps_denied" ? t("davomat.gpsAskAgain") : t("davomat.gpsFailed"),
+          variant: "destructive",
+        });
+      } else {
+        toast({
+          title: t("davomat.gpsNotGranted"),
+          description:
+            result.gpsError === "gps_denied" || result.cameraError === "camera_denied"
+              ? t("davomat.gpsAskAgain")
+              : t("davomat.gpsFailed"),
+          variant: "destructive",
+        });
+      }
+    } finally {
+      setGpsSharing(false);
+    }
   };
 
   const checkInAtIso = verified?.checkInAt || workplace?.today.checkInAt || null;

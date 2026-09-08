@@ -556,7 +556,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
           {scope === "branches"
             ? "QR bir marta yaratiladi va saqlanadi — mudir ham, koordinator ham ko‘radi. Yangi yaratilsa eski almashtiriladi."
-            : "Ofis QR — faqat ofis xodimlari (150 m). Mudir, farmasevt, stajyor — o‘z filial QR / Face ID."}
+            : "Ofis QR — faqat ofis xodimlari (100 m). Mudir, farmasevt, stajyor — o‘z filial QR / Face ID."}
         </p>
       </header>
 

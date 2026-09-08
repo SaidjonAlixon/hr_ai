@@ -1,7 +1,8 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Loader2, Trash2, UserRoundMinus, Users } from "lucide-react";
 import { getGetEmployeesQueryKey } from "@workspace/api-client-react";
+import { useLocation } from "wouter";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent } from "../../components/ui/card";
 import { Skeleton } from "../../components/ui/skeleton";
@@ -10,6 +11,10 @@ import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
 import { EmployeesTabs } from "./employees-tabs";
 import { useI18n } from "../../i18n/I18nProvider";
+import { canViewEmployeeDuplicates } from "../../lib/roles";
+import { canViewEmployeeDuplicates } from "../../lib/roles";
+import { useLocation } from "wouter";
+import { useEffect } from "react";
 
 type DuplicateMember = {
   id: number;
@@ -68,7 +73,7 @@ function statusLabel(t: TFn, st: string) {
 }
 
 function canCleanupDuplicates(role?: string | null) {
-  return ["admin", "hr", "hr_direktor", "hr_kadr_rahbar", "hr_menejer", "hr_auditor"].includes(role || "");
+  return canViewEmployeeDuplicates(role);
 }
 
 function shiftText(m: DuplicateMember, t: TFn) {
@@ -98,9 +103,14 @@ export default function EmployeeDuplicatesPage() {
   const { t } = useI18n();
   const { toast } = useToast();
   const { user } = useAuth();
+  const [, setLocation] = useLocation();
   const qc = useQueryClient();
   const allowed = canCleanupDuplicates(user?.role);
   const [busy, setBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (user && !allowed) setLocation("/employees");
+  }, [user, allowed, setLocation]);
 
   const q = useQuery({
     queryKey: ["employees", "duplicates"],

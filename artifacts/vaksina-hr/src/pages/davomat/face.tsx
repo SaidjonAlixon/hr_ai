@@ -33,6 +33,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { FaceScanDialog } from "@/components/FaceScanDialog";
 import { QrScanDialog, openScanCamera } from "@/components/QrScanDialog";
+import { DavomatPremiumView, type PremiumMethod } from "@/components/davomat/DavomatPremiumView";
 import { useToast } from "@/hooks/use-toast";
 import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
 import {
@@ -83,7 +84,13 @@ function tr(t: Translate, key: string, vars?: Record<string, string | number>): 
   return s;
 }
 
-type Gps = { lat: number; lng: number; accuracy: number };
+type Gps = {
+  lat: number;
+  lng: number;
+  accuracy: number;
+  heading?: number | null;
+  speed?: number | null;
+};
 type Verified = {
   descriptor: number[];
   fullName: string;
@@ -773,6 +780,7 @@ export default function DavomatFacePage() {
   const [qrOpen, setQrOpen] = useState(false);
   const [qrStream, setQrStream] = useState<MediaStream | null>(null);
   const [methodHint, setMethodHint] = useState<"FACE_ID" | "QR" | null>(null);
+  const [selectedMethod, setSelectedMethod] = useState<PremiumMethod>("FACE_ID");
 
   useEffect(() => {
     if (qrOpen) return;
@@ -789,6 +797,8 @@ export default function DavomatFacePage() {
     }
   });
   const watchRef = useRef<number | null>(null);
+  const compassRef = useRef<number | null>(null);
+  const lastCompassRef = useRef<number | null>(null);
   const punchLockRef = useRef(false);
   const tgBootRef = useRef(false);
   const tgScanRef = useRef(false);
@@ -902,13 +912,102 @@ export default function DavomatFacePage() {
   }, []);
 
   const applyGps = (pos: GeolocationPosition) => {
-    setGps({
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      accuracy: Math.round(pos.coords.accuracy || 0),
+    const gpsHeadingRaw = pos.coords.heading;
+    const gpsHeading =
+      typeof gpsHeadingRaw === "number" && Number.isFinite(gpsHeadingRaw) && gpsHeadingRaw >= 0
+        ? gpsHeadingRaw
+        : null;
+    const speed =
+      typeof pos.coords.speed === "number" && Number.isFinite(pos.coords.speed)
+        ? pos.coords.speed
+        : null;
+
+    setGps((prev) => {
+      let nextHeading = gpsHeading;
+      const moving = speed != null && speed > 0.6;
+
+      // Harakatda GPS heading; turib turganda kompas
+      if (!moving || nextHeading == null) {
+        if (lastCompassRef.current != null) nextHeading = lastCompassRef.current;
+      }
+
+      if (nextHeading == null && prev) {
+        const dLat = Math.abs(pos.coords.latitude - prev.lat);
+        const dLng = Math.abs(pos.coords.longitude - prev.lng);
+        if (dLat > 1.2e-6 || dLng > 1.2e-6) {
+          const toRad = (d: number) => (d * Math.PI) / 180;
+          const φ1 = toRad(prev.lat);
+          const φ2 = toRad(pos.coords.latitude);
+          const Δλ = toRad(pos.coords.longitude - prev.lng);
+          const y = Math.sin(Δλ) * Math.cos(φ2);
+          const x =
+            Math.cos(φ1) * Math.sin(φ2) - Math.sin(φ1) * Math.cos(φ2) * Math.cos(Δλ);
+          nextHeading = ((Math.atan2(y, x) * 180) / Math.PI + 360) % 360;
+        } else {
+          nextHeading = prev.heading ?? null;
+        }
+      }
+
+      return {
+        lat: pos.coords.latitude,
+        lng: pos.coords.longitude,
+        accuracy: Math.round(pos.coords.accuracy || 0),
+        heading: nextHeading,
+        speed,
+      };
     });
     setGpsError(null);
   };
+
+  const onCompass = useCallback((ev: DeviceOrientationEvent) => {
+    // iOS: webkitCompassHeading; Android: absolute alpha
+    const w = ev as DeviceOrientationEvent & { webkitCompassHeading?: number };
+    let deg: number | null = null;
+    if (typeof w.webkitCompassHeading === "number" && Number.isFinite(w.webkitCompassHeading)) {
+      deg = w.webkitCompassHeading;
+    } else if (typeof ev.alpha === "number" && Number.isFinite(ev.alpha)) {
+      // absolute: 0 = north; screen orientation offset
+      const orient =
+        typeof window.orientation === "number"
+          ? window.orientation
+          : (screen.orientation?.angle ?? 0);
+      deg = (360 - ev.alpha + orient + 360) % 360;
+    }
+    if (deg == null) return;
+    lastCompassRef.current = deg;
+    setGps((prev) => {
+      if (!prev) return prev;
+      const moving = prev.speed != null && prev.speed > 0.6;
+      if (moving && prev.heading != null) return prev;
+      if (prev.heading != null && Math.abs(((prev.heading - deg!) + 540) % 360 - 180) < 2) {
+        return prev;
+      }
+      return { ...prev, heading: deg };
+    });
+  }, []);
+
+  const startCompass = useCallback(async () => {
+    if (typeof window === "undefined") return;
+    const DOE = DeviceOrientationEvent as unknown as {
+      requestPermission?: () => Promise<"granted" | "denied" | "default">;
+    };
+    try {
+      if (typeof DOE.requestPermission === "function") {
+        const p = await DOE.requestPermission();
+        if (p !== "granted") return;
+      }
+    } catch {
+      /* ignore */
+    }
+    window.removeEventListener("deviceorientationabsolute", onCompass as EventListener);
+    window.removeEventListener("deviceorientation", onCompass as EventListener);
+    if ("ondeviceorientationabsolute" in window) {
+      window.addEventListener("deviceorientationabsolute", onCompass as EventListener, true);
+    } else {
+      window.addEventListener("deviceorientation", onCompass as EventListener, true);
+    }
+    compassRef.current = 1;
+  }, [onCompass]);
 
   const startWatch = useCallback(() => {
     if (!navigator.geolocation) return;
@@ -922,9 +1021,10 @@ export default function DavomatFacePage() {
             : t("davomat.gpsFailed"),
         );
       },
-      { enableHighAccuracy: true, maximumAge: 3_000, timeout: 20_000 },
+      { enableHighAccuracy: true, maximumAge: 800, timeout: 15_000 },
     );
-  }, [t]);
+    void startCompass();
+  }, [t, startCompass]);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -935,8 +1035,10 @@ export default function DavomatFacePage() {
     });
     return () => {
       if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
+      window.removeEventListener("deviceorientationabsolute", onCompass as EventListener);
+      window.removeEventListener("deviceorientation", onCompass as EventListener);
     };
-  }, [t]);
+  }, [t, onCompass]);
 
   const requestLocationPermission = async () => {
     setGpsSharing(true);
@@ -1009,12 +1111,15 @@ export default function DavomatFacePage() {
   };
 
   const checkInAtIso = verified?.checkInAt || workplace?.today.checkInAt || null;
+  const checkOutAtIso = verified?.checkOutAt || workplace?.today.checkOutAt || null;
   const working = Boolean(checkInAtIso) && !(verified?.nextAction === "done" || workplace?.today.complete);
 
   const elapsedLabel = useMemo(() => {
     if (!checkInAtIso) return "0:00:00";
-    return formatElapsed(nowTick - new Date(checkInAtIso).getTime());
-  }, [checkInAtIso, nowTick]);
+    const start = new Date(checkInAtIso).getTime();
+    const end = checkOutAtIso ? new Date(checkOutAtIso).getTime() : nowTick;
+    return formatElapsed(Math.max(0, end - start));
+  }, [checkInAtIso, checkOutAtIso, nowTick]);
 
   const clockLabel = useMemo(
     () =>
@@ -1028,7 +1133,29 @@ export default function DavomatFacePage() {
     [nowTick, locale],
   );
 
-  const dateLabel = useMemo(() => formatLongDate(nowTick, t), [nowTick, t]);
+  const dateParts = useMemo(() => {
+    const ymd = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tashkent",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(nowTick));
+    const p = parseYmd(ymd);
+    if (!p) {
+      return { weekday: "", dayMonth: ymd, year: "", label: ymd };
+    }
+    const week = t(WD_KEYS[weekdayIndex(p.y, p.m, p.d)]!);
+    const month = t(MONTH_KEYS[p.m - 1]!);
+    const weekday = `${week[0]!.toUpperCase()}${week.slice(1)}`;
+    const dayMonth = `${p.d} ${month}`;
+    return {
+      weekday,
+      dayMonth,
+      year: String(p.y),
+      label: `${weekday}, ${dayMonth} ${p.y}`,
+    };
+  }, [nowTick, t]);
+  const dateLabel = dateParts.label;
 
   const distance = useMemo(() => {
     if (!gps) return null;
@@ -1081,15 +1208,17 @@ export default function DavomatFacePage() {
   const methodReady = faceVerifiedReady || qrVerifiedReady;
 
   const openFaceMethod = useCallback(() => {
-    if (!canOpenFace || busy || qrVerifiedReady || methodHint === "QR") return;
+    if (busy || qrVerifiedReady) return;
+    if (!canOpenFace) return;
+    setMethodHint(null);
     setQrOpen(false);
     if (faceRegistered === false) setEnrollOpen(true);
     else setScanOpen(true);
-  }, [canOpenFace, busy, faceRegistered, qrVerifiedReady, methodHint]);
+  }, [canOpenFace, busy, faceRegistered, qrVerifiedReady]);
 
   const openQrMethod = useCallback(() => {
-    if (!canOpenQr || busy || faceVerifiedReady) {
-      if (!cameraGranted) {
+    if (busy || faceVerifiedReady) {
+      if (!cameraGranted && !faceVerifiedReady) {
         toast({
           title: t("davomat.permsCamBlockedTitle"),
           description: t("davomat.permsNeedBtn"),
@@ -1098,6 +1227,8 @@ export default function DavomatFacePage() {
       }
       return;
     }
+    if (!canOpenQr) return;
+    setMethodHint(null);
     setScanOpen(false);
     setEnrollOpen(false);
     void (async () => {
@@ -1608,1047 +1739,233 @@ export default function DavomatFacePage() {
     await refreshFaceStatus();
   };
 
-  return (
-    <div className="davomat-face-page">
-      <div className="mx-auto max-w-lg px-3 pb-10 pt-4 sm:px-4 md:max-w-3xl lg:max-w-4xl">
-        <section className="dv-hero">
-          <div className="relative px-5 pb-6 pt-5">
-            <div className="pointer-events-none absolute -right-10 -top-16 h-40 w-40 rounded-full bg-white/[0.06]" />
-            <div className="pointer-events-none absolute -bottom-10 -left-8 h-28 w-28 rounded-full bg-white/[0.04]" />
+  const firstName = displayName.trim().split(/\s+/)[0] || displayName;
+  const roleLine = [position, workplaceTitle].filter(Boolean).join(" · ");
+  const needsPerms =
+    !cameraGranted || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
+  /** GPS bor, lekin yashil zonadan tashqarida — usul/CTA bloklanadi */
+  const outsideZone =
+    !adminQrAnywhere && Boolean(gps) && !gpsError && !inside && !done;
+  const mapNeedsGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
+  const gpsDenied =
+    Boolean(gpsError) &&
+    /ruxsat|denied|sozlama|berilmadi|bermadingiz|ask again/i.test(gpsError || "");
+  const addressHint = workplace?.employee?.location || department || null;
+  const outsideWarn =
+    remain != null
+      ? `Hududdan tashqaridasiz — yana ${Math.max(0, Math.round(remain))} m`
+      : "Hududdan tashqaridasiz — yashil zonaga kiring";
 
-            <div className="relative flex items-start justify-between gap-3">
+  const cta = (() => {
+    if (done) {
+      return {
+        label: t("davomat.closedToday"),
+        sub: elapsedLabel ? `Ishlagan: ${elapsedLabel}` : "",
+        disabled: true,
+        tone: "done" as const,
+      };
+    }
+    if (outsideZone) {
+      return {
+        label: "Hududdan tashqaridasiz",
+        sub:
+          remain != null
+            ? `Yana ${Math.max(0, Math.round(remain))} m yaqinlashin`
+            : "Avval yashil zona ichiga kiring",
+        disabled: true,
+        tone: "warn" as const,
+      };
+    }
+    if (needsPerms) {
+      return {
+        label: gpsSharing ? "Joylashuv olinmoqda…" : "Ruxsat berish",
+        sub: "Kamera va geolokatsiya",
+        disabled: gpsSharing,
+        tone: "perm" as const,
+      };
+    }
+    if (!methodReady) {
+      const face = selectedMethod === "FACE_ID";
+      return {
+        label: "Davom etish",
+        sub: face
+          ? faceRegistered === false
+            ? "Face ID ro‘yxatdan o‘tkazish"
+            : "Face ID orqali tasdiqlash"
+          : "QR kodni skaner qilish",
+        disabled: false,
+        tone: "go" as const,
+      };
+    }
+    if (!hasIn) {
+      return {
+        label: "Keldim",
+        sub: "Bosib davomatni boshlang",
+        disabled: busy,
+        tone: "in" as const,
+      };
+    }
+    return {
+      label: "Ketdim",
+      sub: afterShiftEnd
+        ? `Ishlagan: ${elapsedLabel}`
+        : `Ishlagan: ${elapsedLabel} · smena ${shiftEndHm} gacha`,
+      disabled: busy || !canPunchOut,
+      tone: "out" as const,
+    };
+  })();
+
+  const handleContinue = () => {
+    if (done || busy) return;
+    if (outsideZone) return;
+    if (needsPerms) {
+      void requestLocationPermission();
+      return;
+    }
+    if (!inside && !adminQrAnywhere) return;
+    if (!methodReady) {
+      if (selectedMethod === "QR") openQrMethod();
+      else openFaceMethod();
+      return;
+    }
+    if (!hasIn) {
+      void punch("in");
+      return;
+    }
+    setConfirmOut(true);
+  };
+
+  const pickMethod = (m: PremiumMethod) => {
+    if (done || busy || outsideZone) return;
+    if (m === "FACE_ID" && !canOpenFace) return;
+    if (m === "QR" && !canOpenQr) return;
+    setSelectedMethod(m);
+    if (!methodReady) setMethodHint(null);
+    if (needsPerms) {
+      void requestLocationPermission();
+      return;
+    }
+    if (methodReady) return;
+    if (m === "QR") openQrMethod();
+    else openFaceMethod();
+  };
+
+  const historyRows =
+    historyDays.length === 0 ? (
+      <p className="px-3 py-6 text-center text-xs text-white/45">{t("davomat.historyEmpty")}</p>
+    ) : filteredHistoryDays.length === 0 ? (
+      <p className="px-3 py-6 text-center text-xs text-white/45">{t("davomat.rangeEmpty")}</p>
+    ) : (
+      <ul className="divide-y divide-white/5">
+        {filteredHistoryDays.slice(0, historyRange === "day" ? 1 : historyRange === "week" ? 7 : 14).map((d) => {
+          const isToday = d.date === todayStamp;
+          const dayParts = splitDay(d.date, t);
+          return (
+            <li
+              key={d.date}
+              className={cn(
+                "flex items-center justify-between gap-2 px-3 py-2.5",
+                isToday && "bg-sky-500/10",
+              )}
+            >
               <div className="min-w-0">
-                <Link
-                  href={user?.role === "stajyor" ? "/kirish" : "/dashboard"}
-                  className="mb-2.5 inline-flex h-9 items-center gap-1.5 rounded-xl bg-white/15 px-3 text-sm font-semibold text-white ring-1 ring-white/20 hover:bg-white/25"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                  {t("common.logout")}
-                </Link>
-                <p className="text-[11px] font-medium uppercase tracking-[0.18em] dv-hero-muted">
-                  {t("davomat.title")}
+                <p className="text-sm font-semibold text-white">
+                  {dayParts.date}
+                  {isToday ? (
+                    <span className="ml-1.5 text-[10px] font-semibold text-sky-300">{t("davomat.todayTag")}</span>
+                  ) : null}
                 </p>
-                <div className="mt-1 flex items-center gap-2 dv-hero-muted">
-                  <CalendarDays className="h-3.5 w-3.5" />
-                  <span className="text-xs">{dateLabel}</span>
-                </div>
+                <p className="text-[11px] capitalize text-white/45">{dayParts.weekday}</p>
               </div>
-              <div className="dv-hero-stat px-3 py-2 text-right">
-                <div className="flex items-center justify-end gap-1.5 text-[10px] uppercase tracking-wide dv-hero-muted">
-                  <Clock3 className="h-3 w-3" />
-                  {t("davomat.nowTime")}
-                </div>
-                <div className="mt-0.5 font-mono text-2xl font-semibold tabular-nums leading-none">{clockLabel}</div>
-              </div>
-            </div>
-
-            <div className="relative mt-6 flex items-center gap-4">
-              <div
-                className={cn(
-                  "relative h-[88px] w-[88px] shrink-0 overflow-hidden rounded-2xl bg-white/10",
-                  ringClass,
-                )}
-              >
-                {shownFace ? (
-                  <img
-                    src={shownFace}
-                    alt={displayName}
-                    className="absolute inset-0 h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-white/15 to-white/5 text-2xl font-semibold text-white">
-                    {initials(displayName)}
-                  </div>
-                )}
-                <span
-                  className={cn(
-                    "absolute bottom-1 right-1 z-10 h-4 w-4 rounded-full border-2 border-primary",
-                    inside ? "bg-teal-400" : gps ? "bg-rose-400" : "bg-slate-400",
-                  )}
-                />
-              </div>
-              <div className="min-w-0 flex-1">
-                <h1 className="truncate text-xl font-semibold leading-tight">{displayName}</h1>
-                <p className="mt-0.5 truncate text-sm dv-hero-muted">{position}</p>
-                {department ? <p className="truncate text-xs dv-hero-muted opacity-80">{department}</p> : null}
-                {displayShift ? (
-                  <div className="mt-2 rounded-xl border border-white/10 bg-white/[0.06] px-2.5 py-2">
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-[10px] font-medium uppercase tracking-wide dv-hero-muted">
-                          {t("davomat.workplace")}
-                        </p>
-                        <p className="truncate text-sm font-semibold text-white">{workplaceTitle}</p>
-                      </div>
-                      <div className="shrink-0 text-right">
-                        <p className="text-[10px] font-medium uppercase tracking-wide dv-hero-muted">
-                          {displayShift.type === "office" ? t("davomat.workHours") : t("davomat.shiftWorkHours")}
-                        </p>
-                        {displayShift.type !== "office" ? (
-                          <p className="text-[11px] font-medium text-white/90">
-                            {displayShift.type === "two"
-                              ? t("davomat.shift2")
-                              : displayShift.type === "one"
-                                ? t("davomat.shift1")
-                                : displayShift.label}
-                          </p>
-                        ) : null}
-                        <p className="font-mono text-sm font-semibold tabular-nums text-white">
-                          {displayShift.start} – {displayShift.end}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                <div className="mt-2">
-                  <span
-                    className={cn(
-                      "inline-flex items-center rounded-full px-2.5 py-0.5 text-[11px] font-medium",
-                      done || todayStatus === "complete"
-                        ? "bg-white/12 text-white"
-                        : hasIn || inside
-                          ? "bg-teal-400/20 text-teal-100"
-                          : "bg-slate-400/25 text-slate-100",
-                    )}
-                  >
-                    {t("davomat.status")}: {holatLabel}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div className="relative mt-4 grid grid-cols-2 gap-2 text-[11px]">
-              <div className="dv-punch-in">
-                <div className="dv-punch-label">
-                  {t("davomat.btnIn")}
-                  {displayShift ? ` ${punchPlanLabelI18n("in", displayShift.start, t)}` : ""}
-                </div>
-                <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
-                  {verified?.checkIn || workplace?.today.checkIn || "—"}
-                </div>
-              </div>
-              <div className="dv-punch-out">
-                <div className="dv-punch-label">
-                  {t("davomat.btnOut")}
-                  {displayShift ? ` ${punchPlanLabelI18n("out", displayShift.end, t)}` : ""}
-                </div>
-                <div className="dv-punch-value mt-0.5 text-sm font-semibold tabular-nums">
-                  {verified?.checkOut || workplace?.today.checkOut || "—"}
-                </div>
-              </div>
-            </div>
-            {displayShift ? (
-              <p className="relative mt-2 text-center text-[10px] font-medium leading-snug text-rose-400">
-                {t("davomat.fineHint")}
-              </p>
-            ) : null}
-            {phone ? (
-              <p className="relative mt-2 text-[11px] dv-hero-muted">{t("davomat.tel")}: {phone}</p>
-            ) : null}
-          </div>
-        </section>
-
-        <div className="mt-4">
-          {!methodsReady ? (
-            <section className="dv-card">
-              <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {t("davomat.guideSteps")}…
-              </div>
-            </section>
-          ) : (
-            <GuideBoard
-              active={guideStep}
-              faceRegistered={faceRegistered}
-              inside={inside}
-              hasGps={Boolean(gps) && !gpsError}
-              cameraGranted={cameraGranted}
-              adminAnywhere={adminQrAnywhere}
-              hasIn={hasIn}
-              afterShiftEnd={afterShiftEnd}
-              done={Boolean(done)}
-              pharmacyStaff={showDualMethods}
-              canOpenFace={canOpenFace}
-              canOpenQr={canOpenQr}
-              onOpenFace={openFaceMethod}
-              onOpenQr={openQrMethod}
-              methodsBusy={busy}
-            />
-          )}
-        </div>
-
-        {!showDualMethods && faceRegistered === false ? (
-          <section className="dv-card dv-tone-info mt-4 border-l-[3px] border-l-primary">
-            {showGuide && guideStep === "enroll" ? (
-              <MobileStepHint step={0} label={t("davomat.connectFaceHint")} tone="amber" />
-            ) : null}
-            <div className={cn("flex items-center gap-2", showGuide && guideStep === "enroll" ? "mt-3" : "mb-3")}>
-              <span className="dv-step-badge dv-step-badge-warn">!</span>
-              <h2 className="text-sm font-semibold">{t("davomat.enrollFace")}</h2>
-            </div>
-            <p className="mb-3 text-sm opacity-90">{t("davomat.enrollBlurb")}</p>
-            <Button
-              type="button"
-              size="lg"
-              className={cn(
-                "h-14 w-full gap-2 rounded-2xl text-base",
-                showGuide && guideStep === "enroll" && "dv-focus",
-              )}
-              disabled={!isFaceIdSupported()}
-              onClick={() => setEnrollOpen(true)}
-            >
-              <ScanFace className="h-5 w-5" />
-              {t("davomat.connectFace")}
-            </Button>
-            {!isFaceIdSupported() ? (
-              <p className="mt-2 text-center text-xs opacity-80">{t("davomat.cameraHttps")}</p>
-            ) : null}
-          </section>
-        ) : null}
-
-        <section className="dv-card mt-4">
-          {showGuide && guideStep === "permission" ? (
-            <MobileStepHint step={1} label={t("davomat.grantStepHint")} tone="amber" />
-          ) : null}
-          <div className={cn("flex items-center gap-2", showGuide && guideStep === "permission" ? "mt-3 mb-3" : "mb-3")}>
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-              1
-            </span>
-            <div className="flex flex-1 items-center justify-between gap-2">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <MapPin className="h-4 w-4" />
-                {t("davomat.location")}
-              </div>
-              <Button
-                type="button"
-                size={guideStep === "permission" ? "default" : "sm"}
-                variant={guideStep === "permission" ? "default" : "outline"}
-                className={cn(
-                  guideStep === "permission"
-                    ? "h-10 shrink-0 gap-1.5 rounded-full px-4 text-primary-foreground"
-                    : "h-9 shrink-0 gap-1.5 rounded-full border-border text-foreground hover:bg-muted",
-                  showGuide && guideStep === "permission" && "dv-focus",
-                )}
-                disabled={gpsSharing || (!showDualMethods && faceRegistered === false)}
-                onClick={() => void requestLocationPermission()}
-              >
-                {gpsSharing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ShieldCheck className="h-3.5 w-3.5" />}
-                {t("davomat.grantPermission")}
-              </Button>
-            </div>
-          </div>
-
-          <div className="mt-3 grid grid-cols-[auto_1fr] items-center gap-3">
-            <div
-              className={cn(
-                "flex h-16 w-16 flex-col items-center justify-center rounded-2xl text-center",
-                inside ? "dv-tone-emerald border-0 bg-teal-500/15" : gps ? "dv-tone-rose border-0 bg-rose-500/15" : "bg-muted text-muted-foreground",
-              )}
-            >
-              {gps && distance != null ? (
-                <>
-                  <span className="text-lg font-semibold tabular-nums leading-none">
-                    {formatDistanceParts(distance, t).value}
-                  </span>
-                  <span className="text-[10px]">{formatDistanceParts(distance, t).unit}</span>
-                </>
-              ) : gpsSharing ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <ShieldCheck className="h-5 w-5" />
-              )}
-            </div>
-            <div className="min-w-0 text-sm">
-              {inside ? (
-                <p className="font-medium text-emerald-700 dark:text-emerald-300">
-                  <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                  {t("davomat.inZone")}
+              <div className="shrink-0 text-right">
+                <p className="font-mono text-xs tabular-nums">
+                  <span className="text-emerald-300">{d.checkIn}</span>
+                  <span className="text-white/30"> · </span>
+                  <span className="text-rose-300">{d.checkOut}</span>
                 </p>
-              ) : gps && remain != null ? (
-                <p className="font-medium text-rose-700 dark:text-rose-300">
-                  <XCircle className="mr-1 inline h-4 w-4" />
-                  {t("davomat.outside")}
-                </p>
-              ) : (
-                <p className="text-muted-foreground">{t("davomat.tapGrant")}</p>
-              )}
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                {workplace?.site?.kind === "branch" ? t("davomat.designatedBranch") : t("davomat.mainOffice")}{" "}
-                · {tr(t, "davomat.allowedMeters", { m: allowedMeters })}
-              </p>
-              {displayShift ? (
-                <p className="mt-1 rounded-lg dv-tone-amber border-0 px-2 py-1 text-[11px] font-medium">
-                  {displayShift.label}: {displayShift.start}–{displayShift.end}. {t("davomat.lateFine")}
-                </p>
-              ) : null}
-              {site.label ? (
-                <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{site.label}</p>
-              ) : null}
-              {gps ? (
-                <p className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-                  {gps.lat.toFixed(5)}, {gps.lng.toFixed(5)} · ±{gps.accuracy} m
-                </p>
-              ) : null}
-            </div>
-          </div>
-
-          {workplace && workplace.employee.hasGps === false ? (
-            <p className="dv-tone-amber mt-3 rounded-2xl border px-3 py-2 text-center text-sm">
-              {workplace.gpsError || t("davomat.branchGpsHint")}
-            </p>
-          ) : null}
-
-          {gps && distance != null ? (
-            <div
-              className={cn(
-                "mt-3 rounded-2xl border px-3 py-2.5 text-center text-sm font-medium",
-                inside
-                  ? "dv-tone-emerald"
-                  : "dv-tone-rose",
-              )}
-            >
-              {inside ? (
-                <>
-                  <CheckCircle2 className="mr-1 inline h-4 w-4" />
-                  {tr(t, "davomat.inZoneMeters", {
-                    dist: formatDistance(distance, t),
-                    m: allowedMeters,
-                  })}
-                </>
-              ) : (
-                <>
-                  <XCircle className="mr-1 inline h-4 w-4" />
-                  {tr(t, "davomat.youAreFar", {
-                    dist: formatDistance(distance, t),
-                    approach: formatApproach(remain, t),
-                  })}
-                  <span className="mt-1 block text-sm font-semibold">
-                    {t("davomat.zoneAbsentWarn")}
-                  </span>
-                  <span className="mt-0.5 block text-xs font-normal opacity-90">
-                    {tr(t, "davomat.onlyWithin", {
-                      place:
-                        workplace?.site?.kind === "branch"
-                          ? t("davomat.placeBranch")
-                          : t("davomat.placeOffice"),
-                      m: allowedMeters,
-                    })}
-                  </span>
-                </>
-              )}
-            </div>
-          ) : null}
-
-          {showGuide && guideStep === "zone" ? (
-            <div className="mt-3">
-              <MobileStepHint
-                step={1}
-                label={t("davomat.zoneStepHint")}
-                tone="rose"
-              />
-            </div>
-          ) : null}
-
-          {gpsError ? <p className="mt-2 text-sm text-rose-600">{gpsError}</p> : null}
-          {locationReady ? (
-            <p className="mt-3 flex items-center gap-1.5 text-xs font-medium text-teal-700 dark:text-teal-400">
-              <CheckCircle2 className="h-3.5 w-3.5" />
-              {t("davomat.locationConfirmed")}
-            </p>
-          ) : null}
-        </section>
-
-        <div className="flex justify-center py-1 text-muted-foreground md:hidden" aria-hidden>
-          <ArrowDown className="h-5 w-5 animate-bounce" />
-        </div>
-
-        {/* Mobil: Face ID | QR — barcha xodimlar */}
-        {methodsReady && showMethodPicker ? (
-          <section className="dv-card mt-2 border-l-[3px] border-l-primary md:hidden" id="davomat-methods">
-            <div className="mb-2 flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                3
-              </span>
-              <SwitchCamera className="h-4 w-4 text-primary" />
-              <h2 className="text-base font-semibold text-foreground">{t("davomat.pickMethodTitle")}</h2>
-            </div>
-            <p className="mb-3 text-sm leading-snug text-muted-foreground">
-              {adminQrAnywhere
-                ? t("davomat.pickMethodAdmin")
-                : pharmacyStaff
-                  ? t("davomat.pickMethodPharmacy")
-                  : t("davomat.pickMethodOffice")}
-            </p>
-
-            {adminQrAnywhere ? (
-              <p className="mb-3 rounded-xl bg-sky-500/10 px-3 py-2 text-center text-xs font-semibold text-sky-700 dark:text-sky-300">
-                {t("davomat.adminQrAnywhere")}
-              </p>
-            ) : !inside ? (
-              <p className="dv-tone-rose mb-3 rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold">
-                {t("davomat.methodsLockedOutside")}
-              </p>
-            ) : (
-              <p className="mb-3 rounded-xl bg-emerald-500/10 px-3 py-2 text-center text-xs font-semibold text-emerald-700 dark:text-emerald-300">
-                {t("davomat.inZone")}
-                {distance != null ? ` · ${formatDistance(distance, t)}` : ""}
-              </p>
-            )}
-
-            <div className="grid grid-cols-1 gap-2.5">
-              <Button
-                type="button"
-                size="lg"
-                className={cn(
-                  "h-auto min-h-[3.75rem] w-full flex-row items-center justify-start gap-3 rounded-2xl px-4 py-3.5 text-left shadow-sm",
-                  guideStep === "face" && canOpenFace && "dv-focus",
-                  !canOpenFace && "opacity-60",
-                )}
-                disabled={!canOpenFace || busy}
-                onClick={openFaceMethod}
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary-foreground/15">
-                  <ScanFace className="h-6 w-6" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-base font-semibold leading-tight">Face ID</span>
-                  <span className="mt-0.5 block text-xs font-normal leading-snug opacity-90">
-                    {t("davomat.frontCamHint")}
-                  </span>
-                </span>
-              </Button>
-
-              <p className="text-center text-[11px] font-bold uppercase tracking-wider text-muted-foreground">
-                {t("davomat.orWord")}
-              </p>
-
-              <Button
-                type="button"
-                size="lg"
-                variant="secondary"
-                className={cn(
-                  "h-auto min-h-[3.75rem] w-full flex-row items-center justify-start gap-3 rounded-2xl px-4 py-3.5 text-left shadow-sm ring-1 ring-primary/25",
-                  guideStep === "face" && canOpenQr && "dv-focus",
-                  !canOpenQr && "opacity-60",
-                )}
-                disabled={!canOpenQr || busy}
-                onClick={openQrMethod}
-              >
-                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/15 text-primary">
-                  <QrCode className="h-6 w-6" />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="block text-base font-semibold leading-tight text-foreground">
-                    {t("davomat.qrScanner")}
-                  </span>
-                  <span className="mt-0.5 block text-xs font-normal leading-snug text-muted-foreground">
-                    {pharmacyStaff ? t("davomat.rearCamHintBranch") : t("davomat.rearCamHintDept")}
-                  </span>
-                </span>
-              </Button>
-            </div>
-
-            {faceRegistered === false ? (
-              <p className="mt-3 text-center text-[11px] text-muted-foreground">
-                {t("davomat.faceOptionalNote")}
-              </p>
-            ) : null}
-
-            {canManageQr ? (
-              <Link
-                href="/davomat-qr"
-                className="mt-3 block text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
-              >
-                {t("davomat.manageQrLink")}
-              </Link>
-            ) : null}
-          </section>
-        ) : null}
-
-        {methodsReady && showMethodPicker ? (
-          <section className={cn("dv-card mt-4", "hidden md:block")}>
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                3
-              </span>
-              <h2 className="text-sm font-semibold text-foreground">
-                {t("davomat.pickMethodTitle")}
-              </h2>
-            </div>
-            <div className="space-y-3">
-                {adminQrAnywhere ? (
-                  <p className="text-center text-xs font-medium text-sky-700 dark:text-sky-300">
-                    {t("davomat.adminQrAnywhere")}
-                  </p>
-                ) : inside ? (
-                  <p className="text-center text-xs font-medium text-emerald-700 dark:text-emerald-300">
-                    {t("davomat.inZone")}
-                    {distance != null ? ` · ${formatDistance(distance, t)}` : ""}
-                  </p>
-                ) : gps ? (
-                  <p className="dv-tone-rose rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold">
-                    {t("davomat.methodsLockedOutside")}
-                  </p>
-                ) : null}
-
-                {!done ? (
-                  <>
-                    <p className="text-center text-xs text-muted-foreground">
-                      {pharmacyStaff ? t("davomat.pickMethodPharmacy") : t("davomat.pickMethodOffice")}
-                    </p>
-                    <div className="flex items-stretch justify-center gap-3">
-                      <Button
-                        type="button"
-                        size="lg"
-                        className={cn(
-                          "h-auto min-h-[4.25rem] w-[9.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
-                          !canOpenFace && "opacity-50",
-                        )}
-                        disabled={!canOpenFace || busy}
-                        onClick={openFaceMethod}
-                      >
-                        <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
-                          <ScanFace className="h-5 w-5 shrink-0" />
-                          Face ID
-                        </span>
-                        <span className="text-center text-[10px] font-normal leading-tight opacity-90">
-                          {t("davomat.frontCam")}
-                        </span>
-                      </Button>
-                      <span className="self-center shrink-0 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
-                        {t("davomat.orWord")}
-                      </span>
-                      <Button
-                        type="button"
-                        size="lg"
-                        className={cn(
-                          "h-auto min-h-[4.25rem] w-[9.5rem] shrink-0 flex-col items-center justify-center gap-1 rounded-2xl px-3 py-3 shadow-sm",
-                          !canOpenQr && "opacity-50",
-                        )}
-                        disabled={!canOpenQr || busy}
-                        onClick={openQrMethod}
-                      >
-                        <span className="flex items-center justify-center gap-1.5 text-sm font-semibold leading-none">
-                          <QrCode className="h-5 w-5 shrink-0" />
-                          {t("davomat.qrScanner")}
-                        </span>
-                        <span className="text-center text-[10px] font-normal leading-tight opacity-90">
-                          {t("davomat.rearCam")}
-                        </span>
-                      </Button>
-                    </div>
-                  </>
-                ) : (
-                  <p className="text-center text-sm text-muted-foreground">{t("davomat.oncePerDay")}</p>
-                )}
-
-                {verified && verified.descriptor.length > 0 ? (
-                  <div className="dv-tone-emerald flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm">
-                    <CheckCircle2 className="h-5 w-5 shrink-0" />
-                    <div>
-                      <p className="font-semibold">{t("davomat.faceVerified")}</p>
-                      <p className="text-xs opacity-80">{verified.fullName}</p>
-                    </div>
-                  </div>
-                ) : null}
-
-                {(workplace?.today.checkInMethod || workplace?.today.checkOutMethod) && (
-                  <p className="text-center text-[11px] text-muted-foreground">
-                    {workplace?.today.checkInMethod ? `Keldi: ${workplace.today.checkInMethod}` : ""}
-                    {workplace?.today.checkInMethod && workplace?.today.checkOutMethod ? " · " : ""}
-                    {workplace?.today.checkOutMethod ? `Ketdi: ${workplace.today.checkOutMethod}` : ""}
-                  </p>
-                )}
-
-                {canManageQr ? (
-                  <Link
-                    href="/davomat-qr"
-                    className="block text-center text-xs font-medium text-primary underline-offset-2 hover:underline"
-                  >
-                    {t("davomat.manageQrLink")}
-                  </Link>
-                ) : null}
-            </div>
-          </section>
-        ) : null}
-
-        {/* Ofis: faqat Face ID */}
-        {methodsReady && !showDualMethods && showFaceStep ? (
-          <section className="dv-card mt-4">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                2
-              </span>
-              <h2 className="text-sm font-semibold text-foreground">Face ID</h2>
-            </div>
-            {verified && faceVerifiedReady ? (
-              <div className="space-y-3">
-                <div className="dv-tone-emerald flex items-center gap-2 rounded-2xl border px-4 py-3 text-sm">
-                  <CheckCircle2 className="h-5 w-5 shrink-0" />
-                  <div>
-                    <p className="font-semibold">{t("davomat.faceVerified")}</p>
-                    <p className="text-xs opacity-80">{verified.fullName}</p>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {showGuide && guideStep === "face" ? (
-                  <MobileStepHint step={2} label={t("davomat.pressFace")} tone="amber" />
-                ) : null}
-                {guideStep === "zone" || (gps && !inside) ? (
-                  <p className="dv-tone-rose rounded-2xl border px-3 py-2.5 text-center text-sm font-semibold">
-                    {t("davomat.faceStepClosed")}
-                  </p>
-                ) : null}
-                <Button
-                  type="button"
-                  size="lg"
-                  className={cn(
-                    "h-14 w-full gap-2 rounded-2xl text-base",
-                    showGuide && guideStep === "face" && "dv-focus",
-                  )}
-                  disabled={!canOpenFace}
-                  onClick={() => {
-                    setQrOpen(false);
-                    setScanOpen(true);
-                  }}
-                >
-                  {canOpenFace ? <ScanFace className="h-5 w-5" /> : <Lock className="h-5 w-5" />}
-                  {canOpenFace ? "Face ID" : t("davomat.faceClosed")}
-                </Button>
-                {!canOpenFace && faceLockedReason ? (
-                  <p className="dv-tone-rose rounded-2xl border px-3 py-2 text-center text-sm">
-                    {faceLockedReason}
-                  </p>
-                ) : (
-                  <p className="text-center text-xs text-muted-foreground">
-                    {t("davomat.afterFacePressIn")}
-                  </p>
-                )}
-              </div>
-            )}
-          </section>
-        ) : null}
-
-        {methodReady && !done ? (
-          <div className="dv-tone-emerald mt-4 rounded-2xl border px-4 py-3 text-center text-sm">
-            <CheckCircle2 className="mr-1 inline h-4 w-4" />
-            {qrVerifiedReady
-              ? "QR scanner tasdiqlandi — Face ID kerak emas. Keldim / Ketdim ni bosing."
-              : t("davomat.faceVerified")}
-          </div>
-        ) : null}
-
-        {showPunchStep ? (
-          <section className="dv-card mt-4">
-            <div className="mb-3 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                {showDualMethods ? 4 : hasIn ? 4 : 3}
-              </span>
-              <h2 className="text-sm font-semibold text-foreground">
-                {hasIn ? t("davomat.btnOut") : t("davomat.btnIn")}
-              </h2>
-            </div>
-            {hasIn ? (
-              <div className="space-y-3">
-                {showGuide && guideStep === "ketdim" ? (
-                  <MobileStepHint step={4} label={t("davomat.outStepHint")} tone="rose" />
-                ) : null}
-                <Button
-                  type="button"
-                  size="lg"
-                  className={cn(
-                    "dv-btn-out",
-                    showGuide && guideStep === "ketdim" && "dv-focus",
-                  )}
-                  disabled={busy || !canPunchOut}
-                  onClick={() => setConfirmOut(true)}
-                >
-                  <LogOut className="h-5 w-5" />
-                  {t("davomat.btnOut")}
-                </Button>
-                <p className="text-center text-xs text-muted-foreground">
-                  {t("davomat.outHint")}
+                <p className="text-[10px] text-white/45">
+                  {t(STATUS_KEYS[d.status] || d.status, d.status)}
                 </p>
               </div>
-            ) : (
-              <div className="space-y-3">
-                {showGuide && guideStep === "keldim" ? (
-                  <MobileStepHint
-                    step={showDualMethods ? 4 : 3}
-                    label={t("davomat.inStepHint")}
-                    tone="emerald"
-                  />
-                ) : null}
-                <Button
-                  type="button"
-                  size="lg"
-                  className={cn(
-                    "dv-btn-in",
-                    showGuide && guideStep === "keldim" && "dv-focus",
-                  )}
-                  disabled={busy}
-                  onClick={() => void punch("in")}
-                >
-                  <LogIn className="h-5 w-5" />
-                  {t("davomat.btnIn")}
-                </Button>
-                <p className="text-center text-xs text-muted-foreground">
-                  {t("davomat.inHint")}
-                </p>
-              </div>
-            )}
-          </section>
-        ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    );
 
-        {working ? (
-          <section className="dv-tone-emerald mt-4 rounded-[24px] border px-4 py-4 text-center">
-            <p className="text-[11px] font-medium uppercase tracking-wide opacity-80">{t("davomat.workingTime")}</p>
-            <p className="mt-1 font-mono text-4xl font-semibold tabular-nums">{elapsedLabel}</p>
-            <p className="mt-1 text-xs opacity-80">
-              {t("davomat.btnIn")}: {verified?.checkIn || workplace?.today.checkIn}
-            </p>
-          </section>
-        ) : null}
-
-        <section className="mt-4 overflow-hidden rounded-[24px] border border-border bg-card shadow-sm">
-          <div className="flex items-start justify-between gap-3 border-b border-border px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">{t("davomat.myToday")}</h2>
-              <p className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
-                <CalendarDays className="h-3.5 w-3.5" />
-                {dateLabel}
-              </p>
-            </div>
-            <span
-              className={cn(
-                "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium",
-                done
-                  ? "bg-muted text-muted-foreground"
-                  : hasIn
-                    ? "dv-tone-emerald border-0 px-2.5 py-1"
-                    : "bg-muted text-muted-foreground",
-              )}
-            >
-              {holatLabel}
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 p-4">
-            <div className="dv-punch-card-in">
-              <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
-                <LogIn className="h-3.5 w-3.5" />
-                {t("davomat.btnIn")}
-                {displayShift ? ` ${punchPlanLabelI18n("in", displayShift.start, t)}` : ""}
-              </div>
-              <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
-                {checkInLabel}
-              </div>
-            </div>
-            <div className="dv-punch-card-out">
-              <div className="dv-punch-card-label flex items-center gap-1.5 text-xs font-medium">
-                <LogOut className="h-3.5 w-3.5" />
-                {t("davomat.btnOut")}
-                {displayShift ? ` ${punchPlanLabelI18n("out", displayShift.end, t)}` : ""}
-              </div>
-              <div className="dv-punch-card-value mt-1 font-mono text-2xl font-semibold tabular-nums">
-                {checkOutLabel}
-              </div>
-            </div>
-          </div>
-          {displayShift ? (
-            <p className="px-4 pb-3 text-center text-[11px] font-medium leading-snug text-red-600">
-              {t("davomat.fineHint")}
-            </p>
-          ) : null}
-          {done && closedWork != null ? (
-            <div className="mx-4 mb-4 rounded-2xl border border-border bg-muted px-3 py-3 text-center">
-              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{t("davomat.workedTime")}</p>
-              <p className="mt-1 text-2xl font-semibold tabular-nums text-foreground">
-                {formatHours(closedWork, t)}
-              </p>
-              <p className="mt-2 text-[11px] text-muted-foreground">
-                {t("davomat.oncePerDay")}
-              </p>
-            </div>
-          ) : done ? (
-            <p className="px-4 pb-3 text-center text-xs text-muted-foreground">
-              {t("davomat.oncePerDay")}
-            </p>
-          ) : null}
-        </section>
-
-        <section className="mt-3 overflow-hidden rounded-xl border border-border bg-card shadow-sm md:rounded-lg">
-          <div className="flex flex-col gap-2 border-b border-border bg-muted/50 px-2.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:px-3">
-            <div className="min-w-0">
-              <h2 className="flex items-center gap-1.5 text-[13px] font-semibold text-foreground">
-                <History className="h-3.5 w-3.5 shrink-0" />
-                {isTgMiniApp ? t("davomat.attStatus") : t("davomat.history")}
-              </h2>
-              <p className="mt-0.5 text-[10px] leading-tight text-muted-foreground sm:text-[11px]">
-                {historyRange === "day"
-                  ? t("davomat.todayDay")
-                  : historyRange === "week"
-                    ? t("davomat.last7")
-                    : t("davomat.last31")}
-                {" · "}
-                {tr(t, "davomat.rowsCount", { n: historySummary.count })}
-                {historySummary.minutes > 0
-                  ? ` · ${tr(t, "davomat.totalHours", { hours: formatHours(historySummary.minutes, t) })}`
-                  : ""}
-              </p>
-            </div>
-            <div
-              className="grid grid-cols-3 gap-0.5 rounded-md border border-border bg-card p-0.5 sm:inline-flex sm:w-auto"
-              role="tablist"
-              aria-label={t("davomat.rangeAria")}
-            >
-              {(
-                [
-                  { id: "day" as const, label: t("davomat.daily") },
-                  { id: "week" as const, label: t("davomat.weekly") },
-                  { id: "month" as const, label: t("davomat.monthly") },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={historyRange === opt.id}
-                  onClick={() => setHistoryRange(opt.id)}
-                  className={cn(
-                    "rounded px-2 py-1 text-[11px] font-semibold transition-colors sm:px-2.5 sm:text-xs",
-                    historyRange === opt.id
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:bg-muted",
-                  )}
-                >
-                  {opt.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {historyDays.length === 0 ? (
-            <p className="px-3 py-5 text-center text-xs text-muted-foreground sm:text-sm">
-              {t("davomat.historyEmpty")}
-            </p>
-          ) : filteredHistoryDays.length === 0 ? (
-            <p className="px-3 py-5 text-center text-xs text-muted-foreground sm:text-sm">
-              {t("davomat.rangeEmpty")}
-            </p>
-          ) : (
-            <>
-              <div className="flex flex-wrap gap-1.5 border-b border-border px-2.5 py-1.5 text-[10px] sm:px-3 sm:text-[11px]">
-                <span className="dv-tone-emerald rounded border-0 px-1.5 py-0.5 font-medium">
-                  {t("davomat.arrived")} {historySummary.present}
-                </span>
-                <span className="dv-tone-amber rounded border-0 px-1.5 py-0.5 font-medium">
-                  {t("davomat.lateShort")} {historySummary.late}
-                </span>
-                <span className="dv-tone-rose rounded border-0 px-1.5 py-0.5 font-medium">
-                  {t("davomat.absent")} {historySummary.absent}
-                </span>
-              </div>
-
-              {/* Mobile: compact sheet rows */}
-              <div
-                className={cn(
-                  "md:hidden overflow-y-auto overscroll-contain",
-                  historyRange === "day" ? "max-h-[220px]" : "max-h-[280px]",
-                )}
-              >
-                <table className="w-full border-collapse text-[11px]">
-                  <thead className="sticky top-0 z-10 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))] dark:bg-slate-800">
-                    <tr className="text-left text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      <th className="border-r border-border px-2 py-1.5">{t("davomat.colDate")}</th>
-                      <th className="border-r border-border px-1.5 py-1.5 text-center">{t("davomat.colInShort")}</th>
-                      <th className="border-r border-border px-1.5 py-1.5 text-center">{t("davomat.colOutShort")}</th>
-                      <th className="border-r border-border px-1.5 py-1.5 text-center">{t("davomat.colStatus")}</th>
-                      <th className="px-1.5 py-1.5 text-right">{t("davomat.colTime")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredHistoryDays.map((d, i) => {
-                      const isToday = d.date === todayStamp;
-                      const dayParts = splitDay(d.date, t);
-                      const worked =
-                        d.checkIn !== "—" && d.checkOut !== "—"
-                          ? workedMinutesFromPunch({
-                              checkIn: d.checkIn,
-                              checkOut: d.checkOut,
-                            })
-                          : null;
-                      return (
-                        <tr
-                          key={d.date}
-                          className={cn(
-                            "border-b border-border",
-                            isToday
-                              ? "dv-history-today"
-                              : i % 2 === 1
-                                ? "bg-muted/70"
-                                : "bg-card",
-                          )}
-                        >
-                          <td className="border-r border-border px-2 py-1.5">
-                            <div className="leading-tight">
-                              <span className="font-semibold text-foreground">{dayParts.date}</span>
-                              <span className="ml-1 text-[10px] text-muted-foreground">
-                                {dayParts.weekday.slice(0, 2)}
-                              </span>
-                              {isToday ? (
-                                <span className="ml-1 text-[9px] font-semibold text-teal-700 dark:text-teal-300">
-                                  {t("davomat.todayTag")}
-                                </span>
-                              ) : null}
-                            </div>
-                          </td>
-                          <td className="border-r border-border px-1.5 py-1.5 text-center font-mono tabular-nums text-emerald-700 dark:text-emerald-400">
-                            {d.checkIn}
-                          </td>
-                          <td className="border-r border-border px-1.5 py-1.5 text-center font-mono tabular-nums text-rose-700 dark:text-rose-400">
-                            {d.checkOut}
-                          </td>
-                          <td className="border-r border-border px-1.5 py-1.5 text-center">
-                            <span
-                              className={cn(
-                                "inline-flex whitespace-nowrap rounded px-1 py-0.5 text-[9px] font-semibold",
-                                STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
-                              )}
-                            >
-                              {t(STATUS_KEYS[d.status] || d.status, d.status)}
-                            </span>
-                          </td>
-                          <td className="px-1.5 py-1.5 text-right font-medium tabular-nums text-foreground">
-                            {worked != null ? formatHours(worked, t) : d.workedHours || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Desktop: wide spreadsheet */}
-              <div
-                className={cn(
-                  "hidden md:block overflow-auto overscroll-contain",
-                  historyRange === "day" ? "max-h-[260px]" : "max-h-[340px]",
-                )}
-              >
-                <table className="w-full min-w-[640px] border-collapse text-sm">
-                  <thead className="sticky top-0 z-10 bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))] dark:bg-slate-800">
-                    <tr className="text-left text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                      <th className="sticky left-0 z-[1] border-r border-border bg-muted px-3 py-2 dark:bg-slate-800">
-                        {t("davomat.colDate")}
-                      </th>
-                      <th className="border-r border-border px-3 py-2">{t("davomat.colWeekday")}</th>
-                      <th className="border-r border-border px-3 py-2 text-center">{t("davomat.btnIn")}</th>
-                      <th className="border-r border-border px-3 py-2 text-center">{t("davomat.btnOut")}</th>
-                      <th className="border-r border-border px-3 py-2 text-center">{t("davomat.colStatus")}</th>
-                      <th className="px-3 py-2 text-right">{t("davomat.workedTime")}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredHistoryDays.map((d, i) => {
-                      const isToday = d.date === todayStamp;
-                      const dayParts = splitDay(d.date, t);
-                      const worked =
-                        d.checkIn !== "—" && d.checkOut !== "—"
-                          ? workedMinutesFromPunch({
-                              checkIn: d.checkIn,
-                              checkOut: d.checkOut,
-                            })
-                          : null;
-                      return (
-                        <tr
-                          key={d.date}
-                          className={cn(
-                            "border-b border-border hover:bg-muted/50",
-                            isToday
-                              ? "dv-history-today"
-                              : i % 2 === 1
-                                ? "bg-muted/80"
-                                : "bg-card",
-                          )}
-                        >
-                          <td
-                            className={cn(
-                              "sticky left-0 z-[1] border-r border-border px-3 py-1.5 font-semibold tabular-nums text-foreground",
-                              isToday ? "dv-history-today-cell" : i % 2 === 1 ? "bg-muted/80" : "bg-card",
-                            )}
-                          >
-                            {dayParts.date}
-                            {isToday ? (
-                              <span className="ml-2 rounded bg-teal-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-teal-700 dark:text-teal-300">
-                                {t("davomat.todayTag")}
-                              </span>
-                            ) : null}
-                          </td>
-                          <td className="border-r border-border px-3 py-1.5 capitalize text-muted-foreground">
-                            {dayParts.weekday}
-                          </td>
-                          <td className="border-r border-border px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-emerald-700 dark:text-emerald-400">
-                            {d.checkIn}
-                          </td>
-                          <td className="border-r border-border px-3 py-1.5 text-center font-mono text-[13px] tabular-nums text-rose-700 dark:text-rose-400">
-                            {d.checkOut}
-                          </td>
-                          <td className="border-r border-border px-3 py-1.5 text-center">
-                            <span
-                              className={cn(
-                                "inline-flex whitespace-nowrap rounded px-2 py-0.5 text-[11px] font-semibold",
-                                STATUS_STYLE[d.status] || "bg-slate-100 text-muted-foreground",
-                              )}
-                            >
-                              {t(STATUS_KEYS[d.status] || d.status, d.status)}
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 text-right font-medium tabular-nums text-foreground">
-                            {worked != null ? formatHours(worked, t) : d.workedHours || "—"}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
-        </section>
-
-        {isAuthenticated && oylikMe.data ? (
-          <Link href="/oylik">
-            <div className="mt-3 rounded-xl border border-border bg-card p-3 shadow-sm">
-              <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-                <Banknote className="h-4 w-4" />
-                {t("davomat.mySalary")} · {oylikMe.data.monthLabel}
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">{t("davomat.salaryHint")}</p>
-              <div className="mt-2 grid grid-cols-2 gap-2 text-xs">
-                <p>{t("davomat.fixedPay")}: <span className="font-semibold">{formatSom(oylikMe.data.fixedSalary)}</span></p>
-                <p>KPI: <span className="font-semibold">{oylikMe.data.kpiPercent}%</span></p>
-                <p>{t("davomat.bonus")}: <span className="font-semibold">{formatSom(oylikMe.data.bonusAmount)}</span></p>
-                <p>{t("davomat.totalPay")}: <span className="font-bold text-primary">{formatSom(oylikMe.data.totalAmount)}</span></p>
-              </div>
-            </div>
-          </Link>
-        ) : null}
-
-        <div className="mt-5 flex justify-center gap-4 text-sm">
-          {!isTgMiniApp ? (
-            <Link href="/login" className="text-primary underline-offset-2 hover:underline">
-              {t("davomat.loginLink")}
-            </Link>
-          ) : null}
-          {isAuthenticated && canReport ? (
-            <Link href="/davomat" className="text-primary underline-offset-2 hover:underline">
-              {t("davomat.report")}
-            </Link>
-          ) : null}
-        </div>
-      </div>
+  return (
+    <>
+      <DavomatPremiumView
+        firstName={firstName}
+        roleLine={roleLine}
+        dateLabel={dateLabel}
+        dateWeekday={dateParts.weekday}
+        dateDayMonth={dateParts.dayMonth}
+        dateYear={dateParts.year}
+        clockLabel={clockLabel}
+        checkInLabel={checkInLabel}
+        checkOutLabel={checkOutLabel}
+        planIn={displayShift?.start || null}
+        planOut={displayShift?.end || null}
+        hasIn={hasIn}
+        done={Boolean(done)}
+        inside={inside}
+        distance={distance}
+        allowedMeters={allowedMeters}
+        siteLat={site.latitude}
+        siteLng={site.longitude}
+        userLat={gps?.lat}
+        userLng={gps?.lng}
+        headingDeg={gps?.heading}
+        accuracyMeters={gps?.accuracy}
+        workplaceTitle={workplaceTitle}
+        addressHint={null}
+        needsGps={mapNeedsGps}
+        gpsDenied={gpsDenied || Boolean(gpsError)}
+        gpsSharing={gpsSharing}
+        methodsReady={methodsReady}
+        showMethodPicker={Boolean(methodsReady && !done && !methodReady)}
+        selectedMethod={selectedMethod}
+        onSelectMethod={setSelectedMethod}
+        onPickMethod={pickMethod}
+        canOpenFace={canOpenFace}
+        canOpenQr={canOpenQr}
+        outsideZone={outsideZone}
+        outsideWarn={outsideWarn}
+        methodReady={methodReady}
+        faceRegistered={faceRegistered}
+        busy={busy}
+        working={Boolean(working)}
+        elapsedLabel={elapsedLabel}
+        ctaLabel={cta.label}
+        ctaSub={cta.sub}
+        ctaDisabled={cta.disabled}
+        ctaTone={cta.tone}
+        onContinue={handleContinue}
+        onEnableGps={() => void requestLocationPermission()}
+        backHref="/dashboard"
+        canManageQr={canManageQr}
+        canReport={canReport}
+        isTgMiniApp={isTgMiniApp}
+        isAuthenticated={isAuthenticated}
+        salary={
+          oylikMe.data
+            ? {
+                monthLabel: oylikMe.data.monthLabel,
+                fixedSalary: oylikMe.data.fixedSalary,
+                kpiPercent: oylikMe.data.kpiPercent,
+                bonusAmount: oylikMe.data.bonusAmount,
+                totalAmount: oylikMe.data.totalAmount,
+              }
+            : null
+        }
+        formatSom={formatSom}
+        historyDays={historyDays}
+        historyRange={historyRange}
+        onHistoryRange={setHistoryRange}
+        historyRows={historyRows}
+        t={t}
+      />
 
       <FaceScanDialog
         open={enrollOpen}
@@ -2690,23 +2007,37 @@ export default function DavomatFacePage() {
       {showDualMethods && !done ? <ScrollDownHint label={t("davomat.scrollDownHint")} /> : null}
 
       <AlertDialog open={confirmOut} onOpenChange={setConfirmOut}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-sm rounded-2xl">
           <AlertDialogHeader>
-            <AlertDialogTitle>{t("davomat.confirmOutTitle")}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {afterShiftEnd
-                ? tr(t, "davomat.confirmOutAfter6", { elapsed: elapsedLabel })
-                : tr(t, "davomat.confirmOutEarly", { elapsed: elapsedLabel, time: shiftEndHm })}
+            <AlertDialogTitle>Ketdim?</AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <p>
+                  Ishlagan vaqt:{" "}
+                  <span className="font-mono text-base font-bold text-foreground">{elapsedLabel}</span>
+                </p>
+                {!afterShiftEnd ? (
+                  <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-amber-800 dark:text-amber-200">
+                    Ogohlantirish: smena tugashidan ({shiftEndHm}) oldin ketmoqdasiz. Baribir
+                    ketasizmi?
+                  </p>
+                ) : (
+                  <p>Smena yakunlandi. Ketdimni tasdiqlaysizmi?</p>
+                )}
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("davomat.no")}</AlertDialogCancel>
-            <AlertDialogAction className="dv-btn-out h-10 px-4" onClick={() => void punch("out")}>
-              {t("davomat.yes")}
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel className="rounded-xl">Yo‘q</AlertDialogCancel>
+            <AlertDialogAction
+              className="rounded-xl bg-rose-600 text-white hover:bg-rose-700"
+              onClick={() => void punch("out")}
+            >
+              Ha — Ketdim
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

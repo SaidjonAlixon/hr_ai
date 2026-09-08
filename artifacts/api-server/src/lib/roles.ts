@@ -101,6 +101,33 @@ export function canViewEmployees(role?: string | null): boolean {
   );
 }
 
+/**
+ * AyTi / bo‘lim boshliqlari / koordinator — to‘liq ro‘yxat (faqat ko‘rish).
+ */
+export const EMPLOYEE_VIEW_ONLY_ROLES = [
+  "department_head",
+  "it_rahbar",
+  "texnik_rahbar",
+  "reviziya_rahbar",
+  "koordinator",
+] as const;
+
+export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {
+  return !!role && (EMPLOYEE_VIEW_ONLY_ROLES as readonly string[]).includes(role);
+}
+
+/** Dublikatlar — faqat admin va HR */
+export function canViewEmployeeDuplicates(role?: string | null): boolean {
+  return (
+    role === "admin" ||
+    role === "hr" ||
+    role === "hr_direktor" ||
+    role === "hr_kadr_rahbar" ||
+    role === "hr_menejer" ||
+    role === "hr_auditor"
+  );
+}
+
 /** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR, rekruter, auditor */
 export function canViewChecklistStatus(role?: string | null): boolean {
   return (

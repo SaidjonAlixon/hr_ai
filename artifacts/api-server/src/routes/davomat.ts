@@ -63,8 +63,8 @@ const WORK_END = "18:00";
 const TZ_OFFSET = "+05:00"; // Asia/Tashkent
 /** Filial davomati Face ID radius (metr) — barcha xodimlar / farmasevtlar */
 export const DAVOMAT_GEOFENCE_METERS = 70;
-/** Asosiy ofis — yashil zona 150 m */
-export const DAVOMAT_OFFICE_GEOFENCE_METERS = 150;
+/** Asosiy ofis — yashil zona 100 m */
+export const DAVOMAT_OFFICE_GEOFENCE_METERS = 100;
 /** Belgilangan ish joyi: 41°13'09.3"N 69°16'22.9"E */
 export const DAVOMAT_SITE_LAT = 41 + 13 / 60 + 9.3 / 3600; // 41.21925
 export const DAVOMAT_SITE_LNG = 69 + 16 / 60 + 22.9 / 3600; // ≈ 69.273028
@@ -3127,7 +3127,7 @@ router.delete("/davomat/qr/department/active/:departmentId", requireAuth, async 
 /**
  * QR orqali davomat — Face ID talab qilinmaydi.
  * Filial QR: farmasevt yo‘li + filial GPS.
- * Bo‘lim QR: ofis xodimi + ofis GPS (150 m).
+ * Bo‘lim QR: ofis xodimi + ofis GPS (100 m).
  * Admin: istalgan QR, lokatsiya shartsiz.
  */
 router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -3417,7 +3417,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
 
-    // Ofis QR: asosiy ofis yashil zonasi (150 m)
+    // Ofis QR: asosiy ofis yashil zonasi (100 m)
     let latitude = hasGps ? latitudeRaw : DAVOMAT_SITE_LAT;
     let longitude = hasGps ? longitudeRaw : DAVOMAT_SITE_LNG;
     let distanceMeters = 0;

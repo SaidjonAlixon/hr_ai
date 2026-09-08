@@ -12,7 +12,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
-import { HR_ROLES, isHrManager, canViewEmployees, isSbRole, canChangeStaffStatus } from "../lib/roles";
+import { HR_ROLES, isHrManager, canViewEmployees, isSbRole, canChangeStaffStatus, isEmployeeDirectoryViewOnly } from "../lib/roles";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from "../lib/dedupe-employees";
 import {
@@ -90,6 +90,10 @@ const FULL_NETWORK_ROLES = new Set([
   "director",
   "recruiter",
   "department_head",
+  "it_rahbar",
+  "texnik_rahbar",
+  "reviziya_rahbar",
+  "koordinator",
   "sb",
   "sb_boshliq",
   "moliya",
@@ -253,7 +257,7 @@ function scopeEmployees(
           myBranch.reportsToId != null &&
           e.id === myBranch.reportsToId),
     );
-  } else if (role === "koordinator" && userId) {
+  } else if (role === "koordinator" && userId && !isEmployeeDirectoryViewOnly(role)) {
     const myCoord = filtered.find((e) => e.orgRole === "coordinator" && e.userId === userId);
     if (!myCoord) return [];
     const myManagerIds = new Set(
@@ -287,8 +291,8 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
 
     const rows = await loadStaffFromUsers(staffGroup);
     let filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
-    // Bo‘lim rahbarlari — faqat o‘z bo‘limi. SB (xavfsizlik) — barcha xodimlar.
-    if (isDeptHeadRole(role) && userId && !isSbRole(role)) {
+    // Bo‘lim rahbarlari — faqat o‘z bo‘limi. SB / view-only (AyTi, koordinator…) — to‘liq.
+    if (isDeptHeadRole(role) && userId && !isSbRole(role) && !isEmployeeDirectoryViewOnly(role)) {
       const actorDeptId = await getActorDepartmentId(userId);
       if (actorDeptId) {
         filtered = filtered.filter((e) => e.departmentId === actorDeptId);
@@ -320,7 +324,7 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
 
   const rows = await loadStaffFromUsers(staffGroup);
   let filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
-  if (isDeptHeadRole(role) && userId && !isSbRole(role)) {
+  if (isDeptHeadRole(role) && userId && !isSbRole(role) && !isEmployeeDirectoryViewOnly(role)) {
     const actorDeptId = await getActorDepartmentId(userId);
     if (actorDeptId) {
       filtered = filtered.filter((e) => e.departmentId === actorDeptId);
@@ -515,6 +519,10 @@ router.post("/employees/cleanup-duplicates", requireAuth, async (req: AuthReques
 });
 
 router.post("/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (isEmployeeDirectoryViewOnly(req.userRole)) {
+    res.status(403).json({ error: "Xodim qo‘shish ruxsati yo‘q — faqat ko‘rish" });
+    return;
+  }
   const {
     fullName,
     position,
@@ -591,6 +599,12 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     return;
   }
 
+  const role = req.userRole ?? "";
+  if (isEmployeeDirectoryViewOnly(role)) {
+    res.status(403).json({ error: "Xodimlarni tahrirlash ruxsati yo‘q — faqat ko‘rish" });
+    return;
+  }
+
   const coordinates = String(req.body?.coordinates || "").trim();
   if (coordinates && req.userId) {
     const gps = await saveManagerBranchLocation({
@@ -608,14 +622,11 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     return;
   }
 
-  const role = req.userRole ?? "";
   const canEditShift = [
     ...HR_ROLES,
     "director",
     "admin",
-    "department_head",
     "mudir",
-    "koordinator",
   ].includes(role);
   const canEditStatus = canChangeStaffStatus(role);
   const canEditIdentity = canEditStatus;

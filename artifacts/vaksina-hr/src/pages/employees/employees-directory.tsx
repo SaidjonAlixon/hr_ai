@@ -29,7 +29,7 @@ import {
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
-import { canViewEmployees, canAddDeptStaff, canChangeStaffStatus } from "../../lib/roles";
+import { canViewEmployees, canAddDeptStaff, canChangeStaffStatus, isEmployeeDirectoryViewOnly } from "../../lib/roles";
 import { AddDeptStaffButton } from "../../components/dept/AddDeptStaffDialog";
 import { fetchStaff, staffQueryKey, type StaffGroup } from "../../lib/staff-api";
 import { formatPersonName } from "../../lib/person-name";
@@ -266,6 +266,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const qc = useQueryClient();
   const canEdit = canChangeStaffStatus(user?.role);
   const canAddStaff = canAddDeptStaff(user?.role);
+  const viewOnly = isEmployeeDirectoryViewOnly(user?.role);
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [workplaceFilter, setWorkplaceFilter] = useState<WorkplaceFilter>("all");
@@ -426,6 +427,13 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           </Button>
         </div>
       </div>
+
+      {viewOnly ? (
+        <div className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3.5 py-2.5 text-sm text-sky-900 dark:text-sky-100">
+          Siz xodimlar ro‘yxatini to‘liq ko‘rasiz — holatni o‘zgartirish yoki o‘chirish mumkin emas.
+          {canAddStaff ? " O‘z bo‘limingizga xodim qo‘shishingiz mumkin." : ""}
+        </div>
+      ) : null}
 
       {group === "active" ? (
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">

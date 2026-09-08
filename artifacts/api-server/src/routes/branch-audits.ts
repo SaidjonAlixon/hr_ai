@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, and } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import {
   db,
@@ -317,8 +317,28 @@ async function loadFilteredAudits(req: AuthRequest) {
     .from(branchAuditsTable)
     .orderBy(desc(branchAuditsTable.visitDate), desc(branchAuditsTable.id));
 
+  // Koordinator: o‘z filiallaridagi BARCHA tashriflar (kim yozganidan qat’i nazar) —
+  // shunda bir kunda 1 ta cheklist limitti UI da ham ko‘rinadi
   if (req.userRole === "koordinator" && req.userId) {
-    rows = rows.filter((r) => r.coordinatorId === req.userId);
+    const coordRows = await db
+      .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId));
+    const coord = coordRows.find((r) => r.orgRole === "coordinator") ?? coordRows[0];
+    if (!coord) {
+      rows = rows.filter((r) => r.coordinatorId === req.userId);
+    } else {
+      const owned = await db
+        .select({ id: employeesTable.id })
+        .from(employeesTable)
+        .where(
+          and(eq(employeesTable.orgRole, "manager"), eq(employeesTable.reportsToId, coord.id)),
+        );
+      const ownedIds = new Set(owned.map((m) => m.id));
+      rows = rows.filter(
+        (r) => ownedIds.has(r.managerEmployeeId) || r.coordinatorId === req.userId,
+      );
+    }
   }
 
   if (isPharmacyBranchRole(req.userRole) && req.userId) {
@@ -1170,9 +1190,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     });
     return;
   }
-  const sameDayVisit = visitsThisMonth.some(
-    (a) => String(a.visitDate || "") === visitDate,
-  );
+  const sameDayVisit = monthAudits.some((a) => String(a.visitDate || "") === visitDate);
   if (sameDayVisit) {
     res.status(400).json({
       error: "Bugun uchun bu filialga tashrif bo‘ldi — boshqasini tanlang",
@@ -1229,28 +1247,40 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
     .from(usersTable)
     .where(eq(usersTable.id, req.userId!));
 
-  const [created] = await db
-    .insert(branchAuditsTable)
-    .values({
-      managerEmployeeId,
-      branchLocation: displayBranchName(manager.location) || manager.fullName,
-      managerName: manager.fullName,
-      visitDate,
-      visitName,
-      monthLabel,
-      coordinatorId: req.userId!,
-      coordinatorName: coordUser?.fullName || null,
-      generalNote,
-      categories,
-      ...score,
-      checkLatitude: savedCheckLat,
-      checkLongitude: savedCheckLng,
-      distanceMeters,
-      status: "saved",
-    })
-    .returning();
+  try {
+    const [created] = await db
+      .insert(branchAuditsTable)
+      .values({
+        managerEmployeeId,
+        branchLocation: displayBranchName(manager.location) || manager.fullName,
+        managerName: manager.fullName,
+        visitDate,
+        visitName,
+        monthLabel,
+        coordinatorId: req.userId!,
+        coordinatorName: coordUser?.fullName || null,
+        generalNote,
+        categories,
+        ...score,
+        checkLatitude: savedCheckLat,
+        checkLongitude: savedCheckLng,
+        distanceMeters,
+        status: "saved",
+      })
+      .returning();
 
-  res.status(201).json(await enrich(created));
+    res.status(201).json(await enrich(created));
+  } catch (err: any) {
+    if (err?.code === "23505" || err?.cause?.code === "23505") {
+      res.status(400).json({
+        error: "Bugun uchun bu filialga tashrif bo‘ldi — boshqasini tanlang",
+        code: "same_day_visit",
+      });
+      return;
+    }
+    console.error("POST /branch-audits error:", err);
+    res.status(500).json({ error: "Cheklist saqlanmadi" });
+  }
 });
 
 /** Yangilash */
@@ -1280,30 +1310,67 @@ router.patch("/branch-audits/:id", requireAuth, async (req: AuthRequest, res): P
       : (existing.categories as AuditCategory[]);
   const score = computeScore(categories);
 
-  const [updated] = await db
-    .update(branchAuditsTable)
-    .set({
-      visitDate: req.body?.visitDate
-        ? String(req.body.visitDate).trim()
-        : existing.visitDate,
-      visitName: req.body?.visitName
-        ? String(req.body.visitName).trim()
-        : existing.visitName,
-      monthLabel:
-        req.body?.monthLabel !== undefined
-          ? String(req.body.monthLabel || "").trim() || null
-          : existing.monthLabel,
-      generalNote:
-        req.body?.generalNote !== undefined
-          ? String(req.body.generalNote || "").trim() || null
-          : existing.generalNote,
-      categories,
-      ...score,
-    })
-    .where(eq(branchAuditsTable.id, id))
-    .returning();
+  const nextVisitDate = req.body?.visitDate
+    ? String(req.body.visitDate).trim()
+    : existing.visitDate;
+  if (
+    nextVisitDate &&
+    nextVisitDate !== existing.visitDate &&
+    /^\d{4}-\d{2}-\d{2}$/.test(nextVisitDate)
+  ) {
+    const [clash] = await db
+      .select({ id: branchAuditsTable.id })
+      .from(branchAuditsTable)
+      .where(
+        and(
+          eq(branchAuditsTable.managerEmployeeId, existing.managerEmployeeId),
+          eq(branchAuditsTable.visitDate, nextVisitDate),
+        ),
+      )
+      .limit(1);
+    if (clash) {
+      res.status(400).json({
+        error: "Bu sanada ushbu filialga cheklist allaqachon bor",
+        code: "same_day_visit",
+      });
+      return;
+    }
+  }
 
-  res.json(await enrich(updated));
+  try {
+    const [updated] = await db
+      .update(branchAuditsTable)
+      .set({
+        visitDate: nextVisitDate,
+        visitName: req.body?.visitName
+          ? String(req.body.visitName).trim()
+          : existing.visitName,
+        monthLabel:
+          req.body?.monthLabel !== undefined
+            ? String(req.body.monthLabel || "").trim() || null
+            : existing.monthLabel,
+        generalNote:
+          req.body?.generalNote !== undefined
+            ? String(req.body.generalNote || "").trim() || null
+            : existing.generalNote,
+        categories,
+        ...score,
+      })
+      .where(eq(branchAuditsTable.id, id))
+      .returning();
+
+    res.json(await enrich(updated));
+  } catch (err: any) {
+    if (err?.code === "23505" || err?.cause?.code === "23505") {
+      res.status(400).json({
+        error: "Bu sanada ushbu filialga cheklist allaqachon bor",
+        code: "same_day_visit",
+      });
+      return;
+    }
+    console.error("PATCH /branch-audits error:", err);
+    res.status(500).json({ error: "Yangilanmadi" });
+  }
 });
 
 router.delete("/branch-audits/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {

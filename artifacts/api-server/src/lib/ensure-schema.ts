@@ -229,6 +229,15 @@ ALTER TABLE branch_audits ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISI
 ALTER TABLE branch_audits ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
 ALTER TABLE branch_audits ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
 
+-- Bir filial + bir sana = bitta cheklist (eski dublikatlarni olib tashlab unique)
+DELETE FROM branch_audits a
+USING branch_audits b
+WHERE a.manager_employee_id = b.manager_employee_id
+  AND a.visit_date = b.visit_date
+  AND a.id > b.id;
+CREATE UNIQUE INDEX IF NOT EXISTS branch_audits_manager_visit_date_uidx
+  ON branch_audits (manager_employee_id, visit_date);
+
 -- Employees GPS (checklist geofence) + employment + org
 DO $$
 BEGIN

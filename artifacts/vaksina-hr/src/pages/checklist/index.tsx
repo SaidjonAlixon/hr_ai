@@ -325,6 +325,7 @@ export default function ChecklistPage() {
   const [gpsWatching, setGpsWatching] = useState(false);
   const [gpsAsking, setGpsAsking] = useState(false);
   const watchRef = useRef<number | null>(null);
+  const saveLockRef = useRef(false);
 
   const canWrite = user?.role === "koordinator" || user?.role === "admin";
 
@@ -566,6 +567,7 @@ export default function ChecklistPage() {
   }
 
   async function handleSave() {
+    if (saveLockRef.current || createAudit.isPending) return;
     if (!canWrite) {
       toast({ title: t("checklist.noPermission"), variant: "destructive" });
       return;
@@ -600,47 +602,48 @@ export default function ChecklistPage() {
       return;
     }
 
+    saveLockRef.current = true;
     let saveGps = gps;
     const mustGps = user?.role === "koordinator";
-    if (mustGps) {
-      if (!branchHasCoords) {
-        toast({
-          title: t("checklist.noGps"),
-          description: t("checklist.gateNoGps"),
-          variant: "destructive",
-        });
-        return;
-      }
-      try {
-        saveGps = await readFreshGps();
-      } catch {
-        toast({
-          title: t("checklist.needLoc"),
-          description: t("checklist.enableLoc"),
-          variant: "destructive",
-        });
-        return;
-      }
-      const dist = haversineMeters(
-        saveGps.lat,
-        saveGps.lng,
-        selectedBranch!.latitude!,
-        selectedBranch!.longitude!,
-      );
-      if (dist > AUDIT_GEOFENCE_METERS) {
-        toast({
-          title: t("checklist.tooFar"),
-          description: tf(t, "checklist.gateFar", {
-            dist: formatDistance(dist),
-            m: AUDIT_GEOFENCE_METERS,
-          }),
-          variant: "destructive",
-        });
-        return;
-      }
-    }
-
     try {
+      if (mustGps) {
+        if (!branchHasCoords) {
+          toast({
+            title: t("checklist.noGps"),
+            description: t("checklist.gateNoGps"),
+            variant: "destructive",
+          });
+          return;
+        }
+        try {
+          saveGps = await readFreshGps();
+        } catch {
+          toast({
+            title: t("checklist.needLoc"),
+            description: t("checklist.enableLoc"),
+            variant: "destructive",
+          });
+          return;
+        }
+        const dist = haversineMeters(
+          saveGps.lat,
+          saveGps.lng,
+          selectedBranch!.latitude!,
+          selectedBranch!.longitude!,
+        );
+        if (dist > AUDIT_GEOFENCE_METERS) {
+          toast({
+            title: t("checklist.tooFar"),
+            description: tf(t, "checklist.gateFar", {
+              dist: formatDistance(dist),
+              m: AUDIT_GEOFENCE_METERS,
+            }),
+            variant: "destructive",
+          });
+          return;
+        }
+      }
+
       await createAudit.mutateAsync({
         managerEmployeeId: parseInt(managerId, 10),
         visitDate,
@@ -664,6 +667,8 @@ export default function ChecklistPage() {
         description: e?.message || t("ui.error"),
         variant: "destructive",
       });
+    } finally {
+      saveLockRef.current = false;
     }
   }
 
@@ -1166,6 +1171,7 @@ export default function ChecklistPage() {
               createAudit.isPending ||
               !canWrite ||
               monthFull ||
+              visitedToday ||
               (user?.role === "koordinator" && !canFillChecklist)
             }
             className="min-w-[160px] rounded-full"
@@ -1215,6 +1221,7 @@ export default function ChecklistPage() {
             createAudit.isPending ||
             !canWrite ||
             monthFull ||
+            visitedToday ||
             (user?.role === "koordinator" && !canFillChecklist)
           }
         >

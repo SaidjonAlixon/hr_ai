@@ -13,6 +13,8 @@ import {
   X,
   Info,
   Filter,
+  Trash2,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -40,6 +42,7 @@ import { canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRan
 import {
   downloadBranchAuditsExcel,
   useBranchAuditsList,
+  useDeleteBranchAudit,
   type BranchAudit,
 } from "@/lib/branch-audits-api";
 import { CoveragePanel } from "./coverage-panel";
@@ -142,6 +145,35 @@ export default function ChecklistHolatiPage() {
     },
     allowedFull && !isCoordOnly,
   );
+  const deleteAudit = useDeleteBranchAudit();
+  const canAdminDelete = user?.role === "admin";
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+
+  async function handleDeleteAudit(a: BranchAudit) {
+    if (!canAdminDelete) return;
+    const label = a.branchLocation || t("ui.branch");
+    if (
+      !window.confirm(
+        `"${label}" — ${formatWhen(a.visitDate, a.createdAt)} cheklistini butunlay o‘chirasizmi?\n\nDashboard, qamrov va tarixdan ham yo‘qoladi.`,
+      )
+    ) {
+      return;
+    }
+    setDeletingId(a.id);
+    try {
+      await deleteAudit.mutateAsync(a.id);
+      if (viewing?.id === a.id) setViewing(null);
+      toast({ title: "Cheklist o‘chirildi", description: "Barcha joylardan olib tashlandi" });
+    } catch (e: any) {
+      toast({
+        title: "O‘chirilmadi",
+        description: e?.message || t("ui.error"),
+        variant: "destructive",
+      });
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const coordinators = useMemo(() => {
     const map = new Map<number, string>();
@@ -595,63 +627,85 @@ export default function ChecklistHolatiPage() {
           <ul className="divide-y">
             {filtered.map((a) => {
               const map = mapsUrl(a.checkLatitude, a.checkLongitude);
+              const busy = deletingId === a.id || (deleteAudit.isPending && deletingId === a.id);
               return (
                 <li key={a.id} className="px-3 py-3 sm:px-4">
-                  <button
-                    type="button"
-                    onClick={() => setViewing(a)}
-                    className="w-full rounded-xl text-left transition hover:bg-muted"
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <p className="font-semibold text-foreground">
-                            {a.branchLocation || t("ui.branch")}
+                  <div className="flex items-start gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setViewing(a)}
+                      className="min-w-0 flex-1 rounded-xl text-left transition hover:bg-muted"
+                    >
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-semibold text-foreground">
+                              {a.branchLocation || t("ui.branch")}
+                            </p>
+                            <Badge className={cn("font-bold", scoreBadge(a.scorePercent))}>
+                              {a.scorePercent}%
+                            </Badge>
+                            <Badge variant="secondary" className="font-normal">
+                              {a.visitName}
+                            </Badge>
+                          </div>
+                          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                            <span className="inline-flex items-center gap-1">
+                              <CalendarDays className="h-3.5 w-3.5" />
+                              {formatWhen(a.visitDate, a.createdAt)}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <Store className="h-3.5 w-3.5" />
+                              Mudir: {a.managerName || "—"}
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <User className="h-3.5 w-3.5" />
+                              {a.coordinatorName || t("checklist.coord")}
+                            </span>
                           </p>
-                          <Badge className={cn("font-bold", scoreBadge(a.scorePercent))}>
-                            {a.scorePercent}%
-                          </Badge>
-                          <Badge variant="secondary" className="font-normal">
-                            {a.visitName}
-                          </Badge>
+                          <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+                            <span className="text-emerald-700">Ha {a.yesCount}</span>
+                            <span className="text-rose-700">Yo‘q {a.noCount}</span>
+                            {map ? (
+                              <a
+                                href={map}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                className="inline-flex items-center gap-1 font-medium text-sky-700 underline-offset-2 hover:underline"
+                              >
+                                <MapPin className="h-3.5 w-3.5" />
+                                Lokatsiya
+                                {a.distanceMeters != null ? ` · ${a.distanceMeters} m` : ""}
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">GPS yo‘q</span>
+                            )}
+                          </p>
                         </div>
-                        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span className="inline-flex items-center gap-1">
-                            <CalendarDays className="h-3.5 w-3.5" />
-                            {formatWhen(a.visitDate, a.createdAt)}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <Store className="h-3.5 w-3.5" />
-                            Mudir: {a.managerName || "—"}
-                          </span>
-                          <span className="inline-flex items-center gap-1">
-                            <User className="h-3.5 w-3.5" />
-                            {a.coordinatorName || t("checklist.coord")}
-                          </span>
-                        </p>
-                        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-                          <span className="text-emerald-700">Ha {a.yesCount}</span>
-                          <span className="text-rose-700">Yo‘q {a.noCount}</span>
-                          {map ? (
-                            <a
-                              href={map}
-                              target="_blank"
-                              rel="noreferrer"
-                              onClick={(e) => e.stopPropagation()}
-                              className="inline-flex items-center gap-1 font-medium text-sky-700 underline-offset-2 hover:underline"
-                            >
-                              <MapPin className="h-3.5 w-3.5" />
-                              Lokatsiya
-                              {a.distanceMeters != null ? ` · ${a.distanceMeters} m` : ""}
-                            </a>
-                          ) : (
-                            <span className="text-muted-foreground">GPS yo‘q</span>
-                          )}
-                        </p>
+                        <span className="text-xs font-medium text-muted-foreground sm:pt-1">
+                          Batafsil →
+                        </span>
                       </div>
-                      <span className="text-xs font-medium text-muted-foreground sm:pt-1">Batafsil →</span>
-                    </div>
-                  </button>
+                    </button>
+                    {canAdminDelete ? (
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        className="mt-0.5 h-9 w-9 shrink-0 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                        disabled={busy}
+                        title="Cheklistni o‘chirish"
+                        onClick={() => void handleDeleteAudit(a)}
+                      >
+                        {busy ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    ) : null}
+                  </div>
                 </li>
               );
             })}
@@ -673,6 +727,25 @@ export default function ChecklistHolatiPage() {
           </DialogHeader>
           {viewing && (
             <div className="space-y-4 text-sm">
+              {canAdminDelete ? (
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="destructive"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={deletingId === viewing.id}
+                    onClick={() => void handleDeleteAudit(viewing)}
+                  >
+                    {deletingId === viewing.id ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="h-4 w-4" />
+                    )}
+                    O‘chirish
+                  </Button>
+                </div>
+              ) : null}
               <Progress value={viewing.scorePercent} className="h-2" />
               <div className="grid gap-2 rounded-xl border bg-muted p-3 text-xs text-muted-foreground sm:grid-cols-2">
                 <p>

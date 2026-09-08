@@ -118,19 +118,7 @@ export function DavomatPremiumView(p: Props) {
                 <ArrowLeft className="h-3.5 w-3.5" />
                 Orqaga
               </Link>
-              <p className="inline-flex items-center gap-2 text-[15px] text-white/85 drop-shadow-sm">
-                Assalomu alaykum
-                <span className="dv-wave-sticker" aria-hidden>
-                  <img
-                    src="/wave-sticker.png"
-                    alt=""
-                    width={28}
-                    height={28}
-                    className="dv-wave-img"
-                    draggable={false}
-                  />
-                </span>
-              </p>
+              <p className="text-[15px] text-white/85 drop-shadow-sm">Assalomu alaykum</p>
               <h1 className="mt-0.5 truncate text-2xl font-bold tracking-tight text-white drop-shadow-sm">
                 {p.firstName}
               </h1>
@@ -467,40 +455,6 @@ export function DavomatPremiumView(p: Props) {
           ) : null}
         </div>
       </div>
-
-      <style>{`
-        .dv-wave-sticker {
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          width: 1.85rem;
-          height: 1.85rem;
-          border-radius: 9999px;
-          background: linear-gradient(160deg, rgba(255,255,255,0.22), rgba(255,255,255,0.06));
-          border: 1px solid rgba(255,255,255,0.28);
-          box-shadow:
-            0 6px 14px rgba(0,0,0,0.28),
-            inset 0 1px 0 rgba(255,255,255,0.35);
-          backdrop-filter: blur(8px);
-          overflow: hidden;
-        }
-        .dv-wave-img {
-          width: 1.35rem;
-          height: 1.35rem;
-          object-fit: contain;
-          transform-origin: 70% 80%;
-          animation: dv-wave-premium 2.2s ease-in-out infinite;
-          user-select: none;
-          -webkit-user-drag: none;
-        }
-        @keyframes dv-wave-premium {
-          0%, 64%, 100% { transform: rotate(0deg) scale(1); }
-          14% { transform: rotate(14deg) scale(1.06); }
-          28% { transform: rotate(-8deg) scale(1.03); }
-          42% { transform: rotate(10deg) scale(1.05); }
-          54% { transform: rotate(-3deg) scale(1); }
-        }
-      `}</style>
     </div>
   );
 }

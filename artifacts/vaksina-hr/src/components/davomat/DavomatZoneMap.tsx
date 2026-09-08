@@ -44,24 +44,23 @@ function branchIcon() {
   });
 }
 
-/** Yandex Maps uslubidagi navigatsiya kursori: konus + o‘q */
+/** Yandex Maps uslubidagi navigatsiya kursori: konus + o‘q (0° = shimol / yuqori) */
 function userNavIcon(heading: number, inside: boolean) {
   const rot = Number.isFinite(heading) ? heading : 0;
-  const gid = `dvCone${Math.round(rot * 10) % 10000}`;
   return L.divIcon({
     className: "dv-lf-user",
     html: `<div class="dv-lf-user-wrap ${inside ? "is-in" : "is-out"}">
-      <div class="dv-lf-nav" style="transform:rotate(${rot}deg)">
+      <div class="dv-lf-nav" data-dv-nav="1" style="transform:rotate(${rot}deg)">
         <div class="dv-lf-nav-cone" aria-hidden="true">
           <svg viewBox="0 0 120 120" width="120" height="120">
             <defs>
-              <radialGradient id="${gid}" cx="50%" cy="78%" r="72%">
+              <radialGradient id="dvConeGrad" cx="50%" cy="78%" r="72%">
                 <stop offset="0%" stop-color="rgba(59,130,246,0.55)"/>
                 <stop offset="55%" stop-color="rgba(59,130,246,0.18)"/>
                 <stop offset="100%" stop-color="rgba(59,130,246,0)"/>
               </radialGradient>
             </defs>
-            <path d="M60 60 L18 8 Q60 -6 102 8 Z" fill="url(#${gid})"/>
+            <path d="M60 60 L18 8 Q60 -6 102 8 Z" fill="url(#dvConeGrad)"/>
           </svg>
         </div>
         <div class="dv-lf-nav-core">
@@ -76,6 +75,13 @@ function userNavIcon(heading: number, inside: boolean) {
     iconSize: [120, 120],
     iconAnchor: [60, 60],
   });
+}
+
+function setMarkerHeading(marker: L.Marker | null, heading: number) {
+  if (!marker) return;
+  const el = marker.getElement();
+  const nav = el?.querySelector<HTMLElement>("[data-dv-nav]");
+  if (nav) nav.style.transform = `rotate(${heading}deg)`;
 }
 
 /** Dark OSM map + green zone + live Yandex-style nav cursor */
@@ -258,6 +264,9 @@ export function DavomatZoneMap({
     if (heading == null) heading = lastHeading.current;
     lastHeading.current = heading;
 
+    // Heading — darhol (telefon bilan sync), animatsiyasiz
+    setMarkerHeading(userRef.current, heading);
+
     const acc = Math.max(
       8,
       Math.min(80, typeof accuracyMeters === "number" && accuracyMeters > 0 ? accuracyMeters : 18),
@@ -265,26 +274,32 @@ export function DavomatZoneMap({
 
     const from = lastUser.current ?? { lat: targetLat, lng: targetLng, heading };
     const to = { lat: targetLat, lng: targetLng, heading };
-    const distMoved =
-      Math.hypot(to.lat - from.lat, to.lng - from.lng) * 111_320; /* ~m */
+    const distMoved = Math.hypot(to.lat - from.lat, to.lng - from.lng) * 111_320;
 
     if (animRef.current != null) cancelAnimationFrame(animRef.current);
 
     const duration = distMoved > 0.4 ? Math.min(700, Math.max(220, distMoved * 40)) : 0;
     const t0 = performance.now();
+    const insideChanged =
+      !!userRef.current?.getElement()?.querySelector(".dv-lf-user-wrap") &&
+      ((inside && !userRef.current.getElement()?.querySelector(".is-in")) ||
+        (!inside && !userRef.current.getElement()?.querySelector(".is-out")));
 
     const applyFrame = (lat: number, lng: number, h: number, done: boolean) => {
-      const icon = userNavIcon(h, inside);
       if (!userRef.current) {
         userRef.current = L.marker([lat, lng], {
-          icon,
+          icon: userNavIcon(h, inside),
           interactive: false,
           zIndexOffset: 900,
           keyboard: false,
         }).addTo(map);
       } else {
         userRef.current.setLatLng([lat, lng]);
-        userRef.current.setIcon(icon);
+        if (insideChanged) {
+          userRef.current.setIcon(userNavIcon(h, inside));
+        } else {
+          setMarkerHeading(userRef.current, h);
+        }
       }
 
       if (!accuracyRef.current) {
@@ -309,7 +324,7 @@ export function DavomatZoneMap({
     };
 
     if (duration <= 0 || !userRef.current) {
-      applyFrame(to.lat, to.lng, to.heading, true);
+      applyFrame(to.lat, to.lng, heading, true);
       return;
     }
 
@@ -318,10 +333,8 @@ export function DavomatZoneMap({
       const ease = 1 - (1 - p) * (1 - p);
       const lat = from.lat + (to.lat - from.lat) * ease;
       const lng = from.lng + (to.lng - from.lng) * ease;
-      // shortest-path heading lerp
-      let dH = ((to.heading - from.heading + 540) % 360) - 180;
-      const h = (from.heading + dH * ease + 360) % 360;
-      applyFrame(lat, lng, h, p >= 1);
+      // Joylashuv silliq; heading — joriy kompas (kechikmasin)
+      applyFrame(lat, lng, lastHeading.current, p >= 1);
       if (p < 1) animRef.current = requestAnimationFrame(tick);
       else animRef.current = null;
     };

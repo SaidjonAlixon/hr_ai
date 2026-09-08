@@ -12,9 +12,6 @@ import { cn } from "../../lib/utils";
 import { EmployeesTabs } from "./employees-tabs";
 import { useI18n } from "../../i18n/I18nProvider";
 import { canViewEmployeeDuplicates } from "../../lib/roles";
-import { canViewEmployeeDuplicates } from "../../lib/roles";
-import { useLocation } from "wouter";
-import { useEffect } from "react";
 
 type DuplicateMember = {
   id: number;

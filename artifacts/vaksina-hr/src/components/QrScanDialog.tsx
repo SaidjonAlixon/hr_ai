@@ -243,7 +243,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
     "QR kodni ramka ichiga joylashtiring — avtomatik o‘qiladi";
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] bg-black" role="dialog" aria-modal="true" aria-label={heading}>
+    <div className="fixed inset-0 z-[110] bg-black" role="dialog" aria-modal="true" aria-label={heading}>
       <video
         ref={videoRef}
         className="absolute inset-0 h-full w-full object-cover"

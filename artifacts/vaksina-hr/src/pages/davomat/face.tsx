@@ -36,6 +36,7 @@ import { QrScanDialog, openScanCamera } from "@/components/QrScanDialog";
 import { DavomatPremiumView, type PremiumMethod } from "@/components/davomat/DavomatPremiumView";
 import { useToast } from "@/hooks/use-toast";
 import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
+import { deviceHeadingFromOrientation } from "@/lib/device-compass";
 import {
   DAVOMAT_GEOFENCE_METERS,
   DAVOMAT_OFFICE_GEOFENCE_METERS,
@@ -799,6 +800,7 @@ export default function DavomatFacePage() {
   const watchRef = useRef<number | null>(null);
   const compassRef = useRef<number | null>(null);
   const lastCompassRef = useRef<number | null>(null);
+  const hasAbsoluteCompassRef = useRef(false);
   const punchLockRef = useRef(false);
   const tgBootRef = useRef(false);
   const tgScanRef = useRef(false);
@@ -921,16 +923,14 @@ export default function DavomatFacePage() {
       typeof pos.coords.speed === "number" && Number.isFinite(pos.coords.speed)
         ? pos.coords.speed
         : null;
+    const movingFast = speed != null && speed > 1.8;
 
     setGps((prev) => {
-      let nextHeading = gpsHeading;
-      const moving = speed != null && speed > 0.6;
-
-      // Harakatda GPS heading; turib turganda kompas
-      if (!moving || nextHeading == null) {
-        if (lastCompassRef.current != null) nextHeading = lastCompassRef.current;
+      // Asosiy: kompas (telefon oldi). GPS heading faqat tez harakat + kompas yo‘q.
+      let nextHeading = lastCompassRef.current;
+      if (nextHeading == null && movingFast && gpsHeading != null) {
+        nextHeading = gpsHeading;
       }
-
       if (nextHeading == null && prev) {
         const dLat = Math.abs(pos.coords.latitude - prev.lat);
         const dLng = Math.abs(pos.coords.longitude - prev.lng);
@@ -960,27 +960,20 @@ export default function DavomatFacePage() {
   };
 
   const onCompass = useCallback((ev: DeviceOrientationEvent) => {
-    // iOS: webkitCompassHeading; Android: absolute alpha
-    const w = ev as DeviceOrientationEvent & { webkitCompassHeading?: number };
-    let deg: number | null = null;
-    if (typeof w.webkitCompassHeading === "number" && Number.isFinite(w.webkitCompassHeading)) {
-      deg = w.webkitCompassHeading;
-    } else if (typeof ev.alpha === "number" && Number.isFinite(ev.alpha)) {
-      // absolute: 0 = north; screen orientation offset
-      const orient =
-        typeof window.orientation === "number"
-          ? window.orientation
-          : (screen.orientation?.angle ?? 0);
-      deg = (360 - ev.alpha + orient + 360) % 360;
+    // Absolute bor bo‘lsa, relative eventlarni e’tiborsiz qoldiramiz
+    if (ev.type === "deviceorientationabsolute") {
+      hasAbsoluteCompassRef.current = true;
+    } else if (hasAbsoluteCompassRef.current && ev.type === "deviceorientation") {
+      return;
     }
+    const deg = deviceHeadingFromOrientation(ev);
     if (deg == null) return;
     lastCompassRef.current = deg;
     setGps((prev) => {
       if (!prev) return prev;
-      const moving = prev.speed != null && prev.speed > 0.6;
-      if (moving && prev.heading != null) return prev;
-      if (prev.heading != null && Math.abs(((prev.heading - deg!) + 540) % 360 - 180) < 2) {
-        return prev;
+      if (prev.heading != null) {
+        const delta = Math.abs(((prev.heading - deg) + 540) % 360 - 180);
+        if (delta < 1) return prev;
       }
       return { ...prev, heading: deg };
     });
@@ -988,6 +981,7 @@ export default function DavomatFacePage() {
 
   const startCompass = useCallback(async () => {
     if (typeof window === "undefined") return;
+    if (compassRef.current) return;
     const DOE = DeviceOrientationEvent as unknown as {
       requestPermission?: () => Promise<"granted" | "denied" | "default">;
     };
@@ -999,13 +993,13 @@ export default function DavomatFacePage() {
     } catch {
       /* ignore */
     }
-    window.removeEventListener("deviceorientationabsolute", onCompass as EventListener);
-    window.removeEventListener("deviceorientation", onCompass as EventListener);
-    if ("ondeviceorientationabsolute" in window) {
-      window.addEventListener("deviceorientationabsolute", onCompass as EventListener, true);
-    } else {
-      window.addEventListener("deviceorientation", onCompass as EventListener, true);
-    }
+
+    const opts: AddEventListenerOptions = { capture: true, passive: true };
+    window.removeEventListener("deviceorientationabsolute", onCompass as EventListener, true);
+    window.removeEventListener("deviceorientation", onCompass as EventListener, true);
+    // Absolute birinchi (Android Chrome)
+    window.addEventListener("deviceorientationabsolute", onCompass as EventListener, opts);
+    window.addEventListener("deviceorientation", onCompass as EventListener, opts);
     compassRef.current = 1;
   }, [onCompass]);
 
@@ -1021,7 +1015,7 @@ export default function DavomatFacePage() {
             : t("davomat.gpsFailed"),
         );
       },
-      { enableHighAccuracy: true, maximumAge: 800, timeout: 15_000 },
+      { enableHighAccuracy: true, maximumAge: 500, timeout: 12_000 },
     );
     void startCompass();
   }, [t, startCompass]);
@@ -1033,12 +1027,15 @@ export default function DavomatFacePage() {
     void queryCameraPermission().then((state) => {
       if (state === "granted") setCameraGranted(true);
     });
+    // GPS allaqachon bo‘lsa — kompasni ham yoqamiz
+    void startCompass();
     return () => {
       if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
-      window.removeEventListener("deviceorientationabsolute", onCompass as EventListener);
-      window.removeEventListener("deviceorientation", onCompass as EventListener);
+      window.removeEventListener("deviceorientationabsolute", onCompass as EventListener, true);
+      window.removeEventListener("deviceorientation", onCompass as EventListener, true);
+      compassRef.current = null;
     };
-  }, [t, onCompass]);
+  }, [t, onCompass, startCompass]);
 
   const requestLocationPermission = async () => {
     setGpsSharing(true);

@@ -9,6 +9,7 @@ import {
   sendMessage,
 } from "./telegram";
 import { logger } from "./logger";
+import { sendWebPushToUser } from "./web-push";
 
 /** Faol HR (va ixtiyoriy admin) ga bildirishnoma */
 export async function notifyActiveHrs(opts: {
@@ -78,6 +79,9 @@ export async function notifyUser(opts: {
   type: string;
   linkUrl: string;
   telegram?: boolean;
+  /** Standart: true — telefonga Chrome/Safari push */
+  webPush?: boolean;
+  title?: string;
 }): Promise<void> {
   if (!opts.userId) return;
   await db.insert(notificationsTable).values({
@@ -88,6 +92,18 @@ export async function notifyUser(opts: {
   });
   if (opts.telegram) {
     await pushTelegramToUser(opts.userId, opts.text, opts.linkUrl);
+  }
+  if (opts.webPush !== false) {
+    try {
+      await sendWebPushToUser(opts.userId, {
+        title: opts.title || "VAKSINA HR",
+        body: opts.text,
+        url: opts.linkUrl || "/",
+        tag: opts.type,
+      });
+    } catch (err) {
+      logger.warn({ err, userId: opts.userId }, "Web push notify failed");
+    }
   }
 }
 

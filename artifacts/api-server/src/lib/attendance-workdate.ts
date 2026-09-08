@@ -9,7 +9,7 @@ export type Ymd = string;
 
 /**
  * Punch uchun workDate:
- * - ochiq (check-in bor, check-out yo‘q) yozuv — o‘sha kun
+ * - ochiq (check-in bor, check-out yo‘q, absent/leave emas) yozuv — o‘sha kun
  * - tungi smena: yarim tundan keyin ham smena boshlangan kun
  * - aks holda bugun
  */
@@ -19,23 +19,38 @@ export function resolveAttendanceWorkDate(opts: {
   shiftType?: string | null;
   shiftLabel?: string | null;
   /** Bugungi yozuv */
-  todayRec?: { checkInAt?: Date | null; checkOutAt?: Date | null } | null;
+  todayRec?: {
+    checkInAt?: Date | null;
+    checkOutAt?: Date | null;
+    status?: string | null;
+  } | null;
   /** Kecha yozuv */
-  yesterdayRec?: { checkInAt?: Date | null; checkOutAt?: Date | null } | null;
+  yesterdayRec?: {
+    checkInAt?: Date | null;
+    checkOutAt?: Date | null;
+    status?: string | null;
+  } | null;
   yesterdayYmd: string;
 }): { workDate: string; reason: string } {
   const { todayYmd, yesterdayYmd, now, todayRec, yesterdayRec } = opts;
   const keys = parseShiftKeys(opts.shiftType, opts.shiftLabel) as ShiftKey[];
 
-  if (todayRec?.checkInAt && !todayRec?.checkOutAt) {
+  const isOpen = (rec?: { checkInAt?: Date | null; checkOutAt?: Date | null; status?: string | null } | null) => {
+    if (!rec?.checkInAt || rec.checkOutAt) return false;
+    const st = rec.status || "";
+    if (st === "absent" || st === "leave") return false;
+    return true;
+  };
+
+  if (isOpen(todayRec)) {
     return { workDate: todayYmd, reason: "open_today" };
   }
-  if (yesterdayRec?.checkInAt && !yesterdayRec?.checkOutAt) {
+  if (isOpen(yesterdayRec)) {
     return { workDate: yesterdayYmd, reason: "open_overnight" };
   }
 
   // Tungi smena: yarim tundan keyin, lekin hali 07:00+grace ichida — kechagi smena
-  if (keys.includes("three") && !yesterdayRec?.checkOutAt) {
+  if (keys.includes("three") && isOpen(yesterdayRec)) {
     const plan = plannedInterval(yesterdayYmd, "three");
     const graceEnd = plan.endMs + 2 * 60 * 60_000; // +2 soat tuzatish oynasi
     if (now.getTime() >= plan.startMs && now.getTime() <= graceEnd) {

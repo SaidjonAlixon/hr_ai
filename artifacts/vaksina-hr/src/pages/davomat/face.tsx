@@ -141,6 +141,22 @@ function formatElapsed(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+/** Smena tugagach Ketdim uchun 2 soatlik oyna (backend CHECKOUT_GRACE_MS bilan bir xil) */
+const CHECKOUT_GRACE_MS = 2 * 60 * 60 * 1000;
+
+function addYmdDays(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + days));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** workDate + endHm → smena tugashi (Toshkent, UTC+5) */
+function shiftEndMs(workDateYmd: string, endHm: string, overnight?: boolean): number {
+  const endDay = overnight ? addYmdDays(workDateYmd, 1) : workDateYmd;
+  const hm = /^\d{1,2}:\d{2}$/.test(endHm) ? endHm : "18:00";
+  return new Date(`${endDay}T${hm}:00+05:00`).getTime();
+}
+
 function formatHours(mins: number, t: Translate): string {
   const n = Math.max(0, Math.round(mins));
   const h = Math.floor(n / 60);
@@ -871,6 +887,14 @@ export default function DavomatFacePage() {
     void loadWorkplace();
   }, [loadWorkplace]);
 
+  /** Telefon OS bildirishnomasi ruxsati — Ketdim eslatmalari uchun */
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission !== "default") return;
+    void Notification.requestPermission();
+  }, [isAuthenticated]);
+
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
@@ -1109,14 +1133,47 @@ export default function DavomatFacePage() {
 
   const checkInAtIso = verified?.checkInAt || workplace?.today.checkInAt || null;
   const checkOutAtIso = verified?.checkOutAt || workplace?.today.checkOutAt || null;
-  const working = Boolean(checkInAtIso) && !(verified?.nextAction === "done" || workplace?.today.complete);
+  const dayStatus = workplace?.today.status || null;
+  const working =
+    Boolean(checkInAtIso) &&
+    dayStatus !== "absent" &&
+    dayStatus !== "leave" &&
+    !(verified?.nextAction === "done" || workplace?.today.complete);
+
+  const workDateYmd =
+    workplace?.workDate ||
+    new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Tashkent",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date(nowTick));
 
   const elapsedLabel = useMemo(() => {
     if (!checkInAtIso) return "0:00:00";
     const start = new Date(checkInAtIso).getTime();
-    const end = checkOutAtIso ? new Date(checkOutAtIso).getTime() : nowTick;
-    return formatElapsed(Math.max(0, end - start));
-  }, [checkInAtIso, checkOutAtIso, nowTick]);
+    const shiftEnd =
+      workplace?.shift?.end ||
+      (user?.role ? workShiftForUserRole(user.role).end : null) ||
+      "18:00";
+    const overnight =
+      workplace?.shift?.overnight ??
+      (user?.role ? Boolean(workShiftForUserRole(user.role).overnight) : false);
+    const graceCap = shiftEndMs(workDateYmd, shiftEnd, overnight) + CHECKOUT_GRACE_MS;
+    const rawEnd = checkOutAtIso
+      ? new Date(checkOutAtIso).getTime()
+      : Math.min(nowTick, graceCap);
+    return formatElapsed(Math.max(0, rawEnd - start));
+  }, [
+    checkInAtIso,
+    checkOutAtIso,
+    nowTick,
+    workDateYmd,
+    workplace?.shift?.end,
+    workplace?.shift?.overnight,
+    dayStatus,
+    user?.role,
+  ]);
 
   const clockLabel = useMemo(
     () =>
@@ -1879,6 +1936,13 @@ export default function DavomatFacePage() {
                   <span className="text-emerald-300">{d.checkIn}</span>
                   <span className="text-white/30"> · </span>
                   <span className="text-rose-300">{d.checkOut}</span>
+                </p>
+                <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-sky-300/95">
+                  {d.workedMinutes > 0
+                    ? formatHours(d.workedMinutes, t)
+                    : d.workedHours && d.workedHours !== "0:00" && d.workedHours !== "0"
+                      ? d.workedHours
+                      : `0 ${t("davomat.hourShort")}`}
                 </p>
                 <p className="text-[10px] text-white/45">
                   {t(STATUS_KEYS[d.status] || d.status, d.status)}

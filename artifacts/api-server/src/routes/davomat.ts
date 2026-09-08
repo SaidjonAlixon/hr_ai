@@ -35,6 +35,8 @@ import {
   workScheduleForStaff,
   normalizeShiftType,
   encodeShiftKeys,
+  shiftEndAt,
+  CHECKOUT_GRACE_MS,
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
@@ -1457,7 +1459,7 @@ async function applyFacePunch(opts: {
         .limit(1)
         .for("update");
 
-      if (existing?.checkOutAt) {
+      if (existing?.checkOutAt || existing?.status === "absent" || existing?.status === "leave") {
         return oncePerDayFail(emp, existing, "already_complete");
       }
       if (action === "in" && existing?.checkInAt) {
@@ -1473,6 +1475,38 @@ async function applyFacePunch(opts: {
             fullName: emp.fullName,
           },
         };
+      }
+
+      // Smena tugagach +2 soatdan keyin Ketdim qabul qilinmaydi
+      if (action === "out" && existing?.checkInAt) {
+        const sched = workScheduleForStaff(
+          userRole,
+          emp.orgRole,
+          punchShiftType,
+          punchShiftLabel,
+          defs,
+        );
+        const endAt = shiftEndAt(workDate, sched.end, sched.overnight);
+        if (now.getTime() > endAt.getTime() + CHECKOUT_GRACE_MS) {
+          await tx
+            .update(attendanceRecordsTable)
+            .set({
+              status: "absent",
+              notes: `auto_absent_no_checkout: Ketdim kechikdi (smena ${sched.end}+2soat)`,
+              updatedAt: new Date(),
+            })
+            .where(eq(attendanceRecordsTable.id, existing.id));
+          return {
+            ok: false,
+            status: 400,
+            body: {
+              error:
+                "Smena tugagach 2 soat o‘tdi — bugun «kelmagan» deb yopildi. Ertaga «Keldim» dan boshlang.",
+              code: "checkout_window_closed",
+              fullName: emp.fullName,
+            },
+          };
+        }
       }
 
       let checkInAt = existing?.checkInAt ?? null;
@@ -1669,17 +1703,58 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           label: DAVOMAT_SITE_LABEL,
           kind: "office" as const,
         };
-    const workDate = todayTashkent();
-    const [rec] = await db
+    const today = todayTashkent();
+    const yesterday = addDaysYmd(today, -1);
+    const [todayRec] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(
+        and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, today)),
+      )
+      .limit(1);
+    const [yesterdayRec] = await db
       .select()
       .from(attendanceRecordsTable)
       .where(
         and(
           eq(attendanceRecordsTable.employeeId, emp.id),
-          eq(attendanceRecordsTable.workDate, workDate),
+          eq(attendanceRecordsTable.workDate, yesterday),
         ),
       )
       .limit(1);
+    const planToday =
+      (await dayShiftTypeFor(emp.id, today)) || (await dayShiftTypeFor(emp.id, yesterday));
+    const shiftType = planToday || emp.shiftType;
+    const shiftLabel = planToday ? null : emp.shiftLabel;
+    const workDate = resolveAttendanceWorkDate({
+      todayYmd: today,
+      yesterdayYmd: yesterday,
+      now: new Date(),
+      shiftType,
+      shiftLabel,
+      todayRec,
+      yesterdayRec,
+    }).workDate;
+    const [rec] =
+      workDate === today
+        ? [todayRec]
+        : workDate === yesterday
+          ? [yesterdayRec]
+          : await db
+              .select()
+              .from(attendanceRecordsTable)
+              .where(
+                and(
+                  eq(attendanceRecordsTable.employeeId, emp.id),
+                  eq(attendanceRecordsTable.workDate, workDate),
+                ),
+              )
+              .limit(1);
+
+    const planForWorkDate = await dayShiftTypeFor(emp.id, workDate);
+    const punchShiftType = planForWorkDate || shiftType;
+    const punchShiftLabel = planForWorkDate ? null : shiftLabel;
+    const defs = await getEffectiveShiftDefs();
 
     res.json({
       allowedMeters: geofenceMetersForKind(point.kind),
@@ -1693,12 +1768,19 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       gpsError: resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q"),
       workDate,
       shift: (() => {
-        const w = workScheduleForStaff(user.role, emp.orgRole, emp.shiftType, emp.shiftLabel);
+        const w = workScheduleForStaff(
+          user.role,
+          emp.orgRole,
+          punchShiftType,
+          punchShiftLabel,
+          defs,
+        );
         return {
           type: w.key,
           label: w.label,
           start: w.start,
           end: w.end,
+          overnight: Boolean(w.overnight),
           warnHm: w.warnHm,
           warnText: w.warnText,
         };
@@ -1720,8 +1802,17 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
             checkInMethod: rec.checkInMethod ?? null,
             checkOutMethod: rec.checkOutMethod ?? null,
             status: rec.status,
-            complete: Boolean(rec.checkInAt && rec.checkOutAt),
-            nextAction: !rec.checkInAt ? "in" : !rec.checkOutAt ? "out" : "done",
+            complete:
+              Boolean(rec.checkOutAt) ||
+              rec.status === "absent" ||
+              rec.status === "leave" ||
+              Boolean(rec.checkInAt && rec.checkOutAt),
+            nextAction:
+              rec.status === "absent" || rec.status === "leave" || rec.checkOutAt
+                ? "done"
+                : !rec.checkInAt
+                  ? "in"
+                  : "out",
           }
         : {
             checkIn: "—",
@@ -1755,7 +1846,6 @@ router.get("/davomat/site", async (_req, res): Promise<void> => {
 /** Banner / ogohlantirish holati — barcha login qilgan xodimlar */
 router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const workDate = todayTashkent();
     const [user] = await db
       .select({
         id: usersTable.id,
@@ -1772,30 +1862,66 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
     let checkIn = "—";
     let checkOut = "—";
     let fullName: string | null = user?.fullName ?? null;
+    let workDate = todayTashkent();
 
     if (emp) {
       fullName = emp.fullName;
-      const [rec] = await db
+      const today = todayTashkent();
+      const yesterday = addDaysYmd(today, -1);
+      const [todayRec] = await db
+        .select()
+        .from(attendanceRecordsTable)
+        .where(
+          and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, today)),
+        )
+        .limit(1);
+      const [yesterdayRec] = await db
         .select()
         .from(attendanceRecordsTable)
         .where(
           and(
             eq(attendanceRecordsTable.employeeId, emp.id),
-            eq(attendanceRecordsTable.workDate, workDate),
+            eq(attendanceRecordsTable.workDate, yesterday),
           ),
         )
         .limit(1);
-      checkIn = formatHm(rec?.checkInAt ?? null);
-      checkOut = formatHm(rec?.checkOutAt ?? null);
-      if (!rec?.checkInAt) nextAction = "in";
-      else if (!rec.checkOutAt) nextAction = "out";
-      else nextAction = "done";
+      const planToday =
+        (await dayShiftTypeFor(emp.id, today)) || (await dayShiftTypeFor(emp.id, yesterday));
+      workDate = resolveAttendanceWorkDate({
+        todayYmd: today,
+        yesterdayYmd: yesterday,
+        now: new Date(),
+        shiftType: planToday || emp.shiftType,
+        shiftLabel: planToday ? null : emp.shiftLabel,
+        todayRec,
+        yesterdayRec,
+      }).workDate;
+      const rec =
+        workDate === today ? todayRec : workDate === yesterday ? yesterdayRec : undefined;
+      const [recAlt] = rec
+        ? [rec]
+        : await db
+            .select()
+            .from(attendanceRecordsTable)
+            .where(
+              and(
+                eq(attendanceRecordsTable.employeeId, emp.id),
+                eq(attendanceRecordsTable.workDate, workDate),
+              ),
+            )
+            .limit(1);
+      const row = rec ?? recAlt;
+      checkIn = formatHm(row?.checkInAt ?? null);
+      checkOut = formatHm(row?.checkOutAt ?? null);
+      if (row?.status === "absent" || row?.status === "leave" || row?.checkOutAt) nextAction = "done";
+      else if (!row?.checkInAt) nextAction = "in";
+      else nextAction = "out";
     }
 
     const messages: Record<string, string> = {
       in: `Bugun hali kelish belgilanmagan — Face ID bilan davomatdan o‘ting (filial ${DAVOMAT_GEOFENCE_METERS} m / ofis ${DAVOMAT_OFFICE_GEOFENCE_METERS} m).`,
       out: "Kelish belgilandi. Ketishni ham Face ID bilan belgilang.",
-      done: "Bugungi davomat yopilgan (kelish va ketish).",
+      done: "Bugungi davomat yopilgan (kelish/ketish yoki avtomatik yopilgan).",
       unlinked: "Davomat Face ID orqali majburiy.",
     };
 
@@ -1955,7 +2081,12 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
         ),
       )
       .limit(1);
-    const nextAction = !rec?.checkInAt ? "in" : !rec.checkOutAt ? "out" : "done";
+    const nextAction =
+      rec?.status === "absent" || rec?.status === "leave" || rec?.checkOutAt
+        ? "done"
+        : !rec?.checkInAt
+          ? "in"
+          : "out";
     const own = await ownEmployeeReport(resolved.emp.id);
     const sessionUser = await adoptFaceSession(res, resolved.user.id);
     res.json({

@@ -42,6 +42,8 @@ import deptStaffRouter from "./dept-staff";
 import distribyutsiyaRouter from "./distribyutsiya";
 import helpRouter from "./help";
 import javobOlishRouter from "./javob-olish";
+import notifTestRouter from "./notif-test";
+import pushRouter from "./push";
 
 const router: IRouter = Router();
 
@@ -72,6 +74,8 @@ router.use(opsDeptRouter);
 router.use(deptStaffRouter);
 router.use(distribyutsiyaRouter);
 router.use(helpRouter);
+router.use(notifTestRouter);
+router.use(pushRouter);
 router.use(departmentsRouter);
 router.use(usersRouter);
 router.use(staffingRouter);

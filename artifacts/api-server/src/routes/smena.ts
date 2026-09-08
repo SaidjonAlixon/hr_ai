@@ -443,8 +443,9 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
 });
 
 /**
- * Kunlik rotatsiya — faqat tanlangan kun uchun filial + smena.
+ * Kunlik rotatsiya — tanlangan kun(lar) uchun filial + smena.
  * Doimiy assignedBranchId / reportsToId o‘zgarmaydi.
+ * Kunlar tugagach resolveBranchForDay endi temp_one_day ni qo‘llamaydi → standartga qaytadi.
  */
 router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
@@ -460,12 +461,33 @@ router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promi
 
   const employeeId = Number(req.body?.employeeId ?? me.id);
   const branchId = Number(req.body?.branchId);
-  const workDate = String(req.body?.workDate || todayTashkentYmd());
   const shiftRaw = req.body?.shiftType != null ? String(req.body.shiftType) : null;
   const note = req.body?.note ? String(req.body.note).slice(0, 400) : null;
 
-  if (!Number.isFinite(employeeId) || !Number.isFinite(branchId) || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
-    res.status(400).json({ error: "employeeId, branchId va workDate (YYYY-MM-DD) majburiy" });
+  const rawDates: string[] = Array.isArray(req.body?.workDates)
+    ? req.body.workDates.map((d: unknown) => String(d))
+    : req.body?.workDate
+      ? [String(req.body.workDate)]
+      : [todayTashkentYmd()];
+
+  const workDates = [
+    ...new Set(
+      rawDates
+        .map((d) => d.trim())
+        .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)),
+    ),
+  ].sort();
+
+  if (!Number.isFinite(employeeId) || !Number.isFinite(branchId)) {
+    res.status(400).json({ error: "employeeId va branchId majburiy" });
+    return;
+  }
+  if (!workDates.length) {
+    res.status(400).json({ error: "Kamida bitta ish kuni (workDates) tanlang" });
+    return;
+  }
+  if (workDates.length > 62) {
+    res.status(400).json({ error: "Bir martada ko‘pi bilan 62 kun" });
     return;
   }
 
@@ -507,72 +529,83 @@ router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promi
     shiftEncoded = applied.shiftType;
   }
 
-  // Shu kun uchun eski bir kunlik biriktirishni almashtiramiz
-  await db
-    .delete(employeeBranchAssignmentsTable)
-    .where(
-      and(
-        eq(employeeBranchAssignmentsTable.employeeId, employeeId),
-        eq(employeeBranchAssignmentsTable.kind, "temp_one_day"),
-        eq(employeeBranchAssignmentsTable.validFrom, workDate),
-      ),
-    );
+  const assignments = [];
+  const dayPlans = [];
 
-  const [assignment] = await db
-    .insert(employeeBranchAssignmentsTable)
-    .values({
-      employeeId,
-      branchId,
-      branchLabel,
-      kind: "temp_one_day",
-      validFrom: workDate,
-      validTo: workDate,
-      note: note || `Kunlik rotatsiya · ${workDate}`,
-      createdById: req.userId ?? null,
-    })
-    .returning();
-
-  let dayPlan = null;
-  if (shiftKeys && shiftKeys.length) {
-    const [existing] = await db
-      .select()
-      .from(employeeDayShiftPlansTable)
+  for (const workDate of workDates) {
+    // Shu kun uchun eski bir kunlik biriktirishni almashtiramiz
+    await db
+      .delete(employeeBranchAssignmentsTable)
       .where(
         and(
-          eq(employeeDayShiftPlansTable.employeeId, employeeId),
-          eq(employeeDayShiftPlansTable.workDate, workDate),
+          eq(employeeBranchAssignmentsTable.employeeId, employeeId),
+          eq(employeeBranchAssignmentsTable.kind, "temp_one_day"),
+          eq(employeeBranchAssignmentsTable.validFrom, workDate),
         ),
-      )
-      .limit(1);
-    if (existing) {
-      [dayPlan] = await db
-        .update(employeeDayShiftPlansTable)
-        .set({
-          shiftKeys,
-          note: note || existing.note,
-          updatedAt: new Date(),
-        })
-        .where(eq(employeeDayShiftPlansTable.id, existing.id))
-        .returning();
-    } else {
-      [dayPlan] = await db
-        .insert(employeeDayShiftPlansTable)
-        .values({
-          employeeId,
-          workDate,
-          shiftKeys,
-          createdById: req.userId ?? null,
-          note: note || null,
-        })
-        .returning();
+      );
+
+    const [assignment] = await db
+      .insert(employeeBranchAssignmentsTable)
+      .values({
+        employeeId,
+        branchId,
+        branchLabel,
+        kind: "temp_one_day",
+        validFrom: workDate,
+        validTo: workDate,
+        note: note || `Kunlik rotatsiya · ${workDate}`,
+        createdById: req.userId ?? null,
+      })
+      .returning();
+    assignments.push(assignment);
+
+    if (shiftKeys && shiftKeys.length) {
+      const [existing] = await db
+        .select()
+        .from(employeeDayShiftPlansTable)
+        .where(
+          and(
+            eq(employeeDayShiftPlansTable.employeeId, employeeId),
+            eq(employeeDayShiftPlansTable.workDate, workDate),
+          ),
+        )
+        .limit(1);
+      if (existing) {
+        const [dayPlan] = await db
+          .update(employeeDayShiftPlansTable)
+          .set({
+            shiftKeys,
+            note: note || existing.note,
+            updatedAt: new Date(),
+          })
+          .where(eq(employeeDayShiftPlansTable.id, existing.id))
+          .returning();
+        dayPlans.push(dayPlan);
+      } else {
+        const [dayPlan] = await db
+          .insert(employeeDayShiftPlansTable)
+          .values({
+            employeeId,
+            workDate,
+            shiftKeys,
+            createdById: req.userId ?? null,
+            note: note || null,
+          })
+          .returning();
+        dayPlans.push(dayPlan);
+      }
     }
   }
 
   if (target.userId) {
     const shiftTxt = shiftEncoded ? `, smena: ${shiftEncoded}` : "";
+    const daysTxt =
+      workDates.length === 1
+        ? workDates[0]
+        : `${workDates.length} kun (${workDates[0]} … ${workDates[workDates.length - 1]})`;
     await notifyUser({
       userId: target.userId,
-      text: `${target.fullName}: ${workDate} kuni «${branchLabel}» filialiga rotatsiya${shiftTxt}. Doimiy joy o‘zgarmaydi.`,
+      text: `${target.fullName}: ${daysTxt} «${branchLabel}» filialiga vaqtinchalik rotatsiya${shiftTxt}. Kunlar tugagach doimiy joyga qaytasiz.`,
       type: "smena_rotation",
       linkUrl: "/davomat-face",
     });
@@ -580,9 +613,11 @@ router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promi
 
   res.status(201).json({
     ok: true,
-    workDate,
-    assignment,
-    dayPlan,
+    workDate: workDates[0],
+    workDates,
+    count: workDates.length,
+    assignments,
+    dayPlans,
     branchLabel,
     shiftType: shiftEncoded,
     permanentUnchanged: true,
@@ -647,6 +682,7 @@ router.get("/smena/rotations", requireAuth, async (req: AuthRequest, res): Promi
         orgRole: emp?.orgRole || null,
         branchId: r.branchId,
         branchLabel: r.branchLabel,
+        workDate: r.validFrom,
         shiftKeys: plan?.shiftKeys || [],
         note: r.note,
         createdAt: r.createdAt,

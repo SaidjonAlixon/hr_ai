@@ -871,6 +871,28 @@ CREATE INDEX IF NOT EXISTS javob_olish_coord_idx ON javob_olish_requests (coordi
 CREATE UNIQUE INDEX IF NOT EXISTS javob_olish_pending_uidx
   ON javob_olish_requests (employee_id, work_date)
   WHERE status = 'pending';
+
+-- Web Push (Chrome / Safari PWA) — telefonda tizim bildirishnomasi
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  endpoint TEXT NOT NULL,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS push_subscriptions_endpoint_uidx ON push_subscriptions (endpoint);
+CREATE INDEX IF NOT EXISTS push_subscriptions_user_idx ON push_subscriptions (user_id);
+
+CREATE TABLE IF NOT EXISTS push_vapid_keys (
+  id INTEGER PRIMARY KEY DEFAULT 1,
+  public_key TEXT NOT NULL,
+  private_key TEXT NOT NULL,
+  subject TEXT NOT NULL DEFAULT 'mailto:admin@vaksina.local',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
 `);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");

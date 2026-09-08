@@ -337,10 +337,11 @@ export type WorkplaceInfo = {
     nextAction: "in" | "out" | "done";
   };
   shift?: {
-    type: "one" | "two" | "office";
+    type: "one" | "two" | "office" | string;
     label: string;
     start: string;
     end: string;
+    overnight?: boolean;
     warnHm: string;
     warnText: string;
   } | null;

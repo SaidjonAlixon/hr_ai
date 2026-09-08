@@ -11,17 +11,20 @@ import {
   Users,
   X,
 } from "lucide-react";
+import { startOfDay } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Calendar } from "../../components/ui/calendar";
 import { useToast } from "../../hooks/use-toast";
 import { useI18n } from "../../i18n/I18nProvider";
 import { cn } from "../../lib/utils";
+import { dateToYmd, formatYmdDisplay } from "../../lib/javob-olish-api";
 import {
   assignSmenaBranch,
   createDayRotation,
   deleteDayRotation,
-  fetchDayRotations,
+  fetchRotationsForDates,
   fetchSmenaMe,
   saveMySmena,
   shiftLabelShort,
@@ -129,7 +132,16 @@ export default function SmenaFilialPage() {
   const [pickedBranchId, setPickedBranchId] = useState<number | null>(null);
   const [pickedPersonId, setPickedPersonId] = useState<number | null>(null);
   const [pickedShift, setPickedShift] = useState<ShiftPick>("one");
-  const [workDate, setWorkDate] = useState(todayTashkentYmd());
+  const [selectedDates, setSelectedDates] = useState<Date[]>(() => {
+    const [y, m, d] = todayTashkentYmd().split("-").map(Number);
+    return [new Date(y!, m! - 1, d!, 12, 0, 0)];
+  });
+
+  const workDates = useMemo(
+    () => selectedDates.map(dateToYmd).sort((a, b) => a.localeCompare(b)),
+    [selectedDates],
+  );
+  const workDatesKey = workDates.join(",");
 
   const canRotate = Boolean(data?.canDayRotate);
   const canAssign = Boolean(data?.canAssignOthers);
@@ -165,13 +177,20 @@ export default function SmenaFilialPage() {
   }, [staff, peopleQ]);
 
   const rotationsQ = useQuery({
-    queryKey: ["smena-rotations", workDate],
-    queryFn: () => fetchDayRotations(workDate),
-    enabled: Boolean(canRotate && mode === "rotation"),
+    queryKey: ["smena-rotations", workDatesKey],
+    queryFn: () => fetchRotationsForDates(workDates),
+    enabled: Boolean(canRotate && mode === "rotation" && workDates.length > 0),
   });
 
   const picked = staff.find((p) => p.id === pickedPersonId) ?? null;
   const pickedBranch = (data?.branches ?? []).find((b) => b.id === pickedBranchId) ?? null;
+
+  const datesLabel =
+    workDates.length === 0
+      ? "—"
+      : workDates.length === 1
+        ? formatYmdDisplay(workDates[0]!)
+        : `${workDates.length} kun (${formatYmdDisplay(workDates[0]!)} … ${formatYmdDisplay(workDates[workDates.length - 1]!)})`;
 
   const saveMine = useMutation({
     mutationFn: (body: { shiftType?: ShiftPick; assignedBranchId?: number }) => saveMySmena(body),
@@ -197,18 +216,20 @@ export default function SmenaFilialPage() {
   });
 
   const saveRotation = useMutation({
-    mutationFn: (p: { employeeId: number; branchId: number; shiftType: ShiftPick }) =>
-      createDayRotation({
+    mutationFn: (p: { employeeId: number; branchId: number; shiftType: ShiftPick }) => {
+      if (!workDates.length) throw new Error(t("smena.pickDates"));
+      return createDayRotation({
         employeeId: p.employeeId,
         branchId: p.branchId,
-        workDate,
+        workDates,
         shiftType: p.shiftType,
-      }),
+      });
+    },
     onSuccess: (r) => {
-      void qc.invalidateQueries({ queryKey: ["smena-rotations", workDate] });
+      void qc.invalidateQueries({ queryKey: ["smena-rotations"] });
       toast({
         title: t("smena.rotationOk"),
-        description: `${r.workDate} · ${r.branchLabel}`,
+        description: `${r.count} kun · ${r.branchLabel}`,
       });
       cancelEdit();
     },
@@ -219,7 +240,7 @@ export default function SmenaFilialPage() {
   const removeRotation = useMutation({
     mutationFn: (id: number) => deleteDayRotation(id),
     onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: ["smena-rotations", workDate] });
+      void qc.invalidateQueries({ queryKey: ["smena-rotations"] });
       toast({ title: t("smena.rotationRemoved") });
     },
     onError: (e: Error) => toast({ title: t("smena.saveFail"), description: e.message, variant: "destructive" }),
@@ -239,10 +260,13 @@ export default function SmenaFilialPage() {
     setBranchQ("");
   }
 
-  /** Filialni o‘zgartirmasdan faqat smena */
   function onSaveShiftOnly() {
     if (!pickedPersonId) {
       toast({ title: t("smena.pickTitle"), description: t("smena.pickPerson"), variant: "destructive" });
+      return;
+    }
+    if (!workDates.length) {
+      toast({ title: t("smena.pickTitle"), description: t("smena.pickDates"), variant: "destructive" });
       return;
     }
     if (mode === "rotation") {
@@ -271,6 +295,10 @@ export default function SmenaFilialPage() {
       return;
     }
     if (mode === "rotation") {
+      if (!workDates.length) {
+        toast({ title: t("smena.pickTitle"), description: t("smena.pickDates"), variant: "destructive" });
+        return;
+      }
       const branchId = pickedBranchId || picked?.assignedBranchId;
       if (!branchId) {
         toast({ title: t("smena.pickTitle"), description: t("smena.pickPersonBranch"), variant: "destructive" });
@@ -368,14 +396,22 @@ export default function SmenaFilialPage() {
             <p className="text-xs leading-relaxed text-muted-foreground">{t("smena.rotationHint")}</p>
             <div>
               <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                {t("smena.workDate")}
+                {t("smena.workDates")}
               </label>
-              <Input
-                type="date"
-                value={workDate}
-                onChange={(e) => setWorkDate(e.target.value || todayTashkentYmd())}
-                className="h-10"
-              />
+              <div className="overflow-hidden rounded-xl border border-border bg-card">
+                <Calendar
+                  mode="multiple"
+                  selected={selectedDates}
+                  onSelect={(days) => setSelectedDates(days ?? [])}
+                  disabled={(day) => day < startOfDay(new Date())}
+                  className="w-full"
+                />
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                {t("smena.selectedDates")}:{" "}
+                <span className="font-medium text-foreground">{datesLabel}</span>
+              </p>
+              <p className="mt-1 text-[11px] text-muted-foreground">{t("smena.autoRevertHint")}</p>
             </div>
           </CardHeader>
           <CardContent className="space-y-3 pt-4">
@@ -415,7 +451,7 @@ export default function SmenaFilialPage() {
                 <div>
                   <p className="truncate text-sm font-semibold text-foreground">{picked.fullName}</p>
                   <p className="text-[11px] text-muted-foreground">
-                    {orgLabel(picked.orgRole)} · {t("smena.onlyForDate")} {workDate}
+                    {orgLabel(picked.orgRole)} · {t("smena.onlyForDate")} {datesLabel}
                   </p>
                 </div>
 
@@ -443,7 +479,11 @@ export default function SmenaFilialPage() {
                       <X className="mr-1 h-4 w-4" />
                       {t("ui.cancel")}
                     </Button>
-                    <Button type="button" disabled={saveRotation.isPending} onClick={onSaveTeam}>
+                    <Button
+                      type="button"
+                      disabled={saveRotation.isPending || workDates.length === 0}
+                      onClick={onSaveTeam}
+                    >
                       {t("smena.applyRotation")}
                     </Button>
                   </div>
@@ -451,7 +491,11 @@ export default function SmenaFilialPage() {
                     type="button"
                     variant="secondary"
                     className="w-full"
-                    disabled={saveRotation.isPending || !(pickedBranchId || picked.assignedBranchId)}
+                    disabled={
+                      saveRotation.isPending ||
+                      workDates.length === 0 ||
+                      !(pickedBranchId || picked.assignedBranchId)
+                    }
                     onClick={onSaveShiftOnly}
                   >
                     {t("smena.keepBranchChangeShift")}
@@ -465,7 +509,7 @@ export default function SmenaFilialPage() {
 
             <div className="space-y-2 border-t border-border pt-3">
               <p className="text-xs font-semibold text-foreground">
-                {t("smena.rotationsFor")} {workDate}
+                {t("smena.rotationsFor")} {datesLabel}
               </p>
               {rotationsQ.isLoading ? (
                 <p className="text-xs text-muted-foreground">{t("ui.loading")}</p>
@@ -477,12 +521,13 @@ export default function SmenaFilialPage() {
                 <div className="space-y-2">
                   {rotationsQ.data!.items.map((r) => (
                     <div
-                      key={r.id}
+                      key={`${r.id}-${r.workDate || ""}`}
                       className="flex items-start justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5"
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-foreground">{r.fullName}</p>
                         <p className="text-[11px] text-muted-foreground">
+                          {r.workDate ? `${formatYmdDisplay(r.workDate)} · ` : ""}
                           {orgLabel(r.orgRole)} → {r.branchLabel || `#${r.branchId}`}
                           {r.shiftKeys?.length
                             ? ` · ${r.shiftKeys.map((k) => shiftLabelShort(k)).join("+")}`

@@ -60,6 +60,7 @@ export type SmenaRotationItem = {
   orgRole: string | null;
   branchId: number;
   branchLabel: string | null;
+  workDate?: string;
   shiftKeys: string[];
   note: string | null;
   createdAt?: string;
@@ -112,13 +113,16 @@ export function assignSmenaBranch(
 export function createDayRotation(body: {
   employeeId: number;
   branchId: number;
-  workDate: string;
+  workDate?: string;
+  workDates?: string[];
   shiftType?: ShiftPick | string;
   note?: string;
 }) {
   return apiJson<{
     ok: boolean;
     workDate: string;
+    workDates: string[];
+    count: number;
     branchLabel: string;
     shiftType: string | null;
     permanentUnchanged: boolean;
@@ -132,6 +136,21 @@ export function fetchDayRotations(date: string) {
   return apiJson<{ workDate: string; items: SmenaRotationItem[] }>(
     `/smena/rotations?date=${encodeURIComponent(date)}`,
   );
+}
+
+export async function fetchRotationsForDates(dates: string[]) {
+  const uniq = [...new Set(dates.filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))].sort();
+  if (!uniq.length) return { workDates: [] as string[], items: [] as SmenaRotationItem[] };
+  const results = await Promise.all(uniq.map((d) => fetchDayRotations(d)));
+  const items = results.flatMap((r) =>
+    r.items.map((it) => ({ ...it, workDate: it.workDate || r.workDate })),
+  );
+  items.sort((a, b) => {
+    const da = (a.workDate || "").localeCompare(b.workDate || "");
+    if (da !== 0) return da;
+    return a.fullName.localeCompare(b.fullName, "uz");
+  });
+  return { workDates: uniq, items };
 }
 
 export function deleteDayRotation(id: number) {

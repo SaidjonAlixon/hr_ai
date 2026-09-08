@@ -159,6 +159,22 @@ export function minutesToHm(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** Smena tugagach Ketdim uchun 2 soatlik oyna */
+export const CHECKOUT_GRACE_MS = 2 * 60 * 60 * 1000;
+
+function addYmdDays(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + days));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+/** workDate + endHm → smena tugash vaqti (Toshkent) */
+export function shiftEndAt(workDateYmd: string, endHm: string, overnight?: boolean): Date {
+  const endDay = overnight ? addYmdDays(workDateYmd, 1) : workDateYmd;
+  const hm = /^\d{1,2}:\d{2}$/.test(endHm) ? endHm : "18:00";
+  return new Date(`${endDay}T${hm}:00+05:00`);
+}
+
 export function onTimeUntilHm(start: string, graceMinutes: number): string {
   return minutesToHm(hmToMinutes(start) + graceMinutes);
 }

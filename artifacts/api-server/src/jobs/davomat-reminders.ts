@@ -1,18 +1,30 @@
-import { and, eq, gte, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, ne, sql } from "drizzle-orm";
 import {
   db,
   usersTable,
   employeesTable,
   attendanceRecordsTable,
   notificationsTable,
+  employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { logger } from "../lib/logger";
 import { notifyAllActiveUsers, notifyUser } from "../lib/notify";
 import { isTelegramConfigured } from "../lib/telegram";
 import { DAVOMAT_GEOFENCE_METERS } from "../routes/davomat";
-import { isPharmacyShiftStaff, shiftWindow, hmToMinutes, workScheduleForStaff } from "../lib/shift-hours";
+import {
+  isPharmacyShiftStaff,
+  shiftWindow,
+  hmToMinutes,
+  workScheduleForStaff,
+  shiftEndAt,
+  CHECKOUT_GRACE_MS,
+  encodeShiftKeys,
+} from "../lib/shift-hours";
+import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
+/** Grace ichida eslatma oralig‘i */
+const NAG_EVERY_MS = 30 * 60 * 1000;
 
 function tashkentParts(d = new Date()) {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -30,6 +42,15 @@ function tashkentParts(d = new Date()) {
     hour: Number(get("hour")),
     minute: Number(get("minute")),
   };
+}
+
+function addYmdDays(ymd: string, days: number): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y!, m! - 1, d! + days));
+  const yy = dt.getUTCFullYear();
+  const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getUTCDate()).padStart(2, "0");
+  return `${yy}-${mm}-${dd}`;
 }
 
 function dayStartUtcApprox(ymd: string): Date {
@@ -54,7 +75,6 @@ async function alreadyNotifiedToday(userId: number, type: string, since: Date): 
 /** Kunlik qoida xabari — barcha faol xodimlarga (kuniga 1 marta) */
 export async function broadcastDavomatRuleNotice(): Promise<number> {
   const { ymd, hour } = tashkentParts();
-  // Ertalab 07:00 dan keyin
   if (hour < 7) return 0;
 
   const since = dayStartUtcApprox(ymd);
@@ -88,6 +108,7 @@ async function loadLinkedStaff() {
       fullName: employeesTable.fullName,
       orgRole: employeesTable.orgRole,
       shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
     })
     .from(employeesTable)
     .where(
@@ -117,12 +138,13 @@ export async function remindPharmacyShiftWarn(): Promise<number> {
   const since = dayStartUtcApprox(ymd);
   const linked = await loadLinkedStaff();
   const roles = await userRoleMap(linked.map((e) => e.userId || 0));
+  const defs = await getEffectiveShiftDefs();
   let sent = 0;
 
   for (const e of linked) {
     if (!e.userId) continue;
     const role = roles.get(e.userId) || "";
-    const w = workScheduleForStaff(role, e.orgRole, e.shiftType);
+    const w = workScheduleForStaff(role, e.orgRole, e.shiftType, e.shiftLabel, defs);
     const warnMin = hmToMinutes(w.warnHm);
     if (mins < warnMin || mins >= warnMin + 15) continue;
 
@@ -157,6 +179,7 @@ export async function remindDavomatCheckIn(): Promise<number> {
   const since = dayStartUtcApprox(ymd);
   const linked = await loadLinkedStaff();
   const roles = await userRoleMap(linked.map((e) => e.userId || 0));
+  const defs = await getEffectiveShiftDefs();
   let sent = 0;
 
   for (const e of linked) {
@@ -164,7 +187,7 @@ export async function remindDavomatCheckIn(): Promise<number> {
     const role = roles.get(e.userId) || "";
     const pharmacy = isPharmacyShiftStaff(role, e.orgRole);
     if (pharmacy) {
-      const start = hmToMinutes(shiftWindow(e.shiftType).start);
+      const start = hmToMinutes(shiftWindow(e.shiftType, e.shiftLabel, defs).start);
       if (mins < start || mins > start + 150) continue;
     } else if (mins < 8 * 60 + 30 || mins > 11 * 60) {
       continue;
@@ -183,7 +206,7 @@ export async function remindDavomatCheckIn(): Promise<number> {
     if (rec?.checkInAt) continue;
     if (await alreadyNotifiedToday(e.userId, "davomat_checkin", since)) continue;
 
-    const w = pharmacy ? shiftWindow(e.shiftType) : null;
+    const w = pharmacy ? shiftWindow(e.shiftType, e.shiftLabel, defs) : null;
     await db.insert(notificationsTable).values({
       userId: e.userId,
       text: w
@@ -198,58 +221,169 @@ export async function remindDavomatCheckIn(): Promise<number> {
   return sent;
 }
 
-/** Ketmaganlarga — smena oxiriga qarab */
-export async function remindDavomatCheckOut(): Promise<number> {
-  const { ymd, hour, minute } = tashkentParts();
-  const mins = hour * 60 + minute;
-  const since = dayStartUtcApprox(ymd);
-  const open = await db
+type OpenCheckoutRow = {
+  id: number;
+  userId: number | null;
+  empId: number;
+  workDate: string;
+  checkInAt: Date | null;
+  fullName: string | null;
+  orgRole: string | null;
+  shiftType: string | null;
+  shiftLabel: string | null;
+};
+
+async function loadOpenCheckouts(): Promise<OpenCheckoutRow[]> {
+  return db
     .select({
+      id: attendanceRecordsTable.id,
       userId: attendanceRecordsTable.userId,
       empId: attendanceRecordsTable.employeeId,
+      workDate: attendanceRecordsTable.workDate,
+      checkInAt: attendanceRecordsTable.checkInAt,
       fullName: employeesTable.fullName,
       orgRole: employeesTable.orgRole,
       shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
     })
     .from(attendanceRecordsTable)
     .innerJoin(employeesTable, eq(employeesTable.id, attendanceRecordsTable.employeeId))
     .where(
       and(
-        eq(attendanceRecordsTable.workDate, ymd),
         isNotNull(attendanceRecordsTable.checkInAt),
         isNull(attendanceRecordsTable.checkOutAt),
+        ne(attendanceRecordsTable.status, "absent"),
+        ne(attendanceRecordsTable.status, "leave"),
         isNotNull(attendanceRecordsTable.userId),
       ),
     );
+}
 
-  let sent = 0;
-  for (const r of open) {
-    if (!r.userId) continue;
-    const pharmacy = isPharmacyShiftStaff(null, r.orgRole);
-    let inWindow = mins >= 17 * 60 + 30 && mins <= 21 * 60;
-    if (pharmacy) {
-      const end = hmToMinutes(shiftWindow(r.shiftType).end);
-      inWindow = mins >= end - 60 && mins <= end + 30;
-    }
-    if (!inWindow) continue;
-    if (await alreadyNotifiedToday(r.userId, "davomat_checkout", since)) continue;
-    await db.insert(notificationsTable).values({
-      userId: r.userId,
-      text: `${r.fullName || "Xodim"}: ketishni Face ID bilan belgilang (${DAVOMAT_GEOFENCE_METERS} m hudud).`,
-      type: "davomat_checkout",
-      linkUrl: "/davomat-face",
-    });
-    sent += 1;
+async function dayPlanShiftType(employeeId: number, workDate: string): Promise<string | null> {
+  try {
+    const [plan] = await db
+      .select({ shiftKeys: employeeDayShiftPlansTable.shiftKeys })
+      .from(employeeDayShiftPlansTable)
+      .where(
+        and(
+          eq(employeeDayShiftPlansTable.employeeId, employeeId),
+          eq(employeeDayShiftPlansTable.workDate, workDate),
+        ),
+      )
+      .limit(1);
+    if (!plan?.shiftKeys?.length) return null;
+    const keys = (plan.shiftKeys as string[]).filter(
+      (k) => k === "one" || k === "two" || k === "three",
+    );
+    if (!keys.length) return null;
+    return encodeShiftKeys(keys as ("one" | "two" | "three")[]);
+  } catch {
+    return null;
   }
-  if (sent > 0) logger.info({ sent }, "Davomat check-out reminders sent");
-  return sent;
+}
+
+/**
+ * Smena tugagach:
+ * - 0…2 soat: har 30 daqiqada Telegram + in-app + OS eslatma
+ * - 2 soatdan keyin: avtomatik «kelmagan» (absent), kun yopiladi
+ * Farmasevt (apteka) + ofis xodimlari.
+ */
+export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number; closed: number }> {
+  const now = new Date();
+  const open = await loadOpenCheckouts();
+  if (!open.length) return { nags: 0, closed: 0 };
+
+  const roles = await userRoleMap(open.map((r) => r.userId || 0));
+  const defs = await getEffectiveShiftDefs();
+  let nags = 0;
+  let closed = 0;
+
+  for (const r of open) {
+    if (!r.userId || !r.checkInAt) continue;
+    const role = roles.get(r.userId) || "";
+    const planType = await dayPlanShiftType(r.empId, r.workDate);
+    const shiftType = planType || r.shiftType;
+    const shiftLabel = planType ? null : r.shiftLabel;
+    const w = workScheduleForStaff(role, r.orgRole, shiftType, shiftLabel, defs);
+    const endAt = shiftEndAt(r.workDate, w.end, w.overnight);
+    const endMs = endAt.getTime();
+    const nowMs = now.getTime();
+
+    // Smena hali tugamagan
+    if (nowMs < endMs) continue;
+
+    const graceEndMs = endMs + CHECKOUT_GRACE_MS;
+
+    // 2 soat o‘tdi — avtomatik kelmagan
+    if (nowMs >= graceEndMs) {
+      await db
+        .update(attendanceRecordsTable)
+        .set({
+          status: "absent",
+          notes: `auto_absent_no_checkout: smena ${w.end} dan keyin 2 soat ichida Ketdim yo‘q (${w.label})`,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(attendanceRecordsTable.id, r.id),
+            isNull(attendanceRecordsTable.checkOutAt),
+            ne(attendanceRecordsTable.status, "absent"),
+          ),
+        );
+      closed += 1;
+
+      await notifyUser({
+        userId: r.userId,
+        text:
+          `Davomat yopildi: ${r.fullName || "Xodim"} — smena tugagach 2 soat ichida «Ketdim» bosilmadi. ` +
+          `Bugun «kelmagan» deb belgilandi. Ertaga yangi kun «Keldim» dan boshlanadi.`,
+        type: "davomat_auto_absent",
+        linkUrl: "/davomat-face",
+        telegram: true,
+      });
+      continue;
+    }
+
+    // Grace oynasi: har 30 daqiqada bir eslatma (0, 30, 60, 90)
+    const elapsed = nowMs - endMs;
+    const slot = Math.min(3, Math.floor(elapsed / NAG_EVERY_MS));
+    const type = `davomat_checkout_nag_${r.workDate}_${slot}`;
+    const since = dayStartUtcApprox(r.workDate);
+    if (await alreadyNotifiedToday(r.userId, type, since)) continue;
+
+    const remainMin = Math.max(0, Math.ceil((graceEndMs - nowMs) / 60_000));
+    const text =
+      `Ish vaqtingiz tugadi (${w.end}). «Ketdim» ni Face ID/QR bilan yoping. ` +
+      `Yana ~${remainMin} daqiqa ichida yopilmasa, bugun ishlamagansiz deb topilasiz. ` +
+      `Hudud: ${DAVOMAT_GEOFENCE_METERS} m.`;
+
+    await notifyUser({
+      userId: r.userId,
+      text,
+      type,
+      linkUrl: "/davomat-face",
+      telegram: true,
+    });
+    nags += 1;
+  }
+
+  if (nags > 0 || closed > 0) {
+    logger.info({ nags, closed }, "Davomat checkout nag / auto-absent");
+  }
+  return { nags, closed };
+}
+
+/** @deprecated — use remindAndAutoCloseMissedCheckout */
+export async function remindDavomatCheckOut(): Promise<number> {
+  const r = await remindAndAutoCloseMissedCheckout();
+  return r.nags;
 }
 
 export async function runDavomatReminderCycle(): Promise<void> {
   await broadcastDavomatRuleNotice();
   await remindPharmacyShiftWarn();
   await remindDavomatCheckIn();
-  await remindDavomatCheckOut();
+  await remindAndAutoCloseMissedCheckout();
 }
 
 export function startDavomatReminderJob(): void {

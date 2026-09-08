@@ -161,7 +161,7 @@ const NAV_SECTIONS: {
     id: 'admin',
     label: 'Sozlamalar',
     icon: Settings,
-    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr'],
+    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test'],
   },
 ];
 
@@ -239,6 +239,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/faces')) return '/admin/faces';
   if (path.startsWith('/admin/smena-sozlamalar')) return '/admin/smena-sozlamalar';
   if (path.startsWith('/admin/davomat-qr')) return '/admin/davomat-qr';
+  if (path.startsWith('/admin/test')) return '/admin/test';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
   if (path.startsWith('/dashboard')) return '/dashboard';
@@ -423,6 +424,47 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     } as any,
   );
 
+  /** Davomat Ketdim eslatmalari — telefon OS bildirishnomasi (SMS kabi) */
+  const shownOsDavomatRef = useRef<Set<number>>(new Set());
+  useEffect(() => {
+    if (!user || !unreadNotifications?.length) return;
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+
+    const urgent = unreadNotifications.filter((n) => {
+      const t = String(n.type || "");
+      return (
+        t.startsWith("davomat_checkout_nag") ||
+        t === "davomat_auto_absent" ||
+        t === "notif_test"
+      );
+    });
+    if (!urgent.length) return;
+
+    const fire = () => {
+      for (const n of urgent) {
+        if (shownOsDavomatRef.current.has(n.id)) continue;
+        shownOsDavomatRef.current.add(n.id);
+        try {
+          new Notification("VAKSINA HR — Davomat", {
+            body: n.text,
+            tag: `davomat-${n.id}`,
+            requireInteraction: true,
+          });
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+
+    if (Notification.permission === "granted") {
+      fire();
+    } else if (Notification.permission === "default") {
+      void Notification.requestPermission().then((p) => {
+        if (p === "granted") fire();
+      });
+    }
+  }, [user, unreadNotifications]);
+
   // Badge uchun — og‘ir so‘rovlarni kam poll qilamiz (RealtimeSync yetarli)
   const { data: dashboardStats } = useGetDashboardStats({
     query: {
@@ -604,6 +646,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       setLocation('/dashboard');
     }
     if (location.startsWith('/admin/davomat-qr') && !canManageSettings(user.role)) {
+      setLocation('/dashboard');
+    }
+    if (location.startsWith('/admin/test') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
   }, [isLoading, isAuthenticated, user, setLocation, location]);
@@ -791,6 +836,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
+      { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -831,6 +877,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
+      { name: 'Test', path: '/admin/test', icon: Bell },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     hr: hrMenejerNav,

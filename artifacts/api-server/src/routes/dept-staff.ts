@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq } from "drizzle-orm";
-import { db, usersTable } from "@workspace/db";
+import { asc, eq } from "drizzle-orm";
+import { db, employeesTable, usersTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { formatPersonName } from "../lib/person-name";
 import { ensureEmployeeForNewUser } from "../lib/user-employee-sync";
+import { newCredWorkbook, paintCredSheet, sendWorkbook } from "../lib/cred-excel";
 import {
   ROLE_LABEL_UZ,
   assertCanCreateDeptStaff,
@@ -73,6 +74,67 @@ router.get("/dept-staff/meta", requireAuth, async (req: AuthRequest, res): Promi
   });
 });
 
+/** Bo‘lim boshlig‘i — o‘z bo‘limi xodimlari login/parol Excel */
+router.get("/dept-staff/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole ?? "";
+  const userId = req.userId;
+  if (!userId || !canAddDeptStaff(role)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  const ctx = await resolveDeptHeadContext(userId, role);
+  if (!ctx) {
+    res.status(403).json({ error: "Bo‘lim topilmadi" });
+    return;
+  }
+
+  try {
+    const rows = await db
+      .select({
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        login: usersTable.login,
+        password: usersTable.password,
+        phone: usersTable.phone,
+        status: usersTable.status,
+        position: employeesTable.position,
+      })
+      .from(usersTable)
+      .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
+      .where(eq(usersTable.departmentId, ctx.departmentId))
+      .orderBy(asc(usersTable.fullName));
+
+    const workbook = newCredWorkbook();
+    paintCredSheet(workbook, {
+      name: "Xodimlar",
+      title: `VAKSINA MED — ${ctx.departmentName} · login/parol · ${rows.length} ta`,
+      headers: ["F.I.Sh.", "Lavozim", "Rol", "Login", "Parol", "Telefon", "Holat"],
+      widths: [32, 22, 20, 24, 14, 16, 12],
+      rows: rows.map((r) => [
+        r.fullName,
+        r.position || "—",
+        ROLE_LABEL_UZ[r.role] || r.role,
+        r.login || "—",
+        r.password || "—",
+        r.phone || "—",
+        r.status === "active" ? "Faol" : r.status || "—",
+      ]),
+      monoCols: [4, 5],
+    });
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    const safeName = ctx.departmentName
+      .toLowerCase()
+      .replace(/[^a-z0-9а-яёўқғҳ\-]+/gi, "-")
+      .replace(/-+/g, "-")
+      .slice(0, 40);
+    await sendWorkbook(res, workbook, `bolim-${safeName || "xodimlar"}-login-${stamp}.xlsx`);
+  } catch (err) {
+    console.error("GET /dept-staff/export error:", err);
+    res.status(500).json({ error: "Excel yuklanmadi" });
+  }
+});
+
 router.post("/dept-staff", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const actorRole = req.userRole ?? "";
   const actorId = req.userId;
@@ -85,11 +147,12 @@ router.post("/dept-staff", requireAuth, async (req: AuthRequest, res): Promise<v
     return;
   }
 
-  const { firstName, lastName, phone, role } = req.body ?? {};
+  const { firstName, lastName, phone, role, position } = req.body ?? {};
   const fn = String(firstName || "").trim();
   const ln = String(lastName || "").trim();
   const phoneVal = String(phone || "").trim();
   const staffRole = String(role || "").trim();
+  const jobTitle = String(position || "").trim();
 
   if (!fn || !ln) {
     res.status(400).json({ error: "Ism va familiya majburiy" });
@@ -101,6 +164,10 @@ router.post("/dept-staff", requireAuth, async (req: AuthRequest, res): Promise<v
   }
   if (!staffRole) {
     res.status(400).json({ error: "Rolni tanlang" });
+    return;
+  }
+  if (!jobTitle) {
+    res.status(400).json({ error: "Lavozimni yozing" });
     return;
   }
 
@@ -133,12 +200,14 @@ router.post("/dept-staff", requireAuth, async (req: AuthRequest, res): Promise<v
       fullName: user.fullName,
       role: user.role,
       departmentId: user.departmentId,
+      position: jobTitle,
     });
 
     res.status(201).json({
       id: user.id,
       fullName: user.fullName,
       role: user.role,
+      position: jobTitle,
       login: user.login,
       phone: user.phone,
       departmentName: scope.departmentName,

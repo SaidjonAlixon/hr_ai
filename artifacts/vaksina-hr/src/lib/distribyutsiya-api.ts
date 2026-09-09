@@ -121,3 +121,24 @@ export function useDistribMutations() {
 
   return { createTitle, updateTitle, deactivateTitle, createStaff };
 }
+
+export async function downloadDistribStaffExcel() {
+  const res = await fetch("/api/distribyutsiya/staff/export", { credentials: "include" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") || "";
+  const match = /filename="?([^"]+)"?/i.exec(cd);
+  const stamp = new Date().toISOString().slice(0, 10);
+  const filename = match?.[1] || `distribyutsiya-login-${stamp}.xlsx`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}

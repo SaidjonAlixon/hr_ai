@@ -17,6 +17,8 @@ import {
   listDistribyutsiyaJobTitles,
 } from "../lib/distribyutsiya-department";
 import { canManageSettings } from "../lib/roles";
+import { newCredWorkbook, paintCredSheet, sendWorkbook } from "../lib/cred-excel";
+import { ROLE_LABEL_UZ } from "../lib/dept-staff";
 
 const router: IRouter = Router();
 
@@ -270,6 +272,55 @@ router.get("/distribyutsiya/staff", requireAuth, async (req: AuthRequest, res): 
   } catch (err) {
     console.error("GET /distribyutsiya/staff error:", err);
     res.status(500).json({ error: "Yuklanmadi" });
+  }
+});
+
+/** Distribyutsiya HR / rahbar — xodimlar login/parol Excel */
+router.get("/distribyutsiya/staff/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageDistrib(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const departmentId = await ensureDistribyutsiyaSetup();
+    const rows = await db
+      .select({
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        login: usersTable.login,
+        password: usersTable.password,
+        phone: usersTable.phone,
+        status: usersTable.status,
+        position: employeesTable.position,
+      })
+      .from(usersTable)
+      .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
+      .where(eq(usersTable.departmentId, departmentId))
+      .orderBy(asc(usersTable.fullName));
+
+    const workbook = newCredWorkbook();
+    paintCredSheet(workbook, {
+      name: "Xodimlar",
+      title: `VAKSINA MED — Distribyutsiya · login/parol · ${rows.length} ta`,
+      headers: ["F.I.Sh.", "Lavozim", "Rol", "Login", "Parol", "Telefon", "Holat"],
+      widths: [32, 22, 22, 24, 14, 16, 12],
+      rows: rows.map((r) => [
+        r.fullName,
+        r.position || "—",
+        ROLE_LABEL_UZ[r.role] || r.role,
+        r.login || "—",
+        r.password || "—",
+        r.phone || "—",
+        r.status === "active" ? "Faol" : r.status || "—",
+      ]),
+      monoCols: [4, 5],
+    });
+
+    const stamp = new Date().toISOString().slice(0, 10);
+    await sendWorkbook(res, workbook, `distribyutsiya-login-${stamp}.xlsx`);
+  } catch (err) {
+    console.error("GET /distribyutsiya/staff/export error:", err);
+    res.status(500).json({ error: "Excel yuklanmadi" });
   }
 });
 

@@ -24,6 +24,7 @@ import {
   tasksTable,
 } from "@workspace/db";
 import { isHrRole } from "./roles";
+import { syncStaffingAlertForEmployee } from "./staffing-alert";
 
 const STAFF_ORG = new Set(["pharmacist", "intern", "supervisor", "manager"]);
 
@@ -198,6 +199,56 @@ export async function hardDeletePharmacyEmployee(
       .from(employeesTable)
       .where(eq(employeesTable.reportsToId, target.id));
     toDelete.push(...staff);
+  } else {
+    // Farmasevt/stajyor hard-delete: smena uchun «xodim kerak» slot + ogohlantirish
+    const [full] = await db.select().from(employeesTable).where(eq(employeesTable.id, target.id)).limit(1);
+    if (full && (full.orgRole === "pharmacist" || full.orgRole === "intern" || full.orgRole === "supervisor")) {
+      let branch = full.location;
+      if (!branch && full.reportsToId) {
+        const [mgr] = await db
+          .select({ location: employeesTable.location })
+          .from(employeesTable)
+          .where(eq(employeesTable.id, full.reportsToId))
+          .limit(1);
+        branch = mgr?.location ?? null;
+      }
+      const shiftHint =
+        full.shiftLabel ||
+        (full.shiftType === "two" || full.shiftType === "2"
+          ? "2-smena"
+          : full.shiftType === "three" || full.shiftType === "3"
+            ? "3-smena"
+            : full.shiftType
+              ? "1-smena"
+              : "smena");
+      const [slot] = await db
+        .insert(employeesTable)
+        .values({
+          fullName: `${shiftHint} — xodim kerak`,
+          position: full.orgRole === "intern" ? "Stajyor" : "Farmasevt",
+          departmentId: full.departmentId,
+          hiredAt: new Date().toISOString().slice(0, 10),
+          orgRole: full.orgRole === "intern" ? "intern" : "pharmacist",
+          reportsToId: full.reportsToId,
+          location: branch,
+          latitude: full.latitude,
+          longitude: full.longitude,
+          shiftType: full.shiftType,
+          shiftLabel: full.shiftLabel,
+          userId: null,
+          employmentStatus: "need_hire",
+          createdById: full.createdById,
+        })
+        .returning();
+      if (slot) {
+        await syncStaffingAlertForEmployee({
+          employee: slot,
+          previousStatus: "working",
+          newStatus: "need_hire",
+          userId: null,
+        });
+      }
+    }
   }
   toDelete.push({ id: target.id, userId: target.userId });
 

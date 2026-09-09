@@ -121,25 +121,40 @@ export const ROLE_LABELS: Record<string, string> = {
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
   it_tarmoq: "Tarmoq administratori",
-  ombor: "Ombor",
+  ombor: "Omborxona xodimi",
+  ombor_rahbar: "Omborxona bo‘lim boshlig‘i",
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
+  moliya_rahbar: "Moliya bo‘lim boshlig‘i",
+  moliya_xodim: "Moliya xodimi",
+  taminot_rahbar: "Ta’minot bo‘lim boshlig‘i",
+  taminot: "Ta’minot xodimi",
+  rivojlantirish_rahbar: "Rivojlantirish bo‘lim boshlig‘i",
+  rivojlantirish: "Rivojlantirish xodimi",
+  mamuriy_rahbar: "Ma’muriy-xo‘jalik bo‘lim boshlig‘i",
+  mamuriy: "Ma’muriy-xo‘jalik xodimi",
+  gpp_rahbar: "GPP bo‘lim boshlig‘i",
+  gpp: "GPP xodimi",
+  oshpaz_rahbar: "Oshpaz bo‘lim boshlig‘i",
+  oshpaz: "Oshpaz",
+  marketing_rahbar: "Marketing bo‘lim boshlig‘i",
+  marketing: "Marketing xodimi",
   revizor: "Revizor-yig‘uvchi",
   reviziya_rahbar: "Reviziya bo‘limi rahbari",
 };
 
 export function canManagePayroll(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya" || role === "hr_direktor" || role === "hr_kadr_rahbar";
+  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar" || role === "hr_direktor" || role === "hr_kadr_rahbar";
 }
 
 export function canApprovePayroll(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya";
+  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function canEditKpiSettings(role?: string | null) {
-  return role === "admin" || role === "hr_direktor" || role === "hr_kadr_rahbar" || role === "director" || role === "moliya";
+  return role === "admin" || role === "hr_direktor" || role === "hr_kadr_rahbar" || role === "director" || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function currentMonthKey() {

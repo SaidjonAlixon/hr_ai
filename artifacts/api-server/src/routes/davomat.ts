@@ -2832,8 +2832,14 @@ async function dayShiftTypeFor(employeeId: number, workDate: string): Promise<st
   }
 }
 
-function canManageBranchQr(role: string | null | undefined) {
+/** Filial QR ko‘rish — mudir, koordinator, admin, direktor */
+function canViewBranchQr(role: string | null | undefined) {
   return role === "mudir" || role === "koordinator" || role === "admin" || role === "director";
+}
+
+/** Filial QR yaratish/yangilash/o‘chirish — faqat admin va koordinator */
+function canEditBranchQr(role: string | null | undefined) {
+  return role === "koordinator" || role === "admin";
 }
 
 function isQrAdmin(role: string | null | undefined) {
@@ -2911,10 +2917,10 @@ async function assertCanAccessBranchQr(
   return { ok: false, status: 403, error: "Bu filial QR iga ruxsat yo‘q" };
 }
 
-/** QR yaratish/yuklash — faqat mudir va koordinator (admin/direktor ham) */
+/** QR ro‘yxat / ko‘rish — mudir, koordinator, admin */
 router.get("/davomat/qr/branches", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageBranchQr(req.userRole)) {
-    res.status(403).json({ error: "QR yaratish faqat mudir yoki koordinator uchun", code: "qr_forbidden" });
+  if (!canViewBranchQr(req.userRole)) {
+    res.status(403).json({ error: "Filial QR ko‘rishga ruxsat yo‘q", code: "qr_forbidden" });
     return;
   }
   try {
@@ -2968,8 +2974,11 @@ router.get("/davomat/qr/branches", requireAuth, async (req: AuthRequest, res): P
 
 /** Yangi QR yaratish — eski active bekor; payload DB da saqlanadi (qayta ko‘rinadi) */
 router.post("/davomat/qr/issue", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageBranchQr(req.userRole)) {
-    res.status(403).json({ error: "QR yaratish faqat mudir, koordinator yoki admin uchun", code: "qr_forbidden" });
+  if (!canEditBranchQr(req.userRole)) {
+    res.status(403).json({
+      error: "QR yaratish faqat admin yoki koordinator uchun (mudir faqat ko‘radi)",
+      code: "qr_forbidden",
+    });
     return;
   }
   try {
@@ -3030,7 +3039,7 @@ router.post("/davomat/qr/issue", requireAuth, async (req: AuthRequest, res): Pro
       createdAt: row.createdAt.toISOString(),
       expiresAt: null,
       payload,
-      note: "QR saqlandi — mudir/koordinator/admin istalgan vaqtda ko‘ra oladi. Yangi yaratilsa eski o‘chadi.",
+      note: "QR saqlandi — mudir ko‘ra oladi. Yangi yaratilsa eski o‘chadi.",
     });
   } catch (err) {
     console.error("POST /davomat/qr/issue error:", err);
@@ -3040,7 +3049,7 @@ router.post("/davomat/qr/issue", requireAuth, async (req: AuthRequest, res): Pro
 
 /** Faol QR + payload — mudir/koordinator/admin qayta ko‘radi */
 router.get("/davomat/qr/active/:branchId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageBranchQr(req.userRole)) {
+  if (!canViewBranchQr(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
     return;
   }
@@ -3074,10 +3083,13 @@ router.get("/davomat/qr/active/:branchId", requireAuth, async (req: AuthRequest,
   });
 });
 
-/** Faol QR ni bekor qilish — admin istalgan; mudir/koordinator o‘z doirasida */
+/** Faol QR ni bekor qilish — faqat koordinator/admin (mudir o‘chira olmaydi) */
 router.delete("/davomat/qr/active/:branchId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageBranchQr(req.userRole)) {
-    res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
+  if (!canEditBranchQr(req.userRole)) {
+    res.status(403).json({
+      error: "QR o‘chirish faqat admin yoki koordinator uchun",
+      code: "qr_forbidden",
+    });
     return;
   }
   const branchId = Number(req.params.branchId);
@@ -3692,7 +3704,8 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
     const adminQrAnywhere = isAdminQrAnywhere(user.role);
     /** Apteka emas — ofis / boshqa rollar (bo‘limi bo‘lmasa ham QR ko‘rinadi) */
     const officeStaff = !pharmacy;
-    const manageBranch = canManageBranchQr(user.role);
+    const viewBranch = canViewBranchQr(user.role);
+    const editBranch = canEditBranchQr(user.role);
     const manageDept = canManageDeptQrRole(user.role);
     const methods: Array<"FACE_ID" | "QR"> = ["FACE_ID", "QR"];
     res.json({
@@ -3700,8 +3713,9 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
       officeStaff,
       adminQrAnywhere,
       methods,
-      canManageQr: manageBranch || manageDept,
-      canManageBranchQr: manageBranch,
+      canManageQr: editBranch || manageDept,
+      canManageBranchQr: editBranch,
+      canViewBranchQr: viewBranch,
       canManageDeptQr: manageDept,
       assignedBranchId: assignedBranchIdForEmp(emp),
       departmentId: user.departmentId,

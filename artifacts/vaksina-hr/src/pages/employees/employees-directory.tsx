@@ -29,7 +29,7 @@ import {
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
-import { canViewEmployees, canAddDeptStaff, canChangeStaffStatus, isEmployeeDirectoryViewOnly } from "../../lib/roles";
+import { canViewEmployees, canAddDeptStaff, canChangeStaffStatus, isEmployeeDirectoryViewOnly, userRoleLabel } from "../../lib/roles";
 import { AddDeptStaffButton } from "../../components/dept/AddDeptStaffDialog";
 import { fetchStaff, staffQueryKey, type StaffGroup } from "../../lib/staff-api";
 import { formatPersonName } from "../../lib/person-name";
@@ -87,38 +87,73 @@ type StaffRow = Employee & {
   phone?: string | null;
   login?: string | null;
   userRole?: string | null;
+  employmentStatus?: string | null;
 };
 
 function staffContact(e: Employee): StaffRow {
   return e as StaffRow;
 }
 
-/** Dorixona: mudir, farmasevt, stajyor (orgRole / userRole / lavozim / bo‘lim) */
-const DORIXONA_ORG = new Set(["manager", "pharmacist", "intern"]);
-const DORIXONA_USER = new Set(["mudir", "farmasevt", "stajyor"]);
-const DORIXONA_POS_RE =
-  /filial\s*mudiri?|^\s*mudir\s*$|farmasevt|stajyor|stajor|фармацевт/i;
-const DORIXONA_DEPT_RE = /^(farmasevt|dorixona|apteka|фармацевт)$/i;
+/** Dorixona / apteka tarmog‘i — ofis emas */
+const DORIXONA_ORG = new Set([
+  "manager",
+  "pharmacist",
+  "intern",
+  "supervisor",
+  "coordinator",
+  "mudir",
+  "farmasevt",
+  "stajyor",
+  "stajor",
+  "koordinator",
+]);
+const DORIXONA_USER = new Set([
+  "mudir",
+  "farmasevt",
+  "stajyor",
+  "stajor",
+  "koordinator",
+]);
+
+function norm(s: unknown): string {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[ʻʼ'`´]/g, "'")
+    .replace(/\s+/g, " ");
+}
 
 function isDorixonaStaff(e: Employee): boolean {
   const row = staffContact(e);
-  const org = String(row.orgRole || "")
-    .trim()
-    .toLowerCase();
-  const role = String(row.userRole || "")
-    .trim()
-    .toLowerCase();
-  const pos = String(row.position || "").trim();
-  const dept = String(row.departmentName || "").trim();
+  const org = norm(row.orgRole);
+  const role = norm(row.userRole);
+  const pos = norm(row.position);
+  const dept = norm(row.departmentName);
+  const loc = norm(row.location);
 
   if (org && DORIXONA_ORG.has(org)) return true;
   if (role && DORIXONA_USER.has(role)) return true;
-  // Ba’zan DB da o‘zbekcha yozuv saqlangan bo‘lishi mumkin
-  if (/^(mudir|farmasevt|stajyor|stajor)$/i.test(org) || /^(mudir|farmasevt|stajyor|stajor)$/i.test(role)) {
+
+  // Lavozim / bo‘lim / rol matnida apteka belgisi
+  const hay = `${org} ${role} ${pos} ${dept}`;
+  if (
+    /\b(mudir|farmasevt|stajyor|stajor|koordinator|pharmacist|manager|intern|supervisor)\b/.test(
+      hay,
+    ) ||
+    /filial\s*mudir/.test(pos) ||
+    /фармацевт|заведующ/.test(hay)
+  ) {
     return true;
   }
-  if (DORIXONA_POS_RE.test(pos)) return true;
-  if (dept && DORIXONA_DEPT_RE.test(dept)) return true;
+
+  // «Farmasevt» bo‘limi (aniq yoki ichida)
+  if (dept && /(farmasevt|dorixona|apteka|фармацевт)/.test(dept)) return true;
+
+  // Filial GPS / joyi bor va lavozim apteka tipida
+  if (loc && (pos.includes("farmasevt") || pos.includes("mudir") || pos.includes("stajyor"))) {
+    return true;
+  }
+
   return false;
 }
 
@@ -291,7 +326,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   });
 
   const workplaceScoped = useMemo(() => {
-    const all = employees ?? [];
+    const all = Array.isArray(employees) ? employees : [];
     if (workplaceFilter === "dorixona") return all.filter(isDorixonaStaff);
     if (workplaceFilter === "ofis") return all.filter((e) => !isDorixonaStaff(e));
     return all;
@@ -311,6 +346,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     const q = search.trim().toLowerCase();
     return [...workplaceScoped]
       .filter((e) => {
+        // Ofis / dorixona — ikkinchi marta ham tekshiruv (ishonch uchun)
+        if (workplaceFilter === "dorixona" && !isDorixonaStaff(e)) return false;
+        if (workplaceFilter === "ofis" && isDorixonaStaff(e)) return false;
         if (deptFilter !== "all" && e.departmentId !== Number(deptFilter)) return false;
         if (statusFilter !== "all" && (e.employmentStatus || "working") !== statusFilter) return false;
         if (!q) return true;
@@ -321,6 +359,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           e.location,
           e.mentorName,
           e.orgRole && orgRoleLabel(t, e.orgRole),
+          userRoleLabel(staffContact(e).userRole),
           staffContact(e).phone,
           staffContact(e).login,
         ]
@@ -330,7 +369,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         return hay.includes(q);
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
-  }, [workplaceScoped, search, deptFilter, statusFilter, t]);
+  }, [workplaceScoped, workplaceFilter, search, deptFilter, statusFilter, t]);
 
   const setStatus = (id: number, employmentStatus: string) => {
     setPendingId(id);
@@ -573,7 +612,10 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                         </td>
                         <td className="px-3 py-2.5 text-foreground">{e.position}</td>
                         <td className="px-3 py-2.5 text-muted-foreground">
-                          {(e.orgRole && orgRoleLabel(t, e.orgRole)) || e.orgRole || "—"}
+                          {userRoleLabel(staffContact(e).userRole) ||
+                            (e.orgRole && orgRoleLabel(t, e.orgRole)) ||
+                            e.orgRole ||
+                            "—"}
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground">{e.departmentName || "—"}</td>
                         <td className="max-w-[180px] truncate px-3 py-2.5 text-muted-foreground">{e.location || "—"}</td>
@@ -605,7 +647,12 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                         <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
                       </div>
                       <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
-                        <span>{t("emp.col.role")}: {(e.orgRole && orgRoleLabel(t, e.orgRole)) || "—"}</span>
+                        <span>
+                          {t("emp.col.role")}:{" "}
+                          {userRoleLabel(staffContact(e).userRole) ||
+                            (e.orgRole && orgRoleLabel(t, e.orgRole)) ||
+                            "—"}
+                        </span>
                         <span>{t("emp.col.shift")}: {shiftLabel(e, t)}</span>
                         <span className="truncate">{t("emp.col.dept")}: {e.departmentName || "—"}</span>
                         <span>{t("emp.col.hired")}: {formatHired(e.hiredAt)}</span>

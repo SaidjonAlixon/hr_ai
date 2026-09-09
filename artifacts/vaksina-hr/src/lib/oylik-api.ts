@@ -346,13 +346,13 @@ export function shiftMonthKey(ym: string, delta: number) {
 }
 
 export function canManagePayroll(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya" || role === "hr_direktor" || role === "hr_kadr_rahbar";
+  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar" || role === "hr_direktor" || role === "hr_kadr_rahbar";
 }
 
 export function canApprovePayroll(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya";
+  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function canEditKpiSettings(role?: string | null) {
-  return role === "admin" || role === "hr_direktor" || role === "hr_kadr_rahbar" || role === "director" || role === "moliya";
+  return role === "admin" || role === "hr_direktor" || role === "hr_kadr_rahbar" || role === "director" || role === "moliya" || role === "moliya_rahbar";
 }

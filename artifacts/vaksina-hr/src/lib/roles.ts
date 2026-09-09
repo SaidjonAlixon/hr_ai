@@ -117,7 +117,15 @@ export function canViewEmployees(role?: string | null): boolean {
     role === "hr_direktor" ||
     role === "hr_menejer" ||
     role === "distrib_rahbar" ||
-    role === "distrib_hr"
+    role === "distrib_hr" ||
+    role === "moliya_rahbar" ||
+    role === "taminot_rahbar" ||
+    role === "rivojlantirish_rahbar" ||
+    role === "mamuriy_rahbar" ||
+    role === "gpp_rahbar" ||
+    role === "ombor_rahbar" ||
+    role === "oshpaz_rahbar" ||
+    role === "marketing_rahbar"
   );
 }
 
@@ -131,6 +139,14 @@ export const EMPLOYEE_VIEW_ONLY_ROLES = [
   "texnik_rahbar",
   "reviziya_rahbar",
   "koordinator",
+  "moliya_rahbar",
+  "taminot_rahbar",
+  "rivojlantirish_rahbar",
+  "mamuriy_rahbar",
+  "gpp_rahbar",
+  "ombor_rahbar",
+  "oshpaz_rahbar",
+  "marketing_rahbar",
 ] as const;
 
 export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {
@@ -160,7 +176,31 @@ export const DEPT_HEAD_ROLES = [
   "hr_menejer",
   "distrib_rahbar",
   "distrib_hr",
+  "moliya_rahbar",
+  "taminot_rahbar",
+  "rivojlantirish_rahbar",
+  "mamuriy_rahbar",
+  "gpp_rahbar",
+  "ombor_rahbar",
+  "oshpaz_rahbar",
+  "marketing_rahbar",
 ] as const;
+
+/** Ofis bo‘lim xodimlari — faqat Mening ishim + Davomat */
+export const LIMITED_OFFICE_STAFF_ROLES = [
+  "moliya_xodim",
+  "taminot",
+  "rivojlantirish",
+  "mamuriy",
+  "gpp",
+  "ombor",
+  "oshpaz",
+  "marketing",
+] as const;
+
+export function isLimitedOfficeStaffRole(role?: string | null): boolean {
+  return !!role && (LIMITED_OFFICE_STAFF_ROLES as readonly string[]).includes(role);
+}
 
 export function isDistribyutsiyaRole(role?: string | null): boolean {
   return role === "distrib" || role === "distrib_hr" || role === "distrib_rahbar";
@@ -313,12 +353,27 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
   it_tarmoq: "Tarmoq administratori",
-  ombor: "Ombor",
+  ombor: "Omborxona xodimi",
+  ombor_rahbar: "Omborxona bo‘lim boshlig‘i",
   sb: "SB operatori",
   sb_boshliq: "SB bo‘limi boshlig‘i",
   farmasevt: "Farmasevt",
   stajyor: "Stajyor",
   moliya: "Moliyachi",
+  moliya_rahbar: "Moliya bo‘lim boshlig‘i",
+  moliya_xodim: "Moliya xodimi",
+  taminot_rahbar: "Ta’minot bo‘lim boshlig‘i",
+  taminot: "Ta’minot xodimi",
+  rivojlantirish_rahbar: "Rivojlantirish bo‘lim boshlig‘i",
+  rivojlantirish: "Rivojlantirish xodimi",
+  mamuriy_rahbar: "Ma’muriy-xo‘jalik bo‘lim boshlig‘i",
+  mamuriy: "Ma’muriy-xo‘jalik xodimi",
+  gpp_rahbar: "GPP bo‘lim boshlig‘i",
+  gpp: "GPP xodimi",
+  oshpaz_rahbar: "Oshpaz bo‘lim boshlig‘i",
+  oshpaz: "Oshpaz",
+  marketing_rahbar: "Marketing bo‘lim boshlig‘i",
+  marketing: "Marketing xodimi",
   revizor: "Revizor-yig‘uvchi",
   reviziya_rahbar: "Reviziya bo‘limi rahbari",
   distrib: "Distribyutsiya xodimi",

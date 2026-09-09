@@ -15,6 +15,7 @@ export type DeptStaffResult = {
   departmentName: string;
   temporaryPassword: string;
   message: string;
+  position?: string;
 };
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -26,6 +27,31 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error((body as { error?: string }).error || "Xatolik");
   return body as T;
+}
+
+async function downloadExcel(path: string, fallbackName: string) {
+  const res = await fetch(`/api${path}`, { credentials: "include" });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get("Content-Disposition") || "";
+  const match = /filename="?([^"]+)"?/i.exec(cd);
+  const filename = match?.[1] || fallbackName;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadDeptStaffExcel() {
+  const stamp = new Date().toISOString().slice(0, 10);
+  await downloadExcel("/dept-staff/export", `bolim-login-${stamp}.xlsx`);
 }
 
 export function useDeptStaffMeta(enabled: boolean) {
@@ -45,6 +71,7 @@ export function useCreateDeptStaff() {
       lastName: string;
       phone: string;
       role: string;
+      position: string;
     }) =>
       apiFetch<DeptStaffResult>("/dept-staff", {
         method: "POST",

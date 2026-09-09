@@ -57,7 +57,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, isDeptHeadRole, userRoleLabel } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel } from '@/lib/roles';
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -651,6 +651,16 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/test') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
+    if (isLimitedOfficeStaffRole(user.role)) {
+      const allowed =
+        location.startsWith('/vazifalar') ||
+        location.startsWith('/eslatmalar') ||
+        location.startsWith('/davomat-face') ||
+        location === '/notifications';
+      if (!allowed) {
+        setLocation('/vazifalar');
+      }
+    }
   }, [isLoading, isAuthenticated, user, setLocation, location]);
 
   if (isLoading) {
@@ -702,6 +712,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   function injectCommonNav(items: NavItem[], role: string): NavItem[] {
     let next = [...items];
+    if (isLimitedOfficeStaffRole(role)) {
+      return next;
+    }
     // Farmasevt / mudir / stajyor / ofis — Javob olish Asosiyda doim ko‘rinsin
     if (
       (role === 'farmasevt' ||
@@ -989,14 +1002,118 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     ombor: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
+    ],
+    moliya_xodim: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    taminot: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    rivojlantirish: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    mamuriy: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    gpp: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    oshpaz: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    marketing: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    ombor_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
       smenaNav,
-      { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },
-      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+    ],
+    moliya_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Oylik', path: '/oylik', icon: Banknote },
+      { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+    ],
+    taminot_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+    ],
+    rivojlantirish_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+    ],
+    mamuriy_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+    ],
+    gpp_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+    ],
+    oshpaz_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+    ],
+    marketing_rahbar: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     sb: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -1108,9 +1225,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         ],
     userRole,
   );
-  const withFace = roleNav.some((item) => item.path === '/davomat-face')
+  const withFace = isLimitedOfficeStaffRole(userRole)
     ? roleNav
-    : [...roleNav, davomatFaceNav];
+    : roleNav.some((item) => item.path === '/davomat-face')
+      ? roleNav
+      : [...roleNav, davomatFaceNav];
   const navItems = (canSeeHrRecruitment(userRole)
     ? withFace
     : withFace.filter((item) => !isHrRecruitmentPath(item.path))

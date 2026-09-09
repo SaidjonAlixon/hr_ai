@@ -1,9 +1,9 @@
 export function canViewHisobkitob(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya";
+  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function canEditHisobkitob(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya";
+  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function canAdminHisobkitob(role?: string | null) {

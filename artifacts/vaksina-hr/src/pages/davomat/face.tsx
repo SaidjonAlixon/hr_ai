@@ -17,7 +17,6 @@ import {
   ArrowLeft,
   Banknote,
   QrCode,
-  ChevronDown,
   SwitchCamera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -34,6 +33,10 @@ import {
 import { FaceScanDialog } from "@/components/FaceScanDialog";
 import { QrScanDialog, openScanCamera } from "@/components/QrScanDialog";
 import { DavomatPremiumView, type PremiumMethod } from "@/components/davomat/DavomatPremiumView";
+import {
+  DavomatCoachFinger,
+  signalDavomatCoachDone,
+} from "@/components/davomat/DavomatCoachFinger";
 import { useToast } from "@/hooks/use-toast";
 import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
 import { deviceHeadingFromOrientation } from "@/lib/device-compass";
@@ -349,35 +352,6 @@ function MobileStepHint({
       </div>
       <ArrowDown className="h-4 w-4 shrink-0 animate-bounce text-muted-foreground" aria-hidden />
     </div>
-  );
-}
-
-function ScrollDownHint({ label }: { label: string }) {
-  const [show, setShow] = useState(true);
-  useEffect(() => {
-    const onScroll = () => {
-      const nearBottom =
-        window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 120;
-      setShow(!nearBottom);
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onScroll);
-    return () => {
-      window.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onScroll);
-    };
-  }, []);
-  if (!show) return null;
-  return (
-    <button
-      type="button"
-      onClick={() => window.scrollBy({ top: Math.min(420, window.innerHeight * 0.55), behavior: "smooth" })}
-      className="fixed bottom-20 left-1/2 z-40 flex -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card/95 px-3 py-2 text-xs font-semibold text-foreground shadow-lg backdrop-blur md:hidden"
-    >
-      <ChevronDown className="h-4 w-4 animate-bounce" />
-      {label}
-    </button>
   );
 }
 
@@ -1894,6 +1868,7 @@ export default function DavomatFacePage() {
     if (m === "FACE_ID" && !canOpenFace) return;
     if (m === "QR" && !canOpenQr) return;
     setSelectedMethod(m);
+    signalDavomatCoachDone();
     if (!methodReady) setMethodHint(null);
     if (needsPerms) {
       void requestLocationPermission();
@@ -2003,7 +1978,9 @@ export default function DavomatFacePage() {
         ctaDisabled={cta.disabled}
         ctaTone={cta.tone}
         onContinue={handleContinue}
-        onEnableGps={() => void requestLocationPermission()}
+        onEnableGps={() => {
+          void requestLocationPermission();
+        }}
         backHref="/dashboard"
         canManageQr={canManageQr}
         canReport={canReport}
@@ -2065,7 +2042,13 @@ export default function DavomatFacePage() {
         onDetected={onQrDetected}
       />
 
-      {showDualMethods && !done ? <ScrollDownHint label={t("davomat.scrollDownHint")} /> : null}
+      <DavomatCoachFinger
+        enabled={Boolean(showDualMethods && !done && !methodReady)}
+        needsGps={Boolean(mapNeedsGps)}
+        gpsDenied={gpsDenied || Boolean(gpsError)}
+        showMethods={Boolean(methodsReady && !done && !methodReady)}
+        onEnableGps={() => void requestLocationPermission()}
+      />
 
       <AlertDialog open={confirmOut} onOpenChange={setConfirmOut}>
         <AlertDialogContent className="max-w-sm rounded-2xl">

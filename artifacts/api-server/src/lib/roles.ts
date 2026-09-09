@@ -97,7 +97,15 @@ export function canViewEmployees(role?: string | null): boolean {
     role === "texnik_rahbar" ||
     role === "reviziya_rahbar" ||
     role === "hr_direktor" ||
-    role === "hr_menejer"
+    role === "hr_menejer" ||
+    role === "moliya_rahbar" ||
+    role === "taminot_rahbar" ||
+    role === "rivojlantirish_rahbar" ||
+    role === "mamuriy_rahbar" ||
+    role === "gpp_rahbar" ||
+    role === "ombor_rahbar" ||
+    role === "oshpaz_rahbar" ||
+    role === "marketing_rahbar"
   );
 }
 
@@ -110,6 +118,14 @@ export const EMPLOYEE_VIEW_ONLY_ROLES = [
   "texnik_rahbar",
   "reviziya_rahbar",
   "koordinator",
+  "moliya_rahbar",
+  "taminot_rahbar",
+  "rivojlantirish_rahbar",
+  "mamuriy_rahbar",
+  "gpp_rahbar",
+  "ombor_rahbar",
+  "oshpaz_rahbar",
+  "marketing_rahbar",
 ] as const;
 
 export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {

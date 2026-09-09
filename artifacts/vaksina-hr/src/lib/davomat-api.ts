@@ -419,6 +419,7 @@ export type DavomatMethods = {
   methods: Array<"FACE_ID" | "QR">;
   canManageQr: boolean;
   canManageBranchQr?: boolean;
+  canViewBranchQr?: boolean;
   canManageDeptQr?: boolean;
   assignedBranchId: number | null;
   departmentId?: number | null;

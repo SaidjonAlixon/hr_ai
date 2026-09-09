@@ -4,7 +4,7 @@ import { db, departmentsTable } from "@workspace/db";
 export const MOLIYA_DEPARTMENT_NAME = "Moliya";
 
 export function isMoliyaRole(role?: string | null): boolean {
-  return role === "moliya";
+  return role === "moliya" || role === "moliya_rahbar";
 }
 
 export async function ensureMoliyaDepartmentId(): Promise<number> {

@@ -80,6 +80,7 @@ async function terminateUser(userId: number | null) {
 async function dismissEmployeeRecord(
   employee: typeof employeesTable.$inferSelect,
   actorUserId: number,
+  alertStatus: "dismissed" | "need_hire" = "dismissed",
 ) {
   const [updated] = await db
     .update(employeesTable)
@@ -89,9 +90,9 @@ async function dismissEmployeeRecord(
   if (!updated) throw new Error("Xodim yangilanmadi");
 
   await syncStaffingAlertForEmployee({
-    employee: updated,
+    employee: { ...updated, shiftType: employee.shiftType, shiftLabel: employee.shiftLabel },
     previousStatus: employee.employmentStatus,
-    newStatus: "dismissed",
+    newStatus: alertStatus,
     userId: actorUserId,
   });
   await terminateUser(employee.userId);
@@ -194,12 +195,13 @@ export async function dismissPharmacyEmployee(
     };
   }
 
-  await dismissEmployeeRecord(target, actorUserId);
+  await dismissEmployeeRecord(target, actorUserId, "need_hire");
+
   return {
     ok: true,
     kind: "staff",
     fullName: target.fullName,
-    message: `«${target.fullName}» bo‘shatildi. O‘rniga yangi xodim qo‘shishingiz mumkin.`,
+    message: `«${target.fullName}» bo‘shatildi. Shu smena uchun ogohlantirish ochildi — xodim kerak.`,
   };
 }
 

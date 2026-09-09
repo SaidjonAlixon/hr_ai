@@ -104,6 +104,10 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   const isAdmin = adminMode || canManageSettings(user?.role);
   /** Faqat admin: istalgan filial/bo‘lim QR + lokatsiyasiz skaner */
   const adminQrAnywhere = user?.role === "admin";
+  const isMudir = user?.role === "mudir";
+  const isKoordinator = user?.role === "koordinator";
+  /** Filial QR yaratish — faqat admin va koordinator */
+  const canEditBranch = user?.role === "admin" || isKoordinator;
 
   const methodsQ = useQuery({
     queryKey: ["davomat-methods"],
@@ -112,12 +116,18 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   });
 
   const canBranch =
+    Boolean(methodsQ.data?.canViewBranchQr) ||
     Boolean(methodsQ.data?.canManageBranchQr) ||
-    user?.role === "mudir" ||
-    user?.role === "koordinator" ||
-    isAdmin;
+    isMudir ||
+    isKoordinator ||
+    user?.role === "admin" ||
+    user?.role === "director";
   const canDept =
     Boolean(methodsQ.data?.canManageDeptQr) || isDeptHeadRole(user?.role) || isAdmin;
+  const canEditDept =
+    Boolean(methodsQ.data?.canManageDeptQr) || isDeptHeadRole(user?.role) || user?.role === "admin";
+  /** Filial: admin/koordinator; ofis bo‘lim: rahbar/admin */
+  const canEditQr = scope === "branches" ? canEditBranch : canEditDept;
 
   useEffect(() => {
     if (methodsQ.isLoading) return;
@@ -518,8 +528,8 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   }
 
   /** Ofis QR id=0 — Boolean(0) false bo‘lmasin */
-  const canIssue = selectedId != null && !issue.isPending;
-  const canRevoke = selectedId != null && Boolean(selected?.hasActiveQr) && !revoke.isPending;
+  const canIssue = canEditQr && selectedId != null && !issue.isPending;
+  const canRevoke = canEditQr && selectedId != null && Boolean(selected?.hasActiveQr) && !revoke.isPending;
   const entityLabel = scope === "branches" ? "filial" : "bo‘lim";
   const showTabs = canBranch && canDept;
 
@@ -537,9 +547,13 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
             <p className="text-sm text-muted-foreground">
               {adminQrAnywhere
                 ? "Filial va bo‘lim QR · istalgan QR skaner"
-                : scope === "branches"
-                  ? "Filial QR yaratish, ko‘rish va yuklab olish"
-                  : "Bo‘lim QR yaratish, ko‘rish va yuklab olish"}
+                : isMudir
+                  ? "Filial QR — faqat ko‘rish va yuklab olish"
+                  : isKoordinator
+                    ? "O‘z filiallaringiz uchun QR yaratish yoki yangilash"
+                    : scope === "branches"
+                      ? "Filial QR yaratish, ko‘rish va yuklab olish"
+                      : "Bo‘lim QR yaratish, ko‘rish va yuklab olish"}
             </p>
           </div>
           {items.length > 0 ? (
@@ -554,9 +568,13 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           ) : null}
         </div>
         <p className="max-w-3xl text-[13px] leading-relaxed text-muted-foreground">
-          {scope === "branches"
-            ? "QR bir marta yaratiladi va saqlanadi — mudir ham, koordinator ham ko‘radi. Yangi yaratilsa eski almashtiriladi."
-            : "Ofis QR — faqat ofis xodimlari (100 m). Mudir, farmasevt, stajyor — o‘z filial QR / Face ID."}
+          {isMudir
+            ? "QR faqat admin yoki koordinator yaratadi. Siz faqat ko‘rasiz va PDF/PNG yuklab olasiz."
+            : isKoordinator
+              ? "Faqat o‘z tarmog‘ingizdagi filiallar. QR yo‘q bo‘lsa — «QR yaratish», bor bo‘lsa — «Yangi QR»."
+              : scope === "branches"
+                ? "QR yaratish: faqat admin va koordinator. Mudir faqat ko‘radi."
+                : "Ofis QR — faqat ofis xodimlari (100 m). Mudir, farmasevt, stajyor — o‘z filial QR / Face ID."}
         </p>
       </header>
 
@@ -764,19 +782,21 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         )}
 
         <div className="mt-4 flex flex-col items-center gap-2 sm:flex-row sm:justify-center">
-          <Button
-            type="button"
-            size="lg"
-            className="h-11 w-full max-w-xs gap-2 rounded-2xl sm:w-auto sm:min-w-[12rem]"
-            disabled={!canIssue}
-            onClick={() => {
-              if (selectedId == null) return;
-              issue.mutate(selectedId);
-            }}
-          >
-            {issue.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-            {selected?.hasActiveQr ? "Yangi QR" : "QR yaratish"}
-          </Button>
+          {canEditQr ? (
+            <Button
+              type="button"
+              size="lg"
+              className="h-11 w-full max-w-xs gap-2 rounded-2xl sm:w-auto sm:min-w-[12rem]"
+              disabled={!canIssue}
+              onClick={() => {
+                if (selectedId == null) return;
+                issue.mutate(selectedId);
+              }}
+            >
+              {issue.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+              {selected?.hasActiveQr ? "Yangi QR" : "QR yaratish"}
+            </Button>
+          ) : null}
           <Button
             type="button"
             size="lg"
@@ -788,7 +808,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
             {bulkPdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
             PDF — barcha QR
           </Button>
-          {isAdmin ? (
+          {canEditQr ? (
             <Button
               type="button"
               size="lg"
@@ -809,17 +829,33 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
             </Button>
           ) : null}
         </div>
-        {needsReissue && selectedId != null ? (
+        {canEditQr && needsReissue && selectedId != null ? (
           <p className="mt-2 text-center text-[11px] text-amber-700 dark:text-amber-300">
             Tanlangan {entityLabel}da eski QR payload yo‘q — «Yangi QR» bosing.
           </p>
-        ) : selected?.hasActiveQr ? (
+        ) : canEditQr && selected?.hasActiveQr ? (
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
             «Yangi QR» eski kodni bekor qiladi. Barcha QR lar pastda ketma-ket ko‘rinadi.
           </p>
-        ) : selected ? (
+        ) : canEditQr && selected ? (
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
             Tanlangan {entityLabel}da hali QR yo‘q — «QR yaratish» ni bosing.
+          </p>
+        ) : isMudir && selected && !selected.hasActiveQr ? (
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Hali QR yaratilmagan — koordinator yoki admindan so‘rang.
+          </p>
+        ) : isMudir ? (
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Siz faqat QR ni ko‘rasiz va yuklab olasiz.
+          </p>
+        ) : isKoordinator && selected && !selected.hasActiveQr ? (
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Bu filialda QR yo‘q — «QR yaratish» ni bosing.
+          </p>
+        ) : isKoordinator && selected?.hasActiveQr ? (
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            «Yangi QR» eski kodni almashtiradi.
           </p>
         ) : null}
       </section>

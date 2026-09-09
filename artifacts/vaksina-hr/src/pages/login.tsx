@@ -16,6 +16,8 @@ import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpA
 import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import { useI18n } from '../i18n/I18nProvider';
 
+import { isStajyor, isLimitedOfficeStaffRole } from '../lib/roles';
+
 export default function Login() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
@@ -29,7 +31,15 @@ export default function Login() {
 
   const goAfterLogin = (user: User) => {
     switchToUser(user);
-    setLocation(user.role === 'stajyor' ? '/kirish' : '/dashboard');
+    if (isStajyor(user.role)) {
+      setLocation('/kirish');
+      return;
+    }
+    if (isLimitedOfficeStaffRole(user.role)) {
+      setLocation('/vazifalar');
+      return;
+    }
+    setLocation('/dashboard');
   };
 
   const handleLogin = (e?: React.FormEvent) => {
@@ -192,10 +202,7 @@ export default function Login() {
                           { data: { login: acc.login, password: acc.pass } },
                           {
                             onSuccess: (data) => {
-                              switchToUser(data.user);
-                              setLocation(
-                                data.user.role === 'stajyor' ? '/kirish' : '/dashboard',
-                              );
+                              goAfterLogin(data.user);
                             },
                           },
                         );

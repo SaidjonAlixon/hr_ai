@@ -410,7 +410,7 @@ export function DavomatZoneMap({
             <MapPin className="h-3.5 w-3.5" />
             {baseTag}
           </div>
-          <button type="button" className="dv-map-gps-cta dv-map-gps-cta-alert" onClick={onEnableGps}>
+          <button type="button" id="dv-coach-gps" className="dv-map-gps-cta dv-map-gps-cta-alert" onClick={onEnableGps}>
             <span className="dv-map-gps-pulse" aria-hidden />
             Yoqing
           </button>

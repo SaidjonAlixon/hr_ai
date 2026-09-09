@@ -1056,7 +1056,7 @@ export default function PharmacyNetworkPage() {
   const networkEmpty = !isMudirOnly && coordinators.length === 0 && allManagers.length === 0;
 
   return (
-    <div className={cn('pharmacy-network-page space-y-5', canAddTeam && 'pb-24 md:pb-0')}>
+    <div className={cn('pharmacy-network-page space-y-5', (canAddTeam || isKoordinatorOnly) && 'pb-24 md:pb-0')}>
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h1 className="text-2xl font-bold tracking-tight text-foreground sm:text-3xl">{t("pharmacy.title")}</h1>
@@ -1161,7 +1161,7 @@ export default function PharmacyNetworkPage() {
                   {openAlerts.length ? ` (${openAlerts.length})` : ''}
                 </h2>
                 {openAlerts.length > 0 && !alertsOpen && (
-                  <span className="hidden rounded-full bg-red-600/15 px-2 py-0.5 text-[10px] font-semibold text-red-700 animate-pulse dark:text-red-300 sm:inline">
+                  <span className="rounded-full bg-red-600/15 px-2 py-0.5 text-[10px] font-semibold text-red-700 animate-pulse dark:text-red-300">
                     Yangi xabar bor — oching
                   </span>
                 )}
@@ -1503,9 +1503,21 @@ export default function PharmacyNetworkPage() {
                 </div>
 
                 {team.length === 0 ? (
-                  <p className="px-4 py-6 text-center text-sm text-amber-800 dark:text-amber-300">
-                    Bu filialda farmasevt va stajyor yo‘q
-                  </p>
+                  <div className="space-y-3 px-4 py-6 text-center">
+                    <p className="text-sm text-amber-800 dark:text-amber-300">
+                      Bu filialda farmasevt va stajyor yo‘q
+                    </p>
+                    {(isKoordinatorOnly || canAddMudir || canAddTeam) && (
+                      <Button
+                        type="button"
+                        className="h-11 w-full max-w-xs gap-2"
+                        onClick={() => openAddStaff('xodim', manager.id)}
+                      >
+                        <Plus className="h-4 w-4" />
+                        Farmasevt qo‘shish
+                      </Button>
+                    )}
+                  </div>
                 ) : (
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -1844,47 +1856,36 @@ export default function PharmacyNetworkPage() {
                             <button
                               type="button"
                               onClick={() => openAddStaff('mudir', manager.id)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-300 bg-amber-50 text-amber-900 shadow-sm hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                              className="inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-2.5 text-xs font-semibold text-amber-900 shadow-sm hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
                               title="Yangi mudir qo‘shish"
                             >
                               <Plus className="h-4 w-4" />
+                              <span className="hidden sm:inline">Mudir</span>
                             </button>
                           )}
-                          {isKoordinatorOnly && (
+                          {(isKoordinatorOnly || (canAddMudir && !isKoordinatorOnly) || canAddTeam) && (
                             <button
                               type="button"
                               onClick={() => openAddStaff('xodim', manager.id)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-sm hover:bg-muted"
+                              className={cn(
+                                'inline-flex h-10 min-w-10 items-center justify-center gap-1 rounded-lg px-2.5 text-xs font-semibold shadow-sm',
+                                !hasTeam
+                                  ? 'border border-sky-300 bg-sky-50 text-sky-900 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-300'
+                                  : canAddTeam
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'border border-border bg-card text-foreground hover:bg-muted',
+                              )}
                               title="Farmasevt yoki stajyor qo‘shish"
                             >
                               <Plus className="h-4 w-4" />
-                            </button>
-                          )}
-                          {canAddMudir && !isKoordinatorOnly && (
-                            <button
-                              type="button"
-                              onClick={() => openAddStaff('xodim', manager.id)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-border bg-card text-foreground shadow-sm hover:bg-muted"
-                              title={t("pharmacy.addStaff")}
-                            >
-                              <Plus className="h-4 w-4" />
-                            </button>
-                          )}
-                          {canAddTeam && (
-                            <button
-                              type="button"
-                              onClick={() => openAddStaff('xodim', manager.id)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm"
-                              title={t("pharmacy.addStaff")}
-                            >
-                              <Plus className="h-4 w-4" />
+                              <span className="hidden sm:inline">Xodim</span>
                             </button>
                           )}
                           {showDismissButton(manager) && (
                             <button
                               type="button"
                               onClick={() => openDismissTarget(manager)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-amber-200 bg-amber-50 text-amber-800 shadow-sm hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-amber-200 bg-amber-50 text-amber-800 shadow-sm hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
                               title={t("pharmacy.dismissMudirTitle")}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1894,7 +1895,7 @@ export default function PharmacyNetworkPage() {
                             <button
                               type="button"
                               onClick={() => openDeleteTarget(manager, fullTeam.length)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-rose-200 bg-rose-50 text-rose-700 shadow-sm hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-lg border border-rose-200 bg-rose-50 text-rose-700 shadow-sm hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300 dark:hover:bg-rose-950/60"
                               title={t("pharmacy.deleteBranchTitle")}
                             >
                               <Trash2 className="h-4 w-4" />
@@ -1904,10 +1905,10 @@ export default function PharmacyNetworkPage() {
                             <button
                               type="button"
                               onClick={(e) => openEditor(manager, e)}
-                              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
+                              className="inline-flex h-10 w-10 items-center justify-center rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-primary"
                               title="Holatni o'zgartirish"
                             >
-                              <Pencil className="h-3.5 w-3.5" />
+                              <Pencil className="h-4 w-4" />
                             </button>
                           )}
                         </div>
@@ -2020,15 +2021,51 @@ export default function PharmacyNetworkPage() {
                         {open ? 'Yopish' : 'Batafsil'}
                       </button>
 
+                      {(noMudir && canAddMudir) || (!hasTeam && (isKoordinatorOnly || canAddMudir || canAddTeam)) ? (
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                          {noMudir && canAddMudir ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="h-11 w-full gap-2 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200"
+                              onClick={() => openAddStaff('mudir', manager.id)}
+                            >
+                              <Plus className="h-4 w-4" />
+                              Mudir qo‘shish
+                            </Button>
+                          ) : null}
+                          {!hasTeam && (isKoordinatorOnly || canAddMudir || canAddTeam) ? (
+                            <Button
+                              type="button"
+                              className="h-11 w-full gap-2"
+                              onClick={() => openAddStaff('xodim', manager.id)}
+                            >
+                              <Plus className="h-4 w-4" />
+                              Farmasevt qo‘shish
+                            </Button>
+                          ) : null}
+                        </div>
+                      ) : null}
+
                       {isMudirOnly && (
                         <div className="space-y-2 border-t border-border pt-3 dark:border-slate-700/60">
                           <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                             Filial xodimlari
                           </p>
                           {fullTeam.length === 0 ? (
-                            <p className="text-center text-xs text-muted-foreground">
-                              Hali farmasevt yoki stajyor yo‘q. «Xodim qo‘shish» bosing.
-                            </p>
+                            <div className="space-y-2">
+                              <p className="text-center text-xs text-muted-foreground">
+                                Hali farmasevt yoki stajyor yo‘q.
+                              </p>
+                              <Button
+                                type="button"
+                                className="h-11 w-full gap-2"
+                                onClick={() => openAddStaff('xodim', manager.id)}
+                              >
+                                <Plus className="h-4 w-4" />
+                                Xodim qo‘shish
+                              </Button>
+                            </div>
                           ) : (
                             fullTeam.map((ph) => {
                               const linked = alertByEmployee.get(ph.id);
@@ -2192,12 +2229,29 @@ export default function PharmacyNetworkPage() {
         </div>
       </div>
 
-      {canAddTeam && (
+      {(canAddTeam || isKoordinatorOnly) && (
         <div className="pn-mobile-bar md:hidden">
-          <Button className="h-11 w-full gap-2" onClick={() => openAddStaff('xodim')}>
-            <Plus className="h-4 w-4" />
-            Xodim qo‘shish
-          </Button>
+          {isKoordinatorOnly ? (
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant="outline"
+                className="h-11 w-full gap-1.5 border-amber-300 bg-amber-50 text-amber-950"
+                onClick={() => openAddStaff('mudir')}
+              >
+                <Plus className="h-4 w-4" />
+                Mudir
+              </Button>
+              <Button className="h-11 w-full gap-1.5" onClick={() => openAddStaff('xodim')}>
+                <Plus className="h-4 w-4" />
+                Farmasevt
+              </Button>
+            </div>
+          ) : (
+            <Button className="h-11 w-full gap-2" onClick={() => openAddStaff('xodim')}>
+              <Plus className="h-4 w-4" />
+              Xodim qo‘shish
+            </Button>
+          )}
         </div>
       )}
 

@@ -101,9 +101,31 @@ export async function syncStaffingAlertForEmployee(opts: {
   }
 
   const statusLabel = EMP_STATUS_LABEL[newStatus] ?? newStatus;
+  const shiftBit = [employee.shiftLabel, employee.shiftType]
+    .filter(Boolean)
+    .map(String)[0];
+  const shiftTxt = shiftBit
+    ? String(shiftBit).includes("smena") || String(shiftBit).includes("+")
+      ? String(shiftBit)
+      : `${String(shiftBit) === "two" || String(shiftBit) === "2" ? "2" : String(shiftBit) === "three" || String(shiftBit) === "3" ? "3" : "1"}-smena`
+    : "";
+
+  const roleBit =
+    employee.orgRole === "manager"
+      ? "mudir"
+      : employee.orgRole === "intern"
+        ? "stajyor"
+        : "farmasevt";
+
+  const text =
+    newStatus === "need_hire" || newStatus === "dismissed"
+      ? `Ogohlantirish: ${branch || "Filial"}${shiftTxt ? ` · ${shiftTxt}` : ""} — ${roleBit} uchun xodim kerak` +
+        (employee.fullName ? ` (${employee.fullName})` : "")
+      : `Ogohlantirish: ${branch || "Filial"} — ${employee.fullName} (${statusLabel})`;
+
   await notifyByRoles({
     roles: ["koordinator", "admin"],
-    text: `Ogohlantirish: ${branch || "Filial"} — ${employee.fullName} (${statusLabel})`,
+    text,
     type: "stage_change",
     linkUrl: "/pharmacy-network",
   });

@@ -20,6 +20,14 @@ export const DEPT_HEAD_ROLES = [
   "hr_menejer",
   "distrib_rahbar",
   "distrib_hr",
+  "moliya_rahbar",
+  "taminot_rahbar",
+  "rivojlantirish_rahbar",
+  "mamuriy_rahbar",
+  "gpp_rahbar",
+  "ombor_rahbar",
+  "oshpaz_rahbar",
+  "marketing_rahbar",
 ] as const;
 
 const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
@@ -32,6 +40,14 @@ const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   hr_menejer: ["hr", "recruiter", "trainer", "mentor"],
   distrib_rahbar: ["distrib", "distrib_hr"],
   distrib_hr: ["distrib"],
+  moliya_rahbar: ["moliya_xodim"],
+  taminot_rahbar: ["taminot"],
+  rivojlantirish_rahbar: ["rivojlantirish"],
+  mamuriy_rahbar: ["mamuriy"],
+  gpp_rahbar: ["gpp"],
+  ombor_rahbar: ["ombor"],
+  oshpaz_rahbar: ["oshpaz"],
+  marketing_rahbar: ["marketing"],
 };
 
 const RAHBAR_SUFFIX = /_rahbar$|^sb_boshliq$|^department_head$|^hr_direktor$|^hr_menejer$/;
@@ -64,10 +80,25 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   texnik: "Texnik",
   revizor: "Revizor-yig‘uvchi",
   sb: "SB operatori",
-  ombor: "Ombor",
+  ombor: "Omborxona xodimi",
+  ombor_rahbar: "Omborxona bo‘lim boshlig‘i",
   distrib: "Distribyutsiya xodimi",
   distrib_hr: "Distribyutsiya HR",
   distrib_rahbar: "Distribyutsiya rahbari",
+  moliya_rahbar: "Moliya bo‘lim boshlig‘i",
+  moliya_xodim: "Moliya xodimi",
+  taminot_rahbar: "Ta’minot bo‘lim boshlig‘i",
+  taminot: "Ta’minot xodimi",
+  rivojlantirish_rahbar: "Rivojlantirish bo‘lim boshlig‘i",
+  rivojlantirish: "Rivojlantirish xodimi",
+  mamuriy_rahbar: "Ma’muriy-xo‘jalik bo‘lim boshlig‘i",
+  mamuriy: "Ma’muriy-xo‘jalik xodimi",
+  gpp_rahbar: "GPP bo‘lim boshlig‘i",
+  gpp: "GPP xodimi",
+  oshpaz_rahbar: "Oshpaz bo‘lim boshlig‘i",
+  oshpaz: "Oshpaz",
+  marketing_rahbar: "Marketing bo‘lim boshlig‘i",
+  marketing: "Marketing xodimi",
 };
 
 export function isDeptHeadRole(role?: string | null): boolean {

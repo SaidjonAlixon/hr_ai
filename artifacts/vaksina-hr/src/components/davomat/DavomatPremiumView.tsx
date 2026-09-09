@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { Link } from "wouter";
 import { DavomatZoneMap } from "@/components/davomat/DavomatZoneMap";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import type { DavomatDayMetrics } from "@/lib/davomat-api";
 
@@ -91,6 +92,7 @@ type Props = {
 };
 
 export function DavomatPremiumView(p: Props) {
+  const { toast } = useToast();
   const inDone = Boolean(p.hasIn || (p.checkInLabel && p.checkInLabel !== "—"));
   const outDone = Boolean(p.done || (p.checkOutLabel && p.checkOutLabel !== "—"));
   /** Joriy soat 19:00+ → kechasi.png (clockLabel Toshkent) */
@@ -98,6 +100,13 @@ export function DavomatPremiumView(p: Props) {
     const h = Number(String(p.clockLabel).split(":")[0]);
     return Number.isFinite(h) && h >= 19;
   })();
+
+  const hintInfoOnly = () => {
+    toast({
+      title: "Bu yer bosilmaydi",
+      description: "Bu yerda keldi–ketdi vaqtingiz ko‘rsatiladi",
+    });
+  };
 
   return (
     <div className="davomat-face-page dv-premium">
@@ -139,8 +148,12 @@ export function DavomatPremiumView(p: Props) {
             </div>
           </header>
 
-          {/* Clock */}
-          <section className="dv-clock-card relative z-[1] mt-4 px-3 py-3 sm:px-4 sm:py-4">
+          {/* Clock — faqat ma'lumot */}
+          <button
+            type="button"
+            className="dv-clock-card relative z-[1] mt-4 w-full cursor-default px-3 py-3 text-left sm:px-4 sm:py-4"
+            onClick={hintInfoOnly}
+          >
             <div className="relative z-[1] flex items-center gap-2.5 sm:gap-3">
               <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/15 text-white shadow-inner sm:h-14 sm:w-14">
                 <Clock3 className="h-6 w-6 sm:h-7 sm:w-7" />
@@ -171,11 +184,15 @@ export function DavomatPremiumView(p: Props) {
                 </p>
               </div>
             </div>
-          </section>
+          </button>
 
-          {/* Keldi / Ketadi */}
+          {/* Keldi / Ketadi — faqat ma'lumot */}
           <section className="relative z-[1] mt-3 grid grid-cols-2 gap-2.5">
-            <div className="dv-status-in relative flex items-center gap-2 px-3 py-2">
+            <button
+              type="button"
+              className="dv-status-in relative flex w-full cursor-default items-center gap-2 px-3 py-2 text-left"
+              onClick={hintInfoOnly}
+            >
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-1.5 text-[11px] font-medium leading-none text-white/80">
                   {inDone ? "Keldi" : "Keladi"}
@@ -195,8 +212,12 @@ export function DavomatPremiumView(p: Props) {
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black/15 text-white">
                 <LogIn className="h-5 w-5" />
               </div>
-            </div>
-            <div className="dv-status-out relative flex items-center gap-2 px-3 py-2">
+            </button>
+            <button
+              type="button"
+              className="dv-status-out relative flex w-full cursor-default items-center gap-2 px-3 py-2 text-left"
+              onClick={hintInfoOnly}
+            >
               <div className="min-w-0 flex-1">
                 <p className="flex items-center gap-1.5 text-[11px] font-medium leading-none text-white/80">
                   {outDone ? "Ketdi" : "Ketadi"}
@@ -216,7 +237,7 @@ export function DavomatPremiumView(p: Props) {
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-black/15 text-white">
                 <LogOut className="h-5 w-5" />
               </div>
-            </div>
+            </button>
           </section>
         </div>
 
@@ -243,7 +264,7 @@ export function DavomatPremiumView(p: Props) {
 
         {/* Methods */}
         {p.methodsReady && p.showMethodPicker ? (
-          <section className="mt-4">
+          <section className="mt-4" id="dv-coach-methods">
             <h2 className="text-base font-semibold text-white">Davomat usulini tanlang</h2>
             <p className="mt-0.5 text-xs text-white/50">
               Istaganingizni tanlang — Face ID yoki QR
@@ -256,6 +277,7 @@ export function DavomatPremiumView(p: Props) {
             <div className="mt-3 grid grid-cols-2 gap-2.5">
               <button
                 type="button"
+                id="dv-coach-face"
                 disabled={p.outsideZone || !p.canOpenFace || p.busy}
                 onClick={() => p.onPickMethod("FACE_ID")}
                 className={cn(
@@ -288,6 +310,7 @@ export function DavomatPremiumView(p: Props) {
               </button>
               <button
                 type="button"
+                id="dv-coach-qr"
                 disabled={p.outsideZone || !p.canOpenQr || p.busy}
                 onClick={() => p.onPickMethod("QR")}
                 className={cn(

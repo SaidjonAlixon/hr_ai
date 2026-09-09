@@ -1,10 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'wouter';
-import { useGetEmployees, type Employee } from '@workspace/api-client-react';
+import { useQuery } from '@tanstack/react-query';
+import { type Employee } from '@workspace/api-client-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { isHrManager } from '../../lib/roles';
 import { useI18n } from '../../i18n/I18nProvider';
+import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import {
   formatNeedDt,
   needLabel,
@@ -138,9 +140,12 @@ export default function EhtiyojPage() {
   const { data: needs, isLoading, refetch } = useBranchNeeds();
   const { data: history, isLoading: historyLoading, refetch: refetchHistory } =
     useBranchNeedsHistory();
-  const { data: employees, isLoading: employeesLoading } = useGetEmployees(undefined, {
-    query: { enabled: canWrite && !isMudir && !isKoordinator },
-  } as any);
+  const { data: employees, isLoading: employeesLoading } = useQuery({
+    queryKey: staffQueryKey('active', '', 'all', 'dorixona'),
+    queryFn: () => fetchStaff('active', { workplace: 'dorixona' }),
+    enabled: canWrite && !isMudir && !isKoordinator,
+    staleTime: 30_000,
+  });
   const { data: auditBranches = [], isLoading: branchesLoading } = useAuditBranches();
   const {
     data: assignees,

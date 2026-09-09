@@ -12,7 +12,7 @@ export async function fetchStaff(
   if (params?.departmentId && params.departmentId !== "all") {
     qs.set("departmentId", params.departmentId);
   }
-  if (params?.workplace && params.workplace !== "all") {
+  if (params?.workplace) {
     qs.set("workplace", params.workplace);
   }
   const res = await fetch(`/api/employees?${qs.toString()}`, { credentials: "include" });

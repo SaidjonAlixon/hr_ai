@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { useGetEmployees, type Employee } from '@workspace/api-client-react';
+import { useQuery } from '@tanstack/react-query';
+import { type Employee } from '@workspace/api-client-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
 import { isHrManager, isHrRole, isSbRole, canChangeStaffStatus } from '../../lib/roles';
+import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import {
   EMPLOYMENT_STATUS_LABELS,
   PIPELINE_STEPS,
@@ -319,7 +321,15 @@ export default function PharmacyNetworkPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
-  const { data: employees, isLoading, refetch } = useGetEmployees();
+  const {
+    data: employees,
+    isLoading,
+    refetch,
+  } = useQuery({
+    queryKey: staffQueryKey('active', '', 'all', 'dorixona'),
+    queryFn: () => fetchStaff('active', { workplace: 'dorixona' }),
+    staleTime: 30_000,
+  });
   const patchProfile = usePatchEmployeeProfile();
   const { data: alerts, refetch: refetchAlerts } = useStaffingAlerts('open', {
     enabled: !!user,

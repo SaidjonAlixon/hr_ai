@@ -284,19 +284,24 @@ function scopeEmployees(
 
 router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    if (!canViewEmployees(req.userRole)) {
+    const role = req.userRole ?? "";
+    const { departmentId, mentorId, search, group, workplace } = req.query as Record<string, string>;
+    const pharmacyNetworkRole =
+      role === "mudir" || role === "koordinator" || role === "farmasevt" || role === "stajyor";
+    // Ofis katalogi yoki apteka tarmog‘i (mudir/koordinator)
+    if (!canViewEmployees(role) && !pharmacyNetworkRole) {
       res.status(403).json({ error: "Xodimlar ro‘yxatini ko‘rish ruxsati yo‘q" });
       return;
     }
-    const { departmentId, mentorId, search, group, workplace } = req.query as Record<string, string>;
-    const role = req.userRole ?? "";
     const userId = req.userId;
     const staffGroup = group === "other" ? "other" : "active";
     const deptHeadScoped = isDeptHeadRole(role) && !!userId && !canViewEmployeesFull(role);
     const fullAccess = canViewEmployeesFull(role);
-    // Default ofis; dorixona/all faqat to‘liq ruxsatli (admin/rahbariyat/HR/SB)
+    // Default ofis; dorixona/all — to‘liq ruxsat; apteka rollari — doim dorixona
     let workplaceMode: "ofis" | "dorixona" | "all" = "ofis";
-    if (fullAccess && !deptHeadScoped) {
+    if (pharmacyNetworkRole) {
+      workplaceMode = "dorixona";
+    } else if (fullAccess && !deptHeadScoped) {
       if (workplace === "dorixona" || workplace === "all") workplaceMode = workplace;
       else workplaceMode = "ofis";
     }

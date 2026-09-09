@@ -1,4 +1,4 @@
-﻿import { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
 import { and, eq, gte, lte, inArray, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import {
@@ -2854,12 +2854,22 @@ function isOfficeSharedQrDepartment(departmentId: number | null | undefined) {
   return Number(departmentId) === OFFICE_SHARED_QR_DEPARTMENT_ID;
 }
 
-/** Ofis bo‘lim QR yaratish: admin/direktor yoki bo‘lim rahbari */
-function canManageDeptQrRole(role: string | null | undefined) {
+/** Ofis QR ko‘rish/yuklash — admin, direktor, bo‘lim boshliqlari */
+function canViewDeptQrRole(role: string | null | undefined) {
   if (!role) return false;
   if (isQrAdmin(role)) return true;
   if (isDeptHeadRole(role)) return true;
   return /_rahbar$/.test(role);
+}
+
+/** Ofis QR yaratish/yangilash/o‘chirish — faqat admin */
+function canEditDeptQrRole(role: string | null | undefined) {
+  return role === "admin";
+}
+
+/** @deprecated use canViewDeptQrRole / canEditDeptQrRole */
+function canManageDeptQrRole(role: string | null | undefined) {
+  return canViewDeptQrRole(role);
 }
 
 /** Faqat admin: istalgan filial/bo‘lim QR + lokatsiya shartsiz (geofence yo‘q) */
@@ -2867,30 +2877,54 @@ function isAdminQrAnywhere(role: string | null | undefined) {
   return role === "admin";
 }
 
-async function assertCanAccessDeptQr(
+async function assertCanViewDeptQr(
   role: string | null | undefined,
   userId: number,
   departmentId: number,
 ): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (!canViewDeptQrRole(role)) {
+    return { ok: false, status: 403, error: "Bo‘lim QR ko‘rishga ruxsat yo‘q" };
+  }
   if (isOfficeSharedQrDepartment(departmentId)) {
-    if (!isQrAdmin(role)) {
-      return { ok: false, status: 403, error: "Umumiy Ofis QR faqat admin/direktor yaratadi" };
-    }
     return { ok: true };
   }
   if (isQrAdmin(role)) return { ok: true };
-  if (!canManageDeptQrRole(role)) {
-    return { ok: false, status: 403, error: "Bo‘lim QR iga ruxsat yo‘q" };
-  }
   const [me] = await db
     .select({ departmentId: usersTable.departmentId })
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
   if (!me?.departmentId || me.departmentId !== departmentId) {
-    return { ok: false, status: 403, error: "Faqat o‘z bo‘limingiz QR ini boshqarishingiz mumkin" };
+    return { ok: false, status: 403, error: "Faqat o‘z bo‘limingiz QR ini ko‘rishingiz mumkin" };
   }
   return { ok: true };
+}
+
+async function assertCanEditDeptQr(
+  role: string | null | undefined,
+  _userId: number,
+  departmentId: number,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  if (!canEditDeptQrRole(role)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "Ofis QR yaratish/o‘chirish faqat admin uchun. Boshqalar faqat ko‘radi yoki yuklab oladi.",
+    };
+  }
+  if (!isOfficeSharedQrDepartment(departmentId) && !isQrAdmin(role)) {
+    return { ok: false, status: 403, error: "Faqat umumiy Ofis QR boshqariladi" };
+  }
+  return { ok: true };
+}
+
+/** legacy alias */
+async function assertCanAccessDeptQr(
+  role: string | null | undefined,
+  userId: number,
+  departmentId: number,
+): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
+  return assertCanEditDeptQr(role, userId, departmentId);
 }
 
 async function assertCanAccessBranchQr(
@@ -3111,18 +3145,13 @@ router.delete("/davomat/qr/active/:branchId", requireAuth, async (req: AuthReque
   res.json({ ok: true, revoked: true, qrId: before.qrId, version: before.version });
 });
 
-/** Ofis bo‘limlari — QR yaratish mumkin bo‘lganlar */
+/** Ofis QR — ko‘rish: admin/direktor/bo‘lim boshliqlari; yaratish: faqat admin */
 router.get("/davomat/qr/departments", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageDeptQrRole(req.userRole)) {
-    res.status(403).json({ error: "Bo‘lim QR yaratishga ruxsat yo‘q", code: "qr_forbidden" });
+  if (!canViewDeptQrRole(req.userRole)) {
+    res.status(403).json({ error: "Bo‘lim QR ko‘rishga ruxsat yo‘q", code: "qr_forbidden" });
     return;
   }
   try {
-    // Faqat umumiy Ofis QR — alohida bo‘limlar yo‘q
-    if (!canManageDeptQrRole(req.userRole)) {
-      res.status(403).json({ error: "Bo‘lim QR yaratishga ruxsat yo‘q", code: "qr_forbidden" });
-      return;
-    }
     const officeActive = await getActiveQrForDepartment(OFFICE_SHARED_QR_DEPARTMENT_ID);
     res.json({
       departments: [
@@ -3135,6 +3164,7 @@ router.get("/davomat/qr/departments", requireAuth, async (req: AuthRequest, res)
           version: officeActive?.version ?? null,
           createdAt: officeActive?.createdAt?.toISOString() ?? null,
           sharedOffice: true,
+          canEdit: canEditDeptQrRole(req.userRole),
         },
       ],
     });
@@ -3145,8 +3175,11 @@ router.get("/davomat/qr/departments", requireAuth, async (req: AuthRequest, res)
 });
 
 router.post("/davomat/qr/department/issue", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageDeptQrRole(req.userRole)) {
-    res.status(403).json({ error: "Bo‘lim QR yaratishga ruxsat yo‘q", code: "qr_forbidden" });
+  if (!canEditDeptQrRole(req.userRole)) {
+    res.status(403).json({
+      error: "Ofis QR yaratish faqat admin uchun",
+      code: "qr_create_admin_only",
+    });
     return;
   }
   try {
@@ -3162,7 +3195,7 @@ router.post("/davomat/qr/department/issue", requireAuth, async (req: AuthRequest
       });
       return;
     }
-    const access = await assertCanAccessDeptQr(req.userRole, req.userId!, departmentId);
+    const access = await assertCanEditDeptQr(req.userRole, req.userId!, departmentId);
     if (!access.ok) {
       res.status(access.status).json({ error: access.error });
       return;
@@ -3209,7 +3242,7 @@ router.post("/davomat/qr/department/issue", requireAuth, async (req: AuthRequest
 });
 
 router.get("/davomat/qr/department/active/:departmentId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageDeptQrRole(req.userRole)) {
+  if (!canViewDeptQrRole(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
     return;
   }
@@ -3218,7 +3251,7 @@ router.get("/davomat/qr/department/active/:departmentId", requireAuth, async (re
     res.status(400).json({ error: "departmentId noto‘g‘ri" });
     return;
   }
-  const access = await assertCanAccessDeptQr(req.userRole, req.userId!, departmentId);
+  const access = await assertCanViewDeptQr(req.userRole, req.userId!, departmentId);
   if (!access.ok) {
     res.status(access.status).json({ error: access.error });
     return;
@@ -3244,8 +3277,11 @@ router.get("/davomat/qr/department/active/:departmentId", requireAuth, async (re
 });
 
 router.delete("/davomat/qr/department/active/:departmentId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageDeptQrRole(req.userRole)) {
-    res.status(403).json({ error: "Ruxsat yo‘q", code: "qr_forbidden" });
+  if (!canEditDeptQrRole(req.userRole)) {
+    res.status(403).json({
+      error: "Ofis QR o‘chirish faqat admin uchun",
+      code: "qr_revoke_admin_only",
+    });
     return;
   }
   const departmentId = Number(req.params.departmentId);
@@ -3253,7 +3289,7 @@ router.delete("/davomat/qr/department/active/:departmentId", requireAuth, async 
     res.status(400).json({ error: "departmentId noto‘g‘ri" });
     return;
   }
-  const access = await assertCanAccessDeptQr(req.userRole, req.userId!, departmentId);
+  const access = await assertCanEditDeptQr(req.userRole, req.userId!, departmentId);
   if (!access.ok) {
     res.status(access.status).json({ error: access.error });
     return;
@@ -3706,17 +3742,19 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
     const officeStaff = !pharmacy;
     const viewBranch = canViewBranchQr(user.role);
     const editBranch = canEditBranchQr(user.role);
-    const manageDept = canManageDeptQrRole(user.role);
+    const viewDept = canViewDeptQrRole(user.role);
+    const editDept = canEditDeptQrRole(user.role);
     const methods: Array<"FACE_ID" | "QR"> = ["FACE_ID", "QR"];
     res.json({
       pharmacyStaff: pharmacy,
       officeStaff,
       adminQrAnywhere,
       methods,
-      canManageQr: editBranch || manageDept,
+      canManageQr: editBranch || editDept,
       canManageBranchQr: editBranch,
       canViewBranchQr: viewBranch,
-      canManageDeptQr: manageDept,
+      canManageDeptQr: editDept,
+      canViewDeptQr: viewDept,
       assignedBranchId: assignedBranchIdForEmp(emp),
       departmentId: user.departmentId,
     });

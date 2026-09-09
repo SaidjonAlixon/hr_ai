@@ -4,13 +4,16 @@ export type StaffGroup = "active" | "other";
 
 export async function fetchStaff(
   group: StaffGroup,
-  params?: { search?: string; departmentId?: string },
+  params?: { search?: string; departmentId?: string; workplace?: string },
 ): Promise<Employee[]> {
   const qs = new URLSearchParams();
   qs.set("group", group);
   if (params?.search?.trim()) qs.set("search", params.search.trim());
   if (params?.departmentId && params.departmentId !== "all") {
     qs.set("departmentId", params.departmentId);
+  }
+  if (params?.workplace && params.workplace !== "all") {
+    qs.set("workplace", params.workplace);
   }
   const res = await fetch(`/api/employees?${qs.toString()}`, { credentials: "include" });
   if (!res.ok) {
@@ -20,6 +23,11 @@ export async function fetchStaff(
   return res.json() as Promise<Employee[]>;
 }
 
-export function staffQueryKey(group: StaffGroup, search: string, deptFilter: string) {
-  return ["staff", group, search.trim(), deptFilter] as const;
+export function staffQueryKey(
+  group: StaffGroup,
+  search: string,
+  deptFilter: string,
+  workplace: string = "ofis",
+) {
+  return ["staff", group, search.trim(), deptFilter, workplace] as const;
 }

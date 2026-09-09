@@ -52,11 +52,16 @@ export function paintCredSheet(
 
 export async function sendWorkbook(res: Response, workbook: ExcelJS.Workbook, filename: string) {
   const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
+  const safe = String(filename || "export.xlsx")
+    .replace(/[^\w.\-]+/g, "_")
+    .replace(/_+/g, "_")
+    .slice(0, 80);
+  const finalName = safe.toLowerCase().endsWith(".xlsx") ? safe : `${safe}.xlsx`;
   res.setHeader(
     "Content-Type",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   );
-  res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+  res.setHeader("Content-Disposition", `attachment; filename="${finalName}"`);
   res.send(buffer);
 }
 

@@ -769,6 +769,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const at = faceIdx >= 0 ? faceIdx + 1 : next.length;
       next = [...next.slice(0, at), davomatQrNav, ...next.slice(at)];
     }
+    // Oddiy xodim / mudir / farmasevt — Xodimlar menyusi yo‘q
+    if (!canViewEmployees(role)) {
+      next = next.filter((i) => i.path !== '/employees');
+    }
     return ensureTaskAnalyticsNav(next);
   }
 
@@ -937,7 +941,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       davomatQrNav,
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
@@ -951,7 +954,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       davomatQrNav,
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
@@ -1155,7 +1157,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Oylik', path: '/oylik', icon: Banknote },
       { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator },
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
       orgNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
@@ -1197,6 +1198,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
       davomatFaceNav,
     ],
     distrib_hr: [
@@ -1204,6 +1206,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
       davomatFaceNav,
     ],
     distrib: [

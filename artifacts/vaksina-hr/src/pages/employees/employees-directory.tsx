@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useGetDepartments,
@@ -29,8 +29,9 @@ import {
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
-import { canViewEmployees, canAddDeptStaff, canChangeStaffStatus, isEmployeeDirectoryViewOnly, userRoleLabel } from "../../lib/roles";
+import { canViewEmployees, canViewEmployeesFull, canAddDeptStaff, canChangeStaffStatus, isEmployeeDirectoryViewOnly, userRoleLabel } from "../../lib/roles";
 import { AddDeptStaffButton } from "../../components/dept/AddDeptStaffDialog";
+import { useDeptStaffMeta } from "../../lib/dept-staff-api";
 import { fetchStaff, staffQueryKey, type StaffGroup } from "../../lib/staff-api";
 import { formatPersonName } from "../../lib/person-name";
 import { EmployeesTabs } from "./employees-tabs";
@@ -302,15 +303,29 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const canEdit = canChangeStaffStatus(user?.role);
   const canAddStaff = canAddDeptStaff(user?.role);
   const viewOnly = isEmployeeDirectoryViewOnly(user?.role);
+  const fullAccess = canViewEmployeesFull(user?.role);
+  const { data: deptMeta } = useDeptStaffMeta(viewOnly);
+  const lockedDeptName = deptMeta?.departmentName?.trim() || null;
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
-  const [workplaceFilter, setWorkplaceFilter] = useState<WorkplaceFilter>("all");
+  const [workplaceFilter, setWorkplaceFilter] = useState<WorkplaceFilter>("ofis");
   const [statusFilter, setStatusFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
   const [pendingId, setPendingId] = useState<number | null>(null);
 
   const { data: departments } = useGetDepartments();
   const updateEmp = useUpdateEmployee();
+
+  // Bo‘lim boshlig‘i — faqat ofis + o‘z bo‘limi; admin/rahbariyat — Ofis/Dorixona
+  const effectiveWorkplace: WorkplaceFilter = viewOnly || !fullAccess ? "ofis" : workplaceFilter;
+  const effectiveDeptFilter = viewOnly ? "all" : deptFilter;
+
+  useEffect(() => {
+    if (viewOnly) {
+      setDeptFilter("all");
+      setWorkplaceFilter("ofis");
+    }
+  }, [viewOnly]);
 
   const {
     data: employees,
@@ -320,17 +335,28 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     refetch,
     isFetching,
   } = useQuery({
-    queryKey: staffQueryKey(group, search, deptFilter),
-    queryFn: () => fetchStaff(group, { search, departmentId: deptFilter }),
+    queryKey: staffQueryKey(
+      group,
+      search,
+      viewOnly ? "own-dept" : deptFilter,
+      effectiveWorkplace,
+    ),
+    queryFn: () =>
+      fetchStaff(group, {
+        search,
+        departmentId: effectiveDeptFilter,
+        workplace: effectiveWorkplace,
+      }),
     staleTime: 30_000,
   });
 
+  /** Ofis / Dorixona / hammasi */
   const workplaceScoped = useMemo(() => {
     const all = Array.isArray(employees) ? employees : [];
-    if (workplaceFilter === "dorixona") return all.filter(isDorixonaStaff);
-    if (workplaceFilter === "ofis") return all.filter((e) => !isDorixonaStaff(e));
+    if (effectiveWorkplace === "dorixona") return all.filter(isDorixonaStaff);
+    if (effectiveWorkplace === "ofis") return all.filter((e) => !isDorixonaStaff(e));
     return all;
-  }, [employees, workplaceFilter]);
+  }, [employees, effectiveWorkplace]);
 
   const counts = useMemo(() => {
     const all = workplaceScoped;
@@ -347,9 +373,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     return [...workplaceScoped]
       .filter((e) => {
         // Ofis / dorixona — ikkinchi marta ham tekshiruv (ishonch uchun)
-        if (workplaceFilter === "dorixona" && !isDorixonaStaff(e)) return false;
-        if (workplaceFilter === "ofis" && isDorixonaStaff(e)) return false;
-        if (deptFilter !== "all" && e.departmentId !== Number(deptFilter)) return false;
+        if (effectiveWorkplace === "dorixona" && !isDorixonaStaff(e)) return false;
+        if (effectiveWorkplace === "ofis" && isDorixonaStaff(e)) return false;
+        if (!viewOnly && deptFilter !== "all" && e.departmentId !== Number(deptFilter)) return false;
         if (statusFilter !== "all" && (e.employmentStatus || "working") !== statusFilter) return false;
         if (!q) return true;
         const hay = [
@@ -369,7 +395,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         return hay.includes(q);
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
-  }, [workplaceScoped, workplaceFilter, search, deptFilter, statusFilter, t]);
+  }, [workplaceScoped, effectiveWorkplace, search, deptFilter, statusFilter, t, viewOnly]);
 
   const setStatus = (id: number, employmentStatus: string) => {
     setPendingId(id);
@@ -377,7 +403,14 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       { id, data: { employmentStatus: employmentStatus as Employee["employmentStatus"] } },
       {
         onSuccess: () => {
-          void qc.invalidateQueries({ queryKey: staffQueryKey(group, search, deptFilter) });
+          void qc.invalidateQueries({
+            queryKey: staffQueryKey(
+              group,
+              search,
+              viewOnly ? "own-dept" : deptFilter,
+              effectiveWorkplace,
+            ),
+          });
           void qc.invalidateQueries({ queryKey: getGetEmployeesQueryKey() });
           void qc.invalidateQueries({ queryKey: ["staff"] });
           toast({ title: t("emp.statusSaved") });
@@ -401,7 +434,8 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       const params = new URLSearchParams();
       params.set("group", group);
       if (search.trim()) params.set("search", search.trim());
-      if (deptFilter !== "all") params.set("departmentId", deptFilter);
+      if (!viewOnly && deptFilter !== "all") params.set("departmentId", deptFilter);
+      if (fullAccess && effectiveWorkplace !== "all") params.set("workplace", effectiveWorkplace);
       const res = await fetch(`/api/employees/export?${params.toString()}`, {
         credentials: "include",
       });
@@ -458,7 +492,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
             size="sm"
             variant="secondary"
             className="gap-1.5 bg-card text-primary hover:bg-card/90"
-            disabled={exporting || isLoading || list.length === 0}
+            disabled={exporting || isLoading}
             onClick={() => void onExportExcel()}
           >
             {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
@@ -469,7 +503,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
 
       {viewOnly ? (
         <div className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3.5 py-2.5 text-sm text-sky-900 dark:text-sky-100">
-          Siz xodimlar ro‘yxatini to‘liq ko‘rasiz — holatni o‘zgartirish yoki o‘chirish mumkin emas.
+          Faqat o‘z bo‘limingiz
+          {lockedDeptName ? ` («${lockedDeptName}»)` : ""} xodimlari ko‘rinadi — bo‘limni o‘zgartirib bo‘lmaydi,
+          holatni o‘zgartirish yoki o‘chirish mumkin emas.
           {canAddStaff ? " O‘z bo‘limingizga xodim qo‘shishingiz mumkin." : ""}
         </div>
       ) : null}
@@ -513,32 +549,47 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                 className="h-9 border-border bg-background pl-8 text-sm"
               />
             </div>
-            <Select
-              value={workplaceFilter}
-              onValueChange={(v) => setWorkplaceFilter(v as WorkplaceFilter)}
-            >
-              <SelectTrigger className="h-9 w-full text-sm lg:w-[160px]">
-                <SelectValue placeholder={t("emp.workplace")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("emp.workplaceAll")}</SelectItem>
-                <SelectItem value="dorixona">{t("emp.dorixona")}</SelectItem>
-                <SelectItem value="ofis">{t("emp.ofis")}</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={deptFilter} onValueChange={setDeptFilter}>
-              <SelectTrigger className="h-9 w-full text-sm lg:w-[200px]">
-                <SelectValue placeholder={t("ui.department")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{t("ui.allDepartments")}</SelectItem>
-                {(departments ?? []).map((d) => (
-                  <SelectItem key={d.id} value={String(d.id)}>
-                    {d.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            {fullAccess ? (
+              <Select
+                value={workplaceFilter}
+                onValueChange={(v) => {
+                  setWorkplaceFilter(v as WorkplaceFilter);
+                  // Ofis tanlanganda barcha ofis xodimlari — bo‘lim filtri «barcha»
+                  if (v === "ofis") setDeptFilter("all");
+                }}
+              >
+                <SelectTrigger className="h-9 w-full text-sm lg:w-[160px]">
+                  <SelectValue placeholder={t("emp.workplace")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ofis">{t("emp.ofis")}</SelectItem>
+                  <SelectItem value="dorixona">{t("emp.dorixona")}</SelectItem>
+                  <SelectItem value="all">{t("emp.workplaceAll")}</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : null}
+            {viewOnly ? (
+              <div
+                className="flex h-9 w-full items-center rounded-md border border-border bg-muted/60 px-3 text-sm font-medium text-foreground lg:w-[200px]"
+                title="Faqat o‘z bo‘limingiz"
+              >
+                {lockedDeptName || "…"}
+              </div>
+            ) : (
+              <Select value={deptFilter} onValueChange={setDeptFilter}>
+                <SelectTrigger className="h-9 w-full text-sm lg:w-[200px]">
+                  <SelectValue placeholder={t("ui.department")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("ui.allDepartments")}</SelectItem>
+                  {(departments ?? []).map((d) => (
+                    <SelectItem key={d.id} value={String(d.id)}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
             {group === "active" ? (
               <Select value={statusFilter} onValueChange={setStatusFilter}>
                 <SelectTrigger className="h-9 w-full text-sm lg:w-[180px]">
@@ -576,7 +627,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           ) : (
             <>
               <div className="hidden overflow-x-auto md:block">
-                <table className="w-full min-w-[1150px] text-left text-sm">
+                <table className="w-full min-w-[980px] text-left text-sm">
                   <thead>
                     <tr className="surface-brand border-b text-[11px] uppercase tracking-wide">
                       <th className="w-10 px-3 py-3 font-medium">№</th>
@@ -585,7 +636,6 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                       <th className="px-3 py-3 font-medium">{t("emp.col.position")}</th>
                       <th className="px-3 py-3 font-medium">{t("emp.col.role")}</th>
                       <th className="px-3 py-3 font-medium">{t("emp.col.dept")}</th>
-                      <th className="px-3 py-3 font-medium">{t("emp.col.branch")}</th>
                       <th className="px-3 py-3 font-medium">{t("emp.col.status")}</th>
                       <th className="px-3 py-3 font-medium">{t("emp.col.shift")}</th>
                       <th className="px-3 py-3 font-medium">{t("emp.col.hired")}</th>
@@ -618,7 +668,6 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                             "—"}
                         </td>
                         <td className="px-3 py-2.5 text-muted-foreground">{e.departmentName || "—"}</td>
-                        <td className="max-w-[180px] truncate px-3 py-2.5 text-muted-foreground">{e.location || "—"}</td>
                         <td className="px-3 py-2">
                           <StatusControl employee={e} canEdit={canEdit} pendingId={pendingId} onChange={setStatus} />
                         </td>
@@ -656,7 +705,6 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                         <span>{t("emp.col.shift")}: {shiftLabel(e, t)}</span>
                         <span className="truncate">{t("emp.col.dept")}: {e.departmentName || "—"}</span>
                         <span>{t("emp.col.hired")}: {formatHired(e.hiredAt)}</span>
-                        <span className="col-span-2 truncate">{t("emp.col.branch")}: {e.location || "—"}</span>
                       </div>
                     </div>
                   </div>

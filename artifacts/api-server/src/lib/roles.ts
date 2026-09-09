@@ -80,24 +80,29 @@ export function canViewDavomat(role?: string | null): boolean {
   );
 }
 
-/** Xodimlar ro‘yxati — HR, moliya, SB va rahbariyat */
-export function canViewEmployees(role?: string | null): boolean {
+/** Xodimlar — to‘liq (barcha ofis bo‘limlari): admin, direktor, HR, SB */
+export function canViewEmployeesFull(role?: string | null): boolean {
   return (
     role === "admin" ||
     role === "director" ||
     isHrRole(role) ||
-    isSbRole(role) ||
-    role === "moliya" ||
-    role === "recruiter" ||
+    isSbRole(role)
+  );
+}
+
+/** Xodimlar menyusi: to‘liq yoki bo‘lim boshlig‘i. Oddiy xodim / mudir / farmasevt — yo‘q. */
+export function canViewEmployees(role?: string | null): boolean {
+  if (!role) return false;
+  if (canViewEmployeesFull(role)) return true;
+  if (role === "mudir" || role === "farmasevt" || role === "stajyor" || role === "koordinator") {
+    return false;
+  }
+  if (role === "mentor" || role === "recruiter" || role === "moliya") return false;
+  return (
     role === "department_head" ||
-    role === "mentor" ||
-    role === "mudir" ||
-    role === "koordinator" ||
     role === "it_rahbar" ||
     role === "texnik_rahbar" ||
     role === "reviziya_rahbar" ||
-    role === "hr_direktor" ||
-    role === "hr_menejer" ||
     role === "moliya_rahbar" ||
     role === "taminot_rahbar" ||
     role === "rivojlantirish_rahbar" ||
@@ -105,19 +110,20 @@ export function canViewEmployees(role?: string | null): boolean {
     role === "gpp_rahbar" ||
     role === "ombor_rahbar" ||
     role === "oshpaz_rahbar" ||
-    role === "marketing_rahbar"
+    role === "marketing_rahbar" ||
+    role === "distrib_rahbar" ||
+    role === "distrib_hr"
   );
 }
 
 /**
- * AyTi / bo‘lim boshliqlari / koordinator — to‘liq ro‘yxat (faqat ko‘rish).
+ * Bo‘lim boshliqlari — o‘z bo‘limi (view-only tahrir).
  */
 export const EMPLOYEE_VIEW_ONLY_ROLES = [
   "department_head",
   "it_rahbar",
   "texnik_rahbar",
   "reviziya_rahbar",
-  "koordinator",
   "moliya_rahbar",
   "taminot_rahbar",
   "rivojlantirish_rahbar",
@@ -126,10 +132,14 @@ export const EMPLOYEE_VIEW_ONLY_ROLES = [
   "ombor_rahbar",
   "oshpaz_rahbar",
   "marketing_rahbar",
+  "distrib_rahbar",
+  "distrib_hr",
 ] as const;
 
 export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {
-  return !!role && (EMPLOYEE_VIEW_ONLY_ROLES as readonly string[]).includes(role);
+  if (!role) return false;
+  if (canViewEmployeesFull(role)) return false;
+  return (EMPLOYEE_VIEW_ONLY_ROLES as readonly string[]).includes(role);
 }
 
 /** Dublikatlar — faqat admin va HR */

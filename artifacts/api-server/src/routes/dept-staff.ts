@@ -10,6 +10,7 @@ import {
   ROLE_LABEL_UZ,
   assertCanCreateDeptStaff,
   canAddDeptStaff,
+  isDeptHeadRole,
   resolveDeptHeadContext,
 } from "../lib/dept-staff";
 
@@ -55,17 +56,19 @@ async function uniqueLogin(role: string, fullName: string): Promise<string> {
 router.get("/dept-staff/meta", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
   const userId = req.userId;
-  if (!userId || !canAddDeptStaff(role)) {
-    res.json({ canAdd: false, departmentName: null, roles: [] });
+  // Bo‘lim boshlig‘i (view-only ham) — o‘z bo‘limi meta
+  if (!userId || (!canAddDeptStaff(role) && !isDeptHeadRole(role))) {
+    res.json({ canAdd: false, departmentId: null, departmentName: null, roles: [] });
     return;
   }
   const ctx = await resolveDeptHeadContext(userId, role);
   if (!ctx) {
-    res.json({ canAdd: false, departmentName: null, roles: [] });
+    res.json({ canAdd: false, departmentId: null, departmentName: null, roles: [] });
     return;
   }
   res.json({
-    canAdd: true,
+    canAdd: canAddDeptStaff(role) && ctx.creatableRoles.length > 0,
+    departmentId: ctx.departmentId,
     departmentName: ctx.departmentName,
     roles: ctx.creatableRoles.map((value) => ({
       value,
@@ -79,12 +82,12 @@ router.get("/dept-staff/export", requireAuth, async (req: AuthRequest, res): Pro
   const role = req.userRole ?? "";
   const userId = req.userId;
   if (!userId || !canAddDeptStaff(role)) {
-    res.status(403).json({ error: "Ruxsat yo‘q" });
+    res.status(403).json({ error: "Ruxsat yo‘q — faqat bo‘lim boshlig‘i" });
     return;
   }
   const ctx = await resolveDeptHeadContext(userId, role);
-  if (!ctx) {
-    res.status(403).json({ error: "Bo‘lim topilmadi" });
+  if (!ctx?.departmentId) {
+    res.status(403).json({ error: "Bo‘lim topilmadi — profilingizda bo‘lim biriktirilganini tekshiring" });
     return;
   }
 
@@ -104,16 +107,25 @@ router.get("/dept-staff/export", requireAuth, async (req: AuthRequest, res): Pro
       .where(eq(usersTable.departmentId, ctx.departmentId))
       .orderBy(asc(usersTable.fullName));
 
+    // Bir user → bir qator (bir nechta employee bo‘lsa)
+    const seen = new Set<string>();
+    const unique = rows.filter((r) => {
+      const key = `${r.login || r.fullName}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+
     const workbook = newCredWorkbook();
     paintCredSheet(workbook, {
       name: "Xodimlar",
-      title: `VAKSINA MED — ${ctx.departmentName} · login/parol · ${rows.length} ta`,
+      title: `VAKSINA MED — ${ctx.departmentName} · login/parol · ${unique.length} ta`,
       headers: ["F.I.Sh.", "Lavozim", "Rol", "Login", "Parol", "Telefon", "Holat"],
       widths: [32, 22, 20, 24, 14, 16, 12],
-      rows: rows.map((r) => [
-        r.fullName,
+      rows: unique.map((r) => [
+        r.fullName || "—",
         r.position || "—",
-        ROLE_LABEL_UZ[r.role] || r.role,
+        ROLE_LABEL_UZ[r.role] || r.role || "—",
         r.login || "—",
         r.password || "—",
         r.phone || "—",
@@ -123,15 +135,12 @@ router.get("/dept-staff/export", requireAuth, async (req: AuthRequest, res): Pro
     });
 
     const stamp = new Date().toISOString().slice(0, 10);
-    const safeName = ctx.departmentName
-      .toLowerCase()
-      .replace(/[^a-z0-9а-яёўқғҳ\-]+/gi, "-")
-      .replace(/-+/g, "-")
-      .slice(0, 40);
-    await sendWorkbook(res, workbook, `bolim-${safeName || "xodimlar"}-login-${stamp}.xlsx`);
+    await sendWorkbook(res, workbook, `bolim-login-${stamp}.xlsx`);
   } catch (err) {
     console.error("GET /dept-staff/export error:", err);
-    res.status(500).json({ error: "Excel yuklanmadi" });
+    res.status(500).json({
+      error: err instanceof Error ? err.message : "Excel yuklanmadi",
+    });
   }
 });
 

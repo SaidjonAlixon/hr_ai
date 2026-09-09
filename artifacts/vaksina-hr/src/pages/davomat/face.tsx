@@ -670,39 +670,39 @@ function GuideBoard({
             <li key={`${it.id}-${it.n}`}>
               {idx > 0 ? <FlowArrow /> : null}
               <div
-                className={cn(
-                  "flex gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
+              className={cn(
+                "flex gap-3 rounded-2xl border px-3 py-2.5 transition-colors",
                   isActive && !passed && it.id !== "zone" && "dv-guide-active",
                   passed && "dv-guide-passed",
                   !isActive && !passed && "dv-guide-idle",
                   it.id === "zone" && isActive && "dv-guide-danger",
-                )}
-              >
-                <span
-                  className={cn(
-                    "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
+              )}
+            >
+              <span
+                className={cn(
+                  "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold",
                     passed && "dv-step-badge-success",
                     isActive && !passed && it.id === "zone" && "dv-step-badge-danger",
                     isActive && !passed && it.id !== "zone" && "dv-step-badge-warn",
                     !isActive && !passed && "bg-muted text-muted-foreground",
-                  )}
-                >
-                  {passed ? "✓" : it.n === 0 ? "!" : it.n}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-foreground">
+                )}
+              >
+                {passed ? "✓" : it.n === 0 ? "!" : it.n}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground">
                     {it.n === 0 ? t("davomat.stepFirst") : tr(t, "davomat.stepLabel", { n: it.n })}: {it.title}
-                  </p>
-                  <p
-                    className={cn(
-                      "mt-0.5 text-xs leading-snug",
+                </p>
+                <p
+                  className={cn(
+                    "mt-0.5 text-xs leading-snug",
                       it.id === "zone" && isActive
                         ? "font-medium text-rose-700 dark:text-rose-300"
                         : "text-muted-foreground",
-                    )}
-                  >
-                    {it.detail}
-                  </p>
+                  )}
+                >
+                  {it.detail}
+                </p>
                 </div>
               </div>
             </li>
@@ -947,9 +947,9 @@ export default function DavomatFacePage() {
       }
 
       return {
-        lat: pos.coords.latitude,
-        lng: pos.coords.longitude,
-        accuracy: Math.round(pos.coords.accuracy || 0),
+      lat: pos.coords.latitude,
+      lng: pos.coords.longitude,
+      accuracy: Math.round(pos.coords.accuracy || 0),
         heading: nextHeading,
         speed,
       };
@@ -1101,7 +1101,7 @@ export default function DavomatFacePage() {
         });
       }
     } finally {
-      setGpsSharing(false);
+        setGpsSharing(false);
     }
   };
 
@@ -1882,17 +1882,17 @@ export default function DavomatFacePage() {
   const historyRows =
     historyDays.length === 0 ? (
       <p className="px-3 py-6 text-center text-xs text-white/45">{t("davomat.historyEmpty")}</p>
-    ) : filteredHistoryDays.length === 0 ? (
+          ) : filteredHistoryDays.length === 0 ? (
       <p className="px-3 py-6 text-center text-xs text-white/45">{t("davomat.rangeEmpty")}</p>
     ) : (
       <ul className="divide-y divide-white/5">
         {filteredHistoryDays.slice(0, historyRange === "day" ? 1 : historyRange === "week" ? 7 : 14).map((d) => {
-          const isToday = d.date === todayStamp;
+                      const isToday = d.date === todayStamp;
           const dayParts = splitDay(d.date, t);
-          return (
+                      return (
             <li
-              key={d.date}
-              className={cn(
+                          key={d.date}
+                          className={cn(
                 "flex items-center justify-between gap-2 px-3 py-2.5",
                 isToday && "bg-sky-500/10",
               )}
@@ -1900,12 +1900,12 @@ export default function DavomatFacePage() {
               <div className="min-w-0">
                 <p className="text-sm font-semibold text-white">
                   {dayParts.date}
-                  {isToday ? (
+                              {isToday ? (
                     <span className="ml-1.5 text-[10px] font-semibold text-sky-300">{t("davomat.todayTag")}</span>
-                  ) : null}
+                              ) : null}
                 </p>
                 <p className="text-[11px] capitalize text-white/45">{dayParts.weekday}</p>
-              </div>
+                            </div>
               <div className="shrink-0 text-right">
                 <p className="font-mono text-xs tabular-nums">
                   <span className="text-emerald-300">{d.checkIn}</span>
@@ -1924,12 +1924,12 @@ export default function DavomatFacePage() {
                 </p>
               </div>
             </li>
-          );
-        })}
+                      );
+                    })}
       </ul>
     );
 
-  return (
+                      return (
     <>
       <DavomatPremiumView
         firstName={firstName}

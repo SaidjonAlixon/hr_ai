@@ -421,6 +421,8 @@ export type DavomatMethods = {
   canManageBranchQr?: boolean;
   canViewBranchQr?: boolean;
   canManageDeptQr?: boolean;
+  /** Ofis QR ko‘rish/yuklash (yaratish emas) */
+  canViewDeptQr?: boolean;
   assignedBranchId: number | null;
   departmentId?: number | null;
 };

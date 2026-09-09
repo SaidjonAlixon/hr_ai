@@ -587,7 +587,8 @@ export default function SmenaFilialPage() {
               {data.shift.start}–{data.shift.end}
             </p>
             <p className="text-xs text-muted-foreground">
-              {data.rules.office || data.shift.hoursNote}
+              {data.rules.office ||
+                `Ofis xodimlari, sizning ish vaqtingiz: ${data.shift.start}–${data.shift.end}`}
             </p>
           </CardContent>
         </Card>

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export type DeptStaffMeta = {
   canAdd: boolean;
+  departmentId: number | null;
   departmentName: string | null;
   roles: Array<{ value: string; label: string }>;
 };
@@ -31,11 +32,17 @@ async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
 
 async function downloadExcel(path: string, fallbackName: string) {
   const res = await fetch(`/api${path}`, { credentials: "include" });
+  const contentType = res.headers.get("Content-Type") || "";
   if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || `Excel yuklanmadi (${res.status})`);
+  }
+  if (contentType.includes("application/json")) {
     const body = await res.json().catch(() => ({}));
     throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
   }
   const blob = await res.blob();
+  if (!blob.size) throw new Error("Excel fayl bo‘sh");
   const cd = res.headers.get("Content-Disposition") || "";
   const match = /filename="?([^"]+)"?/i.exec(cd);
   const filename = match?.[1] || fallbackName;

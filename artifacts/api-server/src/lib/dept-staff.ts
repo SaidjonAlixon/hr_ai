@@ -153,13 +153,17 @@ export async function resolveDeptHeadContext(userId: number, role: string): Prom
     departmentId = await ensureDepartmentByName(departmentName);
   }
 
+  // Profil bo‘limi nom/ID bilan moslashmagan bo‘lsa — tuzatamiz
+  if (departmentId && actor?.departmentId !== departmentId) {
+    await db.update(usersTable).set({ departmentId }).where(eq(usersTable.id, userId));
+  }
+
   const named = NAMED_HEAD_CREATABLE[role];
   const creatableRoles = named?.length
     ? [...named]
     : creatableRolesForDepartmentName(departmentName);
 
-  if (!creatableRoles.length) return null;
-
+  // Excel/eksport uchun bo‘lim kerak; creatable bo‘sh bo‘lsa ham kontekst qaytadi
   return { departmentId, departmentName, creatableRoles };
 }
 

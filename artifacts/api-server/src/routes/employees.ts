@@ -12,19 +12,17 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
-import { HR_ROLES, isHrManager, canViewEmployees, isSbRole, canChangeStaffStatus, isEmployeeDirectoryViewOnly } from "../lib/roles";
+import { HR_ROLES, isHrManager, canViewEmployees, canViewEmployeesFull, canChangeStaffStatus } from "../lib/roles";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from "../lib/dedupe-employees";
 import {
   loadStaffFromUsers,
-  loadPharmacyNetworkEmployees,
-  mergeStaffRows,
   userStatusFromEmployment,
   normalizeUserStatus,
   type StaffRow,
 } from "../lib/staff-directory";
 import { formatPersonName } from "../lib/person-name";
-import { getActorDepartmentId, isDeptHeadRole } from "../lib/dept-staff";
+import { getActorDepartmentId, isDeptHeadRole, resolveDeptHeadContext } from "../lib/dept-staff";
 
 const router: IRouter = Router();
 
@@ -83,21 +81,6 @@ async function pharmacyEditDenied(
   }
   return "Faqat o‘z tarmog‘ingizdagi mudir va xodimlarni tahrirlashingiz mumkin";
 }
-
-const FULL_NETWORK_ROLES = new Set([
-  "admin",
-  ...HR_ROLES,
-  "director",
-  "recruiter",
-  "department_head",
-  "it_rahbar",
-  "texnik_rahbar",
-  "reviziya_rahbar",
-  "koordinator",
-  "sb",
-  "sb_boshliq",
-  "moliya",
-]);
 
 const ORG_ROLE_UZ: Record<string, string> = {
   coordinator: "Koordinator",
@@ -167,7 +150,7 @@ const EMP_CORE_SELECT = {
 
 async function enrichMany(rows: EmpRow[]): Promise<EmpEnriched[]> {
   if (!rows.length) return [];
-  const deptIds = [...new Set(rows.map((r) => r.departmentId))];
+  const deptIds = [...new Set(rows.map((r) => r.departmentId).filter((id): id is number => id != null))];
   const mentorIds = [...new Set(rows.map((r) => r.mentorId).filter((id): id is number => id != null))];
 
   const [depts, mentors] = await Promise.all([
@@ -232,6 +215,29 @@ async function enrichEmployee(r: EmpRow | typeof employeesTable.$inferSelect) {
   return enriched;
 }
 
+const PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
+const PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "supervisor", "coordinator"]);
+
+/** Apteka (mudir/farmasevt/stajyor) — Xodimlar ofis ro‘yxatiga kirmaydi */
+function isPharmacyStaffRow(e: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+  departmentName?: string | null;
+}): boolean {
+  const role = String(e.userRole || "").toLowerCase();
+  const org = String(e.orgRole || "").toLowerCase();
+  const pos = String(e.position || "").toLowerCase();
+  const dept = String(e.departmentName || "").toLowerCase();
+  if (PHARMACY_USER_ROLES.has(role)) return true;
+  if (PHARMACY_ORG_ROLES.has(org)) return true;
+  if (/filial\s*mudir|farmasevt|stajyor|stajor/.test(pos)) return true;
+  if (/(farmasevt|dorixona|apteka)/.test(dept) && /(mudir|farmasevt|stajyor)/.test(`${pos} ${role}`)) {
+    return true;
+  }
+  return false;
+}
+
 function scopeEmployees(
   rows: EmpRow[],
   role: string,
@@ -257,7 +263,7 @@ function scopeEmployees(
           myBranch.reportsToId != null &&
           e.id === myBranch.reportsToId),
     );
-  } else if (role === "koordinator" && userId && !isEmployeeDirectoryViewOnly(role)) {
+  } else if (role === "koordinator" && userId) {
     const myCoord = filtered.find((e) => e.orgRole === "coordinator" && e.userId === userId);
     if (!myCoord) return [];
     const myManagerIds = new Set(
@@ -271,8 +277,6 @@ function scopeEmployees(
           e.reportsToId != null &&
           myManagerIds.has(e.reportsToId)),
     );
-  } else if (!FULL_NETWORK_ROLES.has(role)) {
-    filtered = filtered.filter((e) => !!e.orgRole);
   }
 
   return filtered;
@@ -284,28 +288,58 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
       res.status(403).json({ error: "Xodimlar ro‘yxatini ko‘rish ruxsati yo‘q" });
       return;
     }
-    const { departmentId, mentorId, search, group } = req.query as Record<string, string>;
+    const { departmentId, mentorId, search, group, workplace } = req.query as Record<string, string>;
     const role = req.userRole ?? "";
     const userId = req.userId;
     const staffGroup = group === "other" ? "other" : "active";
+    const deptHeadScoped = isDeptHeadRole(role) && !!userId && !canViewEmployeesFull(role);
+    const fullAccess = canViewEmployeesFull(role);
+    // Default ofis; dorixona/all faqat to‘liq ruxsatli (admin/rahbariyat/HR/SB)
+    let workplaceMode: "ofis" | "dorixona" | "all" = "ofis";
+    if (fullAccess && !deptHeadScoped) {
+      if (workplace === "dorixona" || workplace === "all") workplaceMode = workplace;
+      else workplaceMode = "ofis";
+    }
 
     const rows = await loadStaffFromUsers(staffGroup);
-    let filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
-    // Bo‘lim rahbarlari — faqat o‘z bo‘limi. SB / view-only (AyTi, koordinator…) — to‘liq.
-    if (isDeptHeadRole(role) && userId && !isSbRole(role) && !isEmployeeDirectoryViewOnly(role)) {
-      const actorDeptId = await getActorDepartmentId(userId);
-      if (actorDeptId) {
-        filtered = filtered.filter((e) => e.departmentId === actorDeptId);
-      }
+    // Bo‘lim boshlig‘i uchun query departmentId qo‘llanmaydi — server o‘zi scope qiladi
+    let filtered = scopeEmployees(rows, role, userId, {
+      departmentId: deptHeadScoped ? undefined : departmentId,
+      mentorId,
+      search,
+    });
+
+    if (workplaceMode === "ofis") {
+      filtered = filtered.filter((e) => !isPharmacyStaffRow(e));
+    } else if (workplaceMode === "dorixona") {
+      filtered = filtered.filter((e) => isPharmacyStaffRow(e));
     }
-    // Apteka tarmog‘i (koordinator/mudir/farmasevt) — to‘liq ko‘ruvchilar uchun employees dan qo‘shiladi
-    if (FULL_NETWORK_ROLES.has(role) || isSbRole(role)) {
-      const pharmacy = await loadPharmacyNetworkEmployees();
-      filtered = mergeStaffRows(filtered, pharmacy);
-      if (departmentId) {
-        const deptId = parseInt(departmentId, 10);
-        filtered = filtered.filter((e) => e.departmentId === deptId);
-      }
+    // workplaceMode === "all" — filtr yo‘q
+
+    // Bo‘lim boshliqlari — faqat o‘z bo‘limi (id yoki nom bo‘yicha) + o‘zi yaratgan rollar
+    if (deptHeadScoped) {
+      const ctx = await resolveDeptHeadContext(userId, role);
+      const actorDeptId = ctx?.departmentId ?? (await getActorDepartmentId(userId));
+      const deptNameNorm = (ctx?.departmentName || "")
+        .trim()
+        .toLocaleLowerCase("uz")
+      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+      const allowedRoles = new Set(ctx?.creatableRoles ?? []);
+      allowedRoles.add(role);
+
+      const enriched = await enrichMany(filtered);
+      const scoped = enriched.filter((e) => {
+        if (actorDeptId && e.departmentId === actorDeptId) return true;
+        const eName = (e.departmentName || "")
+          .trim()
+          .toLocaleLowerCase("uz")
+      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+        if (deptNameNorm && eName && eName === deptNameNorm) return true;
+        if (e.userRole && allowedRoles.has(e.userRole)) return true;
+        return false;
+      });
+      res.json(scoped);
+      return;
     }
     res.json(await enrichMany(filtered));
   } catch (err) {
@@ -317,28 +351,55 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
 /** Xodimlar to‘liq ro‘yxati — Excel */
 router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
+  if (!canViewEmployees(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
   const role = req.userRole ?? "";
   const userId = req.userId;
-  const { departmentId, mentorId, search, group } = req.query as Record<string, string>;
+  const { departmentId, mentorId, search, group, workplace } = req.query as Record<string, string>;
   const staffGroup = group === "other" ? "other" : "active";
+  const deptHeadScoped = isDeptHeadRole(role) && !!userId && !canViewEmployeesFull(role);
+  const fullAccess = canViewEmployeesFull(role);
+  let workplaceMode: "ofis" | "dorixona" | "all" = "ofis";
+  if (fullAccess && !deptHeadScoped) {
+    if (workplace === "dorixona" || workplace === "all") workplaceMode = workplace;
+    else workplaceMode = "ofis";
+  }
 
   const rows = await loadStaffFromUsers(staffGroup);
-  let filtered = scopeEmployees(rows, role, userId, { departmentId, mentorId, search });
-  if (isDeptHeadRole(role) && userId && !isSbRole(role) && !isEmployeeDirectoryViewOnly(role)) {
-    const actorDeptId = await getActorDepartmentId(userId);
-    if (actorDeptId) {
-      filtered = filtered.filter((e) => e.departmentId === actorDeptId);
-    }
+  let filtered = scopeEmployees(rows, role, userId, {
+    departmentId: deptHeadScoped ? undefined : departmentId,
+    mentorId,
+    search,
+  });
+  if (workplaceMode === "ofis") {
+    filtered = filtered.filter((e) => !isPharmacyStaffRow(e));
+  } else if (workplaceMode === "dorixona") {
+    filtered = filtered.filter((e) => isPharmacyStaffRow(e));
   }
-  if (FULL_NETWORK_ROLES.has(role) || isSbRole(role)) {
-    const pharmacy = await loadPharmacyNetworkEmployees();
-    filtered = mergeStaffRows(filtered, pharmacy);
-    if (departmentId) {
-      const deptId = parseInt(departmentId, 10);
-      filtered = filtered.filter((e) => e.departmentId === deptId);
-    }
+
+  let enriched = await enrichMany(filtered);
+  if (deptHeadScoped) {
+    const ctx = await resolveDeptHeadContext(userId, role);
+    const actorDeptId = ctx?.departmentId ?? (await getActorDepartmentId(userId));
+    const deptNameNorm = (ctx?.departmentName || "")
+      .trim()
+      .toLocaleLowerCase("uz")
+      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+    const allowedRoles = new Set(ctx?.creatableRoles ?? []);
+    allowedRoles.add(role);
+    enriched = enriched.filter((e) => {
+      if (actorDeptId && e.departmentId === actorDeptId) return true;
+      const eName = (e.departmentName || "")
+        .trim()
+        .toLocaleLowerCase("uz")
+      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+      if (deptNameNorm && eName && eName === deptNameNorm) return true;
+      if (e.userRole && allowedRoles.has(e.userRole)) return true;
+      return false;
+    });
   }
-  const enriched = await enrichMany(filtered);
 
   const userIds = [...new Set(enriched.map((e) => e.userId).filter((id): id is number => id != null))];
   const userMap = new Map<number, { phone: string | null; login: string }>();

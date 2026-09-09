@@ -122,11 +122,15 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     isKoordinator ||
     user?.role === "admin" ||
     user?.role === "director";
+  /** Ofis QR sahifasi — faqat admin/direktor/bo‘lim boshliqlari (oddiy xodim emas) */
   const canDept =
-    Boolean(methodsQ.data?.canManageDeptQr) || isDeptHeadRole(user?.role) || isAdmin;
-  const canEditDept =
-    Boolean(methodsQ.data?.canManageDeptQr) || isDeptHeadRole(user?.role) || user?.role === "admin";
-  /** Filial: admin/koordinator; ofis bo‘lim: rahbar/admin */
+    Boolean(methodsQ.data?.canViewDeptQr) ||
+    Boolean(methodsQ.data?.canManageDeptQr) ||
+    isDeptHeadRole(user?.role) ||
+    isAdmin;
+  /** Ofis QR yaratish/o‘chirish — faqat admin */
+  const canEditDept = user?.role === "admin";
+  /** Filial: admin/koordinator; ofis: faqat admin */
   const canEditQr = scope === "branches" ? canEditBranch : canEditDept;
 
   useEffect(() => {
@@ -493,7 +497,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       <div className="mx-auto max-w-2xl px-4 py-8">
         <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-5 text-center dark:border-rose-900/50 dark:bg-rose-950/30">
           <p className="text-sm font-medium text-rose-700 dark:text-rose-300">
-            QR yaratishga ruxsat yo‘q. Filial: mudir/koordinator · Bo‘lim: rahbar/admin.
+            QR yaratishga ruxsat yo‘q. Filial: mudir/koordinator · Ofis QR: bo‘lim boshlig‘i (faqat ko‘rish) yoki admin.
           </p>
           <Link
             href="/davomat-face"
@@ -551,9 +555,11 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                   ? "Filial QR — faqat ko‘rish va yuklab olish"
                   : isKoordinator
                     ? "O‘z filiallaringiz uchun QR yaratish yoki yangilash"
-                    : scope === "branches"
-                      ? "Filial QR yaratish, ko‘rish va yuklab olish"
-                      : "Bo‘lim QR yaratish, ko‘rish va yuklab olish"}
+                    : scope === "departments" && !canEditDept
+                      ? "Ofis QR — faqat ko‘rish va yuklab olish"
+                      : scope === "branches"
+                        ? "Filial QR yaratish, ko‘rish va yuklab olish"
+                        : "Ofis QR yaratish, ko‘rish va yuklab olish"}
             </p>
           </div>
           {items.length > 0 ? (
@@ -574,7 +580,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
               ? "Faqat o‘z tarmog‘ingizdagi filiallar. QR yo‘q bo‘lsa — «QR yaratish», bor bo‘lsa — «Yangi QR»."
               : scope === "branches"
                 ? "QR yaratish: faqat admin va koordinator. Mudir faqat ko‘radi."
-                : "Ofis QR — faqat ofis xodimlari (100 m). Mudir, farmasevt, stajyor — o‘z filial QR / Face ID."}
+                : !canEditDept
+                  ? "Ofis QR ni ko‘rish va PDF/PNG yuklab olish mumkin. Yangi yaratish yoki o‘chirish — faqat admin."
+                  : "Ofis QR — faqat ofis xodimlari (100 m). Mudir, farmasevt, stajyor — o‘z filial QR / Face ID."}
         </p>
       </header>
 
@@ -849,6 +857,10 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
             Siz faqat QR ni ko‘rasiz va yuklab olasiz.
           </p>
+        ) : !canEditQr && scope === "departments" ? (
+          <p className="mt-2 text-center text-[11px] text-muted-foreground">
+            Faqat ko‘rish va yuklab olish. Yangi QR yaratish — admin.
+          </p>
         ) : isKoordinator && selected && !selected.hasActiveQr ? (
           <p className="mt-2 text-center text-[11px] text-muted-foreground">
             Bu filialda QR yo‘q — «QR yaratish» ni bosing.
@@ -983,7 +995,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                     </div>
                   ) : (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-4 text-center text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-                      Payload yo‘q. {entityLabel}ni tanlab «Yangi QR» bosing.
+                      {canEditQr
+                        ? `Payload yo‘q. ${entityLabel}ni tanlab «Yangi QR» bosing.`
+                        : "Payload yo‘q. Yangi QR yaratish uchun adminga murojaat qiling."}
                     </div>
                   )}
                 </article>

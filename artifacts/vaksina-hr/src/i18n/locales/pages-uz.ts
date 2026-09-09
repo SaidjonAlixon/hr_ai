@@ -1609,7 +1609,7 @@ export const pagesUz: Messages = {
   "smena.noBranch": "filial yo‘q",
   "smena.pickHint": "Xodimni bosing — smena va (ixtiyoriy) filial",
   "smena.noEmployee": "Xodim topilmadi",
-  "smena.officeNoShift": "Ofis xodimlarida smena yo‘q",
+  "smena.officeNoShift": "Ofis xodimlari, sizning ish vaqtingiz",
   "smena.tabRotation": "Kunlik rotatsiya",
   "smena.tabPermanent": "Doimiy",
   "smena.rotationTitle": "Kunlik rotatsiya",

@@ -1608,7 +1608,7 @@ export const pagesRu: Messages = {
   "smena.noBranch": "нет филиала",
   "smena.pickHint": "Выберите сотрудника — смена и (опционально) филиал",
   "smena.noEmployee": "Сотрудник не найден",
-  "smena.officeNoShift": "У офисных сотрудников нет смены",
+  "smena.officeNoShift": "Офисные сотрудники, ваше рабочее время",
   "smena.tabRotation": "Дневная ротация",
   "smena.tabPermanent": "Постоянно",
   "smena.rotationTitle": "Дневная ротация",

@@ -38,7 +38,7 @@ import {
   signalDavomatCoachDone,
 } from "@/components/davomat/DavomatCoachFinger";
 import { useToast } from "@/hooks/use-toast";
-import { enrollFace, fetchFaceIdStatus, isFaceIdSupported } from "@/lib/face-id";
+import { enrollFace, fetchFaceIdStatus, isFaceIdSupported, preloadFaceModels } from "@/lib/face-id";
 import { deviceHeadingFromOrientation } from "@/lib/device-compass";
 import {
   DAVOMAT_GEOFENCE_METERS,
@@ -841,6 +841,11 @@ export default function DavomatFacePage() {
     void fetchDavomatSite().then(setSite);
   }, []);
 
+  /** Face ID modelini fonida yuklash — skan ochilganda kutish bo‘lmasin */
+  useEffect(() => {
+    preloadFaceModels();
+  }, []);
+
   useEffect(() => {
     if (!workplace?.site) return;
     if (
@@ -1036,6 +1041,7 @@ export default function DavomatFacePage() {
   }, [t, onCompass, startCompass]);
 
   const requestLocationPermission = async () => {
+    preloadFaceModels();
     setGpsSharing(true);
     try {
       const result = await requestDavomatPermissions();
@@ -1238,6 +1244,7 @@ export default function DavomatFacePage() {
   const openFaceMethod = useCallback(() => {
     if (busy || qrVerifiedReady) return;
     if (!canOpenFace) return;
+    preloadFaceModels();
     setMethodHint(null);
     setQrOpen(false);
     if (faceRegistered === false) setEnrollOpen(true);

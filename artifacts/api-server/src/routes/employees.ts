@@ -198,7 +198,7 @@ async function hydrateEmployeeRow(row: EmpRow): Promise<EmpRow> {
     .limit(1);
   return {
     ...row,
-    fullName: formatPersonName(user?.fullName.trim() || row.fullName),
+    fullName: formatPersonName(user?.fullName?.trim() || row.fullName),
     phone: user?.phone ?? row.phone,
     login: user?.login ?? row.login,
     userStatus: normalizeUserStatus(user?.status ?? row.userStatus),
@@ -658,6 +658,7 @@ router.get("/employees/:id", requireAuth, async (req: AuthRequest, res): Promise
 });
 
 router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const [before] = await db.select().from(employeesTable).where(eq(employeesTable.id, id));
   if (!before) {
@@ -693,6 +694,8 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
     "director",
     "admin",
     "mudir",
+    "koordinator",
+    "department_head",
   ].includes(role);
   const canEditStatus = canChangeStaffStatus(role);
   const canEditIdentity = canEditStatus;
@@ -766,6 +769,30 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
       updates[key] = formatPersonName(String(req.body[key]));
       continue;
     }
+    if (key === "shiftType") {
+      const raw = String(req.body.shiftType || "").trim().toLowerCase();
+      if (raw === "two" || raw === "2" || raw === "2-smena") {
+        updates.shiftType = "two";
+        updates.shiftLabel = null;
+      } else if (raw === "custom") {
+        updates.shiftType = "custom";
+      } else if (raw === "one" || raw === "1" || raw === "1-smena" || !raw) {
+        updates.shiftType = "one";
+        updates.shiftLabel = null;
+      } else {
+        updates.shiftType = raw;
+      }
+      continue;
+    }
+    if (key === "shiftLabel") {
+      if (updates.shiftType === "one" || updates.shiftType === "two") {
+        updates.shiftLabel = null;
+        continue;
+      }
+      const label = String(req.body.shiftLabel ?? "").trim();
+      updates.shiftLabel = label || null;
+      continue;
+    }
     updates[key] = req.body[key];
   }
 
@@ -814,6 +841,12 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
   }
 
   res.json(await enrichEmployee(updated));
+  } catch (err) {
+    console.error("PATCH /employees/:id error:", err);
+    res.status(500).json({
+      error: (err as Error)?.message || "Xodimni yangilab bo‘lmadi",
+    });
+  }
 });
 
 export default router;

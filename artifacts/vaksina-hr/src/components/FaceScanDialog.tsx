@@ -15,6 +15,7 @@ import {
   ensureFaceModels,
   fetchFaceChallenge,
   isFaceIdSupported,
+  isFaceModelsReady,
   livenessMotion,
   poseMatchesWant,
   type FaceAlignStatus,
@@ -196,14 +197,12 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         return;
       }
       try {
-        setHint(tRef.current("davomat.scanModelLoading"));
-        await ensureFaceModels();
-        if (cancelled) return;
+        // Kamerani darhol ochamiz; model fonida (yoki allaqachon) yuklanadi
+        const modelsP = ensureFaceModels();
         setHint(tRef.current("davomat.scanCamOpening"));
         const stream = await navigator.mediaDevices.getUserMedia({
           audio: false,
           video: {
-            // Mobil: old (selfie) kamera — Face ID uchun
             facingMode: { ideal: "user" },
             width: { ideal: 1280 },
             height: { ideal: 720 },
@@ -215,9 +214,17 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         }
         streamRef.current = stream;
         const video = videoRef.current;
-        if (!video) return;
+        if (!video) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
         video.srcObject = stream;
         await video.play();
+        if (!isFaceModelsReady()) {
+          setHint(tRef.current("davomat.scanModelLoading"));
+        }
+        await modelsP;
+        if (cancelled) return;
         setHint(tRef.current("davomat.scanPrep"));
         const issued = await fetchFaceChallenge(mode);
         if (cancelled) return;

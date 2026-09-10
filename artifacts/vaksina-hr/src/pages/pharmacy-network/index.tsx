@@ -676,8 +676,26 @@ export default function PharmacyNetworkPage() {
     setEditFirstName(parts.length <= 1 ? person.fullName || '' : parts.slice(0, -1).join(' '));
     setEditLastName(parts.length <= 1 ? '' : parts[parts.length - 1]);
     setEditPhone(String((person as Employee & { phone?: string | null }).phone || ''));
-    setShiftType((person.shiftType as ShiftType) || 'one');
-    setShiftLabel(person.shiftLabel ?? '');
+    const rawShift = String(person.shiftType || 'one').toLowerCase().trim();
+    if (rawShift === 'two' || rawShift === '2' || rawShift === '2-smena') {
+      setShiftType('two');
+      setShiftLabel('');
+    } else if (rawShift === 'custom') {
+      setShiftType('custom');
+      setShiftLabel(person.shiftLabel ?? '');
+    } else if (rawShift === 'one' || rawShift === '1' || rawShift === '1-smena') {
+      setShiftType('one');
+      setShiftLabel('');
+    } else if (rawShift.includes('two') && !rawShift.includes('one')) {
+      setShiftType('two');
+      setShiftLabel('');
+    } else if (rawShift.includes('+') || rawShift.includes('three')) {
+      setShiftType('custom');
+      setShiftLabel(person.shiftLabel || person.shiftType || '');
+    } else {
+      setShiftType('one');
+      setShiftLabel('');
+    }
     setEmploymentStatus(empStatus(person));
   };
 
@@ -896,7 +914,7 @@ export default function PharmacyNetworkPage() {
         fullName,
         phone: editPhone.trim(),
         shiftType,
-        shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : '',
+        shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : null,
         ...(canEditStatus ? { employmentStatus } : {}),
       },
       {

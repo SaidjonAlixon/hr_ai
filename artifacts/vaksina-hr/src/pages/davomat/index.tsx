@@ -506,10 +506,11 @@ export default function DavomatPage() {
         to,
         search: search.trim() || undefined,
         departmentId: deptFilter !== "all" ? deptFilter : undefined,
+        staffFilter,
       });
       toast({
         title: "Excel yuklandi",
-        description: "6 varaq: qo'llanma, jadval, xulosa, jami, kelganlar, kelmaganlar",
+        description: `Filtrdagi ${filteredEmployees.length} ta xodim · ${staffFilterLabel(staffFilter)}`,
       });
     } catch (err) {
       toast({

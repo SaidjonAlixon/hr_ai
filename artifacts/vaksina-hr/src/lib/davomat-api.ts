@@ -573,6 +573,7 @@ export async function downloadDavomatExcel(params: {
   search?: string;
   departmentId?: string;
   location?: string;
+  staffFilter?: string;
 }): Promise<void> {
   const q = new URLSearchParams();
   q.set("from", params.from);
@@ -580,6 +581,7 @@ export async function downloadDavomatExcel(params: {
   if (params.search) q.set("search", params.search);
   if (params.departmentId) q.set("departmentId", params.departmentId);
   if (params.location) q.set("location", params.location);
+  if (params.staffFilter && params.staffFilter !== "all") q.set("staffFilter", params.staffFilter);
   const res = await fetch(`/api/davomat/export?${q}`, { credentials: "include" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

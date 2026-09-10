@@ -6,6 +6,7 @@ import {
   enrollFace,
   fetchFaceIdStatus,
   isFaceIdSupported,
+  preloadFaceModels,
   removeFaceId,
   type FaceLivenessProof,
 } from "@/lib/face-id";
@@ -26,6 +27,10 @@ export function FaceIdEnroll({
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(true);
   const [scanOpen, setScanOpen] = useState(false);
+
+  useEffect(() => {
+    preloadFaceModels();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

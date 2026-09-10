@@ -51,6 +51,21 @@ export type DavomatAnalytics = {
     late: number;
     absent: number;
     attendanceRate: number;
+    staff?: Array<{
+      id: number;
+      fullName: string;
+      position: string;
+      present: number;
+      late: number;
+      absent: number;
+      incomplete: number;
+      leave: number;
+      lateMinutes: number;
+      attendanceRate: number;
+      lastCheckIn: string | null;
+      lastStatus: string;
+      lastStatusLabel: string;
+    }>;
   }>;
   byShift: Array<{
     key: string;
@@ -77,6 +92,11 @@ export type DavomatAnalytics = {
     position: string;
     lateDays: number;
     lateMinutes: number;
+    lateDetails?: Array<{
+      date: string;
+      checkIn: string;
+      lateMinutes: number;
+    }>;
   }>;
   branchOpenings: Array<{
     branchId: number;
@@ -110,14 +130,47 @@ export type DavomatAnalytics = {
     absent: number;
     leave: number;
   } | null;
+  officeDayBoard: Array<{
+    employeeId: number;
+    fullName: string;
+    departmentName: string | null;
+    position: string;
+    shiftLabel: string;
+    expectedOpen: string;
+    graceUntil: string;
+    checkIn: string | null;
+    status: "on_time" | "late" | "absent" | "leave";
+    statusLabel: string;
+    lateMinutes: number;
+    date: string;
+  }>;
+  officeDaySummary: {
+    date: string;
+    total: number;
+    onTime: number;
+    late: number;
+    absent: number;
+    leave: number;
+  } | null;
   recentCheckins: Array<{
+    id?: number;
     fullName: string;
     departmentName: string | null;
     position: string;
     date: string;
     checkIn: string;
+    checkOut?: string;
     status: string;
     statusLabel: string;
+    lateMinutes?: number;
+    dayDetails?: Array<{
+      date: string;
+      checkIn: string;
+      checkOut: string;
+      status: string;
+      statusLabel: string;
+      lateMinutes: number;
+    }>;
   }>;
   alerts: Array<{ id: string; severity: "high" | "medium"; title: string; count: number }>;
   bestDay: { date: string; rate: number } | null;

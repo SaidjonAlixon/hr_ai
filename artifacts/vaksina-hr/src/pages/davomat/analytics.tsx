@@ -73,6 +73,17 @@ const SEGMENT_OPTIONS: { key: DavomatSegment; labelKey: string; hintKey: string;
 
 const PIE_COLORS = ["#34d399", "#fbbf24", "#f87171", "#a78bfa", "#60a5fa"];
 
+function formatLateHours(minutes: number): string {
+  if (!Number.isFinite(minutes) || minutes <= 0) return "0";
+  const h = minutes / 60;
+  if (h < 10) return h.toFixed(1).replace(/\.0$/, "");
+  return String(Math.round(h * 10) / 10);
+}
+
+type TopLateRow = DavomatAnalytics["topLate"][number];
+type RecentCheckinRow = DavomatAnalytics["recentCheckins"][number];
+type DeptRow = DavomatAnalytics["byDepartment"][number];
+
 function ChartTip({ active, payload, label }: { active?: boolean; payload?: { name: string; value: number; color?: string }[]; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
@@ -258,6 +269,14 @@ function BranchRow({ b, onSelect }: { b: BranchOpening; onSelect: (b: BranchOpen
   const { t } = useI18n();
   const opened = b.checkIn && b.checkIn !== "—" ? b.checkIn : null;
   const windowLabel = onTimeWindowLabel(b.expectedOpen, b.graceUntil, t);
+  const statusCaption =
+    b.status === "absent"
+      ? t("davomat.notOpened")
+      : b.status === "leave"
+        ? b.statusLabel
+        : b.status === "late"
+          ? t("davomat.lateShort")
+          : t("davomat.opened");
 
   return (
     <button
@@ -273,11 +292,13 @@ function BranchRow({ b, onSelect }: { b: BranchOpening; onSelect: (b: BranchOpen
         <p className="truncate text-xs font-semibold leading-tight">{b.branchName}</p>
         <p className="truncate text-[10px] leading-tight opacity-75">{b.managerName}</p>
         {(b.staff?.length ?? 0) > 1 ? (
-          <p className="text-[9px] opacity-60">{b.staff.length} {t("davomat.staffDetail")}</p>
+          <p className="text-[9px] opacity-60">
+            {b.staff.length} {t("davomat.staffDetail")}
+          </p>
         ) : null}
       </div>
       <div className="shrink-0 text-right leading-tight">
-        <p className="text-[9px] font-medium uppercase tracking-wide opacity-60">{t("davomat.opened")}</p>
+        <p className="text-[9px] font-medium uppercase tracking-wide opacity-60">{statusCaption}</p>
         {opened ? (
           <>
             <p className="text-sm font-bold tabular-nums">{opened}</p>
@@ -459,6 +480,240 @@ function BranchOpeningsPanel({
   );
 }
 
+type OfficeDayItem = DavomatAnalytics["officeDayBoard"][number];
+
+function officeStatusStyle(status: OfficeDayItem["status"]) {
+  return branchStatusStyle(status);
+}
+
+function OfficeDayRow({ item }: { item: OfficeDayItem }) {
+  const { t } = useI18n();
+  const opened = item.checkIn && item.checkIn !== "—" ? item.checkIn : null;
+  const windowLabel = onTimeWindowLabel(item.expectedOpen, item.graceUntil, t);
+  const caption =
+    item.status === "absent"
+      ? t("davomat.absent")
+      : item.status === "leave"
+        ? item.statusLabel
+        : item.status === "late"
+          ? t("davomat.lateShort")
+          : t("davomat.cameAt");
+
+  return (
+    <div
+      className={cn(
+        "flex w-full items-center gap-2 rounded-lg border px-2 py-1.5 text-left",
+        officeStatusStyle(item.status),
+      )}
+    >
+      <Users className="h-3.5 w-3.5 shrink-0 opacity-80" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-xs font-semibold leading-tight">{item.fullName}</p>
+        <p className="truncate text-[10px] leading-tight opacity-75">
+          {item.departmentName || item.position}
+        </p>
+        {item.departmentName ? (
+          <p className="truncate text-[9px] opacity-60">{item.position}</p>
+        ) : null}
+      </div>
+      <div className="shrink-0 text-right leading-tight">
+        <p className="text-[9px] font-medium uppercase tracking-wide opacity-60">{caption}</p>
+        {opened ? (
+          <>
+            <p className="text-sm font-bold tabular-nums">{opened}</p>
+            <p className="text-[9px] tabular-nums opacity-60">{windowLabel}</p>
+            {item.lateMinutes > 0 ? (
+              <p className="text-[9px] font-semibold tabular-nums text-amber-700 dark:text-amber-300">
+                +{item.lateMinutes} {t("davomat.minShort")}
+              </p>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <p className="text-xs font-semibold opacity-70">—</p>
+            <p className="text-[9px] tabular-nums opacity-60">{windowLabel}</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OfficeDayColumn({
+  title,
+  count,
+  tone,
+  items,
+  empty,
+}: {
+  title: string;
+  count: number;
+  tone: "emerald" | "amber" | "rose";
+  items: OfficeDayItem[];
+  empty: string;
+}) {
+  const toneClass =
+    tone === "emerald"
+      ? "border-emerald-500/30 bg-emerald-500/5"
+      : tone === "amber"
+        ? "border-amber-500/30 bg-amber-500/5"
+        : "border-rose-500/30 bg-rose-500/5";
+  const badgeClass =
+    tone === "emerald"
+      ? "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300"
+      : tone === "amber"
+        ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
+        : "bg-rose-500/15 text-rose-800 dark:text-rose-300";
+
+  return (
+    <div className={cn("flex min-h-0 flex-col rounded-xl border", toneClass)}>
+      <div className="flex items-center justify-between gap-2 border-b border-border/50 px-2.5 py-2">
+        <span className="text-xs font-semibold">{title}</span>
+        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums", badgeClass)}>{count}</span>
+      </div>
+      <div className="max-h-[220px] space-y-1 overflow-y-auto p-2">
+        {items.length ? (
+          items.map((item) => <OfficeDayRow key={item.employeeId} item={item} />)
+        ) : (
+          <p className="py-6 text-center text-[11px] text-muted-foreground">{empty}</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function OfficeDayPanel({
+  items,
+  summary,
+  loading,
+  rangeLabel,
+}: {
+  items: DavomatAnalytics["officeDayBoard"];
+  summary: DavomatAnalytics["officeDaySummary"];
+  loading?: boolean;
+  rangeLabel?: string;
+}) {
+  const { t } = useI18n();
+  const [tab, setTab] = useState<BranchStatusTab>("late");
+
+  const grouped = useMemo(() => {
+    const onTime = items.filter((b) => b.status === "on_time");
+    const late = items.filter((b) => b.status === "late");
+    const absent = items.filter((b) => b.status === "absent" || b.status === "leave");
+    return { onTime, late, absent };
+  }, [items]);
+
+  if (loading) {
+    return (
+      <div className="grid gap-2 md:grid-cols-3">
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
+        <Skeleton className="h-40 w-full" />
+      </div>
+    );
+  }
+
+  if (!summary) {
+    return <p className="py-6 text-center text-sm text-muted-foreground">{t("ui.empty")}</p>;
+  }
+
+  const tabs: {
+    key: BranchStatusTab;
+    label: string;
+    count: number;
+    tone: "emerald" | "amber" | "rose";
+    items: OfficeDayItem[];
+    empty: string;
+  }[] = [
+    {
+      key: "on_time",
+      label: t("davomat.onTime"),
+      count: summary.onTime,
+      tone: "emerald",
+      items: grouped.onTime,
+      empty: t("davomat.emptyOfficeOnTime"),
+    },
+    {
+      key: "late",
+      label: t("davomat.lateShort"),
+      count: summary.late,
+      tone: "amber",
+      items: grouped.late,
+      empty: t("davomat.emptyOfficeLate"),
+    },
+    {
+      key: "absent",
+      label: t("davomat.absent"),
+      count: summary.absent + summary.leave,
+      tone: "rose",
+      items: grouped.absent,
+      empty: t("davomat.emptyOfficeAbsent"),
+    },
+  ];
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1 rounded-full border border-border bg-muted/50 px-2 py-0.5 font-medium text-foreground">
+            <CalendarDays className="h-3 w-3" />
+            {formatYmdUz(summary.date)}
+          </span>
+          {rangeLabel ? <span>{rangeLabel}</span> : null}
+          <span className="text-muted-foreground">{t("davomat.officeDayHint")}</span>
+        </div>
+        <div className="flex gap-1 md:hidden">
+          {tabs.map((tb) => (
+            <button
+              key={tb.key}
+              type="button"
+              onClick={() => setTab(tb.key)}
+              className={cn(
+                "rounded-lg px-2 py-1 text-[11px] font-semibold transition",
+                tab === tb.key ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground",
+              )}
+            >
+              {tb.label} ({tb.count})
+            </button>
+          ))}
+        </div>
+      </div>
+      {!items.length ? (
+        <p className="py-4 text-center text-sm text-muted-foreground">{t("davomat.noOfficeStaff")}</p>
+      ) : (
+        <>
+          <div className="hidden gap-3 md:grid md:grid-cols-3">
+            {tabs.map((tb) => (
+              <OfficeDayColumn
+                key={tb.key}
+                title={tb.label}
+                count={tb.count}
+                tone={tb.tone}
+                items={tb.items}
+                empty={tb.empty}
+              />
+            ))}
+          </div>
+          <div className="md:hidden">
+            {tabs
+              .filter((tb) => tb.key === tab)
+              .map((tb) => (
+                <OfficeDayColumn
+                  key={tb.key}
+                  title={tb.label}
+                  count={tb.count}
+                  tone={tb.tone}
+                  items={tb.items}
+                  empty={tb.empty}
+                />
+              ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function DavomatAnalyticsDashboard({
   embedded = false,
   initialSegment = "all",
@@ -478,6 +733,9 @@ export function DavomatAnalyticsDashboard({
   const [customFrom, setCustomFrom] = useState(() => addDaysYmd(tashkentTodayYmd(), -6));
   const [customTo, setCustomTo] = useState(() => tashkentTodayYmd());
   const [segment, setSegment] = useState<DavomatSegment>(segmentFromUrl);
+  const [latePerson, setLatePerson] = useState<TopLateRow | null>(null);
+  const [arrivalPerson, setArrivalPerson] = useState<RecentCheckinRow | null>(null);
+  const [deptRow, setDeptRow] = useState<DeptRow | null>(null);
   useEffect(() => {
     setSegment(segmentFromUrl);
   }, [segmentFromUrl]);
@@ -727,14 +985,73 @@ export function DavomatAnalyticsDashboard({
             )}
           </Panel>
 
-          <Panel title={t("davomat.byShift")}>
+          <Panel title={segment === "office" ? t("davomat.deptRank") : t("davomat.byShift")}>
             {isLoading ? (
               <Skeleton className="h-56 w-full rounded-xl" />
+            ) : segment === "office" ? (
+              <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
+                <p className="mb-2 text-[11px] text-muted-foreground">{t("davomat.deptRankHint")}</p>
+                {[...(data?.byDepartment ?? [])]
+                  .sort((a, b) => b.attendanceRate - a.attendanceRate)
+                  .map((d, i) => (
+                    <div key={d.name} className="analytics-inset !px-2.5 !py-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2">
+                          <span
+                            className={cn(
+                              "flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-[10px] font-bold tabular-nums",
+                              i === 0
+                                ? "bg-emerald-100 text-emerald-800"
+                                : i === 1
+                                  ? "bg-sky-100 text-sky-800"
+                                  : i === 2
+                                    ? "bg-amber-100 text-amber-900"
+                                    : "bg-muted text-muted-foreground",
+                            )}
+                          >
+                            {i + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-semibold">{d.name}</p>
+                            <p className="text-[10px] text-muted-foreground">
+                              {d.headcount} {t("davomat.peopleCount")} · {d.late} {t("davomat.lateWord")}
+                            </p>
+                          </div>
+                        </div>
+                        <span
+                          className={cn(
+                            "shrink-0 text-sm font-bold tabular-nums",
+                            d.attendanceRate >= 85
+                              ? "text-emerald-600"
+                              : d.attendanceRate >= 60
+                                ? "text-amber-600"
+                                : "text-rose-600",
+                          )}
+                        >
+                          {d.attendanceRate}%
+                        </span>
+                      </div>
+                      <Progress value={d.attendanceRate} className="mt-1.5 h-1.5" />
+                    </div>
+                  ))}
+                {!(data?.byDepartment ?? []).length ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">{t("ui.empty")}</p>
+                ) : null}
+              </div>
             ) : (
               <ResponsiveContainer width="100%" height={240}>
                 <BarChart data={data?.byShift ?? []}>
                   <CartesianGrid strokeDasharray="3 3" stroke={chart.grid} vertical={false} />
-                  <XAxis dataKey="label" tick={{ fill: chart.tick, fontSize: 10 }} interval={0} angle={-12} textAnchor="end" height={50} axisLine={false} tickLine={false} />
+                  <XAxis
+                    dataKey="label"
+                    tick={{ fill: chart.tick, fontSize: 10 }}
+                    interval={0}
+                    angle={-12}
+                    textAnchor="end"
+                    height={50}
+                    axisLine={false}
+                    tickLine={false}
+                  />
                   <YAxis tick={{ fill: chart.tick, fontSize: 11 }} axisLine={false} tickLine={false} />
                   <Tooltip content={<ChartTip />} />
                   <Bar dataKey="attendanceRate" name={t("davomat.chartAtt")} fill={chart.barSecondary} radius={[4, 4, 0, 0]} />
@@ -783,16 +1100,29 @@ export function DavomatAnalyticsDashboard({
             </div>
           </Panel>
 
-          <Panel title={t("davomat.branchOpen")} className="lg:col-span-6">
-            <BranchOpeningsPanel
-              openings={data?.branchOpenings ?? []}
-              summary={data?.branchOpeningSummary ?? null}
-              loading={isLoading}
-              rangeLabel={
-                range.from !== range.to ? `${t("davomat.periodLastDay")} · ${formatYmdUz(range.to)}` : undefined
-              }
-            />
-          </Panel>
+          {segment === "office" ? (
+            <Panel title={t("davomat.officeDay")} className="lg:col-span-6">
+              <OfficeDayPanel
+                items={data?.officeDayBoard ?? []}
+                summary={data?.officeDaySummary ?? null}
+                loading={isLoading}
+                rangeLabel={
+                  range.from !== range.to ? `${t("davomat.periodLastDay")} · ${formatYmdUz(range.to)}` : undefined
+                }
+              />
+            </Panel>
+          ) : (
+            <Panel title={t("davomat.branchOpen")} className="lg:col-span-6">
+              <BranchOpeningsPanel
+                openings={data?.branchOpenings ?? []}
+                summary={data?.branchOpeningSummary ?? null}
+                loading={isLoading}
+                rangeLabel={
+                  range.from !== range.to ? `${t("davomat.periodLastDay")} · ${formatYmdUz(range.to)}` : undefined
+                }
+              />
+            </Panel>
+          )}
 
           <Panel title={t("davomat.metrics")} className="lg:col-span-3">
             <div className="space-y-3 text-sm">
@@ -837,16 +1167,78 @@ export function DavomatAnalyticsDashboard({
                 </thead>
                 <tbody>
                   {(data?.topLate ?? []).map((r) => (
-                    <tr key={r.id}>
-                      <td className="font-medium">{r.fullName}</td>
+                    <tr
+                      key={r.id}
+                      className="cursor-pointer transition hover:bg-muted/60"
+                      onClick={() => setLatePerson(r)}
+                    >
+                      <td className="font-medium text-primary underline-offset-2 hover:underline">{r.fullName}</td>
                       <td className="text-muted-foreground">{r.departmentName || "—"}</td>
                       <td className="text-right tabular-nums text-amber-600 dark:text-amber-400">{r.lateDays}</td>
-                      <td className="text-right tabular-nums text-muted-foreground">{r.lateMinutes}</td>
+                      <td className="text-right tabular-nums text-muted-foreground">
+                        {formatLateHours(r.lateMinutes)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <Dialog open={!!latePerson} onOpenChange={(open) => !open && setLatePerson(null)}>
+              <DialogContent className="max-h-[85vh] max-w-md overflow-hidden p-0">
+                <DialogHeader className="border-b border-border px-4 py-3">
+                  <DialogTitle className="text-left text-base">
+                    {t("davomat.lateDetailTitle")}
+                  </DialogTitle>
+                  {latePerson ? (
+                    <p className="text-left text-xs text-muted-foreground">
+                      {latePerson.fullName}
+                      {latePerson.departmentName ? ` · ${latePerson.departmentName}` : ""}
+                      {latePerson.position ? ` · ${latePerson.position}` : ""}
+                    </p>
+                  ) : null}
+                </DialogHeader>
+                <div className="max-h-[60vh] overflow-y-auto p-3">
+                  <p className="mb-3 text-[11px] text-muted-foreground">{t("davomat.lateDetailHint")}</p>
+                  {latePerson?.lateDetails?.length ? (
+                    <ul className="space-y-2">
+                      {latePerson.lateDetails.map((d) => (
+                        <li
+                          key={d.date}
+                          className="flex items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2.5"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold tabular-nums">{formatYmdUz(d.date)}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {t("davomat.checkInTime")}: {d.checkIn}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-[10px] uppercase text-muted-foreground">{t("davomat.lateBy")}</p>
+                            <p className="text-sm font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                              {formatLateHours(d.lateMinutes)} {t("davomat.hourShort")}
+                            </p>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="py-8 text-center text-sm text-muted-foreground">
+                      {t("davomat.lateDetailEmpty")}
+                    </p>
+                  )}
+                  {latePerson ? (
+                    <div className="mt-4 rounded-xl border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                      {t("davomat.col.day")}: <span className="font-semibold text-foreground">{latePerson.lateDays}</span>
+                      {" · "}
+                      {t("davomat.col.min")}:{" "}
+                      <span className="font-semibold text-foreground">
+                        {formatLateHours(latePerson.lateMinutes)} {t("davomat.hourShort")}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+              </DialogContent>
+            </Dialog>
           </Panel>
 
           <Panel title={t("davomat.recentArrivals")} bodyClassName="p-0">
@@ -862,8 +1254,12 @@ export function DavomatAnalyticsDashboard({
                 </thead>
                 <tbody>
                   {(data?.recentCheckins ?? []).map((r, i) => (
-                    <tr key={`${r.fullName}-${i}`}>
-                      <td className="font-medium">{r.fullName}</td>
+                    <tr
+                      key={`${r.id ?? r.fullName}-${i}`}
+                      className="cursor-pointer transition hover:bg-muted/60"
+                      onClick={() => setArrivalPerson(r)}
+                    >
+                      <td className="font-medium text-primary underline-offset-2 hover:underline">{r.fullName}</td>
                       <td className="text-muted-foreground">{r.departmentName || "—"}</td>
                       <td className="tabular-nums text-muted-foreground">{r.checkIn}</td>
                       <td className="text-right">
@@ -872,7 +1268,9 @@ export function DavomatAnalyticsDashboard({
                             "rounded-full px-2 py-0.5 text-xs font-medium",
                             r.status === "late"
                               ? "bg-amber-500/15 text-amber-700 dark:text-amber-300"
-                              : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
+                              : r.status === "incomplete"
+                                ? "bg-violet-500/15 text-violet-700 dark:text-violet-300"
+                                : "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300",
                           )}
                         >
                           {r.statusLabel}
@@ -883,6 +1281,76 @@ export function DavomatAnalyticsDashboard({
                 </tbody>
               </table>
             </div>
+            <Dialog open={!!arrivalPerson} onOpenChange={(open) => !open && setArrivalPerson(null)}>
+              <DialogContent className="max-h-[85vh] max-w-md overflow-hidden p-0">
+                <DialogHeader className="border-b border-border px-4 py-3">
+                  <DialogTitle className="text-left text-base">{t("davomat.arrivalDetailTitle")}</DialogTitle>
+                  {arrivalPerson ? (
+                    <p className="text-left text-xs text-muted-foreground">
+                      {arrivalPerson.fullName}
+                      {arrivalPerson.departmentName ? ` · ${arrivalPerson.departmentName}` : ""}
+                      {arrivalPerson.position ? ` · ${arrivalPerson.position}` : ""}
+                    </p>
+                  ) : null}
+                </DialogHeader>
+                <div className="max-h-[60vh] overflow-y-auto p-3">
+                  {arrivalPerson ? (
+                    <div className="mb-3 rounded-xl border bg-muted/40 px-3 py-2.5 text-xs">
+                      <p className="text-[10px] uppercase text-muted-foreground">{t("davomat.lastDay")}</p>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+                        <span className="tabular-nums font-semibold">{formatYmdUz(arrivalPerson.date)}</span>
+                        <span>
+                          {t("davomat.checkInTime")}:{" "}
+                          <span className="font-semibold tabular-nums">{arrivalPerson.checkIn}</span>
+                        </span>
+                        <span>
+                          {t("davomat.checkOut")}:{" "}
+                          <span className="font-semibold tabular-nums">{arrivalPerson.checkOut || "—"}</span>
+                        </span>
+                        <span className={cn("inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold", staffStatusStyle(arrivalPerson.status))}>
+                          {arrivalPerson.statusLabel}
+                          {(arrivalPerson.lateMinutes ?? 0) > 0
+                            ? ` (+${formatLateHours(arrivalPerson.lateMinutes ?? 0)} ${t("davomat.hourShort")})`
+                            : ""}
+                        </span>
+                      </div>
+                    </div>
+                  ) : null}
+                  <p className="mb-3 text-[11px] text-muted-foreground">{t("davomat.arrivalDetailHint")}</p>
+                  {arrivalPerson?.dayDetails?.length ? (
+                    <ul className="space-y-2">
+                      {arrivalPerson.dayDetails.map((d) => (
+                        <li
+                          key={d.date}
+                          className="flex items-center justify-between gap-3 rounded-xl border bg-card px-3 py-2.5"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-semibold tabular-nums">{formatYmdUz(d.date)}</p>
+                            <p className="text-[11px] text-muted-foreground">
+                              {t("davomat.checkInTime")}: {d.checkIn}
+                              {" · "}
+                              {t("davomat.checkOut")}: {d.checkOut}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <span className={cn("inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold", staffStatusStyle(d.status))}>
+                              {d.statusLabel}
+                            </span>
+                            {d.lateMinutes > 0 ? (
+                              <p className="mt-1 text-xs font-bold tabular-nums text-amber-700 dark:text-amber-300">
+                                +{formatLateHours(d.lateMinutes)} {t("davomat.hourShort")}
+                              </p>
+                            ) : null}
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="py-8 text-center text-sm text-muted-foreground">{t("davomat.lateDetailEmpty")}</p>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
           </Panel>
         </div>
 
@@ -901,8 +1369,12 @@ export function DavomatAnalyticsDashboard({
               </thead>
               <tbody>
                 {(data?.byDepartment ?? []).map((d) => (
-                  <tr key={d.name}>
-                    <td className="font-medium">{d.name}</td>
+                  <tr
+                    key={d.name}
+                    className="cursor-pointer transition hover:bg-muted/60"
+                    onClick={() => setDeptRow(d)}
+                  >
+                    <td className="font-medium text-primary underline-offset-2 hover:underline">{d.name}</td>
                     <td className="text-right tabular-nums">{d.headcount}</td>
                     <td className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">{d.present}</td>
                     <td className="text-right tabular-nums text-amber-600 dark:text-amber-400">{d.late}</td>
@@ -913,6 +1385,65 @@ export function DavomatAnalyticsDashboard({
               </tbody>
             </table>
           </div>
+          <Dialog open={!!deptRow} onOpenChange={(open) => !open && setDeptRow(null)}>
+            <DialogContent className="max-h-[85vh] max-w-2xl overflow-hidden p-0">
+              <DialogHeader className="border-b border-border px-4 py-3">
+                <DialogTitle className="text-left text-base">{t("davomat.deptStaffTitle")}</DialogTitle>
+                {deptRow ? (
+                  <p className="text-left text-xs text-muted-foreground">
+                    {deptRow.name}
+                    {" · "}
+                    {deptRow.headcount} {t("davomat.peopleCount")}
+                    {" · "}
+                    {t("davomat.chartAtt")}: {deptRow.attendanceRate}%
+                  </p>
+                ) : null}
+              </DialogHeader>
+              <div className="max-h-[60vh] overflow-y-auto p-3">
+                <p className="mb-3 text-[11px] text-muted-foreground">{t("davomat.deptStaffHint")}</p>
+                {(deptRow?.staff?.length ?? 0) > 0 ? (
+                  <table className="analytics-table w-full text-sm">
+                    <thead>
+                      <tr>
+                        <th>{t("ui.employee")}</th>
+                        <th className="text-right">{t("davomat.arrived")}</th>
+                        <th className="text-right">{t("davomat.lateShort")}</th>
+                        <th className="text-right">{t("davomat.absent")}</th>
+                        <th className="text-right">{t("davomat.col.min")}</th>
+                        <th className="text-right">{t("davomat.lastDay")}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(deptRow?.staff ?? []).map((s) => (
+                        <tr key={s.id}>
+                          <td>
+                            <p className="font-medium leading-tight">{s.fullName}</p>
+                            <p className="text-[10px] text-muted-foreground">{s.position}</p>
+                          </td>
+                          <td className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">{s.present}</td>
+                          <td className="text-right tabular-nums text-amber-600 dark:text-amber-400">{s.late}</td>
+                          <td className="text-right tabular-nums text-rose-600 dark:text-rose-400">{s.absent}</td>
+                          <td className="text-right tabular-nums text-muted-foreground">
+                            {formatLateHours(s.lateMinutes)}
+                          </td>
+                          <td className="text-right">
+                            <span className={cn("inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold", staffStatusStyle(s.lastStatus))}>
+                              {s.lastStatusLabel}
+                            </span>
+                            {s.lastCheckIn ? (
+                              <p className="mt-0.5 text-[10px] tabular-nums text-muted-foreground">{s.lastCheckIn}</p>
+                            ) : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="py-8 text-center text-sm text-muted-foreground">{t("davomat.deptStaffEmpty")}</p>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
         </Panel>
       </div>
     </div>

@@ -143,6 +143,21 @@ export type DavomatAnalyticsPayload = {
     late: number;
     absent: number;
     attendanceRate: number;
+    staff: Array<{
+      id: number;
+      fullName: string;
+      position: string;
+      present: number;
+      late: number;
+      absent: number;
+      incomplete: number;
+      leave: number;
+      lateMinutes: number;
+      attendanceRate: number;
+      lastCheckIn: string | null;
+      lastStatus: string;
+      lastStatusLabel: string;
+    }>;
   }>;
   byShift: Array<{
     key: string;
@@ -169,6 +184,11 @@ export type DavomatAnalyticsPayload = {
     position: string;
     lateDays: number;
     lateMinutes: number;
+    lateDetails: Array<{
+      date: string;
+      checkIn: string;
+      lateMinutes: number;
+    }>;
   }>;
   branchOpenings: Array<{
     branchId: number;
@@ -192,14 +212,48 @@ export type DavomatAnalyticsPayload = {
     absent: number;
     leave: number;
   } | null;
+  /** Ofis segmenti — oxirgi kun bo‘yicha ofis xodimlari holati */
+  officeDayBoard: Array<{
+    employeeId: number;
+    fullName: string;
+    departmentName: string | null;
+    position: string;
+    shiftLabel: string;
+    expectedOpen: string;
+    graceUntil: string;
+    checkIn: string | null;
+    status: "on_time" | "late" | "absent" | "leave";
+    statusLabel: string;
+    lateMinutes: number;
+    date: string;
+  }>;
+  officeDaySummary: {
+    date: string;
+    total: number;
+    onTime: number;
+    late: number;
+    absent: number;
+    leave: number;
+  } | null;
   recentCheckins: Array<{
+    id: number;
     fullName: string;
     departmentName: string | null;
     position: string;
     date: string;
     checkIn: string;
+    checkOut: string;
     status: string;
     statusLabel: string;
+    lateMinutes: number;
+    dayDetails: Array<{
+      date: string;
+      checkIn: string;
+      checkOut: string;
+      status: string;
+      statusLabel: string;
+      lateMinutes: number;
+    }>;
   }>;
   alerts: Array<{ id: string; severity: "high" | "medium"; title: string; count: number }>;
   bestDay: { date: string; rate: number } | null;
@@ -521,6 +575,71 @@ function buildBranchOpenings(
   });
 }
 
+function buildOfficeDayBoard(
+  report: ReportLike,
+  metaById: Map<number, EmployeeMeta>,
+  targetDate: string,
+): DavomatAnalyticsPayload["officeDayBoard"] {
+  const rows: DavomatAnalyticsPayload["officeDayBoard"] = [];
+  for (const e of report.employees) {
+    const m = metaById.get(e.id);
+    if (davomatStaffSegment(m?.userRole, m?.orgRole ?? e.orgRole) !== "office") continue;
+    if ((m?.userRole || "") === "admin") continue;
+
+    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+    const grace = graceMinutesFor(schedule);
+    const day = e.days.find((x) => x.date === targetDate);
+    const staffDay = classifyStaffDay(day, schedule);
+
+    let status: "on_time" | "late" | "absent" | "leave";
+    let statusLabel: string;
+    let checkIn: string | null = staffDay.checkIn;
+    let lateMinutes = staffDay.lateMinutes;
+
+    if (staffDay.status === "leave") {
+      status = "leave";
+      statusLabel = "Ta'tilda";
+      checkIn = null;
+      lateMinutes = 0;
+    } else if (staffDay.status === "absent" || !checkIn) {
+      status = "absent";
+      statusLabel = "Kelmagan";
+      checkIn = null;
+      lateMinutes = 0;
+    } else if (staffDay.status === "late") {
+      status = "late";
+      statusLabel = "Kechikdi";
+    } else {
+      status = "on_time";
+      statusLabel = "Vaqtida";
+    }
+
+    rows.push({
+      employeeId: e.id,
+      fullName: e.fullName,
+      departmentName: e.departmentName,
+      position: e.position,
+      shiftLabel: schedule.label,
+      expectedOpen: schedule.start,
+      graceUntil: onTimeUntilHm(schedule.start, grace),
+      checkIn,
+      status,
+      statusLabel,
+      lateMinutes,
+      date: targetDate,
+    });
+  }
+
+  const order: Record<string, number> = { late: 0, absent: 1, leave: 2, on_time: 3 };
+  return rows.sort((a, b) => {
+    const oa = order[a.status] ?? 9;
+    const ob = order[b.status] ?? 9;
+    if (oa !== ob) return oa - ob;
+    if (b.lateMinutes !== a.lateMinutes) return b.lateMinutes - a.lateMinutes;
+    return a.fullName.localeCompare(b.fullName, "uz");
+  });
+}
+
 export function buildDavomatAnalytics(
   report: ReportLike,
   meta: EmployeeMeta[],
@@ -590,7 +709,14 @@ export function buildDavomatAnalytics(
 
   const deptMap = new Map<
     string,
-    { headcount: Set<number>; present: number; late: number; absent: number; expected: number }
+    {
+      headcount: Set<number>;
+      present: number;
+      late: number;
+      absent: number;
+      expected: number;
+      staff: EmpRow[];
+    }
   >();
   for (const e of filtered.employees) {
     const name = e.departmentName || "Boshqa";
@@ -600,14 +726,17 @@ export function buildDavomatAnalytics(
       late: 0,
       absent: 0,
       expected: 0,
+      staff: [],
     };
     cur.headcount.add(e.id);
     cur.present += e.totals.present;
     cur.late += e.totals.late;
     cur.absent += e.totals.absent;
     cur.expected += filtered.summary.days;
+    cur.staff.push(e);
     deptMap.set(name, cur);
   }
+  const periodDays = filtered.summary.days || 1;
   const byDepartment = [...deptMap.entries()]
     .map(([name, v]) => ({
       name,
@@ -616,6 +745,26 @@ export function buildDavomatAnalytics(
       late: v.late,
       absent: v.absent,
       attendanceRate: pct(v.present, v.expected),
+      staff: [...v.staff]
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"))
+        .map((e) => {
+          const last = e.days.find((d) => d.date === filtered.dates[filtered.dates.length - 1]);
+          return {
+            id: e.id,
+            fullName: e.fullName,
+            position: e.position,
+            present: e.totals.present,
+            late: e.totals.late,
+            absent: e.totals.absent,
+            incomplete: e.totals.incomplete,
+            leave: e.totals.leave,
+            lateMinutes: e.totals.lateArrivalMin,
+            attendanceRate: pct(e.totals.present, periodDays),
+            lastCheckIn: last && last.checkIn !== "—" ? last.checkIn : null,
+            lastStatus: last?.status ?? "absent",
+            lastStatusLabel: STATUS_LABELS[last?.status ?? "absent"] || last?.status || "—",
+          };
+        }),
     }))
     .sort((a, b) => b.attendanceRate - a.attendanceRate);
 
@@ -703,46 +852,90 @@ export function buildDavomatAnalytics(
     .filter((e) => e.totals.late > 0)
     .sort((a, b) => b.totals.late - a.totals.late || b.totals.lateArrivalMin - a.totals.lateArrivalMin)
     .slice(0, 10)
-    .map((e) => ({
-      id: e.id,
-      fullName: e.fullName,
-      departmentName: e.departmentName,
-      position: e.position,
-      lateDays: e.totals.late,
-      lateMinutes: e.totals.lateArrivalMin,
-    }));
+    .map((e) => {
+      const lateDetails = e.days
+        .filter((d) => d.status === "late" && d.lateArrivalMin > 0)
+        .map((d) => ({
+          date: d.date,
+          checkIn: d.checkIn && d.checkIn !== "—" ? d.checkIn : "—",
+          lateMinutes: d.lateArrivalMin,
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date));
+      return {
+        id: e.id,
+        fullName: e.fullName,
+        departmentName: e.departmentName,
+        position: e.position,
+        lateDays: e.totals.late,
+        lateMinutes: e.totals.lateArrivalMin,
+        lateDetails,
+      };
+    });
 
   const lastDate = filtered.dates[filtered.dates.length - 1] ?? "";
-  const branchOpenings = lastDate
-    ? buildBranchOpenings(
-        segment === "pharmacy" || segment === "all" ? report : pharmacyReport,
-        metaById,
-        lastDate,
-      )
-    : [];
-  const branchOpeningSummary = lastDate
-    ? {
-        date: lastDate,
-        total: branchOpenings.length,
-        onTime: branchOpenings.filter((b) => b.status === "on_time").length,
-        late: branchOpenings.filter((b) => b.status === "late").length,
-        absent: branchOpenings.filter((b) => b.status === "absent").length,
-        leave: branchOpenings.filter((b) => b.status === "leave").length,
-      }
-    : null;
+  const branchOpenings =
+    lastDate && segment !== "office"
+      ? buildBranchOpenings(
+          segment === "pharmacy" ? filtered : report,
+          metaById,
+          lastDate,
+        )
+      : [];
+  const branchOpeningSummary =
+    lastDate && segment !== "office"
+      ? {
+          date: lastDate,
+          total: branchOpenings.length,
+          onTime: branchOpenings.filter((b) => b.status === "on_time").length,
+          late: branchOpenings.filter((b) => b.status === "late").length,
+          absent: branchOpenings.filter((b) => b.status === "absent").length,
+          leave: branchOpenings.filter((b) => b.status === "leave").length,
+        }
+      : null;
+
+  const officeDayBoard =
+    lastDate && (segment === "office" || segment === "all")
+      ? buildOfficeDayBoard(segment === "office" ? filtered : officeReport, metaById, lastDate)
+      : [];
+  const officeDaySummary =
+    lastDate && segment === "office"
+      ? {
+          date: lastDate,
+          total: officeDayBoard.length,
+          onTime: officeDayBoard.filter((b) => b.status === "on_time").length,
+          late: officeDayBoard.filter((b) => b.status === "late").length,
+          absent: officeDayBoard.filter((b) => b.status === "absent").length,
+          leave: officeDayBoard.filter((b) => b.status === "leave").length,
+        }
+      : null;
 
   const recentCheckins = filtered.employees
     .map((e) => {
       const d = e.days.find((x) => x.date === lastDate);
       if (!d || d.status === "absent" || d.status === "leave") return null;
+      const dayDetails = e.days
+        .filter((x) => x.status !== "absent" && x.status !== "leave")
+        .map((x) => ({
+          date: x.date,
+          checkIn: x.checkIn && x.checkIn !== "—" ? x.checkIn : "—",
+          checkOut: x.checkOut && x.checkOut !== "—" ? x.checkOut : "—",
+          status: x.status,
+          statusLabel: STATUS_LABELS[x.status] || x.status,
+          lateMinutes: x.lateArrivalMin,
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date));
       return {
+        id: e.id,
         fullName: e.fullName,
         departmentName: e.departmentName,
         position: e.position,
         date: lastDate,
         checkIn: d.checkIn,
+        checkOut: d.checkOut && d.checkOut !== "—" ? d.checkOut : "—",
         status: d.status,
         statusLabel: STATUS_LABELS[d.status] || d.status,
+        lateMinutes: d.lateArrivalMin,
+        dayDetails,
       };
     })
     .filter((x): x is NonNullable<typeof x> => !!x)
@@ -843,6 +1036,8 @@ export function buildDavomatAnalytics(
     topLate,
     branchOpenings,
     branchOpeningSummary,
+    officeDayBoard: segment === "office" ? officeDayBoard : [],
+    officeDaySummary,
     recentCheckins,
     alerts,
     bestDay,

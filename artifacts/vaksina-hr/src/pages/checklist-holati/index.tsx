@@ -296,7 +296,12 @@ export default function ChecklistHolatiPage() {
           String(b.createdAt || b.visitDate).localeCompare(String(a.createdAt || a.visitDate)),
         ),
       }))
-      .sort((a, b) => b.visits - a.visits);
+      .sort((a, b) => {
+        const aLast = a.stamps[0] ? String(a.stamps[0].createdAt || a.stamps[0].visitDate) : "";
+        const bLast = b.stamps[0] ? String(b.stamps[0].createdAt || b.stamps[0].visitDate) : "";
+        if (bLast !== aLast) return bLast.localeCompare(aLast);
+        return b.visits - a.visits;
+      });
   }, [filtered]);
 
   function openVisits(nav: ChecklistDashNav = {}) {
@@ -566,7 +571,7 @@ export default function ChecklistHolatiPage() {
         <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
           <div className="border-b px-4 py-3">
             <h2 className="text-sm font-semibold">Filiallar bo‘yicha</h2>
-            <p className="text-[11px] text-muted-foreground">Tashrif soni va sanalar</p>
+            <p className="text-[11px] text-muted-foreground">Oxirgi tashrif tepada · sanalar</p>
           </div>
           <ul className="max-h-64 divide-y overflow-y-auto">
             {byBranch.length === 0 ? (

@@ -15,6 +15,11 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { canViewDavomat } from "../lib/roles";
+import {
+  matchesDavomatStaffFilter,
+  parseDavomatStaffFilter,
+  staffFilterLabelUz,
+} from "../lib/davomat-staff-filter";
 import { forceBroadcastDavomatToAll, davomatBroadcastTelegramReady, davomatBroadcastMessage } from "../jobs/davomat-reminders";
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
@@ -470,6 +475,7 @@ async function loadActiveEmployees(filters: {
     orgRole: s.orgRole || orgRoleFromUserRole(s.userRole || "") || null,
     shiftType: s.shiftType,
     shiftLabel: s.shiftLabel,
+    phone: s.phone ?? null,
   }));
 
   const departmentFilter = filters.departmentId
@@ -701,6 +707,7 @@ function buildReport(
         location: e.location,
         orgRole: e.orgRole,
         userRole: e.userRole,
+        phone: e.phone ?? null,
         shiftType: normalizeShiftType(e.shiftType, e.shiftLabel),
         shiftLabel: e.shiftLabel,
         ...(() => {
@@ -2282,12 +2289,14 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const q = req.query as Record<string, string>;
     const to = q.to || todayTashkent();
     const from = q.from || addDays(to, -13);
-    const employees = await loadActiveEmployees({
+    const staffFilter = parseDavomatStaffFilter(q.staffFilter);
+    let employees = await loadActiveEmployees({
       departmentId: q.departmentId,
       location: q.location,
       search: q.search,
       employeeId: q.employeeId,
     });
+    employees = employees.filter((e) => matchesDavomatStaffFilter(e, staffFilter));
     const records = await loadRecords(
       from,
       to,
@@ -2298,6 +2307,16 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "VAKSINA MED HR";
     workbook.created = new Date();
+    const filterNote = [
+      `Davr: ${from} — ${to}`,
+      q.departmentId ? `Bo'lim ID: ${q.departmentId}` : "Bo'lim: barcha",
+      `Xodimlar guruhi: ${staffFilterLabelUz(staffFilter)}`,
+      q.search ? `Qidiruv: ${q.search}` : null,
+      q.location ? `Filial: ${q.location}` : null,
+      `Xodimlar: ${employees.length} ta`,
+    ]
+      .filter(Boolean)
+      .join(" · ");
 
     const headerStyle = (cell: ExcelJS.Cell, fill = "FF0B3A5C") => {
       cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
@@ -2378,6 +2397,13 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     gTitle.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     sGuide.getRow(1).height = 28;
 
+    sGuide.mergeCells("A2:D2");
+    const gFilter = sGuide.getCell("A2");
+    gFilter.value = filterNote;
+    gFilter.font = { name: "Calibri", size: 10, italic: true, color: { argb: "FF0B3A5C" } };
+    gFilter.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: true };
+    sGuide.getRow(2).height = 36;
+
     const guideRows: [string, string][] = [
       ["Ustun: Smena", "1-smenada ishlaydiganlar · 2-smenada ishlaydiganlar · Asosiy ofis · Tashqi xodimlar"],
       ["Ustun: Ish vaqti", "Har xodimning reja bo'yicha kelish/ketish vaqti (masalan 08:00–17:00 yoki 17:00–23:45)"],
@@ -2394,20 +2420,20 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       ["Rang: binafsha fon", "Ta'tilda"],
       ["Varaqlar", "Davomat jadvali → Kunlik xulosa → Xodimlar jami → Kelganlar → Kelmaganlar"],
     ];
-    sGuide.getRow(2).getCell(1).value = "Maydon";
-    sGuide.getRow(2).getCell(2).value = "Ma'nosi";
-    headerStyle(sGuide.getRow(2).getCell(1), "FF1A5F8A");
-    headerStyle(sGuide.getRow(2).getCell(2), "FF1A5F8A");
-    sGuide.mergeCells(2, 2, 2, 4);
+    sGuide.getRow(3).getCell(1).value = "Maydon";
+    sGuide.getRow(3).getCell(2).value = "Ma'nosi";
+    headerStyle(sGuide.getRow(3).getCell(1), "FF1A5F8A");
+    headerStyle(sGuide.getRow(3).getCell(2), "FF1A5F8A");
+    sGuide.mergeCells(3, 2, 3, 4);
     guideRows.forEach(([k, v], i) => {
-      const row = sGuide.getRow(3 + i);
+      const row = sGuide.getRow(4 + i);
       row.getCell(1).value = k;
       row.getCell(2).value = v;
       row.getCell(1).font = { name: "Calibri", size: 10, bold: true };
       row.getCell(2).font = { name: "Calibri", size: 10 };
       row.getCell(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: i % 2 ? "FFF7FAFC" : "FFFFFFFF" } };
       row.getCell(2).fill = { type: "pattern", pattern: "solid", fgColor: { argb: i % 2 ? "FFF7FAFC" : "FFFFFFFF" } };
-      sGuide.mergeCells(3 + i, 2, 3 + i, 4);
+      sGuide.mergeCells(4 + i, 2, 4 + i, 4);
       row.height = 22;
     });
     sGuide.getColumn(1).width = 22;
@@ -2633,14 +2659,14 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const s4 = workbook.addWorksheet("Kelganlar", {
       views: [{ state: "frozen", ySplit: 2 }],
     });
-    s4.mergeCells("A1:J1");
+    s4.mergeCells("A1:K1");
     const t4 = s4.getCell("A1");
     t4.value = `Kelganlar — batafsil (${from} — ${to})`;
     t4.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     t4.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF047857" } };
     t4.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     s4.getRow(1).height = 30;
-    ["Sana", "No", "F.I.Sh.", "Smena", "Ish vaqti", "Holat", "Keldi", "Ketdi", "Kechikish", "Ishlangan"].forEach((h, i) => {
+    ["Sana", "No", "F.I.Sh.", "Smena", "Ish vaqti", "Holat", "Keldi", "Ketdi", "Kechikish", "Ishlangan", "Telefon"].forEach((h, i) => {
       const cell = s4.getRow(2).getCell(i + 1);
       cell.value = h;
       headerStyle(cell, "FF059669");
@@ -2656,6 +2682,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 10 },
       { width: 14 },
       { width: 16 },
+      { width: 16 },
     ];
     let presentCount = 0;
     report.days.forEach((day) => {
@@ -2663,9 +2690,9 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         .map((e) => ({ e, d: e.days.find((x) => x.date === day.date) }))
         .filter(({ d }) => d && d.status !== "absent" && d.status !== "leave");
       if (arrived.length === 0) return;
-      const banner = s4.addRow([`${day.date}  ·  ${arrived.length} kishi kelgan`, "", "", "", "", "", "", "", "", ""]);
-      s4.mergeCells(banner.number, 1, banner.number, 10);
-      paintBanner(banner, "FF047857", 10);
+      const banner = s4.addRow([`${day.date}  ·  ${arrived.length} kishi kelgan`, "", "", "", "", "", "", "", "", "", ""]);
+      s4.mergeCells(banner.number, 1, banner.number, 11);
+      paintBanner(banner, "FF047857", 11);
       arrived.forEach(({ e, d }, i) => {
         presentCount += 1;
         const empHours = {
@@ -2686,15 +2713,16 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
           cout,
           kech,
           readableWorkedHours(d!.workedHours),
+          e.phone || "—",
         ]);
-        paintRow(row, i % 2 === 1, [1, 2, 6, 7, 8, 9, 10]);
+        paintRow(row, i % 2 === 1, [1, 2, 6, 7, 8, 9, 10, 11]);
         if (kech !== "Yo'q") {
           row.getCell(9).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFB91C1C" } };
         }
       });
     });
     if (presentCount === 0) {
-      const row = s4.addRow(["—", "", "Bu davrda kelgan xodim yo‘q", "", "", "", "", "", "", ""]);
+      const row = s4.addRow(["—", "", "Bu davrda kelgan xodim yo‘q", "", "", "", "", "", "", "", ""]);
       paintRow(row, false);
     }
 
@@ -2702,14 +2730,14 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const s5 = workbook.addWorksheet("Kelmaganlar", {
       views: [{ state: "frozen", ySplit: 2 }],
     });
-    s5.mergeCells("A1:G1");
+    s5.mergeCells("A1:H1");
     const t5 = s5.getCell("A1");
     t5.value = `Kelmaganlar — batafsil (${from} — ${to})`;
     t5.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     t5.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB91C1C" } };
     t5.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     s5.getRow(1).height = 30;
-    ["Sana", "No", "F.I.Sh.", "Lavozim", "Smena", "Filial", "Bo‘lim"].forEach((h, i) => {
+    ["Sana", "No", "F.I.Sh.", "Lavozim", "Smena", "Filial", "Bo‘lim", "Telefon"].forEach((h, i) => {
       const cell = s5.getRow(2).getCell(i + 1);
       cell.value = h;
       headerStyle(cell, "FFBE123C");
@@ -2722,6 +2750,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 20 },
       { width: 14 },
       { width: 16 },
+      { width: 16 },
     ];
     let absentCount = 0;
     report.days.forEach((day) => {
@@ -2729,9 +2758,9 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         .map((e) => ({ e, d: e.days.find((x) => x.date === day.date) }))
         .filter(({ d }) => d?.status === "absent");
       if (missing.length === 0) return;
-      const banner = s5.addRow([`${day.date}  ·  ${missing.length} kishi kelmagan`, "", "", "", "", "", ""]);
-      s5.mergeCells(banner.number, 1, banner.number, 7);
-      paintBanner(banner, "FFB91C1C", 7);
+      const banner = s5.addRow([`${day.date}  ·  ${missing.length} kishi kelmagan`, "", "", "", "", "", "", ""]);
+      s5.mergeCells(banner.number, 1, banner.number, 8);
+      paintBanner(banner, "FFB91C1C", 8);
       missing.forEach(({ e }, i) => {
         absentCount += 1;
         const row = s5.addRow([
@@ -2742,12 +2771,13 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
           smenaLabelForEmployee(e),
           e.location || "—",
           e.departmentName || "—",
+          e.phone || "—",
         ]);
-        paintRow(row, i % 2 === 1, [1, 2]);
+        paintRow(row, i % 2 === 1, [1, 2, 8]);
       });
     });
     if (absentCount === 0) {
-      const row = s5.addRow(["—", "", "Bu davrda kelmagan xodim yo‘q", "", ""]);
+      const row = s5.addRow(["—", "", "Bu davrda kelmagan xodim yo‘q", "", "", "", "", ""]);
       paintRow(row, false);
     }
 

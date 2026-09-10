@@ -49,6 +49,25 @@ function previewYoutubeId(raw: string): string | null {
   return null;
 }
 
+function previewDriveFileId(raw: string): string | null {
+  const s = String(raw || "").trim();
+  if (!s) return null;
+  if (/^[a-zA-Z0-9_-]{20,}$/.test(s) && !s.includes("/")) return s;
+  const withProto = /^https?:\/\//i.test(s) ? s : `https://${s}`;
+  try {
+    const u = new URL(withProto);
+    const host = u.hostname.replace(/^www\./, "");
+    if (host !== "drive.google.com" && host !== "docs.google.com") return null;
+    const fromPath = u.pathname.match(/\/(?:file|document|presentation|spreadsheets)\/d\/([a-zA-Z0-9_-]{20,})/);
+    if (fromPath?.[1]) return fromPath[1];
+    const qid = u.searchParams.get("id");
+    if (qid && /^[a-zA-Z0-9_-]{20,}$/.test(qid)) return qid;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
 function emptyQuestion(): KirishAdminQuestion {
   return {
     id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -76,7 +95,11 @@ export default function AdminKirishVideosPage() {
     const next: Record<number, Draft> = {};
     for (const v of list.data.videos) {
       next[v.stage] = {
-        youtube: v.youtubeUrl,
+        youtube:
+          v.youtubeUrl ||
+          (v.videoDriveFileId
+            ? `https://drive.google.com/file/d/${v.videoDriveFileId}/view`
+            : ""),
         pdf: v.pdfUrl || "",
         questions: v.questions?.length ? v.questions : [emptyQuestion()],
       };
@@ -209,6 +232,8 @@ export default function AdminKirishVideosPage() {
               questions: v.questions?.length ? v.questions : [emptyQuestion()],
             };
             const previewId = previewYoutubeId(draft.youtube) || v.youtubeId;
+            const driveId =
+              previewDriveFileId(draft.youtube) || v.videoDriveFileId || null;
             const busy =
               (save.isPending && save.variables?.stage === v.stage) ||
               (clear.isPending && clear.variables === v.stage);
@@ -230,6 +255,16 @@ export default function AdminKirishVideosPage() {
                       alt={`${v.stage}-bosqich preview`}
                       className="aspect-video w-full rounded-xl border object-cover"
                     />
+                  ) : driveId ? (
+                    <div className="overflow-hidden rounded-xl border bg-slate-900">
+                      <iframe
+                        title={`${v.stage}-bosqich video`}
+                        src={`https://drive.google.com/file/d/${driveId}/preview`}
+                        className="aspect-video w-full border-0"
+                        allow="autoplay; fullscreen"
+                        allowFullScreen
+                      />
+                    </div>
                   ) : (
                     <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-dashed bg-muted text-muted-foreground">
                       <Link2 className="h-8 w-8" />

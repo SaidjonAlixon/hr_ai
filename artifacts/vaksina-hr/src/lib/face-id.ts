@@ -47,9 +47,13 @@ declare global {
 }
 
 let modelsReady = false;
+let scriptPromise: Promise<void> | null = null;
+let modelsPromise: Promise<FaceApi> | null = null;
 
 function loadScript(src: string): Promise<void> {
-  return new Promise((resolve, reject) => {
+  if (window.faceapi) return Promise.resolve();
+  if (scriptPromise) return scriptPromise;
+  scriptPromise = new Promise((resolve, reject) => {
     const existing = document.querySelector(`script[data-face-api="1"]`);
     if (existing && window.faceapi) {
       resolve();
@@ -59,25 +63,55 @@ function loadScript(src: string): Promise<void> {
     s.src = src;
     s.async = true;
     s.dataset.faceApi = "1";
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Face ID moduli yuklanmadi — internetni tekshiring"));
+    s.onload = () => {
+      if (window.faceapi) resolve();
+      else reject(new Error("Face ID moduli yuklanmadi"));
+    };
+    s.onerror = () => {
+      scriptPromise = null;
+      reject(new Error("Face ID moduli yuklanmadi — internetni tekshiring"));
+    };
     document.head.appendChild(s);
+  });
+  return scriptPromise;
+}
+
+export function isFaceModelsReady(): boolean {
+  return modelsReady && Boolean(window.faceapi);
+}
+
+/** Sahifa ochilganda chaqiring — skan ochilganda kutish bo‘lmasin */
+export function preloadFaceModels(): void {
+  if (typeof window === "undefined") return;
+  if (!isFaceIdSupported()) return;
+  void ensureFaceModels().catch(() => {
+    /* fon yuklash — xato skanda ko‘rinadi */
   });
 }
 
 export async function ensureFaceModels(): Promise<FaceApi> {
-  await loadScript(FACE_API_SRC);
-  const faceapi = window.faceapi;
-  if (!faceapi) throw new Error("Face ID moduli yuklanmadi");
-  if (!modelsReady) {
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
-      faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
-      faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
-    ]);
-    modelsReady = true;
-  }
-  return faceapi;
+  if (modelsReady && window.faceapi) return window.faceapi;
+  if (modelsPromise) return modelsPromise;
+
+  modelsPromise = (async () => {
+    await loadScript(FACE_API_SRC);
+    const faceapi = window.faceapi;
+    if (!faceapi) throw new Error("Face ID moduli yuklanmadi");
+    if (!modelsReady) {
+      await Promise.all([
+        faceapi.nets.tinyFaceDetector.loadFromUri(MODEL_URL),
+        faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+        faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+      ]);
+      modelsReady = true;
+    }
+    return faceapi;
+  })().catch((err) => {
+    modelsPromise = null;
+    throw err;
+  });
+
+  return modelsPromise;
 }
 
 export type FaceAlignStatus =

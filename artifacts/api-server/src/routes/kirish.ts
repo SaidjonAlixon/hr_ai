@@ -20,9 +20,46 @@ import {
   type KirishQuestion,
 } from "../lib/kirish-content";
 import { parseYoutubeId } from "../lib/youtube-id";
-import { parseDriveFileId } from "../lib/drive-id";
+import { parseDriveFileId, drivePreviewUrl } from "../lib/drive-id";
 
 const router: IRouter = Router();
+
+/** Bosqich videolari (DB bo‘sh bo‘lsa ham stajyor ko‘radi) */
+const DEFAULT_STAGE_VIDEO_DRIVE: Record<number, string> = {
+  5: "1swNC0epB65S9H0tpHeiQHynmB-W9pi2c",
+};
+
+async function ensureDefaultStageVideos() {
+  for (const [stageStr, fileId] of Object.entries(DEFAULT_STAGE_VIDEO_DRIVE)) {
+    const stage = Number(stageStr);
+    const [existing] = await db
+      .select()
+      .from(kirishVideosTable)
+      .where(eq(kirishVideosTable.stage, stage))
+      .limit(1);
+    const driveUrl = `https://drive.google.com/file/d/${fileId}/view`;
+    if (!existing) {
+      await db.insert(kirishVideosTable).values({
+        stage,
+        youtubeUrl: driveUrl,
+        youtubeId: "",
+        videoDriveFileId: fileId,
+        questionsJson: [],
+      });
+      continue;
+    }
+    if (existing.youtubeId) continue;
+    if (existing.videoDriveFileId === fileId) continue;
+    await db
+      .update(kirishVideosTable)
+      .set({
+        videoDriveFileId: fileId,
+        youtubeUrl: existing.youtubeUrl || driveUrl,
+        updatedAt: new Date(),
+      })
+      .where(eq(kirishVideosTable.id, existing.id));
+  }
+}
 
 function emptyStage(): KirishStageState {
   return {
@@ -165,8 +202,11 @@ function publicStagesWithVideos(
     const ov = byStage.get(s.stage);
     const questions = questionsForStage(s, ov);
     const pub = publicStagePayload({ ...s, questions });
-    const youtubeId = ov?.youtubeId || null;
-    const videoDriveFileId = ov?.videoDriveFileId || null;
+    const youtubeId = (ov?.youtubeId || "").trim() || null;
+    const videoDriveFileId =
+      ov?.videoDriveFileId ||
+      (!youtubeId ? DEFAULT_STAGE_VIDEO_DRIVE[s.stage] ?? null : null) ||
+      null;
     const driveFileId = ov?.driveFileId || null;
     const videoKind = youtubeId
       ? ("youtube" as const)
@@ -178,7 +218,7 @@ function publicStagesWithVideos(
       videoUrl: youtubeId
         ? ov!.youtubeUrl
         : videoDriveFileId
-          ? `https://drive.google.com/file/d/${videoDriveFileId}/preview`
+          ? drivePreviewUrl(videoDriveFileId)
           : pub.videoUrl,
       videoKind,
       youtubeId,
@@ -199,6 +239,7 @@ function requireAdmin(req: AuthRequest, res: import("express").Response): boolea
 
 router.get("/kirish/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireStajyor(req, res)) return;
+  await ensureDefaultStageVideos();
   const progress = await getOrCreateProgress(req.userId!);
   const byStage = await youtubeByStage();
   res.json({
@@ -209,21 +250,24 @@ router.get("/kirish/me", requireAuth, async (req: AuthRequest, res): Promise<voi
 
 router.get("/kirish/videos", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
+  await ensureDefaultStageVideos();
   const byStage = await youtubeByStage();
   res.json({
     videos: KIRISH_STAGES.map((s) => {
       const ov = byStage.get(s.stage);
+      const videoDriveFileId =
+        ov?.videoDriveFileId ||
+        (!(ov?.youtubeId || "").trim() ? DEFAULT_STAGE_VIDEO_DRIVE[s.stage] ?? null : null) ||
+        null;
       return {
         stage: s.stage,
         title: s.title,
         subtitle: s.subtitle,
         youtubeUrl:
           ov?.youtubeUrl ||
-          (ov?.videoDriveFileId
-            ? `https://drive.google.com/file/d/${ov.videoDriveFileId}/view`
-            : ""),
+          (videoDriveFileId ? `https://drive.google.com/file/d/${videoDriveFileId}/view` : ""),
         youtubeId: ov?.youtubeId || null,
-        videoDriveFileId: ov?.videoDriveFileId ?? null,
+        videoDriveFileId,
         pdfUrl: ov?.pdfUrl ?? "",
         driveFileId: ov?.driveFileId ?? null,
         questions: questionsForStage(s, ov),

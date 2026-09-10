@@ -337,7 +337,7 @@ export default function ChecklistHolatiPage() {
         <Info className="mx-auto h-10 w-10 text-muted-foreground" />
         <h2 className="mt-3 text-lg font-semibold">Ruxsat yo‘q</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          Cheklist holatini admin, direktor, HR direktor va HR menejer ko‘radi.
+          Cheklist holatini direktor, HR direktor va HR menejer ko‘radi.
         </p>
       </div>
     );

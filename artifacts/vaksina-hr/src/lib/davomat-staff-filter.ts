@@ -6,13 +6,21 @@ export type DavomatStaffFilter = "all" | "shift_one" | "shift_two" | "office" | 
 
 /** Apteka smenalari — mudir, farmasevt, stajyor */
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
-const SHIFT_PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern"]);
-const SHIFT_PHARMACY_POSITION_RE = /mudir|farmasevt|stajyor/i;
+const SHIFT_PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "supervisor"]);
+const SHIFT_PHARMACY_POSITION_RE =
+  /mudir|farmasevt|stajyor|stajor|filial\s*mudir|фармацевт|заведующ/i;
 
 /** Ofisdan tashqari — mudir, farmasevt, stajyor, koordinator (filialda ishlaydi) */
 const NON_OFFICE_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
-const NON_OFFICE_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "coordinator"]);
-const NON_OFFICE_POSITION_RE = /mudir|farmasevt|stajyor|koordinator/i;
+const NON_OFFICE_ORG_ROLES = new Set([
+  "manager",
+  "pharmacist",
+  "intern",
+  "coordinator",
+  "supervisor",
+]);
+const NON_OFFICE_POSITION_RE =
+  /mudir|farmasevt|stajyor|stajor|koordinator|filial\s*mudir|фармацевт|заведующ/i;
 
 /** Reviziya / texnik — endi Ofis filtriga kiradi */
 const OFFICE_FIELD_USER_ROLES = new Set(["revizor", "reviziya_rahbar", "texnik", "texnik_rahbar"]);
@@ -148,19 +156,26 @@ export function workHoursForEmployee(emp: DavomatEmployee): { start: string; end
 export function matchesStaffFilter(
   emp: DavomatEmployee,
   filter: DavomatStaffFilter,
-  farOfficeIds?: Set<number>,
+  _farOfficeIds?: Set<number>,
 ): boolean {
+  // Admin faqat Foydalanuvchilar ro‘yxatida
+  if ((emp.userRole || "") === "admin" || /^admin$/i.test((emp.position || "").trim())) {
+    return false;
+  }
   if (filter === "all") return true;
 
-  const officeField = isOfficeFieldStaff(emp);
   const shiftPharmacy = isShiftPharmacyStaff(emp);
   const shiftTwo = isShiftTwo(emp);
   const nonOffice = isNonOfficeStaff(emp);
-  const far = Boolean(farOfficeIds?.has(emp.id));
 
-  /** Eski «external» tanlovi Ofis bilan bir xil */
+  /**
+   * Ofis — faqat ofis xodimlari (+ reviziya/texnik).
+   * Filial GPS ofisdan uzoq bo‘lsa ham mudir/farmasevt Ofisga kirmaydi
+   * (ilgari farFromOffice ularni noto‘g‘ri qo‘shib yuborgan).
+   */
   if (filter === "office" || filter === "external") {
-    return officeField || far || !nonOffice;
+    if (shiftPharmacy || nonOffice) return false;
+    return true;
   }
 
   if (filter === "shift_two") return shiftPharmacy && shiftTwo;
@@ -180,7 +195,7 @@ export const STAFF_FILTER_OPTIONS: Array<{
   {
     key: "office",
     label: "Ofis",
-    hint: "09:00 – 18:00 · reviziya va texnik ham",
+    hint: "09:00 – 18:00",
     hours: "09:00–18:00",
   },
 ];

@@ -242,7 +242,7 @@ export default function AdminKirishVideosPage() {
                       <Input
                         id={`yt-${v.stage}`}
                         className="h-11 rounded-xl text-base md:h-9 md:text-sm"
-                        placeholder="https://www.youtube.com/watch?v=..."
+                        placeholder="YouTube yoki https://drive.google.com/file/d/..."
                         value={draft.youtube}
                         onChange={(e) => patch(v.stage, { youtube: e.target.value })}
                       />

@@ -465,8 +465,8 @@ export default function VazifalarPage() {
     const activeUserStatuses = new Set(["active", "on_leave"]);
     const activeEmpStatuses = new Set(["working", "new", "on_leave"]);
 
-    const activeUsers = (users as any[]).filter((x) =>
-      activeUserStatuses.has(String(x.status || "")),
+    const activeUsers = (users as any[]).filter(
+      (x) => activeUserStatuses.has(String(x.status || "")) && String(x.role || "") !== "admin",
     );
     const linkedUserIds = new Set<number>(
       activeUsers.map((x) => Number(x.id)).filter((id) => Number.isFinite(id)),

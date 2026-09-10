@@ -154,6 +154,7 @@ function publicStagesWithVideos(
     {
       youtubeUrl: string;
       youtubeId: string;
+      videoDriveFileId?: string | null;
       pdfUrl: string | null;
       driveFileId: string | null;
       questionsJson?: KirishQuestion[] | null;
@@ -165,12 +166,23 @@ function publicStagesWithVideos(
     const questions = questionsForStage(s, ov);
     const pub = publicStagePayload({ ...s, questions });
     const youtubeId = ov?.youtubeId || null;
+    const videoDriveFileId = ov?.videoDriveFileId || null;
     const driveFileId = ov?.driveFileId || null;
+    const videoKind = youtubeId
+      ? ("youtube" as const)
+      : videoDriveFileId
+        ? ("drive" as const)
+        : ("file" as const);
     return {
       ...pub,
-      videoUrl: youtubeId ? ov!.youtubeUrl : pub.videoUrl,
-      videoKind: youtubeId ? ("youtube" as const) : ("file" as const),
+      videoUrl: youtubeId
+        ? ov!.youtubeUrl
+        : videoDriveFileId
+          ? `https://drive.google.com/file/d/${videoDriveFileId}/preview`
+          : pub.videoUrl,
+      videoKind,
       youtubeId,
+      videoDriveFileId,
       pdfUrl: ov?.pdfUrl ?? null,
       driveFileId,
     };
@@ -205,8 +217,13 @@ router.get("/kirish/videos", requireAuth, async (req: AuthRequest, res): Promise
         stage: s.stage,
         title: s.title,
         subtitle: s.subtitle,
-        youtubeUrl: ov?.youtubeUrl ?? "",
+        youtubeUrl:
+          ov?.youtubeUrl ||
+          (ov?.videoDriveFileId
+            ? `https://drive.google.com/file/d/${ov.videoDriveFileId}/view`
+            : ""),
         youtubeId: ov?.youtubeId || null,
+        videoDriveFileId: ov?.videoDriveFileId ?? null,
         pdfUrl: ov?.pdfUrl ?? "",
         driveFileId: ov?.driveFileId ?? null,
         questions: questionsForStage(s, ov),
@@ -225,9 +242,10 @@ router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Prom
   }
   const rawYoutube = String(req.body?.youtubeUrl ?? "").trim();
   const rawPdf = String(req.body?.pdfUrl ?? "").trim();
-  const youtubeId = rawYoutube ? parseYoutubeId(rawYoutube) : "";
-  if (rawYoutube && !youtubeId) {
-    res.status(400).json({ error: "YouTube havolasi noto‘g‘ri" });
+  const videoDriveFileId = rawYoutube ? parseDriveFileId(rawYoutube) : null;
+  const youtubeId = rawYoutube && !videoDriveFileId ? parseYoutubeId(rawYoutube) : "";
+  if (rawYoutube && !videoDriveFileId && !youtubeId) {
+    res.status(400).json({ error: "YouTube yoki Google Drive video havolasi noto‘g‘ri" });
     return;
   }
   const driveFileId = rawPdf ? parseDriveFileId(rawPdf) : null;
@@ -240,11 +258,15 @@ router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Prom
     res.status(400).json({ error: parsedQs.error });
     return;
   }
-  if (!youtubeId && !driveFileId && parsedQs.length === 0) {
-    res.status(400).json({ error: "YouTube, Google Drive PDF yoki test savolini yozing" });
+  if (!youtubeId && !videoDriveFileId && !driveFileId && parsedQs.length === 0) {
+    res.status(400).json({ error: "YouTube/Drive video, PDF yoki test savolini yozing" });
     return;
   }
-  const youtubeUrl = youtubeId ? `https://www.youtube.com/watch?v=${youtubeId}` : "";
+  const youtubeUrl = youtubeId
+    ? `https://www.youtube.com/watch?v=${youtubeId}`
+    : videoDriveFileId
+      ? `https://drive.google.com/file/d/${videoDriveFileId}/view`
+      : "";
   const pdfUrl = driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : null;
   const [existing] = await db
     .select()
@@ -258,6 +280,7 @@ router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Prom
       .set({
         youtubeUrl,
         youtubeId: youtubeId || "",
+        videoDriveFileId,
         pdfUrl,
         driveFileId,
         questionsJson: parsedQs,
@@ -275,6 +298,7 @@ router.put("/kirish/videos/:n", requireAuth, async (req: AuthRequest, res): Prom
       stage: n,
       youtubeUrl,
       youtubeId: youtubeId || "",
+      videoDriveFileId,
       pdfUrl,
       driveFileId,
       questionsJson: parsedQs,

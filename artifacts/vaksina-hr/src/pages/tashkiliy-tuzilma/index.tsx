@@ -279,6 +279,11 @@ function isActiveEmp(e: Employee) {
   return e.employmentStatus !== "dismissed";
 }
 
+function isAdminLinked(e: Employee, usersById: Map<number, User>) {
+  if (e.userId != null && usersById.get(e.userId)?.role === "admin") return true;
+  return /^admin$/i.test(String(e.position || "").trim());
+}
+
 function empKind(e: Employee, usersById: Map<number, User>): string {
   const role = String(e.orgRole || "");
   if (role === "coordinator" || role === "manager" || role === "pharmacist" || role === "intern" || role === "supervisor") {
@@ -293,7 +298,7 @@ function empKind(e: Employee, usersById: Map<number, User>): string {
 }
 
 function activeUsers(users: User[] | undefined, role: string) {
-  return (users ?? []).filter((u) => u.role === role && u.status === "active");
+  return (users ?? []).filter((u) => u.role === role && u.role !== "admin" && u.status === "active");
 }
 
 /** HR menejerlar: 1-yo‘nalish — Saidmuhammadalixon, keyin qolganlari */
@@ -453,7 +458,7 @@ function makeManagerBranchLive(
 
 function buildHrTree(employees: Employee[], users: User[]): OrgNode {
   const usersById = new Map((users ?? []).map((u) => [u.id, u]));
-  const people = employees.filter(isActiveEmp);
+  const people = employees.filter((e) => isActiveEmp(e) && !isAdminLinked(e, usersById));
   const coords = people.filter((e) => empKind(e, usersById) === "coordinator");
   const mudirs = people.filter((e) => empKind(e, usersById) === "manager");
   const staff = people.filter((e) => {
@@ -535,7 +540,7 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
 
 function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode {
   const usersById = new Map((users ?? []).map((u) => [u.id, u]));
-  const people = employees.filter(isActiveEmp);
+  const people = employees.filter((e) => isActiveEmp(e) && !isAdminLinked(e, usersById));
   return {
     id: "tasischi",
     label: "Ta’sischi",

@@ -43,6 +43,8 @@ export const kirishVideosTable = pgTable(
     stage: integer("stage").notNull(),
     youtubeUrl: text("youtube_url").notNull().default(""),
     youtubeId: text("youtube_id").notNull().default(""),
+    /** Google Drive video (bosqich videosi) */
+    videoDriveFileId: text("video_drive_file_id"),
     pdfUrl: text("pdf_url"),
     driveFileId: text("drive_file_id"),
     questionsJson: jsonb("questions_json").$type<KirishQuestionRow[]>().notNull().default([]),

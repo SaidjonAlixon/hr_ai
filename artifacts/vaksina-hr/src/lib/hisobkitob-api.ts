@@ -2,7 +2,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatMoney } from "./money-format";
 
 export function canViewHisobkitob(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar";
+  return (
+    role === "admin" ||
+    role === "director" ||
+    role === "moliya" ||
+    role === "moliya_rahbar" ||
+    role === "hr_direktor" ||
+    role === "hr_auditor"
+  );
 }
 
 async function json<T>(url: string, init?: RequestInit): Promise<T> {

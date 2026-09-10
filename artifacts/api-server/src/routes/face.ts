@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { asc, eq, sql } from "drizzle-orm";
+import { asc, eq, ne, sql } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import {
   db,
@@ -360,6 +360,7 @@ router.get("/admin/faces", requireAuth, async (req: AuthRequest, res): Promise<v
       .from(usersTable)
       .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
       .leftJoin(faceProfilesTable, eq(faceProfilesTable.userId, usersTable.id))
+      .where(ne(usersTable.role, "admin"))
       .orderBy(asc(usersTable.fullName));
 
     const parsed = users.map((row) => ({
@@ -514,6 +515,7 @@ router.get("/admin/faces/export", requireAuth, async (req: AuthRequest, res): Pr
     .from(usersTable)
     .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
     .leftJoin(faceProfilesTable, eq(faceProfilesTable.userId, usersTable.id))
+    .where(ne(usersTable.role, "admin"))
     .orderBy(asc(usersTable.fullName));
 
   const withFace = users.filter((u) => u.faceId != null && u.descriptor);

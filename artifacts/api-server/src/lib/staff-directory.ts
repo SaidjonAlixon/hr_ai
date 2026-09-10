@@ -167,12 +167,14 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
   const filteredUsers = users.filter((u) =>
     group === "active" ? isActiveStaffUser(u.status) : !isActiveStaffUser(u.status),
   );
-  if (!filteredUsers.length) return [];
+  // Admin hech qachon xodimlar/davomat ro‘yxatiga kirmaydi
+  const staffUsers = filteredUsers.filter((u) => u.role !== "admin");
+  if (!staffUsers.length) return [];
 
-  const userIds = filteredUsers.map((u) => u.id);
+  const userIds = staffUsers.map((u) => u.id);
 
   await Promise.all(
-    filteredUsers.map(async (u) => {
+    staffUsers.map(async (u) => {
       const [linked] = await db
         .select({ id: employeesTable.id })
         .from(employeesTable)
@@ -241,7 +243,7 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
   const fallbackDeptId = fallbackDept?.id ?? 1;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
 
-  return filteredUsers.map((u) => {
+  return staffUsers.map((u) => {
     const emp = empByUser.get(u.id);
     const hasFace = faceSet.has(u.id);
     const userStatus = normalizeUserStatus(u.status);

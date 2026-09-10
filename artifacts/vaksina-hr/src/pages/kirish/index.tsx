@@ -296,10 +296,11 @@ export default function KirishPage() {
               </div>
               <div className="p-4 sm:p-5">
                 <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-border bg-slate-900">
-                  {stageContent.youtubeId ? (
+                  {stageContent.youtubeId || stageContent.videoDriveFileId ? (
                     <RestrictedVideoPlayer
-                      key={`${stageContent.youtubeId}-${playerKey}`}
+                      key={`${stageContent.youtubeId || stageContent.videoDriveFileId}-${playerKey}`}
                       youtubeId={stageContent.youtubeId}
+                      driveFileId={stageContent.videoDriveFileId}
                       src={stageContent.videoUrl}
                       poster={`${import.meta.env.BASE_URL}kirish/stage1/poster.svg`}
                       onProgress={({ percent }) => setWatchPercent(percent)}
@@ -321,7 +322,7 @@ export default function KirishPage() {
                     </div>
                   )}
                 </div>
-                {stageContent.youtubeId ? (
+                {stageContent.youtubeId || stageContent.videoDriveFileId ? (
                   <p className="mt-3 text-xs text-muted-foreground">
                     {t("kirish.videoHint")}
                     {sessionWatched

@@ -373,6 +373,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     return [...workplaceScoped]
       .filter((e) => {
         // Ofis / dorixona — ikkinchi marta ham tekshiruv (ishonch uchun)
+        if ((staffContact(e).userRole || "") === "admin") return false;
         if (effectiveWorkplace === "dorixona" && !isDorixonaStaff(e)) return false;
         if (effectiveWorkplace === "ofis" && isDorixonaStaff(e)) return false;
         if (!viewOnly && deptFilter !== "all" && e.departmentId !== Number(deptFilter)) return false;

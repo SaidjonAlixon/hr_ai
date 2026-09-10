@@ -138,12 +138,14 @@ function CenterPlay({ onPlay }: { onPlay: () => void }) {
 
 export function RestrictedVideoPlayer({
   youtubeId,
+  driveFileId,
   src,
   poster,
   onEnded,
   onProgress,
 }: {
   youtubeId?: string | null;
+  driveFileId?: string | null;
   src?: string;
   poster?: string;
   onEnded?: () => void;
@@ -177,6 +179,14 @@ export function RestrictedVideoPlayer({
           onPlaying={hideHint}
           showHint={showHint}
         />
+      ) : driveFileId ? (
+        <DriveRestricted
+          fileId={driveFileId}
+          onEnded={onEnded}
+          onProgress={onProgress}
+          onPlaying={hideHint}
+          showHint={showHint}
+        />
       ) : (
         <Html5Restricted
           src={src || ""}
@@ -187,6 +197,70 @@ export function RestrictedVideoPlayer({
           showHint={showHint}
         />
       )}
+    </div>
+  );
+}
+
+function DriveRestricted({
+  fileId,
+  onEnded,
+  onProgress,
+  onPlaying,
+  showHint,
+}: {
+  fileId: string;
+  onEnded?: () => void;
+  onProgress?: (info: { current: number; duration: number; maxWatched: number; percent: number }) => void;
+  onPlaying?: () => void;
+  showHint: boolean;
+}) {
+  const [done, setDone] = useState(false);
+  const [canConfirm, setCanConfirm] = useState(false);
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setCanConfirm(true), 8_000);
+    return () => window.clearTimeout(t);
+  }, [fileId]);
+
+  const markDone = () => {
+    if (done) return;
+    setDone(true);
+    onPlaying?.();
+    onProgress?.({ current: 1, duration: 1, maxWatched: 1, percent: 100 });
+    onEnded?.();
+  };
+
+  return (
+    <div className="relative h-full w-full bg-black">
+      <iframe
+        title="Kirish video"
+        src={`https://drive.google.com/file/d/${fileId}/preview`}
+        className="absolute inset-0 h-full w-full border-0"
+        allow="autoplay; fullscreen"
+        allowFullScreen
+      />
+      {showHint && !done ? (
+        <div className="pointer-events-none absolute left-3 top-3 z-20 rounded-lg bg-black/55 px-2.5 py-1 text-[11px] font-medium text-white">
+          Videoni ko‘ring, so‘ng pastdagi tugmani bosing
+        </div>
+      ) : null}
+      <div className="absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/80 to-transparent p-3 pt-10">
+        <button
+          type="button"
+          disabled={!canConfirm && !done}
+          onClick={markDone}
+          className={cn(
+            "flex w-full items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+            done
+              ? "bg-emerald-500 text-white"
+              : canConfirm
+                ? "bg-[#2AABEE] text-white hover:bg-[#1f96d4]"
+                : "cursor-not-allowed bg-white/20 text-white/60",
+          )}
+        >
+          {done ? "Video ko‘rildi ✓" : canConfirm ? "Videoni ko‘rib chiqdim" : "Video yuklanmoqda…"}
+        </button>
+      </div>
     </div>
   );
 }

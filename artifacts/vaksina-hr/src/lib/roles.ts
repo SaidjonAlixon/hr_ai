@@ -331,7 +331,7 @@ export const HR_ROLE_LABELS: Record<string, string> = {
 
 /** Foydalanuvchi rollari — Farmasevt va Stajyor alohida */
 export const USER_ROLE_LABELS: Record<string, string> = {
-  admin: "Admin",
+  admin: "",
   ...HR_ROLE_LABELS,
   recruiter: "Rekruter",
   trainer: "Trener",

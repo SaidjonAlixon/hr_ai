@@ -228,6 +228,12 @@ router.get("/users", async (req, res): Promise<void> => {
     ? await base.where(and(...conditions))
     : await base;
 
+  // Admin employee qoldiqlari — xodimlar/davomatda ko‘rinmasin
+  const adminIds = rows.filter((r) => r.role === "admin").map((r) => r.id);
+  if (adminIds.length) {
+    await Promise.all(adminIds.map((id) => removeEmployeesForUser(id)));
+  }
+
   res.json(rows);
 });
 
@@ -594,17 +600,28 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     .where(eq(usersTable.id, id))
     .returning();
   if (!updated) { res.status(404).json({ error: "Topilmadi" }); return; }
-  if (updates.departmentId != null) {
-    await db
-      .update(employeesTable)
-      .set({ departmentId: Number(updates.departmentId) })
-      .where(eq(employeesTable.userId, id));
-  }
-  if (typeof updates.fullName === "string" && String(updates.fullName).trim()) {
-    await db
-      .update(employeesTable)
-      .set({ fullName: formatPersonName(String(updates.fullName)) })
-      .where(eq(employeesTable.userId, id));
+
+  // Admin uchun employee yo‘q; boshqa rollar uchun sync
+  await ensureEmployeeForNewUser({
+    id: updated.id,
+    fullName: updated.fullName,
+    role: updated.role,
+    departmentId: updated.departmentId,
+  });
+
+  if (updated.role !== "admin") {
+    if (updates.departmentId != null) {
+      await db
+        .update(employeesTable)
+        .set({ departmentId: Number(updates.departmentId) })
+        .where(eq(employeesTable.userId, id));
+    }
+    if (typeof updates.fullName === "string" && String(updates.fullName).trim()) {
+      await db
+        .update(employeesTable)
+        .set({ fullName: formatPersonName(String(updates.fullName)) })
+        .where(eq(employeesTable.userId, id));
+    }
   }
   res.json(publicUser(updated));
 });

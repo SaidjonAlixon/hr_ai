@@ -69,7 +69,7 @@ export default function AdminDepartmentsPage() {
   const headCandidates = useMemo(
     () =>
       (users ?? [])
-        .filter((u) => u.status === "active")
+        .filter((u) => u.status === "active" && u.role !== "admin")
         .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz")),
     [users],
   );

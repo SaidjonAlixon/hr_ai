@@ -31,7 +31,26 @@ CREATE TABLE IF NOT EXISTS kirish_videos (
 CREATE UNIQUE INDEX IF NOT EXISTS kirish_videos_stage_uidx ON kirish_videos (stage);
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS pdf_url TEXT;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS drive_file_id TEXT;
+ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS video_drive_file_id TEXT;
 ALTER TABLE kirish_videos ADD COLUMN IF NOT EXISTS questions_json JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+-- 5-bosqich: stajyor videosi (Google Drive)
+INSERT INTO kirish_videos (stage, youtube_url, youtube_id, video_drive_file_id, questions_json)
+VALUES (
+  5,
+  'https://drive.google.com/file/d/1swNC0epB65S9H0tpHeiQHynmB-W9pi2c/view',
+  '',
+  '1swNC0epB65S9H0tpHeiQHynmB-W9pi2c',
+  '[]'::jsonb
+)
+ON CONFLICT (stage) DO UPDATE SET
+  video_drive_file_id = '1swNC0epB65S9H0tpHeiQHynmB-W9pi2c',
+  youtube_url = CASE
+    WHEN kirish_videos.youtube_id IS NULL OR kirish_videos.youtube_id = ''
+      THEN 'https://drive.google.com/file/d/1swNC0epB65S9H0tpHeiQHynmB-W9pi2c/view'
+    ELSE kirish_videos.youtube_url
+  END,
+  updated_at = NOW();
 
 -- Chat
 CREATE TABLE IF NOT EXISTS chats (

@@ -28,6 +28,7 @@ import FinalDecisionPage from './pages/candidates/final-decision';
 import OfferPage from './pages/candidates/offer';
 import DocumentsPage from './pages/candidates/documents';
 import InternshipPage from './pages/candidates/internship';
+import InternshipsPage from './pages/internships/index';
 import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import TashkiliyTuzilmaPage from './pages/tashkiliy-tuzilma/index';
@@ -93,9 +94,6 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
     </Route>
   );
 }
-
-// Simple placeholders for missing pages
-function InternshipsPlaceholder() { return <div className="p-8 text-center text-gray-500">Stajirovkalar ro'yxati (Ishlanmoqda)</div>; }
 
 function Router() {
   return (
@@ -169,7 +167,7 @@ function Router() {
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/distribyutsiya" component={DistribyutsiyaPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
-      <ProtectedRoute path="/internships" component={InternshipsPlaceholder} />
+      <ProtectedRoute path="/internships" component={InternshipsPage} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
       <ProtectedRoute path="/admin/holat" component={AdminHolatPage} />

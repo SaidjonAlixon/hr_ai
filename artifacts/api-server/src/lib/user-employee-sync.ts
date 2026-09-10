@@ -91,6 +91,12 @@ export async function ensureEmployeeForNewUser(user: {
   departmentId: number | null;
   position?: string | null;
 }): Promise<void> {
+  // Admin — faqat Foydalanuvchilar; xodim/davomat/tarmoqda ko‘rinmasin
+  if (user.role === "admin") {
+    await removeEmployeesForUser(user.id);
+    return;
+  }
+
   const [existing] = await db
     .select({ id: employeesTable.id })
     .from(employeesTable)

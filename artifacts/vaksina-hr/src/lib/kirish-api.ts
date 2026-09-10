@@ -45,8 +45,9 @@ export type KirishStagePublic = {
   subtitle: string;
   videoUrl: string;
   videoPosterHint: string;
-  videoKind?: "youtube" | "file";
+  videoKind?: "youtube" | "file" | "drive";
   youtubeId?: string | null;
+  videoDriveFileId?: string | null;
   pdfUrl?: string | null;
   driveFileId?: string | null;
   slides: KirishSlide[];
@@ -176,6 +177,7 @@ export type KirishAdminVideo = {
   subtitle: string;
   youtubeUrl: string;
   youtubeId: string | null;
+  videoDriveFileId?: string | null;
   pdfUrl: string;
   driveFileId: string | null;
   questions: KirishAdminQuestion[];

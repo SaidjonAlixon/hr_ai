@@ -24,7 +24,7 @@ const router: IRouter = Router();
 
 function denyView(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }) {
   if (!canViewHisobkitob(req.userRole)) {
-    res.status(403).json({ error: "Hisob-kitob faqat admin, direktor va moliyachi uchun" });
+    res.status(403).json({ error: "Hisob-kitob faqat direktor, HR direktor, auditor va moliyachi uchun" });
     return true;
   }
   return false;

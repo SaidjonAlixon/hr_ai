@@ -10,9 +10,9 @@ import {
   FileSpreadsheet,
   Loader2,
   MoveHorizontal,
+  Percent,
   Search,
   UserCheck,
-  UserX,
   Users,
   Pencil,
 } from "lucide-react";
@@ -256,7 +256,7 @@ export default function DavomatPage() {
   const [periodTo, setPeriodTo] = useState(() => todayYmd());
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
-  const [staffFilter, setStaffFilter] = useState<DavomatStaffFilter>("all");
+  const [staffFilter, setStaffFilter] = useState<DavomatStaffFilter>("office");
   const [selectedEmpId, setSelectedEmpId] = useState<number | "all">("all");
   const [report, setReport] = useState<DavomatReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -368,6 +368,59 @@ export default function DavomatPage() {
     }
     return { present, late, absent, incomplete, leave, total: employeesForDay.length };
   }, [employeesForDay]);
+
+  /** «Xodimlar jami» kartalari — filtrlangan, tushunarli analitika */
+  const periodAnalytics = useMemo(() => {
+    const emps = filteredEmployees;
+    const dayCount = report?.dates?.length || report?.summary.days || 0;
+    let presentDays = 0;
+    let absentDays = 0;
+    let lateDays = 0;
+    let workedMin = 0;
+    let lateMin = 0;
+    let latePeople = 0;
+    let everAbsentPeople = 0;
+    let perfectPeople = 0;
+
+    for (const e of emps) {
+      presentDays += e.totals.present;
+      absentDays += e.totals.absent;
+      lateDays += e.totals.late;
+      workedMin += e.totals.workedMinutes;
+      lateMin += e.totals.lateArrivalMin;
+      if (e.totals.late > 0 || e.totals.lateArrivalMin > 0) latePeople += 1;
+      if (e.totals.absent > 0) everAbsentPeople += 1;
+      if (e.totals.absent === 0 && e.totals.present > 0) perfectPeople += 1;
+    }
+
+    const trackedDays = presentDays + absentDays;
+    const attendancePct = trackedDays > 0 ? Math.round((presentDays / trackedDays) * 100) : 0;
+    const avgWorkedMin = emps.length > 0 ? Math.round(workedMin / emps.length) : 0;
+
+    const fmtDur = (min: number) => {
+      const m = Math.max(0, Math.round(min));
+      const h = Math.floor(m / 60);
+      const r = m % 60;
+      if (h <= 0) return `${r} daq`;
+      if (r === 0) return `${h} soat`;
+      return `${h} soat ${r} daq`;
+    };
+
+    return {
+      employees: emps.length,
+      dayCount,
+      presentDays,
+      absentDays,
+      lateDays,
+      attendancePct,
+      latePeople,
+      everAbsentPeople,
+      perfectPeople,
+      workedLabel: fmtDur(workedMin),
+      lateLabel: lateMin > 0 ? fmtDur(lateMin) : "0 daq",
+      avgWorkedLabel: fmtDur(avgWorkedMin),
+    };
+  }, [filteredEmployees, report?.dates?.length, report?.summary.days]);
 
   const activeWorkHours = useMemo(() => workHoursForStaffFilter(staffFilter), [staffFilter]);
 
@@ -827,19 +880,13 @@ export default function DavomatPage() {
           setSelectedEmpId("all");
         }}
       >
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-2xl border border-border bg-card p-1 shadow-sm dark:border-slate-600/40 dark:bg-slate-800/60">
-          <TabsTrigger
-            value="schedule"
-            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-sky-500 dark:data-[state=active]:text-slate-950 sm:h-11 sm:text-sm"
-          >
+        <TabsList className="dv-section-tabs">
+          <TabsTrigger value="schedule" className="dv-section-tab">
             <CalendarDays className="h-4 w-4 shrink-0" />
             <span className="truncate sm:hidden">{t("davomat.table")}</span>
             <span className="hidden truncate sm:inline">{t("davomat.tableHint")}</span>
           </TabsTrigger>
-          <TabsTrigger
-            value="totals"
-            className="h-10 gap-1.5 rounded-xl px-2 text-xs font-semibold data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm dark:data-[state=active]:bg-sky-500 dark:data-[state=active]:text-slate-950 sm:h-11 sm:text-sm"
-          >
+          <TabsTrigger value="totals" className="dv-section-tab">
             <Users className="h-4 w-4 shrink-0" />
             <span className="truncate sm:hidden">Jami</span>
             <span className="hidden truncate sm:inline">Xodimlar jami</span>
@@ -850,10 +897,10 @@ export default function DavomatPage() {
           <Card className="border-border shadow-sm">
             <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:space-y-4 sm:px-6 sm:pt-5">
               <div>
-                <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Davr turi
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  Davr turi — tanlang
                 </p>
-                <div className="dv-period-bar">
+                <div className="dv-period-bar" role="group" aria-label="Davr turi">
                   {(
                     [
                       { id: "day" as const, short: t("davomat.dayShort"), label: t("davomat.daily"), hint: t("davomat.hint1d") },
@@ -865,6 +912,7 @@ export default function DavomatPage() {
                     <button
                       key={m.id}
                       type="button"
+                      aria-pressed={calMode === m.id}
                       className={cn(
                         "dv-period-btn",
                         calMode === m.id ? "dv-period-btn-active" : "dv-period-btn-idle",
@@ -875,7 +923,7 @@ export default function DavomatPage() {
                       <span className="hidden text-sm font-semibold leading-none sm:block">{m.label}</span>
                       <span
                         className={cn(
-                          "mt-1 hidden text-[10px] sm:block",
+                          "mt-1.5 block text-[10px] sm:mt-1",
                           calMode === m.id ? "dv-period-hint-active" : "text-muted-foreground",
                         )}
                       >
@@ -1039,23 +1087,30 @@ export default function DavomatPage() {
             </div>
           ) : report ? (
             <>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <Stat icon={<Users className="h-4 w-4" />} label="Xodimlar" value={String(filteredEmployees.length)} />
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <Stat
-                  icon={<UserCheck className="h-4 w-4 text-emerald-600" />}
-                  label="Kelgan (kun×odam)"
-                  value={String(report.summary.presentPersonDays)}
+                  icon={<Users className="h-4 w-4" />}
+                  label="Xodimlar"
+                  value={String(periodAnalytics.employees)}
+                  sub={`Davr: ${periodAnalytics.dayCount} ish kuni`}
                 />
                 <Stat
-                  icon={<UserX className="h-4 w-4 text-rose-600" />}
-                  label="Kelmagan (kun×odam)"
-                  value={String(report.summary.absentPersonDays)}
+                  icon={<Percent className="h-4 w-4 text-emerald-600" />}
+                  label="Davomat foizi"
+                  value={`${periodAnalytics.attendancePct}%`}
+                  sub={`Kelgan ${periodAnalytics.presentDays} · Kelmagan ${periodAnalytics.absentDays} kun`}
                 />
                 <Stat
                   icon={<Clock3 className="h-4 w-4 text-amber-600" />}
-                  label="Jami kech qolish"
-                  value={report.summary.totalLateLabel}
-                  sub={`Ishlangan: ${report.summary.totalWorkedHours}`}
+                  label="Kechikkan xodimlar"
+                  value={`${periodAnalytics.latePeople} kishi`}
+                  sub={`Jami kech: ${periodAnalytics.lateLabel}`}
+                />
+                <Stat
+                  icon={<UserCheck className="h-4 w-4 text-sky-600" />}
+                  label="Ishlangan vaqt"
+                  value={periodAnalytics.workedLabel}
+                  sub={`O‘rtacha: ${periodAnalytics.avgWorkedLabel} / xodim`}
                 />
               </div>
 
@@ -1693,10 +1748,12 @@ function Stat({
   return (
     <Card className="border-border shadow-sm">
       <CardContent className="flex items-start gap-3 pt-5">
-        <div className="rounded-lg bg-slate-100 p-2 text-muted-foreground dark:bg-slate-700/50 dark:text-slate-300">{icon}</div>
-        <div>
-          <div className="text-xs text-muted-foreground">{label}</div>
-          <div className="text-xl font-semibold text-foreground tabular-nums">{value}</div>
+        <div className="rounded-lg bg-slate-100 p-2 text-muted-foreground dark:bg-slate-700/50 dark:text-slate-300">
+          {icon}
+        </div>
+        <div className="min-w-0 space-y-0.5">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+          <div className="text-xl font-semibold tabular-nums text-foreground">{value}</div>
           {sub ? <div className="text-xs text-muted-foreground">{sub}</div> : null}
         </div>
       </CardContent>

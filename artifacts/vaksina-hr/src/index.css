@@ -879,33 +879,56 @@
   @apply text-slate-400;
 }
 
-/* Davomat — davr tanlash */
+/* Davomat — davr tanlash (bosiladigan tugmalar aniq) */
 .dv-period-bar {
-  @apply grid grid-cols-4 gap-1 rounded-xl bg-slate-100/90 p-1;
+  @apply grid grid-cols-2 gap-2 rounded-2xl border border-border/70 bg-slate-100/80 p-1.5 sm:grid-cols-4;
 }
 .dark .dv-period-bar {
-  @apply bg-slate-800/90 ring-1 ring-slate-600/45;
+  @apply border-slate-600/50 bg-slate-800/80;
 }
 .dv-period-btn {
-  @apply rounded-lg px-1 py-2 text-center transition-all sm:px-3 sm:py-2.5 sm:text-left;
+  @apply cursor-pointer rounded-xl border px-2 py-2.5 text-center transition-all duration-150 sm:px-3 sm:py-3 sm:text-left;
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-1;
 }
 .dv-period-btn-active {
-  @apply bg-card text-[#0b3a5c] shadow-sm ring-1 ring-[#0b3a5c]/15;
+  @apply border-primary bg-primary text-primary-foreground shadow-md;
 }
 .dark .dv-period-btn-active {
-  @apply bg-sky-500/20 text-sky-50 shadow-md ring-sky-400/45;
+  @apply border-sky-400 bg-sky-500 text-slate-950 shadow-md shadow-sky-500/20;
 }
 .dv-period-btn-idle {
-  @apply text-muted-foreground hover:bg-white/60 hover:text-foreground;
+  @apply border-border/80 bg-card text-foreground shadow-sm;
+  @apply hover:border-primary/40 hover:bg-primary/5 hover:shadow;
+  @apply active:scale-[0.98];
 }
 .dark .dv-period-btn-idle {
-  @apply text-slate-400 hover:bg-slate-700/55 hover:text-slate-100;
+  @apply border-slate-600/60 bg-slate-900/50 text-slate-100;
+  @apply hover:border-sky-400/50 hover:bg-sky-500/10;
 }
 .dv-period-hint-active {
-  @apply text-[#0b3a5c]/65;
+  @apply text-primary-foreground/80;
 }
 .dark .dv-period-hint-active {
-  @apply text-sky-200/75;
+  @apply text-slate-900/70;
+}
+
+/* Jadval / Xodimlar jami — asosiy bo‘lim tugmalari */
+.dv-section-tabs {
+  @apply grid h-auto w-full grid-cols-2 gap-2 rounded-2xl border border-border bg-slate-100/90 p-1.5 shadow-sm;
+}
+.dark .dv-section-tabs {
+  @apply border-slate-600/50 bg-slate-800/70;
+}
+.dv-section-tab {
+  @apply h-11 cursor-pointer gap-1.5 rounded-xl border border-transparent px-2 text-xs font-semibold transition-all sm:h-12 sm:text-sm;
+  @apply data-[state=inactive]:border-border/70 data-[state=inactive]:bg-card data-[state=inactive]:text-foreground data-[state=inactive]:shadow-sm;
+  @apply data-[state=inactive]:hover:border-primary/35 data-[state=inactive]:hover:bg-primary/5;
+  @apply data-[state=active]:border-primary data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md;
+}
+.dark .dv-section-tab {
+  @apply data-[state=inactive]:border-slate-600/55 data-[state=inactive]:bg-slate-900/40 data-[state=inactive]:text-slate-100;
+  @apply data-[state=inactive]:hover:border-sky-400/40 data-[state=inactive]:hover:bg-sky-500/10;
+  @apply data-[state=active]:border-sky-400 data-[state=active]:bg-sky-500 data-[state=active]:text-slate-950;
 }
 
 /* Statistik ranglar */

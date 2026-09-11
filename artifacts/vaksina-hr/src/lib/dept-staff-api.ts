@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { deliverFile } from "./tg-download";
 
 export type DeptStaffMeta = {
   canAdd: boolean;
@@ -46,19 +47,12 @@ async function downloadExcel(path: string, fallbackName: string) {
   const cd = res.headers.get("Content-Disposition") || "";
   const match = /filename="?([^"]+)"?/i.exec(cd);
   const filename = match?.[1] || fallbackName;
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  return deliverFile(blob, filename);
 }
 
 export async function downloadDeptStaffExcel() {
   const stamp = new Date().toISOString().slice(0, 10);
-  await downloadExcel("/dept-staff/export", `bolim-login-${stamp}.xlsx`);
+  return downloadExcel("/dept-staff/export", `bolim-login-${stamp}.xlsx`);
 }
 
 export function useDeptStaffMeta(enabled: boolean) {

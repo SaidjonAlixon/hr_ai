@@ -782,75 +782,144 @@
   @apply bg-primary/20;
 }
 
-/* Davomat hisobot — hero banner (kunduzgi + kechki) */
+/* Davomat hisobot — hero banner */
 .dv-report-hero {
-  @apply overflow-hidden rounded-2xl border border-primary/10 bg-gradient-to-br from-primary via-[hsl(212,67%,28%)] to-[hsl(212,67%,22%)] text-white shadow-[0_16px_40px_-20px_rgba(11,58,92,0.45)];
+  @apply relative overflow-hidden rounded-2xl border border-white/10 text-white shadow-[0_20px_50px_-28px_rgba(8,40,70,0.55)];
+  background:
+    radial-gradient(120% 90% at 100% 0%, rgba(56, 189, 248, 0.18), transparent 48%),
+    radial-gradient(80% 70% at 0% 100%, rgba(16, 185, 129, 0.12), transparent 42%),
+    linear-gradient(135deg, #0b3a5c 0%, #0f4a73 42%, #0a2f4c 100%);
 }
 .dark .dv-report-hero {
-  @apply border-sky-500/30 bg-gradient-to-br from-[#0a1e38] via-[#0f2f52] to-[#081525] text-white shadow-[0_20px_48px_-24px_rgba(14,116,220,0.35)];
+  @apply border-sky-400/20 shadow-[0_24px_56px_-28px_rgba(14,116,220,0.4)];
+  background:
+    radial-gradient(110% 80% at 100% 0%, rgba(56, 189, 248, 0.2), transparent 46%),
+    radial-gradient(70% 60% at 0% 100%, rgba(14, 165, 233, 0.1), transparent 40%),
+    linear-gradient(140deg, #071525 0%, #0c2744 45%, #06101c 100%);
 }
 
-.dv-report-hero-label {
-  @apply text-[10px] font-semibold uppercase tracking-[0.16em] text-white/70;
+.dv-report-hero-glow {
+  @apply pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full bg-sky-300/20 blur-3xl;
 }
-.dark .dv-report-hero-label {
-  @apply text-sky-300/90;
+.dark .dv-report-hero-glow {
+  @apply bg-sky-400/15;
+}
+
+.dv-report-hero-eyebrow {
+  @apply inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-sky-100/85;
+}
+.dv-report-hero-dot {
+  @apply h-1.5 w-1.5 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.25)];
 }
 
 .dv-report-hero-title {
-  @apply mt-0.5 text-xl font-bold tracking-tight text-white sm:text-[1.7rem];
-}
-.dark .dv-report-hero-title {
-  @apply text-white;
+  @apply mt-1.5 text-2xl font-bold tracking-tight text-white sm:text-[1.85rem];
 }
 
 .dv-report-hero-sub {
-  @apply mt-1 text-xs text-white/80 sm:text-sm;
+  @apply mt-2;
 }
-.dark .dv-report-hero-sub {
-  @apply text-sky-100/85;
-}
-
-.dv-report-hero-strong {
-  @apply font-semibold text-white;
-}
-.dark .dv-report-hero-strong {
-  @apply text-sky-50;
+.dv-report-hero-time {
+  @apply inline-flex max-w-full items-center rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-medium text-white/90 backdrop-blur-sm sm:text-xs;
 }
 
 .dv-report-actions {
-  @apply flex flex-wrap gap-1.5 rounded-2xl border border-white/15 bg-white/[0.06] p-1.5 backdrop-blur-sm;
+  @apply flex w-full flex-wrap gap-1.5 rounded-xl border border-white/15 bg-black/15 p-1.5 backdrop-blur-md sm:w-auto;
 }
 .dark .dv-report-actions {
-  @apply border-sky-400/25 bg-slate-900/50;
+  @apply border-sky-400/20 bg-slate-950/40;
+}
+
+.dv-report-btn-primary,
+.dv-report-btn-ghost,
+.dv-report-btn-excel,
+.dv-report-btn-announce {
+  @apply h-9 w-full gap-1.5 rounded-lg px-2.5 text-xs font-semibold shadow-none transition-all sm:w-auto sm:px-3;
+}
+
+.dv-report-btn-ghost {
+  @apply border border-white/20 bg-white/10 text-white hover:bg-white/20;
+}
+.dark .dv-report-btn-ghost {
+  @apply border-sky-400/30 bg-sky-500/10 text-sky-50 hover:bg-sky-500/20;
+}
+
+.dv-report-btn-excel {
+  @apply border border-emerald-300/30 bg-emerald-500 text-white hover:bg-emerald-400 disabled:opacity-70;
+}
+
+.dv-report-btn-announce {
+  @apply border border-amber-200/40 bg-amber-400 text-amber-950 hover:bg-amber-300 disabled:opacity-70;
 }
 
 .dv-report-btn-primary {
-  @apply h-10 w-full gap-1.5 rounded-xl bg-white px-2.5 text-xs font-semibold text-primary shadow-sm transition-colors hover:bg-white/90 sm:w-auto sm:px-3 sm:text-sm;
+  @apply border border-white/30 bg-white text-primary hover:bg-white/90;
 }
 .dark .dv-report-btn-primary {
   @apply bg-sky-400 text-slate-950 hover:bg-sky-300;
 }
 
-.dv-report-btn-ghost {
-  @apply h-10 w-full gap-1.5 rounded-xl border border-white/25 bg-white/10 px-2.5 text-xs font-semibold text-white transition-colors hover:bg-white/20 sm:w-auto sm:px-3 sm:text-sm;
-}
-.dark .dv-report-btn-ghost {
-  @apply border-sky-400/35 bg-sky-500/15 text-sky-50 hover:bg-sky-500/25;
+/* Hero statistik kartalar — har biri o‘z rangida, aniq ajraladi */
+.dv-hero-stats {
+  @apply grid grid-cols-2 gap-2.5 sm:grid-cols-4 sm:gap-3;
 }
 
-.dv-report-btn-excel {
-  @apply h-10 w-full gap-1.5 rounded-xl bg-emerald-500 px-2.5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-emerald-400 disabled:opacity-70 sm:w-auto sm:px-3 sm:text-sm;
-}
-.dark .dv-report-btn-excel {
-  @apply bg-emerald-500 text-white hover:bg-emerald-400 shadow-emerald-500/25;
+.dv-hero-stat {
+  @apply relative flex min-h-[4.5rem] items-center gap-2.5 overflow-hidden rounded-xl border px-3 py-2.5 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50;
 }
 
-.dv-report-btn-announce {
-  @apply h-10 w-full gap-1.5 rounded-xl border border-amber-200/80 bg-amber-400 px-2.5 text-xs font-semibold text-amber-950 shadow-sm transition-colors hover:bg-amber-300 disabled:opacity-70 sm:w-auto sm:px-3 sm:text-sm;
+.dv-hero-stat-total {
+  @apply border-sky-300/50 bg-gradient-to-br from-sky-400/95 to-sky-600 text-white shadow-sky-900/20;
 }
-.dark .dv-report-btn-announce {
-  @apply border-amber-400/50 bg-amber-400 text-amber-950 hover:bg-amber-300;
+.dv-hero-stat-present {
+  @apply border-emerald-300/50 bg-gradient-to-br from-emerald-400/95 to-emerald-600 text-white shadow-emerald-900/20;
+}
+.dv-hero-stat-absent {
+  @apply border-rose-300/45 bg-gradient-to-br from-rose-400/95 to-rose-600 text-white shadow-rose-900/20;
+}
+.dv-hero-stat-late {
+  @apply border-amber-200/60 bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 shadow-amber-900/15;
+}
+
+.dv-hero-stat-active {
+  @apply ring-2 ring-white/70 ring-offset-2 ring-offset-transparent brightness-110;
+}
+
+.dv-hero-stat-icon {
+  @apply flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/25 text-inherit backdrop-blur-sm;
+}
+.dv-hero-stat-late .dv-hero-stat-icon {
+  @apply bg-amber-950/15 text-amber-950;
+}
+.dv-hero-stat-total .dv-hero-stat-icon,
+.dv-hero-stat-present .dv-hero-stat-icon,
+.dv-hero-stat-absent .dv-hero-stat-icon {
+  @apply text-white;
+}
+
+.dv-hero-stat-meta {
+  @apply flex min-w-0 flex-1 flex-col gap-0.5;
+}
+.dv-hero-stat-label {
+  @apply text-[10px] font-bold uppercase tracking-[0.14em] text-white/85;
+}
+.dv-hero-stat-late .dv-hero-stat-label {
+  @apply text-amber-950/75;
+}
+.dv-hero-stat-row {
+  @apply flex items-baseline gap-1.5;
+}
+.dv-hero-stat-value {
+  @apply text-xl font-bold tabular-nums leading-none tracking-tight text-white sm:text-2xl;
+}
+.dv-hero-stat-late .dv-hero-stat-value {
+  @apply text-amber-950;
+}
+.dv-hero-stat-pct {
+  @apply text-[10px] font-bold tabular-nums text-white/70;
+}
+.dv-hero-stat-late .dv-hero-stat-pct {
+  @apply text-amber-950/60;
 }
 
 /* Boshqaruv paneli */
@@ -1629,6 +1698,86 @@
   inset: 0;
   z-index: 0;
   background: #0b1220;
+}
+
+.dv-map-leaflet-locked {
+  /* Birinchi tegishda sahifa pastga scroll qilsin */
+  touch-action: pan-y !important;
+}
+
+.dv-map-leaflet-locked .leaflet-control-zoom {
+  pointer-events: none !important;
+  opacity: 0.35;
+}
+
+.dv-map-unlock {
+  position: absolute;
+  inset: 0;
+  /* Locate / footer / GPS (z≥5) ustida qolsin — faqat xarita maydoni */
+  z-index: 4;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  /* Vertikal scroll o‘tsin, xarita tortilmasin */
+  touch-action: pan-y;
+  -webkit-user-select: none;
+  user-select: none;
+  /* Footer ustida, xarita markazini to‘smaydi */
+  padding: 0 0.75rem 4.75rem;
+}
+
+.dv-map-unlock-chip {
+  pointer-events: none;
+  display: inline-flex;
+  max-width: calc(100% - 2rem);
+  align-items: center;
+  gap: 0.3rem;
+  border-radius: 9999px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(8, 14, 28, 0.78);
+  padding: 0.35rem 0.65rem;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #e2e8f0;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.dv-map-unlock-chip.is-hint {
+  border-color: rgba(56, 189, 248, 0.45);
+  background: rgba(14, 116, 144, 0.88);
+  color: #fff;
+}
+
+.dv-map-lock-chip {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  z-index: 7;
+  transform: translateX(-50%);
+  border: 1px solid rgba(52, 211, 153, 0.35);
+  border-radius: 9999px;
+  background: rgba(6, 78, 59, 0.88);
+  padding: 0.35rem 0.75rem;
+  font-size: 10px;
+  font-weight: 700;
+  color: #a7f3d0;
+  backdrop-filter: blur(8px);
+  cursor: pointer;
+}
+
+.dv-map-lock-chip:hover {
+  background: rgba(4, 120, 87, 0.95);
+  color: #fff;
+}
+
+.dv-map-shell-active .dv-map-leaflet {
+  touch-action: manipulation;
 }
 
 .dv-map-leaflet .leaflet-pane {

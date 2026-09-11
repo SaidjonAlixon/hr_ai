@@ -157,14 +157,17 @@ function Panel({
   children,
   className,
   action,
+  id,
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
   action?: React.ReactNode;
+  id?: string;
 }) {
   return (
     <section
+      id={id}
       className={cn(
         "flex flex-col overflow-hidden rounded-2xl border border-border/80 bg-card shadow-sm",
         className,
@@ -179,54 +182,118 @@ function Panel({
   );
 }
 
+type KpiFocus =
+  | "total"
+  | "todo"
+  | "in_progress"
+  | "completed"
+  | "overdue"
+  | "dueToday"
+  | "atRisk"
+  | "awaiting";
+
+function isAtRisk(task: Vazifa, now = new Date()) {
+  if (!task.dueAt || isClosed(task)) return false;
+  const due = startOfDay(new Date(task.dueAt)).getTime();
+  const today = startOfDay(now).getTime();
+  const in3 = addDays(startOfDay(now), 3).getTime();
+  return due >= today && due <= in3 && (task.priority === "high" || task.priority === "urgent");
+}
+
+function matchesKpiFocus(task: Vazifa, focus: KpiFocus | null, now: Date) {
+  if (!focus || focus === "total") return true;
+  switch (focus) {
+    case "todo":
+      return task.status === "todo" && !isOverdue(task, now);
+    case "in_progress":
+      return task.status === "in_progress" && !isOverdue(task, now);
+    case "completed":
+      return task.status === "verified" || task.status === "done";
+    case "overdue":
+      return isOverdue(task, now);
+    case "dueToday":
+      return isDueToday(task, now);
+    case "atRisk":
+      return isAtRisk(task, now);
+    case "awaiting":
+      return task.status === "done";
+    default:
+      return true;
+  }
+}
+
 function KpiCard({
   label,
+  hint,
   value,
   delta,
+  deltaLabel,
   icon,
   accent,
+  bar,
+  active,
+  onClick,
 }: {
   label: string;
+  hint: string;
   value: number;
   delta?: number | null;
+  deltaLabel?: string;
   icon: React.ReactNode;
   accent: string;
+  bar: string;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   const up = (delta ?? 0) >= 0;
   return (
-    <div className="group relative overflow-hidden rounded-2xl border border-border/80 bg-card p-3.5 shadow-sm transition hover:border-border hover:shadow-md">
-      <div className={cn("absolute -right-4 -top-4 h-16 w-16 rounded-full opacity-15 blur-2xl dark:opacity-25", accent)} />
-      <div className="relative flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
-          <p className="mt-1.5 text-2xl font-bold tabular-nums tracking-tight text-foreground">
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={cn(
+        "group relative w-full overflow-hidden rounded-2xl border bg-card p-4 text-left shadow-sm transition",
+        "hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400/40 active:translate-y-0",
+        active
+          ? "border-sky-400/80 ring-2 ring-sky-400/30 shadow-md"
+          : "border-border/80 hover:border-sky-200/80",
+      )}
+    >
+      <div className={cn("absolute inset-y-0 left-0 w-1 rounded-l-2xl", bar)} />
+      <div className={cn("absolute -right-5 -top-5 h-20 w-20 rounded-full opacity-20 blur-2xl dark:opacity-30", accent)} />
+      <div className="relative flex items-start justify-between gap-3 pl-1.5">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold leading-snug text-muted-foreground">{label}</p>
+          <p className="mt-1.5 text-3xl font-bold tabular-nums tracking-tight text-foreground">
             {value.toLocaleString()}
           </p>
+          <p className="mt-1 text-[11px] leading-snug text-muted-foreground/90">{hint}</p>
           {delta != null ? (
             <p
               className={cn(
-                "mt-1.5 inline-flex items-center gap-1 text-[11px] font-semibold",
-                up ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400",
+                "mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                up
+                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                  : "bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-300",
               )}
             >
               {up ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
               {up ? "+" : ""}
               {delta}%
+              {deltaLabel ? <span className="font-medium opacity-80">· {deltaLabel}</span> : null}
             </p>
-          ) : (
-            <p className="mt-1.5 text-[11px] text-muted-foreground">—</p>
-          )}
+          ) : null}
         </div>
         <div
           className={cn(
-            "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-inner",
+            "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-white shadow-sm transition group-hover:scale-105",
             accent,
           )}
         >
           {icon}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -384,8 +451,9 @@ export default function VazifalarTahlilPage() {
 
   const [q, setQ] = useState("");
   const [period, setPeriod] = useState<"today" | "7d" | "30d" | "all">("30d");
-  const [branch, setBranch] = useState("all");
+  const [staff, setStaff] = useState("all");
   const [dept, setDept] = useState("all");
+  const [kpiFocus, setKpiFocus] = useState<KpiFocus | null>(null);
   const [calMonth, setCalMonth] = useState(() => {
     const n = new Date();
     return new Date(n.getFullYear(), n.getMonth(), 1);
@@ -416,14 +484,50 @@ export default function VazifalarTahlilPage() {
     return m;
   }, [employees]);
 
-  const branches = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of employees as any[]) {
-      const loc = (e.location || "").trim();
-      if (loc) set.add(loc);
+  const staffOptions = useMemo(() => {
+    const norm = (s: string) =>
+      String(s || "")
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, " ");
+    const map = new Map<string, { key: string; name: string; kind: "user" | "employee"; id: number }>();
+
+    for (const u of users as any[]) {
+      const role = String(u.role || "");
+      if (role === "admin") continue;
+      const status = String(u.status || "active");
+      if (status !== "active" && status !== "on_leave") continue;
+      const name = String(u.fullName || "").trim();
+      if (!name) continue;
+      map.set(`user:${u.id}`, { key: `user:${u.id}`, name, kind: "user", id: Number(u.id) });
     }
-    return [...set].sort((a, b) => a.localeCompare(b, "uz"));
-  }, [employees]);
+
+    const linkedUserIds = new Set(
+      (users as any[])
+        .map((u) => Number(u.id))
+        .filter((id) => Number.isFinite(id)),
+    );
+    const linkedNames = new Set(
+      [...map.values()].map((x) => norm(x.name)).filter(Boolean),
+    );
+
+    for (const e of employees as any[]) {
+      const status = String(e.employmentStatus || "working");
+      if (!["working", "new", "on_leave"].includes(status)) continue;
+      const uid = e.userId != null ? Number(e.userId) : null;
+      if (uid != null && linkedUserIds.has(uid)) continue;
+      const name = String(e.fullName || "").trim();
+      if (!name || linkedNames.has(norm(name))) continue;
+      map.set(`employee:${e.id}`, {
+        key: `employee:${e.id}`,
+        name,
+        kind: "employee",
+        id: Number(e.id),
+      });
+    }
+
+    return [...map.values()].sort((a, b) => a.name.localeCompare(b.name, "uz"));
+  }, [users, employees]);
 
   const periodWindow = useMemo(() => {
     if (period === "all") return { from: null as Date | null, prevFrom: null as Date | null, prevTo: null as Date | null };
@@ -443,20 +547,16 @@ export default function VazifalarTahlilPage() {
       const assigneeUser =
         task.assigneeKind === "user" ? userById.get(task.assigneeId) : null;
       const creator = userById.get(task.createdById);
-      const location =
-        assigneeEmp?.location ||
-        assigneeUser?.location ||
-        creator?.location ||
-        "";
       const departmentId =
         assigneeEmp?.departmentId ??
         assigneeUser?.departmentId ??
         creator?.departmentId ??
         null;
+      const staffKey = `${task.assigneeKind}:${task.assigneeId}`;
       return {
         task,
-        location: String(location || ""),
         departmentId: departmentId as number | null,
+        staffKey,
         creatorRole: String(creator?.role || ""),
         type: classifyType(task),
         source: classifySource(task, creator?.role),
@@ -466,11 +566,11 @@ export default function VazifalarTahlilPage() {
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
-    return enriched.filter(({ task, location, departmentId }) => {
+    return enriched.filter(({ task, departmentId, staffKey }) => {
       if (periodWindow.from) {
         if (new Date(task.createdAt).getTime() < periodWindow.from.getTime()) return false;
       }
-      if (branch !== "all" && location !== branch) return false;
+      if (staff !== "all" && staffKey !== staff) return false;
       if (dept !== "all" && String(departmentId || "") !== dept) return false;
       if (!s) return true;
       return (
@@ -481,20 +581,20 @@ export default function VazifalarTahlilPage() {
         (task.description || "").toLowerCase().includes(s)
       );
     });
-  }, [enriched, q, periodWindow, branch, dept]);
+  }, [enriched, q, periodWindow, staff, dept]);
 
   const prevFiltered = useMemo(() => {
     if (!periodWindow.prevFrom || !periodWindow.prevTo) return [] as typeof enriched;
-    return enriched.filter(({ task, location, departmentId }) => {
+    return enriched.filter(({ task, departmentId, staffKey }) => {
       const created = new Date(task.createdAt).getTime();
       if (created < periodWindow.prevFrom!.getTime() || created >= periodWindow.prevTo!.getTime()) {
         return false;
       }
-      if (branch !== "all" && location !== branch) return false;
+      if (staff !== "all" && staffKey !== staff) return false;
       if (dept !== "all" && String(departmentId || "") !== dept) return false;
       return true;
     });
-  }, [enriched, periodWindow, branch, dept]);
+  }, [enriched, periodWindow, staff, dept]);
 
   const stats = useMemo(() => {
     const list = filtered.map((x) => x.task);
@@ -507,13 +607,7 @@ export default function VazifalarTahlilPage() {
     const overdue = count(list, (x) => isOverdue(x, now));
     const dueToday = count(list, (x) => isDueToday(x, now));
     const awaiting = count(list, (x) => x.status === "done");
-    const atRisk = count(list, (x) => {
-      if (!x.dueAt || isClosed(x)) return false;
-      const due = startOfDay(new Date(x.dueAt)).getTime();
-      const today = startOfDay(now).getTime();
-      const in3 = addDays(startOfDay(now), 3).getTime();
-      return due >= today && due <= in3 && (x.priority === "high" || x.priority === "urgent");
-    });
+    const atRisk = count(list, (x) => isAtRisk(x, now));
     const cancelled = count(list, (x) => x.status === "cancelled");
     const verified = count(list, (x) => x.status === "verified");
     const doneOnly = count(list, (x) => x.status === "done");
@@ -696,8 +790,8 @@ export default function VazifalarTahlilPage() {
 
   const people = useMemo(() => {
     // Period filtrisiz — doskadagi ijrochi filtri bilan bir xil hisob
-    const source = enriched.filter(({ location, departmentId, task }) => {
-      if (branch !== "all" && location !== branch) return false;
+    const source = enriched.filter(({ departmentId, staffKey, task }) => {
+      if (staff !== "all" && staffKey !== staff) return false;
       if (dept !== "all" && String(departmentId || "") !== dept) return false;
       if (!(task.assigneeName || "").trim()) return false;
       return true;
@@ -750,11 +844,12 @@ export default function VazifalarTahlilPage() {
         .slice(0, 5),
       unique: ranked.length,
     };
-  }, [enriched, branch, dept, now]);
+  }, [enriched, staff, dept, now]);
 
   const recent = useMemo(() => {
     return [...filtered]
       .map((x) => x.task)
+      .filter((task) => matchesKpiFocus(task, kpiFocus, now))
       .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
       .slice(0, 8)
       .map((task) => ({
@@ -763,7 +858,7 @@ export default function VazifalarTahlilPage() {
         online: presenceOnline(task.updatedAt, now),
         href: `/vazifalar?task=${task.id}`,
       }));
-  }, [filtered, now, t]);
+  }, [filtered, now, t, kpiFocus]);
 
   const footer = useMemo(() => {
     const completedTasks = filtered
@@ -832,38 +927,70 @@ export default function VazifalarTahlilPage() {
   });
 
   const selectCls =
-    "h-9 rounded-full border-border bg-background text-xs text-foreground focus:ring-sky-500/40";
+    "h-10 rounded-xl border-border bg-background text-xs text-foreground focus:ring-sky-500/40";
+
+  const toggleKpi = (id: KpiFocus) => {
+    setKpiFocus((prev) => (prev === id ? null : id));
+    const el = document.getElementById("tasks-analytics-recent");
+    if (el && id !== "total") {
+      window.setTimeout(() => el.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+    }
+  };
+
+  const kpiFocusLabel = kpiFocus
+    ? {
+        total: t("tasks.analytics.total"),
+        todo: t("tasks.analytics.new"),
+        in_progress: t("tasks.analytics.inProgress"),
+        completed: t("tasks.analytics.completed"),
+        overdue: t("tasks.analytics.overdue"),
+        dueToday: t("tasks.analytics.dueToday"),
+        atRisk: t("tasks.analytics.atRisk"),
+        awaiting: t("tasks.analytics.awaiting"),
+      }[kpiFocus]
+    : null;
+
+  const deltaVsPrev = t("tasks.analytics.deltaVsPrev");
 
   return (
     <div className="relative h-full min-h-0 overflow-y-auto bg-background text-foreground">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(ellipse_at_top,_rgba(14,165,233,0.06),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(99,102,241,0.05),_transparent_50%)] dark:bg-[radial-gradient(ellipse_at_top,_rgba(56,189,248,0.08),_transparent_55%),radial-gradient(ellipse_at_bottom_right,_rgba(129,140,248,0.07),_transparent_50%)]" />
 
-      <div className="relative border-b border-border/80 bg-card/90 px-3 py-3 backdrop-blur-xl sm:px-5">
-        <div className="mx-auto flex max-w-[1480px] flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="min-w-0">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600 dark:text-sky-400/80">
-              {t("nav.section.work")}
-            </p>
-            <h1 className="mt-0.5 flex items-center gap-2 text-lg font-bold tracking-tight text-foreground sm:text-xl">
-              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/15 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
-                <BarChart3 className="h-4 w-4" />
-              </span>
-              {t("tasks.analytics.panelTitle")}
-            </h1>
+      <div className="relative border-b border-border/80 bg-card/90 px-3 py-4 backdrop-blur-xl sm:px-5">
+        <div className="mx-auto flex max-w-[1600px] flex-col gap-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.2em] text-sky-600 dark:text-sky-400/80">
+                {t("nav.section.work")}
+              </p>
+              <h1 className="mt-0.5 flex items-center gap-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
+                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-500/15 text-sky-600 dark:bg-sky-500/20 dark:text-sky-300">
+                  <BarChart3 className="h-5 w-5" />
+                </span>
+                {t("tasks.analytics.panelTitle")}
+              </h1>
+              <p className="mt-1 max-w-2xl text-sm text-muted-foreground">{t("tasks.analytics.subtitle")}</p>
+            </div>
+            <Button asChild className="h-10 shrink-0 rounded-xl bg-sky-600 px-4 text-sm font-semibold text-white hover:bg-sky-500">
+              <Link href="/vazifalar">
+                <Plus className="mr-1.5 h-4 w-4" />
+                {t("tasks.analytics.assign")}
+              </Link>
+            </Button>
           </div>
 
-          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 xl:justify-center">
-            <div className="relative min-w-[200px] flex-1 xl:max-w-md">
+          <div className="flex flex-col gap-2 rounded-2xl border border-border/70 bg-background/70 p-2.5 sm:flex-row sm:flex-wrap sm:items-center sm:gap-2.5">
+            <div className="relative min-w-[200px] flex-1 sm:min-w-[260px]">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={q}
                 onChange={(e) => setQ(e.target.value)}
                 placeholder={t("tasks.analytics.search")}
-                className="h-9 rounded-full bg-background pl-9 text-sm"
+                className="h-10 rounded-xl bg-card pl-9 text-sm"
               />
             </div>
             <Select value={period} onValueChange={(v) => setPeriod(v as typeof period)}>
-              <SelectTrigger className={cn(selectCls, "w-[120px]")}>
+              <SelectTrigger className={cn(selectCls, "w-full sm:w-[130px]")}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -873,21 +1000,21 @@ export default function VazifalarTahlilPage() {
                 <SelectItem value="all">{t("ui.all")}</SelectItem>
               </SelectContent>
             </Select>
-            <Select value={branch} onValueChange={setBranch}>
-              <SelectTrigger className={cn(selectCls, "w-[150px]")}>
-                <SelectValue placeholder={t("ui.allBranches")} />
+            <Select value={staff} onValueChange={setStaff}>
+              <SelectTrigger className={cn(selectCls, "w-full sm:w-[190px]")}>
+                <SelectValue placeholder={t("tasks.filter.allStaff")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">{t("ui.allBranches")}</SelectItem>
-                {branches.map((b) => (
-                  <SelectItem key={b} value={b}>
-                    {b}
+                <SelectItem value="all">{t("tasks.filter.allStaff")}</SelectItem>
+                {staffOptions.slice(0, 120).map((o) => (
+                  <SelectItem key={o.key} value={o.key}>
+                    {o.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
             <Select value={dept} onValueChange={setDept}>
-              <SelectTrigger className={cn(selectCls, "w-[150px]")}>
+              <SelectTrigger className={cn(selectCls, "w-full sm:w-[170px]")}>
                 <SelectValue placeholder={t("ui.allDepartments")} />
               </SelectTrigger>
               <SelectContent>
@@ -900,35 +1027,125 @@ export default function VazifalarTahlilPage() {
               </SelectContent>
             </Select>
           </div>
-
-          <div className="flex items-center gap-2">
-            <Button asChild className="h-9 rounded-full bg-sky-500 px-4 text-sm font-semibold text-white hover:bg-sky-400">
-              <Link href="/vazifalar">
-                <Plus className="mr-1.5 h-4 w-4" />
-                {t("tasks.analytics.assign")}
-              </Link>
-            </Button>
-          </div>
         </div>
       </div>
 
-      <div className="relative mx-auto max-w-[1480px] space-y-4 p-3 sm:space-y-5 sm:p-5">
+      <div className="relative mx-auto max-w-[1600px] space-y-4 p-3 sm:space-y-5 sm:p-5">
         {isLoading ? (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {Array.from({ length: 8 }).map((_, i) => (
-              <Skeleton key={i} className="h-[92px] rounded-2xl" />
+              <Skeleton key={i} className="h-[124px] rounded-2xl" />
             ))}
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 xl:grid-cols-8">
-            <KpiCard label={t("tasks.analytics.total")} value={stats.total} delta={stats.dTotal} icon={<ListTodo className="h-4 w-4" />} accent="bg-sky-500" />
-            <KpiCard label={t("tasks.analytics.new")} value={stats.todo} delta={stats.dTodo} icon={<Plus className="h-4 w-4" />} accent="bg-amber-500" />
-            <KpiCard label={t("tasks.analytics.inProgress")} value={stats.inProgress} delta={stats.dIn} icon={<Clock3 className="h-4 w-4" />} accent="bg-blue-500" />
-            <KpiCard label={t("tasks.analytics.completed")} value={stats.completed} delta={stats.dDone} icon={<CheckCircle2 className="h-4 w-4" />} accent="bg-emerald-500" />
-            <KpiCard label={t("tasks.analytics.overdue")} value={stats.overdue} delta={stats.dOver} icon={<AlertTriangle className="h-4 w-4" />} accent="bg-rose-500" />
-            <KpiCard label={t("tasks.analytics.dueToday")} value={stats.dueToday} delta={null} icon={<CalendarDays className="h-4 w-4" />} accent="bg-orange-500" />
-            <KpiCard label={t("tasks.analytics.atRisk")} value={stats.atRisk} delta={null} icon={<Zap className="h-4 w-4" />} accent="bg-violet-500" />
-            <KpiCard label={t("tasks.analytics.awaiting")} value={stats.awaiting} delta={null} icon={<FileText className="h-4 w-4" />} accent="bg-cyan-500" />
+          <div className="space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-0.5">
+              <p className="text-xs font-medium text-muted-foreground">{t("tasks.analytics.kpiHint")}</p>
+              {kpiFocus ? (
+                <button
+                  type="button"
+                  onClick={() => setKpiFocus(null)}
+                  className="text-xs font-semibold text-sky-600 hover:underline dark:text-sky-400"
+                >
+                  {t("tasks.analytics.kpiFilterClear")}
+                </button>
+              ) : null}
+            </div>
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+              <KpiCard
+                label={t("tasks.analytics.total")}
+                hint={t("tasks.analytics.hint.total")}
+                value={stats.total}
+                delta={stats.dTotal}
+                deltaLabel={deltaVsPrev}
+                icon={<ListTodo className="h-4 w-4" />}
+                accent="bg-sky-500"
+                bar="bg-sky-500"
+                active={kpiFocus === "total"}
+                onClick={() => toggleKpi("total")}
+              />
+              <KpiCard
+                label={t("tasks.analytics.new")}
+                hint={t("tasks.analytics.hint.new")}
+                value={stats.todo}
+                delta={stats.dTodo}
+                deltaLabel={deltaVsPrev}
+                icon={<Plus className="h-4 w-4" />}
+                accent="bg-amber-500"
+                bar="bg-amber-500"
+                active={kpiFocus === "todo"}
+                onClick={() => toggleKpi("todo")}
+              />
+              <KpiCard
+                label={t("tasks.analytics.inProgress")}
+                hint={t("tasks.analytics.hint.inProgress")}
+                value={stats.inProgress}
+                delta={stats.dIn}
+                deltaLabel={deltaVsPrev}
+                icon={<Clock3 className="h-4 w-4" />}
+                accent="bg-blue-500"
+                bar="bg-blue-500"
+                active={kpiFocus === "in_progress"}
+                onClick={() => toggleKpi("in_progress")}
+              />
+              <KpiCard
+                label={t("tasks.analytics.completed")}
+                hint={t("tasks.analytics.hint.completed")}
+                value={stats.completed}
+                delta={stats.dDone}
+                deltaLabel={deltaVsPrev}
+                icon={<CheckCircle2 className="h-4 w-4" />}
+                accent="bg-emerald-500"
+                bar="bg-emerald-500"
+                active={kpiFocus === "completed"}
+                onClick={() => toggleKpi("completed")}
+              />
+              <KpiCard
+                label={t("tasks.analytics.overdue")}
+                hint={t("tasks.analytics.hint.overdue")}
+                value={stats.overdue}
+                delta={stats.dOver}
+                deltaLabel={deltaVsPrev}
+                icon={<AlertTriangle className="h-4 w-4" />}
+                accent="bg-rose-500"
+                bar="bg-rose-500"
+                active={kpiFocus === "overdue"}
+                onClick={() => toggleKpi("overdue")}
+              />
+              <KpiCard
+                label={t("tasks.analytics.dueToday")}
+                hint={t("tasks.analytics.hint.dueToday")}
+                value={stats.dueToday}
+                delta={null}
+                icon={<CalendarDays className="h-4 w-4" />}
+                accent="bg-orange-500"
+                bar="bg-orange-500"
+                active={kpiFocus === "dueToday"}
+                onClick={() => toggleKpi("dueToday")}
+              />
+              <KpiCard
+                label={t("tasks.analytics.atRisk")}
+                hint={t("tasks.analytics.hint.atRisk")}
+                value={stats.atRisk}
+                delta={null}
+                icon={<Zap className="h-4 w-4" />}
+                accent="bg-violet-500"
+                bar="bg-violet-500"
+                active={kpiFocus === "atRisk"}
+                onClick={() => toggleKpi("atRisk")}
+              />
+              <KpiCard
+                label={t("tasks.analytics.awaiting")}
+                hint={t("tasks.analytics.hint.awaiting")}
+                value={stats.awaiting}
+                delta={null}
+                icon={<FileText className="h-4 w-4" />}
+                accent="bg-cyan-500"
+                bar="bg-cyan-500"
+                active={kpiFocus === "awaiting"}
+                onClick={() => toggleKpi("awaiting")}
+              />
+            </div>
           </div>
         )}
 
@@ -1151,33 +1368,33 @@ export default function VazifalarTahlilPage() {
           </Panel>
 
           <div className="flex flex-col gap-4 xl:col-span-3">
-            <div className="rounded-2xl border border-emerald-500/25 bg-emerald-50/80 p-4 shadow-sm dark:border-emerald-400/20 dark:bg-gradient-to-br dark:from-emerald-500/15 dark:to-emerald-900/10">
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-50/90 p-4 shadow-sm dark:border-emerald-400/25 dark:bg-emerald-950/50 dark:shadow-[inset_0_1px_0_rgba(52,211,153,0.12)]">
               <div className="mb-2 flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-300">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500/15 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
                   <Bot className="h-4 w-4" />
                 </span>
                 <div>
-                  <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">{t("tasks.analytics.summary")}</p>
-                  <p className="text-[10px] text-emerald-700/70 dark:text-emerald-300/70">{t("tasks.analytics.aiBadge")}</p>
+                  <p className="text-sm font-semibold text-emerald-950 dark:text-emerald-50">{t("tasks.analytics.summary")}</p>
+                  <p className="text-[10px] text-emerald-700/80 dark:text-emerald-300/70">{t("tasks.analytics.aiBadge")}</p>
                 </div>
                 <Sparkles className="ml-auto h-4 w-4 text-emerald-600/50 dark:text-emerald-300/60" />
               </div>
               <ul className="space-y-1.5 text-xs leading-relaxed text-emerald-950/90 dark:text-emerald-50/90">
                 {aiLines.map((line, i) => (
                   <li key={i} className="flex gap-2">
-                    <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-300" />
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500 dark:bg-emerald-300" />
                     <span>{line}</span>
                   </li>
                 ))}
               </ul>
             </div>
 
-            <div className="relative flex-1 rounded-2xl border border-rose-500/25 bg-rose-50/80 p-4 shadow-sm dark:border-rose-400/25 dark:bg-gradient-to-br dark:from-rose-500/15 dark:to-rose-950/20">
+            <div className="relative flex-1 rounded-2xl border border-rose-500/30 bg-rose-50/90 p-4 shadow-sm dark:border-rose-400/25 dark:bg-rose-950/45 dark:shadow-[inset_0_1px_0_rgba(251,113,133,0.12)]">
               <div className="mb-2 flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-500/15 text-rose-700 dark:bg-rose-500/20 dark:text-rose-300">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-500/15 text-rose-700 dark:bg-rose-400/15 dark:text-rose-300">
                   <AlertTriangle className="h-4 w-4" />
                 </span>
-                <p className="text-sm font-semibold text-rose-900 dark:text-rose-100">{t("tasks.analytics.attention")}</p>
+                <p className="text-sm font-semibold text-rose-950 dark:text-rose-50">{t("tasks.analytics.attention")}</p>
                 {alerts.length ? (
                   <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1.5 text-[10px] font-bold text-white">
                     {alerts.length}
@@ -1188,7 +1405,7 @@ export default function VazifalarTahlilPage() {
                 <ul className="space-y-1.5 text-xs text-rose-950/90 dark:text-rose-50/90">
                   {alerts.map((a, i) => (
                     <li key={i} className="flex gap-2">
-                      <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-rose-500 dark:bg-rose-300" />
+                      <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500 dark:bg-rose-300" />
                       <span>{a}</span>
                     </li>
                   ))}
@@ -1214,7 +1431,18 @@ export default function VazifalarTahlilPage() {
             empty={t("tasks.analytics.emptyPeople")}
             className="xl:col-span-4"
           />
-          <Panel title={t("tasks.analytics.recent")} className="xl:col-span-4">
+          <Panel
+            id="tasks-analytics-recent"
+            title={t("tasks.analytics.recent")}
+            className="xl:col-span-4"
+            action={
+              kpiFocusLabel ? (
+                <span className="rounded-full bg-sky-500/15 px-2.5 py-1 text-[10px] font-semibold text-sky-700 dark:text-sky-300">
+                  {t("tasks.analytics.showing")}: {kpiFocusLabel}
+                </span>
+              ) : null
+            }
+          >
             {recent.length === 0 ? (
               <p className="text-sm text-muted-foreground">{t("ui.empty")}</p>
             ) : (

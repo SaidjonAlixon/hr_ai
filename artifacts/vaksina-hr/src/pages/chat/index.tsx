@@ -1120,21 +1120,32 @@ export default function ChatPage() {
                                   );
                                 }
                                 return (
-                                  <a
+                                  <button
                                     key={a.id}
-                                    href={
-                                      a.url.startsWith("/api/uploads/")
-                                        ? `${a.url}${a.url.includes("?") ? "&" : "?"}download=1`
-                                        : a.url
-                                    }
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    download={a.name}
-                                    className="flex items-center gap-2 rounded-lg bg-black/20 px-2.5 py-1.5 text-xs hover:bg-black/30"
+                                    type="button"
+                                    onClick={() => {
+                                      void (async () => {
+                                        const href = a.url.startsWith("/api/uploads/")
+                                          ? `${a.url}${a.url.includes("?") ? "&" : "?"}download=1`
+                                          : a.url;
+                                        try {
+                                          const { deliverFileFromUrl, isTelegramMiniApp } =
+                                            await import("@/lib/tg-download");
+                                          if (isTelegramMiniApp()) {
+                                            await deliverFileFromUrl(a.url, a.name);
+                                            return;
+                                          }
+                                        } catch (err) {
+                                          console.error(err);
+                                        }
+                                        window.open(href, "_blank", "noopener,noreferrer");
+                                      })();
+                                    }}
+                                    className="flex w-full items-center gap-2 rounded-lg bg-black/20 px-2.5 py-1.5 text-left text-xs hover:bg-black/30"
                                   >
                                     <FileText className="h-4 w-4 shrink-0 text-[#8b9aab]" />
                                     <span className="truncate">{a.name}</span>
-                                  </a>
+                                  </button>
                                 );
                               })}
                             </div>

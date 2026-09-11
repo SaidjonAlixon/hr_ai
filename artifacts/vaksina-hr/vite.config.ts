@@ -21,7 +21,8 @@ export default defineConfig({
   plugins: [
     react(),
     tailwindcss(),
-    runtimeErrorOverlay(),
+    // Replit overlay lokalda bo‘sh "(unknown runtime error)" chiqarishi mumkin — faqat Replitda
+    ...(process.env.REPL_ID !== undefined ? [runtimeErrorOverlay()] : []),
     ...(process.env.NODE_ENV !== 'production' &&
     process.env.REPL_ID !== undefined
       ? [

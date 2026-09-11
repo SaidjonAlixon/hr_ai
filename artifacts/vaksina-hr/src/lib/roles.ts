@@ -49,8 +49,8 @@ export function isItRole(role?: string | null): boolean {
   return !!role && (IT_ROLES as readonly string[]).includes(role);
 }
 
-export function isTexnikRole(role?: string | null): boolean {
-  return role === "texnik" || role === "texnik_rahbar";
+export function isTexnikRole(_role?: string | null): boolean {
+  return false;
 }
 
 export function canViewReviziya(role?: string | null): boolean {
@@ -114,7 +114,7 @@ export function canViewEmployees(role?: string | null): boolean {
   if (role === "mudir" || role === "farmasevt" || role === "stajyor" || role === "koordinator") {
     return false;
   }
-  if (role === "mentor" || role === "recruiter" || role === "moliya") return false;
+  if (role === "recruiter" || role === "moliya") return false;
   if (isLimitedOfficeStaffRole(role)) return false;
   return isDeptHeadRole(role);
 }
@@ -124,9 +124,7 @@ export function canViewEmployees(role?: string | null): boolean {
  * lekin qo‘shish/tahrir/o‘chirish cheklangan (view-only).
  */
 export const EMPLOYEE_VIEW_ONLY_ROLES = [
-  "department_head",
   "it_rahbar",
-  "texnik_rahbar",
   "reviziya_rahbar",
   "moliya_rahbar",
   "taminot_rahbar",
@@ -159,9 +157,7 @@ export function canViewEmployeeDuplicates(role?: string | null): boolean {
 }
 
 export const DEPT_HEAD_ROLES = [
-  "department_head",
   "it_rahbar",
-  "texnik_rahbar",
   "reviziya_rahbar",
   "sb_boshliq",
   "hr_direktor",
@@ -189,6 +185,10 @@ export const LIMITED_OFFICE_STAFF_ROLES = [
   "ombor",
   "oshpaz",
   "marketing",
+  "kassir",
+  "yurist",
+  "komunalniy",
+  "direktor_yordamchisi",
 ] as const;
 
 export function isLimitedOfficeStaffRole(role?: string | null): boolean {
@@ -300,6 +300,11 @@ export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);
 }
 
+/** Bog‘lanish (filial telefon / telegram) — faqat mudir va koordinator */
+export function canAccessBoglanish(role?: string | null): boolean {
+  return role === "mudir" || role === "koordinator";
+}
+
 /** Ish o‘rinlari, nomzod, suhbat, stajirovka — faqat HR oilasi + admin/rekruter/trener */
 export const HR_RECRUITMENT_PATHS = [
   "/vacancies",
@@ -335,13 +340,9 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   ...HR_ROLE_LABELS,
   recruiter: "Rekruter",
   trainer: "Trener",
-  mentor: "Mentor",
   director: "Direktor",
-  department_head: "Bo‘lim boshlig‘i",
   mudir: "Mudir",
   koordinator: "Koordinator",
-  texnik: "Texnik",
-  texnik_rahbar: "Texnik bo‘limi rahbari",
   it: "AyTi mutaxassisi",
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
@@ -372,6 +373,10 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   distrib: "Distribyutsiya xodimi",
   distrib_hr: "Distribyutsiya HR",
   distrib_rahbar: "Distribyutsiya rahbari",
+  kassir: "Kassir",
+  yurist: "Yurist",
+  komunalniy: "Kommunal",
+  direktor_yordamchisi: "Direktor yordamchisi",
 };
 
 export function userRoleLabel(role?: string | null): string {

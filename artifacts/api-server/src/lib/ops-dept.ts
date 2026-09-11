@@ -4,21 +4,21 @@ export function isItRole(role?: string | null) {
   return isItUserRole(role);
 }
 
-export function isTexnikRole(role?: string | null) {
-  return role === "texnik" || role === "texnik_rahbar";
+export function isTexnikRole(_role?: string | null) {
+  return false;
 }
 
 export function canViewOpsDept(dept: "it" | "texnik", role?: string | null) {
-  if (role === "admin" || role === "director") return true;
-  if (role === "mudir" || role === "koordinator") return true;
+  if (role === "admin" || role === "director") return dept === "it";
+  if (role === "mudir" || role === "koordinator") return dept === "it";
   if (dept === "it") return isItRole(role);
-  return isTexnikRole(role);
+  return false;
 }
 
 export function canManageOpsDept(dept: "it" | "texnik", role?: string | null) {
+  if (dept !== "it") return false;
   if (role === "admin") return true;
-  if (dept === "it") return isItRole(role);
-  return isTexnikRole(role);
+  return isItRole(role);
 }
 
 export const IT_CATEGORIES = [

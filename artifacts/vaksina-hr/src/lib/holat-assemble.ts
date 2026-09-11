@@ -57,6 +57,10 @@ const LOGIN_UZ: Record<string, string> = {
   marketing: "Marketing xodimi",
   revizor: "Revizor-yig‘uvchi",
   reviziya_rahbar: "Reviziya bo‘limi rahbari",
+  kassir: "Kassir",
+  yurist: "Yurist",
+  komunalniy: "Kommunal",
+  direktor_yordamchisi: "Direktor yordamchisi",
 };
 
 const EMP_STATUS_UZ: Record<string, string> = {

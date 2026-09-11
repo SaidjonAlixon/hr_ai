@@ -1,5 +1,7 @@
 import { Router, type IRouter } from "express";
-import { and, eq, gt, ne, sql } from "drizzle-orm";
+import express from "express";
+import { and, asc, eq, gt, isNotNull, ne, sql } from "drizzle-orm";
+import ExcelJS from "exceljs";
 import {
   db,
   usersTable,
@@ -7,6 +9,9 @@ import {
   telegramAuthTokensTable,
 } from "@workspace/db";
 import { setTelegramSessionCookie } from "../lib/session";
+import { requireAuth, type AuthRequest } from "../middlewares/auth";
+import { canManageSettings } from "../lib/roles";
+import { formatPersonName } from "../lib/person-name";
 import {
   answerCallbackQuery,
   getMe,
@@ -16,6 +21,7 @@ import {
   parseLoginPassword,
   publicAppUrl,
   ROLE_LABEL_UZ,
+  sendDocument,
   sendMessage,
   setMyCommands,
   setWebhook,
@@ -169,6 +175,12 @@ function formatUserCard(user: {
   if (user.phone) {
     lines.push(`📞 Telefon: ${escapeHtml(user.phone)}`);
   }
+  if (canManageSettings(user.role)) {
+    lines.push(
+      ``,
+      `📊 Admin: <b>/hisobot</b> — Telegram bot foydalanuvchilari Excel`,
+    );
+  }
   lines.push(
     ``,
     `Pastdagi <b>Platformaga kirish</b> — istalgan vaqt oching (login/parol bir marta yetarli).`,
@@ -209,17 +221,167 @@ function welcomeText(name?: string): string {
   ].join("\n");
 }
 
-function helpText(): string {
-  return [
+function helpText(isAdmin = false): string {
+  const lines = [
     `<b>Buyruqlar</b>`,
     `/start — boshidan boshlash`,
     `/holat yoki /kirish — yangi «Platformaga kirish» havolasi`,
     `/davomat — Face ID davomat (Mini App)`,
     `/chiqish — Telegram bog‘lanishni uzish`,
     `/yordam — yordam`,
-    ``,
-    `Login/parolni yuqoridagi namuna tartibda yuboring.`,
-  ].join("\n");
+  ];
+  if (isAdmin) {
+    lines.splice(5, 0, `/hisobot — Telegram bot foydalanuvchilari (Excel)`);
+  }
+  lines.push(``, `Login/parolni yuqoridagi namuna tartibda yuboring.`);
+  return lines.join("\n");
+}
+
+async function buildTelegramUsersExcel(): Promise<{
+  buffer: Buffer;
+  count: number;
+  filename: string;
+}> {
+  const rows = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      login: usersTable.login,
+      role: usersTable.role,
+      phone: usersTable.phone,
+      status: usersTable.status,
+      telegramId: usersTable.telegramId,
+      departmentName: departmentsTable.name,
+      createdAt: usersTable.createdAt,
+    })
+    .from(usersTable)
+    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
+    .where(isNotNull(usersTable.telegramId))
+    .orderBy(asc(usersTable.fullName));
+
+  const linked = rows.filter((r) => String(r.telegramId || "").trim().length > 0);
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "VAKSINA MED HR Bot";
+  wb.created = new Date();
+  const sheet = wb.addWorksheet("Telegram foydalanuvchilar", {
+    views: [{ state: "frozen", ySplit: 2 }],
+  });
+
+  sheet.mergeCells("A1:I1");
+  const title = sheet.getCell("A1");
+  title.value = `VAKSINA MED — Telegram bot foydalanuvchilari · Jami: ${linked.length}`;
+  title.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
+  title.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  sheet.getRow(1).height = 30;
+
+  const headers = [
+    "№",
+    "F.I.Sh.",
+    "Login",
+    "Rol",
+    "Bo‘lim",
+    "Telefon",
+    "Holat",
+    "Telegram ID",
+    "Ro‘yxatdan o‘tgan",
+  ];
+  const headerRow = sheet.getRow(2);
+  headers.forEach((h, i) => {
+    const cell = headerRow.getCell(i + 1);
+    cell.value = h;
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1A5F8A" } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  });
+  headerRow.height = 24;
+
+  sheet.columns = [
+    { width: 5 },
+    { width: 28 },
+    { width: 18 },
+    { width: 20 },
+    { width: 22 },
+    { width: 16 },
+    { width: 12 },
+    { width: 18 },
+    { width: 18 },
+  ];
+
+  linked.forEach((u, idx) => {
+    const zebra = idx % 2 === 0 ? "FFF7FAFC" : "FFFFFFFF";
+    const values = [
+      idx + 1,
+      formatPersonName(u.fullName) || u.fullName || "—",
+      u.login || "—",
+      ROLE_LABEL_UZ[u.role] || u.role || "—",
+      u.departmentName || "—",
+      u.phone || "—",
+      statusLabelUz(u.status),
+      String(u.telegramId || ""),
+      u.createdAt
+        ? new Date(u.createdAt).toLocaleString("uz-UZ", {
+            day: "2-digit",
+            month: "2-digit",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          })
+        : "—",
+    ];
+    const row = sheet.addRow(values);
+    row.eachCell((cell, col) => {
+      cell.font = { name: "Calibri", size: 11, bold: col === 2 };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: zebra } };
+      cell.alignment = {
+        vertical: "middle",
+        horizontal: col === 1 || col === 7 ? "center" : "left",
+      };
+      if (col === 6 || col === 8) cell.numFmt = "@";
+    });
+    row.height = 20;
+  });
+
+  const footer = sheet.addRow([]);
+  sheet.mergeCells(`A${footer.number}:I${footer.number}`);
+  const fcell = sheet.getCell(`A${footer.number}`);
+  fcell.value = `Jami ulangan: ${linked.length} ta · ${new Date().toLocaleString("uz-UZ")} · Faqat telegram_id bog‘langan foydalanuvchilar`;
+  fcell.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF64748B" } };
+
+  const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+  const stamp = new Date().toISOString().slice(0, 10);
+  return {
+    buffer,
+    count: linked.length,
+    filename: `telegram-foydalanuvchilar_${stamp}.xlsx`,
+  };
+}
+
+async function handleHisobot(chatId: number | string, linked: NonNullable<Awaited<ReturnType<typeof getUserWithDept>>>) {
+  if (!canManageSettings(linked.role)) {
+    await sendMessage(
+      chatId,
+      "⛔ <b>/hisobot</b> faqat <b>Admin</b> yoki <b>Direktor</b> uchun.\nSizning rolingiz: " +
+        escapeHtml(ROLE_LABEL_UZ[linked.role] || linked.role),
+    );
+    return;
+  }
+
+  await sendMessage(chatId, "⏳ Telegram foydalanuvchilar hisoboti tayyorlanmoqda…");
+  try {
+    const { buffer, count, filename } = await buildTelegramUsersExcel();
+    await sendDocument(chatId, buffer, filename, {
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      caption: `📊 Telegram bot foydalanuvchilari\nJami ulangan: ${count} ta`,
+    });
+  } catch (err) {
+    console.error("telegram /hisobot:", err);
+    await sendMessage(
+      chatId,
+      `❌ Hisobot yuborilmadi: ${escapeHtml((err as Error)?.message || "xato")}`,
+    );
+  }
 }
 
 async function sendLoggedInCard(
@@ -243,6 +405,9 @@ async function sendLoggedInCard(
   }
   if (davomatUrl) {
     rows.push([{ text: "📋 Davomat — Face ID", web_app: { url: davomatUrl } }]);
+  }
+  if (canManageSettings(user.role)) {
+    rows.push([{ text: "📊 Hisobot — Telegram Excel", callback_data: "hisobot" }]);
   }
   rows.push([{ text: "🔄 Yangi kirish havolasi", callback_data: "refresh_entry" }]);
   rows.push([{ text: "🚪 Chiqish", callback_data: "logout" }]);
@@ -360,6 +525,15 @@ async function handleUpdate(update: TelegramUpdate) {
       await sendLoggedInCard(chatId, linked, String(fromId));
       return;
     }
+    if (data === "hisobot") {
+      const linked = await findUserByTelegramId(String(fromId));
+      if (!linked || !canSignIn(linked.status)) {
+        await sendMessage(chatId, "Avval login va parol yuboring.\n/start");
+        return;
+      }
+      await handleHisobot(chatId, linked);
+      return;
+    }
     return;
   }
 
@@ -375,7 +549,8 @@ async function handleUpdate(update: TelegramUpdate) {
     return;
   }
   if (text === "/yordam" || text === "/help") {
-    await sendMessage(chatId, helpText());
+    const linked = await findUserByTelegramId(String(fromId));
+    await sendMessage(chatId, helpText(canManageSettings(linked?.role)));
     return;
   }
   if (text === "/holat" || text === "/kirish") {
@@ -385,6 +560,15 @@ async function handleUpdate(update: TelegramUpdate) {
       return;
     }
     await sendLoggedInCard(chatId, linked, String(fromId));
+    return;
+  }
+  if (text === "/hisobot") {
+    const linked = await findUserByTelegramId(String(fromId));
+    if (!linked || !canSignIn(linked.status)) {
+      await sendMessage(chatId, "Avval admin login/parol bilan botga kiring.\n/start");
+      return;
+    }
+    await handleHisobot(chatId, linked);
     return;
   }
   if (text === "/davomat") {
@@ -519,6 +703,75 @@ router.post("/telegram/mini-auth", async (req, res): Promise<void> => {
   }
 });
 
+/** Mini App: faylni foydalanuvchi Telegram chatiga yuborish */
+router.post(
+  "/telegram/send-file",
+  requireAuth,
+  express.raw({ type: () => true, limit: "15mb" }),
+  async (req: AuthRequest, res): Promise<void> => {
+    try {
+      if (!isTelegramConfigured()) {
+        res.status(503).json({ error: "Telegram bot sozlanmagan" });
+        return;
+      }
+      if (!req.userId) {
+        res.status(401).json({ error: "Avtorizatsiya kerak" });
+        return;
+      }
+
+      const [user] = await db
+        .select({ id: usersTable.id, telegramId: usersTable.telegramId })
+        .from(usersTable)
+        .where(eq(usersTable.id, req.userId))
+        .limit(1);
+
+      if (!user?.telegramId) {
+        res.status(400).json({
+          error: "Telegram bog‘lanmagan. Avval botda login/parol yuboring.",
+          code: "telegram_not_linked",
+        });
+        return;
+      }
+
+      const buffer = Buffer.isBuffer(req.body)
+        ? req.body
+        : Buffer.from(req.body ?? []);
+      if (!buffer.length) {
+        res.status(400).json({ error: "Fayl yuborilmadi" });
+        return;
+      }
+
+      let fileName = "fayl";
+      const rawName = req.headers["x-file-name"];
+      if (typeof rawName === "string" && rawName.trim()) {
+        try {
+          fileName = decodeURIComponent(rawName).slice(0, 120);
+        } catch {
+          fileName = rawName.slice(0, 120);
+        }
+      }
+
+      const mimeType =
+        (typeof req.headers["content-type"] === "string" &&
+          req.headers["content-type"] !== "application/octet-stream"
+          ? req.headers["content-type"]
+          : undefined) || undefined;
+
+      await sendDocument(user.telegramId, buffer, fileName, {
+        mimeType,
+        caption: `📁 ${fileName}`,
+      });
+
+      res.json({ ok: true, sentTo: "telegram" });
+    } catch (err) {
+      console.error("telegram send-file:", err);
+      res.status(503).json({
+        error: (err as Error)?.message || "Telegramga yuborilmadi",
+      });
+    }
+  },
+);
+
 /** Holat: bot sozlanganmi */
 router.get("/telegram/status", async (_req, res): Promise<void> => {
   const configured = isTelegramConfigured();
@@ -582,6 +835,7 @@ router.post("/telegram/setup", async (req, res): Promise<void> => {
       { command: "start", description: "Boshlash / kirish" },
       { command: "holat", description: "Akkaunt va Mini App" },
       { command: "davomat", description: "Face ID davomat" },
+      { command: "hisobot", description: "Admin: Telegram Excel hisobot" },
       { command: "chiqish", description: "Bog‘lanishni uzish" },
       { command: "yordam", description: "Yordam" },
     ]);

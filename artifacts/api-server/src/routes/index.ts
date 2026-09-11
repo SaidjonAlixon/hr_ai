@@ -44,12 +44,16 @@ import helpRouter from "./help";
 import javobOlishRouter from "./javob-olish";
 import notifTestRouter from "./notif-test";
 import pushRouter from "./push";
+import boglanishRouter from "./boglanish";
+import telegramFilialRouter from "./telegram-filial";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
 router.use(uploadsRouter);
 router.use(pharmacyNetworkRouter);
+router.use(boglanishRouter);
+router.use(telegramFilialRouter);
 router.use(jobsRouter);
 router.use(branchNeedsRouter);
 router.use(branchAuditsRouter);

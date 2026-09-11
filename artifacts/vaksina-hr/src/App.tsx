@@ -63,6 +63,7 @@ import DavomatFacePage from './pages/davomat/face';
 import DavomatQrPage from './pages/davomat/qr';
 import SmenaFilialPage from './pages/smena-filial/index';
 import JavobOlishPage from './pages/javob-olish/index';
+import BoglanishPage from './pages/boglanish/index';
 import NotificationsPage from './pages/notifications/index';
 import TgEntryPage from './pages/tg-entry';
 import NotFound from './pages/not-found';
@@ -165,6 +166,7 @@ function Router() {
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
       <ProtectedRoute path="/javob-olish" component={JavobOlishPage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
+      <ProtectedRoute path="/boglanish" component={BoglanishPage} />
       <ProtectedRoute path="/distribyutsiya" component={DistribyutsiyaPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/internships" component={InternshipsPage} />

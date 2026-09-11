@@ -72,6 +72,7 @@ export const ru: Messages = {
   "nav.javobOlish": "Ответ на звонок",
   "nav.checklistStatus": "Статус чек-листа",
   "nav.pharmacy": "Сеть аптек",
+  "nav.boglanish": "Связь",
   "nav.holat": "Состояние",
   "nav.ehtiyoj": "Потребность",
   "nav.pipeline": "Воронка",

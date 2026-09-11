@@ -49,6 +49,10 @@ const ROLE_POSITION: Record<string, string> = {
   oshpaz: "Oshpaz",
   marketing_rahbar: "Marketing bo‘lim boshlig‘i",
   marketing: "Marketing xodimi",
+  kassir: "Kassir",
+  yurist: "Yurist",
+  komunalniy: "Kommunal",
+  direktor_yordamchisi: "Direktor yordamchisi",
 };
 
 function orgRoleFromUserRole(role: string): string | null {

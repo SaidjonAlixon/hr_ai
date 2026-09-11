@@ -81,15 +81,19 @@ export async function notifyUser(opts: {
   telegram?: boolean;
   /** Standart: true — telefonga Chrome/Safari push */
   webPush?: boolean;
+  /** Standart: true — tizim ichidagi xabarlar jadvali */
+  system?: boolean;
   title?: string;
 }): Promise<void> {
   if (!opts.userId) return;
-  await db.insert(notificationsTable).values({
-    userId: opts.userId,
-    text: opts.text,
-    type: opts.type,
-    linkUrl: opts.linkUrl,
-  });
+  if (opts.system !== false) {
+    await db.insert(notificationsTable).values({
+      userId: opts.userId,
+      text: opts.text,
+      type: opts.type,
+      linkUrl: opts.linkUrl,
+    });
+  }
   if (opts.telegram) {
     await pushTelegramToUser(opts.userId, opts.text, opts.linkUrl);
   }

@@ -95,6 +95,42 @@ export async function sendMessage(
   });
 }
 
+/** Faylni Telegram chatga yuborish (private chat_id = telegram user id) */
+export async function sendDocument(
+  chatId: number | string,
+  file: Buffer,
+  filename: string,
+  opts?: { mimeType?: string; caption?: string },
+) {
+  const token = botToken();
+  if (!token) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
+  if (!file?.length) throw new Error("Fayl bo‘sh");
+
+  const safeName = String(filename || "fayl")
+    .replace(/[/\\]/g, "_")
+    .slice(0, 120);
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append(
+    "document",
+    new Blob([new Uint8Array(file)], {
+      type: opts?.mimeType || "application/octet-stream",
+    }),
+    safeName,
+  );
+  if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+
+  const res = await fetch(`${TG_API}/bot${token}/sendDocument`, {
+    method: "POST",
+    body: form,
+  });
+  const data = (await res.json()) as { ok: boolean; description?: string };
+  if (!data.ok) {
+    throw new Error(data.description || "Telegram sendDocument xato");
+  }
+  return data;
+}
+
 export async function answerCallbackQuery(id: string, text?: string) {
   return tgCall("answerCallbackQuery", {
     callback_query_id: id,
@@ -246,6 +282,10 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   moliya: "Moliyachi",
   revizor: "Revizor-yig‘uvchi",
   reviziya_rahbar: "Reviziya bo‘limi rahbari",
+  kassir: "Kassir",
+  yurist: "Yurist",
+  komunalniy: "Kommunal",
+  direktor_yordamchisi: "Direktor yordamchisi",
 };
 
 export function statusLabelUz(status?: string | null): string {

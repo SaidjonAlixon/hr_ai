@@ -784,15 +784,6 @@ export async function downloadHolatXlsxFile(
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
   const stamp = new Date().toISOString().slice(0, 10);
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `VAKSINA_Holat_${SECTION_FILE[section]}_${stamp}.xlsx`;
-  a.rel = "noopener";
-  document.body.appendChild(a);
-  a.click();
-  window.setTimeout(() => {
-    a.remove();
-    URL.revokeObjectURL(url);
-  }, 1500);
+  const { deliverFile } = await import("./tg-download");
+  await deliverFile(blob, `VAKSINA_Holat_${SECTION_FILE[section]}_${stamp}.xlsx`);
 }

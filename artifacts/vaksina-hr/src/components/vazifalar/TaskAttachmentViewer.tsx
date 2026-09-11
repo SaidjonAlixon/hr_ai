@@ -79,6 +79,19 @@ export function TaskAttachmentViewer({ file, onClose, className }: Props) {
   const office = isOfficeAtt(file);
   const sheet = isSpreadsheetAtt(file);
 
+  const onDownload = async () => {
+    try {
+      const { deliverFileFromUrl, isTelegramMiniApp } = await import("@/lib/tg-download");
+      if (isTelegramMiniApp()) {
+        await deliverFileFromUrl(file.url, file.name);
+        return;
+      }
+    } catch (err) {
+      console.error(err);
+    }
+    window.open(downloadUrl, "_blank", "noopener,noreferrer");
+  };
+
   const Icon = image ? FileImage : sheet ? FileSpreadsheet : FileText;
   const kindLabel = image
     ? "Rasm"
@@ -129,11 +142,15 @@ export function TaskAttachmentViewer({ file, onClose, className }: Props) {
               Yangi oyna
             </a>
           </Button>
-          <Button type="button" variant="outline" size="sm" className="h-8 gap-1.5 rounded-lg" asChild>
-            <a href={downloadUrl} download={file.name} target="_blank" rel="noreferrer">
-              <Download className="h-3.5 w-3.5" />
-              <span className="hidden sm:inline">Yuklash</span>
-            </a>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 gap-1.5 rounded-lg"
+            onClick={() => void onDownload()}
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Yuklash</span>
           </Button>
           <Button
             type="button"
@@ -190,11 +207,15 @@ export function TaskAttachmentViewer({ file, onClose, className }: Props) {
                     To‘liq ochish
                   </a>
                 </Button>
-                <Button type="button" size="lg" variant="outline" className="rounded-xl px-6" asChild>
-                  <a href={downloadUrl} download={file.name}>
-                    <Download className="mr-2 h-4 w-4" />
-                    Yuklab olish
-                  </a>
+                <Button
+                  type="button"
+                  size="lg"
+                  variant="outline"
+                  className="rounded-xl px-6"
+                  onClick={() => void onDownload()}
+                >
+                  <Download className="mr-2 h-4 w-4" />
+                  Yuklab olish
                 </Button>
               </div>
             </div>
@@ -216,11 +237,14 @@ export function TaskAttachmentViewer({ file, onClose, className }: Props) {
                     Ochish
                   </a>
                 </Button>
-                <Button type="button" variant="outline" className="rounded-xl" asChild>
-                  <a href={downloadUrl} download={file.name}>
-                    <Download className="mr-1.5 h-4 w-4" />
-                    Yuklash
-                  </a>
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="rounded-xl"
+                  onClick={() => void onDownload()}
+                >
+                  <Download className="mr-1.5 h-4 w-4" />
+                  Yuklash
                 </Button>
               </div>
             </div>

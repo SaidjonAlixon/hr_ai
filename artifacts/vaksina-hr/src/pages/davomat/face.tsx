@@ -144,8 +144,8 @@ function formatElapsed(ms: number): string {
   return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/** Smena tugagach Ketdim uchun 2 soatlik oyna (backend CHECKOUT_GRACE_MS bilan bir xil) */
-const CHECKOUT_GRACE_MS = 2 * 60 * 60 * 1000;
+/** Ketdim oxirgi muddati — backend CHECKOUT_DEADLINE_HM bilan bir xil */
+const CHECKOUT_DEADLINE_HM = "23:55";
 
 function addYmdDays(ymd: string, days: number): string {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -153,11 +153,40 @@ function addYmdDays(ymd: string, days: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
+function ymdInTashkent(ms: number): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(new Date(ms));
+}
+
 /** workDate + endHm → smena tugashi (Toshkent, UTC+5) */
 function shiftEndMs(workDateYmd: string, endHm: string, overnight?: boolean): number {
   const endDay = overnight ? addYmdDays(workDateYmd, 1) : workDateYmd;
   const hm = /^\d{1,2}:\d{2}$/.test(endHm) ? endHm : "18:00";
   return new Date(`${endDay}T${hm}:00+05:00`).getTime();
+}
+
+/** Smena tugagan kunning 23:55 (Toshkent) — Ketdim muddati */
+function checkoutDeadlineMs(workDateYmd: string, endHm: string, overnight?: boolean): number {
+  const endMs = shiftEndMs(workDateYmd, endHm, overnight);
+  const endDayYmd = ymdInTashkent(endMs);
+  return new Date(`${endDayYmd}T${CHECKOUT_DEADLINE_HM}:00+05:00`).getTime();
+}
+
+/** Masofa: 1 km dan yuqori — km, aks holda metr */
+function formatMetersOrKm(meters: number): string {
+  if (!Number.isFinite(meters)) return "—";
+  const abs = Math.abs(meters);
+  if (abs >= 1000) {
+    const km = abs / 1000;
+    const raw = km >= 10 ? km.toFixed(1) : km.toFixed(2);
+    const value = raw.replace(/\.0$/, "").replace(/(\.\d)0$/, "$1");
+    return `${value} km`;
+  }
+  return `${Math.round(abs)} m`;
 }
 
 function formatHours(mins: number, t: Translate): string {
@@ -1139,10 +1168,10 @@ export default function DavomatFacePage() {
     const overnight =
       workplace?.shift?.overnight ??
       (user?.role ? Boolean(workShiftForUserRole(user.role).overnight) : false);
-    const graceCap = shiftEndMs(workDateYmd, shiftEnd, overnight) + CHECKOUT_GRACE_MS;
+    const deadlineCap = checkoutDeadlineMs(workDateYmd, shiftEnd, overnight);
     const rawEnd = checkOutAtIso
       ? new Date(checkOutAtIso).getTime()
-      : Math.min(nowTick, graceCap);
+      : Math.min(nowTick, deadlineCap);
     return formatElapsed(Math.max(0, rawEnd - start));
   }, [
     checkInAtIso,
@@ -1212,6 +1241,12 @@ export default function DavomatFacePage() {
     "18:00";
   /** Smena tugaganmi — 1-smena 17:00, ofis 18:00, 2-smena 23:45 */
   const afterShiftEnd = isAtOrAfterHm(nowTick, shiftEndHm);
+  const shiftOvernight =
+    workplace?.shift?.overnight ??
+    (user?.role ? Boolean(workShiftForUserRole(user.role).overnight) : false);
+  /** Keldimdan keyin Ketdim 23:55 gacha ochiq; undan keyin yopiladi */
+  const afterCheckoutDeadline =
+    nowTick > checkoutDeadlineMs(workDateYmd, shiftEndHm, shiftOvernight);
 
   /**
    * Face ID skani davomat profilini aniqlaydi (tizim login emas).
@@ -1538,8 +1573,24 @@ export default function DavomatFacePage() {
     if (!usingQr && !gps) return;
     if (!adminQrAnywhere && usingQr && !gps) return;
     if (punchLockRef.current || busy) return;
+    if (action === "out" && afterCheckoutDeadline) {
+      toast({
+        title: t("common.error"),
+        description: `${CHECKOUT_DEADLINE_HM} gacha «Ketdim» bosilmadi — bugun kelmagan deb yopiladi. Kelish vaqti jadvalda saqlanadi.`,
+        variant: "destructive",
+      });
+      return;
+    }
     punchLockRef.current = true;
     setBusy(true);
+    const unlock = () => {
+      punchLockRef.current = false;
+      setBusy(false);
+      setConfirmOut(false);
+    };
+    const refreshQuiet = () => {
+      void Promise.all([loadWorkplace(), loadHistory()]);
+    };
     try {
       if (usingQr && verified.qrPayload) {
         const result = await qrPunchDavomat({
@@ -1569,8 +1620,8 @@ export default function DavomatFacePage() {
             : result.message || "Davomat qayd etildi",
         });
         applyHistory(result.employee);
-        await loadWorkplace();
-        await loadHistory();
+        unlock();
+        refreshQuiet();
         return;
       }
 
@@ -1600,8 +1651,8 @@ export default function DavomatFacePage() {
         description: result.message,
       });
       applyHistory(result.employee);
-      await loadWorkplace();
-      await loadHistory();
+      unlock();
+      refreshQuiet();
     } catch (err) {
       if (
         err instanceof DavomatApiError &&
@@ -1616,8 +1667,26 @@ export default function DavomatFacePage() {
           checkOutAt: err.checkOutAt || verified.checkOutAt,
         });
         toast({ title: t("davomat.alreadyMarked"), description: err.message });
-        await loadWorkplace();
-        await loadHistory();
+        unlock();
+        refreshQuiet();
+        return;
+      }
+      if (err instanceof DavomatApiError && err.code === "checkout_window_closed") {
+        setVerified({
+          ...verified,
+          nextAction: "done",
+          checkIn: err.checkIn || verified.checkIn,
+          checkOut: err.checkOut || "—",
+          checkInAt: err.checkInAt || verified.checkInAt,
+          checkOutAt: null,
+        });
+        toast({
+          title: "Kun yopildi",
+          description: err.message,
+          variant: "destructive",
+        });
+        unlock();
+        refreshQuiet();
         return;
       }
       toast({
@@ -1626,9 +1695,7 @@ export default function DavomatFacePage() {
         variant: "destructive",
       });
     } finally {
-      punchLockRef.current = false;
-      setBusy(false);
-      setConfirmOut(false);
+      if (punchLockRef.current) unlock();
     }
   };
 
@@ -1757,7 +1824,7 @@ export default function DavomatFacePage() {
 
   /** Usul tanlangach Face/QR tugmalari yashirinadi — faqat Keldim/Ketdim */
   const showMethodPicker = showDualMethods && !done && !methodReady;
-  const canPunchOut = hasIn && !done;
+  const canPunchOut = hasIn && !done && !afterCheckoutDeadline;
 
   const onEnrollCaptured = async (
     descriptor: number[] | number[][],
@@ -1788,7 +1855,7 @@ export default function DavomatFacePage() {
   const addressHint = workplace?.employee?.location || department || null;
   const outsideWarn =
     remain != null
-      ? `Hududdan tashqaridasiz — yana ${Math.max(0, Math.round(remain))} m`
+      ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`
       : "Hududdan tashqaridasiz — yashil zonaga kiring";
 
   const cta = (() => {
@@ -1805,7 +1872,7 @@ export default function DavomatFacePage() {
         label: "Hududdan tashqaridasiz",
         sub:
           remain != null
-            ? `Yana ${Math.max(0, Math.round(remain))} m yaqinlashin`
+            ? `Yana ${formatMetersOrKm(Math.max(0, remain))} yaqinlashin`
             : "Avval yashil zona ichiga kiring",
         disabled: true,
         tone: "warn" as const,
@@ -1842,9 +1909,11 @@ export default function DavomatFacePage() {
     }
     return {
       label: "Ketdim",
-      sub: afterShiftEnd
-        ? `Ishlagan: ${elapsedLabel}`
-        : `Ishlagan: ${elapsedLabel} · smena ${shiftEndHm} gacha`,
+      sub: afterCheckoutDeadline
+        ? `${CHECKOUT_DEADLINE_HM} muddati o‘tdi — kun yopiladi`
+        : afterShiftEnd
+          ? `Ishlagan: ${elapsedLabel} · ${CHECKOUT_DEADLINE_HM} gacha yoping`
+          : `Ishlagan: ${elapsedLabel} · smena ${shiftEndHm} gacha`,
       disabled: busy || !canPunchOut,
       tone: "out" as const,
     };

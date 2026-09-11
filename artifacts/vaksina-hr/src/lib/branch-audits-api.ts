@@ -238,14 +238,8 @@ export async function downloadBranchAuditsExcel(params: BranchAuditListParams) {
     throw new Error(message || "Excel yuklanmadi");
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `cheklist-holati-${new Date().toISOString().slice(0, 10)}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const { deliverFile } = await import("./tg-download");
+  await deliverFile(blob, `cheklist-holati-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 export type CoverageBranch = {
@@ -356,14 +350,8 @@ export async function downloadCoverageExcel(params: { from?: string; to?: string
     throw new Error(message || "Excel yuklanmadi");
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `cheklist-qamrov-${new Date().toISOString().slice(0, 10)}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const { deliverFile } = await import("./tg-download");
+  await deliverFile(blob, `cheklist-qamrov-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
 
 export function useCreateBranchAudit() {

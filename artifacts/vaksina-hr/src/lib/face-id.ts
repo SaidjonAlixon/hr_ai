@@ -700,15 +700,9 @@ export async function downloadAdminFacesExcel(params?: {
     throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
   const stamp = new Date().toISOString().slice(0, 10);
-  a.href = url;
-  a.download = `face-id_${stamp}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const { deliverFile } = await import("./tg-download");
+  await deliverFile(blob, `face-id_${stamp}.xlsx`);
 }
 
 export async function adminResetFace(userId: number): Promise<{ message: string }> {

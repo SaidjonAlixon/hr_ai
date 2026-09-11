@@ -159,7 +159,10 @@ export function minutesToHm(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** Smena tugagach Ketdim uchun 2 soatlik oyna */
+/** Smena tugagach Ketdim — ish kuni (smena tugagan kalendar kuni) 23:55 gacha */
+export const CHECKOUT_DEADLINE_HM = "23:55";
+
+/** @deprecated — o‘rniga checkoutDeadlineAt; eski hisoblar uchun qoldirilgan */
 export const CHECKOUT_GRACE_MS = 2 * 60 * 60 * 1000;
 
 function addYmdDays(ymd: string, days: number): string {
@@ -168,11 +171,35 @@ function addYmdDays(ymd: string, days: number): string {
   return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
+export function ymdInTashkent(d: Date): string {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
 /** workDate + endHm → smena tugash vaqti (Toshkent) */
 export function shiftEndAt(workDateYmd: string, endHm: string, overnight?: boolean): Date {
   const endDay = overnight ? addYmdDays(workDateYmd, 1) : workDateYmd;
   const hm = /^\d{1,2}:\d{2}$/.test(endHm) ? endHm : "18:00";
   return new Date(`${endDay}T${hm}:00+05:00`);
+}
+
+/**
+ * Ketdim oxirgi muddati: smena tugagan kunning 23:55 (Toshkent).
+ * Ofis / kunduzgi dorixona: shu kun 23:55.
+ * Tun smenasi: smena tugagan (ertasi) kun 23:55.
+ */
+export function checkoutDeadlineAt(
+  workDateYmd: string,
+  endHm: string,
+  overnight?: boolean,
+): Date {
+  const endAt = shiftEndAt(workDateYmd, endHm, overnight);
+  const endDayYmd = ymdInTashkent(endAt);
+  return new Date(`${endDayYmd}T${CHECKOUT_DEADLINE_HM}:00+05:00`);
 }
 
 export function onTimeUntilHm(start: string, graceMinutes: number): string {

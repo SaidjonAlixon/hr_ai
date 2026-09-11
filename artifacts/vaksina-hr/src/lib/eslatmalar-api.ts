@@ -15,6 +15,8 @@ export type ReminderAttachment = {
 };
 
 export type ReminderStatus = "active" | "completed" | "missed";
+export type ReminderCategory = "work" | "personal" | "meeting" | "check" | "finance" | "other";
+export type ReminderPriority = "low" | "medium" | "high" | "critical";
 
 export type ReminderEvent = {
   id: number;
@@ -32,6 +34,7 @@ export type ReminderEvent = {
 export type Reminder = {
   id: number;
   userId: number;
+  createdById?: number | null;
   title: string;
   description: string | null;
   dueAt: string;
@@ -39,12 +42,18 @@ export type Reminder = {
   remindIntervalMinutes: number | null;
   lastNotifiedAt: string | null;
   attachments: ReminderAttachment[];
+  category?: ReminderCategory | string | null;
+  priority?: ReminderPriority | string | null;
+  notifySystem?: boolean | null;
+  notifyTelegram?: boolean | null;
   status: ReminderStatus;
   completedAt: string | null;
   createdAt: string;
   updatedAt: string;
   remainingMs: number;
   remainingLabel: string;
+  forOthers?: boolean;
+  forMe?: boolean;
   events?: ReminderEvent[];
 };
 
@@ -55,6 +64,14 @@ export type ReminderInput = {
   notifyAt?: string | null;
   remindIntervalMinutes?: number | null;
   attachments?: ReminderAttachment[];
+  category?: ReminderCategory | string;
+  priority?: ReminderPriority | string;
+  notifySystem?: boolean;
+  notifyTelegram?: boolean;
+  /** Boshqa xodimga biriktirish (bitta) */
+  targetUserId?: number | null;
+  /** Bir yoki bir nechta xodimga biriktirish */
+  targetUserIds?: number[];
 };
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
@@ -108,7 +125,7 @@ export function useCreateReminder() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: ReminderInput) =>
-      apiFetch<Reminder>("/reminders", {
+      apiFetch<Reminder & { created?: number; items?: Reminder[] }>("/reminders", {
         method: "POST",
         body: JSON.stringify(body),
       }),

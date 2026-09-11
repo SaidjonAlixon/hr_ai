@@ -4,7 +4,13 @@ export type StaffGroup = "active" | "other";
 
 export async function fetchStaff(
   group: StaffGroup,
-  params?: { search?: string; departmentId?: string; workplace?: string },
+  params?: {
+    search?: string;
+    departmentId?: string;
+    workplace?: string;
+    role?: string;
+    status?: string;
+  },
 ): Promise<Employee[]> {
   const qs = new URLSearchParams();
   qs.set("group", group);
@@ -14,6 +20,12 @@ export async function fetchStaff(
   }
   if (params?.workplace) {
     qs.set("workplace", params.workplace);
+  }
+  if (params?.role && params.role !== "all") {
+    qs.set("role", params.role);
+  }
+  if (params?.status && params.status !== "all") {
+    qs.set("status", params.status);
   }
   const res = await fetch(`/api/employees?${qs.toString()}`, { credentials: "include" });
   if (!res.ok) {
@@ -28,6 +40,8 @@ export function staffQueryKey(
   search: string,
   deptFilter: string,
   workplace: string = "ofis",
+  roleFilter: string = "all",
+  statusFilter: string = "all",
 ) {
-  return ["staff", group, search.trim(), deptFilter, workplace] as const;
+  return ["staff", group, search.trim(), deptFilter, workplace, roleFilter, statusFilter] as const;
 }

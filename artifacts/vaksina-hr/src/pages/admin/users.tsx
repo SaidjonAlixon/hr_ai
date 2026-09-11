@@ -46,13 +46,9 @@ const ROLES = [
   { value: 'hr_menejer', label: 'HR Menejer' },
   { value: 'recruiter', label: 'Rekruter' },
   { value: 'trainer', label: 'Trener' },
-  { value: 'mentor', label: 'Mentor' },
   { value: 'director', label: 'Direktor' },
-  { value: 'department_head', label: "Bo'lim boshlig'i" },
   { value: 'mudir', label: 'Mudir' },
   { value: 'koordinator', label: 'Koordinator' },
-  { value: 'texnik', label: 'Texnik' },
-  { value: 'texnik_rahbar', label: 'Texnik bo‘limi rahbari' },
   { value: 'it_rahbar', label: 'AyTi bo‘lim boshlig‘i' },
   { value: 'it', label: 'AyTi mutaxassisi' },
   { value: 'it_dasturchi', label: 'Dasturchi' },
@@ -83,6 +79,10 @@ const ROLES = [
   { value: 'distrib_rahbar', label: 'Distribyutsiya rahbari' },
   { value: 'distrib_hr', label: 'Distribyutsiya HR' },
   { value: 'distrib', label: 'Distribyutsiya xodimi' },
+  { value: 'kassir', label: 'Kassir' },
+  { value: 'yurist', label: 'Yurist' },
+  { value: 'komunalniy', label: 'Kommunal' },
+  { value: 'direktor_yordamchisi', label: 'Direktor yordamchisi' },
 ] as const;
 
 const STATUSES = [
@@ -200,16 +200,16 @@ export default function AdminUsersPage() {
         throw new Error((body as { error?: string }).error || 'Excel yuklanmadi');
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
       const stamp = new Date().toISOString().slice(0, 10);
-      a.href = url;
-      a.download = `foydalanuvchilar_${stamp}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast({ title: 'Excel yuklandi', description: 'Login va parollar bilan to‘liq ro‘yxat' });
+      const { deliverFile } = await import('../../lib/tg-download');
+      const result = await deliverFile(blob, `foydalanuvchilar_${stamp}.xlsx`);
+      toast({
+        title: result.via === 'telegram' ? 'Telegramga yuborildi' : 'Excel yuklandi',
+        description:
+          result.via === 'telegram'
+            ? 'Fayl bot chatiga yuborildi'
+            : 'Login va parollar bilan to‘liq ro‘yxat',
+      });
     } catch (err: any) {
       toast({
         title: 'Xatolik',

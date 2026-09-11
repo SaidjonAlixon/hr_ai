@@ -20,6 +20,12 @@ export type TaskChecklistItem = {
   done: boolean;
 };
 
+export type TaskChatReplyTo = {
+  id: string;
+  authorName: string;
+  text: string;
+};
+
 export type TaskChatMessage = {
   id: string;
   text: string;
@@ -27,12 +33,28 @@ export type TaskChatMessage = {
   authorRole?: "assigner" | "assignee" | "system";
   createdAt: string;
   attachment?: TaskAttachment | null;
+  /** @ orqali kimga yo‘naltirilgan */
+  mentions?: string[];
+  /** Qaysi xabarga javob */
+  replyTo?: TaskChatReplyTo | null;
 };
 
 export type TaskHistoryEvent = {
   id: string;
   text: string;
   createdAt: string;
+};
+
+/** Mas'ul ko‘chirilganda avvalgi ijrochi tarixi */
+export type TaskAssigneeHistoryItem = {
+  id: string;
+  assigneeKind: "user" | "employee";
+  assigneeId: number;
+  name: string;
+  statusAtTransfer?: string | null;
+  transferredAt: string;
+  byUserId?: number | null;
+  byName?: string | null;
 };
 
 export type TaskMeta = {
@@ -47,8 +69,34 @@ export type TaskMeta = {
   notes?: string;
   formStatus?: string;
   verifiedAt?: string;
+  /** Qabul muddati hisobi shu vaqtdan (qayta biriktirishda) */
+  acceptDeadlineBase?: string;
+  lastReworkNote?: string | null;
+  lastReworkAt?: string | null;
+  lastReworkByName?: string | null;
+  reworkCount?: number;
+  lastReturnAttachments?: TaskAttachment[];
+  submissionHistory?: TaskSubmissionHistoryItem[];
   messages?: TaskChatMessage[];
   history?: TaskHistoryEvent[];
+  assigneeHistory?: TaskAssigneeHistoryItem[];
+  /** Bir nechta xodimga bir vaqtda berilgan vazifalar guruhi */
+  batchId?: string;
+  batchSize?: number;
+};
+
+export type TaskSubmissionHistoryItem = {
+  id: string;
+  note?: string | null;
+  attachments?: TaskAttachment[];
+  completedAt?: string | null;
+  returnedAt?: string | null;
+  returnNote?: string | null;
+  returnAttachments?: TaskAttachment[];
+  returnedByName?: string | null;
+  dueAtBefore?: string | null;
+  dueAtAfter?: string | null;
+  keepDue?: boolean;
 };
 
 export type Vazifa = {
@@ -86,6 +134,8 @@ export type VazifaInput = {
   dueAt?: string | null;
   assigneeKind: "user" | "employee";
   assigneeId: number;
+  /** Bir nechta xodimga bir vaqtda (har biriga alohida vazifa) */
+  assignees?: Array<{ assigneeKind: "user" | "employee"; assigneeId: number }>;
   attachments?: TaskAttachment[];
   meta?: TaskMeta | null;
 };
@@ -167,14 +217,23 @@ export function useSendTaskMessage() {
       id,
       text,
       attachment,
+      mentions,
+      replyTo,
     }: {
       id: number;
       text?: string;
       attachment?: TaskAttachment | null;
+      mentions?: string[];
+      replyTo?: TaskChatReplyTo | null;
     }) =>
       apiFetch<Vazifa>(`/tasks/${id}/messages`, {
         method: "POST",
-        body: JSON.stringify({ text: text || "", attachment: attachment || null }),
+        body: JSON.stringify({
+          text: text || "",
+          attachment: attachment || null,
+          mentions: mentions || [],
+          replyTo: replyTo || null,
+        }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });
@@ -236,14 +295,20 @@ export function useVerifyTask() {
       id,
       action,
       note,
+      keepDue,
+      dueAt,
+      attachments,
     }: {
       id: number;
       action: "approve" | "rework";
       note?: string;
+      keepDue?: boolean;
+      dueAt?: string | null;
+      attachments?: TaskAttachment[];
     }) =>
       apiFetch<Vazifa>(`/tasks/${id}/verify`, {
         method: "POST",
-        body: JSON.stringify({ action, note }),
+        body: JSON.stringify({ action, note, keepDue, dueAt, attachments }),
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["tasks"] });

@@ -20,6 +20,8 @@ export type DavomatDayMetrics = {
   source?: string | null;
   notes?: string | null;
   recordId?: number | null;
+  /** Ofis dam kunida ixtiyoriy kelgan */
+  restDayWork?: boolean;
 };
 
 export type DavomatEmployee = {
@@ -297,9 +299,7 @@ export async function facePunchDavomat(payload: {
   } | null;
   sessionSwitched?: boolean;
 }> {
-  const snapshot = payload.snapshot
-    ? await compressFaceSnapshotAsync(payload.snapshot)
-    : undefined;
+  const snapshot = payload.snapshot;
   return apiJson("/davomat/face-punch", {
     method: "POST",
     body: JSON.stringify({ ...payload, snapshot }),
@@ -591,12 +591,6 @@ export async function downloadDavomatExcel(params: {
   if (!blob.size) {
     throw new Error("Server bo‘sh fayl qaytardi — qayta urinib ko‘ring");
   }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `davomat_${params.from}_${params.to}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const { deliverFile } = await import("./tg-download");
+  return deliverFile(blob, `davomat_${params.from}_${params.to}.xlsx`);
 }

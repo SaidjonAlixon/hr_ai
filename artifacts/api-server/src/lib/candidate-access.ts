@@ -12,7 +12,6 @@ export const ASSIGNABLE_ROLES = [
   "recruiter",
   "trainer",
   "director",
-  "department_head",
 ] as const;
 
 export function isHrManager(role?: string | null): boolean {

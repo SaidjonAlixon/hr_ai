@@ -10,9 +10,7 @@ import {
 
 /** Bo‘lim rahbari — o‘z bo‘limiga xodim qo‘shadi (apteka tarmog‘i alohida). */
 export const DEPT_HEAD_ROLES = [
-  "department_head",
   "it_rahbar",
-  "texnik_rahbar",
   "reviziya_rahbar",
   "sb_boshliq",
   "hr_direktor",
@@ -32,25 +30,24 @@ export const DEPT_HEAD_ROLES = [
 
 const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   it_rahbar: ["it_rahbar", "it", "it_dasturchi", "it_tarmoq"],
-  texnik_rahbar: ["texnik"],
   reviziya_rahbar: ["revizor"],
   sb_boshliq: ["sb"],
-  hr_direktor: ["hr", "hr_menejer", "hr_kadr_rahbar", "hr_auditor", "recruiter", "trainer", "mentor"],
-  hr_kadr_rahbar: ["hr", "hr_menejer", "hr_auditor", "recruiter", "trainer", "mentor"],
-  hr_menejer: ["hr", "recruiter", "trainer", "mentor"],
+  hr_direktor: ["hr", "hr_menejer", "hr_kadr_rahbar", "hr_auditor", "recruiter", "trainer"],
+  hr_kadr_rahbar: ["hr", "hr_menejer", "hr_auditor", "recruiter", "trainer"],
+  hr_menejer: ["hr", "recruiter", "trainer"],
   distrib_rahbar: ["distrib", "distrib_hr"],
   distrib_hr: ["distrib"],
-  moliya_rahbar: ["moliya_xodim"],
+  moliya_rahbar: ["moliya_xodim", "kassir"],
   taminot_rahbar: ["taminot"],
   rivojlantirish_rahbar: ["rivojlantirish"],
-  mamuriy_rahbar: ["mamuriy"],
+  mamuriy_rahbar: ["mamuriy", "komunalniy"],
   gpp_rahbar: ["gpp"],
   ombor_rahbar: ["ombor"],
   oshpaz_rahbar: ["oshpaz"],
   marketing_rahbar: ["marketing"],
 };
 
-const RAHBAR_SUFFIX = /_rahbar$|^sb_boshliq$|^department_head$|^hr_direktor$|^hr_menejer$/;
+const RAHBAR_SUFFIX = /_rahbar$|^sb_boshliq$|^hr_direktor$|^hr_menejer$/;
 
 const BLOCKED_STAFF_ROLES = new Set([
   "admin",
@@ -72,12 +69,10 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   hr_auditor: "HR Auditor",
   recruiter: "Rekruter",
   trainer: "Trener",
-  mentor: "Mentor",
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it: "AyTi mutaxassisi",
   it_dasturchi: "Dasturchi",
   it_tarmoq: "Tarmoq administratori",
-  texnik: "Texnik",
   revizor: "Revizor-yig‘uvchi",
   sb: "SB operatori",
   ombor: "Omborxona xodimi",
@@ -99,6 +94,10 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   oshpaz: "Oshpaz",
   marketing_rahbar: "Marketing bo‘lim boshlig‘i",
   marketing: "Marketing xodimi",
+  kassir: "Kassir",
+  yurist: "Yurist",
+  komunalniy: "Kommunal",
+  direktor_yordamchisi: "Direktor yordamchisi",
 };
 
 export function isDeptHeadRole(role?: string | null): boolean {

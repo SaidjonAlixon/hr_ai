@@ -129,6 +129,11 @@ CREATE TABLE IF NOT EXISTS reminders (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'work';
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'medium';
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS notify_system BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS notify_telegram BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE reminders ADD COLUMN IF NOT EXISTS created_by_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS reminder_events (
   id SERIAL PRIMARY KEY,
@@ -912,6 +917,42 @@ CREATE TABLE IF NOT EXISTS push_vapid_keys (
   subject TEXT NOT NULL DEFAULT 'mailto:admin@vaksina.local',
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS branch_contacts (
+  id SERIAL PRIMARY KEY,
+  branch_employee_id INTEGER NOT NULL,
+  primary_phone TEXT NOT NULL DEFAULT '',
+  extra_phones JSONB NOT NULL DEFAULT '[]'::jsonb,
+  telegram_nick TEXT,
+  contact_from_hm TEXT,
+  contact_to_hm TEXT,
+  updated_by_user_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS branch_contacts_branch_uidx ON branch_contacts (branch_employee_id);
+CREATE INDEX IF NOT EXISTS branch_contacts_updated_by_idx ON branch_contacts (updated_by_user_id);
+
+CREATE TABLE IF NOT EXISTS lokatsiya_bot_users (
+  telegram_user_id BIGINT PRIMARY KEY,
+  chat_id BIGINT NOT NULL,
+  username TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  language_code TEXT,
+  starts_count INTEGER NOT NULL DEFAULT 1,
+  branch_views INTEGER NOT NULL DEFAULT 0,
+  last_action TEXT,
+  is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+  blocked_at TIMESTAMPTZ,
+  first_start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_last_seen_idx ON lokatsiya_bot_users (last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_blocked_idx ON lokatsiya_bot_users (is_blocked);
 `);
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");

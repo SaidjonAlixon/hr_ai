@@ -20,6 +20,7 @@ import {
   parseDavomatStaffFilter,
   staffFilterLabelUz,
 } from "../lib/davomat-staff-filter";
+import { isOfisRestDay } from "../lib/ofis-weekend";
 import { forceBroadcastDavomatToAll, davomatBroadcastTelegramReady, davomatBroadcastMessage } from "../jobs/davomat-reminders";
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
@@ -41,7 +42,8 @@ import {
   normalizeShiftType,
   encodeShiftKeys,
   shiftEndAt,
-  CHECKOUT_GRACE_MS,
+  checkoutDeadlineAt,
+  CHECKOUT_DEADLINE_HM,
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
@@ -332,12 +334,41 @@ function kechikishDisplay(d: DayCellMetrics): string {
   return "Yo'q";
 }
 
-function davomatStatusLine(status: string): string {
+function davomatStatusLine(status: string, restDayWork?: boolean): string {
+  if (restDayWork) return "Qo'shimcha ish (ixtiyoriy)";
   if (status === "late") return "Kechikib keldi";
   if (status === "incomplete") return "Keldi, ketish yozilmagan";
   if (status === "present") return "O'z vaqtida keldi";
   if (status === "leave") return "Ta'tilda";
+  if (status === "rest") return "Dam kuni";
   return "Kelmagan";
+}
+
+function emptyDayMetrics(
+  date: string,
+  status: "absent" | "leave" | "rest",
+  extra?: { source?: string | null; notes?: string | null; recordId?: number | null },
+) {
+  return {
+    date,
+    status,
+    checkIn: "—",
+    checkOut: "—",
+    workedMinutes: 0,
+    workedHours: "0:00",
+    earlyArrivalMin: 0,
+    lateArrivalMin: 0,
+    earlyLeaveMin: 0,
+    overtimeMin: 0,
+    earlyArrivalLabel: "—",
+    lateArrivalLabel: "—",
+    earlyLeaveLabel: "—",
+    overtimeLabel: "—",
+    source: extra?.source ?? null,
+    notes: extra?.notes ?? (status === "rest" ? "Dam kuni (ofis)" : null),
+    recordId: extra?.recordId ?? null,
+    restDayWork: false as boolean,
+  };
 }
 
 type DayCellMetrics = {
@@ -349,6 +380,7 @@ type DayCellMetrics = {
   earlyArrivalLabel: string;
   earlyLeaveLabel: string;
   overtimeLabel: string;
+  restDayWork?: boolean;
 };
 
 /** Har katakda: keldi, ketdi, kechikish, ishlagan — doim ko‘rinadi */
@@ -376,9 +408,22 @@ function applyDavomatDayCell(
   cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true, indent: 1 };
   cell.border = border;
 
-  if (!d || status === "absent") {
+  if (!d || (status === "absent" && (!d.checkIn || d.checkIn === "—"))) {
     cell.value = "Kelmagan\nKeldi: —\nKetdi: —\nKechikish: —\nIshlangan: —";
     cell.font = { ...baseFont, color: { argb: statusFont.absent || "FF94A3B8" } };
+    return;
+  }
+  if (status === "absent") {
+    const cin = d.checkIn && d.checkIn !== "—" ? d.checkIn : "—";
+    cell.value =
+      `Kelmagan (Ketdim yo‘q)\nKeldi: ${cin}\nKetdi: —\nKechikish: —\nIshlangan: —`;
+    cell.font = { ...baseFont, color: { argb: statusFont.absent || "FF94A3B8" } };
+    return;
+  }
+  if (status === "rest") {
+    cell.value =
+      "Dam kuni (ofis)\nShanba–yakshanba dam\nKelish ixtiyoriy\nKeldi: —\nKetdi: —\nIshlangan: —";
+    cell.font = { ...baseFont, color: { argb: statusFont.rest || "FF64748B" } };
     return;
   }
   if (status === "leave") {
@@ -392,21 +437,32 @@ function applyDavomatDayCell(
   const worked = readableWorkedHours(d.workedHours);
   const kech = kechikishDisplay(d);
   const hasLate = kech !== "Yo'q";
+  const restWork = !!d.restDayWork;
 
   const rich: ExcelJS.RichText[] = [
     {
-      text: `${davomatStatusLine(status)}\n`,
+      text: `${davomatStatusLine(status, restWork)}\n`,
       font: { ...baseFont, bold: true, color: { argb: statusFont[status] || "FF0F172A" } },
     },
-    { text: `Keldi: ${cin} (reja ${hours.start})\n`, font: { ...baseFont, color: { argb: "FF0F172A" } } },
-    { text: `Ketdi: ${cout} (reja ${hours.end})\n`, font: { ...baseFont, color: { argb: "FF0F172A" } } },
+    {
+      text: restWork
+        ? `Keldi: ${cin} (ixtiyoriy)\n`
+        : `Keldi: ${cin} (reja ${hours.start})\n`,
+      font: { ...baseFont, color: { argb: "FF0F172A" } },
+    },
+    {
+      text: restWork
+        ? `Ketdi: ${cout}\n`
+        : `Ketdi: ${cout} (reja ${hours.end})\n`,
+      font: { ...baseFont, color: { argb: "FF0F172A" } },
+    },
     { text: "Kechikish: ", font: { ...baseFont, color: { argb: "FF0F172A" } } },
     {
-      text: `${kech}\n`,
+      text: `${restWork ? "—" : kech}\n`,
       font: {
         ...baseFont,
-        bold: hasLate,
-        color: { argb: hasLate ? "FFB91C1C" : "FF64748B" },
+        bold: !restWork && hasLate,
+        color: { argb: !restWork && hasLate ? "FFB91C1C" : "FF64748B" },
       },
     },
     {
@@ -415,17 +471,25 @@ function applyDavomatDayCell(
     },
   ];
 
-  if (d.earlyLeaveLabel && d.earlyLeaveLabel !== "—") {
+  if (!restWork && d.earlyLeaveLabel && d.earlyLeaveLabel !== "—") {
     rich.push({
       text: `\nErta ketish: ${minusDuration(d.earlyLeaveLabel)}`,
       font: { ...baseFont, color: { argb: "FFB45309" } },
     });
   }
-  if (d.overtimeLabel && d.overtimeLabel !== "—") {
-    rich.push({
-      text: `\nQo'shimcha ish: +${d.overtimeLabel.replace(/^−|^-/u, "")}`,
-      font: { ...baseFont, bold: true, color: { argb: "FF047857" } },
-    });
+  if (restWork || (d.overtimeLabel && d.overtimeLabel !== "—")) {
+    const ot =
+      restWork && d.workedHours && d.workedHours !== "0:00"
+        ? readableWorkedHours(d.workedHours)
+        : d.overtimeLabel && d.overtimeLabel !== "—"
+          ? `+${d.overtimeLabel.replace(/^−|^-/u, "")}`
+          : null;
+    if (ot) {
+      rich.push({
+        text: `\nQo'shimcha ish: ${ot}`,
+        font: { ...baseFont, bold: true, color: { argb: "FF047857" } },
+      });
+    }
   }
 
   cell.value = { richText: rich };
@@ -547,6 +611,11 @@ function buildReport(
     }> = [];
 
     for (const e of employees) {
+      const restDay = isOfisRestDay(date, {
+        userRole: e.userRole,
+        orgRole: e.orgRole,
+        position: e.position,
+      });
       const rec = byEmpDate.get(`${e.id}|${date}`);
       if (
         rec?.checkLatitude != null &&
@@ -572,12 +641,19 @@ function buildReport(
         }
       }
       if (!rec || (!rec.checkInAt && rec.status === "absent")) {
+        if (restDay) {
+          // Ofis dam kuni — kelmagan deb hisoblanmaydi
+          continue;
+        }
         absent += 1;
         absentList.push(e.fullName);
         continue;
       }
       if (rec.status === "leave") {
         leave += 1;
+        continue;
+      }
+      if (restDay && !rec.checkInAt) {
         continue;
       }
       const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, staffHours(e));
@@ -591,6 +667,7 @@ function buildReport(
         present += 1;
         presentList.push(e.fullName);
       } else if (m.status === "absent") {
+        if (restDay) continue;
         absent += 1;
         absentList.push(e.fullName);
       } else {
@@ -615,56 +692,45 @@ function buildReport(
   const employeeRows = employees
     .map((e) => {
       const days = dates.map((date) => {
+        const restDay = isOfisRestDay(date, {
+          userRole: e.userRole,
+          orgRole: e.orgRole,
+          position: e.position,
+        });
         const rec = byEmpDate.get(`${e.id}|${date}`);
         if (!rec || (!rec.checkInAt && (rec.status === "absent" || !rec.status))) {
-          return {
-            date,
-            status: "absent" as const,
-            checkIn: "—",
-            checkOut: "—",
-            workedMinutes: 0,
-            workedHours: "0:00",
-            earlyArrivalMin: 0,
-            lateArrivalMin: 0,
-            earlyLeaveMin: 0,
-            overtimeMin: 0,
-            earlyArrivalLabel: "—",
-            lateArrivalLabel: "—",
-            earlyLeaveLabel: "—",
-            overtimeLabel: "—",
-            source: null as string | null,
-            notes: null as string | null,
-            recordId: null as number | null,
-          };
+          if (restDay) {
+            return emptyDayMetrics(date, "rest");
+          }
+          return emptyDayMetrics(date, "absent");
         }
         if (rec.status === "leave") {
-          return {
-            date,
-            status: "leave" as const,
-            checkIn: "—",
-            checkOut: "—",
-            workedMinutes: 0,
-            workedHours: "0:00",
-            earlyArrivalMin: 0,
-            lateArrivalMin: 0,
-            earlyLeaveMin: 0,
-            overtimeMin: 0,
-            earlyArrivalLabel: "—",
-            lateArrivalLabel: "—",
-            earlyLeaveLabel: "—",
-            overtimeLabel: "—",
+          return emptyDayMetrics(date, "leave", {
             source: rec.source,
             notes: rec.notes,
             recordId: rec.id,
-          };
+          });
+        }
+        if (restDay && !rec.checkInAt) {
+          return emptyDayMetrics(date, "rest", {
+            source: rec.source,
+            notes: rec.notes || "Dam kuni (ofis)",
+            recordId: rec.id,
+          });
         }
         const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, staffHours(e));
         return {
           date,
           ...m,
           source: rec.source,
-          notes: rec.notes,
+          notes:
+            restDay && rec.checkInAt
+              ? rec.notes
+                ? `${rec.notes} · Qo'shimcha ish (ixtiyoriy)`
+                : "Qo'shimcha ish (ixtiyoriy, dam kuni)"
+              : rec.notes,
           recordId: rec.id,
+          restDayWork: !!(restDay && rec.checkInAt),
         };
       });
 
@@ -672,10 +738,12 @@ function buildReport(
         (acc, d) => {
           if (d.status === "absent") acc.absent += 1;
           else if (d.status === "leave") acc.leave += 1;
+          else if (d.status === "rest") acc.rest += 1;
           else {
             acc.present += 1;
             if (d.status === "late") acc.late += 1;
             if (d.status === "incomplete") acc.incomplete += 1;
+            if (d.restDayWork) acc.extraWork += 1;
           }
           acc.workedMinutes += d.workedMinutes;
           acc.lateArrivalMin += d.lateArrivalMin;
@@ -690,6 +758,8 @@ function buildReport(
           late: 0,
           incomplete: 0,
           leave: 0,
+          rest: 0,
+          extraWork: 0,
           workedMinutes: 0,
           lateArrivalMin: 0,
           earlyArrivalMin: 0,
@@ -1484,7 +1554,7 @@ async function applyFacePunch(opts: {
         };
       }
 
-      // Smena tugagach +2 soatdan keyin Ketdim qabul qilinmaydi
+      // Ketdim: smena tugagan kun 23:55 gacha; undan keyin — kelmagan (kelish vaqti saqlanadi)
       if (action === "out" && existing?.checkInAt) {
         const sched = workScheduleForStaff(
           userRole,
@@ -1493,13 +1563,13 @@ async function applyFacePunch(opts: {
           punchShiftLabel,
           defs,
         );
-        const endAt = shiftEndAt(workDate, sched.end, sched.overnight);
-        if (now.getTime() > endAt.getTime() + CHECKOUT_GRACE_MS) {
+        const deadlineAt = checkoutDeadlineAt(workDate, sched.end, sched.overnight);
+        if (now.getTime() > deadlineAt.getTime()) {
           await tx
             .update(attendanceRecordsTable)
             .set({
               status: "absent",
-              notes: `auto_absent_no_checkout: Ketdim kechikdi (smena ${sched.end}+2soat)`,
+              notes: `auto_absent_no_checkout: Ketdim ${CHECKOUT_DEADLINE_HM} gacha bosilmadi (smena ${sched.end})`,
               updatedAt: new Date(),
             })
             .where(eq(attendanceRecordsTable.id, existing.id));
@@ -1508,9 +1578,13 @@ async function applyFacePunch(opts: {
             status: 400,
             body: {
               error:
-                "Smena tugagach 2 soat o‘tdi — bugun «kelmagan» deb yopildi. Ertaga «Keldim» dan boshlang.",
+                `${CHECKOUT_DEADLINE_HM} gacha «Ketdim» bosilmadi — bugun «kelmagan» deb yopildi. Kelish vaqti jadvalda saqlanadi. Ertaga «Keldim» dan boshlang.`,
               code: "checkout_window_closed",
               fullName: emp.fullName,
+              checkIn: formatHm(existing.checkInAt),
+              checkOut: "—",
+              checkInAt: existing.checkInAt.toISOString(),
+              checkOutAt: null,
             },
           };
         }
@@ -2364,6 +2438,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       incomplete: "FFF0F9FF",
       absent: "FFF8FAFC",
       leave: "FFF5F3FF",
+      rest: "FFE2E8F0",
     };
     const statusFont: Record<string, string> = {
       present: "FF047857",
@@ -2371,6 +2446,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       incomplete: "FF0369A1",
       absent: "FF94A3B8",
       leave: "FF6D28D9",
+      rest: "FF475569",
     };
 
     const weekdayUz = ["Du", "Se", "Cho", "Pay", "Ju", "Sha", "Yak"];
@@ -2418,6 +2494,8 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       ["Rang: ko'k fon", "Kelgan, lekin ketish yozilmagan"],
       ["Rang: kulrang fon", "Kelmagan"],
       ["Rang: binafsha fon", "Ta'tilda"],
+      ["Rang: och kulrang (Dam kuni)", "Faqat ofis: shanba–yakshanba dam. Kelish majburiy emas"],
+      ["Qo'shimcha ish (ixtiyoriy)", "Ofis dam kunida kelgan bo‘lsa — ish soati hisoblanadi, majburiy emas"],
       ["Varaqlar", "Davomat jadvali → Kunlik xulosa → Xodimlar jami → Kelganlar → Kelmaganlar"],
     ];
     sGuide.getRow(3).getCell(1).value = "Maydon";

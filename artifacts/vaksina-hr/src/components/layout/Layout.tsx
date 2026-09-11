@@ -34,6 +34,7 @@ import {
   Layers,
   Package,
   PhoneCall,
+  Phone,
   Truck,
 } from 'lucide-react';
 import {
@@ -49,6 +50,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
+import { BoglanishMissingBanner } from '@/components/BoglanishMissingBanner';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { FaceIdEnroll } from '@/components/FaceIdEnroll';
@@ -108,7 +110,7 @@ const NAV_SECTIONS: {
     id: 'main',
     label: 'Asosiy',
     icon: Layers,
-    paths: ['/dashboard', '/kirish', '/javob-olish', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it', '/texnik'],
+    paths: ['/dashboard', '/kirish', '/javob-olish', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it'],
   },
   {
     id: 'work',
@@ -149,7 +151,7 @@ const NAV_SECTIONS: {
     id: 'pharmacy',
     label: "Apteka tarmog'i",
     icon: Store,
-    paths: ['/pharmacy-network', '/checklist', '/ehtiyoj'],
+    paths: ['/pharmacy-network', '/boglanish', '/checklist', '/ehtiyoj'],
   },
   {
     id: 'distribution',
@@ -225,6 +227,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/checklist-holati')) return '/checklist-holati';
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
+  if (path.startsWith('/boglanish')) return '/boglanish';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
   if (path.startsWith('/javob-olish')) return '/javob-olish';
@@ -632,7 +635,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
     if (
       user.role === 'director' &&
-      (location.startsWith('/it') || location.startsWith('/texnik'))
+      location.startsWith('/it')
     ) {
       setLocation('/dashboard');
     }
@@ -695,7 +698,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'IT', path: '/it', icon: Cpu };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
-  const texnikNav = { name: 'Texnik', path: '/texnik', icon: Wrench };
 
   const taskAnalyticsNav: NavItem = {
     name: 'Topshiriqlar tahlili',
@@ -758,7 +760,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
       }
       if ((user.role === 'admin' || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
-        next = [...next, itNav, texnikNav];
+        next = [...next, itNav];
       }
       if (canViewDistribyutsiya(role) && !next.some((i) => i.path === '/distribyutsiya')) {
         next = [...next, distribNav];
@@ -803,7 +805,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     hisobNav,
     reviziyaNav,
     itNav,
-    texnikNav,
     distribNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -840,7 +841,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
       hisobNav,
       { name: 'IT', path: '/it', icon: Cpu },
-      { name: 'Texnik', path: '/texnik', icon: Wrench },
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
@@ -913,24 +913,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
-    mentor: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      davomatFaceNav,
-      smenaNav,
-      { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
-    ],
-    department_head: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
-      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      davomatFaceNav,
-      smenaNav,
-      { name: 'Arizalar', path: '/requests', icon: FileText },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
-      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
-    ],
     mudir: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
@@ -942,6 +924,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     koordinator: [
@@ -955,32 +938,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
       { name: 'Reyting', path: '/checklist-holati', icon: Trophy },
-    ],
-    texnik: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Texnik', path: '/texnik', icon: Wrench },
-      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
-      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      orgNav,
-      davomatFaceNav,
-      smenaNav,
-      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
-    ],
-    texnik_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Texnik', path: '/texnik', icon: Wrench },
-      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
-      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
-      orgNav,
-      davomatFaceNav,
-      smenaNav,
-      { name: 'Xodimlar', path: '/employees', icon: Users },
-      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
-      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     it: [
       { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
@@ -1024,6 +985,26 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       davomatFaceNav,
     ],
     mamuriy: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    kassir: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    yurist: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    komunalniy: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    direktor_yordamchisi: [
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
@@ -1733,6 +1714,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         <DavomatAttendanceBanner />
+        <BoglanishMissingBanner />
 
         <main
           className={cn(
@@ -1758,6 +1740,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location === '/oylik' ||
                 location === '/hisobkitob' ||
                 location.startsWith('/employees') ||
+                location.startsWith('/eslatmalar') ||
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
                 location.startsWith('/tashkiliy-tuzilma')

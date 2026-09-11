@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { CheckCircle2, LocateFixed, MapPin, Navigation } from "lucide-react";
+import { CheckCircle2, Hand, LocateFixed, MapPin, Navigation } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -22,6 +22,19 @@ type Props = {
   gpsDenied?: boolean;
   baseTag?: string;
 };
+
+/** Masofa: ≥1 km → km, aks holda metr */
+function formatMetersOrKm(meters: number): string {
+  if (!Number.isFinite(meters)) return "—";
+  const abs = Math.abs(meters);
+  if (abs >= 1000) {
+    const km = abs / 1000;
+    const raw = km >= 10 ? km.toFixed(1) : km.toFixed(2);
+    const value = raw.replace(/\.0$/, "").replace(/(\.\d)0$/, "$1");
+    return `${value} km`;
+  }
+  return `${Math.round(abs)} m`;
+}
 
 function bearingDeg(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -113,12 +126,74 @@ export function DavomatZoneMap({
   const lastUser = useRef<{ lat: number; lng: number; heading: number } | null>(null);
   const lastHeading = useRef<number>(0);
   const animRef = useRef<number | null>(null);
+  const unlockTaps = useRef(0);
+  const unlockTimer = useRef<number | null>(null);
+  const pointerStart = useRef<{ x: number; y: number } | null>(null);
+  const [mapActive, setMapActive] = useState(false);
+  const [tapHint, setTapHint] = useState(false);
 
   const hasUser =
     typeof userLat === "number" &&
     typeof userLng === "number" &&
     Number.isFinite(userLat) &&
     Number.isFinite(userLng);
+
+  function setMapInteractive(map: L.Map, on: boolean) {
+    if (on) {
+      map.dragging.enable();
+      map.touchZoom.enable();
+      map.doubleClickZoom.enable();
+      map.boxZoom.enable();
+      map.keyboard.enable();
+    } else {
+      map.dragging.disable();
+      map.touchZoom.disable();
+      map.doubleClickZoom.disable();
+      map.boxZoom.disable();
+      map.keyboard.disable();
+    }
+  }
+
+  function lockMap() {
+    unlockTaps.current = 0;
+    setTapHint(false);
+    setMapActive(false);
+    if (mapRef.current) setMapInteractive(mapRef.current, false);
+  }
+
+  function handleUnlockTap() {
+    if (mapActive) return;
+    if (unlockTimer.current != null) window.clearTimeout(unlockTimer.current);
+    unlockTaps.current += 1;
+    if (unlockTaps.current >= 2) {
+      unlockTaps.current = 0;
+      setTapHint(false);
+      setMapActive(true);
+      if (mapRef.current) setMapInteractive(mapRef.current, true);
+      return;
+    }
+    setTapHint(true);
+    unlockTimer.current = window.setTimeout(() => {
+      unlockTaps.current = 0;
+      setTapHint(false);
+      unlockTimer.current = null;
+    }, 2200);
+  }
+
+  function onUnlockPointerDown(e: ReactPointerEvent) {
+    pointerStart.current = { x: e.clientX, y: e.clientY };
+  }
+
+  function onUnlockPointerUp(e: ReactPointerEvent) {
+    const start = pointerStart.current;
+    pointerStart.current = null;
+    if (!start) return;
+    const dx = Math.abs(e.clientX - start.x);
+    const dy = Math.abs(e.clientY - start.y);
+    // Scroll / swipe — unlock hisoblanmasin
+    if (dx > 12 || dy > 12) return;
+    handleUnlockTap();
+  }
 
   function fitStandardView(map?: L.Map | null, circle?: L.Circle | null) {
     const m = map ?? mapRef.current;
@@ -149,11 +224,12 @@ export function DavomatZoneMap({
     const map = L.map(shellRef.current, {
       zoomControl: false,
       attributionControl: false,
-      dragging: true,
+      dragging: false,
       scrollWheelZoom: false,
-      doubleClickZoom: true,
+      doubleClickZoom: false,
       boxZoom: false,
       keyboard: false,
+      touchZoom: false,
     }).setView([siteLat, siteLng], 17);
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -190,6 +266,7 @@ export function DavomatZoneMap({
       followRef.current = false;
     });
 
+    setMapInteractive(map, false);
     mapRef.current = map;
 
     const onResize = () => {
@@ -205,6 +282,7 @@ export function DavomatZoneMap({
     return () => {
       window.removeEventListener("resize", onResize);
       if (animRef.current != null) cancelAnimationFrame(animRef.current);
+      if (unlockTimer.current != null) window.clearTimeout(unlockTimer.current);
       map.remove();
       mapRef.current = null;
       circleRef.current = null;
@@ -215,6 +293,11 @@ export function DavomatZoneMap({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    setMapInteractive(map, mapActive);
+  }, [mapActive]);
   useEffect(() => {
     const map = mapRef.current;
     const circle = circleRef.current;
@@ -350,8 +433,33 @@ export function DavomatZoneMap({
   }
 
   return (
-    <div className="dv-map-shell">
-      <div ref={shellRef} className="dv-map-leaflet" />
+    <div className={cn("dv-map-shell", mapActive && "dv-map-shell-active")}>
+      <div
+        ref={shellRef}
+        className={cn("dv-map-leaflet", !mapActive && "dv-map-leaflet-locked")}
+      />
+
+      {!mapActive ? (
+        <button
+          type="button"
+          className="dv-map-unlock"
+          aria-label="Xaritani ochish uchun ikki marta bosing"
+          onPointerDown={onUnlockPointerDown}
+          onPointerUp={onUnlockPointerUp}
+          onPointerCancel={() => {
+            pointerStart.current = null;
+          }}
+        >
+          <span className={cn("dv-map-unlock-chip", tapHint && "is-hint")}>
+            <Hand className="h-3.5 w-3.5" />
+            {tapHint ? "Yana 1×" : "2× bosing"}
+          </span>
+        </button>
+      ) : (
+        <button type="button" className="dv-map-lock-chip" onClick={lockMap}>
+          Xarita faol · yopish
+        </button>
+      )}
 
       {hasUser ? (
         <div
@@ -369,7 +477,7 @@ export function DavomatZoneMap({
             <>
               <Navigation className="h-3.5 w-3.5" />
               {distanceMeters != null
-                ? `Yana ${Math.max(0, Math.round(distanceMeters - allowedMeters))} m`
+                ? `Yana ${formatMetersOrKm(Math.max(0, distanceMeters - allowedMeters))}`
                 : "Hududdan tashqarida"}
             </>
           )}

@@ -1,9 +1,12 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
 import {
   useGetUsers,
   useGetEmployees,
+  useGetDepartments,
 } from "@workspace/api-client-react";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
+import { staffWorkplaceOf } from "@/lib/staff-workplace";
 import {
   Plus,
   Calendar,
@@ -34,12 +37,16 @@ import {
   CircleDot,
   ChevronLeft,
   ChevronRight,
+  SlidersHorizontal,
+  RotateCcw,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   canApproveTaskUi,
+  canBrowseAllTasks,
   canDeleteTaskUi,
-  isTaskAdmin,
+  canManageTaskUi,
   isTaskOverdue,
 } from "@/lib/vazifalar-permissions";
 import { Input } from "@/components/ui/input";
@@ -93,9 +100,14 @@ import {
   type TaskAttachment,
 } from "@/lib/vazifalar-api";
 
-import { HR_ROLES, userRoleLabel } from "@/lib/roles";
+import { HR_ROLES, userRoleLabel, isDeptHeadRole, DEPT_HEAD_ROLES } from "@/lib/roles";
 import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
+import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
+import {
+  TaskReturnDialog,
+  type TaskReturnPayload,
+} from "@/components/vazifalar/TaskReturnDialog";
 
 type BoardCol = "past" | "today" | "progress" | "review" | "completed";
 type BoardView = "kanban" | "list" | "calendar";
@@ -104,17 +116,18 @@ const ASSIGNER_ROLES = new Set([
   "admin",
   ...HR_ROLES,
   "director",
-  "department_head",
+  ...DEPT_HEAD_ROLES,
   "recruiter",
   "trainer",
   "mudir",
   "koordinator",
   "sb",
   "sb_boshliq",
-  "reviziya_rahbar",
-  "it_rahbar",
-  "texnik_rahbar",
 ]);
+
+function canAssignTasks(role?: string | null) {
+  return !!role && (ASSIGNER_ROLES.has(role) || isDeptHeadRole(role));
+}
 
 const COLUMNS: {
   id: BoardCol;
@@ -307,11 +320,13 @@ function boardColumnFor(task: Vazifa, now = new Date()): BoardCol {
   if (task.status === "verified" || task.status === "cancelled") return "completed";
   if (task.status === "done") return "review";
 
+  // Qabul muddati o‘tgan yoki due kechikkan → Kechikkan
+  if (isTaskOverdue(task, now)) return "past";
+
   const dueAt = task.dueAt || task.createdAt;
   if (dueAt) {
     const due = startOfDay(new Date(dueAt));
     const today = startOfDay(now);
-    if (due.getTime() < today.getTime()) return "past";
     if (due.getTime() === today.getTime()) return "today";
   }
   return "progress";
@@ -341,10 +356,40 @@ function checklistProgress(task: Vazifa) {
 
 function taskTypeLabel(type: string | undefined, t: (k: string) => string) {
   if (!type) return "";
-  const key = `tasks.form.type.${type}`;
+  const aliases: Record<string, string> = {
+    hisobot: "tasks.form.type.report",
+    report: "tasks.form.type.report",
+    tekshiruv: "tasks.form.type.audit",
+    audit: "tasks.form.type.audit",
+    suhbat: "tasks.form.type.call",
+    call: "tasks.form.type.call",
+    hujjat: "tasks.form.type.doc",
+    doc: "tasks.form.type.doc",
+    boshqa: "tasks.form.type.other",
+    other: "tasks.form.type.other",
+  };
+  const key = aliases[type] || `tasks.form.type.${type}`;
   const labeled = t(key);
   return labeled === key ? type : labeled;
 }
+
+function looksLikeGpsOrCoords(raw: string) {
+  const s = String(raw || "").trim();
+  if (!s) return true;
+  if (/\|gps:/i.test(s)) return false; // has name + gps suffix — name can be stripped
+  if (/\d+\s*°/.test(s)) return true;
+  if (/^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(s)) return true;
+  return false;
+}
+
+function cleanPlaceLabel(raw: string | null | undefined) {
+  const name = displayBranchName(raw);
+  if (!name || looksLikeGpsOrCoords(name)) return "";
+  if (/^(filial|lokatsiya|location)$/i.test(name)) return "";
+  return name;
+}
+
+const STANDARD_TASK_TYPES = ["hisobot", "tekshiruv", "suhbat", "hujjat", "boshqa"] as const;
 
 function toDatetimeLocalValue(iso: string | null) {
   if (!iso) return "";
@@ -379,7 +424,8 @@ export default function VazifalarPage() {
   const deepQ = deepLinkParams.get("q");
   const deepAssigneeKind = deepLinkParams.get("assigneeKind");
   const deepAssigneeId = deepLinkParams.get("assigneeId");
-  const canAssign = !!user && ASSIGNER_ROLES.has(user.role);
+  const canAssign = canAssignTasks(user?.role);
+  const canBrowseAll = canBrowseAllTasks(user?.role);
 
   const [search, setSearch] = useState(deepQ || "");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -401,18 +447,23 @@ export default function VazifalarPage() {
   });
   const [calScope, setCalScope] = useState<"month" | "year">("month");
   const [selectedCalDay, setSelectedCalDay] = useState(() => startOfDay(new Date()));
-  const [assigneeFilter, setAssigneeFilter] = useState<{
-    kind: "user" | "employee";
-    id: number;
-    name: string;
-  } | null>(null);
+  /** null = O‘zim; "all" = barcha; object = tanlangan xodim */
+  const [assigneeFilter, setAssigneeFilter] = useState<
+    null | "all" | { kind: "user" | "employee"; id: number; name: string }
+  >(null);
 
-  const needsAllBoard = !!(deepTaskId || deepAssigneeKind || assigneeFilter);
+  const needsAllBoard = !!(
+    deepTaskId ||
+    deepAssigneeKind ||
+    assigneeFilter === "all" ||
+    (assigneeFilter && assigneeFilter !== null)
+  );
   const { data: tasks = [], isLoading } = useGetTasks({
     board: needsAllBoard ? "all" : "active",
   });
   const { data: users = [] } = useGetUsers({ status: "active" } as any);
   const { data: employees = [] } = useGetEmployees(undefined as any);
+  const { data: departments = [] } = useGetDepartments();
 
   const createTask = useCreateTask();
   const updateTask = useUpdateTask();
@@ -440,6 +491,7 @@ export default function VazifalarPage() {
 
   const [extendDue, setExtendDue] = useState("");
   const [extendNote, setExtendNote] = useState("");
+  const [returnTask, setReturnTask] = useState<Vazifa | null>(null);
 
   useEffect(() => {
     if (deepQ && !deepAssigneeKind) setSearch(deepQ);
@@ -477,13 +529,24 @@ export default function VazifalarPage() {
 
     const u = activeUsers.map((x) => {
       const roleMeta = userRoleLabel(x.role) || String(x.role || "").replace(/_/g, " ");
+      const deptName = String(x.departmentName || "").trim();
+      const workplace = staffWorkplaceOf({
+        role: x.role,
+        orgRole: x.orgRole,
+        position: x.position,
+        departmentName: deptName,
+        location: x.location,
+      });
       return {
         key: `user:${x.id}`,
         name: String(x.fullName || "").trim(),
-        label: `${x.fullName} · ${roleMeta}`,
+        label: deptName ? `${x.fullName} · ${roleMeta} · ${deptName}` : `${x.fullName} · ${roleMeta}`,
         kind: "user" as const,
         id: x.id as number,
         meta: roleMeta,
+        departmentId: x.departmentId != null ? Number(x.departmentId) : null,
+        departmentName: deptName || null,
+        workplace,
       };
     });
 
@@ -496,14 +559,29 @@ export default function VazifalarPage() {
         if (name && linkedNames.has(name)) return false;
         return true;
       })
-      .map((x) => ({
-        key: `employee:${x.id}`,
-        name: String(x.fullName || "").trim(),
-        label: `${x.fullName} · ${x.position || ""}${x.location ? ` (${x.location})` : ""}`,
-        kind: "employee" as const,
-        id: x.id as number,
-        meta: `${x.position || ""}${x.location ? ` · ${x.location}` : ""}`.trim(),
-      }));
+      .map((x) => {
+        const deptName = String(x.departmentName || "").trim();
+        const place = cleanPlaceLabel(x.location);
+        const metaParts = [x.position, deptName || place].filter(Boolean);
+        const workplace = staffWorkplaceOf({
+          role: x.userRole,
+          orgRole: x.orgRole,
+          position: x.position,
+          departmentName: deptName,
+          location: x.location,
+        });
+        return {
+          key: `employee:${x.id}`,
+          name: String(x.fullName || "").trim(),
+          label: `${x.fullName}${metaParts.length ? ` · ${metaParts.join(" · ")}` : ""}`,
+          kind: "employee" as const,
+          id: x.id as number,
+          meta: metaParts.join(" · "),
+          departmentId: x.departmentId != null ? Number(x.departmentId) : null,
+          departmentName: deptName || null,
+          workplace,
+        };
+      });
 
     return [...u, ...e].filter((o) => o.name);
   }, [users, employees]);
@@ -526,14 +604,51 @@ export default function VazifalarPage() {
     );
   }, [deepAssigneeKind, deepAssigneeId, deepQ, assigneeOptions]);
 
-  const branchOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const e of employees as any[]) {
-      const loc = String(e?.location || "").trim();
-      if (loc) set.add(loc);
+  const departmentOptions = useMemo(() => {
+    const list = (departments as any[])
+      .map((d) => ({
+        id: Number(d.id),
+        name: String(d.name || "").trim(),
+      }))
+      .filter((d) => d.name && Number.isFinite(d.id));
+    return list.sort((a, b) => a.name.localeCompare(b.name, "uz"));
+  }, [departments]);
+
+  const deptNameById = useMemo(() => {
+    const m = new Map<number, string>();
+    for (const d of departmentOptions) m.set(d.id, d.name);
+    return m;
+  }, [departmentOptions]);
+
+  /** Filter uchun: eski branchOptions o‘rniga aniq bo‘lim nomlari */
+  const branchOptions = useMemo(
+    () => departmentOptions.map((d) => d.name),
+    [departmentOptions],
+  );
+
+  const assigneeDeptKey = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const o of assigneeOptions as Array<{
+      kind: string;
+      id: number;
+      departmentId?: number | null;
+      departmentName?: string | null;
+    }>) {
+      const byId = o.departmentId != null ? deptNameById.get(o.departmentId) : null;
+      const name = (byId || o.departmentName || "").trim();
+      if (name) m.set(`${o.kind}:${o.id}`, name);
     }
-    return Array.from(set).sort((a, b) => a.localeCompare(b, "uz"));
-  }, [employees]);
+    for (const e of employees as any[]) {
+      const name = String(e.departmentName || "").trim() || deptNameById.get(Number(e.departmentId)) || "";
+      if (name && e.id != null) m.set(`employee:${e.id}`, name);
+      if (name && e.userId != null) m.set(`user:${e.userId}`, name);
+    }
+    for (const u of users as any[]) {
+      const name = String(u.departmentName || "").trim() || deptNameById.get(Number(u.departmentId)) || "";
+      if (name && u.id != null) m.set(`user:${u.id}`, name);
+    }
+    return m;
+  }, [assigneeOptions, employees, users, deptNameById]);
 
   const searchStaffList = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -563,7 +678,23 @@ export default function VazifalarPage() {
 
   const filtered = useMemo(() => {
     let list = tasks.filter((t) => t.status !== "cancelled");
-    if (assigneeFilter) {
+    if (assigneeFilter === null) {
+      // Standart: O‘zim — menga biriktirilgan
+      if (user?.id) {
+        list = list.filter((t) => t.assigneeKind === "user" && t.assigneeId === user.id);
+      } else {
+        list = [];
+      }
+      const q = search.trim().toLowerCase();
+      if (q && q !== (user?.fullName || "").toLowerCase()) {
+        list = list.filter(
+          (t) =>
+            t.title.toLowerCase().includes(q) ||
+            (t.description || "").toLowerCase().includes(q) ||
+            String(t.id).includes(q),
+        );
+      }
+    } else if (assigneeFilter !== "all") {
       list = list.filter(
         (t) =>
           t.assigneeKind === assigneeFilter.kind && t.assigneeId === assigneeFilter.id,
@@ -593,12 +724,33 @@ export default function VazifalarPage() {
       list = list.filter((t) => t.priority === priorityFilter);
     }
     if (typeFilter !== "all") {
-      list = list.filter((t) => (t.meta?.taskType || "other") === typeFilter);
+      list = list.filter((t) => {
+        const tp = String(t.meta?.taskType || "boshqa");
+        const aliases: Record<string, string[]> = {
+          hisobot: ["hisobot", "report"],
+          tekshiruv: ["tekshiruv", "audit"],
+          suhbat: ["suhbat", "call"],
+          hujjat: ["hujjat", "doc"],
+          boshqa: ["boshqa", "other"],
+          report: ["hisobot", "report"],
+          audit: ["tekshiruv", "audit"],
+          call: ["suhbat", "call"],
+          doc: ["hujjat", "doc"],
+          other: ["boshqa", "other"],
+        };
+        const group = aliases[typeFilter] || [typeFilter];
+        return group.includes(tp) || tp === typeFilter;
+      });
     }
     if (branchFilter !== "all") {
-      list = list.filter(
-        (t) => String(t.meta?.branchOrDept || "").trim() === branchFilter,
-      );
+      const target = branchFilter.trim().toLowerCase();
+      list = list.filter((t) => {
+        const metaDept = cleanPlaceLabel(t.meta?.branchOrDept).toLowerCase();
+        if (metaDept && metaDept === target) return true;
+        const key = `${t.assigneeKind}:${t.assigneeId}`;
+        const fromAssignee = (assigneeDeptKey.get(key) || "").toLowerCase();
+        return fromAssignee === target;
+      });
     }
     if (dateFrom) {
       const from = startOfDay(new Date(dateFrom)).getTime();
@@ -615,11 +767,28 @@ export default function VazifalarPage() {
       });
     }
     return list;
-  }, [tasks, search, assigneeFilter, priorityFilter, typeFilter, branchFilter, dateFrom, dateTo]);
+  }, [
+    tasks,
+    search,
+    assigneeFilter,
+    priorityFilter,
+    typeFilter,
+    branchFilter,
+    dateFrom,
+    dateTo,
+    assigneeDeptKey,
+    user?.id,
+    user?.fullName,
+  ]);
 
   function clearSearchFilter() {
     setSearch("");
     setAssigneeFilter(null);
+  }
+
+  function resetStaffFilterToMe() {
+    setAssigneeFilter(null);
+    setSearch("");
   }
 
   const byColumn = useMemo(() => {
@@ -660,12 +829,27 @@ export default function VazifalarPage() {
   );
 
   const taskTypes = useMemo(() => {
-    const set = new Set<string>();
+    const set = new Set<string>(STANDARD_TASK_TYPES);
     for (const t of tasks) {
-      if (t.meta?.taskType) set.add(t.meta.taskType);
+      if (t.meta?.taskType) set.add(String(t.meta.taskType));
     }
-    return Array.from(set).sort();
+    return Array.from(set);
   }, [tasks]);
+
+  const [mobileCol, setMobileCol] = useState<BoardCol>("today");
+  const [filtersOpen, setFiltersOpen] = useState(true);
+
+  const activeFilterCount = useMemo(() => {
+    let n = 0;
+    if (branchFilter !== "all") n += 1;
+    if (assigneeFilter !== null) n += 1; // "all" yoki tanlangan shaxs (O‘zim — default)
+    if (priorityFilter !== "all") n += 1;
+    if (typeFilter !== "all") n += 1;
+    if (dateFrom) n += 1;
+    if (dateTo) n += 1;
+    if (search.trim() && assigneeFilter === null) n += 1;
+    return n;
+  }, [branchFilter, assigneeFilter, priorityFilter, typeFilter, dateFrom, dateTo, search]);
 
   const topAssignees = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
@@ -730,16 +914,15 @@ export default function VazifalarPage() {
   }
 
   function openEdit(task: Vazifa) {
-    const admin = isTaskAdmin(user?.role);
-    const creator = isCreatorOf(task);
+    const canManage = canManageTaskUi(task, user?.id, user?.role);
     const assignee = isAssigneeOf(task);
-    // Ijrochi — work rejimida ochadi; beruvchi/admin — tahrirlash
-    if (assignee && !creator && !admin) {
+    // Ijrochi (tahrirlash huquqi yo‘q) — work; boshqalar ko‘rish; manage — tahrirlash
+    if (assignee && !canManage) {
       setActiveTask(task);
       setViewOpen(true);
       return;
     }
-    if (!creator && !admin) {
+    if (!canManage) {
       setActiveTask(task);
       setViewOpen(true);
       return;
@@ -763,7 +946,7 @@ export default function VazifalarPage() {
   }
 
   function openExtend(task: Vazifa) {
-    if (isAssigneeOf(task) && isTaskOverdue(task) && !isCreatorOf(task) && !isTaskAdmin(user?.role)) {
+    if (isAssigneeOf(task) && isTaskOverdue(task) && !canManageTaskUi(task, user?.id, user?.role)) {
       toast({
         title: "Vaqt tugagan",
         description: "Faqat beruvchi muddatni uzaytirishi mumkin.",
@@ -821,8 +1004,17 @@ export default function VazifalarPage() {
         await updateTask.mutateAsync({ id: editing.id, data: payload });
         toast({ title: "Vazifa yangilandi" });
       } else {
-        await createTask.mutateAsync(payload);
-        toast({ title: "Vazifa yaratildi" });
+        const created = await createTask.mutateAsync(payload);
+        const n =
+          (created as any)?.created ||
+          payload.assignees?.length ||
+          1;
+        toast({
+          title:
+            n > 1
+              ? `${n} ${t("tasks.batch.created")}`
+              : "Vazifa yaratildi",
+        });
       }
       setEditOpen(false);
     } catch (e: any) {
@@ -916,7 +1108,11 @@ export default function VazifalarPage() {
     }
   }
 
-  async function handleVerify(task: Vazifa, action: "approve" | "rework") {
+  async function handleVerify(
+    task: Vazifa,
+    action: "approve" | "rework",
+    extra?: Partial<TaskReturnPayload>,
+  ) {
     if (!canApproveTaskUi(task, user?.id, user?.role)) {
       toast({
         title: "Ruxsat yo‘q",
@@ -925,26 +1121,31 @@ export default function VazifalarPage() {
       });
       return;
     }
-    let note: string | undefined;
-    if (action === "rework") {
-      note = window.prompt("Qayta ishlash sababi (ixtiyoriy):") || undefined;
-    } else if (!window.confirm(`«${task.title}» — bajarilganini tasdiqlaysizmi?`)) {
-      return;
+    if (action === "approve") {
+      if (!window.confirm(`«${task.title}» — bajarilganini tasdiqlaysizmi?`)) {
+        return;
+      }
     }
     try {
-      await verifyTask.mutateAsync({ id: task.id, action, note });
-      toast({
-        title:
-          action === "approve"
-            ? "✓ Tasdiqlandi"
-            : "Qayta ishlashga qaytarildi",
+      await verifyTask.mutateAsync({
+        id: task.id,
+        action,
+        note: extra?.note?.trim() || undefined,
+        keepDue: action === "rework" ? extra?.keepDue !== false : undefined,
+        dueAt: action === "rework" && !extra?.keepDue ? extra?.dueAt : undefined,
+        attachments: action === "rework" ? extra?.attachments || [] : undefined,
       });
+      toast({
+        title: action === "approve" ? "✓ Tasdiqlandi" : t("tasks.rework.done"),
+      });
+      if (action === "rework") setReturnTask(null);
     } catch (e: any) {
       toast({
         title: "Xato",
         description: e?.message,
         variant: "destructive",
       });
+      throw e;
     }
   }
 
@@ -1007,7 +1208,7 @@ export default function VazifalarPage() {
         onApproveExt={() => void handleResolveExtension(task, "approve")}
         onRejectExt={() => void handleResolveExtension(task, "reject")}
         onVerify={() => void handleVerify(task, "approve")}
-        onRework={() => void handleVerify(task, "rework")}
+        onOpenReturn={() => setReturnTask(task)}
         onAccept={() => void handleAccept(task)}
       />
     );
@@ -1110,16 +1311,16 @@ export default function VazifalarPage() {
               {t("tasks.subtitle")}
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
             <div
               role="tablist"
               aria-label={t("tasks.title")}
-              className="inline-flex rounded-xl border border-border/80 bg-muted/60 p-1 dark:bg-muted/40"
+              className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border/80 bg-muted/60 p-1 dark:bg-muted/40"
             >
               {viewTabs.map((tab) => {
                 const active = tab.id !== "analytics" && viewMode === tab.id;
                 const className = cn(
-                  "inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
+                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all sm:px-3",
                   active
                     ? "bg-card text-foreground shadow-sm ring-1 ring-border/60"
                     : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
@@ -1128,7 +1329,7 @@ export default function VazifalarPage() {
                   return (
                     <Link key={tab.id} href="/vazifalar/tahlil" className={className}>
                       {tab.icon}
-                      {t(tab.labelKey)}
+                      <span className="hidden xs:inline sm:inline">{t(tab.labelKey)}</span>
                     </Link>
                   );
                 }
@@ -1142,13 +1343,13 @@ export default function VazifalarPage() {
                     onClick={() => switchView(tab.id as BoardView)}
                   >
                     {tab.icon}
-                    {t(tab.labelKey)}
+                    <span className="sm:inline">{t(tab.labelKey)}</span>
                   </button>
                 );
               })}
             </div>
             {canAssign && (
-              <Button onClick={() => openCreate("today")} className="gap-2 shadow-sm">
+              <Button onClick={() => openCreate("today")} className="w-full gap-2 shadow-sm sm:w-auto">
                 <Plus className="h-4 w-4" />
                 {t("tasks.new")}
               </Button>
@@ -1156,34 +1357,74 @@ export default function VazifalarPage() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-5">
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
           {kpiCards.map((card) => {
             const Icon = card.icon;
             return (
               <div
                 key={card.key}
-                className={cn(surface, "flex items-center gap-3 px-3.5 py-3")}
+                className={cn(surface, "flex items-center gap-2.5 px-3 py-2.5 sm:gap-3 sm:px-3.5 sm:py-3")}
               >
                 <span
                   className={cn(
-                    "flex h-10 w-10 shrink-0 items-center justify-center rounded-xl",
+                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10",
                     card.tone,
                   )}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
                 </span>
                 <div className="min-w-0">
                   <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
                     {card.label}
                   </p>
-                  <p className="text-xl font-bold tabular-nums text-foreground">{card.value}</p>
+                  <p className="text-lg font-bold tabular-nums text-foreground sm:text-xl">{card.value}</p>
                 </div>
               </div>
             );
           })}
         </div>
 
-        <div className={cn(surface, "mt-4 flex flex-col gap-2 p-2.5 lg:flex-row lg:items-center")}>
+        <div className={cn(surface, "mt-4 p-2.5")}>
+          <div className="mb-2 flex items-center justify-between gap-2 lg:hidden">
+            <button
+              type="button"
+              onClick={() => setFiltersOpen((v) => !v)}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-3 py-2 text-xs font-semibold text-foreground",
+                filtersOpen && "border-primary/40 bg-primary/5 text-primary",
+              )}
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              {t("tasks.filter.toggle")}
+              {activeFilterCount > 0 ? (
+                <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
+                  {activeFilterCount}
+                </span>
+              ) : null}
+            </button>
+            {activeFilterCount > 0 ? (
+              <button
+                type="button"
+                className="text-[11px] font-semibold text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                onClick={() => {
+                  setBranchFilter("all");
+                  setPriorityFilter("all");
+                  setTypeFilter("all");
+                  setDateFrom("");
+                  setDateTo("");
+                  clearSearchFilter();
+                }}
+              >
+                {t("tasks.filter.dateClear")}
+              </button>
+            ) : null}
+          </div>
+          <div
+            className={cn(
+              "flex-col gap-2 lg:flex lg:flex-row lg:items-center",
+              filtersOpen ? "flex" : "hidden",
+            )}
+          >
           <Select value={branchFilter} onValueChange={setBranchFilter}>
             <SelectTrigger className={cn(control, "w-full lg:w-[150px]")}>
               <SelectValue placeholder={t("tasks.filter.allBranches")} />
@@ -1199,10 +1440,29 @@ export default function VazifalarPage() {
           </Select>
 
           <Select
-            value={assigneeFilter ? `${assigneeFilter.kind}:${assigneeFilter.id}` : "all"}
+            value={
+              assigneeFilter === null
+                ? "me"
+                : assigneeFilter === "all"
+                  ? "all"
+                  : `${assigneeFilter.kind}:${assigneeFilter.id}`
+            }
             onValueChange={(v) => {
+              if (v === "me") {
+                resetStaffFilterToMe();
+                return;
+              }
               if (v === "all") {
-                clearSearchFilter();
+                if (!canBrowseAll) {
+                  resetStaffFilterToMe();
+                  return;
+                }
+                setAssigneeFilter("all");
+                setSearch("");
+                return;
+              }
+              if (!canBrowseAll) {
+                resetStaffFilterToMe();
                 return;
               }
               const [kind, idStr] = v.split(":");
@@ -1215,16 +1475,21 @@ export default function VazifalarPage() {
               }
             }}
           >
-            <SelectTrigger className={cn(control, "w-full lg:w-[150px]")}>
-              <SelectValue placeholder={t("tasks.filter.allStaff")} />
+            <SelectTrigger className={cn(control, "w-full lg:w-[160px]")}>
+              <SelectValue placeholder={t("tasks.filter.me")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{t("tasks.filter.allStaff")}</SelectItem>
-              {assigneeOptions.slice(0, 60).map((o) => (
-                <SelectItem key={o.key} value={`${o.kind}:${o.id}`}>
-                  {o.name}
-                </SelectItem>
-              ))}
+              <SelectItem value="me">{t("tasks.filter.me")}</SelectItem>
+              {canBrowseAll ? (
+                <SelectItem value="all">{t("tasks.filter.allStaff")}</SelectItem>
+              ) : null}
+              {canBrowseAll
+                ? assigneeOptions.slice(0, 60).map((o) => (
+                    <SelectItem key={o.key} value={`${o.kind}:${o.id}`}>
+                      {o.name}
+                    </SelectItem>
+                  ))
+                : null}
             </SelectContent>
           </Select>
 
@@ -1392,19 +1657,30 @@ export default function VazifalarPage() {
                   control,
                   "flex min-w-0 flex-1 items-center gap-2 rounded-md border px-3 text-left transition",
                   "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                  (searchOpen || assigneeFilter) && "border-primary/50 ring-2 ring-ring/25",
+                  (searchOpen ||
+                    search.trim() ||
+                    (assigneeFilter !== null && assigneeFilter !== "all")) &&
+                    "border-primary/50 ring-2 ring-ring/25",
                 )}
               >
                 <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <span
                   className={cn(
                     "min-w-0 flex-1 truncate",
-                    search || assigneeFilter ? "text-foreground" : "text-muted-foreground",
+                    search.trim() ||
+                      (assigneeFilter !== null && assigneeFilter !== "all")
+                      ? "text-foreground"
+                      : "text-muted-foreground",
                   )}
                 >
-                  {assigneeFilter?.name || search || t("tasks.searchShort")}
+                  {(assigneeFilter !== null && assigneeFilter !== "all"
+                    ? assigneeFilter.name
+                    : "") ||
+                    search ||
+                    t("tasks.searchShort")}
                 </span>
-                {search || assigneeFilter ? (
+                {search.trim() ||
+                (assigneeFilter !== null && assigneeFilter !== "all") ? (
                   <span
                     role="button"
                     tabIndex={0}
@@ -1439,17 +1715,63 @@ export default function VazifalarPage() {
                   value={search}
                   onValueChange={(v) => {
                     setSearch(v);
-                    setAssigneeFilter(null);
+                    if (assigneeFilter !== null && assigneeFilter !== "all") {
+                      setAssigneeFilter(canBrowseAll ? "all" : null);
+                    }
                   }}
                   placeholder={t("tasks.searchEmployee")}
                 />
                 <CommandList className="max-h-72">
                   <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
                   <CommandGroup heading={t("tasks.filterByAssignee")}>
-                    {searchStaffList.map((o) => {
+                    <CommandItem
+                      value="__me__"
+                      onSelect={() => {
+                        resetStaffFilterToMe();
+                        setSearchOpen(false);
+                      }}
+                      className="gap-2.5 py-2"
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
+                        {initialsFromName(user?.fullName) || "?"}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                        {t("tasks.filter.me")}
+                        {user?.fullName ? ` · ${user.fullName}` : ""}
+                      </span>
+                      <Check
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-primary",
+                          assigneeFilter === null ? "opacity-100" : "opacity-0",
+                        )}
+                      />
+                    </CommandItem>
+                    {canBrowseAll ? (
+                      <CommandItem
+                        value="__all__"
+                        onSelect={() => {
+                          setAssigneeFilter("all");
+                          setSearch("");
+                          setSearchOpen(false);
+                        }}
+                        className="gap-2.5 py-2"
+                      >
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                          {t("tasks.filter.allStaff")}
+                        </span>
+                        <Check
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-primary",
+                            assigneeFilter === "all" ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                      </CommandItem>
+                    ) : null}
+                    {(canBrowseAll ? searchStaffList : []).map((o) => {
                       const initials = initialsFromName(o.name);
                       const active =
-                        !!assigneeFilter &&
+                        assigneeFilter !== null &&
+                        assigneeFilter !== "all" &&
                         assigneeFilter.kind === o.kind &&
                         assigneeFilter.id === o.id;
                       return (
@@ -1486,10 +1808,11 @@ export default function VazifalarPage() {
               </Command>
             </PopoverContent>
           </Popover>
+          </div>
         </div>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto p-4 md:p-5">
+      <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4 md:p-5">
         <div key={viewMode} className="min-h-0 min-w-0 animate-in fade-in-0 duration-200">
           {isLoading ? (
             <div className="flex h-full items-center justify-center text-muted-foreground">
@@ -1889,13 +2212,51 @@ export default function VazifalarPage() {
               </div>
             </div>
           ) : (
-            <div className="flex h-full min-w-max gap-3 pb-1">
+            <div className="flex h-full min-h-0 flex-col gap-3">
+              <div className="flex gap-1.5 overflow-x-auto pb-0.5 md:hidden [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                {COLUMNS.map((col) => {
+                  const active = mobileCol === col.id;
+                  const count = byColumn[col.id].length;
+                  return (
+                    <button
+                      key={col.id}
+                      type="button"
+                      onClick={() => setMobileCol(col.id)}
+                      className={cn(
+                        "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition",
+                        active
+                          ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                          : "border-border/80 bg-card text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "h-1.5 w-1.5 rounded-full",
+                          active ? "bg-primary-foreground" : col.accentDot,
+                        )}
+                      />
+                      {t(col.labelKey)}
+                      <span
+                        className={cn(
+                          "rounded-full px-1.5 py-0.5 text-[10px] tabular-nums",
+                          active ? "bg-white/20" : "bg-muted",
+                        )}
+                      >
+                        {count}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col gap-3 md:min-w-max md:flex-row md:overflow-x-auto md:pb-1">
               {COLUMNS.map((col) => (
                 <section
                   key={col.id}
                   className={cn(
                     surface,
-                    "flex w-[270px] shrink-0 flex-col overflow-hidden md:w-[286px]",
+                    "min-h-[420px] w-full shrink-0 flex-col overflow-hidden md:min-h-0 md:w-[286px]",
+                    mobileCol === col.id ? "flex" : "hidden md:flex",
                   )}
                 >
                   <header className="shrink-0">
@@ -1923,7 +2284,7 @@ export default function VazifalarPage() {
                         </span>
                         <button
                           type="button"
-                          className="rounded-md p-1 text-muted-foreground hover:bg-card/80 hover:text-foreground"
+                          className="hidden rounded-md p-1 text-muted-foreground hover:bg-card/80 hover:text-foreground md:inline-flex"
                           aria-label="more"
                         >
                           <MoreHorizontal className="h-4 w-4" />
@@ -1951,7 +2312,7 @@ export default function VazifalarPage() {
                             col.id === "review" || col.id === "completed" ? "today" : col.id,
                           )
                         }
-                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
                       >
                         <Plus className="h-3.5 w-3.5" />
                         {t("tasks.new")}
@@ -1960,6 +2321,7 @@ export default function VazifalarPage() {
                   )}
                 </section>
               ))}
+              </div>
             </div>
           )}
         </div>
@@ -2210,12 +2572,46 @@ export default function VazifalarPage() {
         onVerify={
           editing && canApproveTaskUi(editing, user?.id, user?.role)
             ? async (action) => {
-                await handleVerify(editing, action);
+                if (action === "rework") {
+                  setEditOpen(false);
+                  setReturnTask(editing);
+                  return;
+                }
+                await handleVerify(editing, "approve");
                 setEditOpen(false);
               }
             : undefined
         }
         onTaskUpdated={(updated) => setEditing(updated)}
+        batchSiblings={
+          editing?.meta?.batchId
+            ? tasks.filter((t) => t.meta?.batchId === editing.meta?.batchId)
+            : []
+        }
+        onOpenBatchTask={(task) => {
+          setEditing(task);
+        }}
+      />
+
+      <TaskReturnDialog
+        open={!!returnTask}
+        task={returnTask}
+        busy={verifyTask.isPending}
+        onOpenChange={(v) => {
+          if (!v) setReturnTask(null);
+        }}
+        onPickFiles={async (list) => {
+          if (!list?.length) return [];
+          const out: TaskAttachment[] = [];
+          for (const file of Array.from(list)) {
+            out.push(await fileToAttachment(file));
+          }
+          return out;
+        }}
+        onSubmit={async (payload) => {
+          if (!returnTask) return;
+          await handleVerify(returnTask, "rework", payload);
+        }}
       />
 
       <TaskFormDialog
@@ -2522,6 +2918,20 @@ function AttachmentList({
     return url;
   };
 
+  const onDownload = async (a: TaskAttachment) => {
+    try {
+      const { deliverFileFromUrl, isTelegramMiniApp } = await import("@/lib/tg-download");
+      if (isTelegramMiniApp()) {
+        await deliverFileFromUrl(a.url, a.name);
+        return;
+      }
+      window.open(downloadHref(a.url), "_blank", "noopener,noreferrer");
+    } catch (err) {
+      console.error(err);
+      window.open(downloadHref(a.url), "_blank", "noopener,noreferrer");
+    }
+  };
+
   return (
     <ul className="space-y-1.5">
       {items.map((a) => (
@@ -2543,15 +2953,13 @@ function AttachmentList({
           <span className="truncate flex-1" title={a.name}>
             {a.name}
           </span>
-          <a
-            href={downloadHref(a.url)}
-            download={a.name}
-            target="_blank"
-            rel="noreferrer"
+          <button
+            type="button"
+            onClick={() => void onDownload(a)}
             className="shrink-0 rounded-md border bg-card px-2 py-1 text-xs font-medium text-foreground hover:bg-muted"
           >
             Yuklab olish
-          </a>
+          </button>
           {!readOnly && onRemove && (
             <button
               type="button"
@@ -2582,7 +2990,7 @@ function TaskCard({
   onApproveExt,
   onRejectExt,
   onVerify,
-  onRework,
+  onOpenReturn,
   onAccept,
 }: {
   task: Vazifa;
@@ -2599,7 +3007,7 @@ function TaskCard({
   onApproveExt: () => void;
   onRejectExt: () => void;
   onVerify: () => void;
-  onRework: () => void;
+  onOpenReturn: () => void;
   onAccept: () => void;
 }) {
   const { t } = useI18n();
@@ -2617,6 +3025,11 @@ function TaskCard({
   const tag = Array.isArray(task.meta?.tags) && task.meta!.tags!.length > 0 ? task.meta!.tags![0] : typeLbl;
   const msgCount = Array.isArray(task.meta?.messages) ? task.meta!.messages!.length : 0;
   const initials = initialsFromName(task.assigneeName);
+  const reworkCount = Number(task.meta?.reworkCount || 0);
+  const prevSubs = Array.isArray(task.meta?.submissionHistory)
+    ? task.meta!.submissionHistory!
+    : [];
+  const lastArchived = prevSubs.length > 0 ? prevSubs[prevSubs.length - 1] : null;
 
   return (
     <article
@@ -2653,6 +3066,12 @@ function TaskCard({
             {tag}
           </span>
         ) : null}
+        {Number(task.meta?.batchSize || 0) > 1 ? (
+          <span className="inline-flex items-center gap-0.5 rounded-md border border-teal-300/70 bg-teal-50 px-1.5 py-0.5 text-[10px] font-bold text-teal-800 dark:border-teal-700/50 dark:bg-teal-950/40 dark:text-teal-200">
+            <Users className="h-2.5 w-2.5" />
+            {task.meta!.batchSize}
+          </span>
+        ) : null}
       </div>
 
       <h3 className="mb-1 text-[13px] font-bold leading-snug text-foreground">{task.title}</h3>
@@ -2661,6 +3080,10 @@ function TaskCard({
         <p className="mb-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
           {task.description}
         </p>
+      ) : null}
+
+      {needsAccept ? (
+        <AcceptWindowCountdown task={task} compact className="mb-2" />
       ) : null}
 
       {task.candidateId && task.pipelineStage && (
@@ -2721,6 +3144,27 @@ function TaskCard({
           </div>
         )}
 
+      {!awaitingReview &&
+      !isVerified &&
+      (task.meta?.lastReworkNote || lastArchived) ? (
+        <div className="mb-2 space-y-1.5">
+          {lastArchived?.note ? (
+            <div className="rounded-lg border border-emerald-300/60 bg-emerald-50/70 px-2 py-1.5 text-[10px] text-emerald-950 dark:border-emerald-700/40 dark:bg-emerald-950/30 dark:text-emerald-100">
+              <span className="font-semibold">{t("tasks.return.history")}: </span>
+              {String(lastArchived.note).slice(0, 80)}
+              {String(lastArchived.note).length > 80 ? "…" : ""}
+            </div>
+          ) : null}
+          {task.meta?.lastReworkNote ? (
+            <div className="rounded-lg border border-amber-300/70 bg-amber-50/80 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700/50 dark:bg-amber-950/30 dark:text-amber-100">
+              <span className="font-semibold">{t("tasks.rework")}: </span>
+              {String(task.meta.lastReworkNote).slice(0, 90)}
+              {String(task.meta.lastReworkNote).length > 90 ? "…" : ""}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {pendingExt && (
         <div className="mb-2 rounded-lg border border-amber-200/80 bg-amber-50 px-2 py-1 text-[10px] text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200">
           Muddat so‘ralgan: {formatDate(task.extensionRequestedDueAt)}
@@ -2733,6 +3177,13 @@ function TaskCard({
         </span>
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
           {task.assigneeName || "—"}
+          {Array.isArray(task.meta?.assigneeHistory) &&
+          task.meta!.assigneeHistory!.length > 0 ? (
+            <span className="ml-1 font-normal text-muted-foreground">
+              · {t("tasks.transferredFrom")}:{" "}
+              {task.meta!.assigneeHistory![task.meta!.assigneeHistory!.length - 1]?.name}
+            </span>
+          ) : null}
         </span>
         <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
           <MessageSquare className="h-3 w-3" />
@@ -2749,7 +3200,9 @@ function TaskCard({
 
       {assigneeFrozen ? (
         <p className="mt-2 w-full rounded-md bg-rose-500/15 px-2 py-1.5 text-center text-[10px] font-bold text-rose-700 ring-1 ring-rose-300/60 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-700/50">
-          Vaqt tugagan — o‘zgartirish yopiq
+          {task.status === "todo" && !task.acceptedAt
+            ? "Qabul qilinmadi — faqat ko‘rish"
+            : "Vaqt tugagan — o‘zgartirish yopiq"}
         </p>
       ) : null}
 
@@ -2763,7 +3216,7 @@ function TaskCard({
         if (!hasActions) return null;
         return (
       <div
-        className="mt-2 flex flex-wrap gap-1 border-t border-border/40 pt-2 opacity-100 transition sm:opacity-0 sm:group-hover:opacity-100"
+        className="mt-2 flex flex-wrap gap-1 border-t border-border/40 pt-2"
         onClick={(e) => e.stopPropagation()}
       >
         {showAccept && (
@@ -2799,7 +3252,11 @@ function TaskCard({
           <button
             type="button"
             className="flex w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 py-2 text-[12px] font-bold text-white shadow-sm hover:bg-emerald-700"
-            onClick={onVerify}
+            onClick={() => {
+              startTransition(() => {
+                onVerify();
+              });
+            }}
           >
             <CheckCircle2 className="h-4 w-4" />
             Tasdiqlash
@@ -2808,10 +3265,12 @@ function TaskCard({
         {showApprove && (
           <button
             type="button"
-            className="w-full rounded-md py-1 text-[10px] text-amber-800 underline-offset-2 hover:underline dark:text-amber-200"
-            onClick={onRework}
+            className="flex w-full items-center justify-center gap-1.5 rounded-md bg-gradient-to-r from-[#0a2540]/10 to-[#0b5fff]/15 py-2 text-[11px] font-bold text-[#0a2540] ring-1 ring-[#0b5fff]/35 hover:from-[#0a2540]/15 hover:to-[#0b5fff]/25 dark:text-sky-100 dark:ring-[#0b5fff]/40"
+            onClick={onOpenReturn}
           >
+            <RotateCcw className="h-3.5 w-3.5" />
             {t("tasks.rework")}
+            {reworkCount > 0 ? ` · ${reworkCount}` : ""}
           </button>
         )}
         {showExtReview && (

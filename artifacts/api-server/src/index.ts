@@ -5,6 +5,7 @@ import { startVacancyReminderJob } from "./jobs/vacancy-reminders";
 import { startDavomatReminderJob } from "./jobs/davomat-reminders";
 import { startReviziyaAlertJob } from "./jobs/reviziya-alerts";
 import { startNotifTestJob } from "./jobs/notif-test";
+import { startFilialBotPollingJob } from "./jobs/filial-bot-polling";
 
 /** Vercel sets VERCEL=1 — serverless uses exported app, no listen. */
 const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -35,6 +36,7 @@ if (!isVercel) {
     startDavomatReminderJob();
     startReviziyaAlertJob();
     startNotifTestJob();
+    startFilialBotPollingJob();
   });
 }
 

@@ -44,8 +44,8 @@ export function isItRole(role?: string | null): boolean {
   return !!role && (IT_ROLES as readonly string[]).includes(role);
 }
 
-export function isTexnikRole(role?: string | null): boolean {
-  return role === "texnik" || role === "texnik_rahbar";
+export function isTexnikRole(_role?: string | null): boolean {
+  return false;
 }
 
 export function isHrManager(role?: string | null): boolean {
@@ -97,11 +97,9 @@ export function canViewEmployees(role?: string | null): boolean {
   if (role === "mudir" || role === "farmasevt" || role === "stajyor" || role === "koordinator") {
     return false;
   }
-  if (role === "mentor" || role === "recruiter" || role === "moliya") return false;
+  if (role === "recruiter" || role === "moliya") return false;
   return (
-    role === "department_head" ||
     role === "it_rahbar" ||
-    role === "texnik_rahbar" ||
     role === "reviziya_rahbar" ||
     role === "moliya_rahbar" ||
     role === "taminot_rahbar" ||
@@ -120,9 +118,7 @@ export function canViewEmployees(role?: string | null): boolean {
  * Bo‘lim boshliqlari — o‘z bo‘limi (view-only tahrir).
  */
 export const EMPLOYEE_VIEW_ONLY_ROLES = [
-  "department_head",
   "it_rahbar",
-  "texnik_rahbar",
   "reviziya_rahbar",
   "moliya_rahbar",
   "taminot_rahbar",
@@ -223,6 +219,12 @@ export function isPharmacyBranchRole(role?: string | null): boolean {
 export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);
 }
+
+/** Bog‘lanish (filial telefon / telegram) — faqat mudir va koordinator */
+export function canAccessBoglanish(role?: string | null): boolean {
+  return role === "mudir" || role === "koordinator";
+}
+
 export function canAccessKirish(role?: string | null): boolean {
   return role === "stajyor" || role === "admin";
 }

@@ -17,10 +17,12 @@ import {
   hmToMinutes,
   workScheduleForStaff,
   shiftEndAt,
-  CHECKOUT_GRACE_MS,
+  checkoutDeadlineAt,
+  CHECKOUT_DEADLINE_HM,
   encodeShiftKeys,
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
+import { isOfisRestDay } from "../lib/ofis-weekend";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 /** Grace ichida eslatma oralig‘i */
@@ -107,6 +109,7 @@ async function loadLinkedStaff() {
       empId: employeesTable.id,
       fullName: employeesTable.fullName,
       orgRole: employeesTable.orgRole,
+      position: employeesTable.position,
       shiftType: employeesTable.shiftType,
       shiftLabel: employeesTable.shiftLabel,
     })
@@ -144,6 +147,16 @@ export async function remindPharmacyShiftWarn(): Promise<number> {
   for (const e of linked) {
     if (!e.userId) continue;
     const role = roles.get(e.userId) || "";
+    if (
+      isOfisRestDay(ymd, {
+        userRole: role,
+        orgRole: e.orgRole,
+        position: e.position,
+      })
+    ) {
+      // Ofis: shanba–yakshanba dam — majburiy kelish eslatmasi yo‘q
+      continue;
+    }
     const w = workScheduleForStaff(role, e.orgRole, e.shiftType, e.shiftLabel, defs);
     const warnMin = hmToMinutes(w.warnHm);
     if (mins < warnMin || mins >= warnMin + 15) continue;
@@ -185,6 +198,15 @@ export async function remindDavomatCheckIn(): Promise<number> {
   for (const e of linked) {
     if (!e.userId) continue;
     const role = roles.get(e.userId) || "";
+    if (
+      isOfisRestDay(ymd, {
+        userRole: role,
+        orgRole: e.orgRole,
+        position: e.position,
+      })
+    ) {
+      continue;
+    }
     const pharmacy = isPharmacyShiftStaff(role, e.orgRole);
     if (pharmacy) {
       const start = hmToMinutes(shiftWindow(e.shiftType, e.shiftLabel, defs).start);
@@ -284,9 +306,9 @@ async function dayPlanShiftType(employeeId: number, workDate: string): Promise<s
 
 /**
  * Smena tugagach:
- * - 0…2 soat: har 30 daqiqada Telegram + in-app + OS eslatma
- * - 2 soatdan keyin: avtomatik «kelmagan» (absent), kun yopiladi
- * Farmasevt (apteka) + ofis xodimlari.
+ * - smena oxiri … 23:55: davriy Telegram + in-app eslatma
+ * - 23:55 dan keyin: avtomatik «kelmagan» (absent), kelish vaqti saqlanadi
+ * Ofis + farmasevt (tun smenasida muddat — smena tugagan kunning 23:55).
  */
 export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number; closed: number }> {
   const now = new Date();
@@ -306,21 +328,21 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
     const shiftLabel = planType ? null : r.shiftLabel;
     const w = workScheduleForStaff(role, r.orgRole, shiftType, shiftLabel, defs);
     const endAt = shiftEndAt(r.workDate, w.end, w.overnight);
+    const deadlineAt = checkoutDeadlineAt(r.workDate, w.end, w.overnight);
     const endMs = endAt.getTime();
+    const deadlineMs = deadlineAt.getTime();
     const nowMs = now.getTime();
 
     // Smena hali tugamagan
     if (nowMs < endMs) continue;
 
-    const graceEndMs = endMs + CHECKOUT_GRACE_MS;
-
-    // 2 soat o‘tdi — avtomatik kelmagan
-    if (nowMs >= graceEndMs) {
+    // 23:55 o‘tdi — avtomatik kelmagan (check-in saqlanadi)
+    if (nowMs >= deadlineMs) {
       await db
         .update(attendanceRecordsTable)
         .set({
           status: "absent",
-          notes: `auto_absent_no_checkout: smena ${w.end} dan keyin 2 soat ichida Ketdim yo‘q (${w.label})`,
+          notes: `auto_absent_no_checkout: ${CHECKOUT_DEADLINE_HM} gacha Ketdim yo‘q (smena ${w.end}, ${w.label})`,
           updatedAt: new Date(),
         })
         .where(
@@ -335,8 +357,8 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
       await notifyUser({
         userId: r.userId,
         text:
-          `Davomat yopildi: ${r.fullName || "Xodim"} — smena tugagach 2 soat ichida «Ketdim» bosilmadi. ` +
-          `Bugun «kelmagan» deb belgilandi. Ertaga yangi kun «Keldim» dan boshlanadi.`,
+          `Davomat yopildi: ${r.fullName || "Xodim"} — ${CHECKOUT_DEADLINE_HM} gacha «Ketdim» bosilmadi. ` +
+          `Bugun «kelmagan» deb belgilandi (kelish vaqti jadvalda qoladi). Ertaga «Keldim» dan boshlang.`,
         type: "davomat_auto_absent",
         linkUrl: "/davomat-face",
         telegram: true,
@@ -344,17 +366,17 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
       continue;
     }
 
-    // Grace oynasi: har 30 daqiqada bir eslatma (0, 30, 60, 90)
+    // Smena tugadi → 23:55: har 30 daqiqada eslatma
     const elapsed = nowMs - endMs;
-    const slot = Math.min(3, Math.floor(elapsed / NAG_EVERY_MS));
+    const slot = Math.min(8, Math.floor(elapsed / NAG_EVERY_MS));
     const type = `davomat_checkout_nag_${r.workDate}_${slot}`;
     const since = dayStartUtcApprox(r.workDate);
     if (await alreadyNotifiedToday(r.userId, type, since)) continue;
 
-    const remainMin = Math.max(0, Math.ceil((graceEndMs - nowMs) / 60_000));
+    const remainMin = Math.max(0, Math.ceil((deadlineMs - nowMs) / 60_000));
     const text =
       `Ish vaqtingiz tugadi (${w.end}). «Ketdim» ni Face ID/QR bilan yoping. ` +
-      `Yana ~${remainMin} daqiqa ichida yopilmasa, bugun ishlamagansiz deb topilasiz. ` +
+      `${CHECKOUT_DEADLINE_HM} gacha (~${remainMin} daq) yopilmasa, bugun kelmagan deb topilasiz. ` +
       `Hudud: ${DAVOMAT_GEOFENCE_METERS} m.`;
 
     await notifyUser({

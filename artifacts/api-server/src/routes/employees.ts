@@ -23,6 +23,7 @@ import {
 } from "../lib/staff-directory";
 import { formatPersonName } from "../lib/person-name";
 import { getActorDepartmentId, isDeptHeadRole, resolveDeptHeadContext } from "../lib/dept-staff";
+import { displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -90,6 +91,55 @@ const ORG_ROLE_UZ: Record<string, string> = {
   supervisor: "Nazoratchi",
 };
 
+const USER_ROLE_UZ: Record<string, string> = {
+  admin: "Admin",
+  recruiter: "Rekruter",
+  hr: "HR",
+  hr_direktor: "HR Direktor",
+  hr_kadr_rahbar: "HR kadr b/m",
+  hr_auditor: "HR Auditor",
+  hr_menejer: "HR Menejer",
+  trainer: "Trener",
+  director: "Direktor",
+  asoschi: "Asoschi",
+  mudir: "Mudir",
+  koordinator: "Koordinator",
+  it: "AyTi mutaxassisi",
+  it_rahbar: "AyTi bo‘lim boshlig‘i",
+  it_dasturchi: "Dasturchi",
+  it_tarmoq: "Tarmoq administratori",
+  ombor: "Ombor",
+  ombor_rahbar: "Omborxona bo‘lim boshlig‘i",
+  sb: "SB operatori",
+  sb_boshliq: "SB bo‘limi boshlig‘i",
+  farmasevt: "Farmasevt",
+  stajyor: "Stajyor",
+  moliya: "Moliyachi",
+  moliya_rahbar: "Moliya bo‘lim boshlig‘i",
+  moliya_xodim: "Moliya xodimi",
+  taminot_rahbar: "Ta’minot bo‘lim boshlig‘i",
+  taminot: "Ta’minot xodimi",
+  rivojlantirish_rahbar: "Rivojlantirish bo‘lim boshlig‘i",
+  rivojlantirish: "Rivojlantirish xodimi",
+  mamuriy_rahbar: "Ma’muriy-xo‘jalik bo‘lim boshlig‘i",
+  mamuriy: "Ma’muriy-xo‘jalik xodimi",
+  gpp_rahbar: "GPP bo‘lim boshlig‘i",
+  gpp: "GPP xodimi",
+  oshpaz_rahbar: "Oshpaz bo‘lim boshlig‘i",
+  oshpaz: "Oshpaz",
+  marketing_rahbar: "Marketing bo‘lim boshlig‘i",
+  marketing: "Marketing xodimi",
+  revizor: "Revizor-yig‘uvchi",
+  reviziya_rahbar: "Reviziya bo‘limi rahbari",
+  distrib: "Distribyutsiya xodimi",
+  distrib_hr: "Distribyutsiya HR",
+  distrib_rahbar: "Distribyutsiya rahbari",
+  kassir: "Kassir",
+  yurist: "Yurist",
+  komunalniy: "Kommunal",
+  direktor_yordamchisi: "Direktor yordamchisi",
+};
+
 const STATUS_UZ: Record<string, string> = {
   working: "Ishlayapti",
   new: "Yangi",
@@ -106,6 +156,29 @@ const SHIFT_UZ: Record<string, string> = {
   two: "2 smena",
   custom: "Maxsus",
 };
+
+function staffRoleLabelForExcel(e: {
+  userRole?: string | null;
+  orgRole?: string | null;
+}): string {
+  if (e.userRole && USER_ROLE_UZ[e.userRole]) return USER_ROLE_UZ[e.userRole];
+  if (e.userRole) return e.userRole;
+  if (e.orgRole && ORG_ROLE_UZ[e.orgRole]) return ORG_ROLE_UZ[e.orgRole];
+  return e.orgRole || "—";
+}
+
+function formatPhoneForExcel(raw: string | null | undefined): string {
+  const p = String(raw || "").trim();
+  return p || "—";
+}
+
+function formatHiredForExcel(raw: string | null | undefined): string {
+  const s = String(raw || "").trim();
+  if (!s) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  if (m) return `${m[3]}.${m[2]}.${m[1]}`;
+  return s;
+}
 
 type EmpRow = StaffRow;
 
@@ -238,6 +311,147 @@ function isPharmacyStaffRow(e: {
   return false;
 }
 
+function isMudirFarmasevtStajyor(e: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+}): boolean {
+  return (
+    matchesStaffRoleFilter(e, "mudir") ||
+    matchesStaffRoleFilter(e, "farmasevt") ||
+    matchesStaffRoleFilter(e, "stajyor")
+  );
+}
+
+type ExportLinkRow = {
+  id: number;
+  fullName: string;
+  orgRole: string | null;
+  userRole: string | null;
+  reportsToId: number | null;
+  location: string | null;
+};
+
+async function loadExportLinkMap(seed: EmpEnriched[]): Promise<Map<number, ExportLinkRow>> {
+  const map = new Map<number, ExportLinkRow>();
+  for (const e of seed) {
+    map.set(e.id, {
+      id: e.id,
+      fullName: e.fullName,
+      orgRole: e.orgRole ?? null,
+      userRole: e.userRole ?? null,
+      reportsToId: e.reportsToId ?? null,
+      location: e.location ?? null,
+    });
+  }
+
+  let pending = [...new Set(seed.map((e) => e.reportsToId).filter((id): id is number => id != null && !map.has(id)))];
+  for (let hop = 0; hop < 3 && pending.length; hop++) {
+    const rows = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        orgRole: employeesTable.orgRole,
+        reportsToId: employeesTable.reportsToId,
+        location: employeesTable.location,
+        userId: employeesTable.userId,
+      })
+      .from(employeesTable)
+      .where(inArray(employeesTable.id, pending));
+
+    const userIds = [...new Set(rows.map((r) => r.userId).filter((id): id is number => id != null))];
+    const roleByUser = new Map<number, string>();
+    if (userIds.length) {
+      const users = await db
+        .select({ id: usersTable.id, role: usersTable.role })
+        .from(usersTable)
+        .where(inArray(usersTable.id, userIds));
+      for (const u of users) roleByUser.set(u.id, u.role);
+    }
+
+    const next: number[] = [];
+    for (const r of rows) {
+      const link: ExportLinkRow = {
+        id: r.id,
+        fullName: formatPersonName(r.fullName) || r.fullName,
+        orgRole: r.orgRole,
+        userRole: r.userId != null ? roleByUser.get(r.userId) ?? null : null,
+        reportsToId: r.reportsToId,
+        location: r.location,
+      };
+      map.set(r.id, link);
+      if (r.reportsToId != null && !map.has(r.reportsToId)) next.push(r.reportsToId);
+    }
+    pending = [...new Set(next)];
+  }
+
+  return map;
+}
+
+function excelPlaceName(e: EmpEnriched, links: Map<number, ExportLinkRow>): string {
+  if (!isPharmacyStaffRow(e)) return "Asosiy ofis";
+
+  const own = displayBranchName(e.location).trim();
+  if (own) return own;
+
+  // Farmasevt / stajyor — mudir filialidan
+  let cursor = e.reportsToId != null ? links.get(e.reportsToId) : undefined;
+  for (let i = 0; i < 3 && cursor; i++) {
+    const loc = displayBranchName(cursor.location).trim();
+    if (loc) return loc;
+    cursor = cursor.reportsToId != null ? links.get(cursor.reportsToId) : undefined;
+  }
+  return "—";
+}
+
+function excelCoordinatorName(e: EmpEnriched, links: Map<number, ExportLinkRow>): string {
+  if (!isMudirFarmasevtStajyor(e)) return "—";
+
+  let cursor = e.reportsToId != null ? links.get(e.reportsToId) : undefined;
+  for (let i = 0; i < 4 && cursor; i++) {
+    const ur = String(cursor.userRole || "").toLowerCase();
+    const org = String(cursor.orgRole || "").toLowerCase();
+    if (ur === "koordinator" || org === "coordinator") {
+      return formatPersonName(cursor.fullName) || cursor.fullName || "—";
+    }
+    cursor = cursor.reportsToId != null ? links.get(cursor.reportsToId) : undefined;
+  }
+  return "—";
+}
+
+function matchesStaffRoleFilter(
+  e: {
+    userRole?: string | null;
+    orgRole?: string | null;
+    position?: string | null;
+  },
+  roleKey?: string,
+): boolean {
+  if (!roleKey || roleKey === "all") return true;
+  const ur = String(e.userRole || "").toLowerCase().trim();
+  const org = String(e.orgRole || "").toLowerCase().trim();
+  const pos = String(e.position || "").toLowerCase().trim();
+  const key = roleKey.toLowerCase().trim();
+  if (key === "mudir") {
+    return ur === "mudir" || org === "manager" || /filial\s*mudir/.test(pos) || pos === "mudir";
+  }
+  if (key === "farmasevt") {
+    return ur === "farmasevt" || org === "pharmacist" || pos.includes("farmasevt");
+  }
+  if (key === "stajyor" || key === "stajor") {
+    return ur === "stajyor" || ur === "stajor" || org === "intern" || pos.includes("stajyor");
+  }
+  if (key === "koordinator") {
+    return ur === "koordinator" || org === "coordinator" || pos.includes("koordinator");
+  }
+  return ur === key || org === key || pos === key;
+}
+
+function isPharmacyRoleKey(roleKey?: string): boolean {
+  const key = String(roleKey || "").toLowerCase().trim();
+  return key === "mudir" || key === "farmasevt" || key === "stajyor" || key === "stajor" || key === "koordinator";
+}
+
 function scopeEmployees(
   rows: EmpRow[],
   role: string,
@@ -285,7 +499,8 @@ function scopeEmployees(
 router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const role = req.userRole ?? "";
-    const { departmentId, mentorId, search, group, workplace } = req.query as Record<string, string>;
+    const { departmentId, mentorId, search, group, workplace, role: roleFilter, status } =
+      req.query as Record<string, string>;
     const pharmacyNetworkRole =
       role === "mudir" || role === "koordinator" || role === "farmasevt" || role === "stajyor";
     // Ofis katalogi yoki apteka tarmog‘i (mudir/koordinator)
@@ -301,6 +516,8 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
     let workplaceMode: "ofis" | "dorixona" | "all" = "ofis";
     if (pharmacyNetworkRole) {
       workplaceMode = "dorixona";
+    } else if (isPharmacyRoleKey(roleFilter)) {
+      workplaceMode = "all";
     } else if (fullAccess && !deptHeadScoped) {
       if (workplace === "dorixona" || workplace === "all") workplaceMode = workplace;
       else workplaceMode = "ofis";
@@ -321,6 +538,12 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
     }
     // workplaceMode === "all" — filtr yo‘q
 
+    if (roleFilter && roleFilter !== "all") {
+      filtered = filtered.filter((e) => matchesStaffRoleFilter(e, roleFilter));
+    }
+    if (status && status !== "all") {
+      filtered = filtered.filter((e) => (e.employmentStatus || "working") === status);
+    }
     // Bo‘lim boshliqlari — faqat o‘z bo‘limi (id yoki nom bo‘yicha) + o‘zi yaratgan rollar
     if (deptHeadScoped) {
       const ctx = await resolveDeptHeadContext(userId, role);
@@ -362,12 +585,15 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
   }
   const role = req.userRole ?? "";
   const userId = req.userId;
-  const { departmentId, mentorId, search, group, workplace } = req.query as Record<string, string>;
+  const { departmentId, mentorId, search, group, workplace, role: roleFilter, status } =
+    req.query as Record<string, string>;
   const staffGroup = group === "other" ? "other" : "active";
   const deptHeadScoped = isDeptHeadRole(role) && !!userId && !canViewEmployeesFull(role);
   const fullAccess = canViewEmployeesFull(role);
   let workplaceMode: "ofis" | "dorixona" | "all" = "ofis";
-  if (fullAccess && !deptHeadScoped) {
+  if (isPharmacyRoleKey(roleFilter)) {
+    workplaceMode = "all";
+  } else if (fullAccess && !deptHeadScoped) {
     if (workplace === "dorixona" || workplace === "all") workplaceMode = workplace;
     else workplaceMode = "ofis";
   }
@@ -382,6 +608,13 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
     filtered = filtered.filter((e) => !isPharmacyStaffRow(e));
   } else if (workplaceMode === "dorixona") {
     filtered = filtered.filter((e) => isPharmacyStaffRow(e));
+  }
+
+  if (roleFilter && roleFilter !== "all") {
+    filtered = filtered.filter((e) => matchesStaffRoleFilter(e, roleFilter));
+  }
+  if (status && status !== "all") {
+    filtered = filtered.filter((e) => (e.employmentStatus || "working") === status);
   }
 
   let enriched = await enrichMany(filtered);
@@ -418,42 +651,58 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
     }
   }
 
+  enriched.sort((a, b) =>
+    String(a.fullName || "").localeCompare(String(b.fullName || ""), "uz", {
+      sensitivity: "base",
+    }),
+  );
+
+  const linkMap = await loadExportLinkMap(enriched);
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "VAKSINA MED HR";
   workbook.created = new Date();
 
+  const colCount = 11;
+  const lastCol = "K";
   const sheet = workbook.addWorksheet("Xodimlar", {
-    views: [{ state: "frozen", ySplit: 2 }],
-    properties: { defaultRowHeight: 20 },
+    views: [{ state: "frozen", ySplit: 2, xSplit: 2 }],
+    properties: { defaultRowHeight: 22 },
   });
 
-  sheet.mergeCells("A1:K1");
+  sheet.mergeCells(`A1:${lastCol}1`);
   const title = sheet.getCell("A1");
-  title.value = "VAKSINA MED — Xodimlar to‘liq ro‘yxati";
-  title.font = { name: "Calibri", size: 14, bold: true, color: { argb: "FFFFFFFF" } };
+  title.value = "VAKSINA MED — Xodimlar ro‘yxati";
+  title.font = { name: "Calibri", size: 15, bold: true, color: { argb: "FFFFFFFF" } };
   title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0B3A5C" } };
   title.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
-  sheet.getRow(1).height = 32;
+  sheet.getRow(1).height = 34;
 
   const headers = [
     "№",
     "F.I.Sh.",
     "Lavozim",
-    "Tarmoq roli",
+    "Rol",
     "Bo‘lim",
-    "Filial / joy",
-    "Mentor",
     "Holat",
     "Smena",
     "Ishga olingan",
     "Telefon",
+    "Joy / filial",
+    "Koordinator",
   ];
   const headerRow = sheet.getRow(2);
   headers.forEach((h, i) => {
     const cell = headerRow.getCell(i + 1);
     cell.value = h;
-    cell.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1A5F8A" } };
+    cell.font = { name: "Calibri", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: {
+        argb: i === 9 ? "FF0F766E" : i === 10 ? "FF7C3AED" : "FF1A5F8A",
+      },
+    };
     cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
     cell.border = {
       top: { style: "thin", color: { argb: "FF0B3A5C" } },
@@ -462,20 +711,20 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
       right: { style: "thin", color: { argb: "FF0B3A5C" } },
     };
   });
-  headerRow.height = 24;
+  headerRow.height = 26;
 
   sheet.columns = [
     { key: "n", width: 5 },
-    { key: "fullName", width: 28 },
-    { key: "position", width: 18 },
-    { key: "orgRole", width: 14 },
+    { key: "fullName", width: 30 },
+    { key: "position", width: 20 },
+    { key: "role", width: 18 },
     { key: "department", width: 18 },
-    { key: "location", width: 20 },
-    { key: "mentor", width: 18 },
-    { key: "status", width: 12 },
+    { key: "status", width: 14 },
     { key: "shift", width: 12 },
-    { key: "hiredAt", width: 12 },
+    { key: "hiredAt", width: 14 },
     { key: "phone", width: 16 },
+    { key: "place", width: 42 },
+    { key: "coordinator", width: 28 },
   ];
 
   enriched.forEach((e, idx) => {
@@ -484,27 +733,46 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
       e.shiftType === "custom" && e.shiftLabel
         ? e.shiftLabel
         : SHIFT_UZ[e.shiftType || ""] || e.shiftType || "—";
+    const phone = formatPhoneForExcel(e.phone || linked?.phone);
+    const place = excelPlaceName(e, linkMap);
+    const coordinator = excelCoordinatorName(e, linkMap);
     const row = sheet.addRow({
       n: idx + 1,
-      fullName: e.fullName,
-      position: e.position,
-      orgRole: (e.orgRole && ORG_ROLE_UZ[e.orgRole]) || e.orgRole || "—",
+      fullName: formatPersonName(e.fullName) || e.fullName || "—",
+      position: e.position || "—",
+      role: staffRoleLabelForExcel(e),
       department: e.departmentName || "—",
-      location: e.location || "—",
-      mentor: e.mentorName || "—",
       status: STATUS_UZ[e.employmentStatus || ""] || e.employmentStatus || "—",
       shift,
-      hiredAt: e.hiredAt || "—",
-      phone: e.phone || linked?.phone || "—",
+      hiredAt: formatHiredForExcel(e.hiredAt),
+      phone,
+      place,
+      coordinator,
     });
     const zebra = idx % 2 === 0 ? "FFF7FAFC" : "FFFFFFFF";
     row.eachCell((cell, colNumber) => {
-      cell.font = { name: "Calibri", size: 10 };
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: zebra } };
+      const isPhone = colNumber === 9;
+      const isPlace = colNumber === 10;
+      const isCoord = colNumber === 11;
+      cell.font = {
+        name: "Calibri",
+        size: 11,
+        bold: colNumber === 2 || isPhone || isPlace,
+      };
+      cell.fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: {
+          argb: isPhone ? "FFECFDF5" : isPlace ? "FFEFF6FF" : isCoord ? "FFF5F3FF" : zebra,
+        },
+      };
       cell.alignment = {
         vertical: "middle",
-        horizontal: colNumber === 1 || colNumber === 8 || colNumber === 10 ? "center" : "left",
-        wrapText: true,
+        horizontal:
+          colNumber === 1 || colNumber === 6 || colNumber === 7 || colNumber === 8
+            ? "center"
+            : "left",
+        wrapText: isPlace,
       };
       cell.border = {
         top: { style: "thin", color: { argb: "FFE2E8F0" } },
@@ -512,17 +780,26 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
         bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
         right: { style: "thin", color: { argb: "FFE2E8F0" } },
       };
+      if (isPhone) {
+        cell.numFmt = "@";
+        cell.value = phone;
+      }
     });
-    row.height = 20;
+    row.height = place.length > 36 ? 32 : 22;
   });
 
+  const dataEnd = 2 + enriched.length;
+  if (enriched.length > 0) {
+    sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: dataEnd, column: colCount } };
+  }
+
   const footerRow = sheet.addRow([]);
-  sheet.mergeCells(`A${footerRow.number}:K${footerRow.number}`);
+  sheet.mergeCells(`A${footerRow.number}:${lastCol}${footerRow.number}`);
   const footer = sheet.getCell(`A${footerRow.number}`);
-  footer.value = `Jami: ${enriched.length} ta xodim · ${new Date().toLocaleString("uz-UZ")}`;
+  footer.value = `Jami: ${enriched.length} ta xodim · Yuklab olingan: ${new Date().toLocaleString("uz-UZ")} · Ofis = Asosiy ofis · Filial nomi bazadagidek · Mudir/Farmasevt/Stajyor — koordinator`;
   footer.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF64748B" } };
   footer.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
-  sheet.getRow(footerRow.number).height = 20;
+  sheet.getRow(footerRow.number).height = 22;
 
   const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
   const stamp = new Date().toISOString().slice(0, 10);

@@ -1,9 +1,10 @@
 import { Router, type IRouter } from "express";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, inArray, or } from "drizzle-orm";
 import {
   db,
   remindersTable,
   reminderEventsTable,
+  usersTable,
   type ReminderAttachment,
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
@@ -13,6 +14,25 @@ import { notifyUser } from "../lib/notify";
 const router: IRouter = Router();
 
 const VALID_INTERVALS = new Set([15, 30, 60, 120, 360, 720, 1440]);
+const VALID_CATEGORIES = new Set(["work", "personal", "meeting", "check", "finance", "other"]);
+const VALID_PRIORITIES = new Set(["low", "medium", "high", "critical"]);
+
+function canAccessReminder(
+  row: typeof remindersTable.$inferSelect,
+  userId: number,
+) {
+  return row.userId === userId || row.createdById === userId;
+}
+
+function parseCategory(raw: unknown): string {
+  const v = String(raw || "work").toLowerCase();
+  return VALID_CATEGORIES.has(v) ? v : "work";
+}
+
+function parsePriority(raw: unknown): string {
+  const v = String(raw || "medium").toLowerCase();
+  return VALID_PRIORITIES.has(v) ? v : "medium";
+}
 
 function parseAttachments(raw: unknown): ReminderAttachment[] {
   if (!Array.isArray(raw)) return [];
@@ -91,6 +111,9 @@ async function syncReminderLifecycle(
         text: `Eslatma muddati o‘tdi: ${current.title}`,
         type: "reminder_missed",
         linkUrl: "/eslatmalar",
+        telegram: Boolean(current.notifyTelegram),
+        system: current.notifySystem !== false,
+        webPush: current.notifySystem !== false,
       });
       current = updated;
     }
@@ -107,12 +130,19 @@ async function syncReminderLifecycle(
     })();
 
     if (shouldNotify) {
-      await notifyUser({
-        userId,
-        text: `Eslatma: ${current.title}`,
-        type: "reminder_ping",
-        linkUrl: "/eslatmalar",
-      });
+      const wantSystem = current.notifySystem !== false;
+      const wantTelegram = Boolean(current.notifyTelegram);
+      if (wantSystem || wantTelegram) {
+        await notifyUser({
+          userId,
+          text: `Eslatma: ${current.title}`,
+          type: "reminder_ping",
+          linkUrl: "/eslatmalar",
+          telegram: wantTelegram,
+          system: wantSystem,
+          webPush: wantSystem,
+        });
+      }
       const [updated] = await db
         .update(remindersTable)
         .set({ lastNotifiedAt: now, updatedAt: now })
@@ -121,7 +151,11 @@ async function syncReminderLifecycle(
       await addEvent({
         reminderId: current.id,
         eventType: "notified",
-        note: "Ogohlantirish yuborildi",
+        note: wantTelegram && wantSystem
+          ? "Tizim + Telegram"
+          : wantTelegram
+            ? "Telegram"
+            : "Tizim ichida",
         createdById: userId,
       });
       if (updated) current = updated;
@@ -161,26 +195,42 @@ router.get("/reminders", requireAuth, async (req: AuthRequest, res): Promise<voi
   const rows = await db
     .select()
     .from(remindersTable)
-    .where(eq(remindersTable.userId, userId))
+    .where(
+      or(eq(remindersTable.userId, userId), eq(remindersTable.createdById, userId)),
+    )
     .orderBy(desc(remindersTable.dueAt));
 
   const synced = [];
   for (const row of rows) {
-    synced.push(enrich(await syncReminderLifecycle(row, userId)));
+    // Lifecycle faqat egasi uchun (bildirishnomalar unga boradi)
+    const live =
+      row.userId === userId ? await syncReminderLifecycle(row, userId) : row;
+    synced.push({
+      ...enrich(live),
+      forOthers: live.userId !== userId && live.createdById === userId,
+      forMe: live.userId === userId,
+    });
   }
   res.json(synced);
 });
 
 router.get("/reminders/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
+  const userId = req.userId!;
   const [row] = await db.select().from(remindersTable).where(eq(remindersTable.id, id));
-  if (!row || row.userId !== req.userId) {
+  if (!row || !canAccessReminder(row, userId)) {
     res.status(404).json({ error: "Eslatma topilmadi" });
     return;
   }
-  const current = await syncReminderLifecycle(row, req.userId!);
+  const current =
+    row.userId === userId ? await syncReminderLifecycle(row, userId) : row;
   const events = await listEvents(id);
-  res.json({ ...enrich(current), events });
+  res.json({
+    ...enrich(current),
+    events,
+    forOthers: current.userId !== userId && current.createdById === userId,
+    forMe: current.userId === userId,
+  });
 });
 
 router.post("/reminders", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -192,6 +242,12 @@ router.post("/reminders", requireAuth, async (req: AuthRequest, res): Promise<vo
     notifyAt,
     remindIntervalMinutes,
     attachments,
+    category,
+    priority,
+    notifySystem,
+    notifyTelegram,
+    targetUserId,
+    targetUserIds,
   } = req.body ?? {};
 
   if (!title || !String(title).trim()) {
@@ -228,47 +284,145 @@ router.post("/reminders", requireAuth, async (req: AuthRequest, res): Promise<vo
     interval = n;
   }
 
-  const [created] = await db
-    .insert(remindersTable)
-    .values({
-      userId,
-      title: String(title).trim(),
-      description: description ? String(description) : null,
-      dueAt: due,
-      notifyAt: notify,
-      remindIntervalMinutes: interval,
-      attachments: parseAttachments(attachments),
-      status: "active",
-    })
-    .returning();
+  const idSet = new Set<number>();
+  if (Array.isArray(targetUserIds)) {
+    for (const raw of targetUserIds) {
+      const n = parseInt(String(raw), 10);
+      if (Number.isFinite(n) && n > 0 && n !== userId) idSet.add(n);
+    }
+  }
+  const singleRaw =
+    targetUserId != null && targetUserId !== "" ? parseInt(String(targetUserId), 10) : NaN;
+  if (Number.isFinite(singleRaw) && singleRaw > 0 && singleRaw !== userId) {
+    idSet.add(singleRaw);
+  }
 
-  await addEvent({
-    reminderId: created.id,
-    eventType: "created",
-    note: "Eslatma yaratildi",
-    toDueAt: due,
-    toStatus: "active",
+  const ownerIds: number[] = [];
+  if (idSet.size === 0) {
+    ownerIds.push(userId);
+  } else {
+    const candidates = [...idSet];
+    const found = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(inArray(usersTable.id, candidates));
+    const foundSet = new Set(found.map((u) => u.id));
+    for (const id of candidates) {
+      if (!foundSet.has(id)) {
+        res.status(400).json({ error: `Xodim topilmadi (#${id})` });
+        return;
+      }
+      ownerIds.push(id);
+    }
+  }
+
+  if (ownerIds.length > 50) {
+    res.status(400).json({ error: "Bir vaqtda 50 tadan ortiq xodimga yuborib bo‘lmaydi" });
+    return;
+  }
+
+  const baseValues = {
     createdById: userId,
-  });
+    title: String(title).trim(),
+    description: description ? String(description) : null,
+    dueAt: due,
+    notifyAt: notify,
+    remindIntervalMinutes: interval,
+    attachments: parseAttachments(attachments),
+    category: parseCategory(category),
+    priority: parsePriority(priority),
+    notifySystem: notifySystem === false || notifySystem === "false" ? false : true,
+    notifyTelegram: notifyTelegram === true || notifyTelegram === "true",
+    status: "active" as const,
+  };
 
-  res.status(201).json(enrich(created));
+  const createdRows = [];
+  for (const ownerId of ownerIds) {
+    const [created] = await db
+      .insert(remindersTable)
+      .values({
+        ...baseValues,
+        userId: ownerId,
+      })
+      .returning();
+
+    await addEvent({
+      reminderId: created.id,
+      eventType: "created",
+      note:
+        ownerId === userId
+          ? "Eslatma yaratildi"
+          : `Xodimga biriktirildi (#${ownerId})`,
+      toDueAt: due,
+      toStatus: "active",
+      createdById: userId,
+    });
+
+    if (ownerId !== userId) {
+      await notifyUser({
+        userId: ownerId,
+        text: `Sizga yangi eslatma: ${created.title}`,
+        type: "reminder_assigned",
+        linkUrl: "/eslatmalar",
+        telegram: Boolean(created.notifyTelegram),
+        system: created.notifySystem !== false,
+        webPush: created.notifySystem !== false,
+      });
+    }
+    createdRows.push(created);
+  }
+
+  const enriched = createdRows.map((row) => ({
+    ...enrich(row),
+    forOthers: row.userId !== userId,
+    forMe: row.userId === userId,
+  }));
+
+  if (enriched.length === 1) {
+    res.status(201).json(enriched[0]);
+    return;
+  }
+
+  res.status(201).json({
+    created: enriched.length,
+    items: enriched,
+    ...enriched[0],
+  });
 });
 
 router.patch("/reminders/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   const userId = req.userId!;
   const [existing] = await db.select().from(remindersTable).where(eq(remindersTable.id, id));
-  if (!existing || existing.userId !== userId) {
+  if (!existing || !canAccessReminder(existing, userId)) {
     res.status(404).json({ error: "Eslatma topilmadi" });
     return;
   }
 
   const updates: Partial<typeof remindersTable.$inferInsert> = {};
-  const { title, description, notifyAt, remindIntervalMinutes, attachments } = req.body ?? {};
+  const {
+    title,
+    description,
+    notifyAt,
+    remindIntervalMinutes,
+    attachments,
+    category,
+    priority,
+    notifySystem,
+    notifyTelegram,
+  } = req.body ?? {};
 
   if (title != null) updates.title = String(title).trim();
   if (description !== undefined) updates.description = description ? String(description) : null;
   if (attachments !== undefined) updates.attachments = parseAttachments(attachments);
+  if (category !== undefined) updates.category = parseCategory(category);
+  if (priority !== undefined) updates.priority = parsePriority(priority);
+  if (notifySystem !== undefined) {
+    updates.notifySystem = !(notifySystem === false || notifySystem === "false");
+  }
+  if (notifyTelegram !== undefined) {
+    updates.notifyTelegram = notifyTelegram === true || notifyTelegram === "true";
+  }
 
   if (notifyAt !== undefined) {
     if (notifyAt === null || notifyAt === "") updates.notifyAt = null;
@@ -332,7 +486,7 @@ router.post("/reminders/:id/postpone", requireAuth, async (req: AuthRequest, res
   }
 
   const [existing] = await db.select().from(remindersTable).where(eq(remindersTable.id, id));
-  if (!existing || existing.userId !== userId) {
+  if (!existing || !canAccessReminder(existing, userId)) {
     res.status(404).json({ error: "Eslatma topilmadi" });
     return;
   }
@@ -395,7 +549,7 @@ router.post("/reminders/:id/complete", requireAuth, async (req: AuthRequest, res
   await addEvent({
     reminderId: id,
     eventType: "completed",
-    note: "Bajarildi deb belgilandi",
+    note: "Bajardim deb belgilandi",
     fromStatus: existing.status,
     toStatus: "completed",
     fromDueAt: existing.dueAt,
@@ -410,7 +564,7 @@ router.delete("/reminders/:id", requireAuth, async (req: AuthRequest, res): Prom
   const id = parseInt(String(req.params.id), 10);
   const userId = req.userId!;
   const [existing] = await db.select().from(remindersTable).where(eq(remindersTable.id, id));
-  if (!existing || existing.userId !== userId) {
+  if (!existing || !canAccessReminder(existing, userId)) {
     res.status(404).json({ error: "Eslatma topilmadi" });
     return;
   }

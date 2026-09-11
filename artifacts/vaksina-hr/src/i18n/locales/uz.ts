@@ -72,6 +72,7 @@ export const uz: Messages = {
   "nav.javobOlish": "Javob olish",
   "nav.checklistStatus": "Cheklist holati",
   "nav.pharmacy": "Aptekalar tarmog‘i",
+  "nav.boglanish": "Bog‘lanish",
   "nav.holat": "Holat",
   "nav.ehtiyoj": "Ehtiyoj",
   "nav.pipeline": "Pipeline",

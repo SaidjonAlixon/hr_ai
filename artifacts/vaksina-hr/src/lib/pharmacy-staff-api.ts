@@ -437,15 +437,12 @@ async function downloadExcel(path: string, fallbackName: string) {
     throw new Error(message || "Excel yuklanmadi");
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
   const stamp = new Date().toISOString().slice(0, 10);
-  a.download = fallbackName.includes("DATE") ? fallbackName.replace("DATE", stamp) : fallbackName;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const filename = fallbackName.includes("DATE")
+    ? fallbackName.replace("DATE", stamp)
+    : fallbackName;
+  const { deliverFile } = await import("./tg-download");
+  return deliverFile(blob, filename);
 }
 
 export async function downloadOwnMudirsExcel() {

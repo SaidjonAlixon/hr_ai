@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import { useGetDepartments } from "@workspace/api-client-react";
 import {
   CalendarDays,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ClipboardCheck,
@@ -15,6 +16,8 @@ import {
   UserCheck,
   Users,
   Pencil,
+  UserX,
+  Timer,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -33,6 +36,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "../../components/ui/popover";
+import { Calendar as DayPickerCalendar } from "../../components/ui/calendar";
 import { Label } from "../../components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
 import { useToast } from "../../hooks/use-toast";
@@ -93,6 +102,27 @@ function lastOfMonth(ymd: string): string {
   return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
 }
 
+/** 2026-09-07 → 07.09.2026 */
+function formatYmdDot(ymd: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return ymd;
+  const [y, m, d] = ymd.split("-");
+  return `${d}.${m}.${y}`;
+}
+
+function toYmdLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+function parseYmdLocal(ymd: string): Date | undefined {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return undefined;
+  const [y, m, d] = ymd.split("-").map(Number);
+  if (!y || !m || !d) return undefined;
+  return new Date(y, m - 1, d);
+}
+
 const MONTH_KEYS = [
   "month.1",
   "month.2",
@@ -137,6 +167,7 @@ const STATUS_KEYS: Record<string, string> = {
   incomplete: "davomat.incomplete",
   absent: "davomat.absent",
   leave: "davomat.leave",
+  rest: "davomat.rest",
 };
 
 const STATUS_STYLE: Record<string, string> = {
@@ -145,6 +176,7 @@ const STATUS_STYLE: Record<string, string> = {
   incomplete: "border-sky-400 bg-sky-500/15 text-sky-900 dark:border-sky-500/50 dark:bg-sky-500/20 dark:text-sky-300",
   absent: "border-rose-400 bg-rose-500/15 text-rose-800 dark:border-rose-500/50 dark:bg-rose-500/20 dark:text-rose-300",
   leave: "border-violet-400 bg-violet-500/15 text-violet-900 dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-300",
+  rest: "border-slate-400 bg-slate-500/15 text-slate-700 dark:border-slate-500/50 dark:bg-slate-500/20 dark:text-slate-300",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -153,6 +185,7 @@ const STATUS_DOT: Record<string, string> = {
   incomplete: "bg-sky-500",
   absent: "bg-rose-500",
   leave: "bg-violet-500",
+  rest: "bg-slate-400",
 };
 
 /** Haftalik jadval kataklari — qisqa matn */
@@ -162,6 +195,7 @@ const WEEK_CELL_STATUS_KEYS: Record<string, string> = {
   incomplete: "davomat.incompleteShort",
   absent: "davomat.absent",
   leave: "davomat.leaveShort",
+  rest: "davomat.restShort",
 };
 
 function compactDuration(label: string): string {
@@ -238,6 +272,16 @@ type EditState = {
 
 type Section = "schedule" | "totals";
 type CalMode = "day" | "week" | "month" | "range";
+type DayStatusFilter = "all" | "present" | "absent" | "late";
+
+function matchesDayStatusFilter(status: string | undefined, filter: DayStatusFilter): boolean {
+  if (filter === "all") return true;
+  const st = status || "absent";
+  if (filter === "absent") return st === "absent";
+  if (filter === "late") return st === "late";
+  // Kelgan — kelmagan / tatil / damdan tashqari
+  return st !== "absent" && st !== "leave" && st !== "rest";
+}
 
 export default function DavomatPage() {
   const { user } = useAuth();
@@ -249,6 +293,9 @@ export default function DavomatPage() {
   const [calMode, setCalMode] = useState<CalMode>("day");
   const [selectedDay, setSelectedDay] = useState(() => todayYmd());
   const [weekStart, setWeekStart] = useState(() => mondayOf(todayYmd()));
+  const [weekPickerOpen, setWeekPickerOpen] = useState(false);
+  const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  const [dayPickerOpen, setDayPickerOpen] = useState(false);
   const [monthAnchor, setMonthAnchor] = useState(() => firstOfMonth(todayYmd()));
   const [rangeFrom, setRangeFrom] = useState(() => addDaysYmd(todayYmd(), -6));
   const [rangeTo, setRangeTo] = useState(() => todayYmd());
@@ -257,6 +304,7 @@ export default function DavomatPage() {
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [staffFilter, setStaffFilter] = useState<DavomatStaffFilter>("office");
+  const [dayStatusFilter, setDayStatusFilter] = useState<DayStatusFilter>("all");
   const [selectedEmpId, setSelectedEmpId] = useState<number | "all">("all");
   const [report, setReport] = useState<DavomatReport | null>(null);
   const [loading, setLoading] = useState(true);
@@ -360,7 +408,9 @@ export default function DavomatPage() {
       if (!day) continue;
       if (day.status === "absent") absent += 1;
       else if (day.status === "leave") leave += 1;
-      else {
+      else if (day.status === "rest") {
+        /* ofis dam — absent emas */
+      } else {
         present += 1;
         if (day.status === "late") late += 1;
         if (day.status === "incomplete") incomplete += 1;
@@ -368,6 +418,18 @@ export default function DavomatPage() {
     }
     return { present, late, absent, incomplete, leave, total: employeesForDay.length };
   }, [employeesForDay]);
+
+  const visibleEmployeesForDay = useMemo(
+    () =>
+      employeesForDay.filter(({ day }) => matchesDayStatusFilter(day?.status, dayStatusFilter)),
+    [employeesForDay, dayStatusFilter],
+  );
+
+  function toggleDayStatusFilter(next: DayStatusFilter) {
+    setDayStatusFilter((prev) => (prev === next ? "all" : next));
+    setSection("schedule");
+    setCalMode("day");
+  }
 
   /** «Xodimlar jami» kartalari — filtrlangan, tushunarli analitika */
   const periodAnalytics = useMemo(() => {
@@ -501,7 +563,7 @@ export default function DavomatPage() {
       description: "Katta hisobot 20–40 soniya olishi mumkin. Iltimos, kuting.",
     });
     try {
-      await downloadDavomatExcel({
+      const result = await downloadDavomatExcel({
         from,
         to,
         search: search.trim() || undefined,
@@ -509,8 +571,11 @@ export default function DavomatPage() {
         staffFilter,
       });
       toast({
-        title: "Excel yuklandi",
-        description: `Filtrdagi ${filteredEmployees.length} ta xodim · ${staffFilterLabel(staffFilter)}`,
+        title: result.via === "telegram" ? "Telegramga yuborildi" : "Excel yuklandi",
+        description:
+          result.via === "telegram"
+            ? "Fayl bot chatiga yuborildi — Telegramdan oching"
+            : `Filtrdagi ${filteredEmployees.length} ta xodim · ${staffFilterLabel(staffFilter)}`,
       });
     } catch (err) {
       toast({
@@ -621,21 +686,25 @@ export default function DavomatPage() {
   }
 
   const fieldClass =
-    "h-11 rounded-xl border-border bg-card text-base shadow-none md:h-9 md:text-sm dark:border-slate-600/50 dark:bg-slate-800/60 dark:text-slate-100";
+    "h-8 rounded-lg border-border bg-card text-xs shadow-none sm:text-sm dark:border-slate-600/50 dark:bg-slate-800/60 dark:text-slate-100";
+  const navBtnClass =
+    "h-8 w-8 shrink-0 rounded-lg border-border";
 
   const filters = (
     <div
       className={cn(
         "grid gap-2",
-        section === "schedule" && calMode !== "range"
-          ? "sm:grid-cols-2 lg:grid-cols-4"
-          : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
+        section === "schedule" && calMode === "day"
+          ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+          : section === "schedule" && calMode !== "range"
+            ? "sm:grid-cols-2 lg:grid-cols-4"
+            : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
       )}
     >
       {section === "schedule" && calMode === "range" ? (
         <>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
+            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -649,7 +718,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
+            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -664,15 +733,19 @@ export default function DavomatPage() {
         </>
       ) : section === "schedule" ? (
         <div>
-          <Label className="text-[11px] font-medium text-muted-foreground">
-            {calMode === "month" ? "Oy" : calMode === "week" ? "Hafta" : "Sana"}
+          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+            {calMode === "month"
+              ? t("davomat.monthLabel")
+              : calMode === "week"
+                ? t("davomat.weekLabel")
+                : t("davomat.dayLabel")}
           </Label>
           <div className="flex items-center gap-1">
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="h-9 w-9 shrink-0 rounded-xl border-border"
+              className={navBtnClass}
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, -7);
@@ -694,38 +767,248 @@ export default function DavomatPage() {
                 }
               }}
             >
-              <ChevronLeft className="h-4 w-4" />
+              <ChevronLeft className="h-3.5 w-3.5" />
             </Button>
-            <Input
-              type={calMode === "month" ? "month" : "date"}
-              className={cn(fieldClass, "min-w-0 flex-1 px-2 text-sm")}
-              value={
-                calMode === "week"
-                  ? weekStart
-                  : calMode === "month"
-                    ? monthAnchor.slice(0, 7)
-                    : selectedDay
-              }
-              onChange={(e) => {
-                const v = e.target.value;
-                if (!v) return;
-                if (calMode === "month") {
-                  const anchor = `${v}-01`;
-                  setMonthAnchor(anchor);
-                  setSelectedDay(anchor);
-                  setWeekStart(mondayOf(anchor));
-                  return;
-                }
-                setSelectedDay(v);
-                setWeekStart(mondayOf(v));
-                setMonthAnchor(firstOfMonth(v));
-              }}
-            />
+            {calMode === "week" ? (
+              <Popover open={weekPickerOpen} onOpenChange={setWeekPickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      fieldClass,
+                      "inline-flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left transition",
+                      "hover:border-primary/45 hover:bg-primary/[0.03]",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+                      weekPickerOpen && "border-primary/50 bg-primary/5 ring-2 ring-ring/20",
+                    )}
+                    title={`${formatYmdDot(weekStart)} — ${formatYmdDot(addDaysYmd(weekStart, 6))}`}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold tabular-nums tracking-tight sm:text-xs">
+                      <span className="text-foreground">{formatYmdDot(weekStart)}</span>
+                      <span className="mx-1 font-medium text-muted-foreground">—</span>
+                      <span className="text-foreground">
+                        {formatYmdDot(addDaysYmd(weekStart, 6))}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                        weekPickerOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={6}
+                  className="z-[90] w-auto rounded-xl border border-border p-0 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t("davomat.pickWeek")}
+                      </p>
+                      <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
+                        {formatYmdDot(weekStart)} — {formatYmdDot(addDaysYmd(weekStart, 6))}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                      onClick={() => {
+                        const mon = mondayOf(todayYmd());
+                        setWeekStart(mon);
+                        setSelectedDay(mon);
+                        setMonthAnchor(firstOfMonth(mon));
+                        setWeekPickerOpen(false);
+                      }}
+                    >
+                      {t("davomat.thisWeek")}
+                    </button>
+                  </div>
+                  <DayPickerCalendar
+                    key={`week-${weekStart}`}
+                    mode="range"
+                    className="rounded-xl"
+                    defaultMonth={parseYmdLocal(weekStart) ?? new Date()}
+                    selected={{
+                      from: parseYmdLocal(weekStart),
+                      to: parseYmdLocal(addDaysYmd(weekStart, 6)),
+                    }}
+                    onSelect={(_range, day) => {
+                      if (!day) return;
+                      const mon = mondayOf(toYmdLocal(day));
+                      setWeekStart(mon);
+                      setSelectedDay(mon);
+                      setMonthAnchor(firstOfMonth(mon));
+                      setWeekPickerOpen(false);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            ) : calMode === "month" ? (
+              <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      fieldClass,
+                      "inline-flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left transition",
+                      "hover:border-primary/45 hover:bg-primary/[0.03]",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+                      monthPickerOpen && "border-primary/50 bg-primary/5 ring-2 ring-ring/20",
+                    )}
+                    title={monthLabelUz(monthAnchor, t)}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold tracking-tight sm:text-xs">
+                      {monthLabelUz(monthAnchor, t)}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                        monthPickerOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={6}
+                  className="z-[90] w-auto rounded-xl border border-border p-0 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t("davomat.pickMonth")}
+                      </p>
+                      <p className="mt-0.5 text-sm font-semibold text-foreground">
+                        {monthLabelUz(monthAnchor, t)}
+                      </p>
+                      <p className="mt-0.5 text-[11px] tabular-nums text-muted-foreground">
+                        {formatYmdDot(firstOfMonth(monthAnchor))} —{" "}
+                        {formatYmdDot(lastOfMonth(monthAnchor))}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                      onClick={() => {
+                        const anchor = firstOfMonth(todayYmd());
+                        setMonthAnchor(anchor);
+                        setSelectedDay(anchor);
+                        setWeekStart(mondayOf(anchor));
+                        setMonthPickerOpen(false);
+                      }}
+                    >
+                      {t("davomat.thisMonth")}
+                    </button>
+                  </div>
+                  <DayPickerCalendar
+                    key={`month-${monthAnchor.slice(0, 7)}`}
+                    mode="range"
+                    className="rounded-xl"
+                    defaultMonth={parseYmdLocal(monthAnchor) ?? new Date()}
+                    selected={{
+                      from: parseYmdLocal(firstOfMonth(monthAnchor)),
+                      to: parseYmdLocal(lastOfMonth(monthAnchor)),
+                    }}
+                    onSelect={(_range, day) => {
+                      if (!day) return;
+                      const ymd = toYmdLocal(day);
+                      const anchor = firstOfMonth(ymd);
+                      setMonthAnchor(anchor);
+                      setSelectedDay(ymd);
+                      setWeekStart(mondayOf(ymd));
+                      setMonthPickerOpen(false);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <Popover open={dayPickerOpen} onOpenChange={setDayPickerOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      fieldClass,
+                      "inline-flex min-w-0 flex-1 items-center gap-2 px-2.5 text-left transition",
+                      "hover:border-primary/45 hover:bg-primary/[0.03]",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/35",
+                      dayPickerOpen && "border-primary/50 bg-primary/5 ring-2 ring-ring/20",
+                    )}
+                    title={formatYmdDot(selectedDay)}
+                  >
+                    <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+                      <CalendarDays className="h-3.5 w-3.5" />
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-[11px] font-semibold tabular-nums tracking-tight sm:text-xs">
+                      {formatYmdDot(selectedDay)}
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                        dayPickerOpen && "rotate-180",
+                      )}
+                    />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  align="start"
+                  sideOffset={6}
+                  className="z-[90] w-auto rounded-xl border border-border p-0 shadow-lg"
+                >
+                  <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
+                    <div>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        {t("davomat.pickDay")}
+                      </p>
+                      <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
+                        {formatYmdDot(selectedDay)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
+                      onClick={() => {
+                        const d = todayYmd();
+                        setSelectedDay(d);
+                        setWeekStart(mondayOf(d));
+                        setMonthAnchor(firstOfMonth(d));
+                        setDayPickerOpen(false);
+                      }}
+                    >
+                      {t("davomat.todayPick")}
+                    </button>
+                  </div>
+                  <DayPickerCalendar
+                    key={`day-${selectedDay}`}
+                    mode="single"
+                    className="rounded-xl"
+                    defaultMonth={parseYmdLocal(selectedDay) ?? new Date()}
+                    selected={parseYmdLocal(selectedDay)}
+                    onSelect={(day) => {
+                      if (!day) return;
+                      const ymd = toYmdLocal(day);
+                      setSelectedDay(ymd);
+                      setWeekStart(mondayOf(ymd));
+                      setMonthAnchor(firstOfMonth(ymd));
+                      setDayPickerOpen(false);
+                    }}
+                  />
+                </PopoverContent>
+              </Popover>
+            )}
             <Button
               type="button"
               variant="outline"
               size="icon"
-              className="h-9 w-9 shrink-0 rounded-xl border-border"
+              className={navBtnClass}
               onClick={() => {
                 if (calMode === "week") {
                   const next = addDaysYmd(weekStart, 7);
@@ -747,14 +1030,14 @@ export default function DavomatPage() {
                 }
               }}
             >
-              <ChevronRight className="h-4 w-4" />
+              <ChevronRight className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
       ) : (
         <>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
+            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -763,7 +1046,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
+            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -774,9 +1057,9 @@ export default function DavomatPage() {
         </>
       )}
       <div>
-        <Label className="text-[11px] font-medium text-muted-foreground">{t("ui.department")}</Label>
+        <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("ui.department")}</Label>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger className={cn(fieldClass, "px-3")}>
+          <SelectTrigger className={cn(fieldClass, "px-2.5")}>
             <SelectValue placeholder={t("ui.allDepartments")} />
           </SelectTrigger>
           <SelectContent position="popper" className="z-[90]">
@@ -789,10 +1072,61 @@ export default function DavomatPage() {
           </SelectContent>
         </Select>
       </div>
+      {section === "schedule" && calMode === "day" ? (
+        <div>
+          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">Holat</Label>
+          <Select
+            value={dayStatusFilter}
+            onValueChange={(v) => {
+              setDayStatusFilter(v as DayStatusFilter);
+              setSection("schedule");
+              setCalMode("day");
+            }}
+          >
+            <SelectTrigger
+              className={cn(
+                fieldClass,
+                "px-2.5 font-semibold",
+                dayStatusFilter === "present" &&
+                  "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-500/15 dark:text-emerald-300",
+                dayStatusFilter === "absent" &&
+                  "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300",
+                dayStatusFilter === "late" &&
+                  "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300",
+              )}
+            >
+              <SelectValue placeholder="Barchasi" />
+            </SelectTrigger>
+            <SelectContent position="popper" className="z-[90]">
+              <SelectItem value="all" className="font-medium text-foreground">
+                Barchasi
+              </SelectItem>
+              <SelectItem
+                value="present"
+                className="font-semibold text-emerald-700 focus:bg-emerald-50 focus:text-emerald-800 dark:text-emerald-300 dark:focus:bg-emerald-500/15 dark:focus:text-emerald-200"
+              >
+                Kelgan
+              </SelectItem>
+              <SelectItem
+                value="absent"
+                className="font-semibold text-rose-700 focus:bg-rose-50 focus:text-rose-800 dark:text-rose-300 dark:focus:bg-rose-500/15 dark:focus:text-rose-200"
+              >
+                Kelmagan
+              </SelectItem>
+              <SelectItem
+                value="late"
+                className="font-semibold text-amber-700 focus:bg-amber-50 focus:text-amber-900 dark:text-amber-300 dark:focus:bg-amber-500/15 dark:focus:text-amber-200"
+              >
+                Kechikkan
+              </SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
       <div>
-        <Label className="text-[11px] font-medium text-muted-foreground">{t("davomat.staffGroup")}</Label>
+        <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.staffGroup")}</Label>
         <Select value={staffFilter} onValueChange={(v) => setStaffFilter(v as DavomatStaffFilter)}>
-          <SelectTrigger className={cn(fieldClass, "px-3")}>
+          <SelectTrigger className={cn(fieldClass, "px-2.5")}>
             <SelectValue placeholder={t("ui.all")} />
           </SelectTrigger>
           <SelectContent position="popper" className="z-[90]">
@@ -805,11 +1139,11 @@ export default function DavomatPage() {
         </Select>
       </div>
       <div className={cn(section === "schedule" && calMode !== "range" ? "sm:col-span-2 lg:col-span-1" : "sm:col-span-2 xl:col-span-1")}>
-        <Label className="text-[11px] font-medium text-muted-foreground">{t("ui.search")}</Label>
+        <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("ui.search")}</Label>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className={cn(fieldClass, "pl-9")}
+            className={cn(fieldClass, "pl-8")}
             placeholder={t("davomat.searchName")}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -822,54 +1156,116 @@ export default function DavomatPage() {
   return (
     <div className="w-full space-y-5 pb-10">
       <div className="dv-report-hero">
-        <div className="flex flex-col gap-3 p-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-6">
-          <div className="min-w-0">
-            <p className="dv-report-hero-label">{t("davomat.report")}</p>
-            <h1 className="dv-report-hero-title">{t("davomat.title")}</h1>
-            <p className="dv-report-hero-sub">
-              {t("davomat.workTime")}:{" "}
-              <span className="dv-report-hero-strong">
-                {staffFilter === "all"
-                  ? "Ofis 09:00–18:00 · 1-smena 08:00–17:00 · 2-smena 17:00–23:45"
-                  : `${staffFilterLabel(staffFilter)} ${activeWorkHours.start}–${activeWorkHours.end}`}
-              </span>
-            </p>
-          </div>
-          <div className="dv-report-actions relative z-10 grid grid-cols-2 sm:flex sm:flex-wrap">
-            <a href="/davomat-face" className="min-w-0">
-              <Button type="button" variant="ghost" className="dv-report-btn-primary">
-                <UserCheck className="h-4 w-4 shrink-0" />
-                {t("davomat.inOut")}
+        <div className="dv-report-hero-glow" aria-hidden />
+        <div className="relative z-[1] flex flex-col gap-4 p-4 sm:gap-5 sm:p-5 lg:p-6">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <div className="min-w-0">
+              <div className="dv-report-hero-eyebrow">
+                <span className="dv-report-hero-dot" aria-hidden />
+                {t("davomat.report")}
+              </div>
+              <h1 className="dv-report-hero-title">{t("davomat.title")}</h1>
+              <p className="dv-report-hero-sub">
+                <span className="dv-report-hero-time">
+                  {staffFilter === "all"
+                    ? "Ofis 09:00–18:00 · 1-smena 08:00–17:00 · 2-smena 17:00–23:45"
+                    : `${staffFilterLabel(staffFilter)} ${activeWorkHours.start}–${activeWorkHours.end}`}
+                </span>
+              </p>
+            </div>
+            <div className="dv-report-actions relative z-10">
+              {canViewChecklistStatus(user?.role) && (
+                <Link href="/checklist-holati" className="min-w-0 flex-1 sm:flex-none">
+                  <Button type="button" variant="ghost" className="dv-report-btn-ghost">
+                    <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
+                    {t("davomat.checklist")}
+                  </Button>
+                </Link>
+              )}
+              <Button
+                type="button"
+                variant="ghost"
+                className="dv-report-btn-announce flex-1 sm:flex-none"
+                onClick={() => void openAnnounceDialog()}
+                disabled={announcing || (loading && !report)}
+              >
+                {announcing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Users className="h-3.5 w-3.5 shrink-0" />}
+                {t("davomat.message")}
               </Button>
-            </a>
-            {canViewChecklistStatus(user?.role) && (
-              <Link href="/checklist-holati" className="min-w-0">
-                <Button type="button" variant="ghost" className="dv-report-btn-ghost">
-                  <ClipboardCheck className="h-4 w-4 shrink-0" />
-                  {t("davomat.checklist")}
-                </Button>
-              </Link>
-            )}
-            <Button
-              type="button"
-              variant="ghost"
-              className="dv-report-btn-announce"
-              onClick={() => void openAnnounceDialog()}
-              disabled={announcing || (loading && !report)}
-            >
-              {announcing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4 shrink-0" />}
-              {t("davomat.message")}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              className="dv-report-btn-excel"
-              onClick={() => void onExport()}
-              disabled={exporting || (loading && !report)}
-            >
-              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 shrink-0" />}
-              {t("ui.excel")}
-            </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="dv-report-btn-excel flex-1 sm:flex-none"
+                onClick={() => void onExport()}
+                disabled={exporting || (loading && !report)}
+              >
+                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />}
+                {t("ui.excel")}
+              </Button>
+            </div>
+          </div>
+
+          <div className="dv-hero-stats" role="group" aria-label="Kunlik statistika">
+            {(
+              [
+                {
+                  key: "all" as const,
+                  label: "Jami",
+                  value: filteredDayStats.total,
+                  icon: Users,
+                  tone: "dv-hero-stat-total",
+                },
+                {
+                  key: "present" as const,
+                  label: "Kelgan",
+                  value: filteredDayStats.present,
+                  icon: UserCheck,
+                  tone: "dv-hero-stat-present",
+                },
+                {
+                  key: "absent" as const,
+                  label: "Kelmagan",
+                  value: filteredDayStats.absent,
+                  icon: UserX,
+                  tone: "dv-hero-stat-absent",
+                },
+                {
+                  key: "late" as const,
+                  label: "Kechikkan",
+                  value: filteredDayStats.late,
+                  icon: Timer,
+                  tone: "dv-hero-stat-late",
+                },
+              ] as const
+            ).map((card) => {
+              const Icon = card.icon;
+              const active = dayStatusFilter === card.key;
+              const pct =
+                filteredDayStats.total > 0 && card.key !== "all"
+                  ? Math.round((card.value / filteredDayStats.total) * 100)
+                  : null;
+              return (
+                <button
+                  key={card.key}
+                  type="button"
+                  onClick={() => toggleDayStatusFilter(card.key)}
+                  className={cn("dv-hero-stat", card.tone, active && "dv-hero-stat-active")}
+                >
+                  <span className="dv-hero-stat-icon">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="dv-hero-stat-meta">
+                    <span className="dv-hero-stat-label">{card.label}</span>
+                    <span className="dv-hero-stat-row">
+                      <span className="dv-hero-stat-value">
+                        {loading && !report ? "…" : card.value}
+                      </span>
+                      {pct != null ? <span className="dv-hero-stat-pct">{pct}%</span> : null}
+                    </span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -958,17 +1354,18 @@ export default function DavomatPage() {
                   {dayInfo ? (
                     <p className="text-xs text-muted-foreground">
                       <span className="font-semibold text-foreground">
-                        Jami: {filteredDayStats.total} xodim
-                        {staffFilter !== "all" && report ? ` / ${report.summary.employees}` : ""}
+                        Ko‘rsatilmoqda: {visibleEmployeesForDay.length}
+                        {dayStatusFilter !== "all" ? ` / ${filteredDayStats.total}` : ""} xodim
+                        {staffFilter !== "all" && report ? ` · jami bazada ${report.summary.employees}` : ""}
                       </span>
-                      {" · "}
-                      <span className="font-medium stat-emerald">Kelgan: {filteredDayStats.present}</span>
-                      {" · "}
-                      <span className="font-medium stat-amber">Kech: {filteredDayStats.late}</span>
-                      {" · "}
-                      <span className="font-medium stat-rose">Kelmagan: {filteredDayStats.absent}</span>
-                      {" · "}
-                      <span className="font-medium stat-sky">Ketish yo‘q: {filteredDayStats.incomplete}</span>
+                      {filteredDayStats.incomplete > 0 ? (
+                        <>
+                          {" · "}
+                          <span className="font-medium stat-sky">
+                            Ketish yo‘q: {filteredDayStats.incomplete}
+                          </span>
+                        </>
+                      ) : null}
                       <span className="mt-0.5 block text-muted-foreground">
                         Kech keldi: {dayTiming.lateArrival} · Erta keldi: {dayTiming.earlyArrival} · Erta
                         ketdi: {dayTiming.earlyLeave} · Kech ketdi: {dayTiming.overtime}
@@ -1001,7 +1398,17 @@ export default function DavomatPage() {
                       </tr>
                     </thead>
                     <tbody>
-                      {employeesForDay.map(({ emp, day }, idx) => (
+                      {visibleEmployeesForDay.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={staffFilter === "all" ? 12 : 11}
+                            className="px-3 py-10 text-center text-sm text-muted-foreground"
+                          >
+                            Tanlangan holat bo‘yicha xodim topilmadi
+                          </td>
+                        </tr>
+                      ) : null}
+                      {visibleEmployeesForDay.map(({ emp, day }, idx) => (
                         <tr
                           key={emp.id}
                           className={cn(
@@ -1652,19 +2059,26 @@ function PeriodAttendanceGrid({
 
 function dayCellTooltip(day: DavomatDayMetrics, hours: { start: string; end: string } | undefined, t: (k: string) => string) {
   const h = hours ?? { start: "09:00", end: "18:00" };
-  const lines = [t(STATUS_KEYS[day.status] || day.status, day.status)];
+  if (day.status === "rest") {
+    return `${t("davomat.rest")}\n${t("davomat.restExtra")}`;
+  }
+  const lines = [
+    day.restDayWork
+      ? t("davomat.restExtra")
+      : t(STATUS_KEYS[day.status] || day.status, day.status),
+  ];
   lines.push(`${t("davomat.btnIn")}: ${day.checkIn} (${t("davomat.plan")} ${h.start})`);
   lines.push(`${t("davomat.btnOut")}: ${day.checkOut} (${t("davomat.plan")} ${h.end})`);
   if (day.workedHours && day.workedHours !== "0:00" && day.workedHours !== "—") {
     lines.push(`${t("davomat.workedHours")}: ${day.workedHours}`);
   }
-  if (day.lateArrivalLabel && day.lateArrivalLabel !== "—") {
+  if (!day.restDayWork && day.lateArrivalLabel && day.lateArrivalLabel !== "—") {
     lines.push(`${t("davomat.lateIn")}: ${day.lateArrivalLabel}`);
   }
   if (day.earlyArrivalLabel && day.earlyArrivalLabel !== "—") {
     lines.push(`${t("davomat.earlyIn")}: ${day.earlyArrivalLabel}`);
   }
-  if (day.earlyLeaveLabel && day.earlyLeaveLabel !== "—") {
+  if (!day.restDayWork && day.earlyLeaveLabel && day.earlyLeaveLabel !== "—") {
     lines.push(`${t("davomat.earlyOut")}: ${day.earlyLeaveLabel}`);
   }
   if (day.overtimeLabel && day.overtimeLabel !== "—") {
@@ -1686,8 +2100,13 @@ function WeekCell({
   const status = day?.status || "absent";
   const hasIn = Boolean(day?.checkIn && day.checkIn !== "—");
   const hasOut = Boolean(day?.checkOut && day.checkOut !== "—");
-  const statusLabel = t(WEEK_CELL_STATUS_KEYS[status] || STATUS_KEYS[status] || status, status);
-  const showTimes = status !== "absent" && status !== "leave" && (hasIn || hasOut || status === "incomplete");
+  const statusLabel = day?.restDayWork
+    ? t("davomat.restExtra")
+    : t(WEEK_CELL_STATUS_KEYS[status] || STATUS_KEYS[status] || status, status);
+  const showTimes =
+    status !== "leave" &&
+    status !== "rest" &&
+    (hasIn || hasOut || status === "incomplete");
   const subline = day ? weekCellSublineParts(day) : null;
 
   return (

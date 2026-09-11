@@ -308,14 +308,8 @@ export async function downloadOylikExcel(month: string): Promise<void> {
     throw new Error((body as { error?: string }).error || "Excel yuklanmadi");
   }
   const blob = await res.blob();
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `oylik-kpi-${month}.xlsx`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  const { deliverFile } = await import("./tg-download");
+  await deliverFile(blob, `oylik-kpi-${month}.xlsx`);
 }
 
 export { formatSom } from "@/lib/money";

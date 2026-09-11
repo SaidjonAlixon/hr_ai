@@ -158,6 +158,45 @@ function isDorixonaStaff(e: Employee): boolean {
   return false;
 }
 
+/** Bo‘lim nomiga yozilgan rol (DB dagi noto‘g‘ri «Mudir» bo‘limi) */
+const ROLE_LIKE_DEPT_NAMES = new Set([
+  "mudir",
+  "farmasevt",
+  "stajyor",
+  "stajor",
+  "koordinator",
+  "mentor",
+  "filial mudiri",
+]);
+
+function matchesStaffRole(e: Employee, roleKey: string): boolean {
+  if (!roleKey || roleKey === "all") return true;
+  const row = staffContact(e);
+  const ur = norm(row.userRole);
+  const org = norm(row.orgRole);
+  const pos = norm(row.position);
+  const key = norm(roleKey);
+
+  if (key === "mudir") {
+    return ur === "mudir" || org === "manager" || /filial\s*mudir/.test(pos) || pos === "mudir";
+  }
+  if (key === "farmasevt") {
+    return ur === "farmasevt" || org === "pharmacist" || pos.includes("farmasevt");
+  }
+  if (key === "stajyor" || key === "stajor") {
+    return ur === "stajyor" || ur === "stajor" || org === "intern" || pos.includes("stajyor");
+  }
+  if (key === "koordinator") {
+    return ur === "koordinator" || org === "coordinator" || pos.includes("koordinator");
+  }
+  return ur === key || org === key || pos === key;
+}
+
+function isPharmacyRoleKey(roleKey: string): boolean {
+  const key = norm(roleKey);
+  return key === "mudir" || key === "farmasevt" || key === "stajyor" || key === "stajor" || key === "koordinator";
+}
+
 type WorkplaceFilter = "all" | "dorixona" | "ofis";
 
 function initials(name: string) {
@@ -250,7 +289,7 @@ function StatusControl({
 }) {
   const { t } = useI18n();
   const statuses = staffStatuses(t);
-  const st = employee.employmentStatus || "working";
+  const st = (employee.employmentStatus || "working").trim() || "working";
   const known = statuses.some((s) => s.value === st);
   if (!canEdit) {
     return (
@@ -266,7 +305,7 @@ function StatusControl({
   }
   return (
     <Select
-      value={known ? st : st}
+      value={st}
       disabled={pendingId === employee.id}
       onValueChange={(v) => onChange(employee.id, v)}
     >
@@ -279,12 +318,14 @@ function StatusControl({
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {statuses.map((s) => (
-          <SelectItem key={s.value} value={s.value}>
-            {s.label}
-          </SelectItem>
-        ))}
-        {!known ? <SelectItem value={st}>{statusLabel(t, st)}</SelectItem> : null}
+        {statuses.map((s) =>
+          s.value ? (
+            <SelectItem key={s.value} value={s.value}>
+              {s.label}
+            </SelectItem>
+          ) : null,
+        )}
+        {!known && st ? <SelectItem value={st}>{statusLabel(t, st)}</SelectItem> : null}
       </SelectContent>
     </Select>
   );
@@ -308,6 +349,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const lockedDeptName = deptMeta?.departmentName?.trim() || null;
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
+  const [roleFilter, setRoleFilter] = useState("all");
   const [workplaceFilter, setWorkplaceFilter] = useState<WorkplaceFilter>("ofis");
   const [statusFilter, setStatusFilter] = useState("all");
   const [exporting, setExporting] = useState(false);
@@ -320,9 +362,23 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const effectiveWorkplace: WorkplaceFilter = viewOnly || !fullAccess ? "ofis" : workplaceFilter;
   const effectiveDeptFilter = viewOnly ? "all" : deptFilter;
 
+  /** Bo‘lim selectida «Mudir» kabi rol nomi tanlansa — rol filtri sifatida */
+  const deptAsRoleKey = useMemo(() => {
+    if (effectiveDeptFilter === "all") return null;
+    const d = (departments ?? []).find((x) => String(x.id) === String(effectiveDeptFilter));
+    const name = norm(d?.name);
+    if (!name || !ROLE_LIKE_DEPT_NAMES.has(name)) return null;
+    if (name === "filial mudiri") return "mudir";
+    return name === "stajor" ? "stajyor" : name;
+  }, [effectiveDeptFilter, departments]);
+
+  const effectiveRoleFilter =
+    roleFilter !== "all" ? roleFilter : deptAsRoleKey || "all";
+
   useEffect(() => {
     if (viewOnly) {
       setDeptFilter("all");
+      setRoleFilter("all");
       setWorkplaceFilter("ofis");
     }
   }, [viewOnly]);
@@ -339,45 +395,92 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       group,
       search,
       viewOnly ? "own-dept" : deptFilter,
-      effectiveWorkplace,
+      isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
+      effectiveRoleFilter,
+      statusFilter,
     ),
     queryFn: () =>
       fetchStaff(group, {
         search,
-        departmentId: effectiveDeptFilter,
-        workplace: effectiveWorkplace,
+        departmentId:
+          deptAsRoleKey || effectiveDeptFilter === "all" ? "all" : effectiveDeptFilter,
+        workplace: isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
+        role: effectiveRoleFilter !== "all" ? effectiveRoleFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
       }),
     staleTime: 30_000,
   });
 
-  /** Ofis / Dorixona / hammasi */
+  /** Ofis / Dorixona / hammasi — apteka roli filtrida ofis cheklovini o‘tkazib yuboramiz */
   const workplaceScoped = useMemo(() => {
     const all = Array.isArray(employees) ? employees : [];
+    if (isPharmacyRoleKey(effectiveRoleFilter)) return all;
     if (effectiveWorkplace === "dorixona") return all.filter(isDorixonaStaff);
     if (effectiveWorkplace === "ofis") return all.filter((e) => !isDorixonaStaff(e));
     return all;
-  }, [employees, effectiveWorkplace]);
+  }, [employees, effectiveWorkplace, effectiveRoleFilter]);
+
+  const deptOptions = useMemo(() => {
+    const fromApi = (departments ?? []).filter((d) => !ROLE_LIKE_DEPT_NAMES.has(norm(d.name)));
+    return [...fromApi].sort((a, b) => String(a.name).localeCompare(String(b.name), "uz"));
+  }, [departments]);
+
+  const roleOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of Array.isArray(employees) ? employees : []) {
+      const ur = norm(staffContact(e).userRole);
+      if (ur && ur !== "admin") set.add(ur);
+    }
+    // Mudir doim ko‘rinsin (ofis rejimida ham tanlash mumkin)
+    set.add("mudir");
+    set.add("farmasevt");
+    set.add("stajyor");
+    set.add("koordinator");
+    return Array.from(set)
+      .filter((r) => r.trim().length > 0)
+      .sort((a, b) =>
+        (userRoleLabel(a) || a).localeCompare(userRoleLabel(b) || b, "uz"),
+      );
+  }, [employees]);
 
   const counts = useMemo(() => {
-    const all = workplaceScoped;
+    const all = workplaceScoped.filter((e) => {
+      if ((staffContact(e).userRole || "") === "admin") return false;
+      if (effectiveRoleFilter !== "all" && !matchesStaffRole(e, effectiveRoleFilter)) return false;
+      return true;
+    });
     return {
       total: all.length,
       working: all.filter((e) => (e.employmentStatus || "working") === "working").length,
       on_leave: all.filter((e) => e.employmentStatus === "on_leave").length,
       dismissed: all.filter((e) => e.employmentStatus === "dismissed").length,
     };
-  }, [workplaceScoped]);
+  }, [workplaceScoped, effectiveRoleFilter]);
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     return [...workplaceScoped]
       .filter((e) => {
-        // Ofis / dorixona — ikkinchi marta ham tekshiruv (ishonch uchun)
         if ((staffContact(e).userRole || "") === "admin") return false;
-        if (effectiveWorkplace === "dorixona" && !isDorixonaStaff(e)) return false;
-        if (effectiveWorkplace === "ofis" && isDorixonaStaff(e)) return false;
-        if (!viewOnly && deptFilter !== "all" && e.departmentId !== Number(deptFilter)) return false;
-        if (statusFilter !== "all" && (e.employmentStatus || "working") !== statusFilter) return false;
+        if (!isPharmacyRoleKey(effectiveRoleFilter)) {
+          if (effectiveWorkplace === "dorixona" && !isDorixonaStaff(e)) return false;
+          if (effectiveWorkplace === "ofis" && isDorixonaStaff(e)) return false;
+        }
+        // Oddiy bo‘lim filtri (rol-nomli bo‘limlar allaqachon roleFilter ga o‘tdi)
+        if (
+          !viewOnly &&
+          !deptAsRoleKey &&
+          deptFilter !== "all" &&
+          e.departmentId !== Number(deptFilter)
+        ) {
+          return false;
+        }
+        if (effectiveRoleFilter !== "all" && !matchesStaffRole(e, effectiveRoleFilter)) {
+          return false;
+        }
+        if (statusFilter !== "all" && (e.employmentStatus || "working") !== statusFilter) {
+          return false;
+        }
         if (!q) return true;
         const hay = [
           e.fullName,
@@ -396,7 +499,17 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         return hay.includes(q);
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
-  }, [workplaceScoped, effectiveWorkplace, search, deptFilter, statusFilter, t, viewOnly]);
+  }, [
+    workplaceScoped,
+    effectiveWorkplace,
+    search,
+    deptFilter,
+    deptAsRoleKey,
+    statusFilter,
+    effectiveRoleFilter,
+    t,
+    viewOnly,
+  ]);
 
   const setStatus = (id: number, employmentStatus: string) => {
     setPendingId(id);
@@ -409,7 +522,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
               group,
               search,
               viewOnly ? "own-dept" : deptFilter,
-              effectiveWorkplace,
+              isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
+              effectiveRoleFilter,
+              statusFilter,
             ),
           });
           void qc.invalidateQueries({ queryKey: getGetEmployeesQueryKey() });
@@ -435,8 +550,18 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       const params = new URLSearchParams();
       params.set("group", group);
       if (search.trim()) params.set("search", search.trim());
-      if (!viewOnly && deptFilter !== "all") params.set("departmentId", deptFilter);
-      if (fullAccess && effectiveWorkplace !== "all") params.set("workplace", effectiveWorkplace);
+      if (!viewOnly && !deptAsRoleKey && deptFilter !== "all") {
+        params.set("departmentId", deptFilter);
+      }
+      if (effectiveRoleFilter !== "all") params.set("role", effectiveRoleFilter);
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      const wp = isPharmacyRoleKey(effectiveRoleFilter)
+        ? "all"
+        : fullAccess
+          ? effectiveWorkplace
+          : "ofis";
+      if (wp !== "all") params.set("workplace", wp);
+      else params.set("workplace", "all");
       const res = await fetch(`/api/employees/export?${params.toString()}`, {
         credentials: "include",
       });
@@ -445,15 +570,18 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         throw new Error((body as { error?: string }).error || t("emp.excelFail"));
       }
       const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `xodimlar_${group}_${new Date().toISOString().slice(0, 10)}.xlsx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(url);
-      toast({ title: t("emp.excelOk") });
+      const { deliverFile } = await import("../../lib/tg-download");
+      const result = await deliverFile(
+        blob,
+        `xodimlar_${group}_${new Date().toISOString().slice(0, 10)}.xlsx`,
+      );
+      toast({
+        title: result.via === "telegram" ? "Telegramga yuborildi" : t("emp.excelOk"),
+        description:
+          result.via === "telegram"
+            ? "Fayl bot chatiga yuborildi — Telegramdan oching"
+            : undefined,
+      });
     } catch (err) {
       toast({
         title: t("emp.excelFail"),
@@ -577,19 +705,51 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                 {lockedDeptName || "…"}
               </div>
             ) : (
-              <Select value={deptFilter} onValueChange={setDeptFilter}>
-                <SelectTrigger className="h-9 w-full text-sm lg:w-[200px]">
-                  <SelectValue placeholder={t("ui.department")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("ui.allDepartments")}</SelectItem>
-                  {(departments ?? []).map((d) => (
-                    <SelectItem key={d.id} value={String(d.id)}>
-                      {d.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <>
+                <Select
+                  value={roleFilter}
+                  onValueChange={(v) => {
+                    setRoleFilter(v);
+                    if (isPharmacyRoleKey(v) && deptAsRoleKey) setDeptFilter("all");
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full text-sm lg:w-[180px]">
+                    <SelectValue placeholder={t("emp.col.role")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("emp.allRoles")}</SelectItem>
+                    {roleOptions.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {userRoleLabel(r) || r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select
+                  value={deptFilter}
+                  onValueChange={(v) => {
+                    setDeptFilter(v);
+                    // Rol-nomli bo‘lim tanlansa — rol filtrini shunga mosla
+                    const d = (departments ?? []).find((x) => String(x.id) === String(v));
+                    const name = norm(d?.name);
+                    if (v !== "all" && ROLE_LIKE_DEPT_NAMES.has(name)) {
+                      setRoleFilter(name === "filial mudiri" ? "mudir" : name === "stajor" ? "stajyor" : name);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-full text-sm lg:w-[200px]">
+                    <SelectValue placeholder={t("ui.department")} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{t("ui.allDepartments")}</SelectItem>
+                    {deptOptions.map((d) => (
+                      <SelectItem key={d.id} value={String(d.id)}>
+                        {d.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </>
             )}
             {group === "active" ? (
               <Select value={statusFilter} onValueChange={setStatusFilter}>

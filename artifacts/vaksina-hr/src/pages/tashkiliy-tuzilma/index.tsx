@@ -164,8 +164,8 @@ const TONES = {
   },
 } as const;
 
-const DEPT_TONES = new Set<ToneKey>(["taminot", "moliya", "hrDept", "cbit", "texnikDept", "sb", "reviziya", "axogpp"]);
-const DEPT_IDS = new Set(["taminot", "moliya", "hr-bolimi", "cb-it", "texnik", "xavfsizlik", "reviziya", "axo-gpp"]);
+const DEPT_TONES = new Set<ToneKey>(["taminot", "moliya", "hrDept", "cbit", "sb", "reviziya", "axogpp"]);
+const DEPT_IDS = new Set(["taminot", "moliya", "hr-bolimi", "cb-it", "xavfsizlik", "reviziya", "axo-gpp"]);
 
 const DEPT_META: Array<{
   id: string;
@@ -181,7 +181,6 @@ const DEPT_META: Array<{
   { id: "moliya", label: "Moliya", hint: "Moliya bo‘limi", tone: "moliya", icon: Wallet, keys: ["moliya", "moliyachi", "hisob"], head: "Moliya rahbari", staff: "Moliyachi" },
   { id: "hr-bolimi", label: "HR bo‘limi", hint: "Kadrlar", tone: "hrDept", icon: Users, keys: ["hr", "kadr"], head: "HR rahbari", staff: "Kadrlar" },
   { id: "cb-it", label: "AyTi", hint: "AyTi bo‘limi", tone: "cbit", icon: Cpu, keys: ["it", "cb"], head: "AyTi bo‘lim boshlig‘i", staff: "AyTi mutaxassisi" },
-  { id: "texnik", label: "Texnik", hint: "Servis / ta’mir", tone: "texnikDept", icon: Wrench, keys: ["texnik", "texnika"], head: "Texnik rahbari", staff: "Texnik" },
   { id: "xavfsizlik", label: "Xavfsizlik (SB)", hint: "Ob’ekt / navbatchilik", tone: "sb", icon: ShieldCheck, keys: ["xavfsizlik", "sb", "security"], head: "SB bo‘limi boshlig‘i", staff: "SB operatori" },
   { id: "reviziya", label: "Reviziya", hint: "Ichki audit / yig‘uv", tone: "reviziya", icon: ClipboardCheck, keys: ["reviziya", "audit"], head: "Reviziya rahbari", staff: "Revizor-yig‘uvchi" },
   { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse, keys: ["axo", "gpp", "mamuriyat"], head: "AXO / GPP rahbari", staff: "Ma’muriyat" },
@@ -207,8 +206,6 @@ const ALLOWED_ROLES = new Set([
   "reviziya_rahbar",
   "it",
   "it_rahbar",
-  "texnik",
-  "texnik_rahbar",
 ]);
 
 function isPharmacyOrg(e: Employee, usersById: Map<number, User>) {
@@ -234,7 +231,7 @@ function officePeopleForDept(
       if (keys.includes("sb") && (u?.role === "sb" || u?.role === "sb_boshliq")) return true;
       if (keys.includes("reviziya") && (u?.role === "revizor" || u?.role === "reviziya_rahbar")) return true;
       if (keys.includes("it") && (u?.role === "it" || u?.role === "it_rahbar" || u?.role === "it_dasturchi" || u?.role === "it_tarmoq")) return true;
-      if (keys.includes("texnik") && (u?.role === "texnik" || u?.role === "texnik_rahbar")) return true;
+      if (keys.includes("hr") && (u?.role?.startsWith("hr") || u?.role === "recruiter" || u?.role === "trainer")) return true;
       const name = normDept(String(e.departmentName || ""));
       return keys.some((k) => name.includes(k));
     })

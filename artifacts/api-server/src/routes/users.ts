@@ -20,14 +20,10 @@ const ALLOWED_ROLES = [
   "hr_auditor",
   "hr_menejer",
   "trainer",
-  "mentor",
   "director",
   "asoschi",
-  "department_head",
   "mudir",
   "koordinator",
-  "texnik",
-  "texnik_rahbar",
   "it",
   "it_rahbar",
   "it_dasturchi",
@@ -58,6 +54,10 @@ const ALLOWED_ROLES = [
   "distrib",
   "distrib_hr",
   "distrib_rahbar",
+  "kassir",
+  "yurist",
+  "komunalniy",
+  "direktor_yordamchisi",
 ] as const;
 
 const ALLOWED_STATUSES = ["active", "vacant", "terminated", "on_leave"] as const;
@@ -71,14 +71,10 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   hr_auditor: "HR Auditor",
   hr_menejer: "HR Menejer",
   trainer: "Trener",
-  mentor: "Mentor",
   director: "Direktor",
   asoschi: "Asoschi",
-  department_head: "Bo‘lim boshlig‘i",
   mudir: "Mudir",
   koordinator: "Koordinator",
-  texnik: "Texnik",
-  texnik_rahbar: "Texnik bo‘limi rahbari",
   it: "AyTi mutaxassisi",
   it_rahbar: "AyTi bo‘lim boshlig‘i",
   it_dasturchi: "Dasturchi",
@@ -109,6 +105,10 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   distrib: "Distribyutsiya xodimi",
   distrib_hr: "Distribyutsiya HR",
   distrib_rahbar: "Distribyutsiya rahbari",
+  kassir: "Kassir",
+  yurist: "Yurist",
+  komunalniy: "Kommunal",
+  direktor_yordamchisi: "Direktor yordamchisi",
 };
 
 const STATUS_UZ: Record<string, string> = {

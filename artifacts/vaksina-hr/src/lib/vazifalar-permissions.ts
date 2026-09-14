@@ -1,4 +1,4 @@
-import { isDirectorRole } from "./roles";
+import { isDirectorRole, hasFullPlatformAccess } from "./roles";
 import type { Vazifa } from "@/lib/vazifalar-api";
 
 /** Barcha xodimlar topshiriqlarini ko‘rish / filtr (O‘zim | Barcha | shaxs) */
@@ -92,7 +92,7 @@ export function isTaskOverdue(
 }
 
 export function isTaskAdmin(role?: string | null) {
-  return role === "admin";
+  return hasFullPlatformAccess(role);
 }
 
 export function isTaskDirector(role?: string | null) {

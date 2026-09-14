@@ -48,29 +48,44 @@ export function isTexnikRole(_role?: string | null): boolean {
   return false;
 }
 
-/** Direktor bilan bir xil to‘liq huquq (Asoschi). */
+/** Direktor bilan bir xil asosiy huquq (Asoschi ham shu yerda). */
 export function isDirectorRole(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();
   return r === "director" || r === "asoschi";
 }
 
+export function isAsoschiRole(role?: string | null): boolean {
+  return (role ?? "").trim().toLowerCase() === "asoschi";
+}
+
+/** Admin yoki Asoschi — platformadagi barcha imkoniyatlar (100%). */
+export function hasFullPlatformAccess(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return r === "admin" || r === "asoschi";
+}
+
 export function isHrManager(role?: string | null): boolean {
-  return isHrRole(role) || role === "admin";
+  return isHrRole(role) || hasFullPlatformAccess(role);
 }
 
 /** Sozlamalar: foydalanuvchilar, Face ID, kirish materiallari */
 export function canManageSettings(role?: string | null): boolean {
-  return role === "admin" || isDirectorRole(role);
+  return hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
 /** Xodim / foydalanuvchi HOLAT — faqat admin va direktor */
 export function canChangeStaffStatus(role?: string | null): boolean {
-  return role === "admin" || isDirectorRole(role);
+  return hasFullPlatformAccess(role) || isDirectorRole(role);
+}
+
+/** Foydalanuvchilar bo‘limi — faqat admin */
+export function canManageUsers(role?: string | null): boolean {
+  return (role ?? "").trim().toLowerCase() === "admin";
 }
 
 /** Foydalanuvchini o‘chirish — faqat admin */
 export function canDeleteUsers(role?: string | null): boolean {
-  return role === "admin";
+  return canManageUsers(role);
 }
 
 /** Davomat: direktor, HR direktor, HR menejer (+ admin) */
@@ -227,13 +242,13 @@ export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);
 }
 
-/** Bog‘lanish (filial telefon / telegram) — faqat mudir va koordinator */
+/** Bog‘lanish (filial telefon / telegram) — mudir, koordinator, admin/asoschi/direktor */
 export function canAccessBoglanish(role?: string | null): boolean {
-  return role === "mudir" || role === "koordinator";
+  return role === "mudir" || role === "koordinator" || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
 export function canAccessKirish(role?: string | null): boolean {
-  return role === "stajyor" || role === "admin";
+  return role === "stajyor" || hasFullPlatformAccess(role);
 }
 
 export const HR_ROLE_LABELS: Record<string, string> = {

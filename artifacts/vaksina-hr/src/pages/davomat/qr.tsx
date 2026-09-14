@@ -30,7 +30,7 @@ import {
   revokeDepartmentQr,
 } from "../../lib/davomat-api";
 import { downloadAllQrPdf, downloadQrPdf, downloadQrPng, renderQrToCanvas } from "../../lib/qr-render";
-import { canManageSettings, isDeptHeadRole, isDirectorRole } from "../../lib/roles";
+import { canManageSettings, isDeptHeadRole, isDirectorRole, hasFullPlatformAccess } from "../../lib/roles";
 import { cn } from "../../lib/utils";
 
 function QrCanvasItem({ payload, size = 240 }: { payload: string; size?: number }) {
@@ -102,12 +102,12 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   }, [scanOpen]);
 
   const isAdmin = adminMode || canManageSettings(user?.role);
-  /** Faqat admin: istalgan filial/bo‘lim QR + lokatsiyasiz skaner */
-  const adminQrAnywhere = user?.role === "admin";
+  /** Admin/asoschi: istalgan filial/bo‘lim QR + lokatsiyasiz skaner */
+  const adminQrAnywhere = hasFullPlatformAccess(user?.role);
   const isMudir = user?.role === "mudir";
   const isKoordinator = user?.role === "koordinator";
-  /** Filial QR yaratish — faqat admin va koordinator */
-  const canEditBranch = user?.role === "admin" || isKoordinator;
+  /** Filial QR yaratish — admin/asoschi va koordinator */
+  const canEditBranch = hasFullPlatformAccess(user?.role) || isKoordinator;
 
   const methodsQ = useQuery({
     queryKey: ["davomat-methods"],
@@ -120,7 +120,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     Boolean(methodsQ.data?.canManageBranchQr) ||
     isMudir ||
     isKoordinator ||
-    user?.role === "admin" ||
+    hasFullPlatformAccess(user?.role) ||
     isDirectorRole(user?.role);
   /** Ofis QR sahifasi — faqat admin/direktor/bo‘lim boshliqlari (oddiy xodim emas) */
   const canDept =
@@ -128,8 +128,8 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     Boolean(methodsQ.data?.canManageDeptQr) ||
     isDeptHeadRole(user?.role) ||
     isAdmin;
-  /** Ofis QR yaratish/o‘chirish — faqat admin */
-  const canEditDept = user?.role === "admin";
+  /** Ofis QR yaratish/o‘chirish — admin/asoschi */
+  const canEditDept = hasFullPlatformAccess(user?.role);
   /** Filial: admin/koordinator; ofis: faqat admin */
   const canEditQr = scope === "branches" ? canEditBranch : canEditDept;
 

@@ -24,7 +24,6 @@ import {
   Wallet,
   Users,
   Cpu,
-  Wrench,
   ClipboardCheck,
   Warehouse,
   ChevronDown,
@@ -183,7 +182,7 @@ const DEPT_META: Array<{
   { id: "cb-it", label: "AyTi", hint: "AyTi bo‘limi", tone: "cbit", icon: Cpu, keys: ["it", "cb"], head: "AyTi bo‘lim boshlig‘i", staff: "AyTi mutaxassisi" },
   { id: "xavfsizlik", label: "Xavfsizlik (SB)", hint: "Ob’ekt / navbatchilik", tone: "sb", icon: ShieldCheck, keys: ["xavfsizlik", "sb", "security"], head: "SB bo‘limi boshlig‘i", staff: "SB operatori" },
   { id: "reviziya", label: "Reviziya", hint: "Ichki audit / yig‘uv", tone: "reviziya", icon: ClipboardCheck, keys: ["reviziya", "audit"], head: "Reviziya rahbari", staff: "Revizor-yig‘uvchi" },
-  { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse, keys: ["axo", "gpp", "mamuriyat"], head: "AXO / GPP rahbari", staff: "Ma’muriyat" },
+  { id: "axo-gpp", label: "AXO va GPP", hint: "Ma’muriyat / GPP", tone: "axogpp", icon: Warehouse, keys: ["axo", "gpp", "mamuriyat", "mamuriy", "ma’muriy", "mamuriy-xojalik"], head: "AXO / GPP rahbari", staff: "Ma’muriyat" },
 ];
 
 const ALLOWED_ROLES = new Set([
@@ -217,6 +216,44 @@ function normDept(s: string) {
   return s.toLowerCase().replace(/[''`‘’]/g, "").replace(/\s+/g, " ").trim();
 }
 
+const DEPT_ROLE_HINT: Record<string, string> = {
+  taminot_rahbar: "Ta’minot rahbari",
+  taminot: "Logistika",
+  moliya_rahbar: "Moliya rahbari",
+  moliya_xodim: "Moliyachi",
+  moliya: "Moliyachi",
+  gpp_rahbar: "GPP rahbari",
+  gpp: "GPP",
+  mamuriy_rahbar: "AXO rahbari",
+  mamuriy: "Ma’muriyat",
+  sb_boshliq: "SB bo‘limi boshlig‘i",
+  sb: "SB operatori",
+  reviziya_rahbar: "Reviziya rahbari",
+  revizor: "Revizor-yig‘uvchi",
+  it_rahbar: "AyTi bo‘lim boshlig‘i",
+  it_dasturchi: "Dasturchi",
+  it_tarmoq: "Tarmoq administratori",
+  it: "AyTi mutaxassisi",
+};
+
+function rolesForDeptKeys(keys: string[]): string[] {
+  const roles: string[] = [];
+  if (keys.some((k) => k === "taminot" || k === "logistika")) roles.push("taminot_rahbar", "taminot");
+  if (keys.some((k) => k === "moliya" || k === "moliyachi" || k === "hisob")) {
+    roles.push("moliya_rahbar", "moliya_xodim", "moliya");
+  }
+  if (keys.some((k) => k === "hr" || k === "kadr")) {
+    roles.push("hr", "hr_direktor", "hr_kadr_rahbar", "hr_auditor", "hr_menejer", "recruiter", "trainer");
+  }
+  if (keys.some((k) => k === "it" || k === "cb")) roles.push("it_rahbar", "it", "it_dasturchi", "it_tarmoq");
+  if (keys.some((k) => k === "sb" || k === "xavfsizlik" || k === "security")) roles.push("sb_boshliq", "sb");
+  if (keys.some((k) => k === "reviziya" || k === "audit")) roles.push("reviziya_rahbar", "revizor");
+  if (keys.some((k) => k === "axo" || k === "gpp" || k === "mamuriyat" || k.startsWith("mamuriy"))) {
+    roles.push("mamuriy_rahbar", "mamuriy", "gpp_rahbar", "gpp");
+  }
+  return roles;
+}
+
 function officePeopleForDept(
   people: Employee[],
   usersById: Map<number, User>,
@@ -224,22 +261,61 @@ function officePeopleForDept(
   tone: ToneKey,
   icon: React.ComponentType<{ className?: string }>,
 ): OrgNode[] {
+  const roleSet = new Set(rolesForDeptKeys(keys));
   return people
     .filter((e) => {
       if (isPharmacyOrg(e, usersById)) return false;
       const u = e.userId != null ? usersById.get(e.userId) : undefined;
-      if (keys.includes("sb") && (u?.role === "sb" || u?.role === "sb_boshliq")) return true;
-      if (keys.includes("reviziya") && (u?.role === "revizor" || u?.role === "reviziya_rahbar")) return true;
-      if (keys.includes("it") && (u?.role === "it" || u?.role === "it_rahbar" || u?.role === "it_dasturchi" || u?.role === "it_tarmoq")) return true;
-      if (keys.includes("hr") && (u?.role?.startsWith("hr") || u?.role === "recruiter" || u?.role === "trainer")) return true;
+      if (u?.role && roleSet.has(u.role)) return true;
       const name = normDept(String(e.departmentName || ""));
       return keys.some((k) => name.includes(k));
     })
-    .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"))
-    .map((e) => ({
-      id: `emp-${e.id}`,
-      label: e.fullName,
-      hint: e.position || "Bo‘lim xodimi",
+    .sort((a, b) => {
+      const ra = a.userId != null ? usersById.get(a.userId)?.role || "" : "";
+      const rb = b.userId != null ? usersById.get(b.userId)?.role || "" : "";
+      const rank = (r: string) => (r.includes("rahbar") || r.includes("boshliq") || r === "hr_direktor" ? 0 : 1);
+      const d = rank(ra) - rank(rb);
+      if (d !== 0) return d;
+      return a.fullName.localeCompare(b.fullName, "uz");
+    })
+    .map((e) => {
+      const u = e.userId != null ? usersById.get(e.userId) : undefined;
+      return {
+        id: `emp-${e.id}`,
+        label: e.fullName,
+        hint: (u?.role && DEPT_ROLE_HINT[u.role]) || e.position || "Bo‘lim xodimi",
+        tone,
+        icon,
+      };
+    });
+}
+
+/** Bo‘limda employee bog‘lanmagan userlarni qo‘shish */
+function extraUsersForDept(
+  users: User[],
+  linkedUserIds: Set<number>,
+  keys: string[],
+  tone: ToneKey,
+  icon: React.ComponentType<{ className?: string }>,
+): OrgNode[] {
+  const roleSet = new Set(rolesForDeptKeys(keys));
+  return users
+    .filter(
+      (u) =>
+        roleSet.has(u.role) &&
+        (u.status === "active" || u.status === "on_leave") &&
+        !linkedUserIds.has(u.id),
+    )
+    .sort((a, b) => {
+      const rank = (r: string) => (r.includes("rahbar") || r.includes("boshliq") || r === "hr_direktor" ? 0 : 1);
+      const d = rank(a.role) - rank(b.role);
+      if (d !== 0) return d;
+      return a.fullName.localeCompare(b.fullName, "uz");
+    })
+    .map((u) => ({
+      id: `user-${u.id}`,
+      label: u.fullName,
+      hint: DEPT_ROLE_HINT[u.role] || "Bo‘lim xodimi",
       tone,
       icon,
     }));
@@ -538,123 +614,55 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
 function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode {
   const usersById = new Map((users ?? []).map((u) => [u.id, u]));
   const people = employees.filter((e) => isActiveEmp(e) && !isAdminLinked(e, usersById));
+  const asoschi =
+    activeUsers(users, "asoschi")[0] ||
+    (users ?? []).find((u) => u.role === "asoschi" && u.status === "on_leave");
+  const direktorUser =
+    activeUsers(users, "director")[0] ||
+    (users ?? []).find((u) => u.role === "director" && u.status === "on_leave");
+
   return {
     id: "tasischi",
     label: "Ta’sischi",
-    hint: "Muassis",
+    hint: asoschi?.fullName || "Muassis",
     tone: "founder",
     icon: Landmark,
     children: [
       {
         id: "direktor",
         label: "Direktor",
-        hint: "Umumiy rahbar",
+        hint: direktorUser?.fullName || "Umumiy rahbar",
         tone: "director",
         icon: Building2,
         children: DEPT_META.map((d) => {
-          let kids =
-            d.id === "hr-bolimi"
-              ? [hr]
-              : officePeopleForDept(people, usersById, d.keys, d.tone, d.icon);
-          if (d.id === "xavfsizlik") {
-            const linked = new Set(
-              people.filter((e) => e.userId != null).map((e) => e.userId as number),
-            );
-            const extra = (users ?? [])
-              .filter(
-                (u) =>
-                  (u.role === "sb" || u.role === "sb_boshliq") &&
-                  (u.status === "active" || u.status === "on_leave"),
-              )
-              .filter((u) => !linked.has(u.id))
-              .sort((a, b) => {
-                if (a.role !== b.role) return a.role === "sb_boshliq" ? -1 : 1;
-                return a.fullName.localeCompare(b.fullName, "uz");
-              })
-              .map((u) => ({
-                id: `user-${u.id}`,
-                label: u.fullName,
-                hint: u.role === "sb_boshliq" ? "SB bo‘limi boshlig‘i" : "SB operatori",
-                tone: d.tone,
-                icon: ShieldCheck,
-              }));
-            kids = [...kids, ...extra];
+          if (d.id === "hr-bolimi") {
+            return {
+              id: d.id,
+              label: d.label,
+              hint: d.hint,
+              tone: d.tone,
+              icon: d.icon,
+              expandable: true,
+              expandHint: "Struktura · bosing",
+              count: 1,
+              children: [hr],
+            };
           }
-          if (d.id === "reviziya") {
-            const linked = new Set(
-              people.filter((e) => e.userId != null).map((e) => e.userId as number),
-            );
-            const extra = (users ?? [])
-              .filter(
-                (u) =>
-                  (u.role === "revizor" || u.role === "reviziya_rahbar") &&
-                  (u.status === "active" || u.status === "on_leave"),
-              )
-              .filter((u) => !linked.has(u.id))
-              .sort((a, b) => {
-                if (a.role !== b.role) return a.role === "reviziya_rahbar" ? -1 : 1;
-                return a.fullName.localeCompare(b.fullName, "uz");
-              })
-              .map((u) => ({
-                id: `user-${u.id}`,
-                label: u.fullName,
-                hint: u.role === "reviziya_rahbar" ? "Reviziya bo‘limi rahbari" : "Revizor-yig‘uvchi",
-                tone: d.tone,
-                icon: ClipboardCheck,
-              }));
-            kids = [...kids, ...extra];
-          }
-          if (d.id === "cb-it") {
-            const linked = new Set(people.filter((e) => e.userId != null).map((e) => e.userId as number));
-            const extra = (users ?? [])
-              .filter((u) =>
-                (u.role === "it" ||
-                  u.role === "it_rahbar" ||
-                  u.role === "it_dasturchi" ||
-                  u.role === "it_tarmoq") &&
-                (u.status === "active" || u.status === "on_leave"),
-              )
-              .filter((u) => !linked.has(u.id))
-              .sort((a, b) =>
-                a.role === b.role
-                  ? a.fullName.localeCompare(b.fullName, "uz")
-                  : a.role === "it_rahbar"
-                    ? -1
-                    : b.role === "it_rahbar"
-                      ? 1
-                      : a.fullName.localeCompare(b.fullName, "uz"),
-              )
-              .map((u) => ({
-                id: `user-${u.id}`,
-                label: u.fullName,
-                hint:
-                  u.role === "it_rahbar"
-                    ? "AyTi bo‘lim boshlig‘i"
-                    : u.role === "it_dasturchi"
-                      ? "Dasturchi"
-                      : u.role === "it_tarmoq"
-                        ? "Tarmoq administratori"
-                        : "AyTi mutaxassisi",
-                tone: d.tone,
-                icon: Cpu,
-              }));
-            kids = [...kids, ...extra];
-          }
-          if (d.id === "texnik") {
-            const linked = new Set(people.filter((e) => e.userId != null).map((e) => e.userId as number));
-            const extra = (users ?? [])
-              .filter((u) => (u.role === "texnik" || u.role === "texnik_rahbar") && (u.status === "active" || u.status === "on_leave"))
-              .filter((u) => !linked.has(u.id))
-              .sort((a, b) => (a.role === b.role ? a.fullName.localeCompare(b.fullName, "uz") : a.role === "texnik_rahbar" ? -1 : 1))
-              .map((u) => ({
-                id: `user-${u.id}`,
-                label: u.fullName,
-                hint: u.role === "texnik_rahbar" ? "Texnik bo‘limi rahbari" : "Texnik",
-                tone: d.tone,
-                icon: Wrench,
-              }));
-            kids = [...kids, ...extra];
-          }
+          const linked = new Set(
+            people.filter((e) => e.userId != null).map((e) => e.userId as number),
+          );
+          const kids = [
+            ...officePeopleForDept(people, usersById, d.keys, d.tone, d.icon),
+            ...extraUsersForDept(users ?? [], linked, d.keys, d.tone, d.icon),
+          ];
+          // employee + user bir xil odam bo‘lsa dublikatni olib tashlash
+          const seen = new Set<string>();
+          const uniqueKids = kids.filter((k) => {
+            const key = k.label.trim().toLowerCase();
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
           return {
             id: d.id,
             label: d.label,
@@ -662,9 +670,11 @@ function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode
             tone: d.tone,
             icon: d.icon,
             expandable: true,
-            expandHint: d.id === "hr-bolimi" ? "Tuzilma · bosing" : `${Math.max(kids.length, 1)} ta · bosing`,
-            count: kids.length,
-            children: d.id === "hr-bolimi" ? [hr] : kids.length ? kids : makeDeptFallback(d.id, d.tone, d.icon, d.head, d.staff),
+            expandHint: "Struktura · bosing",
+            count: uniqueKids.length,
+            children: uniqueKids.length
+              ? uniqueKids
+              : makeDeptFallback(d.id, d.tone, d.icon, d.head, d.staff),
           };
         }),
       },
@@ -672,7 +682,7 @@ function makeOrgTree(hr: OrgNode, employees: Employee[], users: User[]): OrgNode
   };
 }
 
-type OrgBus = { from: string[]; to: string[] };
+type OrgBus = { from: string[]; to: string[]; dashed?: boolean };
 
 function busesFor(tree: OrgNode) {
   const buses: OrgBus[] = [];
@@ -697,7 +707,11 @@ function collectBuses(node: OrgNode, buses: OrgBus[]) {
   }
   const kids = chartChildren(node);
   if (kids.length) {
-    buses.push({ from: [node.id], to: kids.map((k) => k.id) });
+    buses.push({
+      from: [node.id],
+      to: kids.map((k) => k.id),
+      dashed: node.id === "tasischi",
+    });
     for (const child of kids) collectBuses(child, buses);
   }
 }
@@ -1138,7 +1152,6 @@ const LEGEND: { label: string; tone: ToneKey }[] = [
   { label: "Moliya", tone: "moliya" },
   { label: "HR bo‘limi", tone: "hrDept" },
   { label: "AyTi", tone: "cbit" },
-  { label: "Texnik", tone: "texnikDept" },
   { label: "Xavfsizlik (SB)", tone: "sb" },
   { label: "Reviziya", tone: "reviziya" },
   { label: "AXO va GPP", tone: "axogpp" },
@@ -1157,7 +1170,10 @@ export default function TashkiliyTuzilmaPage() {
   const [openCoordGroupId, setOpenCoordGroupId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(0.92);
   const [pan, setPan] = useState({ x: 40, y: 20 });
-  const [paths, setPaths] = useState<{ lines: string[]; dots: Array<[number, number]> }>({
+  const [paths, setPaths] = useState<{
+    lines: Array<{ d: string; dashed?: boolean }>;
+    dots: Array<[number, number]>;
+  }>({
     lines: [],
     dots: [],
   });
@@ -1231,21 +1247,21 @@ export default function TashkiliyTuzilmaPage() {
       };
     };
 
-    const lines: string[] = [];
+    const lines: Array<{ d: string; dashed?: boolean }> = [];
     const dots: Array<[number, number]> = [];
     for (const bus of busesRef.current) {
       const from = bus.from.map(box).filter((b): b is Box => !!b);
       const to = bus.to.map(box).filter((b): b is Box => !!b);
       if (from.length !== bus.from.length || to.length !== bus.to.length) continue;
       const drawn = drawBus(from, to);
-      lines.push(...drawn.lines);
+      for (const d of drawn.lines) lines.push({ d, dashed: bus.dashed });
       dots.push(...drawn.dots);
     }
     setPaths((prev) => {
       if (
         prev.lines.length === lines.length &&
         prev.dots.length === dots.length &&
-        prev.lines.every((d, i) => d === lines[i]) &&
+        prev.lines.every((l, i) => l.d === lines[i].d && !!l.dashed === !!lines[i].dashed) &&
         prev.dots.every((d, i) => d[0] === dots[i][0] && d[1] === dots[i][1])
       ) {
         return prev;
@@ -1432,27 +1448,29 @@ export default function TashkiliyTuzilmaPage() {
             style={{ zoom }}
           >
             <svg className="pointer-events-none absolute inset-0 h-full w-full overflow-visible" aria-hidden>
-              {paths.lines.map((d, i) => (
+              {paths.lines.map((line, i) => (
                 <path
                   key={`h-${i}`}
-                  d={d}
+                  d={line.d}
                   fill="none"
                   stroke="#F8FAFC"
                   strokeWidth="8"
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  strokeDasharray={line.dashed ? "2 10" : undefined}
                 />
               ))}
-              {paths.lines.map((d, i) => (
+              {paths.lines.map((line, i) => (
                 <path
                   key={`l-${i}`}
-                  d={d}
+                  d={line.d}
                   fill="none"
                   stroke="#0B3A5C"
-                  strokeOpacity="0.92"
-                  strokeWidth="3.5"
+                  strokeOpacity={line.dashed ? "0.55" : "0.92"}
+                  strokeWidth={line.dashed ? 2.5 : 3.5}
                   strokeLinecap="round"
                   strokeLinejoin="round"
+                  strokeDasharray={line.dashed ? "6 8" : undefined}
                   shapeRendering="geometricPrecision"
                 />
               ))}

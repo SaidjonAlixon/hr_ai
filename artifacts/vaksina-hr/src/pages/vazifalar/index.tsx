@@ -679,9 +679,13 @@ export default function VazifalarPage() {
   const filtered = useMemo(() => {
     let list = tasks.filter((t) => t.status !== "cancelled");
     if (assigneeFilter === null) {
-      // Standart: O‘zim — menga biriktirilgan
+      // O‘zim — menga kelgan + men qo‘ygan (boshqalarga ham)
       if (user?.id) {
-        list = list.filter((t) => t.assigneeKind === "user" && t.assigneeId === user.id);
+        list = list.filter(
+          (t) =>
+            (t.assigneeKind === "user" && t.assigneeId === user.id) ||
+            t.createdById === user.id,
+        );
       } else {
         list = [];
       }

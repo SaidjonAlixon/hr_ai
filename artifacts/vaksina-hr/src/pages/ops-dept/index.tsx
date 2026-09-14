@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { useReviziyaBranches } from "@/lib/reviziya-api";
 import { useOpsDash, useOpsMeta, useOpsMutations, useOpsTickets } from "@/lib/ops-dept-api";
-import { isItRole, isTexnikRole, canAddDeptStaff } from "@/lib/roles";
+import { isItRole, isTexnikRole, canAddDeptStaff, hasFullPlatformAccess } from "@/lib/roles";
 import { AddDeptStaffButton } from "@/components/dept/AddDeptStaffDialog";
 import { useI18n } from "../../i18n/I18nProvider";
 
@@ -34,7 +34,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   const { user } = useAuth();
   const { toast } = useToast();
   const allowed =
-    user?.role === "admin" ||
+    hasFullPlatformAccess(user?.role) ||
     user?.role === "mudir" ||
     user?.role === "koordinator" ||
     (dept === "it" ? isItRole(user?.role) : isTexnikRole(user?.role));

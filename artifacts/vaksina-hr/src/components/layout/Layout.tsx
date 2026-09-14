@@ -59,7 +59,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -177,7 +177,7 @@ function groupNavItems(
   const groups: NavSection[] = [];
   for (const sec of NAV_SECTIONS) {
     const paths =
-      isDirectorRole(role) && sec.id === 'attendance'
+      role === 'director' && sec.id === 'attendance'
         ? ['/davomat', '/davomat/analytics', '/smena-filial', '/checklist-holati', '/davomat-face']
         : sec.paths;
     const list = paths
@@ -634,7 +634,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       setLocation('/dashboard');
     }
     if (
-      isDirectorRole(user.role) &&
+      user.role === 'director' &&
       location.startsWith('/it')
     ) {
       setLocation('/dashboard');
@@ -642,7 +642,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/employees') && !canViewEmployees(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/admin/users') && !canManageSettings(user.role)) {
+    if (location.startsWith('/admin/users') && !canManageUsers(user.role)) {
       setLocation('/dashboard');
     }
     if (location.startsWith('/admin/smena-sozlamalar') && !canManageSettings(user.role)) {
@@ -759,7 +759,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const at = davIdx >= 0 ? davIdx : next.length;
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
       }
-      if ((user.role === 'admin' || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
+      if ((hasFullPlatformAccess(user.role) || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
         next = [...next, itNav];
       }
       if (canViewDistribyutsiya(role) && !next.some((i) => i.path === '/distribyutsiya')) {
@@ -839,17 +839,53 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
+      oylikNav,
       hisobNav,
       { name: 'IT', path: '/it', icon: Cpu },
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
+      reviziyaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatAnalyticsNav,
       davomatFaceNav,
       smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
-      { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
+      { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
+      { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
+      { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
+      { name: 'Test', path: '/admin/test', icon: Bell },
+      { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
+      { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
+      { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+    ],
+    asoschi: [
+      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      javobNav,
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      { name: 'Arizalar', path: '/requests', icon: FileText },
+      { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
+      { name: 'Nomzodlar', path: '/candidates', icon: Users },
+      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      oylikNav,
+      hisobNav,
+      { name: 'IT', path: '/it', icon: Cpu },
+      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
+      reviziyaNav,
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatAnalyticsNav,
+      davomatFaceNav,
+      smenaNav,
+      { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
+      { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: "Bog'lanish", path: '/boglanish', icon: Phone },
+      { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
+      { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
@@ -887,7 +923,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       davomatFaceNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
-      { name: 'Foydalanuvchilar', path: '/admin/users', icon: Settings },
       { name: 'Holat', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
@@ -1201,14 +1236,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const userRole = normalizeUserRole(user.role);
   const oversightNav = hasHrOversightNav(userRole);
-  const roleNav = injectCommonNav(
-    oversightNav
-      ? hrOversightNav
-      : roleNavigation[userRole] || [
+  const resolvedBase = oversightNav
+    ? hrOversightNav
+    : hasFullPlatformAccess(userRole)
+      ? roleNavigation.admin
+      : roleNavigation[userRole] ??
+        (userRole === 'director' ? roleNavigation.director : null) ?? [
           { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-        ],
-    userRole,
-  );
+        ];
+  const roleNav = injectCommonNav(resolvedBase, userRole);
   const withFace = isLimitedOfficeStaffRole(userRole)
     ? roleNav
     : roleNav.some((item) => item.path === '/davomat-face')
@@ -1217,7 +1253,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const navItems = (canSeeHrRecruitment(userRole)
     ? withFace
     : withFace.filter((item) => !isHrRecruitmentPath(item.path))
-  );
+  ).filter((item) => item.path !== '/admin/users' || canManageUsers(userRole));
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
@@ -1562,7 +1598,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             </div>
           </div>
 
-          {!isDirectorRole(user.role) ? (
+          {user.role !== 'director' ? (
             <div className={cn(desktopCollapsed && 'md:hidden')}>
               <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
             </div>
@@ -1736,7 +1772,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/vazifalar/tahlil') ||
                 location === '/davomat' ||
                 location.startsWith('/davomat/analytics') ||
-                (location === '/dashboard' && isDirectorRole(user.role)) ||
+                (location === '/dashboard' && user.role === 'director') ||
                 location === '/oylik' ||
                 location === '/hisobkitob' ||
                 location.startsWith('/employees') ||

@@ -1,4 +1,4 @@
-import { isItRole as isItUserRole, isDirectorRole } from "./roles";
+import { isItRole as isItUserRole, isDirectorRole, hasFullPlatformAccess } from "./roles";
 
 export function isItRole(role?: string | null) {
   return isItUserRole(role);
@@ -9,7 +9,7 @@ export function isTexnikRole(_role?: string | null) {
 }
 
 export function canViewOpsDept(dept: "it" | "texnik", role?: string | null) {
-  if (role === "admin" || isDirectorRole(role)) return dept === "it";
+  if (hasFullPlatformAccess(role) || isDirectorRole(role)) return dept === "it";
   if (role === "mudir" || role === "koordinator") return dept === "it";
   if (dept === "it") return isItRole(role);
   return false;
@@ -17,7 +17,7 @@ export function canViewOpsDept(dept: "it" | "texnik", role?: string | null) {
 
 export function canManageOpsDept(dept: "it" | "texnik", role?: string | null) {
   if (dept !== "it") return false;
-  if (role === "admin") return true;
+  if (hasFullPlatformAccess(role)) return true;
   return isItRole(role);
 }
 

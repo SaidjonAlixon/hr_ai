@@ -35,7 +35,7 @@ import {
   normalizeUzPhone,
   UZ_PHONE_HINT,
 } from '../../lib/phone';
-import { userRoleLabel, canManageSettings, canDeleteUsers, canChangeStaffStatus } from '../../lib/roles';
+import { userRoleLabel, canManageUsers, canDeleteUsers, canChangeStaffStatus } from '../../lib/roles';
 import { useI18n } from '../../i18n/I18nProvider';
 
 const ROLES = [
@@ -156,7 +156,7 @@ export default function AdminUsersPage() {
   const updateMutation = useUpdateUser();
   const deleteMutation = useDeleteUser();
 
-  const canManage = canManageSettings(me?.role);
+  const canManage = canManageUsers(me?.role);
   const canChangeStatus = canChangeStaffStatus(me?.role);
   const canDelete = canDeleteUsers(me?.role);
   const isAdmin = canManage;

@@ -13,7 +13,7 @@ import { syncBranchNeedFromTask } from "../lib/sync-branch-need";
 
 const router: IRouter = Router();
 
-import { HR_ROLES, isDirectorRole } from "../lib/roles";
+import { HR_ROLES, isDirectorRole, hasFullPlatformAccess } from "../lib/roles";
 import { DEPT_HEAD_ROLES } from "../lib/dept-staff";
 
 /** Rahbar / boshqaruv rollari — vazifa belgilash huquqi */
@@ -57,11 +57,7 @@ function isCreator(row: typeof tasksTable.$inferSelect, userId?: number) {
 }
 
 function isAdminRole(role?: string | null) {
-  return role === "admin";
-}
-
-function isDirectorRole(role?: string | null) {
-  return isDirectorRole(role);
+  return hasFullPlatformAccess(role);
 }
 
 /** To‘liq tahrirlash: admin/direktor — hammasi; qolganlar — faqat o‘zi yaratgani */

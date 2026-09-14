@@ -1,7 +1,7 @@
-import { isDirectorRole } from "./roles";
+import { isDirectorRole, hasFullPlatformAccess } from "./roles";
 export function canViewHisobkitob(role?: string | null) {
   return (
-    role === "admin" ||
+    hasFullPlatformAccess(role) ||
     isDirectorRole(role) ||
     role === "moliya" ||
     role === "moliya_rahbar" ||
@@ -11,11 +11,11 @@ export function canViewHisobkitob(role?: string | null) {
 }
 
 export function canEditHisobkitob(role?: string | null) {
-  return role === "admin" || isDirectorRole(role) || role === "moliya" || role === "moliya_rahbar";
+  return hasFullPlatformAccess(role) || isDirectorRole(role) || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function canAdminHisobkitob(role?: string | null) {
-  return role === "admin";
+  return hasFullPlatformAccess(role);
 }
 
 export function roundMoney(n: number) {

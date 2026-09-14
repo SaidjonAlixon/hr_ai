@@ -57,7 +57,8 @@ export function canViewReviziya(role?: string | null): boolean {
   return (
     isReviziyaRole(role) ||
     hasHrOversightNav(role) ||
-    role === "admin" ||
+    hasFullPlatformAccess(role) ||
+    isDirectorRole(role) ||
     role === "moliya" ||
     role === "sb" ||
     role === "sb_boshliq" ||
@@ -65,29 +66,47 @@ export function canViewReviziya(role?: string | null): boolean {
   );
 }
 
-export function isHrManager(role?: string | null): boolean {
-  return isHrRole(role) || role === "admin";
-}
-
-/** Direktor bilan bir xil to‘liq huquq (Asoschi). */
+/** Direktor bilan bir xil asosiy huquq (Asoschi ham shu yerda). */
 export function isDirectorRole(role?: string | null): boolean {
   const r = normalizeUserRole(role);
   return r === "director" || r === "asoschi";
 }
 
+export function isAsoschiRole(role?: string | null): boolean {
+  return normalizeUserRole(role) === "asoschi";
+}
+
+/**
+ * Admin yoki Asoschi — platformadagi barcha imkoniyatlar (100%).
+ * Oddiy «foydalanuvchi» emas: sozlamalar, HR, IT, o‘chirish va hokazo.
+ */
+export function hasFullPlatformAccess(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return r === "admin" || r === "asoschi";
+}
+
+export function isHrManager(role?: string | null): boolean {
+  return isHrRole(role) || hasFullPlatformAccess(role);
+}
+
 /** Sozlamalar: foydalanuvchilar, Face ID, kirish materiallari */
 export function canManageSettings(role?: string | null): boolean {
-  return role === "admin" || isDirectorRole(role);
+  return hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
 /** Xodim / foydalanuvchi HOLAT (status) — faqat admin va direktor */
 export function canChangeStaffStatus(role?: string | null): boolean {
-  return role === "admin" || isDirectorRole(role);
+  return hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
-/** Foydalanuvchini o‘chirish — faqat admin (direktor ham yo‘q) */
+/** Foydalanuvchilar bo‘limi — faqat admin (asoschi/direktor ko‘rmaydi) */
+export function canManageUsers(role?: string | null): boolean {
+  return normalizeUserRole(role) === "admin";
+}
+
+/** Foydalanuvchini o‘chirish — faqat admin */
 export function canDeleteUsers(role?: string | null): boolean {
-  return role === "admin";
+  return canManageUsers(role);
 }
 
 /** Davomat: direktor, HR direktor, HR menejer (+ admin) */
@@ -150,10 +169,10 @@ export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {
   return (EMPLOYEE_VIEW_ONLY_ROLES as readonly string[]).includes(role) || isDeptHeadRole(role);
 }
 
-/** Dublikatlar — faqat admin va HR */
+/** Dublikatlar — admin, asoschi va HR */
 export function canViewEmployeeDuplicates(role?: string | null): boolean {
   return (
-    role === "admin" ||
+    hasFullPlatformAccess(role) ||
     role === "hr" ||
     role === "hr_direktor" ||
     role === "hr_kadr_rahbar" ||
@@ -272,9 +291,9 @@ export function canExtendVacancy(role?: string | null): boolean {
   );
 }
 
-/** Kirish o‘quv bo‘limi — faqat stajyor (+ admin ko‘rishi mumkin) */
+/** Kirish o‘quv bo‘limi — faqat stajyor (+ admin/asoschi ko‘rishi mumkin) */
 export function canAccessKirish(role?: string | null): boolean {
-  return role === "stajyor" || role === "admin";
+  return role === "stajyor" || hasFullPlatformAccess(role);
 }
 
 export function isStajyor(role?: string | null): boolean {
@@ -306,9 +325,9 @@ export function canViewPharmacyReyting(role?: string | null): boolean {
   return isPharmacyBranchRole(role);
 }
 
-/** Bog‘lanish (filial telefon / telegram) — faqat mudir va koordinator */
+/** Bog‘lanish (filial telefon / telegram) — mudir, koordinator, admin/asoschi */
 export function canAccessBoglanish(role?: string | null): boolean {
-  return role === "mudir" || role === "koordinator";
+  return role === "mudir" || role === "koordinator" || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
 /** Ish o‘rinlari, nomzod, suhbat, stajirovka — faqat HR oilasi + admin/rekruter/trener */
@@ -322,7 +341,8 @@ export const HR_RECRUITMENT_PATHS = [
 export function canSeeHrRecruitment(role?: string | null): boolean {
   return (
     isHrRole(role) ||
-    role === "admin" ||
+    hasFullPlatformAccess(role) ||
+    isDirectorRole(role) ||
     role === "recruiter" ||
     role === "trainer"
   );

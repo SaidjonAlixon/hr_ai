@@ -50,7 +50,7 @@ import { useGetTasks } from '../lib/vazifalar-api';
 import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { cn } from '../lib/utils';
-import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole, isDirectorRole } from "../lib/roles";
+import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole, isDirectorRole, hasFullPlatformAccess } from "../lib/roles";
 import { DavomatAnalyticsDashboard } from '../pages/davomat/analytics';
 import { useHolat } from '../lib/holat-api';
 import {
@@ -134,6 +134,7 @@ type DashDetailKey =
   | null;
 
 function dashKindFor(role?: string | null): DashKind {
+  if (hasFullPlatformAccess(role)) return 'recruitment';
   if (isHrRole(role)) return 'recruitment';
   if (isSbRole(role)) return 'security';
   if (isReviziyaRole(role)) return 'revision';
@@ -206,13 +207,13 @@ export default function Dashboard() {
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';
   const isPharmacyStaff = kind === 'pharmacy_staff';
-  const canWatchRequests = (isDirectorRole(role) || isHrRole(role) || role === 'admin') && !isDirector;
+  const canWatchRequests = (isDirectorRole(role) || isHrRole(role) || hasFullPlatformAccess(role)) && !isDirector;
   const canSeeRecruitment = canSeeHrRecruitment(role);
-  const canSeePipeline = canSeeRecruitment && (role === 'admin' || isHrRole(role) || role === 'recruiter');
-  const canSeeRecruiterTasks = role === 'admin' || isHrRole(role) || role === 'recruiter';
+  const canSeePipeline = canSeeRecruitment && (hasFullPlatformAccess(role) || isHrRole(role) || role === 'recruiter');
+  const canSeeRecruiterTasks = hasFullPlatformAccess(role) || isHrRole(role) || role === 'recruiter';
   const canFetchVacancies =
     canSeeRecruitment &&
-    (role === 'admin' ||
+    (hasFullPlatformAccess(role) ||
       role === 'recruiter' ||
       isHrRole(role) ||
       role === 'department_head');
@@ -261,7 +262,7 @@ export default function Dashboard() {
       seen.add(v.id);
       if (!(v.status === 'published' || v.status === 'draft')) return false;
       if (!(v as any).deadline) return false;
-      if (role === 'admin') return true;
+      if (hasFullPlatformAccess(role)) return true;
       if (role === 'recruiter') return (v as any).recruiterId === uid;
       return (v as any).requestCreatedById === uid;
     });
@@ -269,7 +270,7 @@ export default function Dashboard() {
   }, [vacancies, user?.id, role]);
 
   const canSeeDeadlineVacancies =
-    canSeeRecruitment && (role === 'admin' || role === 'recruiter' || deadlineVacancies.length > 0);
+    canSeeRecruitment && (hasFullPlatformAccess(role) || role === 'recruiter' || deadlineVacancies.length > 0);
 
   const openRequests = useMemo(
     () =>
@@ -520,7 +521,7 @@ export default function Dashboard() {
       {isRecruitment && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2.5">
-            {(role === 'admin' || isHrRole(role)) && (
+            {(hasFullPlatformAccess(role) || isHrRole(role)) && (
               <DashTile
                 title={t('dashboard.openRequests')}
                 value={stats?.openRequests}

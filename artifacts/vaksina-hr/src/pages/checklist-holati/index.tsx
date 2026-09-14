@@ -38,7 +38,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRanking } from "@/lib/roles";
+import { canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRanking, hasFullPlatformAccess } from "@/lib/roles";
 import {
   downloadBranchAuditsExcel,
   useBranchAuditsList,
@@ -146,7 +146,7 @@ export default function ChecklistHolatiPage() {
     allowedFull && !isCoordOnly,
   );
   const deleteAudit = useDeleteBranchAudit();
-  const canAdminDelete = user?.role === "admin";
+  const canAdminDelete = hasFullPlatformAccess(user?.role);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
   async function handleDeleteAudit(a: BranchAudit) {

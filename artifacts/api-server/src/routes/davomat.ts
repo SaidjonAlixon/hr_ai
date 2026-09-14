@@ -14,7 +14,7 @@ import {
   employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canViewDavomat, isDirectorRole } from "../lib/roles";
+import { canViewDavomat, isDirectorRole, hasFullPlatformAccess } from "../lib/roles";
 import {
   matchesDavomatStaffFilter,
   parseDavomatStaffFilter,
@@ -2990,9 +2990,9 @@ function canViewDeptQrRole(role: string | null | undefined) {
   return /_rahbar$/.test(role);
 }
 
-/** Ofis QR yaratish/yangilash/o‘chirish — faqat admin */
+/** Ofis QR yaratish/yangilash/o‘chirish — admin / asoschi */
 function canEditDeptQrRole(role: string | null | undefined) {
-  return role === "admin";
+  return hasFullPlatformAccess(role);
 }
 
 /** @deprecated use canViewDeptQrRole / canEditDeptQrRole */
@@ -3000,9 +3000,9 @@ function canManageDeptQrRole(role: string | null | undefined) {
   return canViewDeptQrRole(role);
 }
 
-/** Faqat admin: istalgan filial/bo‘lim QR + lokatsiya shartsiz (geofence yo‘q) */
+/** Admin/asoschi: istalgan filial/bo‘lim QR + lokatsiya shartsiz (geofence yo‘q) */
 function isAdminQrAnywhere(role: string | null | undefined) {
-  return role === "admin";
+  return hasFullPlatformAccess(role);
 }
 
 async function assertCanViewDeptQr(

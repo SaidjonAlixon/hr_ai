@@ -2,7 +2,7 @@ import React, { useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
 import { useLocation } from "wouter";
-import { isHrDirektor, isHrOversight, HR_ROLE_LABELS } from "@/lib/roles";
+import { isHrDirektor, isHrOversight, HR_ROLE_LABELS, hasFullPlatformAccess } from "@/lib/roles";
 import {
   useKuzatuv,
   useKuzatuvPerson,
@@ -1140,8 +1140,8 @@ export default function KuzatuvPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
-  const allowed = isHrOversight(user?.role) || user?.role === "admin";
-  const full = isHrDirektor(user?.role) || user?.role === "admin";
+  const allowed = isHrOversight(user?.role) || hasFullPlatformAccess(user?.role);
+  const full = isHrDirektor(user?.role) || hasFullPlatformAccess(user?.role);
   const { data, isLoading, error } = useKuzatuv(allowed);
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
   const [peopleQ, setPeopleQ] = useState("");

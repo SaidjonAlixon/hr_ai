@@ -1,3 +1,4 @@
+import { Router, type IRouter, type Response, type Request } from "express";
 import {
   ensureFilialWebhookOnServerless,
   filialDeleteWebhook,
@@ -19,6 +20,51 @@ import { loadFilialBranches } from "../lib/filial-bot-data";
 
 const router: IRouter = Router();
 
+/** Status hech qachon crash qilmasin — webhook ensure alohida try */
+router.get("/telegram-filial/status", async (_req: Request, res: Response): Promise<void> => {
+  try {
+    if (!isFilialBotConfigured()) {
+      res.json({ configured: false, polling: false });
+      return;
+    }
+    let ensure: { ok: boolean; url?: string; note?: string } | null = null;
+    try {
+      ensure = await ensureFilialWebhookOnServerless();
+    } catch (e) {
+      ensure = { ok: false, note: (e as Error).message };
+    }
+    let me: unknown = null;
+    let webhook: unknown = null;
+    let branchCount = 0;
+    try {
+      me = await filialGetMe();
+    } catch (e) {
+      me = { error: (e as Error).message };
+    }
+    try {
+      webhook = await filialGetWebhookInfo();
+    } catch (e) {
+      webhook = { error: (e as Error).message };
+    }
+    try {
+      branchCount = (await loadFilialBranches()).length;
+    } catch {
+      /* ignore */
+    }
+    res.json({
+      configured: true,
+      pollingPreferred: shouldFilialUsePolling(),
+      vercel: Boolean(process.env.VERCEL || process.env.VERCEL_ENV),
+      ensure,
+      me,
+      webhook,
+      branchCount,
+    });
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message || "status_failed" });
+  }
+});
+
 /** Telegram webhook — avval ishlov, keyin 200 (Vercel freeze) */
 router.post("/telegram-filial/webhook", async (req: Request, res: Response): Promise<void> => {
   if (!isFilialBotConfigured()) {
@@ -35,41 +81,6 @@ router.post("/telegram-filial/webhook", async (req: Request, res: Response): Pro
     console.error("telegram-filial webhook:", err);
   }
   res.status(200).json({ ok: true });
-});
-
-router.get("/telegram-filial/status", async (_req: Request, res: Response): Promise<void> => {
-  if (!isFilialBotConfigured()) {
-    res.json({ configured: false, polling: false });
-    return;
-  }
-  const ensure = await ensureFilialWebhookOnServerless();
-  let me: unknown = null;
-  let webhook: unknown = null;
-  let branchCount = 0;
-  try {
-    me = await filialGetMe();
-  } catch (e) {
-    me = { error: (e as Error).message };
-  }
-  try {
-    webhook = await filialGetWebhookInfo();
-  } catch (e) {
-    webhook = { error: (e as Error).message };
-  }
-  try {
-    branchCount = (await loadFilialBranches()).length;
-  } catch {
-    /* ignore */
-  }
-  res.json({
-    configured: true,
-    pollingPreferred: shouldFilialUsePolling(),
-    vercel: Boolean(process.env.VERCEL || process.env.VERCEL_ENV),
-    ensure,
-    me,
-    webhook,
-    branchCount,
-  });
 });
 
 /** Webhook o‘rnatish — faqat filial bot tokeniga; HR botga tegmaydi */

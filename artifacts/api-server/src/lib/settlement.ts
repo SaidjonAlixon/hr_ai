@@ -1,7 +1,8 @@
+import { isDirectorRole } from "./roles";
 export function canViewHisobkitob(role?: string | null) {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     role === "moliya" ||
     role === "moliya_rahbar" ||
     role === "hr_direktor" ||
@@ -10,7 +11,7 @@ export function canViewHisobkitob(role?: string | null) {
 }
 
 export function canEditHisobkitob(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar";
+  return role === "admin" || isDirectorRole(role) || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function canAdminHisobkitob(role?: string | null) {

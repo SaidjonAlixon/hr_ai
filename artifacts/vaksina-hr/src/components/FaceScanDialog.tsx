@@ -92,7 +92,7 @@ function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
     ctx.translate(canvas.width, 0);
     ctx.scale(-1, 1);
     ctx.drawImage(video, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
-    return canvas.toDataURL("image/jpeg", 0.92);
+    return canvas.toDataURL("image/jpeg", 0.82);
   } catch {
     return undefined;
   }

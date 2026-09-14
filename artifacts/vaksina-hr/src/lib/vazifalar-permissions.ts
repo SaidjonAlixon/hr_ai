@@ -1,9 +1,10 @@
+import { isDirectorRole } from "./roles";
 import type { Vazifa } from "@/lib/vazifalar-api";
 
 /** Barcha xodimlar topshiriqlarini ko‘rish / filtr (O‘zim | Barcha | shaxs) */
 export const TASK_ALL_VISIBILITY_ROLES = new Set([
   "admin",
-  "director",
+  "director", "asoschi",
   "hr_direktor",
   "hr_auditor",
 ]);
@@ -95,7 +96,7 @@ export function isTaskAdmin(role?: string | null) {
 }
 
 export function isTaskDirector(role?: string | null) {
-  return role === "director";
+  return isDirectorRole(role);
 }
 
 /** Direktor / admin / HR direktor / HR auditor — barcha topshiriqlarni ko‘rish */

@@ -13,7 +13,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canDeleteHrRecords, deleteVacancyCascade } from "../lib/delete-candidate";
-import { isHrManager, isHrRole, canExtendVacancy } from "../lib/roles";
+import { isHrManager, isHrRole, canExtendVacancy, isDirectorRole } from "../lib/roles";
 import { notifyUser } from "../lib/notify";
 
 const router: IRouter = Router();
@@ -237,7 +237,7 @@ router.patch("/vacancies/:id", requireAuth, async (req: AuthRequest, res): Promi
     const canClose =
       role === "admin" ||
       isHrRole(role) ||
-      role === "director" ||
+      isDirectorRole(role) ||
       (role === "recruiter" && existing.recruiterId === req.userId);
     if (!canClose) {
       res.status(403).json({ error: "Ish o'rinini yopishga ruxsat yo'q" });
@@ -344,7 +344,7 @@ router.post("/vacancies/:id/close", requireAuth, async (req: AuthRequest, res): 
   const canClose =
     role === "admin" ||
     isHrRole(role) ||
-    role === "director" ||
+    isDirectorRole(role) ||
     (role === "recruiter" && existing.recruiterId === req.userId);
   if (!canClose) {
     res.status(403).json({ error: "Ish o'rinini yopishga ruxsat yo'q" });

@@ -13,7 +13,7 @@ import {
 import { cn } from "../../lib/utils";
 import type { HolatMudirNode, HolatPerson, HolatReport } from "../../lib/holat-api";
 import { useAuth } from "../../contexts/AuthContext";
-import { isHrRole } from "../../lib/roles";
+import { isHrRole, isDirectorRole } from "../../lib/roles";
 import { usePatchEmployeeProfile } from "../../lib/pharmacy-staff-api";
 import { useToast } from "../../hooks/use-toast";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -110,7 +110,7 @@ export function HolatDashboardPanel({
     user?.role === "koordinator" ||
     user?.role === "mudir" ||
     user?.role === "admin" ||
-    user?.role === "director" ||
+    isDirectorRole(user?.role) ||
     isHrRole(user?.role);
 
   const [pickerOpen, setPickerOpen] = useState(false);

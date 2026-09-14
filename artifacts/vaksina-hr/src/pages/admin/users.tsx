@@ -47,6 +47,7 @@ const ROLES = [
   { value: 'recruiter', label: 'Rekruter' },
   { value: 'trainer', label: 'Trener' },
   { value: 'director', label: 'Direktor' },
+  { value: 'asoschi', label: 'Asoschi' },
   { value: 'mudir', label: 'Mudir' },
   { value: 'koordinator', label: 'Koordinator' },
   { value: 'it_rahbar', label: 'AyTi bo‘lim boshlig‘i' },

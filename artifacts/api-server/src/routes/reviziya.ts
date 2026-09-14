@@ -118,7 +118,7 @@ async function maybeWatchlist(branchName: string | null | undefined, shortage: n
         consecutiveCount: 2,
       });
       await notifyByRoles({
-        roles: ["reviziya_rahbar", "director", "admin", "sb_boshliq"],
+        roles: ["reviziya_rahbar", "director", "asoschi", "admin", "sb_boshliq"],
         text: `${branchName}: ketma-ket 2 marta kamomad — nazorat ro‘yxatiga qo‘shildi`,
         type: "reviziya_watchlist",
         linkUrl: "/reviziya",
@@ -300,7 +300,7 @@ router.post("/reviziya/documents", requireAuth, async (req: AuthRequest, res): P
 
   if (created.shortageAmount >= SHORTAGE_LIMIT) {
     await notifyByRoles({
-      roles: ["reviziya_rahbar", "director", "admin", "sb_boshliq"],
+      roles: ["reviziya_rahbar", "director", "asoschi", "admin", "sb_boshliq"],
       text: `${created.branchName || "Filial"}: kamomad limiti oshdi (${Math.round(created.shortageAmount)} so‘m)`,
       type: "reviziya_shortage",
       linkUrl: `/reviziya/hujjat/${created.id}`,
@@ -440,7 +440,7 @@ router.post("/reviziya/documents/:id/advance", requireAuth, async (req: AuthRequ
 
   if (next === "signed") {
     await notifyByRoles({
-      roles: ["moliya", "director", "admin"],
+      roles: ["moliya", "director", "asoschi", "admin"],
       text: `${row.docNo} Reviziya rahbari imzoladi — buxgalteriya tasdig‘i kutilmoqda`,
       type: "reviziya_accounting",
       linkUrl: `/reviziya/hujjat/${id}`,

@@ -115,7 +115,7 @@ type BoardView = "kanban" | "list" | "calendar";
 const ASSIGNER_ROLES = new Set([
   "admin",
   ...HR_ROLES,
-  "director",
+  "director", "asoschi",
   ...DEPT_HEAD_ROLES,
   "recruiter",
   "trainer",

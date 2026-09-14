@@ -98,7 +98,7 @@ function toDataUrl(raw: string | null | undefined): string | null {
   return s;
 }
 
-/** Live kadr AI uchun: juda katta bo‘lsa null (lokal yo‘l). */
+/** Live kadr AI uchun: juda katta bo‘lsa null. */
 function toAiLiveDataUrl(raw: string | null | undefined): string | null {
   const s = toDataUrl(raw);
   if (!s) return null;
@@ -110,6 +110,10 @@ function toAiLiveDataUrl(raw: string | null | undefined): string | null {
     return null;
   }
   return s;
+}
+
+function hasLivePhotoRaw(liveSnapshot?: unknown): boolean {
+  return typeof liveSnapshot === "string" && liveSnapshot.trim().startsWith("data:image/");
 }
 
 async function openaiJson(
@@ -300,9 +304,20 @@ export async function inspectLiveAntiSpoof(
 ): Promise<{ ok: true; quality: number } | { ok: false; error: string; code: string }> {
   if (!isFaceAiEnabled()) return { ok: true, quality: 1 };
   if (mode === "login" && !FACE_AI_ANTISPOOF) return { ok: true, quality: 1 };
+  if (!hasLivePhotoRaw(liveSnapshot)) {
+    return { ok: false, error: "Yuz rasmi olinmadi — kameraga tik qarab qayta urinib ko‘ring", code: "face_ai_no_photo" };
+  }
   const live = toAiLiveDataUrl(typeof liveSnapshot === "string" ? liveSnapshot : null);
   if (!live) {
-    return { ok: false, error: "Yuz rasmi olinmadi — kameraga tik qarab qayta urinib ko‘ring", code: "face_ai_no_photo" };
+    /**
+     * Rasm bor, lekin AI limittidan katta (siqilmagan telefon kadri).
+     * Rad etmaslik: lokal match allaqachon bo‘ladi; spoof uchun liveness challenge yetarli.
+     */
+    logger.warn(
+      { event: "face_ai_antispoof", mode, code: "face_ai_photo_too_large" },
+      "live photo too large for OpenAI — soft-pass anti-spoof",
+    );
+    return { ok: true, quality: 0.65 };
   }
   try {
     const inspect = parseFaceAiInspect(
@@ -508,6 +523,25 @@ export async function resolveLoginIdentityWithAi(opts: {
   }
 
   if (!live) {
+    /** Siqilmagan katta rasm: lokal aniq match bo‘lsa AI o‘tkaziladi */
+    if (
+      hasLivePhotoRaw(opts.liveSnapshot) &&
+      isSamePerson(top.dist, top.cosine, FACE_MATCH_MAX) &&
+      !needsAmbiguousAi(opts.candidates)
+    ) {
+      logger.warn(
+        { event: "face_ai_login", mode: "oversized_local_ok", userId: top.userId },
+        "live photo too large — accept clear local match",
+      );
+      return {
+        ok: true,
+        id: top.id,
+        userId: top.userId,
+        dist: top.dist,
+        cosine: top.cosine,
+        confidence: top.cosine,
+      };
+    }
     return {
       ok: false,
       error: "Jonli yuz rasmi olinmadi. Kameraga tik qarab qayta urinib ko‘ring.",

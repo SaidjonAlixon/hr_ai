@@ -41,7 +41,7 @@ import {
 } from "../../components/ui/alert-dialog";
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
-import { isHrManager } from "../../lib/roles";
+import { isHrManager, isDirectorRole } from "../../lib/roles";
 import { Skeleton } from "../../components/ui/skeleton";
 import { useI18n } from "../../i18n/I18nProvider";
 
@@ -51,7 +51,7 @@ export default function AdminDepartmentsPage() {
   const { t } = useI18n();
   const qc = useQueryClient();
 
-  const canManage = isHrManager(me?.role) || me?.role === "director";
+  const canManage = isHrManager(me?.role) || isDirectorRole(me?.role);
 
   const [search, setSearch] = useState("");
   const [dialogOpen, setDialogOpen] = useState(false);

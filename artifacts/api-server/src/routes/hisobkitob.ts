@@ -1,3 +1,4 @@
+import { isDirectorRole } from "../lib/roles";
 import { Router, type IRouter } from "express";
 import { and, asc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
 import ExcelJS from "exceljs";
@@ -511,7 +512,7 @@ router.post("/hisobkitob/sheets/:id/reset", requireAuth, async (req: AuthRequest
 });
 
 router.post("/hisobkitob/sheets/:id/approve", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canAdminHisobkitob(req.userRole) && req.userRole !== "director" && req.userRole !== "moliya") {
+  if (!canAdminHisobkitob(req.userRole) && !isDirectorRole(req.userRole) && req.userRole !== "moliya") {
     res.status(403).json({ error: "Tasdiqlash ruxsati yo‘q" });
     return;
   }

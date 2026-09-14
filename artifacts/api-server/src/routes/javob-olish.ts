@@ -12,7 +12,7 @@ import {
   employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { isHrRole } from "../lib/roles";
+import { isHrRole, isDirectorRole } from "../lib/roles";
 import { notifyUser, notifyByRoles } from "../lib/notify";
 import {
   hoursForStaff,
@@ -28,7 +28,7 @@ const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function isLead(role: string) {
-  return role === "admin" || role === "director" || role === "koordinator" || isHrRole(role);
+  return role === "admin" || isDirectorRole(role) || role === "koordinator" || isHrRole(role);
 }
 
 function todayTashkentYmd() {

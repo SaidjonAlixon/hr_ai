@@ -33,7 +33,7 @@ import { Link, useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
-import { isHrManager } from '../../lib/roles';
+import { isHrManager, isDirectorRole } from "../../lib/roles";
 import { useI18n } from '../../i18n/I18nProvider';
 
 export default function RequestDetails({ params }: { params: { id: string } }) {
@@ -58,7 +58,7 @@ export default function RequestDetails({ params }: { params: { id: string } }) {
   if (!request) return <div>{t('hire.requestNotFound')}</div>;
 
   const canApprove = isHrManager(user?.role);
-  const isHrLike = canApprove || user?.role === 'director';
+  const isHrLike = canApprove || isDirectorRole(user?.role);
   const isRecruiter = user?.role === 'recruiter' || user?.role === 'admin';
   const needsDeadline = !request.deadline;
   const canShowApprove =

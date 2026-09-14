@@ -10,7 +10,7 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { canManageSettings, isHrRole } from "../lib/roles";
+import { canManageSettings, isHrRole, isDirectorRole } from "../lib/roles";
 import { KIRISH_PASS_SCORE, KIRISH_STAGE_COUNT, KIRISH_STAGES } from "../lib/kirish-content";
 
 const router: IRouter = Router();
@@ -19,7 +19,7 @@ function canViewStajirovkalar(role?: string | null) {
   return (
     canManageSettings(role) ||
     isHrRole(role) ||
-    role === "director" ||
+    isDirectorRole(role) ||
     role === "koordinator" ||
     role === "mudir" ||
     role === "trainer" ||

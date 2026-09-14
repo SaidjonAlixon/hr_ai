@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
-import { isHrManager, isHrRole, isSbRole, canChangeStaffStatus } from '../../lib/roles';
+import { isHrManager, isHrRole, isSbRole, canChangeStaffStatus, isDirectorRole } from "../../lib/roles";
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import {
   EMPLOYMENT_STATUS_LABELS,
@@ -347,7 +347,7 @@ export default function PharmacyNetworkPage() {
   const canHardDelete =
     user?.role === 'admin' ||
     isHrRole(user?.role) ||
-    user?.role === 'director';
+    isDirectorRole(user?.role);
   const canPickFilialForStaff = canAddMudir;
 
   const isMudirOnly = user?.role === 'mudir';
@@ -356,7 +356,7 @@ export default function PharmacyNetworkPage() {
 
   const canSeeFullNetwork =
     isHrRole(user?.role) ||
-    user?.role === 'director' ||
+    isDirectorRole(user?.role) ||
     user?.role === 'admin' ||
     user?.role === 'recruiter' ||
     user?.role === 'koordinator' ||
@@ -376,7 +376,7 @@ export default function PharmacyNetworkPage() {
 
   const canEditShift =
     isHrRole(user?.role) ||
-    user?.role === 'director' ||
+    isDirectorRole(user?.role) ||
     user?.role === 'admin' ||
     user?.role === 'department_head' ||
     user?.role === 'mudir' ||
@@ -389,7 +389,7 @@ export default function PharmacyNetworkPage() {
     user?.role === 'mudir' ||
     user?.role === 'admin' ||
     isHrRole(user?.role) ||
-    user?.role === 'director';
+    isDirectorRole(user?.role);
 
   const canConfirmAlerts = user?.role === 'koordinator' || isHrManager(user?.role);
   const canSetBranchGps = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);

@@ -30,7 +30,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { DeadlineCountdown } from '../../components/DeadlineCountdown';
 import { sortByDeadlineAsc } from '../../lib/deadline-countdown';
 import { useToast } from '../../hooks/use-toast';
-import { isHrManager, isHrRole } from '../../lib/roles';
+import { isHrManager, isHrRole, isDirectorRole } from "../../lib/roles";
 import { useI18n } from '../../i18n/I18nProvider';
 import {
   AlertDialog,
@@ -55,7 +55,7 @@ export default function VacanciesList() {
   const canCloseRole =
     isHrRole(user?.role) ||
     user?.role === 'admin' ||
-    user?.role === 'director' ||
+    isDirectorRole(user?.role) ||
     user?.role === 'recruiter';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');

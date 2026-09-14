@@ -7,7 +7,7 @@ import {
   employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { isHrRole } from "../lib/roles";
+import { isHrRole, isDirectorRole } from "../lib/roles";
 import { notifyUser } from "../lib/notify";
 import { isPharmacyShiftStaff, normalizeShiftType, shiftWindow, parseShiftKeys, encodeShiftKeys, validateShiftCombination } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
@@ -20,7 +20,7 @@ const STAFF_ORG = new Set(["pharmacist", "intern"]);
 const MANAGER_ORG = "manager";
 
 function isLeadRole(role: string) {
-  return role === "admin" || role === "director" || role === "koordinator" || isHrRole(role);
+  return role === "admin" || isDirectorRole(role) || role === "koordinator" || isHrRole(role);
 }
 
 type EmpRow = {

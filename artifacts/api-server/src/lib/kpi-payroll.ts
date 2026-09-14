@@ -1,3 +1,4 @@
+import { isDirectorRole } from "./roles";
 import { and, eq, gte, inArray, isNull, lte, or } from "drizzle-orm";
 import {
   db,
@@ -150,15 +151,15 @@ export const ROLE_LABELS: Record<string, string> = {
 };
 
 export function canManagePayroll(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar" || role === "hr_direktor" || role === "hr_kadr_rahbar";
+  return role === "admin" || isDirectorRole(role) || role === "moliya" || role === "moliya_rahbar" || role === "hr_direktor" || role === "hr_kadr_rahbar";
 }
 
 export function canApprovePayroll(role?: string | null) {
-  return role === "admin" || role === "director" || role === "moliya" || role === "moliya_rahbar";
+  return role === "admin" || isDirectorRole(role) || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function canEditKpiSettings(role?: string | null) {
-  return role === "admin" || role === "hr_direktor" || role === "hr_kadr_rahbar" || role === "director" || role === "moliya" || role === "moliya_rahbar";
+  return role === "admin" || role === "hr_direktor" || role === "hr_kadr_rahbar" || isDirectorRole(role) || role === "moliya" || role === "moliya_rahbar";
 }
 
 export function currentMonthKey() {

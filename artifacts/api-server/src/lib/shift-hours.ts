@@ -50,6 +50,8 @@ export function isPharmacyShiftStaff(userRole?: string | null, orgRole?: string 
 
 export type WorkSchedule = {
   key: ShiftKey;
+  /** Birlamchi + kombinatsiya kalitlari (masalan 1+2 → ["one","two"]) */
+  keys?: ShiftKey[];
   label: string;
   start: string;
   end: string;
@@ -77,6 +79,7 @@ function toWorkSchedule(def: ShiftDefinition): WorkSchedule {
     : `${def.startHm}–${def.endHm}`;
   return {
     key: def.key,
+    keys: [def.key],
     label: def.label,
     start: def.startHm,
     end: def.endHm,
@@ -125,6 +128,7 @@ export function shiftWindow(
     : `${first.startHm}–${last.endHm}`;
   return {
     key: first.key,
+    keys,
     label: `${short}-smena`,
     start: first.startHm,
     end: last.endHm,
@@ -159,8 +163,12 @@ export function minutesToHm(total: number): string {
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
-/** Smena tugagach Ketdim — ish kuni (smena tugagan kalendar kuni) 23:55 gacha */
+/** 1-smena / ofis: smena tugagan kun 23:55 */
 export const CHECKOUT_DEADLINE_HM = "23:55";
+/** 2-smena: smena tugagan kundan keyingi kun 02:00 (23:55 qoidasi YO‘Q) */
+export const CHECKOUT_DEADLINE_SHIFT_TWO_HM = "02:00";
+/** 3-smena (tun): smena tugagan ertalab 10:00 */
+export const CHECKOUT_DEADLINE_SHIFT_THREE_HM = "10:00";
 
 /** @deprecated — o‘rniga checkoutDeadlineAt; eski hisoblar uchun qoldirilgan */
 export const CHECKOUT_GRACE_MS = 2 * 60 * 60 * 1000;
@@ -187,19 +195,99 @@ export function shiftEndAt(workDateYmd: string, endHm: string, overnight?: boole
   return new Date(`${endDay}T${hm}:00+05:00`);
 }
 
+function normShiftKeys(opts?: {
+  shiftKey?: string | null;
+  shiftKeys?: Array<string | null | undefined> | null;
+}): string[] {
+  const fromList = (opts?.shiftKeys || [])
+    .map((k) => String(k || "").toLowerCase())
+    .filter(Boolean);
+  if (fromList.length) return fromList;
+  const one = String(opts?.shiftKey || "").toLowerCase();
+  return one ? [one] : [];
+}
+
+/** 3-smena / tungi (2+3) — Ketdim smena tugagan ertalab 10:00 gacha */
+export function usesShiftThreeCheckoutDeadline(opts?: {
+  shiftKey?: string | null;
+  shiftKeys?: Array<string | null | undefined> | null;
+  overnight?: boolean;
+}): boolean {
+  const keys = normShiftKeys(opts);
+  if (keys.some((k) => k === "three" || k === "3" || k === "shift_three")) return true;
+  const one = String(opts?.shiftKey || "").toLowerCase();
+  if (one === "three" || one === "3" || one === "shift_three") return true;
+  // Tun smenasi (overnight) va 2-smena emas
+  if (opts?.overnight && !keys.includes("two") && !keys.includes("2")) return true;
+  return false;
+}
+
+/** 2-smena (yoki 1+2) — Ketdim ertasi 02:00; 23:55 umuman qo‘llanmaydi */
+export function usesShiftTwoCheckoutDeadline(opts?: {
+  shiftKey?: string | null;
+  shiftKeys?: Array<string | null | undefined> | null;
+  overnight?: boolean;
+}): boolean {
+  if (usesShiftThreeCheckoutDeadline(opts)) return false;
+  const keys = normShiftKeys(opts);
+  if (keys.some((k) => k === "two" || k === "2" || k === "shift_two")) return true;
+  const one = String(opts?.shiftKey || "").toLowerCase();
+  return one === "two" || one === "2" || one === "shift_two";
+}
+
+export function checkoutDeadlineHmFor(opts?: {
+  shiftKey?: string | null;
+  shiftKeys?: Array<string | null | undefined> | null;
+  overnight?: boolean;
+}): string {
+  if (usesShiftThreeCheckoutDeadline(opts)) return CHECKOUT_DEADLINE_SHIFT_THREE_HM;
+  if (usesShiftTwoCheckoutDeadline(opts)) return CHECKOUT_DEADLINE_SHIFT_TWO_HM;
+  return CHECKOUT_DEADLINE_HM;
+}
+
 /**
- * Ketdim oxirgi muddati: smena tugagan kunning 23:55 (Toshkent).
- * Ofis / kunduzgi dorixona: shu kun 23:55.
- * Tun smenasi: smena tugagan (ertasi) kun 23:55.
+ * Ketdim oxirgi muddati (Toshkent):
+ * - 2-smena: smena tugagan kundan KEYINGI kun 02:00 (23:55 YO‘Q)
+ * - 3-smena: smena tugagan ertalab 10:00
+ * - 1-smena / ofis: smena tugagan kun 23:55
  */
 export function checkoutDeadlineAt(
   workDateYmd: string,
   endHm: string,
   overnight?: boolean,
+  opts?: {
+    shiftKey?: string | null;
+    shiftKeys?: Array<string | null | undefined> | null;
+  },
 ): Date {
   const endAt = shiftEndAt(workDateYmd, endHm, overnight);
   const endDayYmd = ymdInTashkent(endAt);
+  const merged = { ...opts, overnight };
+
+  if (usesShiftThreeCheckoutDeadline(merged)) {
+    // Tun smenasi tugagan ertalab (endDay) 10:00
+    return new Date(`${endDayYmd}T${CHECKOUT_DEADLINE_SHIFT_THREE_HM}:00+05:00`);
+  }
+  if (usesShiftTwoCheckoutDeadline(merged)) {
+    const nextDay = addYmdDays(endDayYmd, 1);
+    return new Date(`${nextDay}T${CHECKOUT_DEADLINE_SHIFT_TWO_HM}:00+05:00`);
+  }
   return new Date(`${endDayYmd}T${CHECKOUT_DEADLINE_HM}:00+05:00`);
+}
+
+/** Xabar matnlari uchun qisqa izoh */
+export function checkoutDeadlineHint(opts?: {
+  shiftKey?: string | null;
+  shiftKeys?: Array<string | null | undefined> | null;
+  overnight?: boolean;
+}): string {
+  if (usesShiftThreeCheckoutDeadline(opts)) {
+    return `3-smena: «Ketdim» ertalab soat ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} gacha`;
+  }
+  if (usesShiftTwoCheckoutDeadline(opts)) {
+    return `2-smena: «Ketdim» ertasi kun soat ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} gacha (23:55 emas)`;
+  }
+  return `1-smena/ofis: «Ketdim» smena kuni soat ${CHECKOUT_DEADLINE_HM} gacha`;
 }
 
 export function onTimeUntilHm(start: string, graceMinutes: number): string {

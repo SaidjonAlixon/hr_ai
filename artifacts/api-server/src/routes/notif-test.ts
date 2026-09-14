@@ -1,3 +1,4 @@
+import { isDirectorRole } from "../lib/roles";
 import { Router } from "express";
 import { eq } from "drizzle-orm";
 import { db, usersTable } from "@workspace/db";
@@ -13,7 +14,7 @@ import {
 const router = Router();
 
 function requireAdmin(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
-  if (req.userRole !== "admin" && req.userRole !== "director") {
+  if (req.userRole !== "admin" && !isDirectorRole(req.userRole)) {
     res.status(403).json({ error: "Faqat admin/direktor" });
     return false;
   }

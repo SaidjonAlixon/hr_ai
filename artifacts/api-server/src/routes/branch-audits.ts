@@ -28,7 +28,7 @@ const VIEW_ROLES = new Set([
   "koordinator",
   "admin",
   ...HR_ROLES,
-  "director",
+  "director", "asoschi",
   "recruiter",
   "mudir",
   "farmasevt",

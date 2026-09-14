@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db, employeesTable } from "@workspace/db";
-import { isHrRole } from "./roles";
+import { isHrRole, isDirectorRole } from "./roles";
 import { displayBranchName, parseGpsText, withGpsSuffix } from "./geo-location";
 
 export type BranchGpsOk = {
@@ -24,7 +24,7 @@ export async function saveManagerBranchLocation(opts: {
   const canSet =
     opts.actorRole === "koordinator" ||
     opts.actorRole === "admin" ||
-    opts.actorRole === "director" ||
+    isDirectorRole(opts.actorRole) ||
     isHrRole(opts.actorRole);
   if (!canSet) {
     return { ok: false, status: 403, error: "Filial lokatsiyasini koordinator kiritadi" };

@@ -3,13 +3,13 @@ import { eq, sql } from "drizzle-orm";
 import { db, departmentsTable, usersTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { isHrManager } from "../lib/roles";
+import { isHrManager, isDirectorRole } from "../lib/roles";
 import { dedupeDepartmentsByName } from "../lib/role-departments";
 
 const router: IRouter = Router();
 
 function canManageDepartments(role?: string) {
-  return isHrManager(role) || role === "director";
+  return isHrManager(role) || isDirectorRole(role);
 }
 
 async function getDepartmentFull(id: number) {

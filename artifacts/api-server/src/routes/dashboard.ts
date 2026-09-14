@@ -1,3 +1,4 @@
+import { isDirectorRole } from "../lib/roles";
 import { Router, type IRouter } from "express";
 import { eq, and, sql, isNotNull } from "drizzle-orm";
 import {
@@ -309,7 +310,7 @@ router.get("/dashboard/recruiter-tasks", requireAuth, async (req: AuthRequest, r
   ];
   if (role === "recruiter" && userId) {
     vacConditions.push(eq(vacanciesTable.recruiterId, userId));
-  } else if (role !== "admin" && role !== "director" && userId) {
+  } else if (role !== "admin" && !isDirectorRole(role) && userId) {
     vacConditions.push(
       sql`${vacanciesTable.requestId} IN (
         SELECT id FROM requests WHERE created_by_id = ${userId}

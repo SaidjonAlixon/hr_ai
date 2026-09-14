@@ -32,7 +32,7 @@ import { Link, useLocation } from 'wouter';
 import { format } from 'date-fns';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
-import { isHrManager, isHrRole, canExtendVacancy } from '../../lib/roles';
+import { isHrManager, isHrRole, canExtendVacancy, isDirectorRole } from "../../lib/roles";
 import { openCandidatePdf, openVacancyCandidatesPdf } from '../../lib/candidate-pdf';
 import {
   Dialog,
@@ -128,7 +128,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
   const [customDeadline, setCustomDeadline] = React.useState('');
   const [busyKind, setBusyKind] = React.useState<'close' | 'extend' | null>(null);
   const canPublish = isHrManager(user?.role) || user?.role === 'recruiter';
-  const canDelete = isHrRole(user?.role) || user?.role === 'director';
+  const canDelete = isHrRole(user?.role) || isDirectorRole(user?.role);
   const isAssignedRecruiter =
     user?.role === 'recruiter' && vacancy?.recruiterId === user.id;
   const canClose =
@@ -136,7 +136,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
     vacancy.status === 'published' &&
     (user?.role === 'admin' ||
       isHrRole(user?.role) ||
-      user?.role === 'director' ||
+      isDirectorRole(user?.role) ||
       isAssignedRecruiter);
   const canExtend =
     !!vacancy &&
@@ -355,7 +355,7 @@ export default function VacancyDetails({ params }: { params: { id: string } }) {
               <FileDown className="w-4 h-4" /> {t('hire.pdfAll')}
             </Button>
           )}
-          {(user?.role === 'recruiter' || isHrRole(user?.role) || user?.role === 'director' || user?.role === 'admin') &&
+          {(user?.role === 'recruiter' || isHrRole(user?.role) || isDirectorRole(user?.role) || user?.role === 'admin') &&
             vacancy.status !== 'closed' && (
             <Link href={`/candidates/new?vacancyId=${vacancy.id}`}>
               <Button variant="outline" className="gap-2">

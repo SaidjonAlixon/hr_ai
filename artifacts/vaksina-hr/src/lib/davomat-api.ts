@@ -252,7 +252,7 @@ export async function faceVerifyDavomat(payload: {
   ownerVerified?: boolean;
 }> {
   const snapshot = payload.snapshot
-    ? await compressFaceSnapshotAsync(payload.snapshot)
+    ? (await compressFaceSnapshotAsync(payload.snapshot, 640, 0.82)) || payload.snapshot
     : undefined;
   return apiJson("/davomat/face-verify", {
     method: "POST",
@@ -299,7 +299,10 @@ export async function facePunchDavomat(payload: {
   } | null;
   sessionSwitched?: boolean;
 }> {
-  const snapshot = payload.snapshot;
+  /** AI anti-spoof ~180k char limitti — siqilmasa «Yuz rasmi olinmadi» chiqadi */
+  const snapshot = payload.snapshot
+    ? (await compressFaceSnapshotAsync(payload.snapshot, 640, 0.82)) || payload.snapshot
+    : undefined;
   return apiJson("/davomat/face-punch", {
     method: "POST",
     body: JSON.stringify({ ...payload, snapshot }),
@@ -338,12 +341,15 @@ export type WorkplaceInfo = {
   };
   shift?: {
     type: "one" | "two" | "office" | string;
+    keys?: string[];
     label: string;
     start: string;
     end: string;
     overnight?: boolean;
     warnHm: string;
     warnText: string;
+    checkoutDeadlineHm?: string;
+    checkoutDeadlineAt?: string;
   } | null;
 };
 

@@ -19,7 +19,7 @@ export async function runReviziyaAlerts(): Promise<void> {
 
   if (overdue.length) {
     await notifyByRoles({
-      roles: ["reviziya_rahbar", "director", "admin", "moliya"],
+      roles: ["reviziya_rahbar", "director", "asoschi", "admin", "moliya"],
       text: `${overdue.length} ta «yo‘ldagi pul» ${IN_TRANSIT_HOURS} soatdan oshdi`,
       type: "reviziya_in_transit_overdue",
       linkUrl: "/reviziya",

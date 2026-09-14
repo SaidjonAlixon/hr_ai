@@ -23,13 +23,13 @@ import {
   departmentsTable,
   tasksTable,
 } from "@workspace/db";
-import { isHrRole } from "./roles";
+import { isHrRole, isDirectorRole } from "./roles";
 import { syncStaffingAlertForEmployee } from "./staffing-alert";
 
 const STAFF_ORG = new Set(["pharmacist", "intern", "supervisor", "manager"]);
 
 export function canHardDeletePharmacyNetwork(role?: string): boolean {
-  return role === "admin" || isHrRole(role) || role === "director";
+  return role === "admin" || isHrRole(role) || isDirectorRole(role);
 }
 
 export async function purgeUserSideEffects(userIds: number[]) {

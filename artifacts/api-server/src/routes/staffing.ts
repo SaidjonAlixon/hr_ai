@@ -280,7 +280,7 @@ router.post("/staffing-alerts/:id/confirm", requireAuth, async (req: AuthRequest
     .returning();
 
   await notifyByRoles({
-    roles: [...HR_ROLES, "admin", "director", "recruiter"],
+    roles: [...HR_ROLES, "admin", "director", "asoschi", "recruiter"],
     text: `Filial ehtiyoji tasdiqlandi: ${branch} — ${position} (${statusLabel})`,
     type: "new_request",
     linkUrl: `/requests/${createdReq.id}`,

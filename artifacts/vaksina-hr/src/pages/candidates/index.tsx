@@ -8,7 +8,7 @@ import { Link, useLocation } from 'wouter';
 import { Search, Plus, Filter, User, Briefcase, Phone } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../contexts/AuthContext';
-import { isHrManager } from '../../lib/roles';
+import { isHrManager, isDirectorRole } from "../../lib/roles";
 import { useI18n } from '../../i18n/I18nProvider';
 
 function getFiltersFromUrl() {
@@ -45,7 +45,7 @@ export default function CandidatesList() {
   const canAddCandidate =
     user?.role === 'recruiter' ||
     isHrManager(user?.role) ||
-    user?.role === 'director';
+    isDirectorRole(user?.role);
 
   const { data: candidates, isLoading } = useGetCandidates({
     search: search || undefined,

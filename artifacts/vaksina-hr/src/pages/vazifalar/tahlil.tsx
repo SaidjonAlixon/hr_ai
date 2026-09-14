@@ -1,3 +1,4 @@
+import { isDirectorRole } from "../../lib/roles";
 import React, { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
@@ -118,7 +119,7 @@ function classifyType(task: Vazifa): string {
 function classifySource(task: Vazifa, creatorRole?: string): string {
   if (task.candidateId || /avto|auto|sistema/i.test(task.title)) return "auto";
   const role = (creatorRole || "").toLowerCase();
-  if (role === "director" || role.includes("direktor")) return "director";
+  if (isDirectorRole(role) || role.includes("direktor")) return "director";
   if (role.includes("department") || role.includes("rahbar") || role === "mudir" || role === "koordinator") {
     return "leader";
   }
@@ -736,7 +737,7 @@ export default function VazifalarTahlilPage() {
   }, [filtered, t]);
 
   const sourcePie = useMemo(() => {
-    const keys = ["leader", "director", "plan", "auto", "other_dept"] as const;
+    const keys = ["leader", "director", "asoschi", "plan", "auto", "other_dept"] as const;
     const labels: Record<(typeof keys)[number], string> = {
       leader: t("tasks.analytics.source.leader"),
       director: t("tasks.analytics.source.director"),

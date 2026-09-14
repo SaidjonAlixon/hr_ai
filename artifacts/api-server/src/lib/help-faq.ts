@@ -59,7 +59,7 @@ export const HELP_FAQS: HelpFaq[] = [
     titleRu: "Время смен",
     keywords: ["smena", "3smena", "3-smena", "1-smena", "2-smena", "ish vaqti", "smena vaqt", "nechida", "смена", "график"],
     answerUz:
-      "Apteka (mudir/farmasevt/stajyor): 1-smena 08:00–17:00, 2-smena 17:00–23:45, 3-smena 23:00–07:00 (tungi, keyingi kun). Bir kunda max 2 smena (1+2 yoki 2+3). Ofis odatda 09:00–18:00. Ishlangan soat haqiqiy check-in/out dan hisoblanadi.",
+      "Apteka (mudir/farmasevt/stajyor): 1-smena 08:00–17:00 (Ketdim 23:55), 2-smena 17:00–23:45 (Ketdim ertasi 02:00 — 23:55 emas), 3-smena 23:00–07:00 (Ketdim ertalab 10:00). Bir kunda max 2 smena (1+2 yoki 2+3). Ofis odatda 09:00–18:00; Ketdim 23:55. Ishlangan soat haqiqiy check-in/out dan hisoblanadi.",
     answerRu:
       "Аптека (управляющий/фармацевт/стажёр): 1-я смена 08:00–17:00, 2-я 17:00–23:45. 3-й смены нет. Офис обычно 09:00–18:00. Смена задаётся в профиле/кадрах.",
   },

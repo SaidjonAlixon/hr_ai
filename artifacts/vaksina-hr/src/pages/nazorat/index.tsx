@@ -9,7 +9,7 @@ import { Search, Filter, Eye, Briefcase } from 'lucide-react';
 import { format } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useAuth } from '../../contexts/AuthContext';
-import { isHrManager } from '../../lib/roles';
+import { isHrManager, isDirectorRole } from "../../lib/roles";
 import { useI18n } from '../../i18n/I18nProvider';
 
 export default function NazoratPage() {
@@ -20,7 +20,7 @@ export default function NazoratPage() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [departmentFilter, setDepartmentFilter] = useState<string>('all');
 
-  const allowed = isHrManager(user?.role) || user?.role === 'director';
+  const allowed = isHrManager(user?.role) || isDirectorRole(user?.role);
 
   const { data: requests, isLoading } = useGetRequests({
     search: search || undefined,

@@ -1,3 +1,4 @@
+import { isDirectorRole } from "./roles";
 import { eq } from "drizzle-orm";
 import {
   db,
@@ -74,5 +75,5 @@ export async function deleteRequestCascade(requestId: number): Promise<boolean> 
 }
 
 export function canDeleteHrRecords(role?: string): boolean {
-  return role === "hr" || role === "hr_direktor" || role === "hr_auditor" || role === "hr_menejer" || role === "director";
+  return role === "hr" || role === "hr_direktor" || role === "hr_auditor" || role === "hr_menejer" || isDirectorRole(role);
 }

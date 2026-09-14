@@ -1,3 +1,4 @@
+import { isDirectorRole } from "./roles";
 export const REVIZIYA_ROLES = ["revizor", "reviziya_rahbar"] as const;
 
 export function isReviziyaRole(role?: string | null): boolean {
@@ -12,7 +13,7 @@ export function canViewReviziya(role?: string | null): boolean {
   return (
     isReviziyaRole(role) ||
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     role === "moliya" ||
     role === "sb" ||
     role === "sb_boshliq" ||
@@ -29,19 +30,19 @@ export function canApproveReviziyaHead(role?: string | null): boolean {
 }
 
 export function canApproveAccountant(role?: string | null): boolean {
-  return role === "moliya" || role === "director" || role === "admin";
+  return role === "moliya" || isDirectorRole(role) || role === "admin";
 }
 
 export function canStorno(role?: string | null): boolean {
-  return role === "reviziya_rahbar" || role === "admin" || role === "director";
+  return role === "reviziya_rahbar" || role === "admin" || isDirectorRole(role);
 }
 
 export function canExportReviziya(role?: string | null): boolean {
-  return role === "reviziya_rahbar" || role === "admin" || role === "director";
+  return role === "reviziya_rahbar" || role === "admin" || isDirectorRole(role);
 }
 
 export function canSbReview(role?: string | null): boolean {
-  return role === "sb" || role === "sb_boshliq" || role === "admin" || role === "director";
+  return role === "sb" || role === "sb_boshliq" || role === "admin" || isDirectorRole(role);
 }
 
 export const DOC_TYPES = [

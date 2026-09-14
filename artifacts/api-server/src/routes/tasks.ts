@@ -13,14 +13,14 @@ import { syncBranchNeedFromTask } from "../lib/sync-branch-need";
 
 const router: IRouter = Router();
 
-import { HR_ROLES } from "../lib/roles";
+import { HR_ROLES, isDirectorRole } from "../lib/roles";
 import { DEPT_HEAD_ROLES } from "../lib/dept-staff";
 
 /** Rahbar / boshqaruv rollari — vazifa belgilash huquqi */
 const MANAGER_ROLES = new Set<string>([
   "admin",
   ...HR_ROLES,
-  "director",
+  "director", "asoschi",
   ...DEPT_HEAD_ROLES,
   "recruiter",
   "trainer",
@@ -33,7 +33,7 @@ const MANAGER_ROLES = new Set<string>([
 /** «Barcha uchun» — faqat shu rahbarlar (oddiy xodim / bo‘lim boshlig‘i emas) */
 const TASK_ALL_VISIBILITY_ROLES = new Set([
   "admin",
-  "director",
+  "director", "asoschi",
   "hr_direktor",
   "hr_auditor",
 ]);
@@ -61,7 +61,7 @@ function isAdminRole(role?: string | null) {
 }
 
 function isDirectorRole(role?: string | null) {
-  return role === "director";
+  return isDirectorRole(role);
 }
 
 /** To‘liq tahrirlash: admin/direktor — hammasi; qolganlar — faqat o‘zi yaratgani */

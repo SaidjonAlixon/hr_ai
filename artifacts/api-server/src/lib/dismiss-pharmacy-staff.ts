@@ -7,7 +7,7 @@ import { syncStaffingAlertForEmployee } from "./staffing-alert";
 const BRANCH_STAFF_ORG = new Set(["pharmacist", "intern", "supervisor"]);
 const DISMISS_ORG = new Set(["manager", ...BRANCH_STAFF_ORG]);
 
-import { isHrRole } from "./roles";
+import { isHrRole, isDirectorRole } from "./roles";
 
 export function canDismissPharmacyNetwork(role?: string): boolean {
   return (
@@ -15,7 +15,7 @@ export function canDismissPharmacyNetwork(role?: string): boolean {
     role === "mudir" ||
     role === "admin" ||
     isHrRole(role) ||
-    role === "director"
+    isDirectorRole(role)
   );
 }
 
@@ -24,7 +24,7 @@ async function assertDismissScope(
   actorUserId: number,
   target: typeof employeesTable.$inferSelect,
 ): Promise<string | null> {
-  if (role === "admin" || role === "director" || isHrRole(role)) return null;
+  if (role === "admin" || isDirectorRole(role) || isHrRole(role)) return null;
   if (target.orgRole === "coordinator") return "Koordinatorni bo‘shatib bo‘lmaydi";
 
   const mine = await db

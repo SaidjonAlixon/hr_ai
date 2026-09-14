@@ -59,7 +59,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel } from '@/lib/roles';
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -177,7 +177,7 @@ function groupNavItems(
   const groups: NavSection[] = [];
   for (const sec of NAV_SECTIONS) {
     const paths =
-      role === 'director' && sec.id === 'attendance'
+      isDirectorRole(role) && sec.id === 'attendance'
         ? ['/davomat', '/davomat/analytics', '/smena-filial', '/checklist-holati', '/davomat-face']
         : sec.paths;
     const list = paths
@@ -411,7 +411,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     };
   }, [mobileOpen]);
 
-  const isHrLike = isHrRole(user?.role) || user?.role === 'admin' || user?.role === 'director';
+  const isHrLike = isHrRole(user?.role) || user?.role === 'admin' || isDirectorRole(user?.role);
   const isRecruiter = user?.role === 'recruiter';
   const isPharmacyStaff = user?.role === 'koordinator' || user?.role === 'mudir';
 
@@ -634,7 +634,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       setLocation('/dashboard');
     }
     if (
-      user.role === 'director' &&
+      isDirectorRole(user.role) &&
       location.startsWith('/it')
     ) {
       setLocation('/dashboard');
@@ -724,7 +724,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         role === 'stajyor' ||
         role === 'koordinator' ||
         role === 'admin' ||
-        role === 'director') &&
+        isDirectorRole(role)) &&
       !next.some((i) => i.path === '/javob-olish')
     ) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
@@ -1562,7 +1562,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             </div>
           </div>
 
-          {user.role !== 'director' ? (
+          {!isDirectorRole(user.role) ? (
             <div className={cn(desktopCollapsed && 'md:hidden')}>
               <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
             </div>
@@ -1736,7 +1736,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/vazifalar/tahlil') ||
                 location === '/davomat' ||
                 location.startsWith('/davomat/analytics') ||
-                (location === '/dashboard' && user.role === 'director') ||
+                (location === '/dashboard' && isDirectorRole(user.role)) ||
                 location === '/oylik' ||
                 location === '/hisobkitob' ||
                 location.startsWith('/employees') ||

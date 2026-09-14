@@ -6,7 +6,7 @@ export const ASSIGNABLE_ROLES = [
   ...HR_ROLES,
   'recruiter',
   'trainer',
-  'director',
+  'director', 'asoschi',
 ] as const;
 
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];

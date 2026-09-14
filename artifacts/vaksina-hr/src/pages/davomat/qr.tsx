@@ -30,7 +30,7 @@ import {
   revokeDepartmentQr,
 } from "../../lib/davomat-api";
 import { downloadAllQrPdf, downloadQrPdf, downloadQrPng, renderQrToCanvas } from "../../lib/qr-render";
-import { canManageSettings, isDeptHeadRole } from "../../lib/roles";
+import { canManageSettings, isDeptHeadRole, isDirectorRole } from "../../lib/roles";
 import { cn } from "../../lib/utils";
 
 function QrCanvasItem({ payload, size = 240 }: { payload: string; size?: number }) {
@@ -121,7 +121,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     isMudir ||
     isKoordinator ||
     user?.role === "admin" ||
-    user?.role === "director";
+    isDirectorRole(user?.role);
   /** Ofis QR sahifasi — faqat admin/direktor/bo‘lim boshliqlari (oddiy xodim emas) */
   const canDept =
     Boolean(methodsQ.data?.canViewDeptQr) ||

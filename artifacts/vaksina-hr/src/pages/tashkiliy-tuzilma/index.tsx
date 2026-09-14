@@ -188,7 +188,7 @@ const DEPT_META: Array<{
 
 const ALLOWED_ROLES = new Set([
   "admin",
-  "director",
+  "director", "asoschi",
   "hr",
   "hr_direktor",
   "hr_kadr_rahbar",

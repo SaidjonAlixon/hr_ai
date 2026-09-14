@@ -69,14 +69,20 @@ export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || role === "admin";
 }
 
+/** Direktor bilan bir xil to‘liq huquq (Asoschi). */
+export function isDirectorRole(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return r === "director" || r === "asoschi";
+}
+
 /** Sozlamalar: foydalanuvchilar, Face ID, kirish materiallari */
 export function canManageSettings(role?: string | null): boolean {
-  return role === "admin" || role === "director";
+  return role === "admin" || isDirectorRole(role);
 }
 
 /** Xodim / foydalanuvchi HOLAT (status) — faqat admin va direktor */
 export function canChangeStaffStatus(role?: string | null): boolean {
-  return role === "admin" || role === "director";
+  return role === "admin" || isDirectorRole(role);
 }
 
 /** Foydalanuvchini o‘chirish — faqat admin (direktor ham yo‘q) */
@@ -88,7 +94,7 @@ export function canDeleteUsers(role?: string | null): boolean {
 export function canViewDavomat(role?: string | null): boolean {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     hasHrOversightNav(role) ||
     role === "hr_menejer" ||
     role === "hr" ||
@@ -101,7 +107,7 @@ export function canViewDavomat(role?: string | null): boolean {
 export function canViewEmployeesFull(role?: string | null): boolean {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     isHrRole(role) ||
     isSbRole(role)
   );
@@ -226,7 +232,7 @@ export function canAddDeptStaff(role?: string | null): boolean {
 export function canViewChecklistStatus(role?: string | null): boolean {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     hasHrOversightNav(role) ||
     role === "hr_menejer" ||
     role === "hr" ||
@@ -245,7 +251,7 @@ export function canViewCoordinatorRanking(role?: string | null): boolean {
 export function canExportChecklistStatus(role?: string | null): boolean {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
     role === "hr" ||
@@ -259,7 +265,7 @@ export function canExportChecklistStatus(role?: string | null): boolean {
 export function canExtendVacancy(role?: string | null): boolean {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     role === "hr_direktor" ||
     role === "hr_menejer" ||
     role === "hr"
@@ -279,7 +285,7 @@ export function isStajyor(role?: string | null): boolean {
 export function canViewHolat(role?: string | null): boolean {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     isHrRole(role) ||
     role === "koordinator" ||
     role === "mudir"
@@ -287,7 +293,7 @@ export function canViewHolat(role?: string | null): boolean {
 }
 
 export function canViewHolatFull(role?: string | null): boolean {
-  return role === "admin" || role === "director" || isHrRole(role);
+  return role === "admin" || isDirectorRole(role) || isHrRole(role);
 }
 
 /** Apteka filiali — mudir, farmasevt, stajyor */
@@ -341,6 +347,7 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   recruiter: "Rekruter",
   trainer: "Trener",
   director: "Direktor",
+  asoschi: "Asoschi",
   mudir: "Mudir",
   koordinator: "Koordinator",
   it: "AyTi mutaxassisi",

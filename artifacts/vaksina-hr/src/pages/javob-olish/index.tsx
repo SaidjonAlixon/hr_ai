@@ -1,3 +1,4 @@
+import { isDirectorRole } from "../../lib/roles";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -46,7 +47,7 @@ export default function JavobOlishPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const role = user?.role || "";
-  const isCoord = role === "koordinator" || role === "admin" || role === "director" || role.startsWith("hr");
+  const isCoord = role === "koordinator" || role === "admin" || isDirectorRole(role) || role.startsWith("hr");
 
   const [selectedDates, setSelectedDates] = useState<Date[]>([]);
   const [note, setNote] = useState("");

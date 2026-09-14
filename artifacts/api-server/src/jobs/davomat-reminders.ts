@@ -18,8 +18,14 @@ import {
   workScheduleForStaff,
   shiftEndAt,
   checkoutDeadlineAt,
+  checkoutDeadlineHmFor,
   CHECKOUT_DEADLINE_HM,
+  CHECKOUT_DEADLINE_SHIFT_TWO_HM,
+  CHECKOUT_DEADLINE_SHIFT_THREE_HM,
+  usesShiftTwoCheckoutDeadline,
+  usesShiftThreeCheckoutDeadline,
   encodeShiftKeys,
+  parseShiftKeys,
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { isOfisRestDay } from "../lib/ofis-weekend";
@@ -305,10 +311,10 @@ async function dayPlanShiftType(employeeId: number, workDate: string): Promise<s
 }
 
 /**
- * Smena tugagach:
- * - smena oxiri … 23:55: davriy Telegram + in-app eslatma
- * - 23:55 dan keyin: avtomatik «kelmagan» (absent), kelish vaqti saqlanadi
- * Ofis + farmasevt (tun smenasida muddat — smena tugagan kunning 23:55).
+ * Smena tugagach auto-Ketdim / kelmagan:
+ * - 2-smena: ertasi 02:00 (23:55 YO‘Q)
+ * - 3-smena: ertalab 10:00
+ * - 1-smena / ofis: shu kun 23:55
  */
 export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number; closed: number }> {
   const now = new Date();
@@ -327,22 +333,26 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
     const shiftType = planType || r.shiftType;
     const shiftLabel = planType ? null : r.shiftLabel;
     const w = workScheduleForStaff(role, r.orgRole, shiftType, shiftLabel, defs);
+    const deadlineOpts = {
+      shiftKey: w.key,
+      shiftKeys: w.keys,
+      overnight: Boolean(w.overnight),
+    };
     const endAt = shiftEndAt(r.workDate, w.end, w.overnight);
-    const deadlineAt = checkoutDeadlineAt(r.workDate, w.end, w.overnight);
+    const deadlineAt = checkoutDeadlineAt(r.workDate, w.end, w.overnight, deadlineOpts);
+    const deadlineHm = checkoutDeadlineHmFor(deadlineOpts);
     const endMs = endAt.getTime();
     const deadlineMs = deadlineAt.getTime();
     const nowMs = now.getTime();
 
-    // Smena hali tugamagan
     if (nowMs < endMs) continue;
 
-    // 23:55 o‘tdi — avtomatik kelmagan (check-in saqlanadi)
     if (nowMs >= deadlineMs) {
       await db
         .update(attendanceRecordsTable)
         .set({
           status: "absent",
-          notes: `auto_absent_no_checkout: ${CHECKOUT_DEADLINE_HM} gacha Ketdim yo‘q (smena ${w.end}, ${w.label})`,
+          notes: `auto_absent_no_checkout: ${deadlineHm} gacha Ketdim yo‘q (smena ${w.end}, ${w.label})`,
           updatedAt: new Date(),
         })
         .where(
@@ -354,11 +364,17 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
         );
       closed += 1;
 
+      const ruleExtra =
+        deadlineHm === CHECKOUT_DEADLINE_SHIFT_TWO_HM
+          ? ` 2-smena: muddat ertasi ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} edi (23:55 emas).`
+          : deadlineHm === CHECKOUT_DEADLINE_SHIFT_THREE_HM
+            ? ` 3-smena: muddat ertalab ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} edi.`
+            : ` 1-smena/ofis: muddat ${CHECKOUT_DEADLINE_HM} edi.`;
       await notifyUser({
         userId: r.userId,
         text:
-          `Davomat yopildi: ${r.fullName || "Xodim"} — ${CHECKOUT_DEADLINE_HM} gacha «Ketdim» bosilmadi. ` +
-          `Bugun «kelmagan» deb belgilandi (kelish vaqti jadvalda qoladi). Ertaga «Keldim» dan boshlang.`,
+          `Davomat yopildi: ${r.fullName || "Xodim"} — ${deadlineHm} gacha «Ketdim» bosilmadi.` +
+          `${ruleExtra} Bugun «kelmagan» deb belgilandi (kelish vaqti jadvalda qoladi). Ertaga «Keldim» dan boshlang.`,
         type: "davomat_auto_absent",
         linkUrl: "/davomat-face",
         telegram: true,
@@ -366,7 +382,6 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
       continue;
     }
 
-    // Smena tugadi → 23:55: har 30 daqiqada eslatma
     const elapsed = nowMs - endMs;
     const slot = Math.min(8, Math.floor(elapsed / NAG_EVERY_MS));
     const type = `davomat_checkout_nag_${r.workDate}_${slot}`;
@@ -374,9 +389,16 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
     if (await alreadyNotifiedToday(r.userId, type, since)) continue;
 
     const remainMin = Math.max(0, Math.ceil((deadlineMs - nowMs) / 60_000));
+    const shiftHint =
+      deadlineHm === CHECKOUT_DEADLINE_SHIFT_TWO_HM
+        ? `(2-smena: ertasi ${CHECKOUT_DEADLINE_SHIFT_TWO_HM}, 23:55 emas) `
+        : deadlineHm === CHECKOUT_DEADLINE_SHIFT_THREE_HM
+          ? `(3-smena: ertalab ${CHECKOUT_DEADLINE_SHIFT_THREE_HM}) `
+          : "";
     const text =
-      `Ish vaqtingiz tugadi (${w.end}). «Ketdim» ni Face ID/QR bilan yoping. ` +
-      `${CHECKOUT_DEADLINE_HM} gacha (~${remainMin} daq) yopilmasa, bugun kelmagan deb topilasiz. ` +
+      `Ish vaqtingiz tugadi (${w.label} · ${w.end}). «Ketdim» ni Face ID/QR bilan yoping. ` +
+      `${deadlineHm} gacha (~${remainMin} daq) yopilmasa, bugun kelmagan deb topilasiz. ` +
+      shiftHint +
       `Hudud: ${DAVOMAT_GEOFENCE_METERS} m.`;
 
     await notifyUser({
@@ -395,6 +417,87 @@ export async function remindAndAutoCloseMissedCheckout(): Promise<{ nags: number
   return { nags, closed };
 }
 
+const SHIFT2_POLICY_TYPE = "davomat_policy_shift2_ketdim_0200_v2";
+const SHIFT3_POLICY_TYPE = "davomat_policy_shift3_ketdim_1000";
+
+/** 2-smena: 23:55 olib tashlandi → faqat ertasi 02:00 */
+export async function announceShiftTwoCheckoutPolicy(): Promise<number> {
+  const linked = await loadLinkedStaff();
+  const roles = await userRoleMap(linked.map((e) => e.userId || 0));
+  const since = new Date("2020-01-01T00:00:00Z");
+  let sent = 0;
+
+  const text =
+    `📋 2-smena davomat qoidasi yangilandi\n\n` +
+    `❌ Eski qoida olib tashlandi: 23:55 gacha yopish — 2-smena uchun ENDI YO‘Q.\n\n` +
+    `✅ Yangi qoida: «Keldim» dan keyin «Ketdim» ni ertasi kun soat ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} gacha bosing.\n` +
+    `⚠️ ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} gacha bosilmasa — kun «kelmagan» (kelish vaqti jadvalda qoladi).\n` +
+    `ℹ️ 1-smena / ofis: muddat avvalgidek ${CHECKOUT_DEADLINE_HM}.\n` +
+    `ℹ️ 3-smena: «Ketdim» ertalab ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} gacha.\n\n` +
+    `Davomat: Face ID / QR → /davomat-face`;
+
+  for (const e of linked) {
+    if (!e.userId) continue;
+    const role = roles.get(e.userId) || "";
+    if (!isPharmacyShiftStaff(role, e.orgRole)) continue;
+    const keys = parseShiftKeys(e.shiftType, e.shiftLabel);
+    if (!usesShiftTwoCheckoutDeadline({ shiftKey: keys[0], shiftKeys: keys })) continue;
+    if (await alreadyNotifiedToday(e.userId, SHIFT2_POLICY_TYPE, since)) continue;
+
+    await notifyUser({
+      userId: e.userId,
+      text,
+      type: SHIFT2_POLICY_TYPE,
+      linkUrl: "/davomat-face",
+      telegram: true,
+    });
+    sent += 1;
+  }
+
+  if (sent > 0) logger.info({ sent }, "2-smena Ketdim 02:00 qoida xabari");
+  return sent;
+}
+
+/** 3-smena: Ketdim ertalab 10:00 gacha */
+export async function announceShiftThreeCheckoutPolicy(): Promise<number> {
+  const linked = await loadLinkedStaff();
+  const roles = await userRoleMap(linked.map((e) => e.userId || 0));
+  const since = new Date("2020-01-01T00:00:00Z");
+  let sent = 0;
+
+  const text =
+    `📋 3-smena (tun) davomat qoidasi\n\n` +
+    `Smena: odatda 23:00–07:00 (keyingi kun).\n\n` +
+    `✅ «Ketdim» ni smena tugagach ertalab soat ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} gacha bosishingiz shart.\n` +
+    `⚠️ ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} gacha bosilmasa — kun «kelmagan» (kelish vaqti jadvalda qoladi).\n` +
+    `ℹ️ 2-smena: ertasi ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} · 1-smena/ofis: ${CHECKOUT_DEADLINE_HM}.\n\n` +
+    `Davomat: Face ID / QR → /davomat-face`;
+
+  for (const e of linked) {
+    if (!e.userId) continue;
+    const role = roles.get(e.userId) || "";
+    if (!isPharmacyShiftStaff(role, e.orgRole)) continue;
+    const keys = parseShiftKeys(e.shiftType, e.shiftLabel);
+    const overnight = keys.includes("three");
+    if (!usesShiftThreeCheckoutDeadline({ shiftKey: keys[0], shiftKeys: keys, overnight })) {
+      continue;
+    }
+    if (await alreadyNotifiedToday(e.userId, SHIFT3_POLICY_TYPE, since)) continue;
+
+    await notifyUser({
+      userId: e.userId,
+      text,
+      type: SHIFT3_POLICY_TYPE,
+      linkUrl: "/davomat-face",
+      telegram: true,
+    });
+    sent += 1;
+  }
+
+  if (sent > 0) logger.info({ sent }, "3-smena Ketdim 10:00 qoida xabari");
+  return sent;
+}
+
 /** @deprecated — use remindAndAutoCloseMissedCheckout */
 export async function remindDavomatCheckOut(): Promise<number> {
   const r = await remindAndAutoCloseMissedCheckout();
@@ -402,6 +505,8 @@ export async function remindDavomatCheckOut(): Promise<number> {
 }
 
 export async function runDavomatReminderCycle(): Promise<void> {
+  await announceShiftTwoCheckoutPolicy();
+  await announceShiftThreeCheckoutPolicy();
   await broadcastDavomatRuleNotice();
   await remindPharmacyShiftWarn();
   await remindDavomatCheckIn();

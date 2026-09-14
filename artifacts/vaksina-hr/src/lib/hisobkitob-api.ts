@@ -1,10 +1,11 @@
+import { isDirectorRole } from "./roles";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { formatMoney } from "./money-format";
 
 export function canViewHisobkitob(role?: string | null) {
   return (
     role === "admin" ||
-    role === "director" ||
+    isDirectorRole(role) ||
     role === "moliya" ||
     role === "moliya_rahbar" ||
     role === "hr_direktor" ||

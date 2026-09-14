@@ -24,7 +24,7 @@ const router: IRouter = Router();
 
 const DISTRIB_MANAGE_ROLES = new Set([
   "admin",
-  "director",
+  "director", "asoschi",
   "distrib_rahbar",
   "distrib_hr",
 ]);

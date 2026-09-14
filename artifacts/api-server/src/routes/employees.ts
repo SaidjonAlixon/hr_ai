@@ -968,7 +968,7 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
 
   const canEditShift = [
     ...HR_ROLES,
-    "director",
+    "director", "asoschi",
     "admin",
     "mudir",
     "koordinator",

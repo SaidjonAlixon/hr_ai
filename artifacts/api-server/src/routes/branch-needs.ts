@@ -10,7 +10,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyByRoles, notifyUser } from "../lib/notify";
-import { HR_ROLES } from "../lib/roles";
+import { HR_ROLES, isDirectorRole } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -19,7 +19,7 @@ const VIEW_ROLES = new Set([
   "koordinator",
   ...HR_ROLES,
   "admin",
-  "director",
+  "director", "asoschi",
   "recruiter",
   "texnik",
   "ombor",
@@ -197,7 +197,7 @@ router.get("/branch-needs/assignees", requireAuth, async (req: AuthRequest, res)
   // Texnik / ombor birinchi, keyin boshqalar (mudir/koordinator/admin dan tashqari ixtiyoriy)
   const preferred = new Set(["texnik", "ombor"]);
   const list = rows
-    .filter((u) => u.role !== "director")
+    .filter((u) => !isDirectorRole(u.role))
     .sort((a, b) => {
       const ap = preferred.has(a.role) ? 0 : 1;
       const bp = preferred.has(b.role) ? 0 : 1;
@@ -525,7 +525,7 @@ router.post("/branch-needs/:id/verify", requireAuth, async (req: AuthRequest, re
 
 router.post("/branch-needs/:id/close", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (!WRITE_ROLES.has(role) && role !== "director") {
+  if (!WRITE_ROLES.has(role) && !isDirectorRole(role)) {
     res.status(403).json({ error: "Ruxsat yoʻq" });
     return;
   }

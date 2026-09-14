@@ -21,6 +21,8 @@ pnpm run db:push
 | `SESSION_SECRET` | recommended | random string |
 | `CRON_SECRET` | recommended | Vercel Cron Bearer token |
 | `TELEGRAM_BOT_TOKEN` | for bot | BotFather token — see `TELEGRAM.md` |
+| `TELEGRAM_FILIAL_BOT_TOKEN` | filial bot | Vaksina lokatsiya (alohida bot) |
+| `TELEGRAM_FILIAL_POLLING` | local only | Vercelda **qo‘ymang** yoki `0` — polling serverlessda ishlamaydi |
 | `PUBLIC_APP_URL` | for bot | e.g. `https://hr-ai-gamma.vercel.app` |
 | `TELEGRAM_WEBHOOK_SECRET` | recommended | Webhook header secret |
 | `TELEGRAM_SETUP_SECRET` | optional | Setup endpoint (or use CRON_SECRET) |

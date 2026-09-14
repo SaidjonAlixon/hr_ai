@@ -50,7 +50,7 @@ import { useGetTasks } from '../lib/vazifalar-api';
 import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { cn } from '../lib/utils';
-import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole } from '../lib/roles';
+import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole, isDirectorRole } from "../lib/roles";
 import { DavomatAnalyticsDashboard } from '../pages/davomat/analytics';
 import { useHolat } from '../lib/holat-api';
 import {
@@ -206,7 +206,7 @@ export default function Dashboard() {
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';
   const isPharmacyStaff = kind === 'pharmacy_staff';
-  const canWatchRequests = (role === 'director' || isHrRole(role) || role === 'admin') && !isDirector;
+  const canWatchRequests = (isDirectorRole(role) || isHrRole(role) || role === 'admin') && !isDirector;
   const canSeeRecruitment = canSeeHrRecruitment(role);
   const canSeePipeline = canSeeRecruitment && (role === 'admin' || isHrRole(role) || role === 'recruiter');
   const canSeeRecruiterTasks = role === 'admin' || isHrRole(role) || role === 'recruiter';

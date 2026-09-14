@@ -14,7 +14,7 @@ import {
   employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canViewDavomat } from "../lib/roles";
+import { canViewDavomat, isDirectorRole } from "../lib/roles";
 import {
   matchesDavomatStaffFilter,
   parseDavomatStaffFilter,
@@ -43,7 +43,10 @@ import {
   encodeShiftKeys,
   shiftEndAt,
   checkoutDeadlineAt,
+  checkoutDeadlineHmFor,
   CHECKOUT_DEADLINE_HM,
+  CHECKOUT_DEADLINE_SHIFT_TWO_HM,
+  CHECKOUT_DEADLINE_SHIFT_THREE_HM,
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
@@ -1554,7 +1557,7 @@ async function applyFacePunch(opts: {
         };
       }
 
-      // Ketdim: smena tugagan kun 23:55 gacha; undan keyin — kelmagan (kelish vaqti saqlanadi)
+      // Ketdim: 2-smena → ertasi 02:00; 3-smena → ertalab 10:00; 1/ofis → 23:55
       if (action === "out" && existing?.checkInAt) {
         const sched = workScheduleForStaff(
           userRole,
@@ -1563,22 +1566,34 @@ async function applyFacePunch(opts: {
           punchShiftLabel,
           defs,
         );
-        const deadlineAt = checkoutDeadlineAt(workDate, sched.end, sched.overnight);
+        const deadlineOpts = {
+          shiftKey: sched.key,
+          shiftKeys: sched.keys,
+        };
+        const deadlineAt = checkoutDeadlineAt(workDate, sched.end, sched.overnight, deadlineOpts);
+        const deadlineHm = checkoutDeadlineHmFor({ ...deadlineOpts, overnight: sched.overnight });
         if (now.getTime() > deadlineAt.getTime()) {
           await tx
             .update(attendanceRecordsTable)
             .set({
               status: "absent",
-              notes: `auto_absent_no_checkout: Ketdim ${CHECKOUT_DEADLINE_HM} gacha bosilmadi (smena ${sched.end})`,
+              notes: `auto_absent_no_checkout: Ketdim ${deadlineHm} gacha bosilmadi (smena ${sched.label} ${sched.end})`,
               updatedAt: new Date(),
             })
             .where(eq(attendanceRecordsTable.id, existing.id));
+          const ruleNote =
+            deadlineHm === CHECKOUT_DEADLINE_SHIFT_TWO_HM
+              ? `2-smena: «Ketdim» ertasi kun ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} gacha (23:55 emas).`
+              : deadlineHm === CHECKOUT_DEADLINE_SHIFT_THREE_HM
+                ? `3-smena: «Ketdim» ertalab ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} gacha.`
+                : `1-smena/ofis: «Ketdim» ${CHECKOUT_DEADLINE_HM} gacha.`;
           return {
             ok: false,
             status: 400,
             body: {
               error:
-                `${CHECKOUT_DEADLINE_HM} gacha «Ketdim» bosilmadi — bugun «kelmagan» deb yopildi. Kelish vaqti jadvalda saqlanadi. Ertaga «Keldim» dan boshlang.`,
+                `${deadlineHm} gacha «Ketdim» bosilmadi — bugun «kelmagan» deb yopildi. ` +
+                `Kelish vaqti jadvalda saqlanadi. ${ruleNote} Ertaga «Keldim» dan boshlang.`,
               code: "checkout_window_closed",
               fullName: emp.fullName,
               checkIn: formatHm(existing.checkInAt),
@@ -1856,14 +1871,19 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           punchShiftLabel,
           defs,
         );
+        const deadlineOpts = { shiftKey: w.key, shiftKeys: w.keys, overnight: Boolean(w.overnight) };
+        const deadlineAt = checkoutDeadlineAt(workDate, w.end, w.overnight, deadlineOpts);
         return {
           type: w.key,
+          keys: w.keys || [w.key],
           label: w.label,
           start: w.start,
           end: w.end,
           overnight: Boolean(w.overnight),
           warnHm: w.warnHm,
           warnText: w.warnText,
+          checkoutDeadlineHm: checkoutDeadlineHmFor(deadlineOpts),
+          checkoutDeadlineAt: deadlineAt.toISOString(),
         };
       })(),
       employee: {
@@ -2942,7 +2962,7 @@ async function dayShiftTypeFor(employeeId: number, workDate: string): Promise<st
 
 /** Filial QR ko‘rish — mudir, koordinator, admin, direktor */
 function canViewBranchQr(role: string | null | undefined) {
-  return role === "mudir" || role === "koordinator" || role === "admin" || role === "director";
+  return role === "mudir" || role === "koordinator" || role === "admin" || isDirectorRole(role);
 }
 
 /** Filial QR yaratish/yangilash/o‘chirish — faqat admin va koordinator */
@@ -2951,7 +2971,7 @@ function canEditBranchQr(role: string | null | undefined) {
 }
 
 function isQrAdmin(role: string | null | undefined) {
-  return role === "admin" || role === "director";
+  return role === "admin" || isDirectorRole(role);
 }
 
 /** Barcha ofis xodimlari uchun bitta umumiy QR (department_id = 0) */

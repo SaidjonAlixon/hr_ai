@@ -229,9 +229,11 @@ export function filialPublicBaseUrl(): string {
   return withProto.replace(/\/$/, "");
 }
 
-/** Lokal / private URL bo‘lsa webhook ishlamaydi — polling kerak */
+/** Lokal / private URL bo‘lsa webhook ishlamaydi — polling kerak.
+ * Vercel serverless da polling ishlamaydi — har doim webhook. */
 export function shouldFilialUsePolling(): boolean {
   if (!isFilialBotConfigured()) return false;
+  if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
   if (process.env.TELEGRAM_FILIAL_POLLING === "0") return false;
   if (process.env.TELEGRAM_FILIAL_POLLING === "1") return true;
   const base = filialPublicBaseUrl();
@@ -243,4 +245,42 @@ export function shouldFilialUsePolling(): boolean {
     return true;
   }
   return false;
+}
+
+/** Vercelda webhook URL bo‘sh/eski bo‘lsa bir marta o‘rnatadi */
+let filialWebhookEnsure: Promise<{ ok: boolean; url?: string; note?: string }> | null = null;
+
+export async function ensureFilialWebhookOnServerless(): Promise<{
+  ok: boolean;
+  url?: string;
+  note?: string;
+}> {
+  if (shouldFilialUsePolling()) {
+    return { ok: false, note: "polling_mode" };
+  }
+  if (!isFilialBotConfigured()) {
+    return { ok: false, note: "no_token" };
+  }
+  const base = filialPublicBaseUrl();
+  if (!base || !base.startsWith("https://")) {
+    return { ok: false, note: "PUBLIC_APP_URL_https_kerak" };
+  }
+  if (!filialWebhookEnsure) {
+    filialWebhookEnsure = (async () => {
+      const want = `${base}/api/telegram-filial/webhook`;
+      try {
+        const info = (await filialGetWebhookInfo()) as { url?: string };
+        if (info?.url === want) {
+          return { ok: true, url: want, note: "already_set" };
+        }
+        const whSecret = process.env.TELEGRAM_FILIAL_WEBHOOK_SECRET?.trim();
+        await filialSetWebhook(want, whSecret);
+        return { ok: true, url: want, note: info?.url ? "updated" : "created" };
+      } catch (err) {
+        filialWebhookEnsure = null;
+        return { ok: false, note: (err as Error).message };
+      }
+    })();
+  }
+  return filialWebhookEnsure;
 }

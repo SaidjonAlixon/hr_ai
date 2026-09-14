@@ -148,6 +148,19 @@ export async function resolveDeptHeadContext(userId: number, role: string): Prom
     departmentId = itId;
   }
 
+  if (
+    role === "distrib_rahbar" ||
+    role === "distrib_hr" ||
+    departmentName === "Distribyutsiya"
+  ) {
+    const {
+      ensureDistribyutsiyaSetup,
+      DISTRIBYUTSIYA_DEPARTMENT_NAME,
+    } = await import("./distribyutsiya-department");
+    departmentId = await ensureDistribyutsiyaSetup();
+    departmentName = DISTRIBYUTSIYA_DEPARTMENT_NAME;
+  }
+
   if (!departmentId) {
     departmentId = await ensureDepartmentByName(departmentName);
   }

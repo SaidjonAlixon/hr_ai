@@ -123,7 +123,7 @@ router.post("/telegram-filial/setup", async (req: Request, res: Response): Promi
       res.json({
         ok: true,
         mode: "polling",
-        note: "Lokal URL — polling ishlatiladi. Vercelda TELEGRAM_FILIAL_POLLING o‘chirilsin.",
+        note: "TELEGRAM_FILIAL_POLLING=1 — webhook o‘chirildi. Vercel bot ishlashi uchun pollingni o‘chiring va /api/telegram-filial/setup qayta chaqiring.",
         me: await filialGetMe(),
       });
       return;

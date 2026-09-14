@@ -40,6 +40,8 @@ import {
   SlidersHorizontal,
   RotateCcw,
   Users,
+  CalendarClock,
+  SendHorizontal,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +58,7 @@ import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -491,6 +494,7 @@ export default function VazifalarPage() {
 
   const [extendDue, setExtendDue] = useState("");
   const [extendNote, setExtendNote] = useState("");
+  const [extendPresetDays, setExtendPresetDays] = useState<number | null>(1);
   const [returnTask, setReturnTask] = useState<Vazifa | null>(null);
 
   useEffect(() => {
@@ -963,7 +967,16 @@ export default function VazifalarPage() {
     base.setDate(base.getDate() + 1);
     setExtendDue(toDatetimeLocalValue(base.toISOString()));
     setExtendNote("");
+    setExtendPresetDays(1);
     setExtendOpen(true);
+  }
+
+  function applyExtendPreset(days: number) {
+    const base = activeTask?.dueAt ? new Date(activeTask.dueAt) : new Date();
+    if (Number.isNaN(base.getTime())) return;
+    base.setDate(base.getDate() + days);
+    setExtendDue(toDatetimeLocalValue(base.toISOString()));
+    setExtendPresetDays(days);
   }
 
   async function onPickFiles(
@@ -2744,43 +2757,141 @@ export default function VazifalarPage() {
 
       {/* Ijrochi: muddat so'rovi */}
       <Dialog open={extendOpen} onOpenChange={setExtendOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("tasks.extendDialog")}</DialogTitle>
-          </DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Yangi muddat belgilovchi tasdiqlasa qo‘llanadi.
-          </p>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label>Yangi muddat</Label>
-              <Input
-                type="datetime-local"
-                value={extendDue}
-                onChange={(e) => setExtendDue(e.target.value)}
-              />
+        <DialogContent className="max-h-[92vh] overflow-y-auto border-border/80 bg-card p-0 sm:max-w-lg">
+          <div className="relative overflow-hidden rounded-t-lg bg-gradient-to-br from-[#0a2540] via-[#0b5fff] to-[#3dd6f5] px-5 pb-5 pt-6 text-white">
+            <div className="absolute -right-8 -top-10 h-32 w-32 rounded-full bg-white/10" />
+            <div className="absolute -bottom-10 left-8 h-24 w-24 rounded-full bg-[#0a2540]/25" />
+            <div className="absolute right-10 top-1/2 h-16 w-16 -translate-y-1/2 rounded-full bg-[#ffb020]/25 blur-xl" />
+            <DialogHeader className="relative space-y-2 text-left">
+              <div className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/20 shadow-sm ring-1 ring-white/30 backdrop-blur">
+                <CalendarClock className="h-5 w-5" />
+              </div>
+              <DialogTitle className="text-lg font-bold tracking-tight text-white drop-shadow-sm">
+                {t("tasks.extendDialog")}
+              </DialogTitle>
+              <DialogDescription className="text-sm font-medium text-white/95">
+                {t("tasks.extend.subtitle")}
+              </DialogDescription>
+            </DialogHeader>
+            {activeTask ? (
+              <div className="relative mt-3 rounded-xl border border-white/30 bg-[#061428]/55 px-3 py-2.5 backdrop-blur">
+                <p className="truncate text-sm font-semibold text-white">{activeTask.title}</p>
+                <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] font-medium text-white/95">
+                  <span>TK-{activeTask.id}</span>
+                  <span className="opacity-60">·</span>
+                  <span className="inline-flex items-center gap-1">
+                    <Clock className="h-3 w-3" />
+                    {t("tasks.deadline")}:{" "}
+                    {activeTask.dueAt
+                      ? new Date(activeTask.dueAt).toLocaleString("uz-UZ", {
+                          day: "2-digit",
+                          month: "2-digit",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "—"}
+                  </span>
+                </p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="space-y-4 bg-card px-5 py-4 text-foreground">
+            <div className="space-y-2 rounded-xl border border-slate-200 bg-[#f4f7fb] p-3 dark:border-slate-600 dark:bg-slate-900">
+              <p className="text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:text-slate-100">
+                {t("tasks.extend.quickPick")}
+              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {[
+                  { days: 1, label: t("tasks.extend.d1") },
+                  { days: 2, label: t("tasks.extend.d2") },
+                  { days: 3, label: t("tasks.extend.d3") },
+                  { days: 7, label: t("tasks.extend.d7") },
+                ].map((opt) => {
+                  const active = extendPresetDays === opt.days;
+                  return (
+                    <button
+                      key={opt.days}
+                      type="button"
+                      disabled={requestExtension.isPending}
+                      onClick={() => applyExtendPreset(opt.days)}
+                      className={cn(
+                        "rounded-xl border px-2.5 py-2.5 text-left transition",
+                        active
+                          ? "border-[#0b5fff] bg-[#eef4ff] ring-2 ring-[#0b5fff]/30 dark:bg-[#0b5fff]/25"
+                          : "border-slate-300 bg-white hover:border-[#0b5fff]/50 dark:border-slate-600 dark:bg-slate-950 dark:hover:border-[#5b9dff]/60",
+                      )}
+                    >
+                      <p className="text-[12px] font-bold text-[#0a2540] dark:text-white">{opt.label}</p>
+                      <p className="mt-0.5 text-[10px] font-medium text-slate-500 dark:text-slate-300">
+                        +{opt.days} {t("tasks.extend.days")}
+                      </p>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="relative pt-1">
+                <Label className="mb-1.5 block text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:text-slate-100">
+                  {t("tasks.newDeadline")}
+                </Label>
+                <div className="relative">
+                  <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#0b5fff]" />
+                  <Input
+                    type="datetime-local"
+                    value={extendDue}
+                    disabled={requestExtension.isPending}
+                    onChange={(e) => {
+                      setExtendDue(e.target.value);
+                      setExtendPresetDays(null);
+                    }}
+                    className="h-11 rounded-xl border-[#0b5fff]/40 bg-white pl-10 font-medium text-slate-900 focus-visible:border-[#0b5fff] focus-visible:ring-[#0b5fff]/25 dark:border-slate-600 dark:bg-slate-950 dark:text-white"
+                  />
+                </div>
+              </div>
             </div>
+
             <div className="space-y-1.5">
-              <Label>Izoh</Label>
+              <Label className="text-[11px] font-bold uppercase tracking-wide text-slate-700 dark:text-slate-100">
+                {t("tasks.note")}
+              </Label>
               <Textarea
                 value={extendNote}
+                disabled={requestExtension.isPending}
                 onChange={(e) => setExtendNote(e.target.value)}
                 rows={3}
-                placeholder="Nima uchun kerak..."
+                placeholder={t("tasks.extend.notePh")}
+                className="min-h-[88px] resize-none rounded-xl border-slate-300 bg-white text-sm font-medium text-slate-900 placeholder:text-slate-500 focus-visible:border-[#0b5fff] focus-visible:ring-[#0b5fff]/25 dark:border-slate-600 dark:bg-slate-950 dark:text-white dark:placeholder:text-slate-400"
               />
             </div>
+
+            <div className="rounded-xl border border-[#0b5fff]/35 bg-[#eef4ff] px-3 py-2.5 text-[12px] font-medium leading-snug text-[#0a2540] dark:border-[#5b9dff]/45 dark:bg-[#102a4a] dark:text-white">
+              <SendHorizontal className="mr-1 inline h-3.5 w-3.5 text-[#0b5fff] dark:text-[#7eb6ff]" />
+              {t("tasks.extend.flowHint")}
+            </div>
+
+            <div className="flex gap-2 pb-1">
+              <Button
+                type="button"
+                variant="outline"
+                disabled={requestExtension.isPending}
+                onClick={() => setExtendOpen(false)}
+                className="h-11 flex-1 rounded-xl border-slate-300 font-semibold"
+              >
+                {t("ui.cancel")}
+              </Button>
+              <Button
+                type="button"
+                onClick={() => void handleExtend()}
+                disabled={requestExtension.isPending || !extendDue}
+                className="h-11 flex-1 rounded-xl bg-gradient-to-r from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white shadow-md shadow-[#0b5fff]/25 hover:opacity-95"
+              >
+                <Send className="mr-1.5 h-4 w-4" />
+                {t("tasks.extend.submit")}
+              </Button>
+            </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => setExtendOpen(false)}>
-              Bekor
-            </Button>
-            <Button
-              onClick={() => void handleExtend()}
-              disabled={requestExtension.isPending}
-            >
-              So‘rov yuborish
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

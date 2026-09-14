@@ -6,7 +6,7 @@ import {
   getGetEmployeesQueryKey,
   type Employee,
 } from "@workspace/api-client-react";
-import { FileSpreadsheet, Loader2, Search, Users } from "lucide-react";
+import { FileDown, FileSpreadsheet, Loader2, Search, Users } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -352,7 +352,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const [roleFilter, setRoleFilter] = useState("all");
   const [workplaceFilter, setWorkplaceFilter] = useState<WorkplaceFilter>("ofis");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
 
   const { data: departments } = useGetDepartments();
@@ -543,25 +543,29 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     );
   };
 
+  const buildExportParams = () => {
+    const params = new URLSearchParams();
+    params.set("group", group);
+    if (search.trim()) params.set("search", search.trim());
+    if (!viewOnly && !deptAsRoleKey && deptFilter !== "all") {
+      params.set("departmentId", deptFilter);
+    }
+    if (effectiveRoleFilter !== "all") params.set("role", effectiveRoleFilter);
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    const wp = isPharmacyRoleKey(effectiveRoleFilter)
+      ? "all"
+      : fullAccess
+        ? effectiveWorkplace
+        : "ofis";
+    params.set("workplace", wp === "all" ? "all" : wp);
+    return params;
+  };
+
   const onExportExcel = async () => {
     if (exporting) return;
-    setExporting(true);
+    setExporting("excel");
     try {
-      const params = new URLSearchParams();
-      params.set("group", group);
-      if (search.trim()) params.set("search", search.trim());
-      if (!viewOnly && !deptAsRoleKey && deptFilter !== "all") {
-        params.set("departmentId", deptFilter);
-      }
-      if (effectiveRoleFilter !== "all") params.set("role", effectiveRoleFilter);
-      if (statusFilter !== "all") params.set("status", statusFilter);
-      const wp = isPharmacyRoleKey(effectiveRoleFilter)
-        ? "all"
-        : fullAccess
-          ? effectiveWorkplace
-          : "ofis";
-      if (wp !== "all") params.set("workplace", wp);
-      else params.set("workplace", "all");
+      const params = buildExportParams();
       const res = await fetch(`/api/employees/export?${params.toString()}`, {
         credentials: "include",
       });
@@ -589,7 +593,42 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         variant: "destructive",
       });
     } finally {
-      setExporting(false);
+      setExporting(null);
+    }
+  };
+
+  const onExportPdf = async () => {
+    if (exporting) return;
+    setExporting("pdf");
+    toast({
+      title: t("emp.pdfPreparing"),
+      description: t("emp.pdfPreparingHint"),
+    });
+    try {
+      const params = buildExportParams();
+      params.set("format", "json");
+      const res = await fetch(`/api/employees/export?${params.toString()}`, {
+        credentials: "include",
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error((body as { error?: string }).error || t("emp.pdfFail"));
+      }
+      const data = await res.json();
+      const { downloadEmployeesPdf } = await import("../../lib/employees-pdf-export");
+      await downloadEmployeesPdf(
+        data,
+        `xodimlar_${group}_${new Date().toISOString().slice(0, 10)}`,
+      );
+      toast({ title: t("emp.pdfOk"), description: t("emp.pdfOkHint") });
+    } catch (err) {
+      toast({
+        title: t("emp.pdfFail"),
+        description: (err as Error)?.message || "Qayta urinib ko‘ring",
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(null);
     }
   };
 
@@ -619,13 +658,30 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           <Button
             type="button"
             size="sm"
-            variant="secondary"
-            className="gap-1.5 bg-card text-primary hover:bg-card/90"
-            disabled={exporting || isLoading}
+            className="gap-1.5 border border-emerald-200/50 bg-gradient-to-b from-emerald-500 to-emerald-700 text-white shadow-sm hover:from-emerald-400 hover:to-emerald-600"
+            disabled={!!exporting || isLoading}
             onClick={() => void onExportExcel()}
           >
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            {t("ui.excel")}
+            {exporting === "excel" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileSpreadsheet className="h-4 w-4" />
+            )}
+            {t("emp.excelBtn")}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="gap-1.5 border border-rose-200/40 bg-gradient-to-b from-rose-500 to-rose-700 text-white shadow-sm hover:from-rose-400 hover:to-rose-600"
+            disabled={!!exporting || isLoading}
+            onClick={() => void onExportPdf()}
+          >
+            {exporting === "pdf" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileDown className="h-4 w-4" />
+            )}
+            {t("emp.pdfBtn")}
           </Button>
         </div>
       </div>

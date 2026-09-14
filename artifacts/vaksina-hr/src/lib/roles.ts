@@ -109,16 +109,28 @@ export function canDeleteUsers(role?: string | null): boolean {
   return canManageUsers(role);
 }
 
+/** Davomat Dashboard — to‘liq umumiy ma’lumot (filtr Ofis/Dorixona/Hammasi) */
+export function canViewFullDavomatDashboard(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return (
+    hasFullPlatformAccess(r) ||
+    isDirectorRole(r) ||
+    r === "moliya" ||
+    r === "moliya_rahbar" ||
+    r === "hr_direktor" ||
+    r === "hr_menejer" ||
+    r === "hr" ||
+    r === "hr_kadr_rahbar"
+  );
+}
+
 /** Davomat: direktor, HR direktor, HR menejer (+ admin) */
 export function canViewDavomat(role?: string | null): boolean {
   return (
-    role === "admin" ||
-    isDirectorRole(role) ||
+    canViewFullDavomatDashboard(role) ||
     hasHrOversightNav(role) ||
-    role === "hr_menejer" ||
-    role === "hr" ||
     isSbRole(role) ||
-    role === "moliya"
+    isDeptHeadRole(role)
   );
 }
 
@@ -224,15 +236,9 @@ export function isDistribyutsiyaRole(role?: string | null): boolean {
   return role === "distrib" || role === "distrib_hr" || role === "distrib_rahbar";
 }
 
+/** Distribyutsiya bo‘limi menyusi — faqat Distribyutsiya HR / rahbar */
 export function canViewDistribyutsiya(role?: string | null): boolean {
-  return (
-    canManageSettings(role) ||
-    isDistribyutsiyaRole(role) ||
-    role === "hr" ||
-    role === "hr_direktor" ||
-    role === "hr_menejer" ||
-    role === "hr_kadr_rahbar"
-  );
+  return role === "distrib_rahbar" || role === "distrib_hr";
 }
 
 export function canManageDistribyutsiya(role?: string | null): boolean {
@@ -241,6 +247,11 @@ export function canManageDistribyutsiya(role?: string | null): boolean {
 
 export function isDeptHeadRole(role?: string | null): boolean {
   return !!role && (DEPT_HEAD_ROLES as readonly string[]).includes(role);
+}
+
+/** /dashboard da to‘liq yoki bo‘limga mos davomat analytics ko‘rsatish */
+export function usesDavomatDashboardHome(role?: string | null): boolean {
+  return canViewFullDavomatDashboard(role) || isDeptHeadRole(role);
 }
 
 export function canAddDeptStaff(role?: string | null): boolean {

@@ -81,6 +81,9 @@ export function startFilialBotPollingJob() {
 
   started = true;
   void (async () => {
+    logger.warn(
+      "Vaksina lokatsiya: TELEGRAM_FILIAL_POLLING=1 — production webhook o‘chiriladi. Vercel bot uchun pollingni o‘chiring.",
+    );
     try {
       await filialDeleteWebhook();
     } catch (err) {

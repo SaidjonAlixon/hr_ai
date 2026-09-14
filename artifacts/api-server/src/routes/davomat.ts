@@ -14,7 +14,8 @@ import {
   employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canViewDavomat, isDirectorRole, hasFullPlatformAccess } from "../lib/roles";
+import { canViewDavomat, isDirectorRole, hasFullPlatformAccess, canViewFullDavomatDashboard } from "../lib/roles";
+import { getActorDepartmentId, resolveDeptHeadContext, isDeptHeadRole } from "../lib/dept-staff";
 import {
   matchesDavomatStaffFilter,
   parseDavomatStaffFilter,
@@ -65,7 +66,6 @@ import {
   revokeActiveQrForDepartment,
   verifyDepartmentQrPayload,
 } from "../lib/department-attendance-qr";
-import { isDeptHeadRole } from "../lib/dept-staff";
 import { clientIp, writePunchAudit } from "../lib/punch-audit";
 
 const router: IRouter = Router();
@@ -566,6 +566,39 @@ async function loadActiveEmployees(filters: {
   });
 }
 
+/** Bo‘lim boshlig‘i / Distribyutsiya HR — faqat o‘z bo‘limi xodimlari */
+async function scopeDeptHeadDavomatEmployees<
+  T extends {
+    departmentId: number | null;
+    departmentName?: string | null;
+    userRole?: string | null;
+  },
+>(role: string | undefined, userId: number | undefined, employees: T[]): Promise<T[]> {
+  if (!role || !userId) return employees;
+  if (canViewFullDavomatDashboard(role)) return employees;
+  if (!isDeptHeadRole(role)) return employees;
+
+  const ctx = await resolveDeptHeadContext(userId, role);
+  const actorDeptId = ctx?.departmentId ?? (await getActorDepartmentId(userId));
+  const deptNameNorm = (ctx?.departmentName || "")
+    .trim()
+    .toLocaleLowerCase("uz")
+    .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+  const allowedRoles = new Set(ctx?.creatableRoles ?? []);
+  allowedRoles.add(role);
+
+  return employees.filter((e) => {
+    if (actorDeptId && e.departmentId === actorDeptId) return true;
+    const eName = (e.departmentName || "")
+      .trim()
+      .toLocaleLowerCase("uz")
+      .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
+    if (deptNameNorm && eName && eName === deptNameNorm) return true;
+    if (e.userRole && allowedRoles.has(e.userRole)) return true;
+    return false;
+  });
+}
+
 async function loadRecords(from: string, to: string, employeeIds: number[]) {
   if (!employeeIds.length) return [];
   return db
@@ -831,12 +864,13 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
     const q = req.query as Record<string, string>;
     const to = q.to || todayTashkent();
     const from = q.from || addDays(to, -13);
-    const employees = await loadActiveEmployees({
+    let employees = await loadActiveEmployees({
       departmentId: q.departmentId,
       location: q.location,
       search: q.search,
       employeeId: q.employeeId,
     });
+    employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
     const records = await loadRecords(
       from,
       to,
@@ -857,7 +891,9 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
     const to = q.to || todayTashkent();
     const from = q.from || addDays(to, -29);
     const segment = (q.segment === "office" || q.segment === "pharmacy" ? q.segment : "all") as DavomatSegment;
-    const employees = await loadActiveEmployees({});
+    let employees = await loadActiveEmployees({});
+    employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
+
     const employeeIds = employees.map((e) => e.id);
     const records = await loadRecords(from, to, employeeIds);
     const defs = await getEffectiveShiftDefs();
@@ -2391,6 +2427,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       employeeId: q.employeeId,
     });
     employees = employees.filter((e) => matchesDavomatStaffFilter(e, staffFilter));
+    employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
     const records = await loadRecords(
       from,
       to,

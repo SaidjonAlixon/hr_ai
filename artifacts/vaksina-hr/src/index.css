@@ -833,6 +833,7 @@
 .dv-report-btn-primary,
 .dv-report-btn-ghost,
 .dv-report-btn-excel,
+.dv-report-btn-pdf,
 .dv-report-btn-announce {
   @apply h-9 w-full gap-1.5 rounded-lg px-2.5 text-xs font-semibold shadow-none transition-all sm:w-auto sm:px-3;
 }
@@ -845,7 +846,11 @@
 }
 
 .dv-report-btn-excel {
-  @apply border border-emerald-300/30 bg-emerald-500 text-white hover:bg-emerald-400 disabled:opacity-70;
+  @apply border border-emerald-200/50 bg-gradient-to-b from-emerald-500 to-emerald-700 text-white shadow-sm shadow-emerald-950/25 hover:from-emerald-400 hover:to-emerald-600 disabled:opacity-70;
+}
+
+.dv-report-btn-pdf {
+  @apply border border-rose-200/40 bg-gradient-to-b from-rose-500 to-rose-700 text-white shadow-sm shadow-rose-950/25 hover:from-rose-400 hover:to-rose-600 disabled:opacity-70;
 }
 
 .dv-report-btn-announce {

@@ -5,7 +5,8 @@ import {
   workScheduleForStaff,
   type WorkSchedule,
 } from "./shift-hours";
-import { displayBranchName } from "./geo-location";
+import { displayBranchName, parseGpsText, stripGpsSuffix } from "./geo-location";
+import { branchDedupeKey } from "./branch-dedupe";
 
 export const PHARMACY_SEGMENT_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
 export const PHARMACY_SEGMENT_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "coordinator"]);
@@ -136,6 +137,29 @@ export type DavomatAnalyticsPayload = {
     attendanceRate: number;
   }>;
   monthlyTrend: Array<{ month: string; label: string; attendanceRate: number; late: number }>;
+  byBranch: Array<{
+    name: string;
+    headcount: number;
+    present: number;
+    late: number;
+    absent: number;
+    attendanceRate: number;
+    staff: Array<{
+      id: number;
+      fullName: string;
+      position: string;
+      present: number;
+      late: number;
+      absent: number;
+      incomplete: number;
+      leave: number;
+      lateMinutes: number;
+      attendanceRate: number;
+      lastCheckIn: string | null;
+      lastStatus: string;
+      lastStatusLabel: string;
+    }>;
+  }>;
   byDepartment: Array<{
     name: string;
     headcount: number;
@@ -336,14 +360,23 @@ function filterReport(
     let leave = 0;
     let absent = 0;
     for (const e of employees) {
-      const d = e.days.find((x) => x.date === date);
-      const st = d?.status ?? "absent";
-      if (st === "absent") absent += 1;
-      else if (st === "leave") leave += 1;
-      else {
+      const m = metaById.get(e.id);
+      if ((m?.userRole || "") === "admin") continue;
+      const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+      const day = e.days.find((x) => x.date === date);
+      const st = classifyStaffDay(day, schedule).status;
+      if (st === "absent") {
+        absent += 1;
+      } else if (st === "leave") {
+        leave += 1;
+      } else if (st === "late") {
         present += 1;
-        if (st === "late") late += 1;
-        if (st === "incomplete") incomplete += 1;
+        late += 1;
+      } else if (st === "incomplete") {
+        // Ofis doskasi bilan bir xil: to‘liq emas → kelgan (Vaqtida)
+        present += 1;
+      } else {
+        present += 1;
       }
     }
     return { date, present, late, incomplete, leave, absent };
@@ -377,6 +410,32 @@ function isBranchManager(meta: EmployeeMeta | undefined, emp: EmpRow): boolean {
 
 function normalizeBranchKey(location: string | null | undefined): string {
   return (location || "").split("·")[0].split("|")[0].trim().toLowerCase();
+}
+
+/** Filial kartasi uchun nom — GPS/ism emas, haqiqiy filial matni */
+function resolveBranchLabel(location: string | null | undefined, mudirFullName: string): string | null {
+  const raw = displayBranchName(location) || stripGpsSuffix(location).split("·")[0]?.trim() || "";
+  const label = raw.trim();
+  if (!label || label.length < 2 || /^filial$/i.test(label)) return null;
+  const gps = parseGpsText(label);
+  if (gps) {
+    const letters = label
+      .replace(/[\d\s°'"NSnsEWВвЗзСсЮю˚º′″.,;|gps:\-–—]+/gi, "")
+      .trim();
+    if (letters.length < 3) return null;
+  }
+  const norm = (s: string) => s.toLowerCase().replace(/\s+/g, " ").trim();
+  if (norm(label) === norm(mudirFullName)) return null;
+  return label;
+}
+
+function isBranchDavomatStaff(meta: EmployeeMeta | undefined, emp: EmpRow): boolean {
+  const role = meta?.userRole || "";
+  const org = meta?.orgRole ?? emp.orgRole ?? "";
+  if (role === "koordinator" || org === "coordinator") return false;
+  if (role === "mudir" || role === "farmasevt" || role === "stajyor") return true;
+  if (org === "manager" || org === "pharmacist" || org === "intern") return true;
+  return isBranchManager(meta, emp);
 }
 
 const DEFAULT_GRACE_MINUTES = 15;
@@ -522,7 +581,8 @@ function buildBranchOpenings(
     const m = metaById.get(e.id);
     if (!isBranchManager(m, e)) continue;
 
-    const branchName = displayBranchName(e.location) || e.location?.trim() || e.fullName;
+    const branchName = resolveBranchLabel(e.location, e.fullName);
+    if (!branchName) continue;
     const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
     const grace = graceMinutesFor(schedule);
     const day = e.days.find((x) => x.date === targetDate);
@@ -767,6 +827,88 @@ export function buildDavomatAnalytics(
         }),
     }))
     .sort((a, b) => b.attendanceRate - a.attendanceRate);
+
+  const branchMap = new Map<
+    string,
+    {
+      name: string;
+      headcount: Set<number>;
+      present: number;
+      late: number;
+      absent: number;
+      expected: number;
+      staff: EmpRow[];
+    }
+  >();
+  const pharmacyBranchStaff = filtered.employees.filter((e) =>
+    isBranchDavomatStaff(metaById.get(e.id), e),
+  );
+  const addToBranch = (key: string, branchLabel: string, emp: EmpRow) => {
+    const cur = branchMap.get(key) ?? {
+      name: branchLabel,
+      headcount: new Set<number>(),
+      present: 0,
+      late: 0,
+      absent: 0,
+      expected: 0,
+      staff: [],
+    };
+    if (cur.headcount.has(emp.id)) return;
+    cur.headcount.add(emp.id);
+    cur.present += emp.totals.present;
+    cur.late += emp.totals.late;
+    cur.absent += emp.totals.absent;
+    // Ta'til kunlarini expected dan ayiramiz — foiz davomatga mos
+    const leaveDays = emp.totals.leave || 0;
+    cur.expected += Math.max(0, periodDays - leaveDays);
+    cur.staff.push(emp);
+    branchMap.set(key, cur);
+  };
+  for (const mudir of pharmacyBranchStaff.filter((e) => isBranchManager(metaById.get(e.id), e))) {
+    const branchLabel = resolveBranchLabel(mudir.location, mudir.fullName);
+    if (!branchLabel) continue;
+    const locKey = normalizeBranchKey(mudir.location);
+    const key = branchDedupeKey(mudir.location, null) || locKey || `mudir-${mudir.id}`;
+    const staff = pharmacyBranchStaff.filter((emp) => {
+      if (emp.id === mudir.id) return true;
+      if (!locKey) return false;
+      return normalizeBranchKey(emp.location) === locKey;
+    });
+    for (const emp of staff) addToBranch(key, branchLabel, emp);
+  }
+  const byBranch = [...branchMap.values()]
+    .map((v) => ({
+      name: v.name,
+      headcount: v.headcount.size,
+      present: v.present,
+      late: v.late,
+      absent: v.absent,
+      attendanceRate: pct(v.present, v.expected),
+      staff: [...v.staff]
+        .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"))
+        .map((e) => {
+          const last = e.days.find((d) => d.date === filtered.dates[filtered.dates.length - 1]);
+          const leaveDays = e.totals.leave || 0;
+          const expectedDays = Math.max(0, periodDays - leaveDays);
+          return {
+            id: e.id,
+            fullName: e.fullName,
+            position: e.position,
+            present: e.totals.present,
+            late: e.totals.late,
+            absent: e.totals.absent,
+            incomplete: e.totals.incomplete,
+            leave: e.totals.leave,
+            lateMinutes: e.totals.lateArrivalMin,
+            attendanceRate: pct(e.totals.present, expectedDays),
+            lastCheckIn: last && last.checkIn !== "—" ? last.checkIn : null,
+            lastStatus: last?.status ?? "absent",
+            lastStatusLabel: STATUS_LABELS[last?.status ?? "absent"] || last?.status || "—",
+          };
+        }),
+    }))
+    .filter((b) => b.headcount > 0)
+    .sort((a, b) => b.attendanceRate - a.attendanceRate || a.name.localeCompare(b.name, "uz"));
 
   const shiftMap = new Map<
     string,
@@ -1028,6 +1170,7 @@ export function buildDavomatAnalytics(
     ],
     dailyTrend,
     monthlyTrend,
+    byBranch,
     byDepartment,
     byShift,
     byRole,

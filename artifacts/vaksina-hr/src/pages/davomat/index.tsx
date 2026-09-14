@@ -1,13 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "wouter";
 import { useGetDepartments } from "@workspace/api-client-react";
 import {
   CalendarDays,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
-  ClipboardCheck,
   Clock3,
+  FileDown,
   FileSpreadsheet,
   Loader2,
   MoveHorizontal,
@@ -54,9 +53,10 @@ import {
   type DavomatEmployee,
   type DavomatReport,
 } from "../../lib/davomat-api";
+import { downloadDavomatPdf } from "../../lib/davomat-pdf-export";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
-import { canViewChecklistStatus, canViewDavomat } from "../../lib/roles";
+import { canViewDavomat } from "../../lib/roles";
 import {
   type DavomatStaffFilter,
   matchesStaffFilter,
@@ -308,16 +308,7 @@ export default function DavomatPage() {
   const [selectedEmpId, setSelectedEmpId] = useState<number | "all">("all");
   const [report, setReport] = useState<DavomatReport | null>(null);
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
-  const [announcing, setAnnouncing] = useState(false);
-  const [announceOpen, setAnnounceOpen] = useState(false);
-  const [announcePreview, setAnnouncePreview] = useState<{
-    text: string;
-    recipients: string;
-    channels: string[];
-    telegramConfigured: boolean;
-  } | null>(null);
-  const [announcePreviewLoading, setAnnouncePreviewLoading] = useState(false);
+  const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -557,10 +548,10 @@ export default function DavomatPage() {
 
   const onExport = async () => {
     if (exporting) return;
-    setExporting(true);
+    setExporting("excel");
     toast({
-      title: "Excel tayyorlanmoqda…",
-      description: "Katta hisobot 20–40 soniya olishi mumkin. Iltimos, kuting.",
+      title: t("davomat.excelPreparing"),
+      description: t("davomat.excelPreparingHint"),
     });
     try {
       const result = await downloadDavomatExcel({
@@ -571,67 +562,107 @@ export default function DavomatPage() {
         staffFilter,
       });
       toast({
-        title: result.via === "telegram" ? "Telegramga yuborildi" : "Excel yuklandi",
+        title: result.via === "telegram" ? t("davomat.excelTelegram") : t("davomat.excelDone"),
         description:
           result.via === "telegram"
-            ? "Fayl bot chatiga yuborildi — Telegramdan oching"
-            : `Filtrdagi ${filteredEmployees.length} ta xodim · ${staffFilterLabel(staffFilter)}`,
+            ? t("davomat.excelTelegramHint")
+            : `${filteredEmployees.length} ${t("davomat.peopleCount")} · ${staffFilterLabel(staffFilter)}`,
       });
     } catch (err) {
       toast({
-        title: "Excel yuklanmadi",
-        description: (err as Error)?.message || "Server bilan bog‘lanib bo‘lmadi",
+        title: t("davomat.excelFail"),
+        description: (err as Error)?.message || t("davomat.exportFailHint"),
         variant: "destructive",
       });
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   };
 
-  const openAnnounceDialog = async () => {
-    if (announcing) return;
-    setAnnounceOpen(true);
-    setAnnouncePreviewLoading(true);
+  const onExportPdf = async () => {
+    if (exporting || !report) return;
+    setExporting("pdf");
+    toast({
+      title: t("davomat.pdfPreparing"),
+      description: t("davomat.pdfPreparingHint"),
+    });
     try {
-      const res = await fetch("/api/davomat/announce/preview", { credentials: "include" });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((body as { error?: string }).error || "Ma'lumot yuklanmadi");
-      setAnnouncePreview(body as typeof announcePreview);
-    } catch (err) {
-      setAnnounceOpen(false);
-      toast({
-        title: "Xabar oynasi ochilmadi",
-        description: (err as Error)?.message,
-        variant: "destructive",
-      });
-    } finally {
-      setAnnouncePreviewLoading(false);
-    }
-  };
+      const filterBits = [
+        staffFilterLabel(staffFilter),
+        deptFilter !== "all"
+          ? departments?.find((d) => String(d.id) === deptFilter)?.name || deptFilter
+          : null,
+        search.trim() ? `${t("ui.search")}: ${search.trim()}` : null,
+        section === "schedule" && calMode === "day" && dayStatusFilter !== "all"
+          ? dayStatusFilter
+          : null,
+      ].filter(Boolean);
+      const filterLine = filterBits.join(" · ") || t("davomat.filterAll");
+      const statusLabel = (status: string) => t(STATUS_KEYS[status] || status, status);
+      const statusShort = (status: string) =>
+        t(WEEK_CELL_STATUS_KEYS[status] || STATUS_KEYS[status] || status, status);
 
-  const onAnnounceConfirm = async () => {
-    if (announcing) return;
-    setAnnouncing(true);
-    try {
-      const res = await fetch("/api/davomat/announce", {
-        method: "POST",
-        credentials: "include",
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error((body as { error?: string }).error || "Yuborilmadi");
-      setAnnounceOpen(false);
+      const isSingleDay =
+        (section === "schedule" && calMode === "day") ||
+        (section === "totals" && periodFrom === periodTo);
+
+      if (isSingleDay) {
+        const dayRows =
+          section === "schedule" && calMode === "day"
+            ? visibleEmployeesForDay.map(({ emp, day }) => ({ emp, day: day! }))
+            : filteredEmployees
+                .map((emp) => {
+                  const day = emp.days.find((d) => d.date === periodFrom);
+                  return day ? { emp, day } : null;
+                })
+                .filter((x): x is { emp: DavomatEmployee; day: DavomatDayMetrics } => !!x);
+        const dayYmd = section === "schedule" ? selectedDay : periodFrom;
+        await downloadDavomatPdf({
+          mode: "day",
+          title: `${t("davomat.title")} · ${t("davomat.dayReport")}`,
+          subtitle: `${dayYmd} · ${activeWorkHours.start}–${activeWorkHours.end}`,
+          filterLine,
+          statsLine: `${t("davomat.peopleCount")}: ${dayRows.length} · ${t("davomat.arrived")}: ${filteredDayStats.present} · ${t("davomat.lateShort")}: ${filteredDayStats.late} · ${t("davomat.absent")}: ${filteredDayStats.absent}`,
+          fileBase: `davomat_${dayYmd}`,
+          statusLabel,
+          statusShort,
+          dayRows,
+          showShiftCol: staffFilter === "all",
+          workStart: activeWorkHours.start,
+          workEnd: activeWorkHours.end,
+        });
+      } else {
+        const dates = section === "totals" ? report.dates : periodDates;
+        const emps =
+          section === "totals" && selectedEmpId !== "all"
+            ? filteredEmployees.filter((e) => e.id === selectedEmpId)
+            : filteredEmployees;
+        await downloadDavomatPdf({
+          mode: "period",
+          title: `${t("davomat.title")} · ${section === "totals" ? t("davomat.empTotals") : periodTitle}`,
+          subtitle: section === "totals" ? `${periodFrom} — ${periodTo}` : periodSubtitle,
+          filterLine,
+          statsLine: `${emps.length} ${t("davomat.peopleCount")} · ${dates.length} ${t("davomat.days")}`,
+          fileBase: `davomat_${from}_${to}`,
+          statusLabel,
+          statusShort,
+          periodDates: dates,
+          periodEmployees: emps,
+        });
+      }
+
       toast({
-        title: "Xabar yuborildi",
-        description: (body as { message?: string }).message || "Barcha xodimlarga yetkazildi",
+        title: t("davomat.pdfDone"),
+        description: isSingleDay ? t("davomat.pdfPortraitHint") : t("davomat.pdfLandscapeHint"),
       });
     } catch (err) {
       toast({
-        title: "Xabar yuborilmadi",
-        description: (err as Error)?.message || "Server bilan bog‘lanib bo‘lmadi",
+        title: t("davomat.pdfFail"),
+        description: (err as Error)?.message || t("davomat.exportFailHint"),
         variant: "destructive",
       });
     } finally {
-      setAnnouncing(false);
+      setExporting(null);
     }
   };
 
@@ -1174,33 +1205,35 @@ export default function DavomatPage() {
               </p>
             </div>
             <div className="dv-report-actions relative z-10">
-              {canViewChecklistStatus(user?.role) && (
-                <Link href="/checklist-holati" className="min-w-0 flex-1 sm:flex-none">
-                  <Button type="button" variant="ghost" className="dv-report-btn-ghost">
-                    <ClipboardCheck className="h-3.5 w-3.5 shrink-0" />
-                    {t("davomat.checklist")}
-                  </Button>
-                </Link>
-              )}
-              <Button
-                type="button"
-                variant="ghost"
-                className="dv-report-btn-announce flex-1 sm:flex-none"
-                onClick={() => void openAnnounceDialog()}
-                disabled={announcing || (loading && !report)}
-              >
-                {announcing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Users className="h-3.5 w-3.5 shrink-0" />}
-                {t("davomat.message")}
-              </Button>
               <Button
                 type="button"
                 variant="ghost"
                 className="dv-report-btn-excel flex-1 sm:flex-none"
                 onClick={() => void onExport()}
-                disabled={exporting || (loading && !report)}
+                disabled={!!exporting || (loading && !report)}
+                title={t("davomat.excelBtn")}
               >
-                {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />}
-                {t("ui.excel")}
+                {exporting === "excel" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
+                )}
+                {t("davomat.excelBtn")}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="dv-report-btn-pdf flex-1 sm:flex-none"
+                onClick={() => void onExportPdf()}
+                disabled={!!exporting || (loading && !report)}
+                title={t("davomat.pdfBtn")}
+              >
+                {exporting === "pdf" ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <FileDown className="h-3.5 w-3.5 shrink-0" />
+                )}
+                {t("davomat.pdfBtn")}
               </Button>
             </div>
           </div>
@@ -1702,68 +1735,6 @@ export default function DavomatPage() {
             <Button type="button" onClick={() => void saveEdit()} disabled={saving}>
               {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
               Saqlash
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog
-        open={announceOpen}
-        onOpenChange={(o) => {
-          if (!o && !announcing) setAnnounceOpen(false);
-        }}
-      >
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Xabarni tasdiqlang</DialogTitle>
-          </DialogHeader>
-          {announcePreviewLoading ? (
-            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              Xabar matni yuklanmoqda…
-            </div>
-          ) : announcePreview ? (
-            <div className="space-y-4">
-              <div className="rounded-xl border border-amber-200 bg-amber-50/80 p-3 text-sm dark:border-amber-900/40 dark:bg-amber-950/30">
-                <p className="text-xs font-semibold uppercase tracking-wide text-amber-900/70 dark:text-amber-200/80">
-                  Kimga yuboriladi
-                </p>
-                <p className="mt-1 font-medium text-foreground">{announcePreview.recipients}</p>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Kanallar: {announcePreview.channels.join(" · ")}
-                  {!announcePreview.telegramConfigured ? " (Telegram sozlanmagan)" : ""}
-                </p>
-              </div>
-              <div>
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Yuboriladigan matn
-                </p>
-                <div className="rounded-xl border border-border bg-muted/40 p-3 text-sm leading-relaxed text-foreground">
-                  {announcePreview.text}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Davom etish uchun «Yuborish» tugmasini bosing. Bekor qilish uchun «Bekor qilish».
-              </p>
-            </div>
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setAnnounceOpen(false)}
-              disabled={announcing}
-            >
-              Bekor qilish
-            </Button>
-            <Button
-              type="button"
-              className="bg-amber-500 text-amber-950 hover:bg-amber-400"
-              onClick={() => void onAnnounceConfirm()}
-              disabled={announcing || announcePreviewLoading || !announcePreview}
-            >
-              {announcing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-              Yuborish
             </Button>
           </DialogFooter>
         </DialogContent>

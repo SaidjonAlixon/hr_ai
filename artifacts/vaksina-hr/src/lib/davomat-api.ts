@@ -580,7 +580,7 @@ export async function downloadDavomatExcel(params: {
   departmentId?: string;
   location?: string;
   staffFilter?: string;
-}): Promise<void> {
+}): Promise<{ via: "telegram" | "browser" }> {
   const q = new URLSearchParams();
   q.set("from", params.from);
   q.set("to", params.to);

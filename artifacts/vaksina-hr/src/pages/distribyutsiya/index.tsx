@@ -51,7 +51,7 @@ type Tab = "hr" | "lavozimlar";
 export default function DistribyutsiyaPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const canView = canViewDistribyutsiya(user?.role);
+  const canView = canViewDistribyutsiya(user?.role) || canManageDistribyutsiya(user?.role);
   const canManage = canManageDistribyutsiya(user?.role);
   const [tab, setTab] = useState<Tab>("hr");
 

@@ -50,7 +50,7 @@ import { useGetTasks } from '../lib/vazifalar-api';
 import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { cn } from '../lib/utils';
-import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole, isDirectorRole, hasFullPlatformAccess } from "../lib/roles";
+import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "../lib/roles";
 import { DavomatAnalyticsDashboard } from '../pages/davomat/analytics';
 import { useHolat } from '../lib/holat-api';
 import {
@@ -203,11 +203,11 @@ export default function Dashboard() {
     if (kind === 'intern') setLocation('/kirish');
   }, [kind, setLocation]);
 
-  const isDirector = kind === 'director';
+  const showDavomatDash = usesDavomatDashboardHome(role);
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';
   const isPharmacyStaff = kind === 'pharmacy_staff';
-  const canWatchRequests = (isDirectorRole(role) || isHrRole(role) || hasFullPlatformAccess(role)) && !isDirector;
+  const canWatchRequests = (isDirectorRole(role) || isHrRole(role) || hasFullPlatformAccess(role)) && !showDavomatDash;
   const canSeeRecruitment = canSeeHrRecruitment(role);
   const canSeePipeline = canSeeRecruitment && (hasFullPlatformAccess(role) || isHrRole(role) || role === 'recruiter');
   const canSeeRecruiterTasks = hasFullPlatformAccess(role) || isHrRole(role) || role === 'recruiter';
@@ -251,7 +251,7 @@ export default function Dashboard() {
   const { data: reminders, isLoading: remindersLoading } = useGetReminders({
     query: { enabled: kind !== 'intern' },
   });
-  const holatOn = canViewHolat(role) && !isDirector;
+  const holatOn = canViewHolat(role) && !showDavomatDash;
   const { data: holat, isLoading: holatLoading } = useHolat(holatOn);
 
   const deadlineVacancies = useMemo(() => {
@@ -490,10 +490,10 @@ export default function Dashboard() {
     </DashDetailDialog>
   );
 
-  if (isDirector) {
+  if (showDavomatDash) {
     return (
       <div className="-mx-3 space-y-4 sm:-mx-6">
-        <DavomatAnalyticsDashboard embedded />
+        <DavomatAnalyticsDashboard embedded initialSegment="office" />
       </div>
     );
   }

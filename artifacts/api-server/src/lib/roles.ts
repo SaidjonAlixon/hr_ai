@@ -88,17 +88,50 @@ export function canDeleteUsers(role?: string | null): boolean {
   return canManageUsers(role);
 }
 
-/** Davomat: direktor, HR direktor, HR menejer (+ admin) */
+export const DEPT_HEAD_ROLES = [
+  "it_rahbar",
+  "reviziya_rahbar",
+  "sb_boshliq",
+  "hr_direktor",
+  "hr_kadr_rahbar",
+  "hr_menejer",
+  "distrib_rahbar",
+  "distrib_hr",
+  "moliya_rahbar",
+  "taminot_rahbar",
+  "rivojlantirish_rahbar",
+  "mamuriy_rahbar",
+  "gpp_rahbar",
+  "ombor_rahbar",
+  "oshpaz_rahbar",
+  "marketing_rahbar",
+] as const;
+
+export function isDeptHeadRole(role?: string | null): boolean {
+  return !!role && (DEPT_HEAD_ROLES as readonly string[]).includes(role);
+}
+
+/** Davomat Dashboard — to‘liq umumiy ma’lumot */
+export function canViewFullDavomatDashboard(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return (
+    hasFullPlatformAccess(r) ||
+    isDirectorRole(r) ||
+    r === "moliya" ||
+    r === "moliya_rahbar" ||
+    r === "hr_direktor" ||
+    r === "hr_menejer" ||
+    r === "hr" ||
+    r === "hr_kadr_rahbar"
+  );
+}
+
+/** Davomat: to‘liq dashboard rollari + SB + bo‘lim boshliqlari */
 export function canViewDavomat(role?: string | null): boolean {
   return (
-    role === "admin" ||
-    isDirectorRole(role) ||
-    role === "hr_direktor" ||
-    role === "hr_kadr_rahbar" ||
-    role === "hr_menejer" ||
-    role === "hr" ||
+    canViewFullDavomatDashboard(role) ||
     isSbRole(role) ||
-    role === "moliya"
+    isDeptHeadRole(role)
   );
 }
 

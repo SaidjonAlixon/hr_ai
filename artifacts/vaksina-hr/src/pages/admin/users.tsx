@@ -249,7 +249,7 @@ export default function AdminUsersPage() {
   const onCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isAdmin) {
-      toast({ title: 'Ruxsat yo‘q', description: 'Faqat admin yoki direktor yaratishi mumkin', variant: 'destructive' });
+      toast({ title: 'Ruxsat yo‘q', description: 'Faqat admin yaratishi mumkin', variant: 'destructive' });
       return;
     }
     if (!fullName.trim() || fullName.trim().split(/\s+/).length < 2) {

@@ -24,26 +24,21 @@ const router: IRouter = Router();
 
 const DISTRIB_MANAGE_ROLES = new Set([
   "admin",
-  "director", "asoschi",
+  "director",
+  "asoschi",
   "distrib_rahbar",
   "distrib_hr",
 ]);
 
-const DISTRIB_VIEW_ROLES = new Set([
-  ...DISTRIB_MANAGE_ROLES,
-  "distrib",
-  "hr",
-  "hr_direktor",
-  "hr_menejer",
-  "hr_kadr_rahbar",
-]);
+/** Menyu / sahifa — faqat Distribyutsiya HR va rahbar (+ platform admin manage) */
+const DISTRIB_VIEW_ROLES = new Set(["distrib_rahbar", "distrib_hr"]);
 
 function canManageDistrib(role?: string | null): boolean {
-  return !!role && DISTRIB_MANAGE_ROLES.has(role);
+  return !!role && (DISTRIB_MANAGE_ROLES.has(role) || canManageSettings(role));
 }
 
 function canViewDistrib(role?: string | null): boolean {
-  return !!role && (DISTRIB_VIEW_ROLES.has(role) || canManageSettings(role));
+  return !!role && (DISTRIB_VIEW_ROLES.has(role) || canManageDistrib(role));
 }
 
 function latinSlug(input: string): string {

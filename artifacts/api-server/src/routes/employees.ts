@@ -12,7 +12,7 @@ import {
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { syncStaffingAlertForEmployee } from "../lib/staffing-alert";
-import { HR_ROLES, isHrManager, canViewEmployees, canViewEmployeesFull, canChangeStaffStatus } from "../lib/roles";
+import { HR_ROLES, isHrManager, canViewEmployees, canViewEmployeesFull, canChangeStaffStatus, isEmployeeDirectoryViewOnly } from "../lib/roles";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from "../lib/dedupe-employees";
 import {
@@ -659,6 +659,76 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
 
   const linkMap = await loadExportLinkMap(enriched);
 
+  type ExportRow = {
+    n: number;
+    fullName: string;
+    position: string;
+    role: string;
+    department: string;
+    status: string;
+    shift: string;
+    hiredAt: string;
+    phone: string;
+    place: string;
+    coordinator: string;
+  };
+
+  const exportRows: ExportRow[] = enriched.map((e, idx) => {
+    const linked = e.userId != null ? userMap.get(e.userId) : undefined;
+    const shift =
+      e.shiftType === "custom" && e.shiftLabel
+        ? e.shiftLabel
+        : SHIFT_UZ[e.shiftType || ""] || e.shiftType || "—";
+    return {
+      n: idx + 1,
+      fullName: formatPersonName(e.fullName) || e.fullName || "—",
+      position: e.position || "—",
+      role: staffRoleLabelForExcel(e),
+      department: e.departmentName || "—",
+      status: STATUS_UZ[e.employmentStatus || ""] || e.employmentStatus || "—",
+      shift,
+      hiredAt: formatHiredForExcel(e.hiredAt),
+      phone: formatPhoneForExcel(e.phone || linked?.phone),
+      place: excelPlaceName(e, linkMap),
+      coordinator: excelCoordinatorName(e, linkMap),
+    };
+  });
+
+  const stamp = new Date().toISOString().slice(0, 10);
+  const filterMeta = {
+    group: staffGroup,
+    workplace: workplaceMode,
+    role: roleFilter || "all",
+    status: status || "all",
+    search: search || "",
+  };
+
+  if (String(req.query.format || "").toLowerCase() === "json") {
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      title: "VAKSINA MED — Xodimlar ro‘yxati",
+      generatedAt: new Date().toISOString(),
+      stamp,
+      total: exportRows.length,
+      filters: filterMeta,
+      headers: [
+        "№",
+        "F.I.Sh.",
+        "Lavozim",
+        "Rol",
+        "Bo‘lim",
+        "Holat",
+        "Smena",
+        "Ishga olingan",
+        "Telefon",
+        "Joy / filial",
+        "Koordinator",
+      ],
+      rows: exportRows,
+    });
+    return;
+  }
+
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "VAKSINA MED HR";
   workbook.created = new Date();
@@ -727,29 +797,10 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
     { key: "coordinator", width: 28 },
   ];
 
-  enriched.forEach((e, idx) => {
-    const linked = e.userId != null ? userMap.get(e.userId) : undefined;
-    const shift =
-      e.shiftType === "custom" && e.shiftLabel
-        ? e.shiftLabel
-        : SHIFT_UZ[e.shiftType || ""] || e.shiftType || "—";
-    const phone = formatPhoneForExcel(e.phone || linked?.phone);
-    const place = excelPlaceName(e, linkMap);
-    const coordinator = excelCoordinatorName(e, linkMap);
-    const row = sheet.addRow({
-      n: idx + 1,
-      fullName: formatPersonName(e.fullName) || e.fullName || "—",
-      position: e.position || "—",
-      role: staffRoleLabelForExcel(e),
-      department: e.departmentName || "—",
-      status: STATUS_UZ[e.employmentStatus || ""] || e.employmentStatus || "—",
-      shift,
-      hiredAt: formatHiredForExcel(e.hiredAt),
-      phone,
-      place,
-      coordinator,
-    });
+  exportRows.forEach((rowData, idx) => {
+    const row = sheet.addRow(rowData);
     const zebra = idx % 2 === 0 ? "FFF7FAFC" : "FFFFFFFF";
+    const place = rowData.place;
     row.eachCell((cell, colNumber) => {
       const isPhone = colNumber === 9;
       const isPlace = colNumber === 10;
@@ -782,27 +833,26 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
       };
       if (isPhone) {
         cell.numFmt = "@";
-        cell.value = phone;
+        cell.value = rowData.phone;
       }
     });
     row.height = place.length > 36 ? 32 : 22;
   });
 
-  const dataEnd = 2 + enriched.length;
-  if (enriched.length > 0) {
+  const dataEnd = 2 + exportRows.length;
+  if (exportRows.length > 0) {
     sheet.autoFilter = { from: { row: 2, column: 1 }, to: { row: dataEnd, column: colCount } };
   }
 
   const footerRow = sheet.addRow([]);
   sheet.mergeCells(`A${footerRow.number}:${lastCol}${footerRow.number}`);
   const footer = sheet.getCell(`A${footerRow.number}`);
-  footer.value = `Jami: ${enriched.length} ta xodim · Yuklab olingan: ${new Date().toLocaleString("uz-UZ")} · Ofis = Asosiy ofis · Filial nomi bazadagidek · Mudir/Farmasevt/Stajyor — koordinator`;
+  footer.value = `Jami: ${exportRows.length} ta xodim · Yuklab olingan: ${new Date().toLocaleString("uz-UZ")} · Ofis = Asosiy ofis · Filial nomi bazadagidek · Mudir/Farmasevt/Stajyor — koordinator`;
   footer.font = { name: "Calibri", size: 9, italic: true, color: { argb: "FF64748B" } };
   footer.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
   sheet.getRow(footerRow.number).height = 22;
 
   const buffer = Buffer.from(await workbook.xlsx.writeBuffer());
-  const stamp = new Date().toISOString().slice(0, 10);
   res.setHeader(
     "Content-Type",
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

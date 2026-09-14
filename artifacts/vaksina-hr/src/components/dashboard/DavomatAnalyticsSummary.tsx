@@ -7,7 +7,7 @@ import { cn } from "@/lib/utils";
 
 export function DavomatAnalyticsSummary({ enabled }: { enabled: boolean }) {
   const range = rangeForPreset("30d");
-  const { data, isLoading } = useDavomatAnalytics({ ...range, segment: "all" }, enabled);
+  const { data, isLoading } = useDavomatAnalytics({ ...range, segment: "office" }, enabled);
 
   if (!enabled) return null;
 
@@ -15,9 +15,9 @@ export function DavomatAnalyticsSummary({ enabled }: { enabled: boolean }) {
     <section className="hero-dark overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-[#0a1628] via-[#0f2137] to-[#0a1628] shadow-xl">
       <div className="flex flex-col gap-3 border-b border-slate-700/60 px-4 py-4 sm:flex-row sm:items-center sm:justify-between md:px-6">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">Davomat tahlili</p>
-          <h2 className="text-lg font-bold text-white md:text-xl">Boshqaruv paneli — davomat KPI</h2>
-          <p className="text-sm text-muted-foreground">Ofis va apteka tarmog‘i alohida · 30 kunlik ko‘rinish</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-sky-300">Dashboard</p>
+          <h2 className="text-lg font-bold text-white md:text-xl">Davomat tahlili — KPI</h2>
+          <p className="text-sm text-muted-foreground">1. Ofis · 2. Dorixona · 3. Hammasi · 30 kunlik ko‘rinish</p>
         </div>
         <Link href="/davomat/analytics">
           <span className="inline-flex items-center gap-1.5 rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500">
@@ -48,7 +48,7 @@ export function DavomatAnalyticsSummary({ enabled }: { enabled: boolean }) {
             />
             <MiniStat
               icon={Store}
-              label="Apteka tarmog‘i"
+              label="Dorixona"
               value={`${data?.segments.pharmacy.attendanceRate ?? 0}%`}
               sub={`${data?.segments.pharmacy.headcount ?? 0} xodim`}
               accent="text-violet-300"
@@ -89,14 +89,14 @@ export function DavomatAnalyticsSummary({ enabled }: { enabled: boolean }) {
           className="flex items-center gap-2 rounded-xl bg-muted dark:bg-slate-800/50 px-3 py-2.5 text-sm hover:bg-muted dark:bg-slate-800"
         >
           <BarChart3 className="h-4 w-4 text-sky-400" />
-          Ofis tahlili
+          1. Ofis
         </Link>
         <Link
           href="/davomat/analytics?segment=pharmacy"
           className="flex items-center gap-2 rounded-xl bg-muted dark:bg-slate-800/50 px-3 py-2.5 text-sm hover:bg-muted dark:bg-slate-800"
         >
           <Store className="h-4 w-4 text-violet-400" />
-          Apteka tahlili
+          2. Dorixona
         </Link>
         <Link href="/davomat" className="flex items-center gap-2 rounded-xl bg-muted dark:bg-slate-800/50 px-3 py-2.5 text-sm hover:bg-muted dark:bg-slate-800">
           <Users className="h-4 w-4 text-teal-400" />

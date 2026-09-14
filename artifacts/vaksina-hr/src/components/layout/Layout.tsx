@@ -36,6 +36,10 @@ import {
   PhoneCall,
   Phone,
   Truck,
+  GripVertical,
+  RotateCcw,
+  SlidersHorizontal,
+  Check,
 } from 'lucide-react';
 import {
   useLogout,
@@ -59,7 +63,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -72,6 +76,16 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
+import {
+  type NavLayoutState,
+  applyNavLayout,
+  clearNavLayout,
+  layoutFromSections,
+  loadNavLayout,
+  moveNavItem,
+  moveNavSection,
+  saveNavLayout,
+} from '@/lib/nav-layout';
 
 function splitFullName(full: string): { first: string; last: string } {
   const parts = full.trim().split(/\s+/).filter(Boolean);
@@ -311,6 +325,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       return [];
     }
   });
+  const [navEditMode, setNavEditMode] = React.useState(false);
+  const [navLayout, setNavLayout] = React.useState<NavLayoutState | null>(null);
+  const [dragOverKey, setDragOverKey] = React.useState<string | null>(null);
+  const navDragRef = useRef<
+    | { kind: 'item'; path: string; fromSection: string }
+    | { kind: 'section'; sectionId: string }
+    | null
+  >(null);
   const markedPathsRef = useRef<Set<string>>(new Set());
   const { toast } = useToast();
   const [facePhotoUrl, setFacePhotoUrl] = React.useState<string | null>(null);
@@ -401,6 +423,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
   }, [pinnedIds]);
 
+  React.useEffect(() => {
+    if (!user?.id) {
+      setNavLayout(null);
+      return;
+    }
+    setNavLayout(loadNavLayout(user.id));
+  }, [user?.id]);
+
   // Mobil menyu ochiq bo‘lsa body scrollni bloklash
   useEffect(() => {
     if (!mobileOpen) return;
@@ -414,6 +444,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const isHrLike = isHrRole(user?.role) || user?.role === 'admin' || isDirectorRole(user?.role);
   const isRecruiter = user?.role === 'recruiter';
   const isPharmacyStaff = user?.role === 'koordinator' || user?.role === 'mudir';
+  const davomatDashHome = usesDavomatDashboardHome(user?.role);
 
   const { data: unreadNotifications } = useGetNotifications(
     { unreadOnly: true },
@@ -775,11 +806,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (!canViewEmployees(role)) {
       next = next.filter((i) => i.path !== '/employees');
     }
+    // Foydalanuvchilar — faqat admin
+    if (canManageUsers(role)) {
+      if (!next.some((i) => i.path === '/admin/users')) {
+        const holatIdx = next.findIndex((i) => i.path === '/admin/holat');
+        const at = holatIdx >= 0 ? holatIdx : next.length;
+        next = [
+          ...next.slice(0, at),
+          { name: 'Foydalanuvchilar', path: '/admin/users', icon: Users },
+          ...next.slice(at),
+        ];
+      }
+    } else {
+      next = next.filter((i) => i.path !== '/admin/users');
+    }
     return ensureTaskAnalyticsNav(next);
   }
 
   const hrMenejerNav: NavItem[] = [
-    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     orgNav,
@@ -799,13 +844,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ];
 
   const hrOversightNav: NavItem[] = [
-    { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+    { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
     orgNav,
     oylikNav,
     hisobNav,
     reviziyaNav,
     itNav,
-    distribNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     { name: 'Arizalar', path: '/requests', icon: FileText },
@@ -829,7 +873,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const roleNavigation: Record<string, NavItem[]> = {
     admin: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -842,7 +886,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       oylikNav,
       hisobNav,
       { name: 'IT', path: '/it', icon: Cpu },
-      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       reviziyaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
@@ -853,6 +896,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      { name: 'Foydalanuvchilar', path: '/admin/users', icon: Users },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
@@ -862,7 +906,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
     ],
     asoschi: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -875,7 +919,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       oylikNav,
       hisobNav,
       { name: 'IT', path: '/it', icon: Cpu },
-      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       reviziyaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
@@ -895,7 +938,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
     ],
     recruiter: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -910,7 +953,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     director: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -938,7 +981,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     hr_kadr_rahbar: hrOversightNav,
     hr_auditor: hrOversightNav,
     trainer: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
@@ -949,7 +992,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     mudir: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -963,7 +1006,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     koordinator: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -979,7 +1022,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Reyting', path: '/checklist-holati', icon: Trophy },
     ],
     it: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'IT', path: '/it', icon: Cpu },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -989,7 +1032,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     it_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'IT', path: '/it', icon: Cpu },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -1060,7 +1103,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       davomatFaceNav,
     ],
     ombor_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1069,7 +1112,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     moliya_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Oylik', path: '/oylik', icon: Banknote },
       { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1080,7 +1123,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     taminot_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1089,7 +1132,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     rivojlantirish_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1098,7 +1141,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     mamuriy_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1107,7 +1150,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     gpp_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1116,7 +1159,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     oshpaz_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1125,7 +1168,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     marketing_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1134,7 +1177,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     sb: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1146,7 +1189,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     sb_boshliq: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1158,7 +1201,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     farmasevt: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
       { name: 'Oylik', path: '/oylik', icon: Banknote },
       reytingNav,
@@ -1169,7 +1212,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
     ],
     moliya: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Oylik', path: '/oylik', icon: Banknote },
       { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator },
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
@@ -1189,7 +1232,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
     ],
     revizor: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -1199,7 +1242,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     reviziya_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -1210,24 +1253,27 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     distrib_rahbar: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Xodimlar', path: '/employees', icon: Users },
+      davomatAnalyticsNav,
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
     ],
     distrib_hr: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       { name: 'Xodimlar', path: '/employees', icon: Users },
+      davomatAnalyticsNav,
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
     ],
     distrib: [
-      { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck },
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
@@ -1236,14 +1282,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const userRole = normalizeUserRole(user.role);
   const oversightNav = hasHrOversightNav(userRole);
+  // Rolga mos menyu birinchi — Asoschi admin menyusini meros qilmasin (Foydalanuvchilar faqat admin)
   const resolvedBase = oversightNav
     ? hrOversightNav
-    : hasFullPlatformAccess(userRole)
-      ? roleNavigation.admin
-      : roleNavigation[userRole] ??
-        (userRole === 'director' ? roleNavigation.director : null) ?? [
-          { name: 'Boshqaruv', path: '/dashboard', icon: LayoutDashboard },
-        ];
+    : roleNavigation[userRole] ??
+      (hasFullPlatformAccess(userRole) ? roleNavigation.admin : null) ??
+      (userRole === 'director' ? roleNavigation.director : null) ?? [
+        { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      ];
   const roleNav = injectCommonNav(resolvedBase, userRole);
   const withFace = isLimitedOfficeStaffRole(userRole)
     ? roleNav
@@ -1253,7 +1299,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const navItems = (canSeeHrRecruitment(userRole)
     ? withFace
     : withFace.filter((item) => !isHrRecruitmentPath(item.path))
-  ).filter((item) => item.path !== '/admin/users' || canManageUsers(userRole));
+  )
+    .filter((item) => item.path !== '/admin/users' || canManageUsers(userRole))
+    .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole));
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
@@ -1263,8 +1311,26 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
   };
 
-  const navSections = groupNavItems(navItems, userRole, t);
+  const defaultNavSections = groupNavItems(navItems, userRole, t);
+  const navSections = applyNavLayout(defaultNavSections, navLayout, { keepEmpty: navEditMode });
   const pinnedSet = new Set(pinnedIds);
+  const navIsCustom = !!navLayout;
+
+  const ensureNavLayout = (): NavLayoutState => {
+    if (navLayout) return navLayout;
+    return layoutFromSections(defaultNavSections);
+  };
+
+  const commitNavLayout = (next: NavLayoutState) => {
+    setNavLayout(next);
+    if (user?.id != null) saveNavLayout(next, user.id);
+  };
+
+  const resetNavLayout = () => {
+    setNavLayout(null);
+    if (user?.id != null) clearNavLayout(user.id);
+    toast({ title: t('nav.layout.resetDone') });
+  };
 
   const togglePin = (id: string) => {
     setPinnedIds((prev) => {
@@ -1281,85 +1347,162 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const renderNavItem = (
     item: NavItem,
-    opts: { collapsed: boolean; onNavigate?: () => void; nested?: boolean },
+    opts: {
+      collapsed: boolean;
+      onNavigate?: () => void;
+      nested?: boolean;
+      sectionId?: string;
+      itemIndex?: number;
+    },
   ) => {
     const count = badgeByPath[item.path] ?? 0;
     const active = pathIsActive(location, item.path);
     const pulse = item.path === '/pharmacy-network' && count > 0;
+    const dropKey = `item:${opts.sectionId}:${opts.itemIndex}`;
+    const isDropTarget = navEditMode && dragOverKey === dropKey;
+
+    const body = (
+      <>
+        {navEditMode && !opts.collapsed ? (
+          <span
+            className="flex h-7 w-5 shrink-0 cursor-grab items-center justify-center text-white/40 active:cursor-grabbing"
+            aria-hidden
+          >
+            <GripVertical className="h-3.5 w-3.5" />
+          </span>
+        ) : null}
+        <span
+          className={cn(
+            'relative flex shrink-0 items-center justify-center transition-colors',
+            opts.nested &&
+              cn(
+                'h-7 w-7 rounded-md',
+                active
+                  ? 'bg-violet-500/25 text-violet-100'
+                  : 'bg-white/[0.06] text-white/55 group-hover:bg-white/10 group-hover:text-white',
+              ),
+          )}
+        >
+          <item.icon
+            className={cn(
+              'transition-colors',
+              opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
+              !opts.nested &&
+                (active ? 'text-white' : 'text-white/55 group-hover:text-white/90'),
+            )}
+          />
+          {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} tone="soft" />}
+        </span>
+        {!opts.collapsed && (
+          <>
+            <span
+              className={cn(
+                'min-w-0 flex-1 text-[12px] font-medium leading-snug break-words',
+                opts.nested && active && 'font-semibold text-white',
+                opts.nested && !active && 'text-white/72 group-hover:text-white',
+              )}
+            >
+              {navLabelForPath(item.path, t, item.name)}
+            </span>
+            {opts.nested && active && !navEditMode ? (
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(196,181,253,0.9)]" aria-hidden />
+            ) : (
+              <NavBadge count={count} pulse={pulse} tone={opts.nested ? 'soft' : 'rose'} />
+            )}
+          </>
+        )}
+      </>
+    );
+
+    const className = cn(
+      'group relative flex items-center gap-2.5 transition-all duration-200',
+      opts.collapsed && 'justify-center px-0 py-2',
+      opts.nested
+        ? cn(
+            'rounded-lg px-2 py-1.5',
+            active
+              ? 'app-sidebar-nested-item-active'
+              : 'app-sidebar-nested-item',
+          )
+        : cn(
+            !opts.collapsed && 'rounded-lg px-2.5 py-2',
+            opts.collapsed && 'rounded-xl',
+            active ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item active:scale-[0.99]',
+          ),
+      navEditMode && 'cursor-grab active:cursor-grabbing ring-1 ring-transparent',
+      isDropTarget && 'ring-violet-400/60 bg-violet-500/15',
+    );
+
+    if (navEditMode && opts.sectionId != null && opts.itemIndex != null) {
+      return (
+        <div
+          key={item.path}
+          draggable
+          onDragStart={(e) => {
+            navDragRef.current = {
+              kind: 'item',
+              path: item.path,
+              fromSection: opts.sectionId!,
+            };
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', item.path);
+            setDragOverKey(null);
+          }}
+          onDragEnd={() => {
+            navDragRef.current = null;
+            setDragOverKey(null);
+          }}
+          onDragOver={(e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            setDragOverKey(dropKey);
+          }}
+          onDragLeave={() => {
+            setDragOverKey((prev) => (prev === dropKey ? null : prev));
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const drag = navDragRef.current;
+            setDragOverKey(null);
+            if (!drag || drag.kind !== 'item') return;
+            const base = ensureNavLayout();
+            commitNavLayout(
+              moveNavItem(base, drag.path, opts.sectionId!, opts.itemIndex!),
+            );
+            navDragRef.current = null;
+          }}
+          className={className}
+          role="listitem"
+          title={t('nav.layout.dragHint')}
+        >
+          {body}
+        </div>
+      );
+    }
+
     return (
       <Link key={item.path} href={item.path}>
         <div
           role="link"
           onClick={opts.onNavigate}
-          className={cn(
-            'group relative flex items-center gap-2.5 cursor-pointer transition-all duration-200',
-            opts.collapsed && 'justify-center px-0 py-2',
-            opts.nested
-              ? cn(
-                  'rounded-lg px-2 py-1.5',
-                  active
-                    ? 'app-sidebar-nested-item-active'
-                    : 'app-sidebar-nested-item',
-                )
-              : cn(
-                  !opts.collapsed && 'rounded-lg px-2.5 py-2',
-                  opts.collapsed && 'rounded-xl',
-                  active ? 'app-sidebar-nav-item-active' : 'app-sidebar-nav-item active:scale-[0.99]',
-                ),
-          )}
+          className={cn(className, 'cursor-pointer')}
         >
-          <span
-            className={cn(
-              'relative flex shrink-0 items-center justify-center transition-colors',
-              opts.nested &&
-                cn(
-                  'h-7 w-7 rounded-md',
-                  active
-                    ? 'bg-violet-500/25 text-violet-100'
-                    : 'bg-white/[0.06] text-white/55 group-hover:bg-white/10 group-hover:text-white',
-                ),
-            )}
-          >
-            <item.icon
-              className={cn(
-                'transition-colors',
-                opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
-                !opts.nested &&
-                  (active ? 'text-white' : 'text-white/55 group-hover:text-white/90'),
-              )}
-            />
-            {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} tone="soft" />}
-          </span>
-          {!opts.collapsed && (
-            <>
-              <span
-                className={cn(
-                  'min-w-0 flex-1 text-[12px] font-medium leading-snug break-words',
-                  opts.nested && active && 'font-semibold text-white',
-                  opts.nested && !active && 'text-white/72 group-hover:text-white',
-                )}
-              >
-                {navLabelForPath(item.path, t, item.name)}
-              </span>
-              {opts.nested && active ? (
-                <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-violet-300 shadow-[0_0_8px_rgba(196,181,253,0.9)]" aria-hidden />
-              ) : (
-                <NavBadge count={count} pulse={pulse} tone={opts.nested ? 'soft' : 'rose'} />
-              )}
-            </>
-          )}
+          {body}
         </div>
       </Link>
     );
   };
 
   const renderNavLinks = (opts: { collapsed: boolean; onNavigate?: () => void; mobile?: boolean }) =>
-    navSections.map((section) => {
+    navSections.map((section, sectionIndex) => {
       const badgeSum = section.items.reduce((sum, item) => sum + (badgeByPath[item.path] ?? 0), 0);
       const hasActive = section.items.some((item) => pathIsActive(location, item.path));
       const pinned = pinnedSet.has(section.id);
-      const open = opts.collapsed || pinned || openSectionId === section.id;
+      const open = opts.collapsed || pinned || navEditMode || openSectionId === section.id;
       const SectionIcon = section.icon;
+      const sectionDropKey = `section:${section.id}`;
+      const isSectionDrop = navEditMode && dragOverKey === sectionDropKey;
 
       if (opts.collapsed) {
         return (
@@ -1373,8 +1516,52 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       }
 
       return (
-        <div key={section.id} className="mb-1">
+        <div
+          key={section.id}
+          className={cn('mb-1', isSectionDrop && 'rounded-xl ring-1 ring-violet-400/40')}
+          onDragOver={(e) => {
+            if (!navEditMode) return;
+            e.preventDefault();
+            setDragOverKey(sectionDropKey);
+          }}
+          onDrop={(e) => {
+            if (!navEditMode) return;
+            e.preventDefault();
+            const drag = navDragRef.current;
+            setDragOverKey(null);
+            if (!drag) return;
+            const base = ensureNavLayout();
+            if (drag.kind === 'item') {
+              commitNavLayout(
+                moveNavItem(base, drag.path, section.id, section.items.length),
+              );
+            } else if (drag.kind === 'section') {
+              commitNavLayout(moveNavSection(base, drag.sectionId, sectionIndex));
+            }
+            navDragRef.current = null;
+          }}
+        >
           <div className="flex items-center gap-0.5">
+            {navEditMode ? (
+              <button
+                type="button"
+                draggable
+                onDragStart={(e) => {
+                  navDragRef.current = { kind: 'section', sectionId: section.id };
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('text/plain', section.id);
+                }}
+                onDragEnd={() => {
+                  navDragRef.current = null;
+                  setDragOverKey(null);
+                }}
+                className="shrink-0 cursor-grab rounded-lg p-1.5 text-white/40 transition hover:bg-white/10 hover:text-white/80 active:cursor-grabbing"
+                title={t('nav.layout.moveSection')}
+                aria-label={t('nav.layout.moveSection')}
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => toggleSection(section.id, pinned)}
@@ -1399,20 +1586,22 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 )}
               />
             </button>
-            <button
-              type="button"
-              onClick={() => togglePin(section.id)}
-              title={pinned ? t('common.unpinPin') : t('common.pinKeep')}
-              aria-label={pinned ? t('common.unpinPin') : t('common.pinKeep')}
-              className={cn(
-                'shrink-0 rounded-lg p-1.5 transition-colors',
-                pinned
-                  ? 'bg-violet-400/30 text-violet-100'
-                  : 'text-white/70 hover:bg-white/10 hover:text-white',
-              )}
-            >
-              <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
-            </button>
+            {!navEditMode ? (
+              <button
+                type="button"
+                onClick={() => togglePin(section.id)}
+                title={pinned ? t('common.unpinPin') : t('common.pinKeep')}
+                aria-label={pinned ? t('common.unpinPin') : t('common.pinKeep')}
+                className={cn(
+                  'shrink-0 rounded-lg p-1.5 transition-colors',
+                  pinned
+                    ? 'bg-violet-400/30 text-violet-100'
+                    : 'text-white/70 hover:bg-white/10 hover:text-white',
+                )}
+              >
+                <Pin className={cn('h-3.5 w-3.5', pinned && 'fill-current')} />
+              </button>
+            ) : null}
           </div>
           <div
             className={cn(
@@ -1422,9 +1611,19 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           >
             <div className="overflow-hidden">
               <div className="app-sidebar-nested-panel mt-1 ml-0.5 mr-0.5 flex flex-col gap-0.5 p-1">
-                {section.items.map((item) =>
-                  renderNavItem(item, { ...opts, nested: true }),
+                {section.items.map((item, itemIndex) =>
+                  renderNavItem(item, {
+                    ...opts,
+                    nested: true,
+                    sectionId: section.id,
+                    itemIndex,
+                  }),
                 )}
+                {navEditMode && section.items.length === 0 ? (
+                  <p className="px-2 py-3 text-center text-[11px] text-white/40">
+                    {t('nav.layout.dropHere')}
+                  </p>
+                ) : null}
               </div>
             </div>
           </div>
@@ -1491,15 +1690,73 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         </div>
 
         <nav className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2 md:px-2.5">
+          <div
+            className={cn(
+              'mb-2 rounded-xl border border-white/10 bg-white/[0.06] p-1.5',
+              desktopCollapsed && 'md:hidden',
+            )}
+          >
+            {navEditMode ? (
+              <div className="space-y-1.5">
+                <p className="px-1.5 pt-0.5 text-[10px] font-medium leading-snug text-violet-100/85">
+                  {t('nav.layout.editHint')}
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNavEditMode(false);
+                      setDragOverKey(null);
+                      navDragRef.current = null;
+                      toast({ title: t('nav.layout.saved') });
+                    }}
+                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-violet-500/90 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    {t('nav.layout.done')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetNavLayout}
+                    className="inline-flex items-center justify-center gap-1 rounded-lg bg-white/10 px-2 py-1.5 text-[11px] font-medium text-white/85 hover:bg-white/15"
+                    title={t('nav.layout.reset')}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    {t('nav.layout.resetShort')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setDesktopCollapsed(false);
+                  setNavEditMode(true);
+                }}
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-white/75 transition hover:bg-white/10 hover:text-white"
+              >
+                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-violet-200" />
+                <span className="min-w-0 flex-1">{t('nav.layout.customize')}</span>
+                {navIsCustom ? (
+                  <span className="rounded-md bg-violet-400/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-100">
+                    {t('nav.layout.customBadge')}
+                  </span>
+                ) : null}
+              </button>
+            )}
+          </div>
           <div className="flex flex-col gap-1 md:hidden">
             {renderNavLinks({
               collapsed: false,
               mobile: true,
-              onNavigate: () => setMobileOpen(false),
+              onNavigate: () => {
+                if (navEditMode) return;
+                setMobileOpen(false);
+              },
             })}
           </div>
           <div className="hidden md:flex md:flex-col md:gap-0.5">
-            {renderNavLinks({ collapsed: desktopCollapsed })}
+            {renderNavLinks({ collapsed: desktopCollapsed && !navEditMode })}
           </div>
         </nav>
 
@@ -1598,7 +1855,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             </div>
           </div>
 
-          {user.role !== 'director' ? (
+          {!davomatDashHome ? (
             <div className={cn(desktopCollapsed && 'md:hidden')}>
               <FaceIdEnroll compact onStatusChange={onFaceStatusChange} />
             </div>
@@ -1772,7 +2029,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/vazifalar/tahlil') ||
                 location === '/davomat' ||
                 location.startsWith('/davomat/analytics') ||
-                (location === '/dashboard' && user.role === 'director') ||
+                (location === '/dashboard' && davomatDashHome) ||
                 location === '/oylik' ||
                 location === '/hisobkitob' ||
                 location.startsWith('/employees') ||

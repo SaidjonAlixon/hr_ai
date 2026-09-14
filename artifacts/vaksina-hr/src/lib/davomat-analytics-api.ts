@@ -44,6 +44,29 @@ export type DavomatAnalytics = {
     attendanceRate: number;
   }>;
   monthlyTrend: Array<{ month: string; label: string; attendanceRate: number; late: number }>;
+  byBranch: Array<{
+    name: string;
+    headcount: number;
+    present: number;
+    late: number;
+    absent: number;
+    attendanceRate: number;
+    staff?: Array<{
+      id: number;
+      fullName: string;
+      position: string;
+      present: number;
+      late: number;
+      absent: number;
+      incomplete: number;
+      leave: number;
+      lateMinutes: number;
+      attendanceRate: number;
+      lastCheckIn: string | null;
+      lastStatus: string;
+      lastStatusLabel: string;
+    }>;
+  }>;
   byDepartment: Array<{
     name: string;
     headcount: number;

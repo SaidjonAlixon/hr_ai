@@ -229,22 +229,16 @@ export function filialPublicBaseUrl(): string {
   return withProto.replace(/\/$/, "");
 }
 
-/** Lokal / private URL bo‘lsa webhook ishlamaydi — polling kerak.
- * Vercel serverless da polling ishlamaydi — har doim webhook. */
+/**
+ * Polling faqat aniq opt-in: TELEGRAM_FILIAL_POLLING=1.
+ * Lokalda PUBLIC_APP_URL=localhost bo‘lsa avtomatik polling YO‘Q —
+ * aks holda deleteWebhook Verceldagi production webhookni o‘chirib yuboradi.
+ * Vercel serverless da polling ishlamaydi — har doim webhook.
+ */
 export function shouldFilialUsePolling(): boolean {
   if (!isFilialBotConfigured()) return false;
   if (process.env.VERCEL || process.env.VERCEL_ENV) return false;
-  if (process.env.TELEGRAM_FILIAL_POLLING === "0") return false;
-  if (process.env.TELEGRAM_FILIAL_POLLING === "1") return true;
-  const base = filialPublicBaseUrl();
-  if (!base) return true;
-  try {
-    const host = new URL(base).hostname;
-    if (host === "localhost" || host === "127.0.0.1" || host.endsWith(".local")) return true;
-  } catch {
-    return true;
-  }
-  return false;
+  return process.env.TELEGRAM_FILIAL_POLLING === "1";
 }
 
 /** Vercelda webhook URL bo‘sh/eski bo‘lsa bir marta o‘rnatadi */
@@ -269,13 +263,23 @@ export async function ensureFilialWebhookOnServerless(): Promise<{
     filialWebhookEnsure = (async () => {
       const want = `${base}/api/telegram-filial/webhook`;
       try {
-        const info = (await filialGetWebhookInfo()) as { url?: string };
-        if (info?.url === want) {
+        const info = (await filialGetWebhookInfo()) as {
+          url?: string;
+          last_error_message?: string;
+          last_error_date?: number;
+        };
+        const urlOk = info?.url === want;
+        const hasError = Boolean(info?.last_error_message);
+        if (urlOk && !hasError) {
           return { ok: true, url: want, note: "already_set" };
         }
         const whSecret = process.env.TELEGRAM_FILIAL_WEBHOOK_SECRET?.trim();
         await filialSetWebhook(want, whSecret);
-        return { ok: true, url: want, note: info?.url ? "updated" : "created" };
+        return {
+          ok: true,
+          url: want,
+          note: hasError ? "repaired_after_error" : info?.url ? "updated" : "created",
+        };
       } catch (err) {
         filialWebhookEnsure = null;
         return { ok: false, note: (err as Error).message };

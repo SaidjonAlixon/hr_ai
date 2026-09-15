@@ -10,11 +10,31 @@ import {
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { notifyUser } from "../lib/notify";
 import { syncBranchNeedFromTask } from "../lib/sync-branch-need";
+import { cancelAllOpenPipelineTasks } from "../lib/pipeline-tasks";
 
 const router: IRouter = Router();
 
 import { HR_ROLES, isDirectorRole, hasFullPlatformAccess } from "../lib/roles";
 import { DEPT_HEAD_ROLES } from "../lib/dept-staff";
+
+let pipelineTasksCleaned = false;
+
+async function ensurePipelineTasksHidden() {
+  if (pipelineTasksCleaned) return;
+  pipelineTasksCleaned = true;
+  try {
+    await cancelAllOpenPipelineTasks();
+  } catch {
+    pipelineTasksCleaned = false;
+  }
+}
+
+function isPipelineRecruitmentTask(row: {
+  candidateId?: number | null;
+  pipelineStage?: string | null;
+}): boolean {
+  return row.candidateId != null || Boolean(row.pipelineStage);
+}
 
 /** Rahbar / boshqaruv rollari — vazifa belgilash huquqi */
 const MANAGER_ROLES = new Set<string>([
@@ -460,7 +480,12 @@ async function enrichTask(row: typeof tasksTable.$inferSelect) {
 router.get("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const { status, board } = req.query as Record<string, string>;
 
+  await ensurePipelineTasksHidden();
+
   let rows = await db.select().from(tasksTable).orderBy(desc(tasksTable.dueAt));
+
+  // Nomzod pipeline qadamlari Topshiriqlar doskasida ko‘rinmasin
+  rows = rows.filter((r) => !isPipelineRecruitmentTask(r));
 
   // Faqat o'zi belgilagan yoki o'ziga biriktirilgan (admin — hammasi)
   rows = rows.filter((r) => canViewTask(r, req.userId, req.userRole));
@@ -617,7 +642,7 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
 router.get("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const id = parseId(req.params.id);
   const [row] = await db.select().from(tasksTable).where(eq(tasksTable.id, id));
-  if (!row) {
+  if (!row || isPipelineRecruitmentTask(row)) {
     res.status(404).json({ error: "Vazifa topilmadi" });
     return;
   }

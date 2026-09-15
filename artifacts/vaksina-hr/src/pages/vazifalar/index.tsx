@@ -681,7 +681,12 @@ export default function VazifalarPage() {
   };
 
   const filtered = useMemo(() => {
-    let list = tasks.filter((t) => t.status !== "cancelled");
+    let list = tasks.filter(
+      (t) =>
+        t.status !== "cancelled" &&
+        t.candidateId == null &&
+        !t.pipelineStage,
+    );
     if (assigneeFilter === null) {
       // O‘zim — menga kelgan + men qo‘ygan (boshqalarga ham)
       if (user?.id) {

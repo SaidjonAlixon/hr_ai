@@ -493,6 +493,20 @@ export default function Dashboard() {
   if (showDavomatDash) {
     return (
       <div className="-mx-3 space-y-4 sm:-mx-6">
+        {canViewChecklistStatus(role) ? (
+          <div className="flex flex-wrap items-center gap-2 px-3 sm:px-6">
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="gap-1.5"
+              onClick={() => setLocation('/checklist-holati')}
+            >
+              <ClipboardCheck className="h-4 w-4" />
+              Cheklist holati
+            </Button>
+          </div>
+        ) : null}
         <DavomatAnalyticsDashboard embedded initialSegment="office" />
       </div>
     );

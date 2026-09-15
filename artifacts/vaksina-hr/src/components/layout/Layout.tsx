@@ -63,7 +63,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -805,6 +805,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     // Oddiy xodim / mudir / farmasevt — Xodimlar menyusi yo‘q
     if (!canViewEmployees(role)) {
       next = next.filter((i) => i.path !== '/employees');
+    }
+    // Cheklist holati — auditor/HR/direktor
+    if (canViewChecklistStatus(role)) {
+      if (!next.some((i) => i.path === '/checklist-holati')) {
+        const davIdx = next.findIndex((i) => i.path === '/davomat' || i.path === '/davomat/analytics');
+        const at = davIdx >= 0 ? davIdx + 1 : next.length;
+        next = [
+          ...next.slice(0, at),
+          { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
+          ...next.slice(at),
+        ];
+      }
+    } else {
+      next = next.filter((i) => i.path !== '/checklist-holati');
     }
     // Foydalanuvchilar — faqat admin
     if (canManageUsers(role)) {

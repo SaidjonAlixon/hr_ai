@@ -1,35 +1,9 @@
 import { and, eq, inArray, isNotNull } from "drizzle-orm";
-import { db, tasksTable, usersTable, candidatesTable } from "@workspace/db";
-import { notifyUser } from "./notify";
+import { db, tasksTable, candidatesTable } from "@workspace/db";
 import { HR_ROLES } from "./roles";
 
-/** Offline / yakuniy / ishga qabul — shu HR rollariga topshiriq */
+/** Offline / yakuniy / ishga qabul — shu HR rollariga (legacy) */
 export const PIPELINE_HR_ROLES = [...HR_ROLES] as const;
-
-const STAGE_TITLES: Record<string, string> = {
-  offline_interview: "4-qadam · Offline suhbat",
-  final_decision: "5-qadam · Yakuniy qaror",
-  offer: "6-qadam · Job Offer",
-  documents: "7-qadam · Hujjatlar",
-  internship: "8-qadam · Stajirovka",
-  hired: "9-qadam · Ishga qabul",
-};
-
-const STAGE_LINKS: Record<string, (id: number) => string> = {
-  offline_interview: (id) => `/candidates/${id}/offline-interview`,
-  final_decision: (id) => `/candidates/${id}/final-decision`,
-  offer: (id) => `/candidates/${id}/offer`,
-  documents: (id) => `/candidates/${id}/documents`,
-  internship: (id) => `/candidates/${id}/internship`,
-  hired: (id) => `/candidates/${id}`,
-};
-
-function parseDueAt(date?: string | null, time?: string | null): Date | null {
-  if (!date) return null;
-  const t = (time || "10:00").slice(0, 5);
-  const d = new Date(`${date}T${t}:00`);
-  return Number.isNaN(d.getTime()) ? null : d;
-}
 
 /** Shu nomzod + bosqichdagi ochiq pipeline vazifalarini yopish */
 export async function completePipelineStageTasks(opts: {
@@ -65,21 +39,12 @@ export async function completePipelineStageTasks(opts: {
     );
 }
 
-async function activeUsersByRoles(roles: string[]): Promise<{ id: number }[]> {
-  if (!roles.length) return [];
-  return db
-    .select({ id: usersTable.id })
-    .from(usersTable)
-    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, roles)));
-}
-
 /**
- * Pipeline topshirig‘i yaratish.
- * - roles berilsa: har bir faol foydalanuvchiga alohida vazifa
- * - userIds berilsa: faqat shu id lar
- * Bir xil candidate+stage+assignee uchun dublikat ochiq vazifa yaratilmaydi.
+ * Pipeline topshirig‘i yaratish o‘chirilgan.
+ * Nomzod qadamlari Topshiriqlar doskasiga tushmasligi kerak —
+ * faqat Topshiriqlar modulida qo‘lda yaratilgan vazifalar ko‘rinadi.
  */
-export async function createPipelineTasks(opts: {
+export async function createPipelineTasks(_opts: {
   candidateId: number;
   candidateName: string;
   stage: string;
@@ -92,87 +57,7 @@ export async function createPipelineTasks(opts: {
   priority?: string;
   extraNote?: string;
 }): Promise<number[]> {
-  const link = STAGE_LINKS[opts.stage]?.(opts.candidateId) ?? `/candidates/${opts.candidateId}`;
-  const stageTitle = STAGE_TITLES[opts.stage] || opts.stage;
-  const title = `${stageTitle}: ${opts.candidateName}`;
-  const dueAt =
-    opts.dueAt ?? parseDueAt(opts.dueDate, opts.dueTime) ?? null;
-
-  const descriptionParts = [
-    `Nomzod: ${opts.candidateName}`,
-    `Bosqich: ${stageTitle}`,
-    opts.dueDate
-      ? `Muddat: ${opts.dueDate}${opts.dueTime ? ` ${opts.dueTime}` : ""}`
-      : null,
-    opts.extraNote || null,
-    `Havola: ${link}`,
-  ].filter(Boolean);
-
-  let assigneeIds: number[] = [];
-  if (opts.userIds?.length) {
-    assigneeIds = [...new Set(opts.userIds.filter((id) => Number.isFinite(id) && id > 0))];
-  } else if (opts.roles?.length) {
-    const users = await activeUsersByRoles(opts.roles);
-    assigneeIds = users.map((u) => u.id);
-  }
-
-  if (!assigneeIds.length) return [];
-
-  const createdIds: number[] = [];
-  for (const assigneeId of assigneeIds) {
-    const [existing] = await db
-      .select({ id: tasksTable.id })
-      .from(tasksTable)
-      .where(
-        and(
-          eq(tasksTable.candidateId, opts.candidateId),
-          eq(tasksTable.pipelineStage, opts.stage),
-          eq(tasksTable.assigneeKind, "user"),
-          eq(tasksTable.assigneeId, assigneeId),
-          inArray(tasksTable.status, ["todo", "in_progress"]),
-        ),
-      )
-      .limit(1);
-    if (existing) {
-      if (dueAt) {
-        await db
-          .update(tasksTable)
-          .set({ dueAt, updatedAt: new Date(), title, description: descriptionParts.join("\n") })
-          .where(eq(tasksTable.id, existing.id));
-      }
-      createdIds.push(existing.id);
-      continue;
-    }
-
-    const [row] = await db
-      .insert(tasksTable)
-      .values({
-        title,
-        description: descriptionParts.join("\n"),
-        status: "todo",
-        priority: opts.priority || "high",
-        dueAt,
-        assigneeKind: "user",
-        assigneeId,
-        createdById: opts.createdById,
-        candidateId: opts.candidateId,
-        pipelineStage: opts.stage,
-        attachments: [],
-        completionAttachments: [],
-      })
-      .returning({ id: tasksTable.id });
-
-    if (row) {
-      createdIds.push(row.id);
-      await notifyUser({
-        userId: assigneeId,
-        text: `Yangi topshiriq: «${title}»`,
-        type: "task_assigned",
-        linkUrl: "/vazifalar",
-      });
-    }
-  }
-  return createdIds;
+  return [];
 }
 
 export async function assignOfflineInterviewToHrs(opts: {
@@ -191,7 +76,6 @@ export async function assignOfflineInterviewToHrs(opts: {
     dueDate: opts.scheduledDate,
     dueTime: opts.scheduledTime,
     priority: "urgent",
-    extraNote: "Rekruter offline suhbat vaqtini belgiladi. Natijani kiriting.",
   });
 }
 
@@ -211,7 +95,6 @@ export async function assignFinalDecisionToHrs(opts: {
     createdById: opts.createdById,
     roles: [...PIPELINE_HR_ROLES],
     priority: "high",
-    extraNote: "Offline suhbatdan o‘tdi — yakuniy qarorni qabul qiling.",
   });
 }
 
@@ -233,7 +116,6 @@ export async function assignOfferToRecruiter(opts: {
     createdById: opts.createdById,
     userIds: [opts.recruiterId],
     priority: "high",
-    extraNote: "Yakuniy qaror ijobiy — Job Offer yuboring.",
   });
 }
 
@@ -255,7 +137,6 @@ export async function assignDocumentsToRecruiter(opts: {
     createdById: opts.createdById,
     userIds: [opts.recruiterId],
     priority: "high",
-    extraNote: "Offer qabul qilindi — hujjatlarni to‘plang.",
   });
 }
 
@@ -277,7 +158,6 @@ export async function assignInternshipToTrainers(opts: {
       createdById: opts.createdById,
       userIds: [opts.trainerId],
       priority: "high",
-      extraNote: "Stajirovkani boshqaring va baholang.",
     });
     return;
   }
@@ -288,7 +168,6 @@ export async function assignInternshipToTrainers(opts: {
     createdById: opts.createdById,
     roles: ["trainer"],
     priority: "high",
-    extraNote: "Stajirovkani boshqaring va baholang.",
   });
 }
 
@@ -308,7 +187,6 @@ export async function assignHireToHrs(opts: {
     createdById: opts.createdById,
     roles: [...PIPELINE_HR_ROLES],
     priority: "urgent",
-    extraNote: "Stajirovka yakunlandi — ishga qabulni rasmiylashtiring.",
   });
 }
 
@@ -337,4 +215,28 @@ export async function cancelOpenPipelineTasks(candidateId: number): Promise<void
         inArray(tasksTable.status, ["todo", "in_progress"]),
       ),
     );
+}
+
+/** Barcha ochiq nomzod-qadam topshiriqlarini yopish */
+export async function cancelAllOpenPipelineTasks(): Promise<number> {
+  const open = await db
+    .select({ id: tasksTable.id })
+    .from(tasksTable)
+    .where(
+      and(
+        isNotNull(tasksTable.pipelineStage),
+        inArray(tasksTable.status, ["todo", "in_progress"]),
+      ),
+    );
+  if (!open.length) return 0;
+  await db
+    .update(tasksTable)
+    .set({ status: "cancelled", updatedAt: new Date() })
+    .where(
+      inArray(
+        tasksTable.id,
+        open.map((r) => r.id),
+      ),
+    );
+  return open.length;
 }

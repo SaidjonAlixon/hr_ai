@@ -120,7 +120,8 @@ export function canViewFullDavomatDashboard(role?: string | null): boolean {
     r === "hr_direktor" ||
     r === "hr_menejer" ||
     r === "hr" ||
-    r === "hr_kadr_rahbar"
+    r === "hr_kadr_rahbar" ||
+    r === "hr_auditor"
   );
 }
 
@@ -260,15 +261,16 @@ export function canAddDeptStaff(role?: string | null): boolean {
 
 /** Cheklist holati (dashboard, tashriflar, qamrov): admin, direktor, HR, rekruter, auditor */
 export function canViewChecklistStatus(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
   return (
-    role === "admin" ||
-    isDirectorRole(role) ||
-    hasHrOversightNav(role) ||
-    role === "hr_menejer" ||
-    role === "hr" ||
-    role === "hr_auditor" ||
-    role === "recruiter" ||
-    role === "moliya"
+    r === "admin" ||
+    isDirectorRole(r) ||
+    hasHrOversightNav(r) ||
+    r === "hr_menejer" ||
+    r === "hr" ||
+    r === "hr_auditor" ||
+    r === "recruiter" ||
+    r === "moliya"
   );
 }
 

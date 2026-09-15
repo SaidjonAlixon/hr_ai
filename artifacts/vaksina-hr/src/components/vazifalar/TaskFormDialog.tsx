@@ -94,6 +94,7 @@ import {
 } from "@/components/vazifalar/TaskAttachmentViewer";
 import { isTaskOverdue, isAcceptOverdue, acceptDeadlineAt } from "@/lib/vazifalar-permissions";
 import { isOfisWorkplace, isWeekendYmd } from "@/lib/ofis-weekend";
+import { canSetPrivateTaskVisibility } from "@/lib/roles";
 
 const CHAT_PALETTE = [
   "#0b5fff",
@@ -823,6 +824,7 @@ export function TaskFormDialog({
   const { toast } = useToast();
   const sendTaskMessage = useSendTaskMessage();
   const isWork = mode === "work";
+  const canPrivateVisibility = canSetPrivateTaskVisibility(currentUserRole);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const workFileRef = useRef<HTMLInputElement>(null);
@@ -919,7 +921,9 @@ export function TaskFormDialog({
       setReminderEnabled(meta.reminderEnabled ?? true);
       setReminderOffset(meta.reminderOffset || "1d");
       setRecurrence(meta.recurrence || "none");
-      setVisibility(meta.visibility === "private" ? "private" : "all");
+      setVisibility(
+        canPrivateVisibility && meta.visibility === "private" ? "private" : "all",
+      );
       setMessages(Array.isArray(meta.messages) ? meta.messages : []);
       setHistory(
         Array.isArray(meta.history) && meta.history.length
@@ -1238,7 +1242,7 @@ export function TaskFormDialog({
       reminderEnabled,
       reminderOffset,
       recurrence,
-      visibility,
+      visibility: canPrivateVisibility && visibility === "private" ? "private" : "all",
       notes: notes.trim() || undefined,
       verifiedAt: (editing?.meta as TaskMeta | null | undefined)?.verifiedAt,
       messages,
@@ -1283,7 +1287,7 @@ export function TaskFormDialog({
       reminderEnabled,
       reminderOffset,
       recurrence,
-      visibility,
+      visibility: canPrivateVisibility && visibility === "private" ? "private" : "all",
       notes: notes.trim() || undefined,
       verifiedAt: (editing?.meta as TaskMeta | null | undefined)?.verifiedAt,
       messages: nextMessages,
@@ -3076,32 +3080,34 @@ export function TaskFormDialog({
                     {t("tasks.form.vis.all")}
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setVisibility("private")}
-                  className={cn(
-                    "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
-                    visibility === "private"
-                      ? "border-[#0b5fff]/60 bg-[#0b5fff]/8 ring-1 ring-[#0b5fff]/25"
-                      : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900",
-                  )}
-                >
-                  <span
+                {canPrivateVisibility ? (
+                  <button
+                    type="button"
+                    onClick={() => setVisibility("private")}
                     className={cn(
-                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                      "flex w-full items-center gap-3 rounded-xl border px-3 py-2.5 text-left transition",
                       visibility === "private"
-                        ? "border-[#0b5fff] bg-[#0b5fff]"
-                        : "border-slate-300 dark:border-slate-600",
+                        ? "border-[#0b5fff]/60 bg-[#0b5fff]/8 ring-1 ring-[#0b5fff]/25"
+                        : "border-slate-200 bg-white hover:border-slate-300 dark:border-slate-700 dark:bg-slate-900",
                     )}
                   >
-                    {visibility === "private" ? (
-                      <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                    ) : null}
-                  </span>
-                  <span className="text-sm font-medium text-[#0a2540] dark:text-slate-100">
-                    {t("tasks.form.vis.private")}
-                  </span>
-                </button>
+                    <span
+                      className={cn(
+                        "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border-2",
+                        visibility === "private"
+                          ? "border-[#0b5fff] bg-[#0b5fff]"
+                          : "border-slate-300 dark:border-slate-600",
+                      )}
+                    >
+                      {visibility === "private" ? (
+                        <span className="h-1.5 w-1.5 rounded-full bg-white" />
+                      ) : null}
+                    </span>
+                    <span className="text-sm font-medium text-[#0a2540] dark:text-slate-100">
+                      {t("tasks.form.vis.private")}
+                    </span>
+                  </button>
+                ) : null}
               </div>
             </div>
 

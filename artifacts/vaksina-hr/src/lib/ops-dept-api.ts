@@ -29,14 +29,35 @@ export type OpsTicket = {
   branchName: string | null;
   priority: string;
   status: string;
+  createdById: number | null;
   assigneeId: number | null;
-  createdAt?: string;
+  createdByName?: string | null;
+  assigneeName?: string | null;
+  acceptedAt?: string | null;
+  acceptedById?: number | null;
+  acceptedByName?: string | null;
+  completedAt?: string | null;
+  completedById?: number | null;
+  completedByName?: string | null;
+  verifiedAt?: string | null;
+  verifiedById?: number | null;
+  verifiedByName?: string | null;
+  closedAt?: string | null;
+  createdAt?: string | null;
+  updatedAt?: string | null;
 };
 
 export function useOpsMeta(dept: "it" | "texnik") {
   return useQuery({
     queryKey: ["ops", dept, "meta"],
-    queryFn: () => json<any>(`/api/ops-tickets/meta?dept=${dept}`),
+    queryFn: () =>
+      json<{
+        categories: Array<{ value: string; label: string }>;
+        staff: Array<{ id: number; fullName: string }>;
+        canManage: boolean;
+        canCreate: boolean;
+        canViewAll: boolean;
+      }>(`/api/ops-tickets/meta?dept=${dept}`),
   });
 }
 
@@ -47,11 +68,16 @@ export function useOpsDash(dept: "it" | "texnik") {
   });
 }
 
-export function useOpsTickets(dept: "it" | "texnik", status?: string) {
-  const qs = status ? `&status=${encodeURIComponent(status)}` : "";
+export function useOpsTickets(dept: "it" | "texnik", opts?: { status?: string; mine?: boolean }) {
+  const qs = [
+    opts?.status ? `status=${encodeURIComponent(opts.status)}` : "",
+    opts?.mine ? "mine=1" : "",
+  ]
+    .filter(Boolean)
+    .join("&");
   return useQuery({
-    queryKey: ["ops", dept, "list", status],
-    queryFn: () => json<OpsTicket[]>(`/api/ops-tickets?dept=${dept}${qs}`),
+    queryKey: ["ops", dept, "list", opts?.status, opts?.mine],
+    queryFn: () => json<OpsTicket[]>(`/api/ops-tickets?dept=${dept}${qs ? `&${qs}` : ""}`),
   });
 }
 

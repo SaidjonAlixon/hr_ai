@@ -54,7 +54,7 @@ export function DavomatAttendanceBanner() {
   return (
     <div
       className={cn(
-        "border-b px-3 py-2 sm:px-4 sm:py-1.5",
+        "border-b px-3 py-1.5 sm:px-4",
         done
           ? "border-emerald-500/20 bg-emerald-500/10 text-emerald-800 dark:text-emerald-200"
           : urgent
@@ -62,24 +62,24 @@ export function DavomatAttendanceBanner() {
             : "border-sky-500/20 bg-sky-500/10 text-sky-900 dark:text-sky-100",
       )}
     >
-      <div className="mx-auto flex max-w-6xl flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <div className="flex min-w-0 items-start gap-2 text-sm sm:items-center">
+      <div className="mx-auto flex max-w-6xl items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 text-sm">
           {done ? (
-            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 sm:mt-0" />
+            <CheckCircle2 className="h-4 w-4 shrink-0" />
           ) : (
-            <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 sm:mt-0" />
+            <AlertTriangle className="h-4 w-4 shrink-0" />
           )}
-          <p className="min-w-0 leading-snug">
+          <p className="min-w-0 truncate leading-snug">
             <span className="font-semibold">{status.fullName || t("ui.employee")}</span>
-            <span className="mt-0.5 block text-[11px] font-medium opacity-70 sm:mt-0 sm:ml-1.5 sm:inline">
+            <span className="ml-1.5 text-[11px] font-medium opacity-70">
               {t(HOLAT_KEYS[status.nextAction])}
             </span>
-            <span className="mt-0.5 block tabular-nums text-xs opacity-80 sm:ml-1.5 sm:inline">
+            <span className="ml-1.5 hidden tabular-nums text-xs opacity-80 sm:inline">
               {t("banner.checkIn")} {status.checkIn} · {t("banner.checkOut")} {status.checkOut}
             </span>
           </p>
         </div>
-        <Button asChild size="sm" className="h-8 w-full gap-1.5 rounded-lg text-xs sm:h-7 sm:w-auto sm:px-2.5">
+        <Button asChild size="sm" className="h-7 shrink-0 gap-1.5 rounded-lg px-2.5 text-xs">
           <Link href={status.linkUrl || "/davomat-face"}>
             <ScanFace className="h-3.5 w-3.5" />
             {t("banner.davomat")}

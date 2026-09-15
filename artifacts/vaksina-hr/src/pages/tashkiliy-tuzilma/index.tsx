@@ -388,6 +388,25 @@ function orderHrManagers(users: User[]): User[] {
   });
 }
 
+/**
+ * Rekruter yo‘nalishlari:
+ * 1 — Saidmuhammadalixon: Qurbonova Kamola
+ * 2 — Nuraliev Nurislom: Xushboqova Dilnoza
+ */
+function orderRecruitersForLanes(users: User[]): User[] {
+  return [...users].sort((a, b) => {
+    const lane = (u: User) => {
+      const n = u.fullName.toLowerCase();
+      if (n.includes("qurbonova") || n.includes("kamola")) return 0;
+      if (n.includes("xushboqova") || n.includes("dilnoza")) return 1;
+      return 2;
+    };
+    const d = lane(a) - lane(b);
+    if (d !== 0) return d;
+    return a.fullName.localeCompare(b.fullName, "uz");
+  });
+}
+
 function staffHint(role?: string | null) {
   if (role === "intern") return "Stajyor · o‘quv / amaliyot";
   if (role === "supervisor") return "Nazoratchi";
@@ -575,7 +594,7 @@ function buildHrTree(employees: Employee[], users: User[]): OrgNode {
   const direktor = activeUsers(users, "hr_direktor")[0];
   const kadrRahbar = activeUsers(users, "hr_kadr_rahbar")[0];
   const auditor = activeUsers(users, "hr_auditor")[0];
-  const recruiters = activeUsers(users, "recruiter");
+  const recruiters = orderRecruitersForLanes(activeUsers(users, "recruiter"));
   const trainers = activeUsers(users, "trainer");
 
   return {

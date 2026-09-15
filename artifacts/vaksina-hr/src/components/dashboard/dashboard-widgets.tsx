@@ -33,6 +33,107 @@ export function flattenHolatTree(holat?: HolatReport) {
   return { mudirs, pharmacists, interns };
 }
 
+export function WorkHomeHeader({
+  title,
+  name,
+  roleLabel,
+  hint,
+  primaryHref,
+  primaryLabel,
+  primaryIcon: PrimaryIcon,
+}: {
+  title: string;
+  name?: string | null;
+  roleLabel?: string | null;
+  hint?: string;
+  primaryHref?: string;
+  primaryLabel?: string;
+  primaryIcon?: React.ComponentType<{ className?: string }>;
+}) {
+  return (
+    <header className="relative overflow-hidden rounded-2xl border border-[#0B3A5C]/15 bg-gradient-to-br from-[#071E33] via-[#0B3A5C] to-[#145A8A] px-4 py-5 text-white shadow-md sm:px-6 sm:py-6">
+      <div
+        className="pointer-events-none absolute inset-0 opacity-[0.12]"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 12% 20%, #fff 0.6px, transparent 0.7px), radial-gradient(circle at 80% 70%, #fff 0.5px, transparent 0.6px)",
+          backgroundSize: "18px 18px, 22px 22px",
+        }}
+      />
+      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0 space-y-1.5">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-sky-200/90">
+            Mening ishim
+          </p>
+          <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">{title}</h1>
+          <p className="flex flex-wrap items-center gap-2 text-sm text-sky-100/90">
+            {name ? <span className="font-medium text-white">{name}</span> : null}
+            {roleLabel ? (
+              <span className="rounded-full bg-white/15 px-2.5 py-0.5 text-xs font-medium backdrop-blur">
+                {roleLabel}
+              </span>
+            ) : null}
+          </p>
+          {hint ? <p className="max-w-xl text-xs leading-relaxed text-sky-100/75 sm:text-sm">{hint}</p> : null}
+        </div>
+        {primaryHref && primaryLabel ? (
+          <Link href={primaryHref}>
+            <Button
+              type="button"
+              className="h-11 w-full gap-2 bg-white text-[#0B3A5C] hover:bg-sky-50 sm:w-auto"
+            >
+              {PrimaryIcon ? <PrimaryIcon className="h-4 w-4" /> : null}
+              {primaryLabel}
+            </Button>
+          </Link>
+        ) : null}
+      </div>
+    </header>
+  );
+}
+
+export function WorkPanel({
+  title,
+  href,
+  hrefLabel = "Barchasi",
+  children,
+  empty,
+  loading,
+}: {
+  title: string;
+  href?: string;
+  hrefLabel?: string;
+  children?: React.ReactNode;
+  empty?: string;
+  loading?: boolean;
+}) {
+  const hasKids = React.Children.count(children) > 0;
+  return (
+    <section className="overflow-hidden rounded-2xl border bg-card shadow-sm">
+      <div className="flex items-center justify-between gap-2 border-b bg-muted/30 px-4 py-3">
+        <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        {href ? (
+          <Link href={href} className="text-xs font-medium text-[#0B3A5C] hover:underline dark:text-sky-400">
+            {hrefLabel} →
+          </Link>
+        ) : null}
+      </div>
+      <div className="p-3 sm:p-4">
+        {loading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-12 w-full" />
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : hasKids ? (
+          <div className="space-y-2">{children}</div>
+        ) : (
+          <p className="py-8 text-center text-sm text-muted-foreground">{empty || "Hozircha bo‘sh"}</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function DashTile({
   title,
   value,
@@ -60,27 +161,27 @@ export function DashTile({
       type={onClick ? 'button' : undefined}
       onClick={onClick}
       className={cn(
-        'group relative flex min-h-[88px] flex-col justify-between rounded-xl border bg-card p-3 text-left transition',
-        onClick && 'cursor-pointer hover:border-primary/35 hover:shadow-sm active:scale-[0.99] dark:hover:border-sky-400/40 dark:hover:bg-slate-800/80',
-        active && 'border-primary/50 ring-1 ring-primary/15 dark:border-sky-400/50 dark:ring-sky-400/25',
+        'group relative flex min-h-[96px] flex-col justify-between rounded-2xl border bg-card p-3.5 text-left shadow-sm transition',
+        onClick && 'cursor-pointer hover:border-[#0B3A5C]/35 hover:shadow-md active:scale-[0.99] dark:hover:border-sky-400/40',
+        active && 'border-[#0B3A5C]/50 ring-1 ring-[#0B3A5C]/20 dark:border-sky-400/50',
       )}
     >
       <div className="flex items-start justify-between gap-1.5">
-        <span className={cn('rounded-lg p-1.5 shrink-0 dark:bg-white/[0.08] dark:ring-1 dark:ring-inset dark:ring-white/10', accent)}>
-          <Icon className={cn('h-4 w-4 dark:brightness-110', color)} />
+        <span className={cn('rounded-xl p-2 shrink-0 dark:bg-white/[0.08]', accent)}>
+          <Icon className={cn('h-4 w-4', color)} />
         </span>
         {onClick ? (
-          <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition group-hover:text-primary dark:group-hover:text-sky-400" />
+          <ChevronRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground/70 transition group-hover:text-[#0B3A5C]" />
         ) : null}
       </div>
       <div>
-        <p className="text-[11px] font-medium leading-tight text-muted-foreground line-clamp-2">{title}</p>
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground line-clamp-2">{title}</p>
         {loading ? (
-          <Skeleton className="mt-1.5 h-6 w-12" />
+          <Skeleton className="mt-1.5 h-7 w-14" />
         ) : (
-          <p className="mt-0.5 text-xl font-bold tabular-nums text-foreground">{value ?? '—'}</p>
+          <p className="mt-1 text-2xl font-bold tabular-nums tracking-tight text-foreground">{value ?? '—'}</p>
         )}
-        {hint ? <p className="mt-0.5 text-[10px] text-muted-foreground line-clamp-1">{hint}</p> : null}
+        {hint ? <p className="mt-0.5 text-[11px] text-muted-foreground line-clamp-1">{hint}</p> : null}
       </div>
     </Tag>
   );

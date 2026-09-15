@@ -10,10 +10,12 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '../../components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, Sparkles, Loader2 } from 'lucide-react';
 import { Link } from 'wouter';
 import { useToast } from '../../hooks/use-toast';
 import { useI18n } from '../../i18n/I18nProvider';
+import { hireAiFill } from '../../lib/hire-flow';
+import { useAuth } from '../../contexts/AuthContext';
 
 const formSchema = z.object({
   departmentId: z.coerce.number({ required_error: "Bo'limni tanlang" }).min(1, "Bo'limni tanlang"),
@@ -33,8 +35,10 @@ export default function NewRequest() {
   const [, setLocation] = useLocation();
   const { t } = useI18n();
   const { toast } = useToast();
+  const { user } = useAuth();
   const { mutate, isPending } = useCreateRequest();
   const { data: departments, isLoading: deptsLoading } = useGetDepartments();
+  const [aiLoading, setAiLoading] = React.useState(false);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -62,6 +66,36 @@ export default function NewRequest() {
         toast({ title: t('ui.error'), description: t('requests.createFail'), variant: 'destructive' });
       }
     });
+  };
+
+  const runAiFill = async () => {
+    const position = form.getValues('position')?.trim();
+    if (!position) {
+      toast({ title: t('hire.ai.needTitle'), variant: 'destructive' });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const result = await hireAiFill({
+        kind: 'request',
+        position,
+        assigneeId: user?.id,
+        createTasks: true,
+      });
+      form.setValue('description', result.description);
+      form.setValue('requirements', result.requirements);
+      toast({
+        title: t('hire.ai.done'),
+        description: t('hire.ai.doneDesc').replace(
+          '{n}',
+          String(result.createdTaskIds?.length ?? result.tasks?.length ?? 0),
+        ),
+      });
+    } catch (e: any) {
+      toast({ title: t('ui.error'), description: e?.message || t('hire.ai.fail'), variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
   };
 
   return (
@@ -213,6 +247,20 @@ export default function NewRequest() {
               </div>
 
               <div className="space-y-6">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-muted-foreground">{t('hire.ai.cardHint')}</p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    disabled={aiLoading}
+                    onClick={() => void runAiFill()}
+                  >
+                    {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                    {aiLoading ? t('hire.ai.loading') : t('hire.ai.fill')}
+                  </Button>
+                </div>
                 <FormField
                   control={form.control}
                   name="description"

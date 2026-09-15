@@ -16,7 +16,7 @@ import { Link } from "wouter";
 import { Button } from "../../components/ui/button";
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
-import { QrScanDialog, openScanCamera } from "../../components/QrScanDialog";
+import { QrScanDialog, primeQrCamera } from "../../components/QrScanDialog";
 import {
   fetchActiveBranchQr,
   fetchActiveDepartmentQr,
@@ -87,7 +87,6 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   const [scanOpen, setScanOpen] = useState(false);
   const [qrStream, setQrStream] = useState<MediaStream | null>(null);
   const [scanAction, setScanAction] = useState<"in" | "out">("in");
-  const [scanBusy, setScanBusy] = useState(false);
   const [gallery, setGallery] = useState<GalleryQr[]>([]);
   const [galleryLoading, setGalleryLoading] = useState(false);
   const [galleryTick, setGalleryTick] = useState(0);
@@ -458,24 +457,13 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     }
   }
 
-  async function openAdminScanner() {
-    setScanBusy(true);
-    try {
-      const stream = await openScanCamera();
-      setQrStream((prev) => {
-        prev?.getTracks().forEach((t) => t.stop());
-        return stream;
-      });
-      setScanOpen(true);
-    } catch {
-      toast({
-        title: "Kamera",
-        description: "Kameraga ruxsat berilmadi yoki kamera topilmadi",
-        variant: "destructive",
-      });
-    } finally {
-      setScanBusy(false);
-    }
+  useEffect(() => {
+    void primeQrCamera();
+  }, []);
+
+  function openAdminScanner() {
+    setQrStream(null);
+    setScanOpen(true);
   }
 
   async function onAdminScan(detected: string) {
@@ -672,10 +660,9 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                 type="button"
                 size="lg"
                 className="h-11 w-full gap-2 rounded-2xl shadow-sm"
-                disabled={scanBusy}
-                onClick={() => void openAdminScanner()}
+                onClick={() => openAdminScanner()}
               >
-                {scanBusy ? <Loader2 className="h-5 w-5 animate-spin" /> : <ScanLine className="h-5 w-5" />}
+                <ScanLine className="h-5 w-5" />
                 QR scanner — skaner qiling
               </Button>
             </div>

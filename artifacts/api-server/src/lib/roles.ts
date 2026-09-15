@@ -58,6 +58,12 @@ export function isAsoschiRole(role?: string | null): boolean {
   return (role ?? "").trim().toLowerCase() === "asoschi";
 }
 
+/** Maxfiy vazifa — faqat admin, asoschi, direktor, direktor yordamchisi */
+export function canSetPrivateTaskVisibility(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return r === "admin" || isDirectorRole(r) || r === "direktor_yordamchisi";
+}
+
 /** Admin yoki Asoschi — platformadagi barcha imkoniyatlar (100%). */
 export function hasFullPlatformAccess(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();
@@ -85,6 +91,11 @@ export function canManageUsers(role?: string | null): boolean {
 
 /** Foydalanuvchini o‘chirish — faqat admin */
 export function canDeleteUsers(role?: string | null): boolean {
+  return canManageUsers(role);
+}
+
+/** Davomat qo‘lda tahrirlash — faqat admin */
+export function canEditDavomatManual(role?: string | null): boolean {
   return canManageUsers(role);
 }
 

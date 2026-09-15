@@ -10,10 +10,11 @@ import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '../../components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
-import { ArrowLeft, AlertCircle } from 'lucide-react';
+import { ArrowLeft, AlertCircle, Sparkles, Loader2 } from 'lucide-react';
 import { useToast } from '../../hooks/use-toast';
 import { useAuth } from '../../contexts/AuthContext';
 import { isHrManager } from '../../lib/roles';
+import { hireAiFill } from '../../lib/hire-flow';
 import { useI18n } from '../../i18n/I18nProvider';
 
 const formSchema = z.object({
@@ -41,6 +42,7 @@ export default function NewVacancy() {
   const { mutate, isPending } = useCreateVacancy();
   const { data: requests, isLoading: reqsLoading } = useGetRequests({ status: 'accepted' });
   const { data: recruiters, isLoading: recsLoading } = useGetUsers({ role: 'recruiter' });
+  const [aiLoading, setAiLoading] = React.useState(false);
 
   const acceptedRequests = useMemo(
     () => (requests ?? []).filter((r) => r.status === 'accepted'),
@@ -81,6 +83,38 @@ export default function NewVacancy() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [acceptedRequests.length, initialReqId]);
+
+  const runAiFill = async () => {
+    const title = form.getValues('title')?.trim();
+    if (!title) {
+      toast({ title: t('hire.ai.needTitle'), variant: 'destructive' });
+      return;
+    }
+    setAiLoading(true);
+    try {
+      const result = await hireAiFill({
+        kind: 'vacancy',
+        position: title,
+        assigneeId: form.getValues('recruiterId') || user?.id,
+        createTasks: true,
+      });
+      const descParts = [result.description, result.requirements].filter(Boolean);
+      form.setValue('description', descParts.join('\n\n'));
+      if (result.schedule) form.setValue('schedule', result.schedule);
+      if (result.benefits) form.setValue('benefits', result.benefits);
+      toast({
+        title: t('hire.ai.done'),
+        description: t('hire.ai.doneDesc').replace(
+          '{n}',
+          String(result.createdTaskIds?.length ?? result.tasks?.length ?? 0),
+        ),
+      });
+    } catch (e: any) {
+      toast({ title: t('ui.error'), description: e?.message || t('hire.ai.fail'), variant: 'destructive' });
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   if (!canCreate) {
     return (
@@ -307,6 +341,20 @@ export default function NewVacancy() {
                 </div>
 
                 <div className="space-y-6">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-muted-foreground">{t('hire.ai.cardHint')}</p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-1.5"
+                      disabled={aiLoading}
+                      onClick={() => void runAiFill()}
+                    >
+                      {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                      {aiLoading ? t('hire.ai.loading') : t('hire.ai.fill')}
+                    </Button>
+                  </div>
                   <FormField
                     control={form.control}
                     name="description"

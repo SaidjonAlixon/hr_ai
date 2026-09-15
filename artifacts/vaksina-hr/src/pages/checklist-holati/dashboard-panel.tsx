@@ -22,7 +22,6 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { useGetEmployees } from "@workspace/api-client-react";
 import { Progress } from "@/components/ui/progress";
 import { Label } from "@/components/ui/label";
 import {
@@ -34,8 +33,12 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
-import { useBranchAuditsList, type BranchAudit } from "@/lib/branch-audits-api";
-import { buildCoverage } from "./coverage-panel";
+import {
+  useAuditCoverage,
+  useBranchAuditsList,
+  type BranchAudit,
+  type CoverageResponse,
+} from "@/lib/branch-audits-api";
 import { CoordinatorRankingBoard } from "./ranking-panel";
 import { useI18n } from "@/i18n/I18nProvider";
 
@@ -130,27 +133,26 @@ export function ChecklistDashboard({
   const today = tashkentYmd();
 
   const { data: audits = [], isLoading: auditsLoading } = useBranchAuditsList({}, enabled);
-  const { data: employees, isLoading: empLoading } = useGetEmployees(undefined, {
-    query: { enabled },
-  });
-  const isLoading = auditsLoading || empLoading;
-
   const from =
     range === "today" ? today : range === "7d" ? addDaysYmd(today, -6) : range === "30d" ? addDaysYmd(today, -29) : "";
+  const { data: coverageAll, isLoading: covLoading } = useAuditCoverage(
+    { from: from || undefined, to: today },
+    enabled,
+  );
+  const isLoading = auditsLoading || covLoading;
 
   const coordinators = useMemo(() => {
     const map = new Map<string, string>();
+    for (const c of coverageAll?.coordinators ?? []) {
+      const id = String(c.userId ?? c.employeeId);
+      if (!map.has(id)) map.set(id, c.name);
+    }
     for (const a of audits) {
       const id = String(a.coordinatorId);
       if (!map.has(id)) map.set(id, a.coordinatorName || `${t("checklist.coord")} #${id}`);
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
-  }, [audits]);
-
-  const coverageAll = useMemo(() => {
-    if (!employees) return undefined;
-    return buildCoverage(employees as Parameters<typeof buildCoverage>[0], audits, from || undefined, today);
-  }, [employees, audits, from, today]);
+  }, [audits, coverageAll, t]);
 
   const branches = useMemo(() => {
     const map = new Map<string, string>();
@@ -662,9 +664,7 @@ export function ChecklistDashboard({
 
 function computeDashboard(
   audits: BranchAudit[],
-  coverage:
-    | ReturnType<typeof buildCoverage>
-    | undefined,
+  coverage: CoverageResponse | undefined,
 ) {
   const today = tashkentYmd();
   const byDay = Array.from({ length: 14 }, (_, i) => {

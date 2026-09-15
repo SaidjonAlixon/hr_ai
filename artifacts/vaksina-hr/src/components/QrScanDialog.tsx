@@ -8,6 +8,7 @@ import { createPortal } from "react-dom";
 import { Loader2, QrCode, X } from "lucide-react";
 import jsQR from "jsqr";
 import { cn } from "@/lib/utils";
+import { openScanCamera as openCameraFast, warmCamera } from "@/lib/camera-fast";
 
 type Props = {
   open: boolean;
@@ -28,55 +29,11 @@ function getBarcodeDetector(): (new (opts?: { formats: string[] }) => BarcodeDet
 }
 
 export async function openScanCamera(): Promise<MediaStream> {
-  if (!window.isSecureContext) throw new Error("secure_context");
-  if (!navigator.mediaDevices?.getUserMedia) throw new Error("camera_unsupported");
-
-  const attempts: MediaStreamConstraints[] = [
-    { audio: false, video: { facingMode: { exact: "environment" } } },
-    { audio: false, video: { facingMode: "environment" } },
-    { audio: false, video: { facingMode: { ideal: "environment" } } },
-    { audio: false, video: { facingMode: { ideal: "user" } } },
-    { audio: false, video: { facingMode: "user" } },
-    { audio: false, video: true },
-  ];
-
-  let lastErr: unknown;
-  for (const constraints of attempts) {
-    try {
-      return await navigator.mediaDevices.getUserMedia(constraints);
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videos = devices.filter((d) => d.kind === "videoinput");
-    const back =
-      videos.find((d) => /back|rear|environment|orqa|задн/i.test(d.label)) ||
-      videos[videos.length - 1] ||
-      videos[0];
-    if (back?.deviceId) {
-      return await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { deviceId: { exact: back.deviceId } },
-      });
-    }
-  } catch (e) {
-    lastErr = e;
-  }
-
-  throw lastErr || new Error("camera_denied");
+  return openCameraFast();
 }
 
 export async function primeQrCamera(): Promise<boolean> {
-  try {
-    const s = await openScanCamera();
-    s.getTracks().forEach((t) => t.stop());
-    return true;
-  } catch {
-    return false;
-  }
+  return warmCamera("environment");
 }
 
 export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetected, title, description }: Props) {
@@ -85,6 +42,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
   const ownedStreamRef = useRef<MediaStream | null>(null);
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [opening, setOpening] = useState(false);
   const handling = useRef(false);
   const onDetectedRef = useRef(onDetected);
   onDetectedRef.current = onDetected;
@@ -104,6 +62,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       ownedStreamRef.current = null;
       setReady(false);
       setBusy(false);
+      setOpening(false);
       handling.current = false;
       return;
     }
@@ -128,27 +87,33 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
 
     async function start() {
       setReady(false);
+      setOpening(true);
       handling.current = false;
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       if (cancelled) return;
 
       let stream = streamProp && streamProp.active ? streamProp : null;
       if (!stream) {
         try {
-          stream = await openScanCamera();
+          stream = await openCameraFast();
           if (cancelled) {
             stream.getTracks().forEach((t) => t.stop());
             return;
           }
           ownedStreamRef.current = stream;
         } catch {
-          setReady(false);
+          if (!cancelled) {
+            setReady(false);
+            setOpening(false);
+          }
           return;
         }
       }
 
       const ok = await bind(stream);
-      if (!cancelled) setReady(Boolean(ok) || stream.active);
+      if (!cancelled) {
+        setReady(Boolean(ok) || stream.active);
+        setOpening(false);
+      }
     }
 
     void start();
@@ -196,20 +161,20 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
           if (canvas) {
             const ctx = canvas.getContext("2d", { willReadFrequently: true });
             if (!ctx) return;
-            const w = Math.min(v.videoWidth, 720);
+            const w = Math.min(v.videoWidth, 640);
             const h = Math.max(1, Math.round((v.videoHeight / v.videoWidth) * w));
             if (canvas.width !== w) canvas.width = w;
             if (canvas.height !== h) canvas.height = h;
             ctx.drawImage(v, 0, 0, w, h);
             const image = ctx.getImageData(0, 0, w, h);
-            const code = jsQR(image.data, w, h, { inversionAttempts: "attemptBoth" });
+            const code = jsQR(image.data, w, h, { inversionAttempts: "dontInvert" });
             if (code?.data?.trim()) await handleValue(code.data.trim());
           }
         } catch {
           /* skip */
         }
       })();
-    }, 120);
+    }, 90);
 
     return () => {
       cancelled = true;
@@ -218,9 +183,10 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
   }, [open, ready, onOpenChange]);
 
   const onTapCamera = async () => {
+    setOpening(true);
     try {
       ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
-      const stream = await openScanCamera();
+      const stream = await openCameraFast();
       ownedStreamRef.current = stream;
       const video = videoRef.current;
       if (video) {
@@ -232,6 +198,8 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       setReady(true);
     } catch {
       setReady(false);
+    } finally {
+      setOpening(false);
     }
   };
 
@@ -253,7 +221,6 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       />
       <canvas ref={canvasRef} className="hidden" aria-hidden />
 
-      {/* Yuqori panel — sarlavha + yopish */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-30 bg-gradient-to-b from-black/80 via-black/45 to-transparent pb-16 pt-[max(0.75rem,env(safe-area-inset-top))]">
         <div className="pointer-events-auto flex items-start justify-between gap-3 px-4">
           <div className="min-w-0 flex-1 pt-1">
@@ -299,25 +266,31 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
         <button
           type="button"
           aria-label="Camera"
-          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black px-6"
+          className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/70 px-6"
           onClick={() => void onTapCamera()}
+          disabled={opening}
         >
-          <span className="flex h-24 w-24 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/50 animate-pulse">
-            <svg viewBox="0 0 24 24" className="h-11 w-11 text-white" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
-              <circle cx="12" cy="13" r="4" />
-            </svg>
-          </span>
-          <p className="max-w-[16rem] text-center text-base font-semibold text-white">
-            Kamerani yoqish uchun bosing
-          </p>
-          <p className="max-w-[18rem] text-center text-sm text-white/70">
-            Orqa kamera ochiladi · QR kodni skaner qiling
-          </p>
+          {opening ? (
+            <>
+              <Loader2 className="h-12 w-12 animate-spin text-white" />
+              <p className="text-base font-semibold text-white">Kamera ochilmoqda…</p>
+            </>
+          ) : (
+            <>
+              <span className="flex h-24 w-24 items-center justify-center rounded-full bg-white/20 ring-2 ring-white/50 animate-pulse">
+                <svg viewBox="0 0 24 24" className="h-11 w-11 text-white" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+              </span>
+              <p className="max-w-[16rem] text-center text-base font-semibold text-white">
+                Kamerani yoqish uchun bosing
+              </p>
+            </>
+          )}
         </button>
       )}
 
-      {/* Pastki yo‘riqnoma */}
       {ready && !busy ? (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/50 to-transparent pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-16">
           <p className="mx-auto max-w-[20rem] px-4 text-center text-sm font-medium leading-snug text-white">

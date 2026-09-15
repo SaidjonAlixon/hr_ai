@@ -6,6 +6,7 @@ import {
   davomatMiniAppKeyboard,
   escapeHtml,
   isTelegramConfigured,
+  notificationOpenKeyboard,
   sendMessage,
 } from "./telegram";
 import { logger } from "./logger";
@@ -61,10 +62,18 @@ async function pushTelegramToUser(
   if (!user?.telegramId) return;
 
   const reply_markup =
-    linkUrl?.includes("davomat") ? davomatMiniAppKeyboard() : undefined;
+    linkUrl?.includes("davomat")
+      ? davomatMiniAppKeyboard()
+      : notificationOpenKeyboard(linkUrl, "Ochish");
+
+  const body = reply_markup
+    ? escapeHtml(text)
+    : linkUrl
+      ? `${escapeHtml(text)}\n\n🔗 ${escapeHtml(linkUrl)}`
+      : escapeHtml(text);
 
   try {
-    await sendMessage(user.telegramId, escapeHtml(text), {
+    await sendMessage(user.telegramId, body, {
       parse_mode: "HTML",
       reply_markup,
     });
@@ -78,6 +87,7 @@ export async function notifyUser(opts: {
   text: string;
   type: string;
   linkUrl: string;
+  /** Standart: true — Telegram botga yuboriladi (telegramId bog‘langan bo‘lsa) */
   telegram?: boolean;
   /** Standart: true — telefonga Chrome/Safari push */
   webPush?: boolean;
@@ -94,7 +104,8 @@ export async function notifyUser(opts: {
       linkUrl: opts.linkUrl,
     });
   }
-  if (opts.telegram) {
+  // Default: botga ham yuborish
+  if (opts.telegram !== false) {
     await pushTelegramToUser(opts.userId, opts.text, opts.linkUrl);
   }
   if (opts.webPush !== false) {

@@ -14,7 +14,7 @@ import { cancelAllOpenPipelineTasks } from "../lib/pipeline-tasks";
 
 const router: IRouter = Router();
 
-import { HR_ROLES, isDirectorRole, hasFullPlatformAccess } from "../lib/roles";
+import { HR_ROLES, isDirectorRole, hasFullPlatformAccess, canSetPrivateTaskVisibility } from "../lib/roles";
 import { DEPT_HEAD_ROLES } from "../lib/dept-staff";
 
 let pipelineTasksCleaned = false;
@@ -41,6 +41,7 @@ const MANAGER_ROLES = new Set<string>([
   "admin",
   ...HR_ROLES,
   "director", "asoschi",
+  "direktor_yordamchisi",
   ...DEPT_HEAD_ROLES,
   "recruiter",
   "trainer",
@@ -50,13 +51,10 @@ const MANAGER_ROLES = new Set<string>([
   "sb_boshliq",
 ]);
 
-/** «Barcha uchun» — faqat shu rahbarlar (oddiy xodim / bo‘lim boshlig‘i emas) */
-const TASK_ALL_VISIBILITY_ROLES = new Set([
-  "admin",
-  "director", "asoschi",
-  "hr_direktor",
-  "hr_auditor",
-]);
+/** «Barcha topshiriqlar» to‘liq kuzatuv — faqat sof admin */
+function isStrictAdminRole(role?: string | null) {
+  return (role ?? "").trim().toLowerCase() === "admin";
+}
 
 function canAssignTasks(role?: string): boolean {
   return !!role && MANAGER_ROLES.has(role);
@@ -95,9 +93,9 @@ function canApproveTask(row: typeof tasksTable.$inferSelect, userId?: number, ro
   return isCreator(row, userId) || isAdminRole(role) || isDirectorRole(role);
 }
 
-/** To‘liq boshqaruv (o‘chirish va h.k.) — faqat admin */
+/** To‘liq boshqaruv (o‘chirish va h.k.) — faqat sof admin */
 function canAdminTaskOps(role?: string | null) {
-  return isAdminRole(role);
+  return isStrictAdminRole(role);
 }
 
 function startOfDay(d: Date) {
@@ -191,20 +189,13 @@ function denyIfAssigneeOverdue(
 
 /**
  * Ko‘rinish:
- * - admin: hammasi
+ * - sof admin: Maxfiy + oddiy — hammasi (to‘liq kuzatuv)
  * - beruvchi / oluvchi: o‘z vazifasi
- * - private: faqat yuqoridagilar
- * - all: + director, hr_direktor, hr_auditor
+ * - boshqalar: faqat o‘ziga tegishli (asoschi/direktor/HR ham to‘liq doskani ko‘rmaydi)
  */
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
-  if (isAdminRole(role)) return true;
-  if (isCreator(row, userId) || isAssignee(row, userId)) return true;
-  const meta = (row.meta && typeof row.meta === "object" ? row.meta : {}) as Record<
-    string,
-    unknown
-  >;
-  if (meta.visibility === "private") return false;
-  return !!role && TASK_ALL_VISIBILITY_ROLES.has(role);
+  if (isStrictAdminRole(role)) return true;
+  return isCreator(row, userId) || isAssignee(row, userId);
 }
 
 function isAllowedAttachmentUrl(url: string) {
@@ -338,6 +329,17 @@ function sanitizeMeta(raw: unknown): Record<string, unknown> {
   return out;
 }
 
+/** Maxfiy faqat admin / asoschi / direktor / direktor yordamchisi */
+function applyTaskVisibilityPolicy(
+  meta: Record<string, unknown>,
+  role?: string | null,
+): Record<string, unknown> {
+  if (meta.visibility === "private" && !canSetPrivateTaskVisibility(role)) {
+    return { ...meta, visibility: "all" };
+  }
+  return meta;
+}
+
 function sanitizeAttachments(raw: unknown, max = 10): TaskAttachment[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -374,6 +376,42 @@ async function resolveAssigneeName(
     .from(usersTable)
     .where(eq(usersTable.id, assigneeId));
   return row?.fullName ?? null;
+}
+
+/** Bildirishnoma uchun user id (employee → bog‘langan user) */
+async function resolveNotifyUserId(
+  kind: string,
+  assigneeId: number,
+): Promise<number | null> {
+  if (kind === "user") return assigneeId;
+  if (kind === "employee") {
+    const [row] = await db
+      .select({ userId: employeesTable.userId })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, assigneeId))
+      .limit(1);
+    return row?.userId ?? null;
+  }
+  return null;
+}
+
+async function notifyTaskAssignee(opts: {
+  kind: string;
+  assigneeId: number;
+  actorUserId?: number;
+  text: string;
+  linkUrl?: string;
+  type?: string;
+}) {
+  const uid = await resolveNotifyUserId(opts.kind, opts.assigneeId);
+  if (!uid || uid === opts.actorUserId) return;
+  await notifyUser({
+    userId: uid,
+    text: opts.text,
+    type: opts.type || "expired_task",
+    linkUrl: opts.linkUrl || "/vazifalar",
+    title: "Yangi vazifa",
+  });
 }
 
 async function assigneeIsOfisStaff(
@@ -581,20 +619,23 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
   const statusVal = status || "todo";
   const batchId =
     list.length > 1 ? `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : null;
-  const baseMeta = sanitizeMeta(meta);
+  const baseMeta = applyTaskVisibilityPolicy(sanitizeMeta(meta), req.userRole);
   const fileAtt = sanitizeAttachments(attachments);
   const createdRows = [];
 
   for (const a of list) {
-    const rowMeta = sanitizeMeta({
-      ...baseMeta,
-      ...(batchId
-        ? {
-            batchId,
-            batchSize: list.length,
-          }
-        : {}),
-    });
+    const rowMeta = applyTaskVisibilityPolicy(
+      sanitizeMeta({
+        ...baseMeta,
+        ...(batchId
+          ? {
+              batchId,
+              batchSize: list.length,
+            }
+          : {}),
+      }),
+      req.userRole,
+    );
     const [created] = await db
       .insert(tasksTable)
       .values({
@@ -615,12 +656,13 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
       })
       .returning();
 
-    if (a.kind === "user" && a.id !== req.userId) {
-      await notifyUser({
-        userId: a.id,
+    if (a.id) {
+      await notifyTaskAssignee({
+        kind: a.kind,
+        assigneeId: a.id,
+        actorUserId: req.userId,
         text: `Sizga yangi vazifa: «${created.title}» — avval qabul qiling`,
-        type: "expired_task",
-        linkUrl: "/vazifalar",
+        linkUrl: `/vazifalar?task=${created.id}`,
       });
     }
     createdRows.push(created);
@@ -819,7 +861,10 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
       : {};
   let nextMeta: Record<string, unknown> | undefined;
   if (body.meta !== undefined) {
-    nextMeta = sanitizeMeta({ ...prevMeta, ...(body.meta as object) });
+    nextMeta = applyTaskVisibilityPolicy(
+      sanitizeMeta({ ...prevMeta, ...(body.meta as object) }),
+      req.userRole,
+    );
   }
 
   if (body.assigneeKind !== undefined || body.assigneeId !== undefined) {
@@ -887,12 +932,13 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
         updates.acceptedAt = null;
       }
 
-      if (kind === "user" && aid !== req.userId) {
-        await notifyUser({
-          userId: aid,
+      if (kind && aid) {
+        await notifyTaskAssignee({
+          kind,
+          assigneeId: aid,
+          actorUserId: req.userId,
           text: `Sizga vazifa biriktirildi: «${existing.title}» (avval: ${oldName})`,
-          type: "expired_task",
-          linkUrl: "/vazifalar",
+          linkUrl: `/vazifalar?task=${existing.id}`,
         });
       }
       if (
@@ -904,7 +950,20 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
           userId: existing.assigneeId,
           text: `«${existing.title}» boshqa xodimga o‘tkazildi (${name})`,
           type: "stage_change",
-          linkUrl: "/vazifalar",
+          linkUrl: `/vazifalar?task=${existing.id}`,
+          title: "Vazifa o‘zgardi",
+        });
+      } else if (
+        existing.assigneeKind === "employee" &&
+        existing.assigneeId !== aid
+      ) {
+        await notifyTaskAssignee({
+          kind: "employee",
+          assigneeId: existing.assigneeId,
+          actorUserId: req.userId,
+          text: `«${existing.title}» boshqa xodimga o‘tkazildi (${name})`,
+          linkUrl: `/vazifalar?task=${existing.id}`,
+          type: "stage_change",
         });
       }
     }

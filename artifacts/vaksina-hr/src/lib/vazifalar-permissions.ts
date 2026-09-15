@@ -1,13 +1,8 @@
-import { isDirectorRole, hasFullPlatformAccess } from "./roles";
+import { isDirectorRole, hasFullPlatformAccess, normalizeUserRole } from "./roles";
 import type { Vazifa } from "@/lib/vazifalar-api";
 
-/** Barcha xodimlar topshiriqlarini ko‘rish / filtr (O‘zim | Barcha | shaxs) */
-export const TASK_ALL_VISIBILITY_ROLES = new Set([
-  "admin",
-  "director", "asoschi",
-  "hr_direktor",
-  "hr_auditor",
-]);
+/** To‘liq kuzatuv (Maxfiy + oddiy) — faqat sof admin */
+export const TASK_ALL_VISIBILITY_ROLES = new Set(["admin"]);
 
 /** Qabul qilish muddati — yaratilgan (yoki qayta biriktirilgan) vaqtdan */
 export const ACCEPT_DEADLINE_MS: Record<string, number> = {
@@ -99,9 +94,9 @@ export function isTaskDirector(role?: string | null) {
   return isDirectorRole(role);
 }
 
-/** Direktor / admin / HR direktor / HR auditor — barcha topshiriqlarni ko‘rish */
+/** Sof admin — Maxfiy va oddiy barcha topshiriqlarni kuzatadi */
 export function canBrowseAllTasks(role?: string | null) {
-  return !!role && TASK_ALL_VISIBILITY_ROLES.has(role);
+  return normalizeUserRole(role) === "admin";
 }
 
 /**

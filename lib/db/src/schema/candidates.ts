@@ -13,8 +13,8 @@ export const candidatesTable = pgTable("candidates", {
   notes: text("notes"),
   vacancyId: integer("vacancy_id").notNull(),
   recruiterId: integer("recruiter_id"),
-  stage: text("stage").notNull().default("phone_interview"),
-  // phone_interview|online_interview|preboarding|offline_interview|final_decision|offer|internship|hired|rejected
+  /** Soddalashtirilgan: new | in_progress | hired (+ legacy 9-stage qiymatlari) */
+  stage: text("stage").notNull().default("new"),
   status: text("status").notNull().default("active"), // active|rejected|hired
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

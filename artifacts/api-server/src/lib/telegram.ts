@@ -333,3 +333,42 @@ export function davomatMiniAppKeyboard(): { inline_keyboard: InlineKeyboardButto
     inline_keyboard: [[{ text: "📋 Davomat — Face ID", web_app: { url } }]],
   };
 }
+
+/**
+ * Bildirishnoma uchun ochish tugmasi.
+ * linkPath: "/vazifalar" yoki "vazifalar" yoki to‘liq URL.
+ */
+export function notificationOpenKeyboard(
+  linkPath?: string | null,
+  buttonText = "Ochish",
+): { inline_keyboard: InlineKeyboardButton[][] } | undefined {
+  const raw = String(linkPath || "").trim();
+  if (!raw) return undefined;
+
+  if (raw.includes("davomat")) {
+    return davomatMiniAppKeyboard();
+  }
+
+  const base = publicAppUrl();
+  let absolute = raw;
+  if (raw.startsWith("http://") || raw.startsWith("https://")) {
+    absolute = raw;
+  } else if (base) {
+    absolute = `${base}${raw.startsWith("/") ? raw : `/${raw}`}`;
+  } else {
+    return undefined;
+  }
+
+  // Mini App ichida ochish (Telegram)
+  const next = raw.replace(/^\//, "").split("#")[0];
+  const webAppUrl = miniAppEntryUrl({ next: next || "dashboard" });
+  if (webAppUrl) {
+    return {
+      inline_keyboard: [[{ text: buttonText, web_app: { url: webAppUrl } }]],
+    };
+  }
+
+  return {
+    inline_keyboard: [[{ text: buttonText, url: absolute }]],
+  };
+}

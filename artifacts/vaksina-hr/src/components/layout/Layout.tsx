@@ -151,7 +151,6 @@ const NAV_SECTIONS: {
     paths: [
       '/vacancies',
       '/candidates',
-      '/interviews',
       '/internships',
     ],
   },
@@ -250,7 +249,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/eslatmalar')) return '/eslatmalar';
   if (path.startsWith('/chat')) return '/chat';
   if (path.startsWith('/kirish')) return '/kirish';
-  if (path.startsWith('/interviews')) return '/interviews';
+  if (path.startsWith('/interviews')) return '/candidates';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/holat')) return '/admin/holat';
   if (path.startsWith('/admin/faces')) return '/admin/faces';
@@ -267,7 +266,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
     path.includes('final-decision') ||
     path.includes('/offer')
   ) {
-    return '/interviews';
+    return '/candidates';
   }
   if (path.startsWith('/candidates')) return '/candidates';
 
@@ -727,7 +726,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
-  const itNav = { name: 'IT', path: '/it', icon: Cpu };
+  const itNav = { name: 'AyTi', path: '/it', icon: Cpu };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
 
   const taskAnalyticsNav: NavItem = {
@@ -745,6 +744,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   function injectCommonNav(items: NavItem[], role: string): NavItem[] {
     let next = [...items];
+    // AyTi zayavka — barcha rollar (farmasevt, mudir, ofis, ...)
+    if (!next.some((i) => i.path === '/it')) {
+      next = [...next, itNav];
+    }
     if (isLimitedOfficeStaffRole(role)) {
       return next;
     }
@@ -789,9 +792,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const davIdx = next.findIndex((i) => i.path === '/davomat');
         const at = davIdx >= 0 ? davIdx : next.length;
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
-      }
-      if ((hasFullPlatformAccess(user.role) || user.role === 'mudir' || user.role === 'koordinator') && !next.some((i) => i.path === '/it')) {
-        next = [...next, itNav];
       }
       if (canViewDistribyutsiya(role) && !next.some((i) => i.path === '/distribyutsiya')) {
         next = [...next, distribNav];
@@ -845,8 +845,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { name: 'Arizalar', path: '/requests', icon: FileText },
     { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
-    { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
-      { name: 'Xodimlar', path: '/employees', icon: Users },
+    { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
       smenaNav,
@@ -863,14 +862,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     oylikNav,
     hisobNav,
     reviziyaNav,
-    itNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     { name: 'Arizalar', path: '/requests', icon: FileText },
     { name: 'Xodimlar', path: '/employees', icon: Users },
     { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
     { name: 'Nomzodlar', path: '/candidates', icon: Users },
-    { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
     { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     davomatAnalyticsNav,
     davomatFaceNav,
@@ -895,11 +892,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
-      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
       hisobNav,
-      { name: 'IT', path: '/it', icon: Cpu },
+      itNav,
       reviziyaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
@@ -928,11 +924,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
-      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       oylikNav,
       hisobNav,
-      { name: 'IT', path: '/it', icon: Cpu },
+      itNav,
       reviziyaNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatAnalyticsNav,
@@ -962,7 +957,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
-      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
@@ -1002,7 +996,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
-      { name: 'Suhbatlar', path: '/interviews', icon: Calendar },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ],
     mudir: [
@@ -1037,7 +1030,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     it: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'IT', path: '/it', icon: Cpu },
+      itNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1045,9 +1038,27 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
+    it_dasturchi: [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      itNav,
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+    ],
+    it_tarmoq: [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      itNav,
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      orgNav,
+      davomatFaceNav,
+      smenaNav,
+    ],
     it_rahbar: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-      { name: 'IT', path: '/it', icon: Cpu },
+      itNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,

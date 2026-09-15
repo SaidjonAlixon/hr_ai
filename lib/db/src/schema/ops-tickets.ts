@@ -12,10 +12,19 @@ export const opsTicketsTable = pgTable("ops_tickets", {
   branchName: text("branch_name"),
   /** low | normal | high | urgent */
   priority: text("priority").notNull().default("normal"),
-  /** new | assigned | in_progress | waiting_parts | done | closed */
+  /** new | accepted | in_progress | waiting_parts | done | verified | closed */
   status: text("status").notNull().default("new"),
   createdById: integer("created_by_id"),
   assigneeId: integer("assignee_id"),
+  /** AyTi qabul qilgan vaqt */
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  acceptedById: integer("accepted_by_id"),
+  /** AyTi bajargan vaqt */
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  completedById: integer("completed_by_id"),
+  /** Ariza egasi tasdiqlagan vaqt */
+  verifiedAt: timestamp("verified_at", { withTimezone: true }),
+  verifiedById: integer("verified_by_id"),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

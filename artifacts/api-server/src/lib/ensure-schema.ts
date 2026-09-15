@@ -697,12 +697,24 @@ CREATE TABLE IF NOT EXISTS ops_tickets (
   status TEXT NOT NULL DEFAULT 'new',
   created_by_id INTEGER,
   assignee_id INTEGER,
+  accepted_at TIMESTAMPTZ,
+  accepted_by_id INTEGER,
+  completed_at TIMESTAMPTZ,
+  completed_by_id INTEGER,
+  verified_at TIMESTAMPTZ,
+  verified_by_id INTEGER,
   closed_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS ops_tickets_dept_idx ON ops_tickets (dept);
 CREATE INDEX IF NOT EXISTS ops_tickets_status_idx ON ops_tickets (status);
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS accepted_by_id INTEGER;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS completed_by_id INTEGER;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verified_by_id INTEGER;
 
 CREATE TABLE IF NOT EXISTS department_job_titles (
   id SERIAL PRIMARY KEY,

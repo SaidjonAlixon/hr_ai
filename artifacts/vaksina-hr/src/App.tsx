@@ -20,16 +20,7 @@ import VacancyDetails from './pages/vacancies/show';
 import CandidatesList from './pages/candidates/index';
 import NewCandidate from './pages/candidates/new';
 import CandidateProfile from './pages/candidates/show';
-import OnlineInterviewPage from './pages/candidates/online-interview';
-import PhoneInterviewPage from './pages/candidates/phone-interview';
-import PreboardingPage from './pages/candidates/preboarding';
-import OfflineInterviewPage from './pages/candidates/offline-interview';
-import FinalDecisionPage from './pages/candidates/final-decision';
-import OfferPage from './pages/candidates/offer';
-import DocumentsPage from './pages/candidates/documents';
-import InternshipPage from './pages/candidates/internship';
 import InternshipsPage from './pages/internships/index';
-import InterviewsList from './pages/interviews/index';
 import PharmacyNetworkPage from './pages/pharmacy-network/index';
 import TashkiliyTuzilmaPage from './pages/tashkiliy-tuzilma/index';
 import VazifalarPage from './pages/vazifalar/index';
@@ -126,17 +117,35 @@ function Router() {
       
       <ProtectedRoute path="/candidates" component={CandidatesList} />
       <ProtectedRoute path="/candidates/new" component={NewCandidate} />
-      <ProtectedRoute path="/candidates/:id/phone-interview" component={PhoneInterviewPage} />
-      <ProtectedRoute path="/candidates/:id/online-interview" component={OnlineInterviewPage} />
-      <ProtectedRoute path="/candidates/:id/preboarding" component={PreboardingPage} />
-      <ProtectedRoute path="/candidates/:id/offline-interview" component={OfflineInterviewPage} />
-      <ProtectedRoute path="/candidates/:id/final-decision" component={FinalDecisionPage} />
-      <ProtectedRoute path="/candidates/:id/offer" component={OfferPage} />
-      <ProtectedRoute path="/candidates/:id/documents" component={DocumentsPage} />
-      <ProtectedRoute path="/candidates/:id/internship" component={InternshipPage} />
+      <Route path="/candidates/:id/phone-interview">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
+      <Route path="/candidates/:id/online-interview">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
+      <Route path="/candidates/:id/preboarding">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
+      <Route path="/candidates/:id/offline-interview">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
+      <Route path="/candidates/:id/final-decision">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
+      <Route path="/candidates/:id/offer">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
+      <Route path="/candidates/:id/documents">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
+      <Route path="/candidates/:id/internship">
+        {(params) => <Redirect to={`/candidates/${params.id}`} />}
+      </Route>
       <ProtectedRoute path="/candidates/:id" component={CandidateProfile} />
       
-      <ProtectedRoute path="/interviews" component={InterviewsList} />
+      <Route path="/interviews">
+        <Redirect to="/candidates" />
+      </Route>
       <Route path="/pipeline">
         <Redirect to="/candidates" />
       </Route>

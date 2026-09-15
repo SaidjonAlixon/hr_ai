@@ -56,7 +56,7 @@ import {
 import { downloadDavomatPdf } from "../../lib/davomat-pdf-export";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
-import { canViewDavomat } from "../../lib/roles";
+import { canEditDavomatManual, canViewDavomat } from "../../lib/roles";
 import {
   type DavomatStaffFilter,
   matchesStaffFilter,
@@ -288,6 +288,7 @@ export default function DavomatPage() {
   const { t } = useI18n();
   const { toast } = useToast();
   const allowed = canViewDavomat(user?.role);
+  const canEdit = canEditDavomatManual(user?.role);
 
   const [section, setSection] = useState<Section>("schedule");
   const [calMode, setCalMode] = useState<CalMode>("day");
@@ -667,6 +668,7 @@ export default function DavomatPage() {
   };
 
   const openEdit = (emp: DavomatEmployee, workDate: string) => {
+    if (!canEdit) return;
     const day = emp.days.find((d) => d.date === workDate);
     setEdit({
       employeeId: emp.id,
@@ -680,7 +682,7 @@ export default function DavomatPage() {
   };
 
   const saveEdit = async () => {
-    if (!edit) return;
+    if (!edit || !canEdit) return;
     setSaving(true);
     try {
       await saveDavomatManual({
@@ -1427,14 +1429,14 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">Ketish</th>
                         <th className="px-3 py-2">Ishlagan</th>
                         <TimingHeaderCells workStart={activeWorkHours.start} workEnd={activeWorkHours.end} />
-                        <th className="px-3 py-2 w-10" />
+                        {canEdit ? <th className="px-3 py-2 w-10" /> : null}
                       </tr>
                     </thead>
                     <tbody>
                       {visibleEmployeesForDay.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={staffFilter === "all" ? 12 : 11}
+                            colSpan={staffFilter === "all" ? (canEdit ? 12 : 11) : canEdit ? 11 : 10}
                             className="px-3 py-10 text-center text-sm text-muted-foreground"
                           >
                             Tanlangan holat bo‘yicha xodim topilmadi
@@ -1485,17 +1487,19 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                             <TimeMetric value={day!.overtimeLabel} />
                           </td>
-                          <td className="px-3 py-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-8 w-8 p-0"
-                              onClick={() => openEdit(emp, selectedDay)}
-                            >
-                              <Pencil className="h-3.5 w-3.5" />
-                            </Button>
-                          </td>
+                          {canEdit ? (
+                            <td className="px-3 py-2">
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0"
+                                onClick={() => openEdit(emp, selectedDay)}
+                              >
+                                <Pencil className="h-3.5 w-3.5" />
+                              </Button>
+                            </td>
+                          ) : null}
                         </tr>
                       ))}
                     </tbody>
@@ -1511,6 +1515,7 @@ export default function DavomatPage() {
                 employees={filteredEmployees}
                 employeeCount={filteredEmployees.length}
                 staffFilter={staffFilter}
+                canEdit={canEdit}
                 onEdit={openEdit}
               />
             )
@@ -1626,7 +1631,7 @@ export default function DavomatPage() {
                           Ishlagan
                         </th>
                           <TimingHeaderCells workStart={detailWorkHours.start} workEnd={detailWorkHours.end} />
-                          <th className="px-3 py-2 w-10" />
+                          {canEdit ? <th className="px-3 py-2 w-10" /> : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -1651,17 +1656,19 @@ export default function DavomatPage() {
                             <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                               <TimeMetric value={d.overtimeLabel} />
                             </td>
-                            <td className="px-3 py-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 w-8 p-0"
-                                onClick={() => openEdit(detailEmployee, d.date)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
-                            </td>
+                            {canEdit ? (
+                              <td className="px-3 py-2">
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => openEdit(detailEmployee, d.date)}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                              </td>
+                            ) : null}
                           </tr>
                         ))}
                       </tbody>
@@ -1674,7 +1681,7 @@ export default function DavomatPage() {
         </TabsContent>
       </Tabs>
 
-      <Dialog open={Boolean(edit)} onOpenChange={(o) => !o && setEdit(null)}>
+      <Dialog open={Boolean(edit) && canEdit} onOpenChange={(o) => !o && setEdit(null)}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{t("davomat.editTitle")}</DialogTitle>
@@ -1783,6 +1790,7 @@ function PeriodAttendanceGrid({
   employees,
   employeeCount,
   staffFilter,
+  canEdit,
   onEdit,
 }: {
   title: string;
@@ -1791,6 +1799,7 @@ function PeriodAttendanceGrid({
   employees: DavomatEmployee[];
   employeeCount: number;
   staffFilter: DavomatStaffFilter;
+  canEdit: boolean;
   onEdit: (emp: DavomatEmployee, date: string) => void;
 }) {
   const { t } = useI18n();
@@ -1897,7 +1906,8 @@ function PeriodAttendanceGrid({
         <CardTitle className="text-base text-[#0b3a5c] dark:text-sky-300">{title}</CardTitle>
         <p className="mt-1 text-xs text-muted-foreground">{subtitle}</p>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Katakka bosing — tahrirlash · {employeeCount} xodim
+          {canEdit ? "Katakka bosing — tahrirlash · " : ""}
+          {employeeCount} xodim
           {staffFilter !== "all" ? ` · ${staffFilterLabel(staffFilter)}` : ""}
           {dates.length ? ` · ${dates.length} kun` : ""}
         </p>
@@ -2007,7 +2017,7 @@ function PeriodAttendanceGrid({
                                   ? { start: emp.workStart, end: emp.workEnd }
                                   : undefined
                               }
-                              onClick={() => onEdit(emp, date)}
+                              onClick={canEdit ? () => onEdit(emp, date) : undefined}
                             />
                           </td>
                         );
@@ -2064,7 +2074,7 @@ function WeekCell({
   hours,
 }: {
   day?: DavomatDayMetrics;
-  onClick: () => void;
+  onClick?: () => void;
   hours?: { start: string; end: string };
 }) {
   const { t } = useI18n();
@@ -2079,16 +2089,21 @@ function WeekCell({
     status !== "rest" &&
     (hasIn || hasOut || status === "incomplete");
   const subline = day ? weekCellSublineParts(day) : null;
+  const interactive = Boolean(onClick);
 
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={!interactive}
       className={cn(
-        "mx-auto flex h-[62px] w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20",
+        "mx-auto flex h-[62px] w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium",
+        interactive
+          ? "transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20"
+          : "cursor-default",
         STATUS_STYLE[status] || "bg-muted",
       )}
-      title={day ? dayCellTooltip(day, hours, t) : t("ui.edit")}
+      title={day ? dayCellTooltip(day, hours, t) : interactive ? t("ui.edit") : undefined}
     >
       <span className="w-full whitespace-nowrap text-center text-[10px] font-bold leading-none">
         {statusLabel}

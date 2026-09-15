@@ -14,7 +14,13 @@ import {
   employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canViewDavomat, isDirectorRole, hasFullPlatformAccess, canViewFullDavomatDashboard } from "../lib/roles";
+import {
+  canViewDavomat,
+  canEditDavomatManual,
+  isDirectorRole,
+  hasFullPlatformAccess,
+  canViewFullDavomatDashboard,
+} from "../lib/roles";
 import { getActorDepartmentId, resolveDeptHeadContext, isDeptHeadRole } from "../lib/dept-staff";
 import {
   matchesDavomatStaffFilter,
@@ -966,6 +972,10 @@ router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise
 /** HR: qo‘lda kelish/ketish yozish yoki tahrirlash */
 router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
+  if (!canEditDavomatManual(req.userRole)) {
+    res.status(403).json({ error: "Davomatni qo‘lda tahrirlash faqat admin uchun" });
+    return;
+  }
   try {
     const {
       employeeId,

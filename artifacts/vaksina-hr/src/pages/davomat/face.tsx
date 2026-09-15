@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FaceScanDialog } from "@/components/FaceScanDialog";
-import { QrScanDialog, openScanCamera } from "@/components/QrScanDialog";
+import { QrScanDialog, primeQrCamera } from "@/components/QrScanDialog";
 import { DavomatPremiumView, type PremiumMethod } from "@/components/davomat/DavomatPremiumView";
 import {
   DavomatCoachFinger,
@@ -39,6 +39,7 @@ import {
 } from "@/components/davomat/DavomatCoachFinger";
 import { useToast } from "@/hooks/use-toast";
 import { compressFaceSnapshotAsync, enrollFace, fetchFaceIdStatus, isFaceIdSupported, preloadFaceModels } from "@/lib/face-id";
+import { warmCamera } from "@/lib/camera-fast";
 import { deviceHeadingFromOrientation } from "@/lib/device-compass";
 import {
   DAVOMAT_GEOFENCE_METERS,
@@ -928,9 +929,13 @@ export default function DavomatFacePage() {
     void fetchDavomatSite().then(setSite);
   }, []);
 
-  /** Face ID modelini fonida yuklash — skan ochilganda kutish bo‘lmasin */
+  /** Face ID model + kamera keshini fonida isitish — skan ochilganda kutish bo‘lmasin */
   useEffect(() => {
     preloadFaceModels();
+    void warmCamera("user").then((ok) => {
+      if (ok) setCameraGranted(true);
+    });
+    void primeQrCamera();
   }, []);
 
   useEffect(() => {
@@ -1374,29 +1379,9 @@ export default function DavomatFacePage() {
     setMethodHint(null);
     setScanOpen(false);
     setEnrollOpen(false);
-    void (async () => {
-      try {
-        const stream = await openScanCamera();
-        setCameraGranted(true);
-        setQrStream((prev) => {
-          prev?.getTracks().forEach((t) => t.stop());
-          return stream;
-        });
-        setQrOpen(true);
-      } catch (e) {
-        const name = e instanceof DOMException ? e.name : "";
-        const msg =
-          name === "NotFoundError" || name === "DevicesNotFoundError"
-            ? t("davomat.permsCamMissing")
-            : t("davomat.permsCamDenied");
-        setCameraGranted(false);
-        toast({
-          title: t("davomat.permsCamBlockedTitle"),
-          description: msg,
-          variant: "destructive",
-        });
-      }
-    })();
+    // Dialog darhol — kamera ichida ochiladi (ketma-ket getUserMedia kutmasin)
+    setQrStream(null);
+    setQrOpen(true);
   }, [canOpenQr, busy, faceVerifiedReady, cameraGranted, toast, t]);
 
   const guideStep = useMemo((): GuideStep => {

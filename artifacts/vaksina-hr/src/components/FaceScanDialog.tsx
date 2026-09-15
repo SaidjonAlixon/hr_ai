@@ -24,6 +24,7 @@ import {
   type FaceOvalFrame,
   type FacePose,
 } from "@/lib/face-id";
+import { openFaceCamera } from "@/lib/camera-fast";
 import { cn } from "@/lib/utils";
 
 type CaptureResult = { fullName?: string } | void;
@@ -197,17 +198,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         return;
       }
       try {
-        // Kamerani darhol ochamiz; model fonida (yoki allaqachon) yuklanadi
+        // Model + challenge + kamera parallel — UI darhol ochiladi
         const modelsP = ensureFaceModels();
+        const challengeP = fetchFaceChallenge(mode).catch(() => null);
         setHint(tRef.current("davomat.scanCamOpening"));
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: false,
-          video: {
-            facingMode: { ideal: "user" },
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-          },
-        });
+        const stream = await openFaceCamera();
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
           return;
@@ -219,19 +214,37 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           return;
         }
         video.srcObject = stream;
-        await video.play();
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute("playsinline", "true");
+        await video.play().catch(() => undefined);
         if (!isFaceModelsReady()) {
           setHint(tRef.current("davomat.scanModelLoading"));
         }
+
         await modelsP;
         if (cancelled) return;
-        setHint(tRef.current("davomat.scanPrep"));
-        const issued = await fetchFaceChallenge(mode);
+
+        const issued = await Promise.race([
+          challengeP,
+          new Promise<null>((r) => window.setTimeout(() => r(null), 800)),
+        ]);
         if (cancelled) return;
-        steps = issued.steps?.length ? issued.steps : steps;
-        challengeToken = issued.token;
-        poseBuckets = steps.map(() => []);
-        setLiveSteps(steps);
+        if (issued?.steps?.length) {
+          steps = issued.steps;
+          challengeToken = issued.token;
+          poseBuckets = steps.map(() => []);
+          setLiveSteps(steps);
+        } else {
+          void challengeP.then((late) => {
+            if (cancelled || !late?.steps?.length || poseI > 0) return;
+            steps = late.steps;
+            challengeToken = late.token;
+            poseBuckets = steps.map(() => []);
+            setLiveSteps(steps);
+            setHint(stepHint(tRef.current, steps[0]!));
+          });
+        }
         setHint(stepHint(tRef.current, steps[0]!));
 
         const finish = async (videoEl: HTMLVideoElement) => {

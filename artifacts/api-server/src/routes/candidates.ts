@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { eq, and, ilike } from "drizzle-orm";
+import { eq, and, ilike, ne, or } from "drizzle-orm";
 import { db, candidatesTable, vacanciesTable, usersTable, notificationsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
@@ -55,12 +55,27 @@ async function getCandidateFull(id: number) {
 }
 
 router.get("/candidates", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const { vacancyId, stage, status, recruiterId, search } = req.query as Record<string, string>;
+  const { vacancyId, stage, status, recruiterId, search, flow } = req.query as Record<string, string>;
 
   const conditions = [];
   if (vacancyId) conditions.push(eq(candidatesTable.vacancyId, parseInt(vacancyId, 10)));
-  if (stage) conditions.push(eq(candidatesTable.stage, stage));
-  if (status) conditions.push(eq(candidatesTable.status, status));
+  if (flow === "yangi") {
+    conditions.push(eq(candidatesTable.status, "active"));
+    conditions.push(eq(candidatesTable.stage, "new"));
+  } else if (flow === "jarayonda") {
+    conditions.push(eq(candidatesTable.status, "active"));
+    conditions.push(ne(candidatesTable.stage, "new"));
+    conditions.push(ne(candidatesTable.stage, "hired"));
+  } else if (flow === "qabul") {
+    conditions.push(
+      or(eq(candidatesTable.status, "hired"), eq(candidatesTable.stage, "hired"))!,
+    );
+  } else if (flow === "rad") {
+    conditions.push(eq(candidatesTable.status, "rejected"));
+  } else {
+    if (stage) conditions.push(eq(candidatesTable.stage, stage));
+    if (status) conditions.push(eq(candidatesTable.status, status));
+  }
   if (search) conditions.push(ilike(candidatesTable.fullName, `%${search}%`));
 
   // Rekruter faqat o'ziga biriktirilgan nomzodlarni ko'radi
@@ -120,7 +135,7 @@ router.post("/candidates", async (req, res): Promise<void> => {
       expectedSalary: expectedSalary ?? null,
       notes: notes ?? null,
       recruiterId: recruiterId ? parseInt(recruiterId, 10) : null,
-      stage: "phone_interview",
+      stage: "new",
       status: "active",
     })
     .returning();
@@ -142,7 +157,14 @@ router.get("/candidates/:id", requireAuth, async (req: AuthRequest, res): Promis
 router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const [existing] = await db
-    .select({ id: candidatesTable.id, recruiterId: candidatesTable.recruiterId, fullName: candidatesTable.fullName })
+    .select({
+      id: candidatesTable.id,
+      recruiterId: candidatesTable.recruiterId,
+      fullName: candidatesTable.fullName,
+      stage: candidatesTable.stage,
+      status: candidatesTable.status,
+      notes: candidatesTable.notes,
+    })
     .from(candidatesTable)
     .where(eq(candidatesTable.id, id));
   if (!existing) {
@@ -191,6 +213,28 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
     }
   }
 
+  // Soddalashtirilgan holat: decisionNote → notes oxiriga
+  const decisionNote = typeof req.body?.decisionNote === "string" ? req.body.decisionNote.trim() : "";
+  if (decisionNote && (updates.status === "rejected" || updates.status === "hired" || updates.stage === "hired")) {
+    const prev = String(updates.notes ?? existing.notes ?? "").trim();
+    const stamp = new Date().toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+    const label = updates.status === "rejected" ? "Rad izohi" : "Qabul izohi";
+    updates.notes = prev ? `${prev}\n\n[${stamp}] ${label}: ${decisionNote}` : `[${stamp}] ${label}: ${decisionNote}`;
+  }
+
+  if (updates.stage === "in_progress" && !updates.status) {
+    updates.status = "active";
+  }
+  if (updates.stage === "hired") {
+    updates.status = "hired";
+  }
+  if (updates.status === "hired" && !updates.stage) {
+    updates.stage = "hired";
+  }
+  if (updates.status === "rejected") {
+    // stage saqlanadi (qayerda rad etilgani)
+  }
+
   if (Object.keys(updates).length === 0) {
     res.json(await getCandidateFull(id));
     return;
@@ -205,7 +249,7 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
   ) {
     await db.insert(notificationsTable).values({
       userId: updates.recruiterId,
-      text: `Sizga nomzod biriktirildi: "${existing.fullName}". Suhbatni olib borishingiz mumkin.`,
+      text: `Sizga nomzod biriktirildi: "${existing.fullName}". Jarayonni davom ettiring.`,
       type: "stage_change",
       linkUrl: `/candidates/${id}`,
     });

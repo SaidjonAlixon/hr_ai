@@ -87,8 +87,16 @@ async function miniAuth(
 }
 
 function redirectAfterLogin(user: User, next: string | null, setLocation: (path: string) => void) {
-  const clean =
-    next === "davomat-face" ? "/davomat-face?tg=1" : user.role === "stajyor" ? "/kirish" : "/dashboard";
+  let clean: string;
+  if (next === "davomat-face" || next === "davomat-face?tg=1") {
+    clean = "/davomat-face?tg=1";
+  } else if (next && /^[a-zA-Z0-9/_?=&.%-]+$/.test(next) && !next.includes("..")) {
+    clean = next.startsWith("/") ? next : `/${next}`;
+  } else if (user.role === "stajyor") {
+    clean = "/kirish";
+  } else {
+    clean = "/dashboard";
+  }
   window.history.replaceState({}, "", clean);
   setLocation(clean);
 }

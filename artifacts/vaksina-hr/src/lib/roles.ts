@@ -53,6 +53,29 @@ export function isTexnikRole(_role?: string | null): boolean {
   return false;
 }
 
+/** AyTi / Texnik ops arizalari — zayavka (barcha rollar) */
+export function canCreateOpsTicket(dept: "it" | "texnik", role?: string | null): boolean {
+  if (!role) return false;
+  return dept === "it";
+}
+
+/** Sahifani ochish: zayavka yozish / o‘z arizalarini ko‘rish */
+export function canViewOpsDept(dept: "it" | "texnik", role?: string | null): boolean {
+  return canCreateOpsTicket(dept, role);
+}
+
+/** AyTi ariza holati / qabul / bajarish — AyTi xodimi, admin, asoschi, direktor */
+export function canManageOpsDept(dept: "it" | "texnik", role?: string | null): boolean {
+  if (dept !== "it") return false;
+  if (hasFullPlatformAccess(role) || isDirectorRole(role)) return true;
+  return isItRole(role);
+}
+
+/** Barcha arizalar doskasi */
+export function canViewAllOpsTickets(dept: "it" | "texnik", role?: string | null): boolean {
+  return canManageOpsDept(dept, role);
+}
+
 export function canViewReviziya(role?: string | null): boolean {
   return (
     isReviziyaRole(role) ||
@@ -74,6 +97,12 @@ export function isDirectorRole(role?: string | null): boolean {
 
 export function isAsoschiRole(role?: string | null): boolean {
   return normalizeUserRole(role) === "asoschi";
+}
+
+/** Maxfiy vazifa — faqat admin, asoschi, direktor, direktor yordamchisi */
+export function canSetPrivateTaskVisibility(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return r === "admin" || isDirectorRole(r) || r === "direktor_yordamchisi";
 }
 
 /**
@@ -133,6 +162,11 @@ export function canViewDavomat(role?: string | null): boolean {
     isSbRole(role) ||
     isDeptHeadRole(role)
   );
+}
+
+/** Davomat qo‘lda tahrirlash — faqat admin */
+export function canEditDavomatManual(role?: string | null): boolean {
+  return normalizeUserRole(role) === "admin";
 }
 
 /** Xodimlar — to‘liq (barcha ofis bo‘limlari): admin, direktor, HR, SB */

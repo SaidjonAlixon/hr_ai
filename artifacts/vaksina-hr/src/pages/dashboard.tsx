@@ -32,6 +32,7 @@ import {
   Calculator,
   Cpu,
   Wrench,
+  Fingerprint,
 } from 'lucide-react';
 import { Badge } from '../components/ui/badge';
 import { Skeleton } from '../components/ui/skeleton';
@@ -66,6 +67,8 @@ import {
   ReminderListRows,
   StaffingAlertRows,
   TaskListRows,
+  WorkHomeHeader,
+  WorkPanel,
 } from '../components/dashboard/dashboard-widgets';
 
 const OPEN_STATUSES = new Set(['submitted', 'reviewing', 'accepted', 'announced']);
@@ -169,6 +172,113 @@ function dashKindFor(role?: string | null): DashKind {
       return 'intern';
     default:
       return 'ops';
+  }
+}
+
+function workHomeMeta(kind: DashKind, role?: string | null): {
+  title: string;
+  hint: string;
+  primaryHref?: string;
+  primaryLabel?: string;
+  primaryIcon?: React.ComponentType<{ className?: string }>;
+} {
+  switch (kind) {
+    case 'pharmacy_staff':
+      return {
+        title: 'Bugungi smena',
+        hint: 'Davomat, topshiriqlar, filial reytingi va oylik — shu yerda.',
+        primaryHref: '/davomat-face',
+        primaryLabel: 'Davomat (Face ID)',
+        primaryIcon: Fingerprint,
+      };
+    case 'pharmacy':
+      return role === 'koordinator'
+        ? {
+            title: 'Filiallar nazorati',
+            hint: 'Mudirlar, cheklist, ehtiyoj va kadr ogohlantirishlari.',
+            primaryHref: '/checklist',
+            primaryLabel: 'Cheklist',
+            primaryIcon: ClipboardCheck,
+          }
+        : {
+            title: 'Mening filialim',
+            hint: 'Jamoa, ehtiyoj, topshiriqlar va kadr holati.',
+            primaryHref: '/pharmacy-network',
+            primaryLabel: 'Filial',
+            primaryIcon: Store,
+          };
+    case 'recruitment':
+      return {
+        title: 'Ishga olish',
+        hint: 'Nomzodlar, ish o‘rinlari va ochiq arizalar — kundalik ishingiz.',
+        primaryHref: '/candidates',
+        primaryLabel: 'Nomzodlar',
+        primaryIcon: Users,
+      };
+    case 'trainer':
+      return {
+        title: 'O‘qitish',
+        hint: 'Stajirovkalar va topshiriqlar.',
+        primaryHref: '/internships',
+        primaryLabel: 'Stajirovkalar',
+        primaryIcon: GraduationCap,
+      };
+    case 'security':
+      return {
+        title: 'Xavfsizlik',
+        hint: 'Davomat, xodimlar va eskalatsiya.',
+        primaryHref: '/davomat',
+        primaryLabel: 'Davomat',
+        primaryIcon: ClipboardCheck,
+      };
+    case 'finance':
+      return {
+        title: 'Moliya',
+        hint: 'Hisob-kitob, oylik va KPI.',
+        primaryHref: '/hisobkitob',
+        primaryLabel: 'Hisob-kitob',
+        primaryIcon: Calculator,
+      };
+    case 'revision':
+      return {
+        title: 'Reviziya',
+        hint: 'Filial qoldig‘i va yo‘ldagi pul.',
+        primaryHref: '/reviziya',
+        primaryLabel: 'Reviziya',
+        primaryIcon: ClipboardCheck,
+      };
+    case 'it':
+      return {
+        title: 'AyTi',
+        hint: 'Arizalar va topshiriqlar.',
+        primaryHref: '/it',
+        primaryLabel: 'AyTi',
+        primaryIcon: Cpu,
+      };
+    case 'tech':
+      return {
+        title: 'Texnik xizmat',
+        hint: 'Ta’mir arizalari va filial ehtiyoji.',
+        primaryHref: '/texnik',
+        primaryLabel: 'Texnik',
+        primaryIcon: Wrench,
+      };
+    case 'department':
+      return {
+        title: 'Bo‘lim ishi',
+        hint: 'Arizalar, nomzodlar va jamoa topshiriqlari.',
+        primaryHref: '/requests',
+        primaryLabel: 'Arizalar',
+        primaryIcon: FileText,
+      };
+    default:
+      return {
+        title: 'Mening ishim',
+        hint: 'Sizga biriktirilgan topshiriqlar va eslatmalar.',
+        primaryHref: '/vazifalar',
+        primaryLabel: 'Topshiriqlar',
+        primaryIcon: ListTodo,
+      };
   }
 }
 
@@ -347,6 +457,7 @@ export default function Dashboard() {
   }
 
   const subtitle = ROLE_LABELS[role || ''] || role;
+  const home = workHomeMeta(kind, role);
 
   const detailDialog = (
     <DashDetailDialog
@@ -513,23 +624,18 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-5">
-      <div className="page-hero">
-        <div className="min-w-0 flex-1">
-          <h1 className="page-hero-title">{t('dashboard.title')}</h1>
-          <p className="text-muted-foreground mt-1 text-sm break-words dark:text-slate-300">
-            {user?.fullName}
-            {subtitle ? (
-              <span className="page-hero-badge">
-                {subtitle}
-              </span>
-            ) : null}
-          </p>
-          <p className="page-hero-hint">{t('dashboard.cardHint')}</p>
-        </div>
-      </div>
+    <div className="mx-auto max-w-6xl space-y-5 pb-6">
+      <WorkHomeHeader
+        title={home.title}
+        name={user?.fullName}
+        roleLabel={subtitle}
+        hint={home.hint}
+        primaryHref={home.primaryHref}
+        primaryLabel={home.primaryLabel}
+        primaryIcon={home.primaryIcon}
+      />
 
-      <FaceIdEnroll />
+      {kind !== 'intern' && <FaceIdEnroll />}
 
       {/* ===== RECRUITMENT (admin / hr / recruiter) ===== */}
       {isRecruitment && (
@@ -679,9 +785,9 @@ export default function Dashboard() {
           </div>
           <DashActionBar
             items={[
-              { href: '/interviews', title: 'Suhbatlar', desc: 'Rejalashtirish', icon: Calendar },
               { href: '/internships', title: 'Stajirovkalar', desc: 'Stajorlar', icon: GraduationCap },
-              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ishlar', icon: ListTodo },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ish', icon: ListTodo },
+              { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
             ]}
           />
           <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
@@ -861,16 +967,15 @@ export default function Dashboard() {
 
       {isPharmacyStaff && (
         <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
             <DashTile
-              title="Ehtiyoj"
-              value={pendingNeeds}
-              icon={ClipboardList}
-              loading={needsLoading}
-              color="text-orange-600"
-              accent="bg-orange-50"
-              onClick={() => openDetail('needs')}
-              active={detail === 'needs'}
+              title="Davomat"
+              value="→"
+              icon={Fingerprint}
+              color="text-[#0B3A5C]"
+              accent="bg-slate-100"
+              hint="Kelish / ketish"
+              onClick={() => setLocation('/davomat-face')}
             />
             <DashTile
               title="Topshiriqlar"
@@ -879,6 +984,7 @@ export default function Dashboard() {
               loading={myTasksLoading}
               color="text-sky-600"
               accent="bg-sky-50"
+              hint="Menga berilgan"
               onClick={() => openDetail('tasks')}
               active={detail === 'tasks'}
             />
@@ -893,36 +999,81 @@ export default function Dashboard() {
               active={detail === 'reminders'}
             />
             <DashTile
+              title="Oylik"
+              value="→"
+              icon={Banknote}
+              color="text-emerald-700"
+              accent="bg-emerald-50"
+              hint="Maosh varaqasi"
+              onClick={() => setLocation('/oylik')}
+            />
+            <DashTile
               title="Reyting"
               value="→"
               icon={Trophy}
-              color="text-emerald-600"
-              accent="bg-emerald-50"
+              color="text-violet-600"
+              accent="bg-violet-50"
               hint="Filial balli"
               onClick={() => setLocation('/reyting')}
             />
             <DashTile
-              title="Oylik"
+              title="Ehtiyoj"
+              value={pendingNeeds}
+              icon={ClipboardList}
+              loading={needsLoading}
+              color="text-orange-600"
+              accent="bg-orange-50"
+              hint="Filial so‘rovi"
+              onClick={() => openDetail('needs')}
+              active={detail === 'needs'}
+            />
+            <DashTile
+              title="Javob olish"
               value="→"
-              icon={Banknote}
-              color="text-[#0b3a5c]"
-              accent="bg-slate-100"
-              hint="Maosh / davomat"
-              onClick={() => setLocation('/oylik')}
+              icon={Eye}
+              color="text-teal-700"
+              accent="bg-teal-50"
+              hint="Savol / javob"
+              onClick={() => setLocation('/javob-olish')}
             />
           </div>
+
           <DashActionBar
             items={[
-              { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'Filial so‘rovi', icon: ClipboardList },
-              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ishlar', icon: ListTodo },
+              { href: '/davomat-face', title: 'Davomat', desc: 'Face ID', icon: Fingerprint },
+              { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Kunlik ish', icon: ListTodo },
+              { href: '/oylik', title: 'Oylik', desc: 'Maosh', icon: Banknote },
+              { href: '/reyting', title: 'Reyting', desc: 'Filial', icon: Trophy },
+              { href: '/ehtiyoj', title: 'Ehtiyoj', desc: 'So‘rov', icon: ClipboardList },
               { href: '/eslatmalar', title: 'Eslatmalar', desc: 'Shaxsiy', icon: AlarmClock },
-              { href: '/reyting', title: 'Reyting', desc: 'Filial balli', icon: Trophy },
-              { href: '/oylik', title: 'Oylik', desc: 'Maosh varaqasi', icon: Banknote },
             ]}
           />
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
-            <NeedsPreview needs={branchNeeds} loading={needsLoading} />
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <WorkPanel title="Mening topshiriqlarim" href="/vazifalar" loading={myTasksLoading} empty="Ochiq topshiriq yo‘q">
+              {openTasksList.slice(0, 6).map((task: any) => (
+                <Link key={task.id} href={`/vazifalar?task=${task.id}`}>
+                  <DashListRow
+                    title={task.title}
+                    subtitle={task.dueAt ? format(new Date(task.dueAt), 'dd.MM.yyyy HH:mm') : undefined}
+                    badge={
+                      <Badge variant="secondary" className="text-[10px]">
+                        {task.status === 'in_progress' ? 'Jarayonda' : 'Yangi'}
+                      </Badge>
+                    }
+                  />
+                </Link>
+              ))}
+            </WorkPanel>
+            <WorkPanel title="Ehtiyojlar" href="/ehtiyoj" loading={needsLoading} empty="Ochiq ehtiyoj yo‘q">
+              {filteredNeedsList.slice(0, 6).map((n: any) => (
+                <DashListRow
+                  key={n.id}
+                  title={n.title || n.category || `Ehtiyoj #${n.id}`}
+                  subtitle={n.status}
+                />
+              ))}
+            </WorkPanel>
           </div>
         </>
       )}
@@ -1062,13 +1213,15 @@ export default function Dashboard() {
         <>
           <div className="dept-banner dept-banner-cyan">
             <p className="dept-banner-title-cyan">AyTi bo‘limi</p>
-            <p className="mt-0.5 text-xs text-cyan-800/80">POS, tarmoq, kamera, kirish huquqi va 1C — arizalar shu yerda.</p>
+            <p className="mt-0.5 text-xs text-cyan-800/80">
+              Topshiriqlar, POS/tarmoq/kamera arizalari va jamoa — shu yerda.
+            </p>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-            <DashTile title="IT ishlar" value="→" icon={Cpu} color="text-cyan-700" accent="bg-cyan-50" onClick={() => setLocation('/it')} />
-            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => openDetail('tasks')} active={detail === 'tasks'} />
+            <DashTile title="AyTi" value="→" icon={Cpu} color="text-cyan-700" accent="bg-cyan-50" onClick={() => setLocation('/it')} />
+            <DashTile title="Topshiriqlar" value={openTaskCount} icon={ListTodo} loading={myTasksLoading} color="text-sky-600" accent="bg-sky-50" onClick={() => setLocation('/it')} />
           </div>
-          <DashActionBar items={[{ href: '/it', title: 'IT', desc: 'Arizalar', icon: Cpu }, { href: '/vazifalar', title: 'Topshiriqlar', desc: 'Reja', icon: ListTodo }]} />
+          <DashActionBar items={[{ href: '/it', title: 'AyTi', desc: 'Topshiriq + ariza', icon: Cpu }, { href: '/vazifalar', title: 'Topshiriqlar', desc: 'To‘liq doska', icon: ListTodo }]} />
           <MyTasksPreview tasks={myTasks} loading={myTasksLoading} />
         </>
       )}

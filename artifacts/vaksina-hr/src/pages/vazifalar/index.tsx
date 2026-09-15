@@ -1,5 +1,6 @@
 import React, { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "wouter";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   useGetUsers,
   useGetEmployees,
@@ -119,6 +120,7 @@ const ASSIGNER_ROLES = new Set([
   "admin",
   ...HR_ROLES,
   "director", "asoschi",
+  "direktor_yordamchisi",
   ...DEPT_HEAD_ROLES,
   "recruiter",
   "trainer",
@@ -418,6 +420,7 @@ export default function VazifalarPage() {
   const { toast } = useToast();
   const { user } = useAuth();
   const { t } = useI18n();
+  const isMobile = useIsMobile();
   const [location] = useLocation();
   const deepLinkParams = useMemo(() => {
     const qs = typeof window !== "undefined" ? window.location.search : "";
@@ -435,6 +438,8 @@ export default function VazifalarPage() {
   const [viewMode, setViewMode] = useState<BoardView>(() => {
     const v = deepLinkParams.get("view");
     if (v === "list" || v === "calendar" || v === "kanban") return v;
+    // Mobil: ro‘yxat — barcha vazifalar bir ko‘rinishda
+    if (typeof window !== "undefined" && window.innerWidth < 768) return "list";
     return "kanban";
   });
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -850,7 +855,15 @@ export default function VazifalarPage() {
   }, [tasks]);
 
   const [mobileCol, setMobileCol] = useState<BoardCol>("today");
-  const [filtersOpen, setFiltersOpen] = useState(true);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const mobileColTouched = useRef(false);
+
+  useEffect(() => {
+    if (mobileColTouched.current) return;
+    const order: BoardCol[] = ["past", "today", "progress", "review", "completed"];
+    const first = order.find((id) => byColumn[id].length > 0);
+    if (first) setMobileCol(first);
+  }, [byColumn]);
 
   const activeFilterCount = useMemo(() => {
     let n = 0;
@@ -1323,14 +1336,29 @@ export default function VazifalarPage() {
   return (
     <div className="flex h-full min-h-0 bg-background">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-      <div className="shrink-0 border-b border-border/70 bg-card/80 px-4 pb-4 pt-5 backdrop-blur-md supports-[backdrop-filter]:bg-card/70 md:px-6">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <div className="shrink-0 border-b border-border/70 bg-card/90 px-3 pb-3 pt-3 backdrop-blur-md supports-[backdrop-filter]:bg-card/80 md:px-6 md:pb-4 md:pt-5">
+        <div className="flex flex-col gap-2.5 md:gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0">
-            <h1 className="text-[1.65rem] font-bold tracking-tight text-foreground md:text-[1.75rem]">
-              {t("tasks.title")}
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            <div className="flex items-center justify-between gap-2">
+              <h1 className="text-xl font-bold tracking-tight text-foreground md:text-[1.75rem]">
+                {t("tasks.title")}
+              </h1>
+              {canAssign && (
+                <Button
+                  size="sm"
+                  onClick={() => openCreate("today")}
+                  className="h-9 shrink-0 gap-1.5 px-3 shadow-sm md:hidden"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t("tasks.new")}
+                </Button>
+              )}
+            </div>
+            <p className="mt-0.5 hidden max-w-2xl text-sm leading-relaxed text-muted-foreground md:mt-1 md:block">
               {t("tasks.subtitle")}
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground md:hidden">
+              {kpi.total} ta · {kpi.overdue > 0 ? `${kpi.overdue} kechikkan` : "navbatda"}
             </p>
           </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
@@ -1351,7 +1379,7 @@ export default function VazifalarPage() {
                   return (
                     <Link key={tab.id} href="/vazifalar/tahlil" className={className}>
                       {tab.icon}
-                      <span className="hidden xs:inline sm:inline">{t(tab.labelKey)}</span>
+                      <span className="hidden sm:inline">{t(tab.labelKey)}</span>
                     </Link>
                   );
                 }
@@ -1365,13 +1393,13 @@ export default function VazifalarPage() {
                     onClick={() => switchView(tab.id as BoardView)}
                   >
                     {tab.icon}
-                    <span className="sm:inline">{t(tab.labelKey)}</span>
+                    <span className="hidden sm:inline">{t(tab.labelKey)}</span>
                   </button>
                 );
               })}
             </div>
             {canAssign && (
-              <Button onClick={() => openCreate("today")} className="w-full gap-2 shadow-sm sm:w-auto">
+              <Button onClick={() => openCreate("today")} className="hidden gap-2 shadow-sm sm:inline-flex">
                 <Plus className="h-4 w-4" />
                 {t("tasks.new")}
               </Button>
@@ -1379,35 +1407,58 @@ export default function VazifalarPage() {
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+        {/* Mobil: ixcham gorizontal KPI; desktop: to‘liq kartalar */}
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mt-4 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-5">
           {kpiCards.map((card) => {
             const Icon = card.icon;
+            const colMap: Record<string, BoardCol | null> = {
+              overdue: "past",
+              today: "today",
+              progress: "progress",
+              done: "completed",
+              total: null,
+            };
+            const targetCol = colMap[card.key];
             return (
-              <div
+              <button
                 key={card.key}
-                className={cn(surface, "flex items-center gap-2.5 px-3 py-2.5 sm:gap-3 sm:px-3.5 sm:py-3")}
+                type="button"
+                onClick={() => {
+                  if (targetCol) {
+                    mobileColTouched.current = true;
+                    setMobileCol(targetCol);
+                    if (isMobile) switchView("kanban");
+                  } else if (isMobile) {
+                    switchView("list");
+                  }
+                }}
+                className={cn(
+                  surface,
+                  "flex min-w-[132px] shrink-0 items-center gap-2 px-2.5 py-2 text-left transition hover:border-primary/30 md:min-w-0 md:gap-3 md:px-3.5 md:py-3",
+                  targetCol && mobileCol === targetCol && viewMode === "kanban" && "border-primary/40 ring-1 ring-primary/20",
+                )}
               >
                 <span
                   className={cn(
-                    "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl sm:h-10 sm:w-10",
+                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg md:h-10 md:w-10 md:rounded-xl",
                     card.tone,
                   )}
                 >
-                  <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
+                  <Icon className="h-3.5 w-3.5 md:h-5 md:w-5" />
                 </span>
                 <div className="min-w-0">
-                  <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+                  <p className="text-[9px] font-semibold uppercase tracking-[0.06em] text-muted-foreground md:text-[10px] md:tracking-[0.08em]">
                     {card.label}
                   </p>
-                  <p className="text-lg font-bold tabular-nums text-foreground sm:text-xl">{card.value}</p>
+                  <p className="text-base font-bold tabular-nums text-foreground md:text-xl">{card.value}</p>
                 </div>
-              </div>
+              </button>
             );
           })}
         </div>
 
-        <div className={cn(surface, "mt-4 p-2.5")}>
-          <div className="mb-2 flex items-center justify-between gap-2 lg:hidden">
+        <div className={cn(surface, "mt-3 p-2 md:mt-4 md:p-2.5")}>
+          <div className="mb-0 flex items-center justify-between gap-2 lg:mb-2 lg:hidden">
             <button
               type="button"
               onClick={() => setFiltersOpen((v) => !v)}
@@ -1444,7 +1495,7 @@ export default function VazifalarPage() {
           <div
             className={cn(
               "flex-col gap-2 lg:flex lg:flex-row lg:items-center",
-              filtersOpen ? "flex" : "hidden",
+              filtersOpen ? "mt-2 flex" : "hidden",
             )}
           >
           <Select value={branchFilter} onValueChange={setBranchFilter}>
@@ -1849,14 +1900,20 @@ export default function VazifalarPage() {
                     {filtered.length} {t("tasks.filteredCount")}
                   </p>
                 </div>
-                {canAssign && (
-                  <Button size="sm" variant="outline" onClick={() => openCreate("today")}>
-                    <Plus className="mr-1 h-3.5 w-3.5" />
-                    {t("tasks.new")}
-                  </Button>
+              </div>
+
+              {/* Mobil: kartalar — jadval emas */}
+              <div className="space-y-2.5 md:hidden">
+                {filtered.length === 0 ? (
+                  <div className={cn(surface, "px-4 py-12 text-center text-sm text-muted-foreground")}>
+                    {t("tasks.empty.done")}
+                  </div>
+                ) : (
+                  filtered.map((task) => renderTaskCard(task, boardColumnFor(task)))
                 )}
               </div>
-              <div className={cn(surface, "overflow-hidden")}>
+
+              <div className={cn(surface, "hidden overflow-hidden md:block")}>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[720px] text-left text-sm">
                     <thead className="border-b border-border bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -2243,7 +2300,10 @@ export default function VazifalarPage() {
                     <button
                       key={col.id}
                       type="button"
-                      onClick={() => setMobileCol(col.id)}
+                      onClick={() => {
+                        mobileColTouched.current = true;
+                        setMobileCol(col.id);
+                      }}
                       className={cn(
                         "inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-bold transition",
                         active
@@ -2277,7 +2337,7 @@ export default function VazifalarPage() {
                   key={col.id}
                   className={cn(
                     surface,
-                    "min-h-[420px] w-full shrink-0 flex-col overflow-hidden md:min-h-0 md:w-[286px]",
+                    "min-h-0 w-full shrink-0 flex-col overflow-hidden md:min-h-0 md:w-[286px]",
                     mobileCol === col.id ? "flex" : "hidden md:flex",
                   )}
                 >
@@ -2285,7 +2345,7 @@ export default function VazifalarPage() {
                     <div className={cn("h-1", col.top)} />
                     <div
                       className={cn(
-                        "flex items-start justify-between gap-2 px-3 py-3",
+                        "flex items-start justify-between gap-2 px-3 py-2.5 md:py-3",
                         col.headerBg,
                       )}
                     >
@@ -2293,7 +2353,7 @@ export default function VazifalarPage() {
                         <h2 className="text-[14px] font-bold text-foreground">
                           {t(col.labelKey)}
                         </h2>
-                        <p className="text-[11px] text-muted-foreground">{t(col.hintKey)}</p>
+                        <p className="hidden text-[11px] text-muted-foreground md:block">{t(col.hintKey)}</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <span

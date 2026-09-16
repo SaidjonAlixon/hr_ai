@@ -117,6 +117,7 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res): Promise<vo
       stage: candidatesTable.stage,
       status: candidatesTable.status,
       pipelineStep: candidatesTable.pipelineStep,
+      pipelineJson: candidatesTable.pipelineJson,
       createdAt: candidatesTable.createdAt,
     })
     .from(candidatesTable)
@@ -207,9 +208,15 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
     return;
   }
 
-  // Pipeline qadam: advance | back | set
+  // Pipeline qadam: advance | back | set | no_answer*
   if (req.body?.pipelineAction) {
-    const action = String(req.body.pipelineAction) as "advance" | "back" | "set";
+    const action = String(req.body.pipelineAction) as
+      | "advance"
+      | "back"
+      | "set"
+      | "no_answer"
+      | "no_answer_cancel"
+      | "no_answer_continue";
     const currentStep = normalizeStep(existing.pipelineStep, existing.status);
     const currentData = parsePipeline(existing.pipelineJson);
     let actor: { id: number; name: string; role: string } | undefined;
@@ -227,13 +234,65 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
       currentData,
       action,
       step: req.body.pipelineStep as PipelineStep | undefined,
-      patch: (req.body.pipelinePatch || {}) as Partial<PipelineData>,
+      patch: (req.body.pipelinePatch || {}) as Parameters<typeof applyPipelineAction>[0]["patch"],
       actor,
     });
     if (result.error) {
       res.status(400).json({ error: result.error });
       return;
     }
+
+    // Eslatma: rekruter / assignee ga
+    if (result.createReminder && req.userId) {
+      try {
+        const { remindersTable, reminderEventsTable } = await import("@workspace/db");
+        const targetUserId = existing.recruiterId || req.userId;
+        const due = new Date(result.createReminder.dueAt);
+        const [rem] = await db
+          .insert(remindersTable)
+          .values({
+            userId: targetUserId,
+            createdById: req.userId,
+            title: `Nomzod: ${existing.fullName} — telefon`,
+            description: `${result.createReminder.note}\n/candidates/${id}`,
+            dueAt: due,
+            notifyAt: due,
+            category: "check",
+            priority: "high",
+            notifySystem: true,
+            notifyTelegram: true,
+            status: "active",
+          })
+          .returning();
+        if (rem) {
+          await db.insert(reminderEventsTable).values({
+            reminderId: rem.id,
+            eventType: "created",
+            note: "Nomzod tel. javobsiz eslatmasi",
+            createdById: req.userId,
+          });
+          const attempts = result.data.noAnswer?.attempts || [];
+          const last = attempts[attempts.length - 1];
+          if (last && action === "no_answer") {
+            last.reminderId = rem.id;
+            result.data.noAnswer = {
+              ...result.data.noAnswer!,
+              attempts: [...attempts.slice(0, -1), last],
+            };
+          }
+          const { notifyUser } = await import("../lib/notify");
+          await notifyUser({
+            userId: targetUserId,
+            text: `📞 ${existing.fullName}: telefon ko‘tarmadi. Eslatma: ${due.toLocaleString("uz-UZ")}. /candidates/${id}`,
+            type: "candidate_no_answer",
+            linkUrl: `/candidates/${id}`,
+          });
+        }
+      } catch (err) {
+        console.warn("no_answer reminder failed", err);
+      }
+    }
+
     await db
       .update(candidatesTable)
       .set({

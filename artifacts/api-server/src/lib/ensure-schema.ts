@@ -908,6 +908,33 @@ CREATE TABLE IF NOT EXISTS employee_day_shift_plans (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS emp_day_shift_plans_uidx ON employee_day_shift_plans (employee_id, work_date);
 
+-- Ko‘p filial + smena ish slotlari (doimiy / muddat / haftalik / kunlik)
+CREATE TABLE IF NOT EXISTS employee_work_slots (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  branch_id INTEGER NOT NULL,
+  branch_label TEXT,
+  shift_key TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  valid_from TEXT NOT NULL,
+  valid_to TEXT,
+  weekdays JSONB,
+  work_dates JSONB,
+  note TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS emp_work_slots_emp_idx ON employee_work_slots (employee_id);
+CREATE INDEX IF NOT EXISTS emp_work_slots_active_idx ON employee_work_slots (employee_id, active);
+CREATE INDEX IF NOT EXISTS emp_work_slots_range_idx ON employee_work_slots (valid_from, valid_to);
+ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS weekdays JSONB;
+ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS work_dates JSONB;
+ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS note TEXT;
+ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 -- Javob olish so‘rovlari (har sana = alohida yozuv)
 CREATE TABLE IF NOT EXISTS javob_olish_requests (
   id SERIAL PRIMARY KEY,

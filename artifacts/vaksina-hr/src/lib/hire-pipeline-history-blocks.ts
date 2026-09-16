@@ -19,7 +19,7 @@ export function fmtPipelineAt(iso?: string): string {
 }
 
 export type HistoryBlock = {
-  step: PipelineStep;
+  step: PipelineStep | "no_answer";
   title: string;
   at: string;
   lines: { label?: string; value: string }[];
@@ -58,6 +58,64 @@ export function buildPipelineHistoryBlocks(data: PipelineData, t: Translate): Hi
         ...actorLines(data.match, "hire.pipe.historyFilledBy", t),
         { label: t("hire.pipe.historyVerdict"), value: verdict },
         ...(data.match.note?.trim() ? [{ value: data.match.note.trim() }] : []),
+      ],
+    });
+  }
+
+  if (data.noAnswer?.attempts?.length) {
+    const statusLabel =
+      data.noAnswer.status === "cancelled"
+        ? t("hire.pipe.noAnswerCancelled")
+        : data.noAnswer.status === "resolved"
+          ? t("hire.pipe.noAnswerResolved")
+          : t("hire.pipe.noAnswerWaiting");
+    const attemptLines = data.noAnswer.attempts.flatMap((a, i) => {
+      const lines: { label?: string; value: string }[] = [
+        {
+          label: `${t("hire.pipe.historyAttempt")} #${i + 1}`,
+          value: a.note?.trim() || "—",
+        },
+        {
+          label: t("hire.pipe.historyCalledAt"),
+          value: fmtPipelineAt(a.calledAt || a.at),
+        },
+      ];
+      if (a.remindAt) {
+        lines.push({
+          label: t("hire.pipe.historyRemindAt"),
+          value: fmtPipelineAt(a.remindAt),
+        });
+      }
+      lines.push(...actorLines(a, "hire.pipe.historyFilledBy", t));
+      return lines;
+    });
+    const lastAt =
+      data.noAnswer.cancelledAt ||
+      data.noAnswer.continuedAt ||
+      data.noAnswer.attempts[data.noAnswer.attempts.length - 1]?.at;
+    out.push({
+      step: "no_answer",
+      title: t("hire.pipe.historyNoAnswer"),
+      at: fmtPipelineAt(lastAt),
+      lines: [
+        { label: t("hire.pipe.historyVerdict"), value: statusLabel },
+        ...attemptLines,
+        ...(data.noAnswer.continueDeadline
+          ? [
+              {
+                label: t("hire.pipe.historyDeadline"),
+                value: fmtPipelineAt(data.noAnswer.continueDeadline),
+              },
+            ]
+          : []),
+        ...(data.noAnswer.cancelNote?.trim()
+          ? [
+              {
+                label: t("hire.pipe.historyCancelNote"),
+                value: data.noAnswer.cancelNote.trim(),
+              },
+            ]
+          : []),
       ],
     });
   }

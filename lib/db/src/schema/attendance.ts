@@ -216,6 +216,44 @@ export const employeeDayShiftPlansTable = pgTable(
   (t) => [uniqueIndex("emp_day_shift_plans_uidx").on(t.employeeId, t.workDate)],
 );
 
+/**
+ * Ko‘p filial / smena ish slotlari.
+ * mode: permanent | period | weekly | days
+ * Bir xodim bir kunda 2 ta filialga (masalan 1-smena A, 2-smena B) biriktirilishi mumkin.
+ * weekdays: ISO 1=Dushanba … 7=Yakshanba (faqat weekly)
+ * workDates: aniq kunlar (faqat days)
+ */
+export const employeeWorkSlotsTable = pgTable(
+  "employee_work_slots",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id").notNull(),
+    branchId: integer("branch_id").notNull(),
+    branchLabel: text("branch_label"),
+    /** one | two | three */
+    shiftKey: text("shift_key").notNull(),
+    /** permanent | period | weekly | days */
+    mode: text("mode").notNull(),
+    validFrom: text("valid_from").notNull(),
+    validTo: text("valid_to"),
+    weekdays: jsonb("weekdays").$type<number[]>(),
+    workDates: jsonb("work_dates").$type<string[]>(),
+    note: text("note"),
+    active: boolean("active").notNull().default(true),
+    createdById: integer("created_by_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("emp_work_slots_emp_idx").on(t.employeeId),
+    index("emp_work_slots_active_idx").on(t.employeeId, t.active),
+    index("emp_work_slots_range_idx").on(t.validFrom, t.validTo),
+  ],
+);
+
 /** Davomat / smena to‘lov sozlamalari (bitta qator id=1) */
 export const attendancePaySettingsTable = pgTable("attendance_pay_settings", {
   id: serial("id").primaryKey(),

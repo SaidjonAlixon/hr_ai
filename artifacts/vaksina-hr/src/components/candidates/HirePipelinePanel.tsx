@@ -14,6 +14,7 @@ import {
   GraduationCap,
   Loader2,
   MessageSquare,
+  PhoneOff,
   Plus,
   Trash2,
   ThumbsDown,
@@ -120,6 +121,17 @@ export function HirePipelinePanel({ candidate, canEdit, busy, onAction }: Props)
 
   const [matchVerdict, setMatchVerdict] = useState<MatchVerdict | null>(data.match?.verdict ?? null);
   const [matchNote, setMatchNote] = useState(data.match?.note ?? "");
+  const [showNoAnswer, setShowNoAnswer] = useState(false);
+  const [noAnswerNote, setNoAnswerNote] = useState("");
+  const [noAnswerCalledAt, setNoAnswerCalledAt] = useState(() => {
+    const d = new Date();
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    return d.toISOString().slice(0, 16);
+  });
+  const [noAnswerRemindAt, setNoAnswerRemindAt] = useState("");
+  const [continueDeadline, setContinueDeadline] = useState("");
+  const [cancelNote, setCancelNote] = useState("");
+  const [continueNote, setContinueNote] = useState("");
   const [recommendYes, setRecommendYes] = useState<boolean | null>(
     data.recommend ? data.recommend.yes : null,
   );
@@ -306,6 +318,201 @@ export function HirePipelinePanel({ candidate, canEdit, busy, onAction }: Props)
               disabled={!canEdit || busy}
               rows={3}
             />
+
+            {/* Telefon ko'tarmadi */}
+            {(canEdit || (data.noAnswer?.attempts?.length || 0) > 0) && (
+              <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 p-4 space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                    <PhoneOff className="h-4 w-4 text-amber-700" />
+                    {t("hire.pipe.noAnswerTitle")}
+                  </p>
+                  {canEdit && !rejected ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={showNoAnswer ? "secondary" : "outline"}
+                      disabled={busy}
+                      onClick={() => setShowNoAnswer((v) => !v)}
+                    >
+                      {showNoAnswer ? t("hire.pipe.noAnswerHide") : t("hire.pipe.noAnswerOpen")}
+                    </Button>
+                  ) : null}
+                </div>
+                {data.noAnswer?.attempts?.length ? (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold uppercase text-muted-foreground">
+                      {t("hire.pipe.noAnswerHistory")} ({data.noAnswer.attempts.length})
+                      {data.noAnswer.status === "waiting" ? (
+                        <Badge className="ml-2 bg-amber-100 text-amber-900">{t("hire.pipe.noAnswerWaiting")}</Badge>
+                      ) : data.noAnswer.status === "cancelled" ? (
+                        <Badge className="ml-2 bg-rose-100 text-rose-900">{t("hire.pipe.noAnswerCancelled")}</Badge>
+                      ) : (
+                        <Badge className="ml-2 bg-emerald-100 text-emerald-900">{t("hire.pipe.noAnswerResolved")}</Badge>
+                      )}
+                    </p>
+                    {data.noAnswer.attempts.map((a, i) => (
+                      <div key={`${a.at}-${i}`} className="rounded-xl border bg-card px-3 py-2 text-xs">
+                        <p className="font-semibold">
+                          #{i + 1} · {new Date(a.calledAt || a.at).toLocaleString("uz-UZ")}
+                        </p>
+                        <p className="mt-0.5 text-muted-foreground">{a.note}</p>
+                        {a.remindAt ? (
+                          <p className="mt-0.5 text-amber-800">
+                            {t("hire.pipe.noAnswerRemindAt")}: {new Date(a.remindAt).toLocaleString("uz-UZ")}
+                          </p>
+                        ) : null}
+                        {a.byName ? <p className="mt-0.5 text-muted-foreground">{a.byName}</p> : null}
+                      </div>
+                    ))}
+                    {data.noAnswer.continueDeadline ? (
+                      <p className="text-xs text-sky-800">
+                        {t("hire.pipe.noAnswerDeadline")}:{" "}
+                        {new Date(data.noAnswer.continueDeadline).toLocaleString("uz-UZ")}
+                      </p>
+                    ) : null}
+                    {data.noAnswer.cancelNote?.trim() ? (
+                      <p className="text-xs text-rose-800">{data.noAnswer.cancelNote}</p>
+                    ) : null}
+                  </div>
+                ) : null}
+                {canEdit && !rejected && showNoAnswer && (
+                  <div className="space-y-3 border-t border-amber-500/20 pt-3">
+                    <Textarea
+                      value={noAnswerNote}
+                      onChange={(e) => setNoAnswerNote(e.target.value)}
+                      placeholder={t("hire.pipe.noAnswerNotePh")}
+                      disabled={busy}
+                      rows={2}
+                    />
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">
+                          {t("hire.pipe.noAnswerCalledAt")}
+                        </label>
+                        <Input
+                          type="datetime-local"
+                          value={noAnswerCalledAt}
+                          onChange={(e) => setNoAnswerCalledAt(e.target.value)}
+                          disabled={busy}
+                          className="h-9"
+                        />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">
+                          {t("hire.pipe.noAnswerRemindAsk")}
+                        </label>
+                        <Input
+                          type="datetime-local"
+                          value={noAnswerRemindAt}
+                          onChange={(e) => setNoAnswerRemindAt(e.target.value)}
+                          disabled={busy}
+                          className="h-9"
+                          required
+                        />
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      className="w-full sm:w-auto"
+                      disabled={busy || !noAnswerNote.trim() || !noAnswerRemindAt}
+                      onClick={() => {
+                        onAction({
+                          pipelineAction: "no_answer",
+                          pipelinePatch: {
+                            noAnswerAttempt: {
+                              note: noAnswerNote.trim(),
+                              calledAt: noAnswerCalledAt
+                                ? new Date(noAnswerCalledAt).toISOString()
+                                : new Date().toISOString(),
+                              remindAt: new Date(noAnswerRemindAt).toISOString(),
+                            },
+                          },
+                        });
+                        setNoAnswerNote("");
+                        setNoAnswerRemindAt("");
+                        setShowNoAnswer(false);
+                      }}
+                    >
+                      {busy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PhoneOff className="mr-2 h-4 w-4" />}
+                      {t("hire.pipe.noAnswerSave")}
+                    </Button>
+                  </div>
+                )}
+                {canEdit &&
+                  !rejected &&
+                  (data.noAnswer?.attempts?.length || 0) >= 2 &&
+                  data.noAnswer?.status === "waiting" && (
+                  <div className="space-y-3 border-t border-rose-500/20 pt-3">
+                    <p className="text-xs text-muted-foreground">{t("hire.pipe.noAnswerAfterTwo")}</p>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <div className="rounded-xl border border-rose-200 bg-rose-50/50 p-3 dark:border-rose-900 dark:bg-rose-950/30">
+                        <Textarea
+                          value={cancelNote}
+                          onChange={(e) => setCancelNote(e.target.value)}
+                          placeholder={t("hire.pipe.noAnswerCancelNotePh")}
+                          rows={2}
+                          disabled={busy}
+                        />
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          className="mt-2 w-full"
+                          disabled={busy}
+                          onClick={() =>
+                            onAction({
+                              pipelineAction: "no_answer_cancel",
+                              pipelinePatch: { noAnswerCancel: { note: cancelNote } },
+                            })
+                          }
+                        >
+                          {t("hire.pipe.noAnswerCancel")}
+                        </Button>
+                      </div>
+                      <div className="rounded-xl border border-sky-200 bg-sky-50/50 p-3 dark:border-sky-900 dark:bg-sky-950/30">
+                        <label className="mb-1 block text-[11px] font-semibold text-muted-foreground">
+                          {t("hire.pipe.noAnswerDeadline")}
+                        </label>
+                        <Input
+                          type="datetime-local"
+                          value={continueDeadline}
+                          onChange={(e) => setContinueDeadline(e.target.value)}
+                          disabled={busy}
+                          className="h-9"
+                        />
+                        <Textarea
+                          className="mt-2"
+                          value={continueNote}
+                          onChange={(e) => setContinueNote(e.target.value)}
+                          placeholder={t("hire.pipe.noAnswerContinueNotePh")}
+                          rows={2}
+                          disabled={busy}
+                        />
+                        <Button
+                          type="button"
+                          className="mt-2 w-full"
+                          disabled={busy || !continueDeadline}
+                          onClick={() =>
+                            onAction({
+                              pipelineAction: "no_answer_continue",
+                              pipelinePatch: {
+                                noAnswerContinue: {
+                                  deadline: new Date(continueDeadline).toISOString(),
+                                  note: continueNote,
+                                },
+                              },
+                            })
+                          }
+                        >
+                          {t("hire.pipe.noAnswerContinue")}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {canEdit && (
               <Button
                 className="w-full sm:w-auto"

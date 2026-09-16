@@ -115,11 +115,13 @@ export function openCandidatePdf(candidate: CandidatePdfData, vacancy: VacancyPd
   return true;
 }
 
-function pipelineBlockHtml(
+function pipelineBlockHtmlTone(
   title: string,
   at: string,
   lines: { label?: string; value: string }[],
+  tone: "sky" | "amber" = "sky",
 ) {
+  const accent = tone === "amber" ? "#f59e0b" : "#0ea5e9";
   const body = lines
     .map((line) => {
       const label = line.label
@@ -129,7 +131,7 @@ function pipelineBlockHtml(
     })
     .join("");
   return `
-  <section style="page-break-inside:avoid;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;border-left:4px solid #0ea5e9;">
+  <section style="page-break-inside:avoid;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;border-left:4px solid ${accent};">
     <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
       <div style="font-size:14px;font-weight:700;color:#0b3a5c;">${esc(title)}</div>
       ${at ? `<div style="font-size:10px;color:#64748b;">${esc(at)}</div>` : ""}
@@ -178,7 +180,16 @@ export function openCandidateAnketaPdf(input: CandidateAnketaInput) {
   const stepsHtml =
     steps.length > 0 ?
       `<h2 style="font-size:15px;color:#0b3a5c;margin:24px 0 12px;">${esc(t("hire.pipe.historyTitle"))}</h2>` +
-      steps.map((s) => pipelineBlockHtml(s.title, s.at, s.lines)).join("\n")
+      steps
+        .map((s) =>
+          pipelineBlockHtmlTone(
+            s.title,
+            s.at,
+            s.lines,
+            s.step === "no_answer" ? "amber" : "sky",
+          ),
+        )
+        .join("\n")
     : `<p style="font-size:12px;color:#64748b;">${esc(t("hire.pdfAnketaNoSteps"))}</p>`;
 
   const html = wrapHtml(

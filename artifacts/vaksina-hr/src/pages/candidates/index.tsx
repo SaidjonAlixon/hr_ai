@@ -4,18 +4,38 @@ import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Badge } from "../../components/ui/badge";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, Filter, User, Briefcase, Phone } from "lucide-react";
+import { Search, Plus, Filter, User, Briefcase, Phone, PhoneOff } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useAuth } from "../../contexts/AuthContext";
 import { isHrManager, isDirectorRole } from "../../lib/roles";
 import { resolveHireFlow, type HireFlow } from "../../lib/hire-flow";
+import { parsePipeline } from "../../lib/hire-pipeline";
 import { useI18n } from "../../i18n/I18nProvider";
 
-function getFlowFromUrl(): string {
+const FLOW_STORAGE_KEY = "vaksina-candidates-flow-filter";
+const FLOW_VALUES = ["all", "yangi", "jarayonda", "qabul", "rad", "no_answer"] as const;
+type FlowFilter = (typeof FLOW_VALUES)[number];
+
+function isFlowFilter(v: string | null | undefined): v is FlowFilter {
+  return !!v && (FLOW_VALUES as readonly string[]).includes(v);
+}
+
+function readStoredFlow(): FlowFilter {
   if (typeof window === "undefined") return "all";
+  try {
+    const raw = localStorage.getItem(FLOW_STORAGE_KEY);
+    if (isFlowFilter(raw)) return raw;
+  } catch {
+    /* ignore */
+  }
+  return "all";
+}
+
+function getFlowFromUrl(): FlowFilter | null {
+  if (typeof window === "undefined") return null;
   const params = new URLSearchParams(window.location.search);
   const flow = params.get("flow");
-  if (flow && ["yangi", "jarayonda", "qabul", "rad"].includes(flow)) return flow;
+  if (isFlowFilter(flow)) return flow;
   // Eski linklar
   const status = params.get("status");
   if (status === "hired") return "qabul";
@@ -25,7 +45,22 @@ function getFlowFromUrl(): string {
   if (stage === "new") return "yangi";
   if (stage === "hired") return "qabul";
   if (stage === "rejected") return "rad";
-  return "all";
+  return null;
+}
+
+function initialFlowFilter(): FlowFilter {
+  return getFlowFromUrl() ?? readStoredFlow();
+}
+
+function noAnswerMeta(candidate: { pipelineJson?: unknown }) {
+  const data = parsePipeline(candidate.pipelineJson);
+  const na = data.noAnswer;
+  if (!na?.attempts?.length) return null;
+  return {
+    status: na.status,
+    count: na.attempts.length,
+    waiting: na.status === "waiting",
+  };
 }
 
 function flowBadge(flow: HireFlow, t: (k: string) => string) {
@@ -44,7 +79,7 @@ export default function CandidatesList() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const [search, setSearch] = useState("");
-  const [flowFilter, setFlowFilter] = useState(getFlowFromUrl);
+  const [flowFilter, setFlowFilter] = useState<FlowFilter>(initialFlowFilter);
 
   const canAddCandidate =
     user?.role === "recruiter" || isHrManager(user?.role) || isDirectorRole(user?.role);
@@ -56,23 +91,36 @@ export default function CandidatesList() {
   const filtered = useMemo(() => {
     const list = candidates ?? [];
     if (flowFilter === "all") return list;
+    if (flowFilter === "no_answer") {
+      return list.filter((c) => {
+        const meta = noAnswerMeta(c as { pipelineJson?: unknown });
+        return meta?.waiting;
+      });
+    }
     return list.filter((c) => resolveHireFlow(c) === flowFilter);
   }, [candidates, flowFilter]);
 
   const updateFlow = (value: string) => {
-    setFlowFilter(value);
+    const next: FlowFilter = isFlowFilter(value) ? value : "all";
+    setFlowFilter(next);
+    try {
+      localStorage.setItem(FLOW_STORAGE_KEY, next);
+    } catch {
+      /* ignore */
+    }
     const params = new URLSearchParams();
-    if (value !== "all") params.set("flow", value);
+    if (next !== "all") params.set("flow", next);
     const q = params.toString();
     setLocation(q ? `/candidates?${q}` : "/candidates");
   };
 
-  const titleMap: Record<string, string> = {
+  const titleMap: Record<FlowFilter, string> = {
     all: t("hire.statusAll"),
     yangi: t("hire.flow.new"),
     jarayonda: t("hire.flow.inProgress"),
     qabul: t("hire.flow.hired"),
     rad: t("hire.flow.rejected"),
+    no_answer: t("hire.flow.noAnswer"),
   };
 
   return (
@@ -91,7 +139,7 @@ export default function CandidatesList() {
         )}
       </div>
 
-      <div className="flex flex-col items-center gap-4 rounded-lg border bg-card p-4 shadow-sm sm:flex-row">
+      <div className="flex flex-col items-center gap-4 rounded-xl border bg-card/80 p-4 shadow-sm backdrop-blur-sm sm:flex-row">
         <div className="relative w-full flex-1">
           <Search className="absolute top-1/2 left-3 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -102,7 +150,7 @@ export default function CandidatesList() {
           />
         </div>
         <Select value={flowFilter} onValueChange={updateFlow}>
-          <SelectTrigger className="w-full border-transparent bg-background sm:w-[220px]">
+          <SelectTrigger className="w-full border-transparent bg-background sm:w-[240px]">
             <Filter className="mr-2 h-4 w-4" />
             <SelectValue placeholder={t("ui.status")} />
           </SelectTrigger>
@@ -110,13 +158,14 @@ export default function CandidatesList() {
             <SelectItem value="all">{t("hire.allStatuses")}</SelectItem>
             <SelectItem value="yangi">{t("hire.flow.new")}</SelectItem>
             <SelectItem value="jarayonda">{t("hire.flow.inProgress")}</SelectItem>
+            <SelectItem value="no_answer">{t("hire.flow.noAnswer")}</SelectItem>
             <SelectItem value="qabul">{t("hire.flow.hired")}</SelectItem>
             <SelectItem value="rad">{t("hire.flow.rejected")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
-      <div className="overflow-hidden rounded-lg border bg-card shadow-sm">
+      <div className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-left text-sm">
             <thead className="border-b bg-muted/50 text-muted-foreground">
@@ -138,6 +187,7 @@ export default function CandidatesList() {
               ) : filtered.length > 0 ? (
                 filtered.map((candidate) => {
                   const flow = resolveHireFlow(candidate);
+                  const na = noAnswerMeta(candidate as { pipelineJson?: unknown });
                   return (
                     <tr
                       key={candidate.id}
@@ -187,7 +237,29 @@ export default function CandidatesList() {
                           <span className="text-sm">{candidate.phone}</span>
                         </div>
                       </td>
-                      <td className="px-6 py-4">{flowBadge(flow, t)}</td>
+                      <td className="px-6 py-4">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {na?.waiting ? (
+                            <Badge className="gap-1 bg-amber-100 text-amber-950">
+                              <PhoneOff className="h-3 w-3" />
+                              {t("hire.pipe.noAnswerStatus")}
+                              {na.count > 0 ? (
+                                <span className="opacity-80">
+                                  · {t("hire.pipe.noAnswerAttempts").replace("{n}", String(na.count))}
+                                </span>
+                              ) : null}
+                            </Badge>
+                          ) : na?.status === "cancelled" && flow === "rad" ? (
+                            <Badge className="gap-1 bg-rose-100 text-rose-900">
+                              <PhoneOff className="h-3 w-3" />
+                              {t("hire.pipe.noAnswerCancelled")}
+                            </Badge>
+                          ) : (
+                            flowBadge(flow, t)
+                          )}
+                          {na?.waiting && flow !== "yangi" ? flowBadge(flow, t) : null}
+                        </div>
+                      </td>
                       <td className="px-6 py-4 text-sm text-muted-foreground">
                         {candidate.recruiterName || t("ui.unassigned")}
                       </td>

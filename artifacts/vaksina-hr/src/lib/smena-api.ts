@@ -15,6 +15,8 @@ export type SmenaAssignable = {
 };
 
 export type ShiftPick = "one" | "two" | "three" | "one+two" | "two+three";
+export type SlotShiftKey = "one" | "two" | "three";
+export type SlotMode = "permanent" | "period" | "weekly" | "days";
 
 export type SmenaMe = {
   pharmacyStaff: boolean;
@@ -22,6 +24,7 @@ export type SmenaMe = {
   canPickOwnBranch: boolean;
   canAssignOthers: boolean;
   canDayRotate?: boolean;
+  canManageSlots?: boolean;
   employee: {
     id: number;
     fullName: string;
@@ -66,6 +69,25 @@ export type SmenaRotationItem = {
   createdAt?: string;
 };
 
+export type WorkSlotItem = {
+  id: number;
+  employeeId: number;
+  branchId: number;
+  branchLabel: string | null;
+  shiftKey: SlotShiftKey;
+  mode: SlotMode;
+  validFrom: string;
+  validTo: string | null;
+  weekdays: number[] | null;
+  workDates: string[] | null;
+  note: string | null;
+  active?: boolean;
+  modeLabel?: string;
+  shiftLabel?: string;
+  fullName?: string;
+  orgRole?: string | null;
+};
+
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     credentials: "include",
@@ -76,8 +98,10 @@ async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
     },
     ...init,
   });
-  const body = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new Error(body.error || "So‘rov bajarilmadi");
+  const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+  if (!res.ok) {
+    throw new Error(body.error || body.message || `So‘rov bajarilmadi (kod ${res.status})`);
+  }
   return body as T;
 }
 
@@ -157,6 +181,39 @@ export function deleteDayRotation(id: number) {
   return apiJson<{ ok: boolean }>(`/smena/rotation/${id}`, { method: "DELETE" });
 }
 
+export function fetchAllWorkSlots() {
+  return apiJson<{ items: WorkSlotItem[] }>("/smena/slots/all");
+}
+
+export function fetchEmployeeSlots(employeeId: number, date?: string) {
+  const q = new URLSearchParams({ employeeId: String(employeeId) });
+  if (date) q.set("date", date);
+  return apiJson<{ employeeId: number; items: WorkSlotItem[]; daySlots: WorkSlotItem[]; date: string }>(
+    `/smena/slots?${q.toString()}`,
+  );
+}
+
+export function createWorkSlot(body: {
+  employeeId: number;
+  branchId: number;
+  shiftKey: SlotShiftKey;
+  mode: SlotMode;
+  validFrom?: string;
+  validTo?: string | null;
+  weekdays?: number[];
+  workDates?: string[];
+  note?: string;
+}) {
+  return apiJson<{ ok: boolean; item: WorkSlotItem }>("/smena/slots", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function deleteWorkSlot(id: number) {
+  return apiJson<{ ok: boolean }>(`/smena/slots/${id}`, { method: "DELETE" });
+}
+
 export function shiftLabelShort(type: string | null | undefined): string {
   const s = String(type || "").toLowerCase();
   if (s.includes("one+two") || s === "one+two") return "1+2";
@@ -170,3 +227,13 @@ export function shiftLabelShort(type: string | null | undefined): string {
 export function todayTashkentYmd() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
 }
+
+export const WEEKDAY_OPTIONS = [
+  { value: 1, label: "Du" },
+  { value: 2, label: "Se" },
+  { value: 3, label: "Ch" },
+  { value: 4, label: "Pa" },
+  { value: 5, label: "Ju" },
+  { value: 6, label: "Sh" },
+  { value: 7, label: "Ya" },
+] as const;

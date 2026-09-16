@@ -21,6 +21,23 @@ export type PipelineStepMeta = {
   byRole?: string;
 };
 
+export type NoAnswerAttempt = {
+  at: string;
+  note: string;
+  calledAt: string;
+  remindAt?: string | null;
+  reminderId?: number | null;
+} & PipelineStepMeta;
+
+export type NoAnswerState = {
+  status: "waiting" | "cancelled" | "resolved";
+  attempts: NoAnswerAttempt[];
+  cancelNote?: string;
+  cancelledAt?: string;
+  continueDeadline?: string | null;
+  continuedAt?: string;
+};
+
 export type PipelineData = {
   match?: { verdict: MatchVerdict; note: string; at: string } & PipelineStepMeta;
   recommend?: { yes: boolean; note: string; at: string } & PipelineStepMeta;
@@ -33,6 +50,7 @@ export type PipelineData = {
     checklist: Record<string, boolean>;
     at: string;
   } & PipelineStepMeta;
+  noAnswer?: NoAnswerState;
 };
 
 export const PIPELINE_ORDER: PipelineStep[] = [

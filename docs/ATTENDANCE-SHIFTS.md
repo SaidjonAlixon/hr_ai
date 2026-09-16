@@ -46,12 +46,22 @@ Ofis xodimlari: avvalgidek faqat Face ID (+ ofis geofence).
 3. rotation
 4. permanent
 
+**Ko‘p filial + smena slotlari** (`employee_work_slots`):
+- `permanent` — doimiy (masalan 1-smena A, 2-smena B)
+- `period` — muddatli (from–to)
+- `weekly` — haftaning tanlangan kunlari
+- `days` — aniq kalendar kunlari
+- Bir kunda 2 ta filial ruxsat (smena vaqtlari kesishmasa)
+- Davomat: faqat aktiv smena oynasida va shu filial GPS da; aks holda `outside_shift_window` / `outside_geofence`
+- UI: `/smena-filial` — mudir, koordinator, admin, HR
+
 Tarix `employee_branch_assignments` da saqlanadi — eski oylar buzilmaydi.
 
 ## Yangi jadvallar
 - `attendance_shift_segments`
 - `employee_branch_assignments`
 - `employee_day_shift_plans`
+- `employee_work_slots`
 - `attendance_pay_settings`
 - `attendance_records` ga: `resolved_branch_*`, `shift_plan`
 
@@ -60,6 +70,7 @@ Tarix `employee_branch_assignments` da saqlanadi — eski oylar buzilmaydi.
 - `GET/POST /api/employees/:id/branch-assignments`
 - `GET /api/employees/:id/branch-on/:date`
 - `GET/PUT /api/employees/:id/day-shifts/:date`
+- `GET/POST /api/smena/slots`, `GET /api/smena/slots/all`, `DELETE /api/smena/slots/:id`
 
 ## DB
 ```bash

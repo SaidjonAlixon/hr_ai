@@ -26,7 +26,8 @@ export function HirePipelineHistory({
             key={`${block.step}-${idx}`}
             className={cn(
               "rounded-xl border bg-muted/25 p-4",
-              "border-l-4 border-l-sky-500",
+              "border-l-4",
+              block.step === "no_answer" ? "border-l-amber-500" : "border-l-sky-500",
             )}
           >
             <div className="flex flex-wrap items-baseline justify-between gap-2">

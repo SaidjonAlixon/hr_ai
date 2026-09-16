@@ -12,6 +12,8 @@ import {
   departmentAttendanceQrTable,
   employeeBranchAssignmentsTable,
   employeeDayShiftPlansTable,
+  employeeWorkSlotsTable,
+  attendanceShiftSegmentsTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import {
@@ -42,12 +44,20 @@ import {
   addDaysYmd,
   DEFAULT_SHIFT_DEFS,
 } from "../lib/attendance-engine";
+import {
+  resolveSlotsForDay,
+  activePunchSlotsAt,
+  formatShiftKeyUz,
+  type WorkSlotRow,
+  type ResolvedDaySlot,
+} from "../lib/work-slots";
 import { setSessionCookie } from "../lib/session";
 import {
   hoursForStaff,
   workScheduleForStaff,
   normalizeShiftType,
   encodeShiftKeys,
+  parseShiftKeys,
   shiftEndAt,
   checkoutDeadlineAt,
   checkoutDeadlineHmFor,
@@ -1414,34 +1424,287 @@ function readSessionUserId(req: { cookies?: Record<string, unknown> }): number |
   }
 }
 
+function mapWorkSlotRow(r: typeof employeeWorkSlotsTable.$inferSelect): WorkSlotRow {
+  return {
+    id: r.id,
+    employeeId: r.employeeId,
+    branchId: r.branchId,
+    branchLabel: r.branchLabel,
+    shiftKey: (r.shiftKey as WorkSlotRow["shiftKey"]) || "one",
+    mode: (r.mode as WorkSlotRow["mode"]) || "permanent",
+    validFrom: r.validFrom,
+    validTo: r.validTo,
+    weekdays: (r.weekdays as number[] | null) || null,
+    workDates: (r.workDates as string[] | null) || null,
+    note: r.note,
+    active: r.active,
+  };
+}
+
+async function loadActiveWorkSlots(employeeId: number): Promise<WorkSlotRow[]> {
+  try {
+    const rows = await db
+      .select()
+      .from(employeeWorkSlotsTable)
+      .where(and(eq(employeeWorkSlotsTable.employeeId, employeeId), eq(employeeWorkSlotsTable.active, true)));
+    return rows.map(mapWorkSlotRow);
+  } catch {
+    return [];
+  }
+}
+
+async function branchCoordsById(
+  branchId: number,
+): Promise<{ lat: number; lng: number; label: string } | null> {
+  const [mgr] = await db
+    .select({
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+      location: employeesTable.location,
+      fullName: employeesTable.fullName,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.id, branchId))
+    .limit(1);
+  if (!mgr) return null;
+  const c = coordsFromEmp(mgr);
+  if (!c) return null;
+  return {
+    lat: c.lat,
+    lng: c.lng,
+    label: displayBranchName(mgr.location) || mgr.location || mgr.fullName || "Filial",
+  };
+}
+
+type GeoGateOk = {
+  ok: true;
+  distanceMeters: number;
+  effectiveRadius: number;
+  point: DavomatPoint;
+  resolvedBranchId: number | null;
+  resolvedBranchLabel: string | null;
+  activeShiftKey: string | null;
+  daySlots: ResolvedDaySlot[];
+};
+
 async function geoGate(
   emp: WorkplaceEmp,
   userRole: string,
   latitude: number,
   longitude: number,
   _accuracyMeters?: number,
-): Promise<
-  | { ok: true; distanceMeters: number; effectiveRadius: number; point: DavomatPoint }
-  | {
-      ok: false;
-      status: number;
-      body: Record<string, unknown>;
+  action: "in" | "out" = "in",
+): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
+  if (!usesBranchDavomat(userRole, emp.orgRole)) {
+    const resolved = await resolveDavomatPoint(emp, userRole);
+    if (!resolved.ok) return resolved;
+    const point = resolved.point;
+    const distanceMeters = haversineMeters(latitude, longitude, point.latitude, point.longitude);
+    const effectiveRadius = geofenceMetersForKind(point.kind);
+    if (distanceMeters > effectiveRadius) {
+      const remainMeters = distanceMeters - effectiveRadius;
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: `Hududdan tashqaridasiz (asosiy ofis): ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
+          code: "outside_geofence",
+          distanceMeters,
+          remainMeters,
+          allowedMeters: effectiveRadius,
+          workplace: {
+            location: point.label,
+            latitude: point.latitude,
+            longitude: point.longitude,
+            kind: point.kind,
+          },
+          fullName: emp.fullName,
+        },
+      };
     }
-> {
+    return {
+      ok: true,
+      distanceMeters,
+      effectiveRadius,
+      point,
+      resolvedBranchId: null,
+      resolvedBranchLabel: null,
+      activeShiftKey: null,
+      daySlots: [],
+    };
+  }
+
+  const defs = await getEffectiveShiftDefs();
+  const today = todayTashkent();
+  const yesterday = addDaysYmd(today, -1);
+  const nowMs = Date.now();
+  const allSlots = await loadActiveWorkSlots(emp.id);
+  const hasSlotSystem = allSlots.length > 0;
+  let workDate = today;
+  let daySlots = resolveSlotsForDay(today, allSlots);
+  let active = activePunchSlotsAt(today, daySlots, nowMs, defs, action);
+  if (!active.length) {
+    const ySlots = resolveSlotsForDay(yesterday, allSlots);
+    const yActive = activePunchSlotsAt(yesterday, ySlots, nowMs, defs, action);
+    if (yActive.length) {
+      workDate = yesterday;
+      daySlots = ySlots;
+      active = yActive;
+    }
+  }
+
+  // Biriktirish tizimi bor — faqat slot bo‘yicha (legacy filialga qaytmaymiz)
+  if (hasSlotSystem) {
+    if (!daySlots.length) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: "Bugun sizga filial/smena biriktirilmagan. Davomat qilib bo‘lmaydi.",
+          code: "no_assignment_today",
+          workDate: today,
+          daySlots: [],
+          fullName: emp.fullName,
+        },
+      };
+    }
+    if (!active.length) {
+      const plan = daySlots
+        .map((s) => `${s.branchLabel || s.branchId} · ${formatShiftKeyUz(s.shiftKey)}`)
+        .join("; ");
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: `Hozir smena vaqti emas. Bugungi reja: ${plan || "—"}. Faqat belgilangan smenada va shu filialda davomat qilinadi.`,
+          code: "outside_shift_window",
+          workDate,
+          daySlots,
+          fullName: emp.fullName,
+        },
+      };
+    }
+
+    const radius = geofenceMetersForKind("branch");
+    const candidates: Array<{
+      slot: (typeof active)[0];
+      distanceMeters: number;
+      lat: number;
+      lng: number;
+      label: string;
+    }> = [];
+    for (const slot of active) {
+      const coords = await branchCoordsById(slot.branchId);
+      if (!coords) continue;
+      candidates.push({
+        slot,
+        distanceMeters: haversineMeters(latitude, longitude, coords.lat, coords.lng),
+        lat: coords.lat,
+        lng: coords.lng,
+        label: slot.branchLabel || coords.label,
+      });
+    }
+    if (!candidates.length) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: "Belgilangan filial GPS yo‘q. Koordinator filial lokatsiyasini kiritsin.",
+          code: "branch_gps_missing",
+          fullName: emp.fullName,
+          daySlots,
+        },
+      };
+    }
+    candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    const best = candidates[0]!;
+    // Faqat HOZIRGI smena filialiga ruxsat — boshqa filialdagi GPS rad
+    if (best.distanceMeters > radius) {
+      const remainMeters = best.distanceMeters - radius;
+      const allowed = candidates
+        .map((c) => `${c.label} (${formatShiftKeyUz(c.slot.shiftKey)})`)
+        .join(", ");
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: `Hozir faqat shu joyda davomat: ${allowed}. Siz ${best.distanceMeters} m uzoqdasiz — yana ${remainMeters} m yaqinlashing.`,
+          code: "outside_geofence",
+          distanceMeters: best.distanceMeters,
+          remainMeters,
+          allowedMeters: radius,
+          allowedBranches: candidates.map((c) => ({
+            branchId: c.slot.branchId,
+            label: c.label,
+            shiftKey: c.slot.shiftKey,
+          })),
+          workplace: {
+            location: best.label,
+            latitude: best.lat,
+            longitude: best.lng,
+            kind: "branch",
+          },
+          fullName: emp.fullName,
+          daySlots,
+        },
+      };
+    }
+    return {
+      ok: true,
+      distanceMeters: best.distanceMeters,
+      effectiveRadius: radius,
+      point: {
+        latitude: best.lat,
+        longitude: best.lng,
+        label: best.label,
+        kind: "branch",
+      },
+      resolvedBranchId: best.slot.branchId,
+      resolvedBranchLabel: best.label,
+      activeShiftKey: best.slot.shiftKey,
+      daySlots,
+    };
+  }
+
+  // Legacy (slot yo‘q): bitta doimiy filial + smena oynasi
   const resolved = await resolveDavomatPoint(emp, userRole);
   if (!resolved.ok) return resolved;
   const point = resolved.point;
   const distanceMeters = haversineMeters(latitude, longitude, point.latitude, point.longitude);
   const effectiveRadius = geofenceMetersForKind(point.kind);
 
+  const legacyKeys = parseShiftKeys(emp.shiftType, emp.shiftLabel).filter(
+    (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
+  );
+  if (legacyKeys.length) {
+    const pseudo: ResolvedDaySlot[] = legacyKeys.map((shiftKey) => ({
+      branchId: (assignedBranchIdForEmp(emp) || emp.id) as number,
+      branchLabel: point.label,
+      shiftKey,
+      mode: "permanent" as const,
+    }));
+    const legacyActive = activePunchSlotsAt(today, pseudo, nowMs, defs, action);
+    const yLegacy = activePunchSlotsAt(yesterday, pseudo, nowMs, defs, action);
+    if (!legacyActive.length && !yLegacy.length) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error: `Hozir smena vaqti emas (${legacyKeys.map(formatShiftKeyUz).join("+")}). Belgilangan smenada keling.`,
+          code: "outside_shift_window",
+          fullName: emp.fullName,
+        },
+      };
+    }
+  }
+
   if (distanceMeters > effectiveRadius) {
     const remainMeters = distanceMeters - effectiveRadius;
-    const where = point.kind === "branch" ? "o‘z filiali" : "asosiy ofis";
     return {
       ok: false,
       status: 403,
       body: {
-        error: `Hududdan tashqaridasiz (${where}): ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
+        error: `Hududdan tashqaridasiz (o‘z filiali): ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
         code: "outside_geofence",
         distanceMeters,
         remainMeters,
@@ -1456,7 +1719,17 @@ async function geoGate(
       },
     };
   }
-  return { ok: true, distanceMeters, effectiveRadius, point };
+  const effective = await effectiveBranchIdForDay(emp);
+  return {
+    ok: true,
+    distanceMeters,
+    effectiveRadius,
+    point,
+    resolvedBranchId: effective.branchId,
+    resolvedBranchLabel: effective.branchLabel,
+    activeShiftKey: legacyKeys[0] || null,
+    daySlots: [],
+  };
 }
 
 type PunchFail = { ok: false; status: number; body: Record<string, unknown> };
@@ -1498,6 +1771,8 @@ async function applyFacePunch(opts: {
   verificationMethod?: "FACE_ID" | "QR";
   resolvedBranchId?: number | null;
   resolvedBranchLabel?: string | null;
+  activeShiftKey?: string | null;
+  daySlots?: ResolvedDaySlot[];
 }): Promise<
   | { ok: true; payload: Record<string, unknown> }
   | PunchFail
@@ -1514,6 +1789,8 @@ async function applyFacePunch(opts: {
     verificationMethod = "FACE_ID",
     resolvedBranchId = null,
     resolvedBranchLabel = null,
+    activeShiftKey = null,
+    daySlots = [],
   } = opts;
   const defs = await getEffectiveShiftDefs();
   const today = todayTashkent();
@@ -1588,8 +1865,97 @@ async function applyFacePunch(opts: {
       if (existing?.checkOutAt || existing?.status === "absent" || existing?.status === "leave") {
         return oncePerDayFail(emp, existing, "already_complete");
       }
+      // Ko‘p filial: 2-smenaga boshqa filialda qayta «Keldim» — asosiy yozuvni yopmaymiz
+      const multiBranchDay =
+        daySlots.length >= 2 && new Set(daySlots.map((s) => s.branchId)).size >= 2;
       if (action === "in" && existing?.checkInAt) {
-        return oncePerDayFail(emp, existing, "already_in");
+        if (!(multiBranchDay && activeShiftKey && resolvedBranchId)) {
+          return oncePerDayFail(emp, existing, "already_in");
+        }
+        // Segment: yangi smena/filial uchun kelish
+        try {
+          const [seg] = await tx
+            .select()
+            .from(attendanceShiftSegmentsTable)
+            .where(
+              and(
+                eq(attendanceShiftSegmentsTable.employeeId, emp.id),
+                eq(attendanceShiftSegmentsTable.workDate, workDate),
+                eq(attendanceShiftSegmentsTable.shiftKey, activeShiftKey),
+              ),
+            )
+            .limit(1);
+          if (seg?.checkInAt && !seg.checkOutAt) {
+            return oncePerDayFail(emp, existing, "already_in");
+          }
+          if (seg?.checkInAt && seg.checkOutAt) {
+            return oncePerDayFail(emp, existing, "already_complete");
+          }
+          // Oldingi ochiq segmentni yopamiz
+          await tx
+            .update(attendanceShiftSegmentsTable)
+            .set({ checkOutAt: now, status: "closed", updatedAt: now })
+            .where(
+              and(
+                eq(attendanceShiftSegmentsTable.employeeId, emp.id),
+                eq(attendanceShiftSegmentsTable.workDate, workDate),
+                eq(attendanceShiftSegmentsTable.status, "open"),
+              ),
+            );
+          if (seg) {
+            await tx
+              .update(attendanceShiftSegmentsTable)
+              .set({
+                checkInAt: now,
+                checkOutAt: null,
+                branchId: resolvedBranchId,
+                branchLabel: resolvedBranchLabel,
+                status: "open",
+                source: verificationMethod === "QR" ? "qr" : "face",
+                updatedAt: now,
+              })
+              .where(eq(attendanceShiftSegmentsTable.id, seg.id));
+          } else {
+            await tx.insert(attendanceShiftSegmentsTable).values({
+              employeeId: emp.id,
+              workDate,
+              shiftKey: activeShiftKey,
+              checkInAt: now,
+              branchId: resolvedBranchId,
+              branchLabel: resolvedBranchLabel,
+              status: "open",
+              source: verificationMethod === "QR" ? "qr" : "face",
+            });
+          }
+          await tx
+            .update(attendanceRecordsTable)
+            .set({
+              ...geoFields,
+              resolvedBranchId: resolvedBranchId ?? undefined,
+              resolvedBranchLabel: resolvedBranchLabel ?? undefined,
+              notes: `multi_branch_transfer:${activeShiftKey}`,
+              updatedAt: now,
+            })
+            .where(eq(attendanceRecordsTable.id, existing.id));
+          return {
+            ok: true,
+            payload: {
+              ok: true,
+              action: "in",
+              fullName: emp.fullName,
+              workDate,
+              checkIn: formatHm(existing.checkInAt),
+              checkOut: "—",
+              transfer: true,
+              shiftKey: activeShiftKey,
+              branchLabel: resolvedBranchLabel,
+              message: `2-filialga o‘tdingiz: ${resolvedBranchLabel || ""} · ${formatShiftKeyUz(activeShiftKey)}`,
+            },
+          };
+        } catch (segErr) {
+          console.warn("multi-branch segment in failed", segErr);
+          return oncePerDayFail(emp, existing, "already_in");
+        }
       }
       if (action === "out" && !existing?.checkInAt) {
         return {
@@ -1734,6 +2100,7 @@ async function resolveFaceAtSite(opts: {
   longitude: number;
   accuracy?: number;
   snapshot?: unknown;
+  action?: "in" | "out";
   /** Login/parol sessiya — faqat shu user Face ID si. */
   expectedUserId?: number;
   expectedFullName?: string;
@@ -1743,7 +2110,14 @@ async function resolveFaceAtSite(opts: {
       emp: WorkplaceEmp;
       faceId: number;
       user: { id: number; fullName: string; role: string };
-      gate: { distanceMeters: number; effectiveRadius: number };
+      gate: {
+        distanceMeters: number;
+        effectiveRadius: number;
+        resolvedBranchId: number | null;
+        resolvedBranchLabel: string | null;
+        activeShiftKey: string | null;
+        daySlots: ResolvedDaySlot[];
+      };
     }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
@@ -1783,7 +2157,14 @@ async function resolveFaceAtSite(opts: {
   }
 
   const emp = await ensureEmployeeForUser(user);
-  const gate = await geoGate(emp, user.role, opts.latitude, opts.longitude, opts.accuracy);
+  const gate = await geoGate(
+    emp,
+    user.role,
+    opts.latitude,
+    opts.longitude,
+    opts.accuracy,
+    opts.action === "out" ? "out" : "in",
+  );
   if (!gate.ok) {
     return { ok: false, status: gate.status, body: gate.body };
   }
@@ -1792,7 +2173,14 @@ async function resolveFaceAtSite(opts: {
     emp,
     faceId: matched.faceId,
     user: { id: user.id, fullName: user.fullName, role: user.role },
-    gate: { distanceMeters: gate.distanceMeters, effectiveRadius: gate.effectiveRadius },
+    gate: {
+      distanceMeters: gate.distanceMeters,
+      effectiveRadius: gate.effectiveRadius,
+      resolvedBranchId: gate.resolvedBranchId,
+      resolvedBranchLabel: gate.resolvedBranchLabel,
+      activeShiftKey: gate.activeShiftKey,
+      daySlots: gate.daySlots,
+    },
   };
 }
 
@@ -1836,7 +2224,54 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       return;
     }
     const emp = await ensureEmployeeForUser(user);
-    const resolved = await resolveDavomatPoint(emp, user.role);
+    const today = todayTashkent();
+    const yesterday = addDaysYmd(today, -1);
+    const defs = await getEffectiveShiftDefs();
+    const nowMs = Date.now();
+    const allSlots = await loadActiveWorkSlots(emp.id);
+    let daySlots = resolveSlotsForDay(today, allSlots);
+    let activeNow = activePunchSlotsAt(today, daySlots, nowMs, defs, "in");
+    let planWorkDate = today;
+    if (!activeNow.length) {
+      const ySlots = resolveSlotsForDay(yesterday, allSlots);
+      const yActive = activePunchSlotsAt(yesterday, ySlots, nowMs, defs, "in");
+      if (yActive.length) {
+        daySlots = ySlots;
+        activeNow = yActive;
+        planWorkDate = yesterday;
+      }
+    }
+
+    // UI GPS: hozirgi aktiv smena filiali; yo‘q bo‘lsa bugungi 1-slot; legacy resolve
+    let resolved = await resolveDavomatPoint(emp, user.role);
+    if (activeNow[0]) {
+      const coords = await branchCoordsById(activeNow[0].branchId);
+      if (coords) {
+        resolved = {
+          ok: true,
+          point: {
+            latitude: coords.lat,
+            longitude: coords.lng,
+            label: activeNow[0].branchLabel || coords.label,
+            kind: "branch",
+          },
+        };
+      }
+    } else if (allSlots.length > 0 && daySlots[0]) {
+      const coords = await branchCoordsById(daySlots[0].branchId);
+      if (coords) {
+        resolved = {
+          ok: true,
+          point: {
+            latitude: coords.lat,
+            longitude: coords.lng,
+            label: daySlots[0].branchLabel || coords.label,
+            kind: "branch",
+          },
+        };
+      }
+    }
+
     const point = resolved.ok
       ? resolved.point
       : {
@@ -1845,8 +2280,6 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           label: DAVOMAT_SITE_LABEL,
           kind: "office" as const,
         };
-    const today = todayTashkent();
-    const yesterday = addDaysYmd(today, -1);
     const [todayRec] = await db
       .select()
       .from(attendanceRecordsTable)
@@ -1896,7 +2329,17 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     const planForWorkDate = await dayShiftTypeFor(emp.id, workDate);
     const punchShiftType = planForWorkDate || shiftType;
     const punchShiftLabel = planForWorkDate ? null : shiftLabel;
-    const defs = await getEffectiveShiftDefs();
+
+    const shiftWindowOpen = allSlots.length === 0 ? true : activeNow.length > 0;
+    let gpsError: string | null = resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q");
+    if (allSlots.length > 0 && !daySlots.length) {
+      gpsError = "Bugun sizga filial/smena biriktirilmagan — davomat yopiq.";
+    } else if (allSlots.length > 0 && !shiftWindowOpen) {
+      const plan = daySlots
+        .map((s) => `${s.branchLabel || s.branchId} · ${formatShiftKeyUz(s.shiftKey)}`)
+        .join("; ");
+      gpsError = `Hozir smena vaqti emas. Bugungi reja: ${plan}. Faqat shu vaqtda va filialda davomat.`;
+    }
 
     res.json({
       allowedMeters: geofenceMetersForKind(point.kind),
@@ -1906,23 +2349,46 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         longitude: point.longitude,
         kind: point.kind,
       },
-      gpsReady: resolved.ok,
-      gpsError: resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q"),
+      gpsReady: resolved.ok && shiftWindowOpen && (allSlots.length === 0 || daySlots.length > 0),
+      gpsError,
+      shiftWindowOpen,
       workDate,
+      dayPlan: {
+        workDate: planWorkDate,
+        slots: daySlots.map((s) => ({
+          branchId: s.branchId,
+          branchLabel: s.branchLabel || null,
+          shiftKey: s.shiftKey,
+          shiftLabel: formatShiftKeyUz(s.shiftKey),
+          mode: s.mode,
+          activeNow: activeNow.some((a) => a.branchId === s.branchId && a.shiftKey === s.shiftKey),
+        })),
+        activeNow: activeNow.map((s) => ({
+          branchId: s.branchId,
+          branchLabel: s.branchLabel || null,
+          shiftKey: s.shiftKey,
+          shiftLabel: formatShiftKeyUz(s.shiftKey),
+        })),
+      },
       shift: (() => {
+        const activeKey = activeNow[0]?.shiftKey;
         const w = workScheduleForStaff(
           user.role,
           emp.orgRole,
-          punchShiftType,
-          punchShiftLabel,
+          activeKey || punchShiftType,
+          activeKey ? null : punchShiftLabel,
           defs,
         );
         const deadlineOpts = { shiftKey: w.key, shiftKeys: w.keys, overnight: Boolean(w.overnight) };
         const deadlineAt = checkoutDeadlineAt(workDate, w.end, w.overnight, deadlineOpts);
         return {
           type: w.key,
-          keys: w.keys || [w.key],
-          label: w.label,
+          keys: daySlots.length
+            ? daySlots.map((s) => s.shiftKey)
+            : w.keys || [w.key],
+          label: daySlots.length
+            ? daySlots.map((s) => `${formatShiftKeyUz(s.shiftKey)}→${s.branchLabel || s.branchId}`).join(" · ")
+            : w.label,
           start: w.start,
           end: w.end,
           overnight: Boolean(w.overnight),
@@ -2310,6 +2776,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       longitude,
       accuracy: Number.isFinite(accuracy) ? accuracy : undefined,
       snapshot: req.body?.snapshot ?? req.body?.photo,
+      action,
       expectedUserId,
       expectedFullName,
     });
@@ -2329,6 +2796,10 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       faceProfileId: resolved.faceId,
       action,
       verificationMethod: "FACE_ID",
+      resolvedBranchId: resolved.gate.resolvedBranchId,
+      resolvedBranchLabel: resolved.gate.resolvedBranchLabel,
+      activeShiftKey: resolved.gate.activeShiftKey,
+      daySlots: resolved.gate.daySlots,
     });
     if (!punched.ok) {
       await writePunchAudit({
@@ -2947,15 +3418,28 @@ function assignedBranchIdForEmp(emp: WorkplaceEmp): number | null {
   return emp.reportsToId ?? null;
 }
 
-/** Doimiy + kunlik rotatsiya (temp_one_day / substitute / …) */
+/** Doimiy + kunlik rotatsiya + work slots */
 async function effectiveBranchIdForDay(
   emp: WorkplaceEmp,
   workDate?: string,
 ): Promise<{ branchId: number | null; branchLabel: string | null }> {
+  const date = workDate || todayTashkent();
+  try {
+    const slots = await loadActiveWorkSlots(emp.id);
+    const daySlots = resolveSlotsForDay(date, slots);
+    if (daySlots.length) {
+      const nowMs = Date.now();
+      const defs = await getEffectiveShiftDefs();
+      const active = activePunchSlotsAt(date, daySlots, nowMs, defs, "in");
+      const pick = active[0] || daySlots[0]!;
+      return { branchId: pick.branchId, branchLabel: pick.branchLabel || null };
+    }
+  } catch {
+    /* fall through */
+  }
   const permanent = assignedBranchIdForEmp(emp);
   const permanentLabel = displayBranchName(emp.location) || emp.location || emp.fullName || null;
   try {
-    const date = workDate || todayTashkent();
     const assignRows = await db
       .select()
       .from(employeeBranchAssignmentsTable)
@@ -2985,9 +3469,17 @@ async function effectiveBranchIdForDay(
   }
 }
 
-/** Kunlik smena rejasini (rotatsiya) encoded shiftType sifatida qaytaradi */
+/** Kunlik smena rejasini encoded shiftType sifatida qaytaradi (work slots ustun) */
 async function dayShiftTypeFor(employeeId: number, workDate: string): Promise<string | null> {
   try {
+    const slots = await loadActiveWorkSlots(employeeId);
+    const day = resolveSlotsForDay(workDate, slots);
+    if (day.length) {
+      const keys = day
+        .map((s) => s.shiftKey)
+        .filter((k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three");
+      if (keys.length) return encodeShiftKeys(keys);
+    }
     const [plan] = await db
       .select({ shiftKeys: employeeDayShiftPlansTable.shiftKeys })
       .from(employeeDayShiftPlansTable)
@@ -3572,7 +4064,23 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         });
         return;
       }
-      if (!adminAnywhere && branchQr.row.branchId !== myBranchId) {
+      const slotRows = await loadActiveWorkSlots(emp.id);
+      const todaySlots = resolveSlotsForDay(todayTashkent(), slotRows);
+      const allowedBranchIds = new Set<number>();
+      if (slotRows.length > 0) {
+        // Slot tizimi: faqat bugungi rejadagi filiallar
+        for (const s of todaySlots) allowedBranchIds.add(s.branchId);
+      } else if (myBranchId) {
+        allowedBranchIds.add(myBranchId);
+      }
+      if (!adminAnywhere && slotRows.length > 0 && !todaySlots.length) {
+        res.status(403).json({
+          error: "Bugun sizga filial/smena biriktirilmagan — QR davomat yopiq.",
+          code: "no_assignment_today",
+        });
+        return;
+      }
+      if (!adminAnywhere && !allowedBranchIds.has(branchQr.row.branchId)) {
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
@@ -3584,23 +4092,28 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           failureReason: "QR boshqa filialga tegishli",
           ipAddress: ip,
           deviceId,
-          meta: { qrBranchId: branchQr.row.branchId, myBranchId },
+          meta: { qrBranchId: branchQr.row.branchId, myBranchId, allowed: [...allowedBranchIds] },
         });
         res.status(403).json({
-          error: "Bu QR boshqa filialniki. Faqat o‘z filialingiz QR i bilan davomat qiling.",
+          error: "Bu QR bugungi smena/filial rejangizga mos emas. Faqat belgilangan filial QR i bilan davomat qiling.",
           code: "qr_wrong_branch",
           myBranchId,
           qrBranchId: branchQr.row.branchId,
+          allowedBranchIds: [...allowedBranchIds],
         });
         return;
       }
 
-      const punchBranchId = adminAnywhere ? branchQr.row.branchId : myBranchId!;
+      const punchBranchId = adminAnywhere ? branchQr.row.branchId : branchQr.row.branchId;
+      const matchingSlot = todaySlots.find((s) => s.branchId === punchBranchId);
       let latitude = hasGps ? latitudeRaw : 0;
       let longitude = hasGps ? longitudeRaw : 0;
       let distanceMeters = 0;
       let allowedMeters = 0;
       let gpsResult: string = adminAnywhere ? "admin_bypass" : "ok";
+
+      let gateDaySlots = todaySlots;
+      let gateShiftKey: string | null = matchingSlot?.shiftKey || null;
 
       if (!adminAnywhere) {
         const gate = await geoGate(
@@ -3609,6 +4122,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           latitude,
           longitude,
           Number.isFinite(accuracy) ? accuracy : undefined,
+          action === "out" ? "out" : "in",
         );
         if (!gate.ok) {
           await writePunchAudit({
@@ -3631,6 +4145,8 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         distanceMeters = gate.distanceMeters;
         allowedMeters = gate.effectiveRadius;
         gpsResult = "ok";
+        gateDaySlots = gate.daySlots.length ? gate.daySlots : todaySlots;
+        gateShiftKey = gate.activeShiftKey || gateShiftKey;
       } else if (hasGps) {
         try {
           const resolved = await resolveDavomatPoint(emp, user.role);
@@ -3672,7 +4188,9 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         action,
         verificationMethod: "QR",
         resolvedBranchId: punchBranchId,
-        resolvedBranchLabel: branchQr.row.branchLabel || null,
+        resolvedBranchLabel: branchQr.row.branchLabel || matchingSlot?.branchLabel || null,
+        activeShiftKey: gateShiftKey,
+        daySlots: gateDaySlots,
       });
       if (!punched.ok) {
         await writePunchAudit({

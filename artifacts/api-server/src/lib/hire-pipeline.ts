@@ -27,6 +27,23 @@ export type PipelineData = {
     checklist: Record<string, boolean>;
     at: string;
   } & PipelineStepMeta;
+  /** Telefon ko‘tarmadi / javob bermadi — to‘liq tarix */
+  noAnswer?: {
+    status: "waiting" | "cancelled" | "resolved";
+    attempts: Array<
+      {
+        at: string;
+        note: string;
+        calledAt: string;
+        remindAt?: string | null;
+        reminderId?: number | null;
+      } & PipelineStepMeta
+    >;
+    cancelNote?: string;
+    cancelledAt?: string;
+    continueDeadline?: string | null;
+    continuedAt?: string;
+  };
 };
 
 export type PipelineActor = { id: number; name: string; role: string };
@@ -101,14 +118,148 @@ export function stageStatusForStep(
 export function applyPipelineAction(opts: {
   currentStep: PipelineStep;
   currentData: PipelineData;
-  action: "advance" | "back" | "set";
+  action: "advance" | "back" | "set" | "no_answer" | "no_answer_cancel" | "no_answer_continue";
   step?: PipelineStep;
-  patch?: Partial<PipelineData>;
+  patch?: Partial<PipelineData> & {
+    noAnswerAttempt?: {
+      note?: string;
+      calledAt?: string;
+      remindAt?: string | null;
+      reminderId?: number | null;
+    };
+    noAnswerCancel?: { note?: string };
+    noAnswerContinue?: { deadline?: string; note?: string };
+  };
   actor?: PipelineActor;
-}): { step: PipelineStep; data: PipelineData; stage: string; status: string; error?: string } {
+}): { step: PipelineStep; data: PipelineData; stage: string; status: string; error?: string; createReminder?: { dueAt: string; note: string } } {
   const actor = opts.actor;
   let step = opts.currentStep;
   let data = { ...opts.currentData };
+
+  if (opts.action === "no_answer") {
+    const attempt = opts.patch?.noAnswerAttempt;
+    const note = String(attempt?.note || "").trim();
+    if (!note) return { step, data, ...stageStatusForStep(step, data), error: "Izoh majburiy (nima deyildi / qachon qo‘ng‘iroq)" };
+    const calledAt = attempt?.calledAt ? new Date(attempt.calledAt) : new Date();
+    if (Number.isNaN(calledAt.getTime())) {
+      return { step, data, ...stageStatusForStep(step, data), error: "Qo‘ng‘iroq vaqti noto‘g‘ri" };
+    }
+    if (!attempt?.remindAt) {
+      return { step, data, ...stageStatusForStep(step, data), error: "Eslatma vaqti majburiy" };
+    }
+    const r = new Date(attempt.remindAt);
+    if (Number.isNaN(r.getTime())) {
+      return { step, data, ...stageStatusForStep(step, data), error: "Eslatma vaqti noto‘g‘ri" };
+    }
+    const remindAt = r.toISOString();
+    const prev = data.noAnswer || { status: "waiting" as const, attempts: [] };
+    const nextAttempt = withActor(
+      {
+        at: new Date().toISOString(),
+        note,
+        calledAt: calledAt.toISOString(),
+        remindAt,
+        reminderId: attempt?.reminderId ?? null,
+      },
+      actor,
+    );
+    data.noAnswer = {
+      ...prev,
+      status: "waiting",
+      attempts: [...(prev.attempts || []), nextAttempt],
+      cancelledAt: undefined,
+      cancelNote: undefined,
+    };
+    // Match qadamida qolamiz
+    step = "match";
+    const out: {
+      step: PipelineStep;
+      data: PipelineData;
+      stage: string;
+      status: string;
+      createReminder?: { dueAt: string; note: string };
+    } = {
+      step,
+      data,
+      stage: "in_progress",
+      status: "active",
+    };
+    if (remindAt) {
+      out.createReminder = {
+        dueAt: remindAt,
+        note: `Telefon ko‘tarmadi · ${note}`.slice(0, 400),
+      };
+    }
+    return out;
+  }
+
+  if (opts.action === "no_answer_cancel") {
+    const attempts = data.noAnswer?.attempts || [];
+    if (attempts.length < 2) {
+      return {
+        step,
+        data,
+        ...stageStatusForStep(step, data),
+        error: "Bekor qilish 2 marta javobsiz qo‘ng‘iroqdan keyin",
+      };
+    }
+    const note = String(opts.patch?.noAnswerCancel?.note || "").trim() || "2 marta telefon ko‘tarmadi — bekor";
+    data.noAnswer = {
+      ...(data.noAnswer || { attempts }),
+      status: "cancelled",
+      attempts,
+      cancelNote: note,
+      cancelledAt: new Date().toISOString(),
+    };
+    data.decision = withActor(
+      {
+        track: "reject" as const,
+        note,
+        at: new Date().toISOString(),
+      },
+      actor,
+    );
+    return { step: "match", data, stage: "in_progress", status: "rejected" };
+  }
+
+  if (opts.action === "no_answer_continue") {
+    const attempts = data.noAnswer?.attempts || [];
+    if (attempts.length < 2) {
+      return {
+        step,
+        data,
+        ...stageStatusForStep(step, data),
+        error: "Davom etish 2 marta javobsizdan keyin",
+      };
+    }
+    const rawDl = opts.patch?.noAnswerContinue?.deadline;
+    if (!rawDl) {
+      return { step, data, ...stageStatusForStep(step, data), error: "Deadline (muddat) majburiy" };
+    }
+    const dl = new Date(rawDl);
+    if (Number.isNaN(dl.getTime())) {
+      return { step, data, ...stageStatusForStep(step, data), error: "Deadline noto‘g‘ri" };
+    }
+    const note = String(opts.patch?.noAnswerContinue?.note || "").trim();
+    data.noAnswer = {
+      ...(data.noAnswer || { attempts }),
+      status: "waiting",
+      attempts,
+      continueDeadline: dl.toISOString(),
+      continuedAt: new Date().toISOString(),
+      cancelNote: note || data.noAnswer?.cancelNote,
+    };
+    return {
+      step: "match",
+      data,
+      stage: "in_progress",
+      status: "active",
+      createReminder: {
+        dueAt: dl.toISOString(),
+        note: `Tel. javobsiz deadline · ${note || "Qayta qo‘ng‘iroq"}`.slice(0, 400),
+      },
+    };
+  }
 
   if (opts.action === "back") {
     const i = stepIndex(step);
@@ -142,6 +293,9 @@ export function applyPipelineAction(opts: {
       },
       actor,
     );
+    if (data.noAnswer?.status === "waiting") {
+      data.noAnswer = { ...data.noAnswer, status: "resolved" };
+    }
     step = "recommend";
   } else if (step === "recommend") {
     if (typeof patch.recommend?.yes !== "boolean") {

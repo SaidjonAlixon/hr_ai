@@ -313,12 +313,30 @@ export type WorkplaceInfo = {
   allowedMeters: number;
   gpsReady?: boolean;
   gpsError?: string | null;
+  shiftWindowOpen?: boolean;
   workDate: string;
   site?: {
     label: string;
     latitude: number;
     longitude: number;
     kind?: "branch" | "office";
+  };
+  dayPlan?: {
+    workDate: string;
+    slots: Array<{
+      branchId: number;
+      branchLabel: string | null;
+      shiftKey: string;
+      shiftLabel: string;
+      mode?: string;
+      activeNow?: boolean;
+    }>;
+    activeNow: Array<{
+      branchId: number;
+      branchLabel: string | null;
+      shiftKey: string;
+      shiftLabel: string;
+    }>;
   };
   employee: {
     id: number;

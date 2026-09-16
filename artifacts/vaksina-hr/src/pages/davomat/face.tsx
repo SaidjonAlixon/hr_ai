@@ -1297,8 +1297,13 @@ export default function DavomatFacePage() {
   const remain = distance != null ? Math.max(0, distance - allowedMeters) : null;
   /** Filial GPS yo‘q bo‘lsa ofis nuqtasiga tushib «Hududdasiz» deb yolg‘on yashil ko‘rsatilmasin */
   const workplaceGpsMissing = workplace?.employee.hasGps === false;
+  const shiftWindowBlocked = workplace?.shiftWindowOpen === false || workplace?.gpsReady === false;
   const inside =
-    !workplaceGpsMissing && distance != null ? distance <= allowedMeters : false;
+    !workplaceGpsMissing &&
+    !shiftWindowBlocked &&
+    distance != null
+      ? distance <= allowedMeters
+      : false;
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   const done = nextAction === "done" || workplace?.today.complete;
@@ -1449,11 +1454,14 @@ export default function DavomatFacePage() {
     if (gpsError) return gpsError;
     if (!gps) return t("davomat.step1Grant");
     if (!isFaceIdSupported()) return t("davomat.faceUnsupported");
-    if (workplaceGpsMissing) {
+    if (workplaceGpsMissing || workplace?.gpsReady === false) {
       return (
         workplace?.gpsError ||
         t("davomat.branchGpsMissingHint")
       );
+    }
+    if (workplace?.shiftWindowOpen === false) {
+      return workplace.gpsError || "Hozir smena vaqti emas — belgilangan smenada keling.";
     }
     if (remain != null && remain > 0) {
       return tr(t, "davomat.notInZoneDetail", {
@@ -1462,7 +1470,18 @@ export default function DavomatFacePage() {
       });
     }
     return null;
-  }, [faceRegistered, gps, gpsError, remain, distance, workplaceGpsMissing, workplace?.gpsError, t]);
+  }, [
+    faceRegistered,
+    gps,
+    gpsError,
+    remain,
+    distance,
+    workplaceGpsMissing,
+    workplace?.gpsError,
+    workplace?.gpsReady,
+    workplace?.shiftWindowOpen,
+    t,
+  ]);
 
   useEffect(() => {
     if (!isTgMiniApp || tgBootRef.current) return;
@@ -1920,6 +1939,12 @@ export default function DavomatFacePage() {
 
   const firstName = displayName.trim().split(/\s+/)[0] || displayName;
   const roleLine = [position, workplaceTitle].filter(Boolean).join(" · ");
+  const dayPlanLine =
+    workplace?.dayPlan?.slots && workplace.dayPlan.slots.length > 0
+      ? workplace.dayPlan.slots
+          .map((s) => `${s.shiftLabel} → ${s.branchLabel || `#${s.branchId}`}${s.activeNow ? " ●" : ""}`)
+          .join(" · ")
+      : null;
   const needsPerms =
     !cameraGranted || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
   /** GPS bor, lekin yashil zonadan tashqarida — usul/CTA bloklanadi */
@@ -1929,7 +1954,11 @@ export default function DavomatFacePage() {
   const gpsDenied =
     Boolean(gpsError) &&
     /ruxsat|denied|sozlama|berilmadi|bermadingiz|ask again/i.test(gpsError || "");
-  const addressHint = workplace?.employee?.location || department || null;
+  const addressHint =
+    dayPlanLine ||
+    workplace?.employee?.location ||
+    department ||
+    null;
   const outsideWarn =
     remain != null
       ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`

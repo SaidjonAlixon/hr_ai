@@ -5,6 +5,7 @@ import {
   employeesTable,
   employeeBranchAssignmentsTable,
   employeeDayShiftPlansTable,
+  employeeWorkSlotsTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { isHrRole, isDirectorRole } from "../lib/roles";
@@ -13,6 +14,15 @@ import { isPharmacyShiftStaff, normalizeShiftType, shiftWindow, parseShiftKeys, 
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { displayBranchName } from "../lib/geo-location";
 import { dedupeBranchesWithGps } from "../lib/branch-dedupe";
+import {
+  validateSlotInput,
+  conflictAmongSlots,
+  resolveSlotsForDay,
+  formatShiftKeyUz,
+  formatModeUz,
+  type WorkSlotRow,
+} from "../lib/work-slots";
+import { addDaysYmd } from "../lib/attendance-engine";
 
 const router: IRouter = Router();
 
@@ -262,6 +272,9 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
     canPickOwnBranch: Boolean(me && canPickOwnBranch(role, me.orgRole)),
     canAssignOthers: assignable.length > 0,
     canDayRotate: Boolean(
+      me && (role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG),
+    ),
+    canManageSlots: Boolean(
       me && (role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG),
     ),
     employee: me
@@ -730,6 +743,397 @@ router.delete("/smena/rotation/:id", requireAuth, async (req: AuthRequest, res):
       ),
     );
   res.json({ ok: true });
+});
+
+function mapSlotRow(r: typeof employeeWorkSlotsTable.$inferSelect): WorkSlotRow {
+  return {
+    id: r.id,
+    employeeId: r.employeeId,
+    branchId: r.branchId,
+    branchLabel: r.branchLabel,
+    shiftKey: (r.shiftKey as WorkSlotRow["shiftKey"]) || "one",
+    mode: (r.mode as WorkSlotRow["mode"]) || "permanent",
+    validFrom: r.validFrom,
+    validTo: r.validTo,
+    weekdays: (r.weekdays as number[] | null) || null,
+    workDates: (r.workDates as string[] | null) || null,
+    note: r.note,
+    active: r.active,
+  };
+}
+
+async function syncPrimaryFromSlots(employeeId: number): Promise<void> {
+  const rows = await db
+    .select()
+    .from(employeeWorkSlotsTable)
+    .where(and(eq(employeeWorkSlotsTable.employeeId, employeeId), eq(employeeWorkSlotsTable.active, true)));
+  const today = todayTashkentYmd();
+  const resolved = resolveSlotsForDay(today, rows.map(mapSlotRow));
+  if (!resolved.length) return;
+  const primary = resolved[0]!;
+  const keys = resolved.map((s) => s.shiftKey);
+  const shiftType = encodeShiftKeys(keys.filter((k) => k === "one" || k === "two" || k === "three"));
+  const target = await empById(employeeId);
+  if (!target) return;
+  const patch: {
+    shiftType: string;
+    shiftLabel: string;
+    assignedBranchId?: number | null;
+    reportsToId?: number | null;
+    location?: string;
+  } = {
+    shiftType,
+    shiftLabel: keys.map((k) => formatShiftKeyUz(k)).join(" + "),
+  };
+  if (target.orgRole !== MANAGER_ORG) {
+    patch.assignedBranchId = primary.branchId;
+    patch.reportsToId = primary.branchId;
+  }
+  if (primary.branchLabel) patch.location = primary.branchLabel;
+  await db.update(employeesTable).set(patch).where(eq(employeesTable.id, employeeId));
+}
+
+/** Xodimning barcha ish slotlari */
+router.get("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole || "";
+  const me = await empByUserId(req.userId!);
+  if (!me) {
+    res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
+    return;
+  }
+  const employeeId = Number(req.query.employeeId || me.id);
+  if (!Number.isFinite(employeeId)) {
+    res.status(400).json({ error: "employeeId noto‘g‘ri" });
+    return;
+  }
+  const target = await empById(employeeId);
+  if (!target) {
+    res.status(404).json({ error: "Xodim topilmadi" });
+    return;
+  }
+  const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
+  const canSee =
+    target.id === me.id || canAssignTarget({ role, me, target, scope }) || isLeadRole(role);
+  if (!canSee) {
+    res.status(403).json({ error: "Ko‘rish huquqi yo‘q" });
+    return;
+  }
+  const rows = await db
+    .select()
+    .from(employeeWorkSlotsTable)
+    .where(eq(employeeWorkSlotsTable.employeeId, employeeId));
+  const activeOnly = String(req.query.active || "1") !== "0";
+  const items = rows
+    .filter((r) => (activeOnly ? r.active : true))
+    .map((r) => ({
+      ...mapSlotRow(r),
+      modeLabel: formatModeUz(r.mode),
+      shiftLabel: formatShiftKeyUz(r.shiftKey),
+      createdAt: r.createdAt,
+    }))
+    .sort((a, b) => {
+      const m = String(a.mode).localeCompare(String(b.mode));
+      if (m !== 0) return m;
+      return String(a.shiftKey).localeCompare(String(b.shiftKey));
+    });
+
+  const onDate = String(req.query.date || todayTashkentYmd());
+  const daySlots = /^\d{4}-\d{2}-\d{2}$/.test(onDate)
+    ? resolveSlotsForDay(onDate, items)
+    : [];
+
+  res.json({ employeeId, items, daySlots, date: onDate });
+});
+
+/** Doira ichidagi barcha faol slotlar (ro‘yxat) */
+router.get("/smena/slots/all", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole || "";
+  const me = await empByUserId(req.userId!);
+  if (!me) {
+    res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
+    return;
+  }
+  if (!(role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG)) {
+    res.status(403).json({ error: "Slotlar ro‘yxati uchun huquq yo‘q" });
+    return;
+  }
+  const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
+  const people = await db
+    .select(EMP_COLS)
+    .from(employeesTable)
+    .where(sql`coalesce(${employeesTable.employmentStatus}, 'working') <> 'dismissed'`);
+  const allowed = new Set<number>();
+  for (const p of people) {
+    if (canAssignTarget({ role, me, target: p, scope })) allowed.add(p.id);
+  }
+  if (!allowed.size) {
+    res.json({ items: [] });
+    return;
+  }
+  const rows = await db
+    .select()
+    .from(employeeWorkSlotsTable)
+    .where(eq(employeeWorkSlotsTable.active, true));
+  const empMap = new Map(people.map((p) => [p.id, p]));
+  const items = rows
+    .filter((r) => allowed.has(r.employeeId))
+    .map((r) => {
+      const emp = empMap.get(r.employeeId);
+      return {
+        ...mapSlotRow(r),
+        fullName: emp?.fullName || `#${r.employeeId}`,
+        orgRole: emp?.orgRole || null,
+        modeLabel: formatModeUz(r.mode),
+        shiftLabel: formatShiftKeyUz(r.shiftKey),
+      };
+    })
+    .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
+  res.json({ items });
+});
+
+router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+  const role = req.userRole || "";
+  const me = await empByUserId(req.userId!);
+  if (!me) {
+    res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
+    return;
+  }
+  if (!(role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG)) {
+    res.status(403).json({ error: "Slot yaratish huquqi yo‘q" });
+    return;
+  }
+
+  const employeeId = Number(req.body?.employeeId);
+  const branchId = Number(req.body?.branchId);
+  if (!Number.isFinite(employeeId) || !Number.isFinite(branchId)) {
+    res.status(400).json({ error: "Xodim va filialni tanlang (employeeId, branchId)" });
+    return;
+  }
+  const target = await empById(employeeId);
+  if (!target) {
+    res.status(404).json({ error: "Xodim topilmadi" });
+    return;
+  }
+  const org = target.orgRole || "";
+  if (!(org === MANAGER_ORG || STAFF_ORG.has(org))) {
+    res.status(400).json({ error: "Faqat mudir, farmasevt yoki stajyor" });
+    return;
+  }
+  const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
+  if (!canAssignTarget({ role, me, target, scope })) {
+    res.status(403).json({ error: "Bu xodimni biriktirish huquqi yo‘q" });
+    return;
+  }
+  const branch = await empById(branchId);
+  if (!branch || branch.orgRole !== MANAGER_ORG || !hasGps(branch)) {
+    res.status(400).json({ error: "Filial GPS yo‘q yoki mudir emas" });
+    return;
+  }
+  const parsed = validateSlotInput({
+    mode: String(req.body?.mode || ""),
+    shiftKey: req.body?.shiftKey,
+    validFrom: req.body?.validFrom,
+    validTo: req.body?.validTo,
+    weekdays: req.body?.weekdays,
+    workDates: req.body?.workDates,
+  });
+  if (!parsed.ok) {
+    res.status(400).json({ error: parsed.error });
+    return;
+  }
+
+  const branchLabel =
+    displayBranchName(branch.location) || (branch.location || "").split("|")[0].trim() || branch.fullName;
+  const note = req.body?.note ? String(req.body.note).slice(0, 400) : null;
+
+  const existing = await db
+    .select()
+    .from(employeeWorkSlotsTable)
+    .where(and(eq(employeeWorkSlotsTable.employeeId, employeeId), eq(employeeWorkSlotsTable.active, true)));
+  const defs = await getEffectiveShiftDefs();
+  const proposed: WorkSlotRow[] = [
+    ...existing.map(mapSlotRow),
+    {
+      employeeId,
+      branchId,
+      branchLabel,
+      shiftKey: parsed.shiftKey,
+      mode: parsed.mode,
+      validFrom: parsed.validFrom,
+      validTo: parsed.validTo,
+      weekdays: parsed.weekdays,
+      workDates: parsed.workDates,
+      active: true,
+    },
+  ];
+  const sampleTo =
+    parsed.validTo ||
+    (parsed.workDates?.length ? parsed.workDates[parsed.workDates.length - 1]! : addDaysYmd(parsed.validFrom, 28));
+  const conflict = conflictAmongSlots(proposed, parsed.validFrom, sampleTo, defs);
+  if (conflict) {
+    res.status(400).json({ error: conflict });
+    return;
+  }
+
+  const [row] = await db
+    .insert(employeeWorkSlotsTable)
+    .values({
+      employeeId,
+      branchId,
+      branchLabel,
+      shiftKey: parsed.shiftKey,
+      mode: parsed.mode,
+      validFrom: parsed.validFrom,
+      validTo: parsed.validTo,
+      weekdays: parsed.weekdays,
+      workDates: parsed.workDates,
+      note,
+      active: true,
+      createdById: req.userId ?? null,
+    })
+    .returning();
+
+  // Kunlik: legacy rotatsiya jadvallariga ham yozamiz (eski resolve uchun)
+  if (parsed.mode === "days" && parsed.workDates?.length) {
+    for (const workDate of parsed.workDates) {
+      await db
+        .delete(employeeBranchAssignmentsTable)
+        .where(
+          and(
+            eq(employeeBranchAssignmentsTable.employeeId, employeeId),
+            eq(employeeBranchAssignmentsTable.kind, "temp_one_day"),
+            eq(employeeBranchAssignmentsTable.validFrom, workDate),
+            eq(employeeBranchAssignmentsTable.branchId, branchId),
+          ),
+        );
+      await db.insert(employeeBranchAssignmentsTable).values({
+        employeeId,
+        branchId,
+        branchLabel,
+        kind: "temp_one_day",
+        validFrom: workDate,
+        validTo: workDate,
+        note: note || `Kunlik slot · ${formatShiftKeyUz(parsed.shiftKey)}`,
+        createdById: req.userId ?? null,
+      });
+      const [plan] = await db
+        .select()
+        .from(employeeDayShiftPlansTable)
+        .where(
+          and(
+            eq(employeeDayShiftPlansTable.employeeId, employeeId),
+            eq(employeeDayShiftPlansTable.workDate, workDate),
+          ),
+        )
+        .limit(1);
+      const prevKeys = (plan?.shiftKeys as string[]) || [];
+      const nextKeys = [...new Set([...prevKeys, parsed.shiftKey])];
+      if (plan) {
+        await db
+          .update(employeeDayShiftPlansTable)
+          .set({ shiftKeys: nextKeys, updatedAt: new Date() })
+          .where(eq(employeeDayShiftPlansTable.id, plan.id));
+      } else {
+        await db.insert(employeeDayShiftPlansTable).values({
+          employeeId,
+          workDate,
+          shiftKeys: nextKeys,
+          createdById: req.userId ?? null,
+          note,
+        });
+      }
+    }
+  }
+
+  if (parsed.mode === "permanent" || parsed.mode === "period" || parsed.mode === "weekly") {
+    await syncPrimaryFromSlots(employeeId);
+  }
+
+  if (target.userId) {
+    const when =
+      parsed.mode === "weekly"
+        ? `haftalik (${(parsed.weekdays || []).join(",")})`
+        : parsed.mode === "days"
+          ? `${parsed.workDates!.length} kun`
+          : parsed.mode === "period"
+            ? `${parsed.validFrom}…${parsed.validTo}`
+            : "doimiy";
+    await notifyUser({
+      userId: target.userId,
+      text: `${target.fullName}: «${branchLabel}» · ${formatShiftKeyUz(parsed.shiftKey)} · ${formatModeUz(parsed.mode)} (${when}). Davomat faqat shu filial va smena vaqtida.`,
+      type: "smena_slot",
+      linkUrl: "/smena-filial",
+    });
+  }
+
+  res.status(201).json({
+    ok: true,
+    item: {
+      ...mapSlotRow(row!),
+      modeLabel: formatModeUz(row!.mode),
+      shiftLabel: formatShiftKeyUz(row!.shiftKey),
+    },
+  });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("POST /smena/slots error:", err);
+    if (/employee_work_slots|does not exist|relation/i.test(msg)) {
+      res.status(503).json({
+        error: "Jadval hali yaratilmagan. API ni qayta ishga tushiring (employee_work_slots).",
+      });
+      return;
+    }
+    res.status(500).json({ error: msg.slice(0, 300) || "Slot saqlanmadi" });
+  }
+});
+
+router.delete("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole || "";
+  const me = await empByUserId(req.userId!);
+  if (!me) {
+    res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
+    return;
+  }
+  const id = Number(req.params.id);
+  const [row] = await db.select().from(employeeWorkSlotsTable).where(eq(employeeWorkSlotsTable.id, id)).limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Slot topilmadi" });
+    return;
+  }
+  const target = await empById(row.employeeId);
+  if (!target) {
+    res.status(404).json({ error: "Xodim topilmadi" });
+    return;
+  }
+  const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
+  if (!canAssignTarget({ role, me, target, scope })) {
+    res.status(403).json({ error: "O‘chirish huquqi yo‘q" });
+    return;
+  }
+  await db
+    .update(employeeWorkSlotsTable)
+    .set({ active: false, updatedAt: new Date() })
+    .where(eq(employeeWorkSlotsTable.id, id));
+  await syncPrimaryFromSlots(row.employeeId);
+  res.json({ ok: true });
+});
+
+/** Bugungi kun rejasini ko‘rish */
+router.get("/smena/slots/day-plan", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const me = await empByUserId(req.userId!);
+  if (!me) {
+    res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
+    return;
+  }
+  const employeeId = Number(req.query.employeeId || me.id);
+  const workDate = String(req.query.date || todayTashkentYmd());
+  const rows = await db
+    .select()
+    .from(employeeWorkSlotsTable)
+    .where(and(eq(employeeWorkSlotsTable.employeeId, employeeId), eq(employeeWorkSlotsTable.active, true)));
+  const daySlots = resolveSlotsForDay(workDate, rows.map(mapSlotRow));
+  res.json({ employeeId, workDate, slots: daySlots });
 });
 
 export default router;

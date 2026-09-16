@@ -4,12 +4,13 @@ import {
   useDeleteCandidate,
   useUpdateCandidate,
   useGetUsers,
+  getGetCandidateQueryKey,
 } from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Badge } from "../../components/ui/badge";
 import { Skeleton } from "../../components/ui/skeleton";
-import { Textarea } from "../../components/ui/textarea";
 import { CandidateReadOnlyBanner } from "../../components/candidates/CandidateReadOnlyBanner";
 import {
   Select,
@@ -26,10 +27,8 @@ import {
   FileText,
   Trash2,
   Sparkles,
-  Play,
-  CheckCircle2,
-  XCircle,
   Loader2,
+  FileDown,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { format } from "date-fns";
@@ -43,7 +42,10 @@ import {
 } from "../../lib/candidate-access";
 import { isHrRole, isDirectorRole } from "../../lib/roles";
 import { hireAiFill, resolveHireFlow, type HireFlow } from "../../lib/hire-flow";
-import { cn } from "../../lib/utils";
+import { patchCandidatePipeline } from "../../lib/hire-pipeline";
+import { openCandidateAnketaPdf } from "../../lib/candidate-pdf";
+import { HirePipelinePanel } from "../../components/candidates/HirePipelinePanel";
+import { HirePipelineHistory } from "../../components/candidates/HirePipelineHistory";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -55,14 +57,6 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "../../components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "../../components/ui/dialog";
 import { useI18n } from "../../i18n/I18nProvider";
 
 function InfoRow({ label, value, empty }: { label: string; value?: string | null; empty: string }) {
@@ -87,15 +81,15 @@ export default function CandidateProfile({ params }: { params: { id: string } })
   const { user } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const { data: candidate, isLoading, refetch } = useGetCandidate(id, { query: { enabled: !!id } });
   const { mutate: removeCandidate, isPending: isDeleting } = useDeleteCandidate();
   const { mutate: updateCandidate, isPending: isUpdating } = useUpdateCandidate();
+  const [pipelineBusy, setPipelineBusy] = useState(false);
   const { data: allUsers } = useGetUsers(undefined, {
     query: { enabled: canReassignCandidate(user) },
   } as any);
 
-  const [decisionOpen, setDecisionOpen] = useState<"hire" | "reject" | null>(null);
-  const [decisionNote, setDecisionNote] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
   const [aiNotes, setAiNotes] = useState("");
   const [aiQuestions, setAiQuestions] = useState("");
@@ -152,48 +146,24 @@ export default function CandidateProfile({ params }: { params: { id: string } })
     );
   };
 
-  const patchFlow = (data: Record<string, unknown>, okTitle: string) => {
-    updateCandidate(
-      { id, data: data as any },
-      {
-        onSuccess: () => {
-          toast({ title: okTitle });
-          setDecisionOpen(null);
-          setDecisionNote("");
-          refetch();
-        },
-        onError: (err: any) => {
-          toast({
-            title: t("ui.error"),
-            description: err?.message || t("ui.error"),
-            variant: "destructive",
-          });
-        },
-      },
-    );
-  };
-
-  const startProgress = () => {
-    patchFlow({ stage: "in_progress", status: "active" }, t("hire.flow.started"));
-  };
-
-  const confirmDecision = () => {
-    if (!decisionOpen) return;
-    if (decisionOpen === "reject" && !decisionNote.trim()) {
-      toast({ title: t("hire.decisionNoteRequired"), variant: "destructive" });
-      return;
-    }
-    if (decisionOpen === "hire") {
-      patchFlow(
-        { status: "hired", stage: "hired", decisionNote: decisionNote.trim() || undefined },
-        t("hire.flow.hiredOk"),
-      );
-    } else {
-      patchFlow(
-        { status: "rejected", decisionNote: decisionNote.trim() },
-        t("hire.flow.rejectedOk"),
-      );
-    }
+  const runPipeline = (body: Record<string, unknown>) => {
+    setPipelineBusy(true);
+    void patchCandidatePipeline(id, body)
+      .then((updated) => {
+        queryClient.setQueryData(getGetCandidateQueryKey(id), (prev: unknown) =>
+          prev && typeof prev === "object" ? { ...prev, ...updated } : updated,
+        );
+        toast({ title: t("hire.pipe.saved") });
+        void refetch();
+      })
+      .catch((err: unknown) => {
+        toast({
+          title: t("ui.error"),
+          description: err instanceof Error ? err.message : t("ui.error"),
+          variant: "destructive",
+        });
+      })
+      .finally(() => setPipelineBusy(false));
   };
 
   const runAi = async () => {
@@ -301,6 +271,49 @@ export default function CandidateProfile({ params }: { params: { id: string } })
             </div>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            onClick={() => {
+              const ok = openCandidateAnketaPdf({
+                candidate: {
+                  fullName: candidate.fullName,
+                  id: candidate.id,
+                  phone: candidate.phone,
+                  birthDate: candidate.birthDate,
+                  address: candidate.address,
+                  education: candidate.education,
+                  experience: candidate.experience,
+                  expectedSalary: candidate.expectedSalary,
+                  notes: candidate.notes,
+                  recruiterName: candidate.recruiterName,
+                  createdAt: format(new Date(candidate.createdAt), "dd.MM.yyyy HH:mm"),
+                  vacancyTitle: candidate.vacancyTitle,
+                  vacancyDescription: (candidate as { vacancyDescription?: string | null }).vacancyDescription,
+                  statusLabel: flowLabel,
+                },
+                vacancy: {
+                  title: candidate.vacancyTitle || t("hire.unknownJob"),
+                  recruiterName: candidate.recruiterName,
+                },
+                pipelineJson: (candidate as { pipelineJson?: unknown }).pipelineJson,
+                flowLabel,
+                t,
+              });
+              if (!ok) {
+                toast({
+                  title: t("ui.error"),
+                  description: t("hire.pdfPopupBlocked"),
+                  variant: "destructive",
+                });
+              }
+            }}
+          >
+            <FileDown className="h-4 w-4" />
+            {t("hire.pdfAnketaBtn")}
+          </Button>
         {canDelete && (
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -325,6 +338,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
             </AlertDialogContent>
           </AlertDialog>
         )}
+        </div>
       </div>
 
       {canReassign && (
@@ -359,70 +373,12 @@ export default function CandidateProfile({ params }: { params: { id: string } })
         </Card>
       )}
 
-      {/* Jarayon — 3 holat */}
-      <Card className="overflow-hidden border-t-4 border-t-primary shadow-md">
-        <CardHeader className="bg-muted/30 pb-3">
-          <CardTitle className="text-lg">{t("hire.flow.title")}</CardTitle>
-          <p className="text-sm text-muted-foreground">{t("hire.flow.sub")}</p>
-        </CardHeader>
-        <CardContent className="space-y-4 p-5">
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {(
-              [
-                ["yangi", t("hire.flow.new")],
-                ["jarayonda", t("hire.flow.inProgress")],
-                ["qabul", t("hire.flow.hired")],
-                ["rad", t("hire.flow.rejected")],
-              ] as const
-            ).map(([key, label]) => (
-              <div
-                key={key}
-                className={cn(
-                  "rounded-xl border px-3 py-3 text-center text-sm font-semibold",
-                  flow === key ? flowBadgeClass(key) + " ring-2 ring-offset-2 ring-primary/30" : "bg-muted/40 text-muted-foreground",
-                )}
-              >
-                {label}
-              </div>
-            ))}
-          </div>
-
-          {canEdit && flow !== "qabul" && flow !== "rad" && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {flow === "yangi" && (
-                <Button onClick={startProgress} disabled={isUpdating} className="gap-2">
-                  <Play className="h-4 w-4" />
-                  {t("hire.flow.start")}
-                </Button>
-              )}
-              <Button
-                variant="default"
-                className="gap-2 bg-emerald-600 hover:bg-emerald-700"
-                disabled={isUpdating}
-                onClick={() => {
-                  setDecisionNote("");
-                  setDecisionOpen("hire");
-                }}
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                {t("hire.flow.hire")}
-              </Button>
-              <Button
-                variant="destructive"
-                className="gap-2"
-                disabled={isUpdating}
-                onClick={() => {
-                  setDecisionNote("");
-                  setDecisionOpen("reject");
-                }}
-              >
-                <XCircle className="h-4 w-4" />
-                {t("hire.flow.reject")}
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <HirePipelinePanel
+        candidate={candidate as any}
+        canEdit={canEdit}
+        busy={isUpdating || pipelineBusy}
+        onAction={runPipeline}
+      />
 
       {/* AI tayyorlash */}
       <Card className="border-primary/20 shadow-sm">
@@ -540,39 +496,10 @@ export default function CandidateProfile({ params }: { params: { id: string } })
               {candidate.notes?.trim() || t("hire.noNotesYet")}
             </div>
           </div>
+
+          <HirePipelineHistory pipelineJson={(candidate as { pipelineJson?: unknown }).pipelineJson} t={t} />
         </CardContent>
       </Card>
-
-      <Dialog open={!!decisionOpen} onOpenChange={(o) => !o && setDecisionOpen(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {decisionOpen === "hire" ? t("hire.flow.hire") : t("hire.flow.reject")}
-            </DialogTitle>
-            <DialogDescription>
-              {decisionOpen === "hire" ? t("hire.flow.hireHint") : t("hire.flow.rejectHint")}
-            </DialogDescription>
-          </DialogHeader>
-          <Textarea
-            value={decisionNote}
-            onChange={(e) => setDecisionNote(e.target.value)}
-            placeholder={t("hire.decisionNotePh")}
-            className="min-h-[100px]"
-          />
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDecisionOpen(null)}>
-              {t("ui.cancelFull")}
-            </Button>
-            <Button
-              variant={decisionOpen === "reject" ? "destructive" : "default"}
-              onClick={confirmDecision}
-              disabled={isUpdating}
-            >
-              {t("ui.confirm")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

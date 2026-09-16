@@ -490,7 +490,36 @@ BEGIN
     END IF;
   END IF;
 END $$;
+
+-- Nomzod hire qadamlari
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'candidates'
+  ) THEN
+    ALTER TABLE candidates ADD COLUMN IF NOT EXISTS pipeline_step TEXT NOT NULL DEFAULT 'match';
+    ALTER TABLE candidates ADD COLUMN IF NOT EXISTS pipeline_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+  END IF;
+END $$;
 `;
+
+/** Nomzod hire qadamlari — ENSURE_SQL dan mustaqil, har doim alohida ishga tushadi */
+export async function ensureCandidatePipelineColumns(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(`
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS pipeline_step TEXT NOT NULL DEFAULT 'match';
+      ALTER TABLE candidates ADD COLUMN IF NOT EXISTS pipeline_json JSONB NOT NULL DEFAULT '{}'::jsonb;
+    `);
+    logger.info("Candidate pipeline columns ensured");
+  } catch (err) {
+    logger.warn({ err }, "Candidate pipeline columns ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 export async function ensureEmployeesOrgColumns(): Promise<void> {
   const timeoutMs = 8_000;
@@ -502,6 +531,7 @@ export async function ensureEmployeesOrgColumns(): Promise<void> {
         setTimeout(() => reject(new Error(`critical columns query timeout ${timeoutMs}ms`)), timeoutMs),
       ),
     ]);
+    await ensureCandidatePipelineColumns();
   } finally {
     client.release();
   }
@@ -518,6 +548,7 @@ export async function ensurePersistentSchema(): Promise<void> {
       ),
     ]);
     logger.info("Persistent DB schema ensured (CREATE IF NOT EXISTS only — no wipe)");
+    await ensureCandidatePipelineColumns();
     await client.query(`
 CREATE TABLE IF NOT EXISTS kpi_settings (
   id SERIAL PRIMARY KEY,

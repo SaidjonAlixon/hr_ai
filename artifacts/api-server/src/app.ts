@@ -4,7 +4,11 @@ import cookieParser from "cookie-parser";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
-import { ensurePersistentSchema, ensureEmployeesOrgColumns } from "./lib/ensure-schema";
+import {
+  ensurePersistentSchema,
+  ensureEmployeesOrgColumns,
+  ensureCandidatePipelineColumns,
+} from "./lib/ensure-schema";
 
 const app: Express = express();
 
@@ -19,6 +23,9 @@ if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
 } else {
   void ensurePersistentSchema().catch((err) => {
     logger.error({ err }, "Schema ensure failed (non-blocking)");
+  });
+  void ensureCandidatePipelineColumns().catch((err) => {
+    logger.error({ err }, "Candidate pipeline columns ensure failed (non-blocking)");
   });
 }
 

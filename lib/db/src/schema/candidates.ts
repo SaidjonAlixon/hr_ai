@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
 
 export const candidatesTable = pgTable("candidates", {
   id: serial("id").primaryKey(),
@@ -16,6 +16,9 @@ export const candidatesTable = pgTable("candidates", {
   /** Soddalashtirilgan: new | in_progress | hired (+ legacy 9-stage qiymatlari) */
   stage: text("stage").notNull().default("new"),
   status: text("status").notNull().default("active"), // active|rejected|hired
+  /** Rekruter qadamlari: match → recommend → questions → interview → decision → intro → done */
+  pipelineStep: text("pipeline_step").notNull().default("match"),
+  pipelineJson: jsonb("pipeline_json").notNull().default({}),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

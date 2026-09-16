@@ -3,16 +3,10 @@ import { eq } from "drizzle-orm";
 import { db, candidatesTable, usersTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 
-import { HR_ROLES, isHrManager as isHrManagerRole } from "./roles";
+import { isHrManager as isHrManagerRole } from "./roles";
 
-/** HR suhbatni shu rollarga o'tkaza oladi */
-export const ASSIGNABLE_ROLES = [
-  "admin",
-  ...HR_ROLES,
-  "recruiter",
-  "trainer",
-  "director", "asoschi",
-] as const;
+/** Nomzod mas'uli — faqat rekruter va HR rahbariyat */
+export const ASSIGNABLE_ROLES = ["recruiter", "hr_menejer", "hr_direktor"] as const;
 
 export function isHrManager(role?: string | null): boolean {
   return isHrManagerRole(role);

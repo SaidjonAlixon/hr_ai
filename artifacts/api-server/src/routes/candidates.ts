@@ -11,6 +11,13 @@ import {
   isRecruiterScoped,
   assertAssignableUser,
 } from "../lib/candidate-access";
+import {
+  applyPipelineAction,
+  normalizeStep,
+  parsePipeline,
+  type PipelineData,
+  type PipelineStep,
+} from "../lib/hire-pipeline";
 
 const router: IRouter = Router();
 
@@ -41,10 +48,16 @@ async function getCandidateFull(id: number) {
       notes: candidatesTable.notes,
       vacancyId: candidatesTable.vacancyId,
       vacancyTitle: vacanciesTable.title,
+      vacancyDescription: vacanciesTable.description,
+      vacancySalary: vacanciesTable.salaryRange,
+      vacancySchedule: vacanciesTable.schedule,
+      vacancyLocation: vacanciesTable.location,
       recruiterId: candidatesTable.recruiterId,
       recruiterName: usersTable.fullName,
       stage: candidatesTable.stage,
       status: candidatesTable.status,
+      pipelineStep: candidatesTable.pipelineStep,
+      pipelineJson: candidatesTable.pipelineJson,
       createdAt: candidatesTable.createdAt,
     })
     .from(candidatesTable)
@@ -103,6 +116,7 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res): Promise<vo
       recruiterName: usersTable.fullName,
       stage: candidatesTable.stage,
       status: candidatesTable.status,
+      pipelineStep: candidatesTable.pipelineStep,
       createdAt: candidatesTable.createdAt,
     })
     .from(candidatesTable)
@@ -137,6 +151,8 @@ router.post("/candidates", async (req, res): Promise<void> => {
       recruiterId: recruiterId ? parseInt(recruiterId, 10) : null,
       stage: "new",
       status: "active",
+      pipelineStep: "match",
+      pipelineJson: {},
     })
     .returning();
   const full = await getCandidateFull(created.id);
@@ -164,6 +180,8 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
       stage: candidatesTable.stage,
       status: candidatesTable.status,
       notes: candidatesTable.notes,
+      pipelineStep: candidatesTable.pipelineStep,
+      pipelineJson: candidatesTable.pipelineJson,
     })
     .from(candidatesTable)
     .where(eq(candidatesTable.id, id));
@@ -189,6 +207,62 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
     return;
   }
 
+  // Pipeline qadam: advance | back | set
+  if (req.body?.pipelineAction) {
+    const action = String(req.body.pipelineAction) as "advance" | "back" | "set";
+    const currentStep = normalizeStep(existing.pipelineStep, existing.status);
+    const currentData = parsePipeline(existing.pipelineJson);
+    let actor: { id: number; name: string; role: string } | undefined;
+    if (req.userId) {
+      const [actorRow] = await db
+        .select({ fullName: usersTable.fullName, role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, req.userId));
+      if (actorRow?.fullName) {
+        actor = { id: req.userId, name: actorRow.fullName, role: actorRow.role };
+      }
+    }
+    const result = applyPipelineAction({
+      currentStep,
+      currentData,
+      action,
+      step: req.body.pipelineStep as PipelineStep | undefined,
+      patch: (req.body.pipelinePatch || {}) as Partial<PipelineData>,
+      actor,
+    });
+    if (result.error) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    await db
+      .update(candidatesTable)
+      .set({
+        pipelineStep: result.step,
+        pipelineJson: result.data,
+        stage: result.stage,
+        status: result.status,
+      })
+      .where(eq(candidatesTable.id, id));
+
+    if (result.status === "hired") {
+      const { resolveStaffingHireByCandidateId } = await import("../lib/staffing-alert");
+      await resolveStaffingHireByCandidateId(id);
+      try {
+        const { assignHireToHrs } = await import("../lib/pipeline-tasks");
+        await assignHireToHrs({
+          candidateId: id,
+          candidateName: existing.fullName,
+          createdById: req.userId!,
+        });
+      } catch {
+        /* ignore */
+      }
+    }
+
+    res.json(await getCandidateFull(id));
+    return;
+  }
+
   const allowed = ["fullName", "birthDate", "phone", "address", "education", "experience", "expectedSalary", "notes", "stage", "status", "recruiterId", "photoUrl"];
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
@@ -202,7 +276,7 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
         const assignee = await assertAssignableUser(parseInt(String(raw), 10));
         if (!assignee) {
           res.status(400).json({
-            error: "Mas'ul sifatida faqat faol admin/HR/rekruter/trener/direktor/bo'lim boshlig'i tanlanadi",
+            error: "Mas'ul sifatida faqat rekruter, HR menejer yoki HR direktor tanlanadi",
           });
           return;
         }
@@ -227,15 +301,23 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
   }
   if (updates.stage === "hired") {
     updates.status = "hired";
+    updates.pipelineStep = "done";
   }
   if (updates.status === "hired" && !updates.stage) {
     updates.stage = "hired";
+    updates.pipelineStep = "done";
   }
   if (updates.status === "rejected") {
     // stage saqlanadi (qayerda rad etilgani)
   }
 
   if (Object.keys(updates).length === 0) {
+    if (req.body?.pipelineAction || req.body?.pipelinePatch) {
+      res.status(400).json({
+        error: "Pipeline qadami saqlanmadi — server yangilangan bo‘lishi kerak (API qayta ishga tushiring)",
+      });
+      return;
+    }
     res.json(await getCandidateFull(id));
     return;
   }

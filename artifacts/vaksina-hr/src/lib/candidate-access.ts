@@ -1,13 +1,7 @@
-import { HR_ROLES, isHrManager as isHrManagerRole, userRoleLabel } from './roles';
+import { isHrManager as isHrManagerRole, userRoleLabel } from './roles';
 
-/** HR suhbatni shu rollarga o'tkaza oladi */
-export const ASSIGNABLE_ROLES = [
-  'admin',
-  ...HR_ROLES,
-  'recruiter',
-  'trainer',
-  'director', 'asoschi',
-] as const;
+/** Nomzod mas'uli — faqat rekruter va HR rahbariyat */
+export const ASSIGNABLE_ROLES = ['recruiter', 'hr_menejer', 'hr_direktor'] as const;
 
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 

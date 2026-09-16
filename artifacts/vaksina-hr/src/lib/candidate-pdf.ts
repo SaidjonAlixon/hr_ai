@@ -1,5 +1,10 @@
 /** Brauzer orqali PDF (Chop etish → PDF sifatida saqlash) */
 
+import {
+  pipelineHistoryFromJson,
+  type Translate,
+} from "@/lib/hire-pipeline-history-blocks";
+
 export type CandidatePdfData = {
   fullName: string;
   phone?: string | null;
@@ -102,6 +107,84 @@ export function openCandidatePdf(candidate: CandidatePdfData, vacancy: VacancyPd
       ${vacancy.salaryRange ? ` · ${esc(vacancy.salaryRange)}` : ""}
     </div>`;
   const html = wrapHtml(meta + candidateBlock(candidate, vacancy), `Nomzod — ${candidate.fullName}`);
+  const w = window.open("", "_blank");
+  if (!w) return false;
+  w.document.open();
+  w.document.write(html);
+  w.document.close();
+  return true;
+}
+
+function pipelineBlockHtml(
+  title: string,
+  at: string,
+  lines: { label?: string; value: string }[],
+) {
+  const body = lines
+    .map((line) => {
+      const label = line.label
+        ? `<div style="font-size:10px;color:#64748b;text-transform:uppercase;margin-top:8px;">${esc(line.label)}</div>`
+        : "";
+      return `${label}<div style="font-size:13px;color:#0f172a;margin-top:2px;white-space:pre-wrap;">${esc(line.value)}</div>`;
+    })
+    .join("");
+  return `
+  <section style="page-break-inside:avoid;margin-bottom:16px;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;border-left:4px solid #0ea5e9;">
+    <div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;">
+      <div style="font-size:14px;font-weight:700;color:#0b3a5c;">${esc(title)}</div>
+      ${at ? `<div style="font-size:10px;color:#64748b;">${esc(at)}</div>` : ""}
+    </div>
+    <div style="margin-top:8px;">${body}</div>
+  </section>`;
+}
+
+export type CandidateAnketaInput = {
+  candidate: CandidatePdfData & {
+    id?: number;
+    vacancyTitle?: string | null;
+    vacancyDescription?: string | null;
+  };
+  vacancy: VacancyPdfMeta;
+  pipelineJson?: unknown;
+  flowLabel?: string | null;
+  t: Translate;
+};
+
+export function openCandidateAnketaPdf(input: CandidateAnketaInput) {
+  const { candidate, vacancy, pipelineJson, flowLabel, t } = input;
+  const c = candidate;
+  const meta = `
+    <div class="meta">
+      Ish o'rni: ${esc(c.vacancyTitle || vacancy.title)}
+      ${vacancy.location ? ` · ${esc(vacancy.location)}` : ""}
+      ${vacancy.salaryRange ? ` · ${esc(vacancy.salaryRange)}` : ""}
+      ${c.id != null ? ` · ID #${c.id}` : ""}
+    </div>`;
+
+  const desc =
+    c.vacancyDescription?.trim() ?
+      `<p style="font-size:12px;color:#475569;margin:0 0 16px;line-height:1.5;">${esc(c.vacancyDescription.trim())}</p>`
+    : "";
+
+  const basic = candidateBlock(
+    {
+      ...c,
+      stageLabel: flowLabel || c.stageLabel,
+    },
+    vacancy,
+  );
+
+  const steps = pipelineHistoryFromJson(pipelineJson, t);
+  const stepsHtml =
+    steps.length > 0 ?
+      `<h2 style="font-size:15px;color:#0b3a5c;margin:24px 0 12px;">${esc(t("hire.pipe.historyTitle"))}</h2>` +
+      steps.map((s) => pipelineBlockHtml(s.title, s.at, s.lines)).join("\n")
+    : `<p style="font-size:12px;color:#64748b;">${esc(t("hire.pdfAnketaNoSteps"))}</p>`;
+
+  const html = wrapHtml(
+    meta + desc + basic + stepsHtml,
+    t("hire.pdfAnketaTitle").replace("{name}", c.fullName),
+  );
   const w = window.open("", "_blank");
   if (!w) return false;
   w.document.open();

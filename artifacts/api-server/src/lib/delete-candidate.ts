@@ -75,5 +75,17 @@ export async function deleteRequestCascade(requestId: number): Promise<boolean> 
 }
 
 export function canDeleteHrRecords(role?: string): boolean {
-  return role === "hr" || role === "hr_direktor" || role === "hr_auditor" || role === "hr_menejer" || isDirectorRole(role);
+  return (
+    role === "hr" ||
+    role === "hr_direktor" ||
+    role === "hr_auditor" ||
+    role === "hr_menejer" ||
+    role === "hr_kadr_rahbar" ||
+    isDirectorRole(role)
+  );
+}
+
+/** Nomzodni to‘liq o‘chirish: HR/direktor + rekruter (o‘z biriktirilganlari) */
+export function canDeleteCandidateRecord(role?: string | null): boolean {
+  return canDeleteHrRecords(role || undefined) || role === "recruiter";
 }

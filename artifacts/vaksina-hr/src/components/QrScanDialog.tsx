@@ -1,14 +1,13 @@
 /**
  * Full-screen QR scanner — mobil uchun aniq ko‘rsatma + ramka.
- * Stream odatda tugma click da ochiladi (ruxsat so‘raladi).
- * Orqa kamera → bo‘lmasa old.
+ * Default: orqa kamera; old/orqa almashtirish mumkin.
  */
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { Loader2, QrCode, X } from "lucide-react";
+import { Loader2, QrCode, SwitchCamera, X } from "lucide-react";
 import jsQR from "jsqr";
 import { cn } from "@/lib/utils";
-import { openScanCamera as openCameraFast, warmCamera } from "@/lib/camera-fast";
+import { openCameraFast, warmCamera, type CameraFacing } from "@/lib/camera-fast";
 
 type Props = {
   open: boolean;
@@ -29,7 +28,7 @@ function getBarcodeDetector(): (new (opts?: { formats: string[] }) => BarcodeDet
 }
 
 export async function openScanCamera(): Promise<MediaStream> {
-  return openCameraFast();
+  return openCameraFast("environment");
 }
 
 export async function primeQrCamera(): Promise<boolean> {
@@ -43,6 +42,9 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [facing, setFacing] = useState<CameraFacing>("environment");
+  const facingRef = useRef<CameraFacing>("environment");
+  facingRef.current = facing;
   const handling = useRef(false);
   const onDetectedRef = useRef(onDetected);
   onDetectedRef.current = onDetected;
@@ -63,6 +65,8 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       setReady(false);
       setBusy(false);
       setOpening(false);
+      setFacing("environment");
+      facingRef.current = "environment";
       handling.current = false;
       return;
     }
@@ -91,10 +95,11 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       handling.current = false;
       if (cancelled) return;
 
-      let stream = streamProp && streamProp.active ? streamProp : null;
+      let stream =
+        facingRef.current === "environment" && streamProp && streamProp.active ? streamProp : null;
       if (!stream) {
         try {
-          stream = await openCameraFast();
+          stream = await openCameraFast(facingRef.current);
           if (cancelled) {
             stream.getTracks().forEach((t) => t.stop());
             return;
@@ -122,7 +127,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
       ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
       ownedStreamRef.current = null;
     };
-  }, [open, streamProp]);
+  }, [open, streamProp, facing]);
 
   useEffect(() => {
     if (!open || !ready) return;
@@ -186,7 +191,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
     setOpening(true);
     try {
       ownedStreamRef.current?.getTracks().forEach((t) => t.stop());
-      const stream = await openCameraFast();
+      const stream = await openCameraFast(facingRef.current);
       ownedStreamRef.current = stream;
       const video = videoRef.current;
       if (video) {
@@ -201,6 +206,11 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
     } finally {
       setOpening(false);
     }
+  };
+
+  const switchCamera = () => {
+    if (busy || opening) return;
+    setFacing((f) => (f === "environment" ? "user" : "environment"));
   };
 
   if (!open || typeof document === "undefined") return null;
@@ -233,14 +243,25 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
             </h2>
             <p className="mt-1 max-w-[18rem] text-sm leading-snug text-white/85 sm:max-w-sm">{hint}</p>
           </div>
-          <button
-            type="button"
-            aria-label="Close"
-            className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/35 active:scale-95"
-            onClick={() => onOpenChange(false)}
-          >
-            <X className="h-6 w-6" />
-          </button>
+          <div className="flex shrink-0 items-center gap-2">
+            <button
+              type="button"
+              aria-label={facing === "environment" ? "Old kamera" : "Orqa kamera"}
+              disabled={busy || opening}
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/35 active:scale-95 disabled:opacity-50"
+              onClick={switchCamera}
+            >
+              {opening ? <Loader2 className="h-5 w-5 animate-spin" /> : <SwitchCamera className="h-5 w-5" />}
+            </button>
+            <button
+              type="button"
+              aria-label="Yopish"
+              className="flex h-12 w-12 items-center justify-center rounded-full bg-black/55 text-white ring-1 ring-white/35 active:scale-95"
+              onClick={() => onOpenChange(false)}
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
         </div>
       </div>
 
@@ -295,6 +316,9 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
         <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 bg-gradient-to-t from-black/85 via-black/50 to-transparent pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-16">
           <p className="mx-auto max-w-[20rem] px-4 text-center text-sm font-medium leading-snug text-white">
             QR kodni yashil burchakli ramka ichiga tuting
+            <span className="mt-1 block text-xs text-white/60">
+              {facing === "environment" ? "Orqa kamera" : "Old kamera"}
+            </span>
           </p>
         </div>
       ) : null}

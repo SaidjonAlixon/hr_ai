@@ -35,12 +35,12 @@ import { format } from "date-fns";
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../hooks/use-toast";
 import {
+  canDeleteCandidate,
   canManageCandidate,
   canReassignCandidate,
   isAssignableRole,
   roleLabel,
 } from "../../lib/candidate-access";
-import { isHrRole, isDirectorRole } from "../../lib/roles";
 import { hireAiFill, resolveHireFlow, type HireFlow } from "../../lib/hire-flow";
 import { patchCandidatePipeline } from "../../lib/hire-pipeline";
 import { openCandidateAnketaPdf } from "../../lib/candidate-pdf";
@@ -95,7 +95,7 @@ export default function CandidateProfile({ params }: { params: { id: string } })
   const [aiQuestions, setAiQuestions] = useState("");
   const [aiRequirements, setAiRequirements] = useState("");
 
-  const canDelete = isHrRole(user?.role) || isDirectorRole(user?.role);
+  const canDelete = canDeleteCandidate(user, candidate?.recruiterId);
   const canReassign = canReassignCandidate(user);
   const canEdit = canManageCandidate(user, candidate?.recruiterId);
 

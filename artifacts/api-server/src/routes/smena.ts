@@ -771,8 +771,10 @@ async function syncPrimaryFromSlots(employeeId: number): Promise<void> {
   const resolved = resolveSlotsForDay(today, rows.map(mapSlotRow));
   if (!resolved.length) return;
   const primary = resolved[0]!;
-  const keys = resolved.map((s) => s.shiftKey);
-  const shiftType = encodeShiftKeys(keys.filter((k) => k === "one" || k === "two" || k === "three"));
+  const keys = resolved
+    .flatMap((s) => parseShiftKeys(s.shiftKey))
+    .filter((k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three");
+  const shiftType = encodeShiftKeys(keys);
   const target = await empById(employeeId);
   if (!target) return;
   const patch: {
@@ -783,7 +785,7 @@ async function syncPrimaryFromSlots(employeeId: number): Promise<void> {
     location?: string;
   } = {
     shiftType,
-    shiftLabel: keys.map((k) => formatShiftKeyUz(k)).join(" + "),
+    shiftLabel: resolved.map((s) => formatShiftKeyUz(s.shiftKey)).join(" + "),
   };
   if (target.orgRole !== MANAGER_ORG) {
     patch.assignedBranchId = primary.branchId;
@@ -1028,7 +1030,10 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
         )
         .limit(1);
       const prevKeys = (plan?.shiftKeys as string[]) || [];
-      const nextKeys = [...new Set([...prevKeys, parsed.shiftKey])];
+      const added = parseShiftKeys(parsed.shiftKey).filter(
+        (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
+      );
+      const nextKeys = [...new Set([...prevKeys, ...added])];
       if (plan) {
         await db
           .update(employeeDayShiftPlansTable)
@@ -1061,7 +1066,7 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
             : "doimiy";
     await notifyUser({
       userId: target.userId,
-      text: `${target.fullName}: «${branchLabel}» · ${formatShiftKeyUz(parsed.shiftKey)} · ${formatModeUz(parsed.mode)} (${when}). Davomat faqat shu filial va smena vaqtida.`,
+      text: `${target.fullName}: «${branchLabel}» · ${formatShiftKeyUz(parsed.shiftKey)} · ${formatModeUz(parsed.mode)} (${when}). Davomat shu filialda; Keldim/Ketdim istalgan vaqtda (soat smena rejasiga qarab).`,
       type: "smena_slot",
       linkUrl: "/smena-filial",
     });

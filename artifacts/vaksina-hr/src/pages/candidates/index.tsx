@@ -1,16 +1,34 @@
 import React, { useMemo, useState } from "react";
-import { useGetCandidates } from "@workspace/api-client-react";
+import {
+  getGetCandidatesQueryKey,
+  useDeleteCandidate,
+  useGetCandidates,
+} from "@workspace/api-client-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Badge } from "../../components/ui/badge";
 import { Link, useLocation } from "wouter";
-import { Search, Plus, Filter, User, Briefcase, Phone, PhoneOff } from "lucide-react";
+import { Search, Plus, Filter, User, Briefcase, Phone, PhoneOff, Trash2 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../../components/ui/select";
 import { useAuth } from "../../contexts/AuthContext";
 import { isHrManager, isDirectorRole } from "../../lib/roles";
+import { canDeleteCandidate } from "../../lib/candidate-access";
 import { resolveHireFlow, type HireFlow } from "../../lib/hire-flow";
 import { parsePipeline } from "../../lib/hire-pipeline";
 import { useI18n } from "../../i18n/I18nProvider";
+import { useToast } from "../../hooks/use-toast";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../components/ui/alert-dialog";
 
 const FLOW_STORAGE_KEY = "vaksina-candidates-flow-filter";
 const FLOW_VALUES = ["all", "yangi", "jarayonda", "qabul", "rad", "no_answer"] as const;
@@ -78,8 +96,12 @@ export default function CandidatesList() {
   const { t } = useI18n();
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [flowFilter, setFlowFilter] = useState<FlowFilter>(initialFlowFilter);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const { mutate: removeCandidate, isPending: isDeleting } = useDeleteCandidate();
 
   const canAddCandidate =
     user?.role === "recruiter" || isHrManager(user?.role) || isDirectorRole(user?.role);
@@ -100,6 +122,9 @@ export default function CandidatesList() {
     return list.filter((c) => resolveHireFlow(c) === flowFilter);
   }, [candidates, flowFilter]);
 
+  const showActionsCol = filtered.some((c) => canDeleteCandidate(user, c.recruiterId));
+  const colSpan = showActionsCol ? 6 : 5;
+
   const updateFlow = (value: string) => {
     const next: FlowFilter = isFlowFilter(value) ? value : "all";
     setFlowFilter(next);
@@ -112,6 +137,28 @@ export default function CandidatesList() {
     if (next !== "all") params.set("flow", next);
     const q = params.toString();
     setLocation(q ? `/candidates?${q}` : "/candidates");
+  };
+
+  const handleDelete = (id: number) => {
+    setDeletingId(id);
+    removeCandidate(
+      { id },
+      {
+        onSuccess: () => {
+          toast({ title: t("ui.deleted"), description: t("hire.deletedCand") });
+          void queryClient.invalidateQueries({ queryKey: getGetCandidatesQueryKey() });
+          setDeletingId(null);
+        },
+        onError: (err: any) => {
+          toast({
+            title: t("ui.error"),
+            description: err?.message || t("hire.deleteFail"),
+            variant: "destructive",
+          });
+          setDeletingId(null);
+        },
+      },
+    );
   };
 
   const titleMap: Record<FlowFilter, string> = {
@@ -175,12 +222,13 @@ export default function CandidatesList() {
                 <th className="px-6 py-4 font-medium">{t("hire.col.contact")}</th>
                 <th className="px-6 py-4 font-medium">{t("hire.col.status")}</th>
                 <th className="px-6 py-4 font-medium">{t("hire.col.recruiter")}</th>
+                {showActionsCol && <th className="w-14 px-4 py-4 font-medium" />}
               </tr>
             </thead>
             <tbody className="divide-y divide-border">
               {isLoading ? (
                 <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-muted-foreground">
+                  <td colSpan={colSpan} className="px-6 py-8 text-center text-muted-foreground">
                     {t("ui.loading")}
                   </td>
                 </tr>
@@ -188,6 +236,7 @@ export default function CandidatesList() {
                 filtered.map((candidate) => {
                   const flow = resolveHireFlow(candidate);
                   const na = noAnswerMeta(candidate as { pipelineJson?: unknown });
+                  const canDelete = canDeleteCandidate(user, candidate.recruiterId);
                   return (
                     <tr
                       key={candidate.id}
@@ -263,12 +312,54 @@ export default function CandidatesList() {
                       <td className="px-6 py-4 text-sm text-muted-foreground">
                         {candidate.recruiterName || t("ui.unassigned")}
                       </td>
+                      {showActionsCol && (
+                        <td
+                          className="px-4 py-4"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          {canDelete ? (
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-8 w-8 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                                  disabled={isDeleting && deletingId === candidate.id}
+                                  aria-label={t("ui.delete")}
+                                  title={t("ui.delete")}
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>{t("hire.deleteCand")}</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    {t("hire.deleteCandDesc")}
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>{t("ui.cancelFull")}</AlertDialogCancel>
+                                  <AlertDialogAction
+                                    onClick={() => handleDelete(candidate.id)}
+                                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  >
+                                    {t("ui.delete")}
+                                  </AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          ) : null}
+                        </td>
+                      )}
                     </tr>
                   );
                 })
               ) : (
                 <tr>
-                  <td colSpan={5} className="px-6 py-12 text-center text-muted-foreground">
+                  <td colSpan={colSpan} className="px-6 py-12 text-center text-muted-foreground">
                     {t("ui.empty")}
                   </td>
                 </tr>

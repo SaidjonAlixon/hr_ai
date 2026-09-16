@@ -345,7 +345,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const canAddStaff = canAddDeptStaff(user?.role);
   const viewOnly = isEmployeeDirectoryViewOnly(user?.role);
   const fullAccess = canViewEmployeesFull(user?.role);
-  const { data: deptMeta } = useDeptStaffMeta(viewOnly);
+  // Rekruter — to‘liq ro‘yxat, faqat ko‘rish; bo‘lim boshlig‘i — o‘z bo‘limi
+  const deptLocked = viewOnly && !fullAccess;
+  const { data: deptMeta } = useDeptStaffMeta(deptLocked);
   const lockedDeptName = deptMeta?.departmentName?.trim() || null;
   const [search, setSearch] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
@@ -358,9 +360,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const { data: departments } = useGetDepartments();
   const updateEmp = useUpdateEmployee();
 
-  // Bo‘lim boshlig‘i — faqat ofis + o‘z bo‘limi; admin/rahbariyat — Ofis/Dorixona
-  const effectiveWorkplace: WorkplaceFilter = viewOnly || !fullAccess ? "ofis" : workplaceFilter;
-  const effectiveDeptFilter = viewOnly ? "all" : deptFilter;
+  // Bo‘lim boshlig‘i — faqat ofis; to‘liq ruxsat (HR/rekruter/admin) — Ofis/Dorixona
+  const effectiveWorkplace: WorkplaceFilter = fullAccess ? workplaceFilter : "ofis";
+  const effectiveDeptFilter = deptLocked ? "all" : deptFilter;
 
   /** Bo‘lim selectida «Mudir» kabi rol nomi tanlansa — rol filtri sifatida */
   const deptAsRoleKey = useMemo(() => {
@@ -376,12 +378,12 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     roleFilter !== "all" ? roleFilter : deptAsRoleKey || "all";
 
   useEffect(() => {
-    if (viewOnly) {
+    if (deptLocked) {
       setDeptFilter("all");
       setRoleFilter("all");
       setWorkplaceFilter("ofis");
     }
-  }, [viewOnly]);
+  }, [deptLocked]);
 
   const {
     data: employees,
@@ -394,7 +396,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     queryKey: staffQueryKey(
       group,
       search,
-      viewOnly ? "own-dept" : deptFilter,
+      deptLocked ? "own-dept" : deptFilter,
       isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
       effectiveRoleFilter,
       statusFilter,
@@ -468,7 +470,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         }
         // Oddiy bo‘lim filtri (rol-nomli bo‘limlar allaqachon roleFilter ga o‘tdi)
         if (
-          !viewOnly &&
+          !deptLocked &&
           !deptAsRoleKey &&
           deptFilter !== "all" &&
           e.departmentId !== Number(deptFilter)
@@ -509,6 +511,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     effectiveRoleFilter,
     t,
     viewOnly,
+    deptLocked,
   ]);
 
   const setStatus = (id: number, employmentStatus: string) => {
@@ -521,7 +524,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
             queryKey: staffQueryKey(
               group,
               search,
-              viewOnly ? "own-dept" : deptFilter,
+              deptLocked ? "own-dept" : deptFilter,
               isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
               effectiveRoleFilter,
               statusFilter,
@@ -547,7 +550,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
     const params = new URLSearchParams();
     params.set("group", group);
     if (search.trim()) params.set("search", search.trim());
-    if (!viewOnly && !deptAsRoleKey && deptFilter !== "all") {
+    if (!deptLocked && !deptAsRoleKey && deptFilter !== "all") {
       params.set("departmentId", deptFilter);
     }
     if (effectiveRoleFilter !== "all") params.set("role", effectiveRoleFilter);
@@ -686,12 +689,16 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         </div>
       </div>
 
-      {viewOnly ? (
+      {deptLocked ? (
         <div className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3.5 py-2.5 text-sm text-sky-900 dark:text-sky-100">
           Faqat o‘z bo‘limingiz
           {lockedDeptName ? ` («${lockedDeptName}»)` : ""} xodimlari ko‘rinadi — bo‘limni o‘zgartirib bo‘lmaydi,
           holatni o‘zgartirish yoki o‘chirish mumkin emas.
           {canAddStaff ? " O‘z bo‘limingizga xodim qo‘shishingiz mumkin." : ""}
+        </div>
+      ) : viewOnly ? (
+        <div className="rounded-xl border border-sky-400/25 bg-sky-500/10 px-3.5 py-2.5 text-sm text-sky-900 dark:text-sky-100">
+          Xodimlar ro‘yxati — faqat ko‘rish (holat o‘zgartirish yoki o‘chirish mumkin emas).
         </div>
       ) : null}
 
@@ -753,7 +760,7 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                 </SelectContent>
               </Select>
             ) : null}
-            {viewOnly ? (
+            {deptLocked ? (
               <div
                 className="flex h-9 w-full items-center rounded-md border border-border bg-muted/60 px-3 text-sm font-medium text-foreground lg:w-[200px]"
                 title="Faqat o‘z bo‘limingiz"

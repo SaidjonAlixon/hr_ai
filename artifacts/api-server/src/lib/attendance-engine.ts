@@ -262,18 +262,26 @@ export function minutesBetween(a: Date, b: Date): number {
   return Math.round((b.getTime() - a.getTime()) / 60_000);
 }
 
-/** Smena reja oralig‘i (workDate = boshlanish kuni) */
+/** Smena reja oralig‘i (workDate = boshlanish kuni). 1+2 / 2+3 — birinchi start … oxirgi end. */
 export function plannedInterval(
   workDate: string,
-  key: ShiftKey,
+  key: ShiftKey | string,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): TimeInterval {
-  const def = defs[key] || DEFAULT_SHIFT_DEFS[key];
-  const start = atTashkent(workDate, def.startHm);
-  const endDate = def.overnight ? addDaysYmd(workDate, 1) : workDate;
-  let end = atTashkent(endDate, def.endHm);
+  const keys = parseShiftKeys(String(key)).filter((k) => k !== "office");
+  const firstKey = keys[0] || "one";
+  const lastKey = keys[keys.length - 1] || firstKey;
+  const first = defs[firstKey] || DEFAULT_SHIFT_DEFS[firstKey];
+  const last = defs[lastKey] || DEFAULT_SHIFT_DEFS[lastKey];
+  const start = atTashkent(workDate, first.startHm);
+  const overnight =
+    keys.length > 1
+      ? keys.some((k) => Boolean(defs[k]?.overnight)) || Boolean(last.overnight)
+      : Boolean(first.overnight);
+  const endDate = overnight ? addDaysYmd(workDate, 1) : workDate;
+  let end = atTashkent(endDate, last.endHm);
   if (end.getTime() <= start.getTime()) {
-    end = atTashkent(addDaysYmd(workDate, 1), def.endHm);
+    end = atTashkent(addDaysYmd(workDate, 1), last.endHm);
   }
   return { startMs: start.getTime(), endMs: end.getTime() };
 }

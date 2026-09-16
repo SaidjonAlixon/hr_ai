@@ -58,10 +58,19 @@ function buildAttempts(facing: CameraFacing): MediaStreamConstraints[] {
         },
       },
       { audio: false, video: { facingMode: "user" } },
-      { audio: false, video: true },
+      { audio: false, video: { facingMode: { exact: "user" } } },
     ];
   }
+  // Orqa: `video: true` qo‘shilmasin — ko‘p telefonlarda old kamera ochiladi
   return [
+    {
+      audio: false,
+      video: {
+        facingMode: { exact: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+      },
+    },
     {
       audio: false,
       video: {
@@ -71,16 +80,15 @@ function buildAttempts(facing: CameraFacing): MediaStreamConstraints[] {
       },
     },
     { audio: false, video: { facingMode: "environment" } },
-    { audio: false, video: true },
   ];
 }
 
-/** Face ID — old kamera */
+/** Face ID / skan — default orqa kamera (oldingi fallback emas) */
 export async function openFaceCamera(): Promise<MediaStream> {
-  return openCameraFast("user");
+  return openCameraFast("environment");
 }
 
-/** QR — orqa (bo‘lmasa old) */
+/** QR — orqa */
 export async function openScanCamera(): Promise<MediaStream> {
   return openCameraFast("environment");
 }
@@ -96,8 +104,7 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
         {
           audio: false,
           video: {
-            deviceId: { ideal: hit.deviceId },
-            facingMode: { ideal: facing },
+            deviceId: { exact: hit.deviceId },
             width: { ideal: facing === "user" ? 640 : 1280 },
           },
         },
@@ -130,20 +137,20 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
     }
   }
 
-  // Oxirgi urinish: enumerateDevices orqali
+  // enumerateDevices — orqa/old ni aniq tanlash
   try {
     const devices = await navigator.mediaDevices.enumerateDevices();
     const videos = devices.filter((d) => d.kind === "videoinput");
     const pick =
       facing === "environment"
-        ? videos.find((d) => /back|rear|environment|orqa|задн/i.test(d.label)) ||
-          videos[videos.length - 1] ||
+        ? videos.find((d) => /back|rear|environment|orqa|задн|world/i.test(d.label)) ||
+          (videos.length > 1 ? videos[videos.length - 1] : undefined) ||
           videos[0]
-        : videos.find((d) => /front|user|face|old|перед/i.test(d.label)) || videos[0];
+        : videos.find((d) => /front|user|face|old|перед|selfie/i.test(d.label)) || videos[0];
     if (pick?.deviceId) {
       const constraints: MediaStreamConstraints = {
         audio: false,
-        video: { deviceId: { ideal: pick.deviceId } },
+        video: { deviceId: { exact: pick.deviceId } },
       };
       const stream = await tryGet(constraints, 2500);
       remember(facing, stream, constraints);
@@ -153,11 +160,20 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
     lastErr = e;
   }
 
+  // Oxirgi chora — istalgan kamera
+  try {
+    const stream = await tryGet({ audio: false, video: true }, 2500);
+    remember(facing, stream, { audio: false, video: true });
+    return stream;
+  } catch (e) {
+    lastErr = e;
+  }
+
   throw lastErr || new Error("camera_denied");
 }
 
 /** Ruxsat + kesh isitish (stream darhol yopiladi) */
-export async function warmCamera(facing: CameraFacing = "user"): Promise<boolean> {
+export async function warmCamera(facing: CameraFacing = "environment"): Promise<boolean> {
   try {
     const s = await openCameraFast(facing);
     s.getTracks().forEach((t) => t.stop());

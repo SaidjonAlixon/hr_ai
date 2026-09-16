@@ -14,12 +14,14 @@ import {
 
 export type WorkSlotMode = "permanent" | "period" | "weekly" | "days";
 
+export type WorkSlotShiftKey = ShiftKey | "one+two" | "two+three";
+
 export type WorkSlotRow = {
   id?: number;
   employeeId: number;
   branchId: number;
   branchLabel?: string | null;
-  shiftKey: ShiftKey;
+  shiftKey: WorkSlotShiftKey;
   mode: WorkSlotMode;
   validFrom: string;
   validTo?: string | null;
@@ -32,7 +34,7 @@ export type WorkSlotRow = {
 export type ResolvedDaySlot = {
   branchId: number;
   branchLabel?: string | null;
-  shiftKey: ShiftKey;
+  shiftKey: WorkSlotShiftKey;
   mode: WorkSlotMode;
   slotId?: number;
 };
@@ -86,11 +88,16 @@ export function normalizeWorkDates(raw: unknown): string[] {
   ].sort();
 }
 
-export function normalizeShiftKeyStrict(raw: unknown): ShiftKey | null {
-  const s = String(raw || "").trim().toLowerCase();
+export function normalizeShiftKeyStrict(raw: unknown): WorkSlotShiftKey | null {
+  const s = String(raw || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
   if (s === "one" || s === "1") return "one";
   if (s === "two" || s === "2") return "two";
   if (s === "three" || s === "3") return "three";
+  if (s === "one+two" || s === "1+2" || s === "onetwo") return "one+two";
+  if (s === "two+three" || s === "2+3" || s === "twothree") return "two+three";
   return null;
 }
 
@@ -159,7 +166,7 @@ export function validateSlotInput(input: {
     return { ok: false, error: "mode: permanent | period | weekly | days" };
   }
   const shiftKey = normalizeShiftKeyStrict(input.shiftKey);
-  if (!shiftKey) return { ok: false, error: "Smena: 1, 2 yoki 3" };
+  if (!shiftKey) return { ok: false, error: "Smena: 1, 2, 3, 1+2 yoki 2+3" };
 
   if (mode === "days") {
     const workDates = normalizeWorkDates(input.workDates);
@@ -240,7 +247,25 @@ export type ActivePunchSlot = ResolvedDaySlot & {
   punchCloseMs: number;
 };
 
-/** Hozirgi vaqtda davomat qilish mumkin bo‘lgan slot(lar) */
+/** Kun slotlarini interval bilan (vaqt oynasidan qat’i nazar) */
+export function allPunchSlotsAt(
+  workDate: string,
+  slots: ResolvedDaySlot[],
+  defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
+): ActivePunchSlot[] {
+  return slots.map((s) => {
+    const iv = plannedInterval(workDate, s.shiftKey, defs);
+    return {
+      ...s,
+      startMs: iv.startMs,
+      endMs: iv.endMs,
+      punchOpenMs: iv.startMs - EARLY_IN_MIN * 60_000,
+      punchCloseMs: iv.endMs + LATE_OUT_MIN * 60_000,
+    };
+  });
+}
+
+/** Hozirgi smena oynasidagi slot(lar) — informatsion / afzal tanlash */
 export function activePunchSlotsAt(
   workDate: string,
   slots: ResolvedDaySlot[],
@@ -249,25 +274,39 @@ export function activePunchSlotsAt(
   action: "in" | "out" = "in",
 ): ActivePunchSlot[] {
   const out: ActivePunchSlot[] = [];
-  for (const s of slots) {
-    const iv = plannedInterval(workDate, s.shiftKey, defs);
-    const punchOpenMs = iv.startMs - EARLY_IN_MIN * 60_000;
-    const punchCloseMs = iv.endMs + LATE_OUT_MIN * 60_000;
+  for (const s of allPunchSlotsAt(workDate, slots, defs)) {
     const windowOk =
       action === "in"
-        ? nowMs >= punchOpenMs && nowMs <= iv.endMs + 15 * 60_000
-        : nowMs >= iv.startMs - 15 * 60_000 && nowMs <= punchCloseMs;
-    if (windowOk) {
-      out.push({ ...s, startMs: iv.startMs, endMs: iv.endMs, punchOpenMs, punchCloseMs });
-    }
+        ? nowMs >= s.punchOpenMs && nowMs <= s.endMs + 15 * 60_000
+        : nowMs >= s.startMs - 15 * 60_000 && nowMs <= s.punchCloseMs;
+    if (windowOk) out.push(s);
   }
   return out;
 }
 
-export function formatShiftKeyUz(key: ShiftKey | string): string {
-  if (key === "two") return "2-smena";
-  if (key === "three") return "3-smena";
-  if (key === "office") return "Ofis";
+/**
+ * Davomat uchun slotlar: avvalo oynadagi, yo‘q bo‘lsa kunning barcha biriktirilgan slotlari.
+ * Keldim/Ketdim istalgan vaqtda qabul qilinadi; soat hisobi smena rejasi bo‘yicha.
+ */
+export function punchSlotsForGate(
+  workDate: string,
+  slots: ResolvedDaySlot[],
+  nowMs: number,
+  defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
+  action: "in" | "out" = "in",
+): ActivePunchSlot[] {
+  const active = activePunchSlotsAt(workDate, slots, nowMs, defs, action);
+  if (active.length) return active;
+  return allPunchSlotsAt(workDate, slots, defs);
+}
+
+export function formatShiftKeyUz(key: WorkSlotShiftKey | ShiftKey | string): string {
+  const s = String(key || "").toLowerCase();
+  if (s === "one+two" || s === "1+2") return "1+2";
+  if (s === "two+three" || s === "2+3") return "2+3";
+  if (s === "two") return "2-smena";
+  if (s === "three") return "3-smena";
+  if (s === "office") return "Ofis";
   return "1-smena";
 }
 

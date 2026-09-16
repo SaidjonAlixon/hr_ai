@@ -857,6 +857,7 @@ export default function DavomatFacePage() {
   const [methodsReady, setMethodsReady] = useState(false);
   const [canManageQr, setCanManageQr] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
+  const [methodsHidden, setMethodsHidden] = useState(false);
   const [qrStream, setQrStream] = useState<MediaStream | null>(null);
   const [methodHint, setMethodHint] = useState<"FACE_ID" | "QR" | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PremiumMethod>("FACE_ID");
@@ -932,7 +933,7 @@ export default function DavomatFacePage() {
   /** Face ID model + kamera keshini fonida isitish — skan ochilganda kutish bo‘lmasin */
   useEffect(() => {
     preloadFaceModels();
-    void warmCamera("user").then((ok) => {
+    void warmCamera("environment").then((ok) => {
       if (ok) setCameraGranted(true);
     });
     void primeQrCamera();
@@ -1297,10 +1298,11 @@ export default function DavomatFacePage() {
   const remain = distance != null ? Math.max(0, distance - allowedMeters) : null;
   /** Filial GPS yo‘q bo‘lsa ofis nuqtasiga tushib «Hududdasiz» deb yolg‘on yashil ko‘rsatilmasin */
   const workplaceGpsMissing = workplace?.employee.hasGps === false;
-  const shiftWindowBlocked = workplace?.shiftWindowOpen === false || workplace?.gpsReady === false;
+  /** Smena oynasi faqat ma’lumot — Keldim/Ketdimni bloklamaydi */
+  const gpsNotReady = workplace?.gpsReady === false;
   const inside =
     !workplaceGpsMissing &&
-    !shiftWindowBlocked &&
+    !gpsNotReady &&
     distance != null
       ? distance <= allowedMeters
       : false;
@@ -1460,9 +1462,6 @@ export default function DavomatFacePage() {
         t("davomat.branchGpsMissingHint")
       );
     }
-    if (workplace?.shiftWindowOpen === false) {
-      return workplace.gpsError || "Hozir smena vaqti emas — belgilangan smenada keling.";
-    }
     if (remain != null && remain > 0) {
       return tr(t, "davomat.notInZoneDetail", {
         dist: formatDistance(distance, t),
@@ -1479,7 +1478,6 @@ export default function DavomatFacePage() {
     workplaceGpsMissing,
     workplace?.gpsError,
     workplace?.gpsReady,
-    workplace?.shiftWindowOpen,
     t,
   ]);
 
@@ -2142,7 +2140,8 @@ export default function DavomatFacePage() {
         gpsDenied={gpsDenied || Boolean(gpsError)}
         gpsSharing={gpsSharing}
         methodsReady={methodsReady}
-        showMethodPicker={Boolean(methodsReady && !done && !methodReady)}
+        showMethodPicker={Boolean(methodsReady && !done && !methodReady && !methodsHidden)}
+        onDismissMethods={() => setMethodsHidden(true)}
         selectedMethod={selectedMethod}
         onSelectMethod={setSelectedMethod}
         onPickMethod={pickMethod}

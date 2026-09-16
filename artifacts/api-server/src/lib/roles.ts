@@ -134,7 +134,8 @@ export function canViewFullDavomatDashboard(role?: string | null): boolean {
     r === "hr_menejer" ||
     r === "hr" ||
     r === "hr_kadr_rahbar" ||
-    r === "hr_auditor"
+    r === "hr_auditor" ||
+    r === "recruiter"
   );
 }
 
@@ -147,13 +148,14 @@ export function canViewDavomat(role?: string | null): boolean {
   );
 }
 
-/** Xodimlar — to‘liq (barcha ofis bo‘limlari): admin, direktor, HR, SB */
+/** Xodimlar — to‘liq (barcha ofis bo‘limlari): admin, direktor, HR, SB, rekruter */
 export function canViewEmployeesFull(role?: string | null): boolean {
   return (
     role === "admin" ||
     isDirectorRole(role) ||
     isHrRole(role) ||
-    isSbRole(role)
+    isSbRole(role) ||
+    role === "recruiter"
   );
 }
 
@@ -164,7 +166,7 @@ export function canViewEmployees(role?: string | null): boolean {
   if (role === "mudir" || role === "farmasevt" || role === "stajyor" || role === "koordinator") {
     return false;
   }
-  if (role === "recruiter" || role === "moliya") return false;
+  if (role === "moliya") return false;
   return (
     role === "it_rahbar" ||
     role === "reviziya_rahbar" ||
@@ -185,6 +187,7 @@ export function canViewEmployees(role?: string | null): boolean {
  * Bo‘lim boshliqlari — o‘z bo‘limi (view-only tahrir).
  */
 export const EMPLOYEE_VIEW_ONLY_ROLES = [
+  "recruiter",
   "it_rahbar",
   "reviziya_rahbar",
   "moliya_rahbar",
@@ -201,6 +204,7 @@ export const EMPLOYEE_VIEW_ONLY_ROLES = [
 
 export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {
   if (!role) return false;
+  if (role === "recruiter") return true;
   if (canViewEmployeesFull(role)) return false;
   return (EMPLOYEE_VIEW_ONLY_ROLES as readonly string[]).includes(role);
 }

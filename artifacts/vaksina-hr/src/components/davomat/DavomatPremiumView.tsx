@@ -11,6 +11,7 @@ import {
   QrCode,
   ScanFace,
   Banknote,
+  X,
 } from "lucide-react";
 import { Link } from "wouter";
 import { DavomatZoneMap } from "@/components/davomat/DavomatZoneMap";
@@ -50,6 +51,7 @@ type Props = {
   gpsSharing: boolean;
   methodsReady: boolean;
   showMethodPicker: boolean;
+  onDismissMethods?: () => void;
   selectedMethod: PremiumMethod;
   onSelectMethod: (m: PremiumMethod) => void;
   /** Tanlash + darhol shu usulni ochish */
@@ -265,10 +267,24 @@ export function DavomatPremiumView(p: Props) {
         {/* Methods */}
         {p.methodsReady && p.showMethodPicker ? (
           <section className="mt-4" id="dv-coach-methods">
-            <h2 className="text-base font-semibold text-white">Davomat usulini tanlang</h2>
-            <p className="mt-0.5 text-xs text-white/50">
-              Istaganingizni tanlang — Face ID yoki QR
-            </p>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-white">Davomat usulini tanlang</h2>
+                <p className="mt-0.5 text-xs text-white/50">
+                  Istaganingizni tanlang — Face ID yoki QR
+                </p>
+              </div>
+              {p.onDismissMethods ? (
+                <button
+                  type="button"
+                  aria-label="Yopish"
+                  onClick={p.onDismissMethods}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/10 text-white ring-1 ring-white/20 active:scale-95 md:hidden"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              ) : null}
+            </div>
             {p.outsideZone ? (
               <p className="mt-2 text-center text-xs font-semibold leading-snug text-rose-400">
                 {p.outsideWarn || "Hududdan tashqaridasiz — Face ID / QR ochilmaydi"}
@@ -286,7 +302,28 @@ export function DavomatPremiumView(p: Props) {
                   (p.outsideZone || !p.canOpenFace) && "dv-method-card-locked",
                 )}
               >
-                {p.selectedMethod === "FACE_ID" && !p.outsideZone ? (
+                {p.onDismissMethods ? (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label="Face ID yopish"
+                    className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/25 md:hidden"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      p.onDismissMethods?.();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        p.onDismissMethods?.();
+                      }
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </span>
+                ) : p.selectedMethod === "FACE_ID" && !p.outsideZone ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
@@ -319,7 +356,28 @@ export function DavomatPremiumView(p: Props) {
                   (p.outsideZone || !p.canOpenQr) && "dv-method-card-locked",
                 )}
               >
-                {p.selectedMethod === "QR" && !p.outsideZone ? (
+                {p.onDismissMethods ? (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    aria-label="QR yopish"
+                    className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/25 md:hidden"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      p.onDismissMethods?.();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        p.onDismissMethods?.();
+                      }
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </span>
+                ) : p.selectedMethod === "QR" && !p.outsideZone ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>

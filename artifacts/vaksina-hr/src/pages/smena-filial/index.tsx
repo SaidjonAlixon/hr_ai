@@ -36,7 +36,23 @@ const SHIFT_KEYS: { value: SlotShiftKey; label: string; hint: string }[] = [
   { value: "one", label: "1-smena", hint: "08:00–17:00" },
   { value: "two", label: "2-smena", hint: "17:00–23:45" },
   { value: "three", label: "3-smena", hint: "23:00–07:00" },
+  { value: "one+two", label: "1+2", hint: "08:00–23:45" },
+  { value: "two+three", label: "2+3", hint: "17:00–07:00" },
 ];
+
+function shiftAtoms(key: string): string[] {
+  const s = String(key || "").toLowerCase();
+  if (s === "one+two" || s === "1+2") return ["one", "two"];
+  if (s === "two+three" || s === "2+3") return ["two", "three"];
+  return [s];
+}
+
+function shiftConflicts(a: string, b: string): boolean {
+  if (a === b) return true;
+  const aa = shiftAtoms(a);
+  const bb = shiftAtoms(b);
+  return aa.some((x) => bb.includes(x));
+}
 
 type Tab = SlotMode;
 
@@ -130,7 +146,7 @@ function PersonPlanBoard({
   const branchCount = new Set(slots.map((s) => s.branchId)).size;
   const shiftCount = new Set(slots.map((s) => s.shiftKey)).size;
   const sorted = [...slots].sort((a, b) => {
-    const order = { one: 1, two: 2, three: 3 } as Record<string, number>;
+    const order = { one: 1, "one+two": 1.5, two: 2, "two+three": 2.5, three: 3 } as Record<string, number>;
     const oa = order[a.shiftKey] || 9;
     const ob = order[b.shiftKey] || 9;
     if (oa !== ob) return oa - ob;
@@ -217,7 +233,7 @@ function PersonPlanBoard({
 
       {branchCount >= 2 ? (
         <p className="text-[11px] leading-snug text-muted-foreground">
-          Bir kunda: smena vaqtiga qarab tegishli filialda davomat. Masalan 1-smena — 1-filial, 2-smena — 2-filial.
+          Bir kunda: smena rejasiga qarab tegishli filialda davomat. Keldim/Ketdim istalgan vaqtda; soat smena bo‘yicha hisoblanadi.
         </p>
       ) : (
         <p className="text-[11px] leading-snug text-muted-foreground">
@@ -408,7 +424,7 @@ export default function SmenaFilialPage() {
     const on = pickedBranchId === b.id;
     const occ = occupancyByBranch.get(b.id) || [];
     const shiftLines = SHIFT_KEYS.map((sk) => {
-      const who = occ.filter((o) => o.shiftKey === sk.value);
+      const who = occ.filter((o) => shiftConflicts(o.shiftKey, sk.value));
       const mine = who.some((w) => w.employeeId === pickedPersonId);
       if (!who.length) return { key: sk.value, label: sk.label, text: "bo‘sh", tone: "empty" as const };
       if (mine) return { key: sk.value, label: sk.label, text: "shu xodim", tone: "mine" as const };
@@ -640,9 +656,9 @@ export default function SmenaFilialPage() {
                     <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       3. Bu filialda qaysi smena?
                     </label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
                       {SHIFT_KEYS.map((opt) => {
-                        const taken = usedShiftsByPicked.has(opt.value);
+                        const taken = [...usedShiftsByPicked].some((u) => shiftConflicts(u, opt.value));
                         return (
                           <Button
                             key={opt.value}
@@ -662,7 +678,7 @@ export default function SmenaFilialPage() {
                       })}
                     </div>
                     <p className="mt-1 text-[11px] text-muted-foreground">
-                      Masalan: 1-filialga 1-smena, 2-filialga 2-smena.
+                      1+2 = 08:00–23:45 · 2+3 = 17:00–07:00. Yoki 1-filialga 1-smena, 2-filialga 2-smena.
                     </p>
                   </div>
 

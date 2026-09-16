@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   resolveSlotsForDay,
   activePunchSlotsAt,
+  punchSlotsForGate,
   slotCoversDate,
   type WorkSlotRow,
 } from "./work-slots.ts";
@@ -55,6 +56,9 @@ describe("work-slots resolve + punch window", () => {
     const night = atTashkent(day, "03:00").getTime();
     const activeNight = activePunchSlotsAt(day, daySlots, night, DEFAULT_SHIFT_DEFS, "in");
     assert.equal(activeNight.length, 0);
+
+    const gateNight = punchSlotsForGate(day, daySlots, night, DEFAULT_SHIFT_DEFS, "in");
+    assert.equal(gateNight.length, 2, "vaqt tashqarisida ham kun slotlari ochiq");
   });
 
   it("haftalik: faqat tanlangan kunda", () => {

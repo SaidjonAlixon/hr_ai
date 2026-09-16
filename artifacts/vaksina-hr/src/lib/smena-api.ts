@@ -15,7 +15,7 @@ export type SmenaAssignable = {
 };
 
 export type ShiftPick = "one" | "two" | "three" | "one+two" | "two+three";
-export type SlotShiftKey = "one" | "two" | "three";
+export type SlotShiftKey = "one" | "two" | "three" | "one+two" | "two+three";
 export type SlotMode = "permanent" | "period" | "weekly" | "days";
 
 export type SmenaMe = {

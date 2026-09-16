@@ -1,4 +1,8 @@
-import { isHrManager as isHrManagerRole, userRoleLabel } from './roles';
+import {
+  isDirectorRole,
+  isHrManager as isHrManagerRole,
+  userRoleLabel,
+} from './roles';
 
 /** Nomzod mas'uli — faqat rekruter va HR rahbariyat */
 export const ASSIGNABLE_ROLES = ['recruiter', 'hr_menejer', 'hr_direktor'] as const;
@@ -27,6 +31,17 @@ export function canManageCandidate(
   if (!user) return false;
   if (isHrManager(user.role)) return true;
   if (assigneeId != null && user.id === assigneeId) return true;
+  return false;
+}
+
+/** Nomzodni to‘liq o‘chirish: HR/direktor yoki biriktirilgan rekruter */
+export function canDeleteCandidate(
+  user?: { id: number; role: string } | null,
+  assigneeId?: number | null,
+): boolean {
+  if (!user) return false;
+  if (isHrManager(user.role) || isDirectorRole(user.role)) return true;
+  if (user.role === "recruiter" && assigneeId != null && user.id === assigneeId) return true;
   return false;
 }
 

@@ -3,7 +3,7 @@ import { eq, and, ilike, ne, or } from "drizzle-orm";
 import { db, candidatesTable, vacanciesTable, usersTable, notificationsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { canDeleteHrRecords, deleteCandidateCascade } from "../lib/delete-candidate";
+import { canDeleteCandidateRecord, deleteCandidateCascade } from "../lib/delete-candidate";
 import {
   canManageCandidate,
   canViewCandidate,
@@ -452,14 +452,28 @@ router.patch("/candidates/:id", requireAuth, async (req: AuthRequest, res): Prom
 });
 
 router.delete("/candidates/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canDeleteHrRecords(req.userRole)) {
-    res.status(403).json({ error: "Faqat HR va Direktor o'chira oladi" });
+  if (!canDeleteCandidateRecord(req.userRole)) {
+    res.status(403).json({ error: "Nomzodni o‘chirish ruxsati yo‘q" });
     return;
   }
 
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  const existing = await getCandidateFull(id);
+  if (!existing) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+  // Rekruter — faqat o‘ziga biriktirilgan nomzodni o‘chiradi
+  if (req.userRole === "recruiter" && existing.recruiterId !== req.userId) {
+    res.status(403).json({ error: "Faqat o‘zingizga biriktirilgan nomzodni o‘chira olasiz" });
+    return;
+  }
+
   const ok = await deleteCandidateCascade(id);
-  if (!ok) { res.status(404).json({ error: "Topilmadi" }); return; }
+  if (!ok) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
   res.status(204).send();
 });
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
-import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Loader2, ScanFace, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Loader2, ScanFace, SwitchCamera, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,7 +24,7 @@ import {
   type FaceOvalFrame,
   type FacePose,
 } from "@/lib/face-id";
-import { openFaceCamera } from "@/lib/camera-fast";
+import { openCameraFast, type CameraFacing } from "@/lib/camera-fast";
 import { cn } from "@/lib/utils";
 
 type CaptureResult = { fullName?: string } | void;
@@ -76,7 +76,7 @@ function alignHint(t: Translate, status: FaceAlignStatus): string {
   return t(ALIGN_KEYS[status] ?? "davomat.align.default");
 }
 
-function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
+function grabFaceSnapshot(video: HTMLVideoElement | null, mirror: boolean): string | undefined {
   if (!video || video.videoWidth < 8) return undefined;
   try {
     const vw = video.videoWidth;
@@ -90,8 +90,10 @@ function grabFaceSnapshot(video: HTMLVideoElement | null): string | undefined {
     canvas.height = Math.min(cropH, vh - sy);
     const ctx = canvas.getContext("2d");
     if (!ctx) return undefined;
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
+    if (mirror) {
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
     ctx.drawImage(video, sx, sy, canvas.width, canvas.height, 0, 0, canvas.width, canvas.height);
     return canvas.toDataURL("image/jpeg", 0.82);
   } catch {
@@ -132,9 +134,15 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const [poseIndex, setPoseIndex] = useState(0);
   const [poseFill, setPoseFill] = useState(0);
   const [liveSteps, setLiveSteps] = useState<Challenge[]>(mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN);
+  /** Default: orqa kamera */
+  const [facing, setFacing] = useState<CameraFacing>("environment");
+  const [switching, setSwitching] = useState(false);
+  const facingRef = useRef<CameraFacing>("environment");
+  facingRef.current = facing;
 
   const steps = liveSteps;
   const currentStep = steps[Math.min(poseIndex, steps.length - 1)]!;
+  const mirrorPreview = facing === "user";
 
   useEffect(() => {
     if (!open) {
@@ -144,6 +152,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setPoseIndex(0);
       setPoseFill(0);
       setLiveSteps(mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN);
+      setFacing("environment");
+      facingRef.current = "environment";
+      setSwitching(false);
       return;
     }
 
@@ -198,11 +209,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         return;
       }
       try {
-        // Model + challenge + kamera parallel — UI darhol ochiladi
         const modelsP = ensureFaceModels();
         const challengeP = fetchFaceChallenge(mode).catch(() => null);
         setHint(tRef.current("davomat.scanCamOpening"));
-        const stream = await openFaceCamera();
+        const stream = await openCameraFast(facingRef.current);
         if (cancelled) {
           stream.getTracks().forEach((track) => track.stop());
           return;
@@ -218,6 +228,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         video.playsInline = true;
         video.setAttribute("playsinline", "true");
         await video.play().catch(() => undefined);
+        setSwitching(false);
         if (!isFaceModelsReady()) {
           setHint(tRef.current("davomat.scanModelLoading"));
         }
@@ -288,7 +299,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           try {
             const captured = await onCapturedRef.current(
               payload,
-              lastPhoto || grabFaceSnapshot(videoEl),
+              lastPhoto || grabFaceSnapshot(videoEl, facingRef.current === "user"),
               liveness,
             );
             const name =
@@ -364,7 +375,6 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                   sawOpenEyes = true;
                 }
                 const baseline = openEar > 0.12 ? openEar : 0.2;
-                /** Nisbiy pasayish — kichik ko‘zlar / past EAR ham o‘tadi. */
                 const closeAt = Math.max(0.09, baseline * 0.85);
                 const openAt = Math.max(closeAt + 0.01, baseline * 0.92);
                 const isClosed =
@@ -423,7 +433,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                 } else {
                   lastDesc = vec;
                   if (wantPose === "center") {
-                    lastPhoto = grabFaceSnapshot(videoEl) || lastPhoto;
+                    lastPhoto =
+                      grabFaceSnapshot(videoEl, facingRef.current === "user") || lastPhoto;
                   }
                   const bucket = poseBuckets[poseI]!;
                   bucket.push(vec);
@@ -463,6 +474,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         void loop();
       } catch (err) {
         if (cancelled) return;
+        setSwitching(false);
         const name = err instanceof DOMException ? err.name : "";
         if (name === "NotAllowedError") {
           setError(tRef.current("davomat.scanCamDenied"));
@@ -477,7 +489,14 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       cancelled = true;
       stopCamera();
     };
-  }, [open, mode, onOpenChange]);
+  }, [open, mode, onOpenChange, facing]);
+
+  const switchCamera = () => {
+    if (busy || switching) return;
+    setSwitching(true);
+    setHint(t("davomat.scanCamOpening"));
+    setFacing((f) => (f === "environment" ? "user" : "environment"));
+  };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -496,7 +515,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         <div className="relative aspect-[4/5] w-full overflow-hidden bg-black">
           <video
             ref={videoRef}
-            className="absolute inset-0 h-full w-full object-cover -scale-x-100"
+            className={cn(
+              "absolute inset-0 h-full w-full object-cover",
+              mirrorPreview && "-scale-x-100",
+            )}
             playsInline
             muted
             autoPlay
@@ -526,6 +548,27 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               <PoseArrow pose={currentStep.pose} />
             </div>
           ) : null}
+
+          {/* Mobil: X yopish + kamera almashtirish */}
+          <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
+            <button
+              type="button"
+              aria-label={facing === "environment" ? "Old kamera" : "Orqa kamera"}
+              disabled={busy || switching}
+              onClick={switchCamera}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white ring-1 ring-white/35 active:scale-95 disabled:opacity-50"
+            >
+              {switching ? <Loader2 className="h-5 w-5 animate-spin" /> : <SwitchCamera className="h-5 w-5" />}
+            </button>
+            <button
+              type="button"
+              aria-label="Yopish"
+              onClick={() => onOpenChange(false)}
+              className="flex h-11 w-11 items-center justify-center rounded-full bg-black/60 text-white ring-1 ring-white/35 active:scale-95"
+            >
+              <X className="h-6 w-6" />
+            </button>
+          </div>
         </div>
 
         <div className="space-y-3 bg-zinc-950 px-5 pb-5 pt-4">
@@ -550,6 +593,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           <p className={cn("min-h-5 text-center text-sm", error ? "text-red-300" : "text-white/80")}>
             {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}
             {error || hint}
+          </p>
+          <p className="text-center text-[11px] text-white/45">
+            {facing === "environment" ? "Orqa kamera" : "Old kamera"} · almashtirish tugmasi yuqorida
           </p>
           <Button
             type="button"

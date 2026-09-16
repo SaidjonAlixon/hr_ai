@@ -47,6 +47,7 @@ import {
 import {
   resolveSlotsForDay,
   activePunchSlotsAt,
+  punchSlotsForGate,
   formatShiftKeyUz,
   type WorkSlotRow,
   type ResolvedDaySlot,
@@ -1542,11 +1543,14 @@ async function geoGate(
   const hasSlotSystem = allSlots.length > 0;
   let workDate = today;
   let daySlots = resolveSlotsForDay(today, allSlots);
-  let active = activePunchSlotsAt(today, daySlots, nowMs, defs, action);
-  if (!active.length) {
+  // Avvalo smena oynasidagi slot; yo‘q bo‘lsa kunning barcha biriktirilganlari (vaqt bloklamaydi)
+  let active = punchSlotsForGate(today, daySlots, nowMs, defs, action);
+  const inWindowToday = activePunchSlotsAt(today, daySlots, nowMs, defs, action).length > 0;
+  if (!inWindowToday) {
     const ySlots = resolveSlotsForDay(yesterday, allSlots);
     const yActive = activePunchSlotsAt(yesterday, ySlots, nowMs, defs, action);
     if (yActive.length) {
+      // Tun smenasi / kechikkan Ketdim — kechagi oynada
       workDate = yesterday;
       daySlots = ySlots;
       active = yActive;
@@ -1568,22 +1572,7 @@ async function geoGate(
         },
       };
     }
-    if (!active.length) {
-      const plan = daySlots
-        .map((s) => `${s.branchLabel || s.branchId} · ${formatShiftKeyUz(s.shiftKey)}`)
-        .join("; ");
-      return {
-        ok: false,
-        status: 403,
-        body: {
-          error: `Hozir smena vaqti emas. Bugungi reja: ${plan || "—"}. Faqat belgilangan smenada va shu filialda davomat qilinadi.`,
-          code: "outside_shift_window",
-          workDate,
-          daySlots,
-          fullName: emp.fullName,
-        },
-      };
-    }
+    // Vaqt oynasi tashqarisida ham ruxsat — soat hisobi smena rejasiga bog‘langan
 
     const radius = geofenceMetersForKind("branch");
     const candidates: Array<{
@@ -1618,7 +1607,7 @@ async function geoGate(
     }
     candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
     const best = candidates[0]!;
-    // Faqat HOZIRGI smena filialiga ruxsat — boshqa filialdagi GPS rad
+    // Faqat biriktirilgan filialga ruxsat — boshqa filialdagi GPS rad
     if (best.distanceMeters > radius) {
       const remainMeters = best.distanceMeters - radius;
       const allowed = candidates
@@ -1666,7 +1655,7 @@ async function geoGate(
     };
   }
 
-  // Legacy (slot yo‘q): bitta doimiy filial + smena oynasi
+  // Legacy (slot yo‘q): bitta doimiy filial — smena vaqti bloklamaydi
   const resolved = await resolveDavomatPoint(emp, userRole);
   if (!resolved.ok) return resolved;
   const point = resolved.point;
@@ -1676,27 +1665,6 @@ async function geoGate(
   const legacyKeys = parseShiftKeys(emp.shiftType, emp.shiftLabel).filter(
     (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
   );
-  if (legacyKeys.length) {
-    const pseudo: ResolvedDaySlot[] = legacyKeys.map((shiftKey) => ({
-      branchId: (assignedBranchIdForEmp(emp) || emp.id) as number,
-      branchLabel: point.label,
-      shiftKey,
-      mode: "permanent" as const,
-    }));
-    const legacyActive = activePunchSlotsAt(today, pseudo, nowMs, defs, action);
-    const yLegacy = activePunchSlotsAt(yesterday, pseudo, nowMs, defs, action);
-    if (!legacyActive.length && !yLegacy.length) {
-      return {
-        ok: false,
-        status: 403,
-        body: {
-          error: `Hozir smena vaqti emas (${legacyKeys.map(formatShiftKeyUz).join("+")}). Belgilangan smenada keling.`,
-          code: "outside_shift_window",
-          fullName: emp.fullName,
-        },
-      };
-    }
-  }
 
   if (distanceMeters > effectiveRadius) {
     const remainMeters = distanceMeters - effectiveRadius;
@@ -2334,12 +2302,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     let gpsError: string | null = resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q");
     if (allSlots.length > 0 && !daySlots.length) {
       gpsError = "Bugun sizga filial/smena biriktirilmagan — davomat yopiq.";
-    } else if (allSlots.length > 0 && !shiftWindowOpen) {
-      const plan = daySlots
-        .map((s) => `${s.branchLabel || s.branchId} · ${formatShiftKeyUz(s.shiftKey)}`)
-        .join("; ");
-      gpsError = `Hozir smena vaqti emas. Bugungi reja: ${plan}. Faqat shu vaqtda va filialda davomat.`;
     }
+    // Smena vaqti tashqarisida ham Keldim/Ketdim ochiq — faqat biriktirilgan filial GPS talab
 
     res.json({
       allowedMeters: geofenceMetersForKind(point.kind),
@@ -2349,7 +2313,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         longitude: point.longitude,
         kind: point.kind,
       },
-      gpsReady: resolved.ok && shiftWindowOpen && (allSlots.length === 0 || daySlots.length > 0),
+      gpsReady: resolved.ok && (allSlots.length === 0 || daySlots.length > 0),
       gpsError,
       shiftWindowOpen,
       workDate,

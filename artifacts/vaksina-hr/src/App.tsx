@@ -49,6 +49,7 @@ import AdminTestPage from './pages/admin/test';
 import AdminQurilmalarPage from './pages/admin/qurilmalar';
 import AdminKochmaDavomatPage from './pages/admin/kochma-davomat';
 import AdminKochmaXaritaPage from './pages/admin/kochma-xarita';
+import AdminKochmaLivePage from './pages/admin/kochma-live';
 import DavomatKochmaPage from './pages/davomat/kochma';
 import DistribyutsiyaPage from './pages/distribyutsiya/index';
 import EmployeesPage from './pages/employees/index';
@@ -215,6 +216,7 @@ function Router() {
       <ProtectedRoute path="/admin/qurilmalar" component={AdminQurilmalarPage} />
       <ProtectedRoute path="/admin/kochma-davomat" component={AdminKochmaDavomatPage} />
       <ProtectedRoute path="/admin/kochma-xarita" component={AdminKochmaXaritaPage} />
+      <ProtectedRoute path="/admin/kochma-live" component={AdminKochmaLivePage} />
       
       <Route component={NotFound} />
     </Switch>

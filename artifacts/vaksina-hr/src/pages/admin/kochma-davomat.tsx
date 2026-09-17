@@ -303,6 +303,12 @@ export default function AdminKochmaDavomatPage() {
                 Xarita
               </Link>
             </Button>
+            <Button asChild size="sm" className="h-9 rounded-xl bg-emerald-600 hover:bg-emerald-700">
+              <Link href="/admin/kochma-live">
+                <MapPinned className="mr-1.5 h-4 w-4" />
+                Jonli
+              </Link>
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -538,10 +544,11 @@ export default function AdminKochmaDavomatPage() {
       </Card>
 
       <p className="px-1 text-xs text-muted-foreground">
-        Xodim sahifasi:{" "}
-        <Link href="/davomat-kochma" className="font-medium text-sky-600 underline-offset-2 hover:underline">
-          /davomat-kochma
-        </Link>
+        Xodim alohida sahifa ko‘rmaydi — ruxsat berilgach asosiy{" "}
+        <Link href="/davomat-face" className="font-medium text-sky-600 underline-offset-2 hover:underline">
+          Davomat
+        </Link>{" "}
+        da yashil zonadan tashqarida ham ishlaydi; GPS avtomatik yoziladi.
       </p>
 
       {/* Grant */}

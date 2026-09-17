@@ -67,6 +67,8 @@ import { useI18n } from "@/i18n/I18nProvider";
 import type { User } from "@workspace/api-client-react";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
+import { ensureMobileTrack } from "@/lib/mobile-attendance-api";
+import { MOBILE_GPS_GRANTED_EVENT } from "@/components/davomat/MobileGpsBackgroundTracker";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 import { formatSom, useOylikMe } from "@/lib/oylik-api";
 import { workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
@@ -1195,6 +1197,20 @@ export default function DavomatFacePage() {
       }
 
       const gpsOk = Boolean(result.gps) || gpsAlreadyOk;
+      // Ko‘chma ruxsat: lokatsiya berilishi bilan tracking avtomatik (Boshlash yo‘q)
+      if (gpsOk) {
+        const lat = result.gps?.coords.latitude ?? gps?.lat;
+        const lng = result.gps?.coords.longitude ?? gps?.lng;
+        const accuracy = result.gps?.coords.accuracy ?? gps?.accuracy;
+        if (typeof lat === "number" && typeof lng === "number") {
+          void ensureMobileTrack({ latitude: lat, longitude: lng, accuracy }).catch(() => undefined);
+          window.dispatchEvent(
+            new CustomEvent(MOBILE_GPS_GRANTED_EVENT, {
+              detail: { latitude: lat, longitude: lng, accuracy },
+            }),
+          );
+        }
+      }
       if (gpsOk && result.camera) {
         toast({
           title: t("davomat.gpsGrantedTitle"),
@@ -1346,6 +1362,9 @@ export default function DavomatFacePage() {
     distance != null
       ? distance <= allowedMeters
       : false;
+  /** Admin ko‘chma ruxsat — yashil zonadan tashqarida ham davomat */
+  const mobileAnywhere = Boolean(workplace?.mobileAnywhere);
+  const geoOk = adminQrAnywhere || mobileAnywhere || inside;
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   // 2-filial: 1-smena Ketdi bo‘lsa ham nextAction="in" — kun yopilmagan
@@ -1385,7 +1404,7 @@ export default function DavomatFacePage() {
     Boolean(gps) &&
     !gpsError &&
     isFaceIdSupported() &&
-    inside &&
+    geoOk &&
     !done;
 
   /** QR: barcha xodimlar — GPS + zona; admin — lokatsiya shartsiz */
@@ -1393,7 +1412,7 @@ export default function DavomatFacePage() {
     methodsReady &&
     cameraGranted &&
     !done &&
-    (adminQrAnywhere || (Boolean(gps) && !gpsError && inside));
+    (adminQrAnywhere || mobileAnywhere || (Boolean(gps) && !gpsError && inside));
 
   /** Face ID | QR — ofis, farmasevt va barcha rollar */
   const showDualMethods = methodsReady;
@@ -1438,7 +1457,7 @@ export default function DavomatFacePage() {
     // Face/QR uchun kamera majburiy (admin ham)
     if (showDualMethods && !cameraGranted) return "permission";
     if (!adminQrAnywhere && (!gps || gpsError)) return "permission";
-    if (!adminQrAnywhere && !inside) return "zone";
+    if (!adminQrAnywhere && !mobileAnywhere && !inside) return "zone";
     if (showDualMethods) {
       // Apteka/ofis/admin: avval Face ID yoki QR; tasdiqdan keyin Keldim/Ketdim
       if (!hasIn && !methodReady) return "face";
@@ -1446,7 +1465,7 @@ export default function DavomatFacePage() {
       return "ketdim";
     }
     if (!gps || gpsError) return "permission";
-    if (!inside) return "zone";
+    if (!mobileAnywhere && !inside) return "zone";
     if (!verified) return "face";
     if (!hasIn) return "keldim";
     return "ketdim";
@@ -1456,6 +1475,7 @@ export default function DavomatFacePage() {
     gps,
     gpsError,
     inside,
+    mobileAnywhere,
     verified,
     hasIn,
     showDualMethods,
@@ -1581,7 +1601,7 @@ export default function DavomatFacePage() {
     liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number },
   ) => {
     if (!gps) throw new Error(t("davomat.gpsMissing"));
-    if (!inside) {
+    if (!geoOk) {
       throw new Error(
         tr(t, "davomat.outsideThrow", {
           dist: formatDistance(distance, t),
@@ -1838,7 +1858,7 @@ export default function DavomatFacePage() {
     async (payload: string) => {
       if (!adminQrAnywhere) {
         if (!gps) throw new Error(t("davomat.gpsMissing"));
-        if (!inside) throw new Error(t("davomat.outside"));
+        if (!geoOk) throw new Error(t("davomat.outside"));
       }
       const action = (verified?.nextAction || workplace?.today.nextAction || "in") as "in" | "out" | "done";
       if (action === "done") throw new Error(t("davomat.oncePerDay"));
@@ -1864,7 +1884,7 @@ export default function DavomatFacePage() {
         description: action === "out" ? "Endi «Ketdim» ni bosing" : "Endi «Keldim» ni bosing",
       });
     },
-    [adminQrAnywhere, gps, inside, verified?.nextAction, workplace, user?.fullName, t],
+    [adminQrAnywhere, gps, geoOk, verified?.nextAction, workplace, user?.fullName, t],
   );
 
   const displayName =
@@ -1990,9 +2010,14 @@ export default function DavomatFacePage() {
       : null;
   const needsPerms =
     !cameraGranted || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
-  /** GPS bor, lekin yashil zonadan tashqarida — usul/CTA bloklanadi */
+  /** GPS bor, lekin yashil zonadan tashqarida — usul/CTA bloklanadi (ko‘chma ruxsat bo‘lsa yo‘q) */
   const outsideZone =
-    !adminQrAnywhere && Boolean(gps) && !gpsError && !inside && !done;
+    !adminQrAnywhere &&
+    !mobileAnywhere &&
+    Boolean(gps) &&
+    !gpsError &&
+    !inside &&
+    !done;
   const mapNeedsGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
   const gpsDenied =
     Boolean(gpsError) &&
@@ -2087,7 +2112,7 @@ export default function DavomatFacePage() {
       void requestLocationPermission();
       return;
     }
-    if (!inside && !adminQrAnywhere) return;
+    if (!geoOk) return;
     if (!methodReady) {
       if (selectedMethod === "QR") openQrMethod();
       else openFaceMethod();

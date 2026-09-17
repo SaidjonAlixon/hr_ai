@@ -23,6 +23,7 @@ import {
   MonitorSmartphone,
   MapPin,
   Navigation,
+  Radio,
   ChevronDown,
   ChevronLeft,
   Pin,
@@ -58,6 +59,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useStaffingAlerts } from '@/lib/staffing-api';
 import { cn } from '@/lib/utils';
 import { fetchMyMobileAttendance } from '@/lib/mobile-attendance-api';
+import { MobileGpsBackgroundTracker } from '@/components/davomat/MobileGpsBackgroundTracker';
 import { DavomatAttendanceBanner } from '@/components/DavomatAttendanceBanner';
 import { BoglanishMissingBanner } from '@/components/BoglanishMissingBanner';
 import { MobileBottomNav } from '@/components/layout/MobileBottomNav';
@@ -181,7 +183,7 @@ const NAV_SECTIONS: {
     id: 'admin',
     label: 'Sozlamalar',
     icon: Settings,
-    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar', '/admin/kochma-davomat', '/admin/kochma-xarita'],
+    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar', '/admin/kochma-davomat', '/admin/kochma-xarita', '/admin/kochma-live'],
   },
 ];
 
@@ -265,6 +267,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/qurilmalar')) return '/admin/qurilmalar';
   if (path.startsWith('/admin/kochma-davomat')) return '/admin/kochma-davomat';
   if (path.startsWith('/admin/kochma-xarita')) return '/admin/kochma-xarita';
+  if (path.startsWith('/admin/kochma-live')) return '/admin/kochma-live';
   if (path.startsWith('/davomat-kochma')) return '/davomat-kochma';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
@@ -442,7 +445,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     setNavLayout(loadNavLayout(user.id));
   }, [user?.id]);
 
-  // Ko‘chma davomat menyusi — faqat admin ruxsat bergan xodimlarda
+  // Ko‘chma ruxsat — menyu yo‘q; GPS tracker + /davomat-face geofence bypass uchun
   useEffect(() => {
     if (!user?.id || !isAuthenticated) {
       setMobileAttAllowed(false);
@@ -715,6 +718,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/kochma-xarita') && !canManageUsers(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/admin/kochma-live') && !canManageUsers(user.role)) {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/admin/smena-sozlamalar') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }
@@ -896,16 +902,28 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           ...next.slice(0, at),
           { name: "Ko‘chma davomat", path: '/admin/kochma-davomat', icon: MapPin },
           { name: "Ko‘chma xarita", path: '/admin/kochma-xarita', icon: Navigation },
+          { name: "Jonli kuzatuv", path: '/admin/kochma-live', icon: Radio },
           ...next.slice(at),
         ];
-      } else if (!next.some((i) => i.path === '/admin/kochma-xarita')) {
-        const kIdx = next.findIndex((i) => i.path === '/admin/kochma-davomat');
-        const at = kIdx >= 0 ? kIdx + 1 : next.length;
-        next = [
-          ...next.slice(0, at),
-          { name: "Ko‘chma xarita", path: '/admin/kochma-xarita', icon: Navigation },
-          ...next.slice(at),
-        ];
+      } else {
+        if (!next.some((i) => i.path === '/admin/kochma-xarita')) {
+          const kIdx = next.findIndex((i) => i.path === '/admin/kochma-davomat');
+          const at = kIdx >= 0 ? kIdx + 1 : next.length;
+          next = [
+            ...next.slice(0, at),
+            { name: "Ko‘chma xarita", path: '/admin/kochma-xarita', icon: Navigation },
+            ...next.slice(at),
+          ];
+        }
+        if (!next.some((i) => i.path === '/admin/kochma-live')) {
+          const xIdx = next.findIndex((i) => i.path === '/admin/kochma-xarita');
+          const at = xIdx >= 0 ? xIdx + 1 : next.length;
+          next = [
+            ...next.slice(0, at),
+            { name: "Jonli kuzatuv", path: '/admin/kochma-live', icon: Radio },
+            ...next.slice(at),
+          ];
+        }
       }
     } else {
       next = next.filter(
@@ -913,19 +931,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           i.path !== '/admin/users' &&
           i.path !== '/admin/qurilmalar' &&
           i.path !== '/admin/kochma-davomat' &&
-          i.path !== '/admin/kochma-xarita',
+          i.path !== '/admin/kochma-xarita' &&
+          i.path !== '/admin/kochma-live',
       );
     }
-    // Xodim: ko‘chma sahifa — faqat admin ruxsat berganlarda menyuda
-    if (mobileAttAllowed) {
-      if (!next.some((i) => i.path === '/davomat-kochma')) {
-        const faceIdx = next.findIndex((i) => i.path === '/davomat-face');
-        const at = faceIdx >= 0 ? faceIdx + 1 : next.length;
-        next = [...next.slice(0, at), davomatKochmaNav, ...next.slice(at)];
-      }
-    } else {
-      next = next.filter((i) => i.path !== '/davomat-kochma');
-    }
+    // Alohida /davomat-kochma menyu yo‘q — ruxsat asosiy Davomatda yashirin
+    next = next.filter((i) => i.path !== '/davomat-kochma');
     return ensureTaskAnalyticsNav(next);
   }
 
@@ -1005,6 +1016,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Qurilmalar', path: '/admin/qurilmalar', icon: MonitorSmartphone },
       { name: "Ko‘chma davomat", path: '/admin/kochma-davomat', icon: MapPin },
       { name: "Ko‘chma xarita", path: '/admin/kochma-xarita', icon: Navigation },
+      { name: "Jonli kuzatuv", path: '/admin/kochma-live', icon: Radio },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
@@ -1432,7 +1444,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   )
     .filter((item) => item.path !== '/admin/users' || canManageUsers(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
-    .filter((item) => item.path !== '/davomat-kochma' || mobileAttAllowed);
+    .filter((item) => item.path !== '/davomat-kochma');
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {
@@ -2187,6 +2199,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             )}
           >
             {children}
+            <MobileGpsBackgroundTracker />
           </div>
         </main>
 

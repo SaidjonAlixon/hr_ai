@@ -322,6 +322,8 @@ export async function facePunchDavomat(payload: {
 
 export type WorkplaceInfo = {
   allowedMeters: number;
+  /** Admin ko‘chma ruxsat — yashil zonadan tashqarida ham davomat */
+  mobileAnywhere?: boolean;
   gpsReady?: boolean;
   gpsError?: string | null;
   shiftWindowOpen?: boolean;

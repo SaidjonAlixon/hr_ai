@@ -94,6 +94,10 @@ import {
   verifyDepartmentQrPayload,
 } from "../lib/department-attendance-qr";
 import { clientIp, writePunchAudit } from "../lib/punch-audit";
+import {
+  findActivePermissionForEmployee,
+  getMobileSettings,
+} from "../lib/mobile-attendance";
 
 const router: IRouter = Router();
 
@@ -1695,13 +1699,25 @@ async function geoGate(
   _accuracyMeters?: number,
   action: "in" | "out" = "in",
 ): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
+  // Admin bergan ko‘chma ruxsat — yashil zona (geofence) talab qilinmaydi
+  let mobileAnywhere = false;
+  try {
+    const [settings, perm] = await Promise.all([
+      getMobileSettings(),
+      findActivePermissionForEmployee(emp.id),
+    ]);
+    mobileAnywhere = Boolean(settings.enabled && perm);
+  } catch {
+    mobileAnywhere = false;
+  }
+
   if (!usesBranchDavomat(userRole, emp.orgRole)) {
     const resolved = await resolveDavomatPoint(emp, userRole);
     if (!resolved.ok) return resolved;
     const point = resolved.point;
     const distanceMeters = haversineMeters(latitude, longitude, point.latitude, point.longitude);
     const effectiveRadius = geofenceMetersForKind(point.kind);
-    if (distanceMeters > effectiveRadius) {
+    if (!mobileAnywhere && distanceMeters > effectiveRadius) {
       const remainMeters = distanceMeters - effectiveRadius;
       return {
         ok: false,
@@ -1725,7 +1741,7 @@ async function geoGate(
     return {
       ok: true,
       distanceMeters,
-      effectiveRadius,
+      effectiveRadius: mobileAnywhere ? Math.max(effectiveRadius, Math.ceil(distanceMeters) || effectiveRadius) : effectiveRadius,
       point,
       resolvedBranchId: null,
       resolvedBranchLabel: null,
@@ -1847,8 +1863,8 @@ async function geoGate(
       }
     }
     const best = candidates[0]!;
-    // Faqat biriktirilgan filialga ruxsat — boshqa filialdagi GPS rad
-    if (best.distanceMeters > radius) {
+    // Faqat biriktirilgan filialga ruxsat — boshqa filialdagi GPS rad (ko‘chma ruxsat bo‘lsa o‘tadi)
+    if (!mobileAnywhere && best.distanceMeters > radius) {
       const remainMeters = best.distanceMeters - radius;
       const allowed = candidates
         .map((c) => `${c.label} (${formatShiftKeyUz(c.slot.shiftKey)})`)
@@ -1881,7 +1897,7 @@ async function geoGate(
     return {
       ok: true,
       distanceMeters: best.distanceMeters,
-      effectiveRadius: radius,
+      effectiveRadius: mobileAnywhere ? Math.max(radius, Math.ceil(best.distanceMeters) || radius) : radius,
       point: {
         latitude: best.lat,
         longitude: best.lng,
@@ -1906,7 +1922,7 @@ async function geoGate(
     (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
   );
 
-  if (distanceMeters > effectiveRadius) {
+  if (!mobileAnywhere && distanceMeters > effectiveRadius) {
     const remainMeters = distanceMeters - effectiveRadius;
     return {
       ok: false,
@@ -1931,7 +1947,9 @@ async function geoGate(
   return {
     ok: true,
     distanceMeters,
-    effectiveRadius,
+    effectiveRadius: mobileAnywhere
+      ? Math.max(effectiveRadius, Math.ceil(distanceMeters) || effectiveRadius)
+      : effectiveRadius,
     point,
     resolvedBranchId: effective.branchId,
     resolvedBranchLabel: effective.branchLabel,
@@ -2705,8 +2723,20 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     }
     // Smena vaqti tashqarisida ham Keldim/Ketdim ochiq — faqat biriktirilgan filial GPS talab
 
+    let mobileAnywhere = false;
+    try {
+      const [ms, mp] = await Promise.all([
+        getMobileSettings(),
+        findActivePermissionForEmployee(emp.id),
+      ]);
+      mobileAnywhere = Boolean(ms.enabled && mp);
+    } catch {
+      mobileAnywhere = false;
+    }
+
     res.json({
       allowedMeters: geofenceMetersForKind(point.kind),
+      mobileAnywhere,
       site: {
         label: point.label,
         latitude: point.latitude,

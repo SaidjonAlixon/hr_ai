@@ -168,6 +168,37 @@ export async function fetchMobileSessions(params: {
   return api<{ sessions: Array<Record<string, unknown>> }>(`/mobile-attendance/sessions?${qs}`);
 }
 
+export async function fetchMobileLive(employeeId?: number) {
+  const qs = employeeId ? `?employeeId=${employeeId}` : "";
+  return api<{
+    today: string;
+    count: number;
+    onlineCount: number;
+    polledAt: string;
+    live: Array<{
+      sessionId: number | null;
+      employeeId: number;
+      userId: number | null;
+      fullName: string | null;
+      position: string | null;
+      location: string | null;
+      status: string;
+      presence: "online" | "offline";
+      securityStatus: string;
+      routeTrackingEnabled: boolean;
+      startTime: string | null;
+      startLatitude: number | null;
+      startLongitude: number | null;
+      liveLatitude: number | null;
+      liveLongitude: number | null;
+      liveAccuracy: number | null;
+      liveAt: string | null;
+      pointCount: number;
+      durationMin: number;
+    }>;
+  }>(`/mobile-attendance/live${qs}`);
+}
+
 export async function fetchMobileSessionDetail(id: number) {
   return api<MobileSessionDetail>(`/mobile-attendance/sessions/${id}`);
 }
@@ -270,6 +301,24 @@ export async function trackMobilePoint(body: {
   return api<{ ok: boolean }>("/mobile-attendance/track", {
     method: "POST",
     body: JSON.stringify(body),
+  });
+}
+
+export async function ensureMobileTrack(gps?: {
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
+}) {
+  return api<{
+    ok: boolean;
+    allowed: boolean;
+    reason?: string;
+    sessionId?: number;
+    routeTrackingEnabled?: boolean;
+    created?: boolean;
+  }>("/mobile-attendance/ensure-track", {
+    method: "POST",
+    body: JSON.stringify(gps || {}),
   });
 }
 

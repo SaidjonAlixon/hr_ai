@@ -47,6 +47,7 @@ import javobOlishRouter from "./javob-olish";
 import notifTestRouter from "./notif-test";
 import pushRouter from "./push";
 import deviceSecurityRouter from "./device-security";
+import mobileAttendanceRouter from "./mobile-attendance";
 import boglanishRouter from "./boglanish";
 import telegramFilialRouter from "./telegram-filial";
 
@@ -67,6 +68,7 @@ router.use(realtimeRouter);
 router.use(kuzatuvRouter);
 router.use(authRouter);
 router.use(deviceSecurityRouter);
+router.use(mobileAttendanceRouter);
 router.use(webauthnRouter);
 router.use(faceRouter);
 router.use(davomatRouter);

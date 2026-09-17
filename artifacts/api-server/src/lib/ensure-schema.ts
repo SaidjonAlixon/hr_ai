@@ -1219,6 +1219,117 @@ CREATE TABLE IF NOT EXISTS security_events (
 );
 CREATE INDEX IF NOT EXISTS security_events_user_idx ON security_events (user_id);
 CREATE INDEX IF NOT EXISTS security_events_created_idx ON security_events (created_at);
+
+-- ========== Ko‘chma davomat (MOBILE_GPS) ==========
+CREATE TABLE IF NOT EXISTS mobile_attendance_settings (
+  id SERIAL PRIMARY KEY,
+  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  require_gps BOOLEAN NOT NULL DEFAULT TRUE,
+  require_active_shift BOOLEAN NOT NULL DEFAULT FALSE,
+  route_tracking_default BOOLEAN NOT NULL DEFAULT FALSE,
+  gps_interval_min INTEGER NOT NULL DEFAULT 10,
+  max_accuracy_meters INTEGER NOT NULL DEFAULT 50,
+  allow_start_anywhere BOOLEAN NOT NULL DEFAULT TRUE,
+  allow_end_anywhere BOOLEAN NOT NULL DEFAULT TRUE,
+  detect_suspicious BOOLEAN NOT NULL DEFAULT TRUE,
+  create_security_events BOOLEAN NOT NULL DEFAULT TRUE,
+  retention_days INTEGER NOT NULL DEFAULT 90,
+  updated_by_id INTEGER,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO mobile_attendance_settings (id)
+SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM mobile_attendance_settings WHERE id = 1);
+
+CREATE TABLE IF NOT EXISTS mobile_attendance_permissions (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  user_id INTEGER,
+  granted_by_id INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'active',
+  permission_type TEXT NOT NULL DEFAULT 'permanent',
+  start_date TEXT,
+  end_date TEXT,
+  weekdays JSONB,
+  shift_key TEXT,
+  note TEXT,
+  allow_anywhere BOOLEAN NOT NULL DEFAULT TRUE,
+  allow_start_anywhere BOOLEAN NOT NULL DEFAULT TRUE,
+  allow_end_anywhere BOOLEAN NOT NULL DEFAULT TRUE,
+  route_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  gps_interval_min INTEGER,
+  max_accuracy_meters INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  revoked_at TIMESTAMPTZ,
+  revoked_by_id INTEGER
+);
+CREATE INDEX IF NOT EXISTS mobile_att_perm_emp_idx ON mobile_attendance_permissions (employee_id);
+CREATE INDEX IF NOT EXISTS mobile_att_perm_status_idx ON mobile_attendance_permissions (status);
+CREATE INDEX IF NOT EXISTS mobile_att_perm_user_idx ON mobile_attendance_permissions (user_id);
+
+CREATE TABLE IF NOT EXISTS mobile_attendance_sessions (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  user_id INTEGER,
+  permission_id INTEGER,
+  work_date TEXT NOT NULL,
+  shift_key TEXT,
+  branch_id INTEGER,
+  branch_label TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  security_status TEXT NOT NULL DEFAULT 'ok',
+  device_row_id INTEGER,
+  device_id TEXT,
+  session_token_hash TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  start_time TIMESTAMPTZ NOT NULL,
+  start_latitude DOUBLE PRECISION NOT NULL,
+  start_longitude DOUBLE PRECISION NOT NULL,
+  start_accuracy DOUBLE PRECISION,
+  start_location_ts TIMESTAMPTZ,
+  end_time TIMESTAMPTZ,
+  end_latitude DOUBLE PRECISION,
+  end_longitude DOUBLE PRECISION,
+  end_accuracy DOUBLE PRECISION,
+  end_location_ts TIMESTAMPTZ,
+  route_tracking_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  attendance_record_id INTEGER,
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS mobile_att_sess_emp_date_idx ON mobile_attendance_sessions (employee_id, work_date);
+CREATE INDEX IF NOT EXISTS mobile_att_sess_status_idx ON mobile_attendance_sessions (status);
+CREATE INDEX IF NOT EXISTS mobile_att_sess_user_idx ON mobile_attendance_sessions (user_id);
+
+CREATE TABLE IF NOT EXISTS mobile_location_points (
+  id SERIAL PRIMARY KEY,
+  session_id INTEGER NOT NULL,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  accuracy DOUBLE PRECISION,
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sequence_number INTEGER NOT NULL DEFAULT 0,
+  point_type TEXT NOT NULL DEFAULT 'track'
+);
+CREATE INDEX IF NOT EXISTS mobile_loc_points_sess_idx ON mobile_location_points (session_id);
+CREATE INDEX IF NOT EXISTS mobile_loc_points_recorded_idx ON mobile_location_points (recorded_at);
+
+CREATE TABLE IF NOT EXISTS mobile_attendance_audit_logs (
+  id SERIAL PRIMARY KEY,
+  session_id INTEGER,
+  employee_id INTEGER,
+  actor_id INTEGER,
+  action TEXT NOT NULL,
+  metadata JSONB,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS mobile_att_audit_emp_idx ON mobile_attendance_audit_logs (employee_id);
+CREATE INDEX IF NOT EXISTS mobile_att_audit_created_idx ON mobile_attendance_audit_logs (created_at);
+CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audit_logs (action);
 `);
     await ensureRevisionVisitsSchema();
   } catch (err) {

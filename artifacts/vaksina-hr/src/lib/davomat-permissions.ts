@@ -1,6 +1,7 @@
 /**
  * Davomat: GPS + kamera ruxsatini bitta tugmadan so‘raydi.
  * Kamera va GPS — bir marta ruxsat, keyin qayta dialog yo‘q; joylashuv tez olinadi.
+ * Brauzer timeout’lari ishonchsiz — har bir so‘rov hard timeout bilan himoyalangan.
  */
 
 export type DavomatPermResult = {
@@ -12,6 +13,7 @@ export type DavomatPermResult = {
 };
 
 const GPS_GRANT_KEY = "vaksina-gps-granted";
+const CAMERA_GRANT_KEY = "vaksina-camera-granted";
 
 function stopStream(stream: MediaStream | null) {
   stream?.getTracks().forEach((t) => t.stop());
@@ -25,6 +27,14 @@ function markGpsGranted() {
   }
 }
 
+function markCameraGranted() {
+  try {
+    localStorage.setItem(CAMERA_GRANT_KEY, "1");
+  } catch {
+    /* ignore */
+  }
+}
+
 /** Watch / muvaffaqiyatli fix — keyingi safar tugmasiz ishlasin */
 export function rememberGpsGranted() {
   markGpsGranted();
@@ -33,6 +43,14 @@ export function rememberGpsGranted() {
 export function wasGpsGrantedBefore(): boolean {
   try {
     return localStorage.getItem(GPS_GRANT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function wasCameraGrantedBefore(): boolean {
+  try {
+    return localStorage.getItem(CAMERA_GRANT_KEY) === "1";
   } catch {
     return false;
   }
@@ -58,18 +76,29 @@ export function gpsEnableTipKey(os: MobileOs = detectMobileOs()): string {
   return "davomat.gpsEnableGeneric";
 }
 
+function timeoutReject(ms: number, code = 3): Promise<never> {
+  return new Promise((_, reject) => {
+    window.setTimeout(() => {
+      const err = new Error("Timeout expired") as Error & { code: number };
+      err.code = code;
+      reject(err);
+    }, ms);
+  });
+}
+
 export async function queryCameraPermission(): Promise<"granted" | "denied" | "prompt" | "unknown"> {
   try {
     const status = await navigator.permissions?.query({
       name: "camera" as PermissionName,
     });
     if (status?.state === "granted" || status?.state === "denied" || status?.state === "prompt") {
+      if (status.state === "granted") markCameraGranted();
       return status.state;
     }
   } catch {
     /* Safari / ba’zi brauzerlar camera permission query qilmaydi */
   }
-  return "unknown";
+  return wasCameraGrantedBefore() ? "granted" : "unknown";
 }
 
 export async function queryGeolocationPermission(): Promise<
@@ -88,7 +117,10 @@ export async function queryGeolocationPermission(): Promise<
 }
 
 /** Kamera ruxsatini so‘rash — allaqachon berilgan bo‘lsa qayta dialog yo‘q */
-export async function requestCameraPermission(keepStream = false): Promise<{
+export async function requestCameraPermission(
+  keepStream = false,
+  hardTimeoutMs = 12_000,
+): Promise<{
   ok: boolean;
   error: string | null;
   stream: MediaStream | null;
@@ -105,19 +137,17 @@ export async function requestCameraPermission(keepStream = false): Promise<{
     return { ok: false, error: "camera_denied", stream: null };
   }
   // Allaqachon ruxsat bor va stream kerak emas — qayta getUserMedia yo‘q
-  if ((state === "granted" || localStorage.getItem("vaksina-camera-granted") === "1") && !keepStream) {
+  if ((state === "granted" || wasCameraGrantedBefore()) && !keepStream) {
     return { ok: true, error: null, stream: null };
   }
 
   let stream: MediaStream | null = null;
   try {
-    // Bitta oddiy so‘rov — qayta-qayta facingMode urinishlari yo‘q
-    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
-    try {
-      localStorage.setItem("vaksina-camera-granted", "1");
-    } catch {
-      /* ignore */
-    }
+    stream = await Promise.race([
+      navigator.mediaDevices.getUserMedia({ audio: false, video: true }),
+      timeoutReject(hardTimeoutMs, 3),
+    ]);
+    markCameraGranted();
     if (!keepStream) {
       stopStream(stream);
       stream = null;
@@ -126,6 +156,10 @@ export async function requestCameraPermission(keepStream = false): Promise<{
   } catch (e) {
     stopStream(stream);
     const name = e instanceof DOMException ? e.name : "";
+    const code = typeof (e as { code?: number })?.code === "number" ? (e as { code: number }).code : 0;
+    if (code === 3 || name === "TimeoutError") {
+      return { ok: false, error: "camera_denied", stream: null };
+    }
     if (name === "NotAllowedError" || name === "PermissionDeniedError") {
       return { ok: false, error: "camera_denied", stream: null };
     }
@@ -138,11 +172,45 @@ export async function requestCameraPermission(keepStream = false): Promise<{
 
 function getPositionOnce(opts: PositionOptions): Promise<GeolocationPosition> {
   return new Promise((resolve, reject) => {
-    navigator.geolocation.getCurrentPosition(resolve, reject, opts);
+    let settled = false;
+    const browserTimeout = typeof opts.timeout === "number" ? opts.timeout : 8_000;
+    // Ba’zi WebView timeout’ni e’tiborsiz qoldiradi — hard cutoff
+    const hardMs = Math.min(Math.max(browserTimeout + 2_000, 5_000), 15_000);
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      const err = new Error("Timeout expired") as Error & {
+        code: number;
+        TIMEOUT: number;
+        PERMISSION_DENIED: number;
+        POSITION_UNAVAILABLE: number;
+      };
+      err.code = 3;
+      err.TIMEOUT = 3;
+      err.PERMISSION_DENIED = 1;
+      err.POSITION_UNAVAILABLE = 2;
+      reject(err);
+    }, hardMs);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        resolve(pos);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        reject(err);
+      },
+      opts,
+    );
   });
 }
 
-function mapGpsError(err: GeolocationPositionError): string {
+function mapGpsError(err: GeolocationPositionError | { code?: number }): string {
   if (err.code === 1) return "gps_denied";
   // 2 = unavailable (ko‘pincha telefon lokatsiyasi o‘chiq), 3 = timeout
   if (err.code === 2 || err.code === 3) return "gps_services_off";
@@ -181,7 +249,7 @@ export async function requestGpsPermission(timeoutMs = 10_000): Promise<{
     /* keyingi urinish */
   }
 
-  // 2) Aniqroq — qisqa kutish (20s emas)
+  // 2) Aniqroq — qisqa kutish
   try {
     const precise = await getPositionOnce({
       enableHighAccuracy: true,
@@ -203,15 +271,54 @@ export async function requestGpsPermission(timeoutMs = 10_000): Promise<{
 export async function requestDavomatPermissions(opts?: {
   gpsTimeoutMs?: number;
   keepCameraStream?: boolean;
+  /** GPS allaqachon UI da bor — qayta so‘ramaslik */
+  skipGps?: boolean;
 }): Promise<DavomatPermResult> {
-  const cam = await requestCameraPermission(Boolean(opts?.keepCameraStream));
-  const gps = await requestGpsPermission(opts?.gpsTimeoutMs ?? 10_000);
+  const hardCapMs = Math.max((opts?.gpsTimeoutMs ?? 10_000) + 12_000, 16_000);
 
-  return {
-    gps: gps.pos,
-    gpsError: gps.error,
-    camera: cam.ok,
-    cameraError: cam.error,
-    cameraStream: cam.stream,
+  const run = async (): Promise<DavomatPermResult> => {
+    const cam = await requestCameraPermission(Boolean(opts?.keepCameraStream), 10_000);
+    if (opts?.skipGps) {
+      return {
+        gps: null,
+        gpsError: null,
+        camera: cam.ok,
+        cameraError: cam.error,
+        cameraStream: cam.stream,
+      };
+    }
+    const gps = await requestGpsPermission(opts?.gpsTimeoutMs ?? 10_000);
+    return {
+      gps: gps.pos,
+      gpsError: gps.error,
+      camera: cam.ok,
+      cameraError: cam.error,
+      cameraStream: cam.stream,
+    };
   };
+
+  try {
+    return await Promise.race([
+      run(),
+      new Promise<DavomatPermResult>((resolve) => {
+        window.setTimeout(() => {
+          resolve({
+            gps: null,
+            gpsError: "gps_services_off",
+            camera: false,
+            cameraError: "camera_denied",
+            cameraStream: null,
+          });
+        }, hardCapMs);
+      }),
+    ]);
+  } catch {
+    return {
+      gps: null,
+      gpsError: "gps_failed",
+      camera: false,
+      cameraError: "camera_denied",
+      cameraStream: null,
+    };
+  }
 }

@@ -78,6 +78,7 @@ import {
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
 import { loadStaffFromUsers } from "../lib/staff-directory";
+import { formatPersonName } from "../lib/person-name";
 import { buildDavomatAnalytics, type DavomatSegment } from "../lib/davomat-analytics";
 import { matchesDepartmentFilter, resolveDepartmentFilter } from "../lib/department-filter";
 import {
@@ -538,6 +539,39 @@ function smenaLabelForEmployee(e: {
   return `${w.label}da ishlaydiganlar`;
 }
 
+/** reportsTo zanjiri: mudir/farmasevt/stajyor → koordinator F.I.Sh. */
+function coordinatorNameFromLinks(
+  employeeId: number,
+  byId: Map<
+    number,
+    {
+      id: number;
+      fullName: string;
+      reportsToId: number | null;
+      userRole?: string | null;
+      orgRole?: string | null;
+    }
+  >,
+): string {
+  const self = byId.get(employeeId);
+  if (!self) return "—";
+  const selfUr = String(self.userRole || "").toLowerCase();
+  const selfOrg = String(self.orgRole || "").toLowerCase();
+  if (selfUr === "koordinator" || selfOrg === "coordinator") {
+    return formatPersonName(self.fullName) || self.fullName || "—";
+  }
+  let cursor = self.reportsToId != null ? byId.get(self.reportsToId) : undefined;
+  for (let i = 0; i < 5 && cursor; i++) {
+    const ur = String(cursor.userRole || "").toLowerCase();
+    const org = String(cursor.orgRole || "").toLowerCase();
+    if (ur === "koordinator" || org === "coordinator") {
+      return formatPersonName(cursor.fullName) || cursor.fullName || "—";
+    }
+    cursor = cursor.reportsToId != null ? byId.get(cursor.reportsToId) : undefined;
+  }
+  return "—";
+}
+
 async function loadActiveEmployees(filters: {
   departmentId?: string;
   location?: string;
@@ -571,6 +605,7 @@ async function loadActiveEmployees(filters: {
     userId: s.userId,
     userRole: s.userRole,
     orgRole: s.orgRole || orgRoleFromUserRole(s.userRole || "") || null,
+    reportsToId: s.reportsToId ?? null,
     shiftType: s.shiftType,
     shiftLabel: s.shiftLabel,
     phone: s.phone ?? null,
@@ -3313,6 +3348,21 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     );
     const report = await buildReportWithJavob(employees, records, from, to, await getEffectiveShiftDefs());
 
+    // Kelmaganlar Excel: koordinator (filtrlangan smenada ham to‘liq zanjir)
+    const staffLinks = await loadStaffFromUsers("active");
+    const coordById = new Map(
+      staffLinks.map((s) => [
+        s.id,
+        {
+          id: s.id,
+          fullName: s.fullName,
+          reportsToId: s.reportsToId ?? null,
+          userRole: s.userRole,
+          orgRole: s.orgRole || orgRoleFromUserRole(s.userRole || "") || null,
+        },
+      ]),
+    );
+
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "VAKSINA MED HR";
     workbook.created = new Date();
@@ -3431,7 +3481,8 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       ["Rang: binafsha fon", "Ta'tilda"],
       ["Rang: och kulrang (Dam kuni)", "Faqat ofis: shanba–yakshanba dam. Kelish majburiy emas"],
       ["Qo'shimcha ish (ixtiyoriy)", "Ofis dam kunida kelgan bo‘lsa — ish soati hisoblanadi, majburiy emas"],
-      ["Varaqlar", "Davomat jadvali → Kunlik xulosa → Xodimlar jami → Kelganlar → Kelmaganlar"],
+      ["Varaqlar", "Davomat jadvali → Kunlik xulosa → Xodimlar jami → Kelganlar → Kelmaganlar (+ KOORDINATOR)"],
+      ["Kelmaganlar: KOORDINATOR", "Xodimning reportsTo zanjiri bo‘yicha biriktirilgan koordinator F.I.Sh."],
     ];
     sGuide.getRow(3).getCell(1).value = "Maydon";
     sGuide.getRow(3).getCell(2).value = "Ma'nosi";
@@ -3743,18 +3794,20 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const s5 = workbook.addWorksheet("Kelmaganlar", {
       views: [{ state: "frozen", ySplit: 2 }],
     });
-    s5.mergeCells("A1:H1");
+    s5.mergeCells("A1:I1");
     const t5 = s5.getCell("A1");
     t5.value = `Kelmaganlar — batafsil (${from} — ${to})`;
     t5.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     t5.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFB91C1C" } };
     t5.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     s5.getRow(1).height = 30;
-    ["Sana", "No", "F.I.Sh.", "Lavozim", "Smena", "Filial", "Bo‘lim", "Telefon"].forEach((h, i) => {
-      const cell = s5.getRow(2).getCell(i + 1);
-      cell.value = h;
-      headerStyle(cell, "FFBE123C");
-    });
+    ["Sana", "No", "F.I.Sh.", "Lavozim", "Smena", "Filial", "Bo‘lim", "Telefon", "KOORDINATOR"].forEach(
+      (h, i) => {
+        const cell = s5.getRow(2).getCell(i + 1);
+        cell.value = h;
+        headerStyle(cell, "FFBE123C");
+      },
+    );
     s5.columns = [
       { width: 12 },
       { width: 5 },
@@ -3764,6 +3817,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 14 },
       { width: 16 },
       { width: 16 },
+      { width: 26 },
     ];
     let absentCount = 0;
     report.days.forEach((day) => {
@@ -3771,9 +3825,19 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         .map((e) => ({ e, d: e.days.find((x) => x.date === day.date) }))
         .filter(({ d }) => d?.status === "absent");
       if (missing.length === 0) return;
-      const banner = s5.addRow([`${day.date}  ·  ${missing.length} kishi kelmagan`, "", "", "", "", "", "", ""]);
-      s5.mergeCells(banner.number, 1, banner.number, 8);
-      paintBanner(banner, "FFB91C1C", 8);
+      const banner = s5.addRow([
+        `${day.date}  ·  ${missing.length} kishi kelmagan`,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
+      s5.mergeCells(banner.number, 1, banner.number, 9);
+      paintBanner(banner, "FFB91C1C", 9);
       missing.forEach(({ e }, i) => {
         absentCount += 1;
         const row = s5.addRow([
@@ -3785,12 +3849,13 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
           e.location || "—",
           e.departmentName || "—",
           e.phone || "—",
+          coordinatorNameFromLinks(e.id, coordById),
         ]);
-        paintRow(row, i % 2 === 1, [1, 2, 8]);
+        paintRow(row, i % 2 === 1, [1, 2, 8, 9]);
       });
     });
     if (absentCount === 0) {
-      const row = s5.addRow(["—", "", "Bu davrda kelmagan xodim yo‘q", "", "", "", "", ""]);
+      const row = s5.addRow(["—", "", "Bu davrda kelmagan xodim yo‘q", "", "", "", "", "", ""]);
       paintRow(row, false);
     }
 

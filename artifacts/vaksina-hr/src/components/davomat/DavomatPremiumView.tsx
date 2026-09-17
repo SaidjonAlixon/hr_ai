@@ -385,7 +385,7 @@ export function DavomatPremiumView(p: Props) {
                 p.ctaTone === "warn" && "text-rose-100",
               )}
             >
-              {p.busy || p.gpsSharing ? (
+              {p.busy || (p.gpsSharing && p.ctaTone === "perm") ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
               ) : p.ctaTone === "in" ? (
                 <LogIn className="h-5 w-5" />

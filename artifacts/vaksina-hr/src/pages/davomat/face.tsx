@@ -76,6 +76,7 @@ import {
   queryGeolocationPermission,
   rememberGpsGranted,
   requestDavomatPermissions,
+  wasCameraGrantedBefore,
   wasGpsGrantedBefore,
 } from "@/lib/davomat-permissions";
 
@@ -885,6 +886,7 @@ export default function DavomatFacePage() {
   const lastCompassRef = useRef<number | null>(null);
   const hasAbsoluteCompassRef = useRef(false);
   const punchLockRef = useRef(false);
+  const gpsShareLockRef = useRef(false);
   const tgBootRef = useRef(false);
   const tgScanRef = useRef(false);
   const pharmacyGateRef = useRef(false);
@@ -1142,6 +1144,8 @@ export default function DavomatFacePage() {
     if (!navigator.geolocation) {
       setGpsError(t("davomat.gpsUnsupported"));
     }
+    // Oldingi ruxsatlar — tugma «Joylashuv olinmoqda»da qolib ketmasin
+    if (wasCameraGrantedBefore()) setCameraGranted(true);
     void queryCameraPermission().then((state) => {
       if (state === "granted") setCameraGranted(true);
     });
@@ -1161,14 +1165,24 @@ export default function DavomatFacePage() {
   }, [t, onCompass, startCompass, startWatch]);
 
   const requestLocationPermission = async () => {
+    if (gpsShareLockRef.current) return;
+    gpsShareLockRef.current = true;
     preloadFaceModels();
     setGpsSharing(true);
+    const safety = window.setTimeout(() => {
+      setGpsSharing(false);
+      gpsShareLockRef.current = false;
+    }, 14_000);
     try {
-      const result = await requestDavomatPermissions({ gpsTimeoutMs: 8_000 });
+      const gpsAlreadyOk = Boolean(gps) && !gpsError;
+      const result = await requestDavomatPermissions({
+        gpsTimeoutMs: 8_000,
+        skipGps: gpsAlreadyOk,
+      });
 
       if (result.camera) {
         setCameraGranted(true);
-      } else {
+      } else if (!wasCameraGrantedBefore()) {
         setCameraGranted(false);
       }
 
@@ -1176,23 +1190,26 @@ export default function DavomatFacePage() {
         applyGps(result.gps);
         startWatch();
         setGpsError(null);
-      } else if (result.gpsError) {
+      } else if (result.gpsError && !gpsAlreadyOk) {
         setGpsError(gpsErrorMessage(result.gpsError));
       }
 
-      if (result.gps && result.camera) {
+      const gpsOk = Boolean(result.gps) || gpsAlreadyOk;
+      if (gpsOk && result.camera) {
         toast({
           title: t("davomat.gpsGrantedTitle"),
-          description: tr(t, "davomat.gpsGrantedDesc", {
-            m: Math.round(result.gps.coords.accuracy || 0),
-          }),
+          description: result.gps
+            ? tr(t, "davomat.gpsGrantedDesc", {
+                m: Math.round(result.gps.coords.accuracy || 0),
+              })
+            : t("davomat.permsAllOk"),
         });
-      } else if (result.camera && !result.gps && adminQrAnywhere) {
+      } else if (result.camera && !gpsOk && adminQrAnywhere) {
         toast({
           title: t("davomat.gpsGrantedTitle"),
           description: t("davomat.permsAllOk"),
         });
-      } else if (result.gps && !result.camera) {
+      } else if (gpsOk && !result.camera) {
         toast({
           title: t("davomat.permsCamBlockedTitle"),
           description:
@@ -1201,7 +1218,7 @@ export default function DavomatFacePage() {
               : t("davomat.permsCamDenied"),
           variant: "destructive",
         });
-      } else if (!result.gps && result.camera) {
+      } else if (!gpsOk && result.camera) {
         toast({
           title: t("davomat.gpsNotGranted"),
           description: gpsErrorMessage(result.gpsError),
@@ -1221,7 +1238,9 @@ export default function DavomatFacePage() {
         });
       }
     } finally {
+      window.clearTimeout(safety);
       setGpsSharing(false);
+      gpsShareLockRef.current = false;
     }
   };
 
@@ -2011,9 +2030,19 @@ export default function DavomatFacePage() {
       };
     }
     if (needsPerms) {
+      const needGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
+      const needCam = !cameraGranted;
       return {
-        label: gpsSharing ? "Joylashuv olinmoqda…" : "Ruxsat berish",
-        sub: "Kamera va geolokatsiya",
+        label: gpsSharing
+          ? needGps
+            ? "Joylashuv olinmoqda…"
+            : "Kamera so‘ralmoqda…"
+          : needGps
+            ? "Joylashuvga ruxsat"
+            : needCam
+              ? "Kamera ruxsati"
+              : "Ruxsat berish",
+        sub: needGps && needCam ? "Kamera va geolokatsiya" : needCam ? "Kamera" : "Geolokatsiya",
         disabled: gpsSharing,
         tone: "perm" as const,
       };

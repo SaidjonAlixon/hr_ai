@@ -47,6 +47,9 @@ import AdminSmenaSozlamalarPage from './pages/admin/smena-sozlamalar';
 import AdminDavomatQrPage from './pages/admin/davomat-qr';
 import AdminTestPage from './pages/admin/test';
 import AdminQurilmalarPage from './pages/admin/qurilmalar';
+import AdminKochmaDavomatPage from './pages/admin/kochma-davomat';
+import AdminKochmaXaritaPage from './pages/admin/kochma-xarita';
+import DavomatKochmaPage from './pages/davomat/kochma';
 import DistribyutsiyaPage from './pages/distribyutsiya/index';
 import EmployeesPage from './pages/employees/index';
 import EmployeesOtherPage from './pages/employees/other';
@@ -191,6 +194,7 @@ function Router() {
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat/analytics" component={DavomatAnalyticsPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
+      <ProtectedRoute path="/davomat-kochma" component={DavomatKochmaPage} />
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
       <ProtectedRoute path="/javob-olish/holat" component={() => <LazyPage component={JavobOlishHolatPage} />} />
       <ProtectedRoute path="/javob-olish" component={() => <LazyPage component={JavobOlishPage} />} />
@@ -209,6 +213,8 @@ function Router() {
       <ProtectedRoute path="/admin/davomat-qr" component={AdminDavomatQrPage} />
       <ProtectedRoute path="/admin/test" component={AdminTestPage} />
       <ProtectedRoute path="/admin/qurilmalar" component={AdminQurilmalarPage} />
+      <ProtectedRoute path="/admin/kochma-davomat" component={AdminKochmaDavomatPage} />
+      <ProtectedRoute path="/admin/kochma-xarita" component={AdminKochmaXaritaPage} />
       
       <Route component={NotFound} />
     </Switch>

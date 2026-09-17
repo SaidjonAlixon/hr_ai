@@ -26,3 +26,4 @@ export * from "./department-job-titles";
 export * from "./javob-olish";
 export * from "./push";
 export * from "./device-security";
+export * from "./mobile-attendance";

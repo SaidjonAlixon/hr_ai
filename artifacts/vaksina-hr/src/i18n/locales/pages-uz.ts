@@ -1932,9 +1932,8 @@ export const pagesUz: Messages = {
   "smena.title": "Smena va filial",
   "smena.subtitle": "Kunlik rotatsiya, doimiy filial yoki faqat smena. 1+2 — ertalab kelish, kech ketish.",
   "smena.subtitleNew":
-
-  
-  
+    "Bir xodimni 2 filialga turli smenalarda biriktirish mumkin: doimiy, muddatli, hafta kunlari yoki aniq sanalar. Belgilash biriktirilgan filialda; soatlar smena bo‘yicha hisoblanadi (kelish/ketish istalgan vaqtda).",
+  "smena.searchName": "Ism bo‘yicha qidirish…",
   "smena.searchBranch": "Filial qidirish…",
   "smena.noBranch": "filial yo‘q",
   "smena.pickHint": "Xodimni bosing — smena va (ixtiyoriy) filial",

@@ -15,6 +15,7 @@ import {
   UserCheck,
   Users,
   Pencil,
+  RotateCcw,
   UserX,
   Timer,
 } from "lucide-react";
@@ -36,6 +37,17 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "../../components/ui/alert-dialog";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -48,6 +60,7 @@ import { cn } from "../../lib/utils";
 import {
   downloadDavomatExcel,
   fetchDavomat,
+  resetDavomatManual,
   saveDavomatManual,
   type DavomatDayMetrics,
   type DavomatEmployee,
@@ -56,7 +69,7 @@ import {
 import { downloadDavomatPdf } from "../../lib/davomat-pdf-export";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
-import { canEditDavomatManual, canViewDavomat } from "../../lib/roles";
+import { canEditDavomatManual, canResetDavomatManual, canViewDavomat } from "../../lib/roles";
 import {
   type DavomatStaffFilter,
   matchesStaffFilter,
@@ -268,6 +281,8 @@ type EditState = {
   checkOut: string;
   status: string;
   notes: string;
+  /** Haqiqiy yozuv bor — bekor qilish mumkin */
+  canReset: boolean;
 };
 
 type Section = "schedule" | "totals";
@@ -289,6 +304,7 @@ export default function DavomatPage() {
   const { toast } = useToast();
   const allowed = canViewDavomat(user?.role);
   const canEdit = canEditDavomatManual(user?.role);
+  const canReset = canResetDavomatManual(user?.role);
 
   const [section, setSection] = useState<Section>("schedule");
   const [calMode, setCalMode] = useState<CalMode>("day");
@@ -670,14 +686,17 @@ export default function DavomatPage() {
   const openEdit = (emp: DavomatEmployee, workDate: string) => {
     if (!canEdit) return;
     const day = emp.days.find((d) => d.date === workDate);
+    const hasIn = Boolean(day?.checkIn && day.checkIn !== "—");
+    const hasOut = Boolean(day?.checkOut && day.checkOut !== "—");
     setEdit({
       employeeId: emp.id,
       fullName: emp.fullName,
       workDate,
-      checkIn: day?.checkIn && day.checkIn !== "—" ? day.checkIn : "",
-      checkOut: day?.checkOut && day.checkOut !== "—" ? day.checkOut : "",
+      checkIn: hasIn ? day!.checkIn : "",
+      checkOut: hasOut ? day!.checkOut : "",
       status: day?.status === "absent" && !day.recordId ? "auto" : day?.status || "auto",
       notes: day?.notes || "",
+      canReset: Boolean(day?.recordId || hasIn || hasOut),
     });
   };
 
@@ -706,6 +725,33 @@ export default function DavomatPage() {
       setSaving(false);
     }
   };
+
+  const resetEdit = async () => {
+    if (!edit || !canReset) return;
+    setSaving(true);
+    try {
+      await resetDavomatManual({
+        employeeId: edit.employeeId,
+        workDate: edit.workDate,
+      });
+      toast({
+        title: t("davomat.resetDone"),
+        description: `${edit.fullName} · ${edit.workDate}`,
+      });
+      setEdit(null);
+      await load();
+    } catch (err) {
+      toast({
+        title: t("davomat.resetFail"),
+        description: (err as Error)?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editHasPunch = Boolean(edit?.canReset && canReset);
 
   if (!allowed) {
     return (
@@ -1735,14 +1781,58 @@ export default function DavomatPage() {
               </div>
             </div>
           ) : null}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setEdit(null)}>
-              Bekor
-            </Button>
-            <Button type="button" onClick={() => void saveEdit()} disabled={saving}>
-              {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-              Saqlash
-            </Button>
+          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              {editHasPunch ? (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      className="gap-1.5"
+                      disabled={saving}
+                    >
+                      <RotateCcw className="h-4 w-4" />
+                      {t("davomat.resetBtn")}
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>{t("davomat.resetTitle")}</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        {edit ? (
+                          <>
+                            <span className="font-medium text-foreground">{edit.fullName}</span>
+                            {" · "}
+                            {edit.workDate}
+                            <br />
+                          </>
+                        ) : null}
+                        {t("davomat.resetDesc")}
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>{t("ui.cancelFull")}</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => void resetEdit()}
+                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                      >
+                        {t("davomat.resetBtn")}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              ) : null}
+            </div>
+            <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
+              <Button type="button" variant="outline" onClick={() => setEdit(null)}>
+                Bekor
+              </Button>
+              <Button type="button" onClick={() => void saveEdit()} disabled={saving}>
+                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                Saqlash
+              </Button>
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>

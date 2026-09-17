@@ -134,10 +134,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const [poseIndex, setPoseIndex] = useState(0);
   const [poseFill, setPoseFill] = useState(0);
   const [liveSteps, setLiveSteps] = useState<Challenge[]>(mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN);
-  /** Default: orqa kamera */
-  const [facing, setFacing] = useState<CameraFacing>("environment");
+  /** Default: old (selfie) kamera */
+  const [facing, setFacing] = useState<CameraFacing>("user");
   const [switching, setSwitching] = useState(false);
-  const facingRef = useRef<CameraFacing>("environment");
+  const facingRef = useRef<CameraFacing>("user");
   facingRef.current = facing;
 
   const steps = liveSteps;
@@ -152,8 +152,8 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setPoseIndex(0);
       setPoseFill(0);
       setLiveSteps(mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN);
-      setFacing("environment");
-      facingRef.current = "environment";
+      setFacing("user");
+      facingRef.current = "user";
       setSwitching(false);
       return;
     }

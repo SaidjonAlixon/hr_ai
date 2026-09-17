@@ -83,9 +83,9 @@ function buildAttempts(facing: CameraFacing): MediaStreamConstraints[] {
   ];
 }
 
-/** Face ID / skan — default orqa kamera (oldingi fallback emas) */
+/** Face ID — standart old (selfie) kamera */
 export async function openFaceCamera(): Promise<MediaStream> {
-  return openCameraFast("environment");
+  return openCameraFast("user");
 }
 
 /** QR — orqa */

@@ -209,6 +209,17 @@ export async function saveDavomatManual(payload: {
   });
 }
 
+/** Kunlik davomatni bekor qilish — yozuv o‘chadi, xodim qayta punch qila oladi */
+export async function resetDavomatManual(payload: {
+  employeeId: number;
+  workDate: string;
+}): Promise<{ ok: boolean; deleted: boolean; message?: string }> {
+  return apiJson("/davomat/reset", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function faceVerifyDavomat(payload: {
   descriptor?: number[];
   descriptors?: number[][];

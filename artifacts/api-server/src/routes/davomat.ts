@@ -19,6 +19,7 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import {
   canViewDavomat,
   canEditDavomatManual,
+  canResetDavomatManual,
   isDirectorRole,
   hasFullPlatformAccess,
   canViewFullDavomatDashboard,
@@ -984,7 +985,7 @@ router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise
 router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
   if (!canEditDavomatManual(req.userRole)) {
-    res.status(403).json({ error: "Davomatni qo‘lda tahrirlash faqat admin uchun" });
+    res.status(403).json({ error: "Davomatni qo‘lda tahrirlash faqat admin va HR direktor uchun" });
     return;
   }
   try {
@@ -1078,6 +1079,69 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
   } catch (err) {
     console.error("POST /davomat/manual error:", err);
     res.status(503).json({ error: "Saqlanmadi" });
+  }
+});
+
+/**
+ * HR/admin: kunlik davomatni bekor qilish (0) —
+ * yozuv + smena segmentlari o‘chiriladi, xodim qayta Keldim/Ketdim qila oladi.
+ */
+router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  if (!canResetDavomatManual(req.userRole)) {
+    res.status(403).json({ error: "Davomatni bekor qilish faqat admin uchun" });
+    return;
+  }
+  try {
+    const { employeeId, workDate } = req.body as {
+      employeeId?: number;
+      workDate?: string;
+    };
+    if (!employeeId || !workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      res.status(400).json({ error: "employeeId va workDate (YYYY-MM-DD) majburiy" });
+      return;
+    }
+
+    const [emp] = await db
+      .select({ id: employeesTable.id, fullName: employeesTable.fullName })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employeeId))
+      .limit(1);
+    if (!emp) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+
+    await db
+      .delete(attendanceShiftSegmentsTable)
+      .where(
+        and(
+          eq(attendanceShiftSegmentsTable.employeeId, employeeId),
+          eq(attendanceShiftSegmentsTable.workDate, workDate),
+        ),
+      );
+
+    const deleted = await db
+      .delete(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.employeeId, employeeId),
+          eq(attendanceRecordsTable.workDate, workDate),
+        ),
+      )
+      .returning({ id: attendanceRecordsTable.id });
+
+    res.json({
+      ok: true,
+      employeeId,
+      workDate,
+      fullName: emp.fullName,
+      deleted: deleted.length > 0,
+      message: "Davomat bekor qilindi — xodim qayta ro‘yxatdan o‘tishi mumkin",
+    });
+  } catch (err) {
+    console.error("POST /davomat/reset error:", err);
+    res.status(503).json({ error: "Bekor qilinmadi" });
   }
 });
 

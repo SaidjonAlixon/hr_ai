@@ -165,8 +165,14 @@ export function canViewDavomat(role?: string | null): boolean {
   );
 }
 
-/** Davomat qo‘lda tahrirlash — faqat admin */
+/** Davomat qo‘lda tahrirlash (vaqt) — admin va HR direktor */
 export function canEditDavomatManual(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return r === "admin" || r === "hr_direktor";
+}
+
+/** Davomatni bekor qilish (0) — faqat admin */
+export function canResetDavomatManual(role?: string | null): boolean {
   return normalizeUserRole(role) === "admin";
 }
 

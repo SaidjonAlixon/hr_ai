@@ -330,6 +330,12 @@ export const pagesUz: Messages = {
   "davomat.statusAuto": "Avto (vaqtdan)",
   "davomat.note": "Izoh",
   "davomat.optional": "Ixtiyoriy",
+  "davomat.resetBtn": "Bekor qilish (0)",
+  "davomat.resetTitle": "Davomatni bekor qilasizmi?",
+  "davomat.resetDesc": "Kelish/ketish yozuvi o‘chiriladi (0). Xodim Face ID yoki QR orqali yana qayta ro‘yxatdan o‘ta oladi.",
+  "davomat.resetDone": "Davomat bekor qilindi",
+  "davomat.resetFail": "Bekor qilinmadi",
+  "davomat.resetHint": "Qayta ro‘yxatdan o‘tish uchun",
   "davomat.rowHint": "Qatorni bosing — shu xodimning kunlari chiqadi",
   "davomat.daysOf": "kunlar",
   "davomat.personDays": "kun-xodim",
@@ -1926,8 +1932,9 @@ export const pagesUz: Messages = {
   "smena.title": "Smena va filial",
   "smena.subtitle": "Kunlik rotatsiya, doimiy filial yoki faqat smena. 1+2 — ertalab kelish, kech ketish.",
   "smena.subtitleNew":
-    "Bitta xodimni 2 ta filialga turli smenada biriktirish mumkin: doimiy, muddatli, haftalik yoki aniq kunlar. Davomat biriktirilgan filialda; soat smena rejasiga qarab hisoblanadi (istalgan vaqtda Keldim/Ketdim mumkin).",
-  "smena.searchName": "Ism yozib qidirish…",
+
+  
+  
   "smena.searchBranch": "Filial qidirish…",
   "smena.noBranch": "filial yo‘q",
   "smena.pickHint": "Xodimni bosing — smena va (ixtiyoriy) filial",

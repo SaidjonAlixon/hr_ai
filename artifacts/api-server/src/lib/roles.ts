@@ -94,8 +94,13 @@ export function canDeleteUsers(role?: string | null): boolean {
   return canManageUsers(role);
 }
 
-/** Davomat qo‘lda tahrirlash — faqat admin */
+/** Davomat qo‘lda tahrirlash (vaqt) — admin va HR direktor */
 export function canEditDavomatManual(role?: string | null): boolean {
+  return canManageUsers(role) || isHrDirektor(role);
+}
+
+/** Davomatni bekor qilish (0) — faqat admin */
+export function canResetDavomatManual(role?: string | null): boolean {
   return canManageUsers(role);
 }
 

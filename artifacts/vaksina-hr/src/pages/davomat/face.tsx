@@ -933,7 +933,7 @@ export default function DavomatFacePage() {
   /** Face ID model + kamera keshini fonida isitish — skan ochilganda kutish bo‘lmasin */
   useEffect(() => {
     preloadFaceModels();
-    void warmCamera("environment").then((ok) => {
+    void warmCamera("user").then((ok) => {
       if (ok) setCameraGranted(true);
     });
     void primeQrCamera();

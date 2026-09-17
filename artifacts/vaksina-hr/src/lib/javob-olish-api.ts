@@ -69,7 +69,7 @@ export function fetchJavobShifts(dates: string[]) {
   );
 }
 
-export function fetchJavobRequests(scope: "mine" | "pending" | "all" = "mine") {
+export function fetchJavobRequests(scope: "mine" | "pending" | "all" | "approved-by-me" = "mine") {
   return apiJson<{
     items: JavobRequestItem[];
     canDecide: boolean;

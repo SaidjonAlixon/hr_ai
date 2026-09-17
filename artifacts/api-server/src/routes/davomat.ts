@@ -52,8 +52,12 @@ import {
 import {
   resolveSlotsForDay,
   activePunchSlotsAt,
+  allPunchSlotsAt,
   punchSlotsForGate,
   formatShiftKeyUz,
+  isMultiBranchDay,
+  preferActivePunchSlot,
+  hasOpenMultiBranchShift,
   type WorkSlotRow,
   type ResolvedDaySlot,
 } from "../lib/work-slots";
@@ -1766,6 +1770,47 @@ async function geoGate(
       };
     }
     candidates.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    // 1-smena allaqachon yopilgan bo‘lsa — 2-filial slotini afzal qilamiz (masofa bir xil bo‘lsa)
+    if (action === "in" && isMultiBranchDay(daySlots)) {
+      const [todayRecForGate] = await db
+        .select({
+          checkInAt: attendanceRecordsTable.checkInAt,
+          checkOutAt: attendanceRecordsTable.checkOutAt,
+          resolvedBranchId: attendanceRecordsTable.resolvedBranchId,
+        })
+        .from(attendanceRecordsTable)
+        .where(
+          and(
+            eq(attendanceRecordsTable.employeeId, emp.id),
+            eq(attendanceRecordsTable.workDate, workDate),
+          ),
+        )
+        .limit(1);
+      if (todayRecForGate?.checkOutAt) {
+        const segs = await db
+          .select({
+            shiftKey: attendanceShiftSegmentsTable.shiftKey,
+            checkInAt: attendanceShiftSegmentsTable.checkInAt,
+            checkOutAt: attendanceShiftSegmentsTable.checkOutAt,
+          })
+          .from(attendanceShiftSegmentsTable)
+          .where(
+            and(
+              eq(attendanceShiftSegmentsTable.employeeId, emp.id),
+              eq(attendanceShiftSegmentsTable.workDate, workDate),
+            ),
+          );
+        const punched = punchedShiftKeysFromParts(daySlots, todayRecForGate, segs);
+        const openCands = candidates.filter(
+          (c) => !punched.has(String(c.slot.shiftKey).toLowerCase()),
+        );
+        if (openCands.length) {
+          openCands.sort((a, b) => a.distanceMeters - b.distanceMeters);
+          candidates.length = 0;
+          candidates.push(...openCands);
+        }
+      }
+    }
     const best = candidates[0]!;
     // Faqat biriktirilgan filialga ruxsat — boshqa filialdagi GPS rad
     if (best.distanceMeters > radius) {
@@ -1887,6 +1932,41 @@ function oncePerDayFail(
   };
 }
 
+/** Segment + asosiy Ketdi dan yopilgan smena kalitlari (2-filial uchun) */
+function punchedShiftKeysFromParts(
+  daySlots: ResolvedDaySlot[],
+  rec: {
+    checkInAt?: Date | null;
+    checkOutAt?: Date | null;
+    resolvedBranchId?: number | null;
+  } | null | undefined,
+  segments: Array<{ shiftKey: string; checkInAt: Date | null; checkOutAt: Date | null }>,
+): Set<string> {
+  const keys = new Set<string>();
+  for (const s of segments) {
+    if (s.checkInAt) keys.add(String(s.shiftKey).toLowerCase());
+  }
+  if (rec?.checkInAt && keys.size === 0) {
+    const byBranch = rec.resolvedBranchId
+      ? daySlots.find((s) => s.branchId === rec.resolvedBranchId)
+      : null;
+    keys.add(String((byBranch || daySlots[0])?.shiftKey || "one").toLowerCase());
+  }
+  return keys;
+}
+
+function nextActionForRecord(
+  rec: { checkInAt: Date | null; checkOutAt: Date | null; status?: string | null } | null | undefined,
+  daySlots: ResolvedDaySlot[],
+  punchedShiftKeys: Set<string>,
+): "in" | "out" | "done" {
+  if (rec?.status === "absent" || rec?.status === "leave") return "done";
+  if (rec?.checkOutAt && hasOpenMultiBranchShift(daySlots, punchedShiftKeys)) return "in";
+  if (rec?.checkOutAt) return "done";
+  if (!rec?.checkInAt) return "in";
+  return "out";
+}
+
 async function applyFacePunch(opts: {
   emp: WorkplaceEmp;
   userRole: string;
@@ -1991,11 +2071,20 @@ async function applyFacePunch(opts: {
         .for("update");
 
       if (existing?.checkOutAt || existing?.status === "absent" || existing?.status === "leave") {
-        return oncePerDayFail(emp, existing, "already_complete");
+        // Ko‘p filial: 1-smena Ketdi → 2-filialda qayta «Keldim» (kunni butunlay yopmaymiz)
+        const multiBranchAfterOut =
+          action === "in" &&
+          existing?.checkOutAt &&
+          existing.status !== "absent" &&
+          existing.status !== "leave" &&
+          isMultiBranchDay(daySlots) &&
+          Boolean(activeShiftKey && resolvedBranchId);
+        if (!multiBranchAfterOut) {
+          return oncePerDayFail(emp, existing, "already_complete");
+        }
       }
       // Ko‘p filial: 2-smenaga boshqa filialda qayta «Keldim» — asosiy yozuvni yopmaymiz
-      const multiBranchDay =
-        daySlots.length >= 2 && new Set(daySlots.map((s) => s.branchId)).size >= 2;
+      const multiBranchDay = isMultiBranchDay(daySlots);
       if (action === "in" && existing?.checkInAt) {
         if (!(multiBranchDay && activeShiftKey && resolvedBranchId)) {
           return oncePerDayFail(emp, existing, "already_in");
@@ -2019,6 +2108,49 @@ async function applyFacePunch(opts: {
           if (seg?.checkInAt && seg.checkOutAt) {
             return oncePerDayFail(emp, existing, "already_complete");
           }
+
+          // 1-smena Ketdi asosiy yozuvda — segmentga yozib qo‘yamiz
+          if (existing.checkOutAt) {
+            const morningSlot =
+              daySlots.find((s) => String(s.shiftKey) !== String(activeShiftKey)) || daySlots[0];
+            if (morningSlot) {
+              const morningKey = String(morningSlot.shiftKey);
+              const [morningSeg] = await tx
+                .select()
+                .from(attendanceShiftSegmentsTable)
+                .where(
+                  and(
+                    eq(attendanceShiftSegmentsTable.employeeId, emp.id),
+                    eq(attendanceShiftSegmentsTable.workDate, workDate),
+                    eq(attendanceShiftSegmentsTable.shiftKey, morningKey),
+                  ),
+                )
+                .limit(1);
+              if (!morningSeg) {
+                await tx.insert(attendanceShiftSegmentsTable).values({
+                  employeeId: emp.id,
+                  workDate,
+                  shiftKey: morningKey,
+                  checkInAt: existing.checkInAt,
+                  checkOutAt: existing.checkOutAt,
+                  branchId: existing.resolvedBranchId ?? morningSlot.branchId,
+                  branchLabel: existing.resolvedBranchLabel ?? morningSlot.branchLabel ?? null,
+                  status: "closed",
+                  source: verificationMethod === "QR" ? "qr" : "face",
+                });
+              } else if (!morningSeg.checkOutAt) {
+                await tx
+                  .update(attendanceShiftSegmentsTable)
+                  .set({
+                    checkOutAt: existing.checkOutAt,
+                    status: "closed",
+                    updatedAt: now,
+                  })
+                  .where(eq(attendanceShiftSegmentsTable.id, morningSeg.id));
+              }
+            }
+          }
+
           // Oldingi ochiq segmentni yopamiz
           await tx
             .update(attendanceShiftSegmentsTable)
@@ -2059,6 +2191,9 @@ async function applyFacePunch(opts: {
             .update(attendanceRecordsTable)
             .set({
               ...geoFields,
+              checkOutAt: null,
+              checkOutMethod: null,
+              status: computeMetrics(workDate, existing.checkInAt, null, null, punchHours).status,
               resolvedBranchId: resolvedBranchId ?? undefined,
               resolvedBranchLabel: resolvedBranchLabel ?? undefined,
               notes: `multi_branch_transfer:${activeShiftKey}`,
@@ -2074,6 +2209,9 @@ async function applyFacePunch(opts: {
               workDate,
               checkIn: formatHm(existing.checkInAt),
               checkOut: "—",
+              checkInAt: existing.checkInAt.toISOString(),
+              checkOutAt: null,
+              nextAction: "out",
               transfer: true,
               shiftKey: activeShiftKey,
               branchLabel: resolvedBranchLabel,
@@ -2391,9 +2529,61 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       }
     }
 
+    const [todayRecEarly] = await db
+      .select()
+      .from(attendanceRecordsTable)
+      .where(
+        and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, today)),
+      )
+      .limit(1);
+    const earlySegs =
+      isMultiBranchDay(daySlots) && todayRecEarly
+        ? await db
+            .select({
+              shiftKey: attendanceShiftSegmentsTable.shiftKey,
+              checkInAt: attendanceShiftSegmentsTable.checkInAt,
+              checkOutAt: attendanceShiftSegmentsTable.checkOutAt,
+            })
+            .from(attendanceShiftSegmentsTable)
+            .where(
+              and(
+                eq(attendanceShiftSegmentsTable.employeeId, emp.id),
+                eq(attendanceShiftSegmentsTable.workDate, today),
+              ),
+            )
+        : [];
+    const punchedKeys = punchedShiftKeysFromParts(daySlots, todayRecEarly, earlySegs);
+    if (punchedKeys.size && activeNow.length) {
+      const openActive = activeNow.filter((s) => !punchedKeys.has(String(s.shiftKey).toLowerCase()));
+      if (openActive.length) activeNow = openActive;
+    }
+    const preferredSlot =
+      preferActivePunchSlot(activeNow, nowMs) ||
+      (daySlots.length
+        ? preferActivePunchSlot(
+            allPunchSlotsAt(planWorkDate, daySlots, defs).filter(
+              (s) => !punchedKeys.has(String(s.shiftKey).toLowerCase()),
+            ),
+            nowMs,
+          )
+        : null);
+
     // UI GPS: hozirgi aktiv smena filiali; yo‘q bo‘lsa bugungi 1-slot; legacy resolve
     let resolved = await resolveDavomatPoint(emp, user.role);
-    if (activeNow[0]) {
+    if (preferredSlot) {
+      const coords = await branchCoordsById(preferredSlot.branchId);
+      if (coords) {
+        resolved = {
+          ok: true,
+          point: {
+            latitude: coords.lat,
+            longitude: coords.lng,
+            label: preferredSlot.branchLabel || coords.label,
+            kind: "branch",
+          },
+        };
+      }
+    } else if (activeNow[0]) {
       const coords = await branchCoordsById(activeNow[0].branchId);
       if (coords) {
         resolved = {
@@ -2429,13 +2619,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           label: DAVOMAT_SITE_LABEL,
           kind: "office" as const,
         };
-    const [todayRec] = await db
-      .select()
-      .from(attendanceRecordsTable)
-      .where(
-        and(eq(attendanceRecordsTable.employeeId, emp.id), eq(attendanceRecordsTable.workDate, today)),
-      )
-      .limit(1);
+    const todayRec = todayRecEarly;
     const [yesterdayRec] = await db
       .select()
       .from(attendanceRecordsTable)
@@ -2506,9 +2690,12 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           shiftKey: s.shiftKey,
           shiftLabel: formatShiftKeyUz(s.shiftKey),
           mode: s.mode,
-          activeNow: activeNow.some((a) => a.branchId === s.branchId && a.shiftKey === s.shiftKey),
+          activeNow:
+            preferredSlot
+              ? preferredSlot.branchId === s.branchId && preferredSlot.shiftKey === s.shiftKey
+              : activeNow.some((a) => a.branchId === s.branchId && a.shiftKey === s.shiftKey),
         })),
-        activeNow: activeNow.map((s) => ({
+        activeNow: (preferredSlot ? [preferredSlot] : activeNow).map((s) => ({
           branchId: s.branchId,
           branchLabel: s.branchLabel || null,
           shiftKey: s.shiftKey,
@@ -2516,7 +2703,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         })),
       },
       shift: (() => {
-        const activeKey = activeNow[0]?.shiftKey;
+        const activeKey = preferredSlot?.shiftKey || activeNow[0]?.shiftKey;
         const w = workScheduleForStaff(
           user.role,
           emp.orgRole,
@@ -2552,26 +2739,33 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         hasGps: resolved.ok,
       },
       today: rec
-        ? {
-            checkIn: formatHm(rec.checkInAt),
-            checkOut: formatHm(rec.checkOutAt),
-            checkInAt: rec.checkInAt ? rec.checkInAt.toISOString() : null,
-            checkOutAt: rec.checkOutAt ? rec.checkOutAt.toISOString() : null,
-            checkInMethod: rec.checkInMethod ?? null,
-            checkOutMethod: rec.checkOutMethod ?? null,
-            status: rec.status,
-            complete:
-              Boolean(rec.checkOutAt) ||
-              rec.status === "absent" ||
-              rec.status === "leave" ||
-              Boolean(rec.checkInAt && rec.checkOutAt),
-            nextAction:
-              rec.status === "absent" || rec.status === "leave" || rec.checkOutAt
-                ? "done"
-                : !rec.checkInAt
-                  ? "in"
-                  : "out",
-          }
+        ? (() => {
+            const workSlots =
+              workDate === today || workDate === planWorkDate
+                ? daySlots
+                : resolveSlotsForDay(workDate, allSlots);
+            const segsForWork =
+              workDate === today
+                ? earlySegs
+                : [];
+            const punched =
+              workDate === today
+                ? punchedKeys
+                : punchedShiftKeysFromParts(workSlots, rec, segsForWork);
+            const nextAction = nextActionForRecord(rec, workSlots, punched);
+            const complete = nextAction === "done";
+            return {
+              checkIn: formatHm(rec.checkInAt),
+              checkOut: formatHm(rec.checkOutAt),
+              checkInAt: rec.checkInAt ? rec.checkInAt.toISOString() : null,
+              checkOutAt: rec.checkOutAt ? rec.checkOutAt.toISOString() : null,
+              checkInMethod: rec.checkInMethod ?? null,
+              checkOutMethod: rec.checkOutMethod ?? null,
+              status: rec.status,
+              complete,
+              nextAction,
+            };
+          })()
         : {
             checkIn: "—",
             checkOut: "—",
@@ -2676,9 +2870,27 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
       const row = rec ?? recAlt;
       checkIn = formatHm(row?.checkInAt ?? null);
       checkOut = formatHm(row?.checkOutAt ?? null);
-      if (row?.status === "absent" || row?.status === "leave" || row?.checkOutAt) nextAction = "done";
-      else if (!row?.checkInAt) nextAction = "in";
-      else nextAction = "out";
+      const slotsForStatus = resolveSlotsForDay(workDate, await loadActiveWorkSlots(emp.id));
+      let punched = new Set<string>();
+      if (row && isMultiBranchDay(slotsForStatus)) {
+        const segs = await db
+          .select({
+            shiftKey: attendanceShiftSegmentsTable.shiftKey,
+            checkInAt: attendanceShiftSegmentsTable.checkInAt,
+            checkOutAt: attendanceShiftSegmentsTable.checkOutAt,
+          })
+          .from(attendanceShiftSegmentsTable)
+          .where(
+            and(
+              eq(attendanceShiftSegmentsTable.employeeId, emp.id),
+              eq(attendanceShiftSegmentsTable.workDate, workDate),
+            ),
+          );
+        punched = punchedShiftKeysFromParts(slotsForStatus, row, segs);
+      } else if (row?.checkInAt) {
+        punched = punchedShiftKeysFromParts(slotsForStatus, row, []);
+      }
+      nextAction = nextActionForRecord(row, slotsForStatus, punched);
     }
 
     const messages: Record<string, string> = {
@@ -2853,12 +3065,29 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
         ),
       )
       .limit(1);
-    const nextAction =
-      rec?.status === "absent" || rec?.status === "leave" || rec?.checkOutAt
-        ? "done"
-        : !rec?.checkInAt
-          ? "in"
-          : "out";
+    const daySlotsForNext = resolved.gate.daySlots?.length
+      ? resolved.gate.daySlots
+      : resolveSlotsForDay(workDate, await loadActiveWorkSlots(resolved.emp.id));
+    let punchedForNext = new Set<string>();
+    if (rec && isMultiBranchDay(daySlotsForNext)) {
+      const segs = await db
+        .select({
+          shiftKey: attendanceShiftSegmentsTable.shiftKey,
+          checkInAt: attendanceShiftSegmentsTable.checkInAt,
+          checkOutAt: attendanceShiftSegmentsTable.checkOutAt,
+        })
+        .from(attendanceShiftSegmentsTable)
+        .where(
+          and(
+            eq(attendanceShiftSegmentsTable.employeeId, resolved.emp.id),
+            eq(attendanceShiftSegmentsTable.workDate, workDate),
+          ),
+        );
+      punchedForNext = punchedShiftKeysFromParts(daySlotsForNext, rec, segs);
+    } else if (rec?.checkInAt) {
+      punchedForNext = punchedShiftKeysFromParts(daySlotsForNext, rec, []);
+    }
+    const nextAction = nextActionForRecord(rec, daySlotsForNext, punchedForNext);
     const own = await ownEmployeeReport(resolved.emp.id);
     const sessionUser = await adoptFaceSession(res, resolved.user.id);
     res.json({

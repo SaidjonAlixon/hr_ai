@@ -93,6 +93,7 @@ router.get(
           slot: userDevicesTable.slot,
           os: userDevicesTable.os,
           browser: userDevicesTable.browser,
+          userAgent: userDevicesTable.userAgent,
           ipAddress: userDevicesTable.ipAddress,
           lastIp: userDevicesTable.lastIp,
           approxLocation: userDevicesTable.approxLocation,
@@ -158,18 +159,38 @@ router.get(
       );
 
       res.json({
-        devices: filtered.map((r) => ({
-          ...r,
-          staffGroup: staffGroupForRole(r.role),
-          status: r.isBlocked
-            ? "blocked"
-            : !r.isVerified
-              ? "pending"
-              : activeSessionByDevice.has(r.id)
-                ? "active"
-                : "inactive",
-          sessionActive: activeSessionByDevice.has(r.id),
-        })),
+        devices: filtered.map((r) => {
+          let os = r.os || "";
+          let browser = r.browser || "";
+          const ua = r.userAgent || "";
+          if ((!os || os === "Unknown") && ua) {
+            if (/Windows/i.test(ua)) os = "Windows";
+            else if (/Android/i.test(ua)) os = "Android";
+            else if (/iPhone|iPad|iOS/i.test(ua)) os = "iOS";
+            else if (/Mac OS/i.test(ua)) os = "macOS";
+            else if (/Linux/i.test(ua)) os = "Linux";
+          }
+          if ((!browser || browser === "Unknown") && ua) {
+            if (/Edg\//i.test(ua)) browser = "Edge";
+            else if (/Chrome\//i.test(ua)) browser = "Chrome";
+            else if (/Firefox\//i.test(ua)) browser = "Firefox";
+            else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
+          }
+          return {
+            ...r,
+            os: os || null,
+            browser: browser || null,
+            staffGroup: staffGroupForRole(r.role),
+            status: r.isBlocked
+              ? "blocked"
+              : !r.isVerified
+                ? "pending"
+                : activeSessionByDevice.has(r.id)
+                  ? "active"
+                  : "inactive",
+            sessionActive: activeSessionByDevice.has(r.id),
+          };
+        }),
       });
     } catch (err) {
       console.error("devices list", err);
@@ -212,7 +233,54 @@ router.get(
       .orderBy(desc(userSessionsTable.createdAt))
       .limit(20);
 
-    res.json({ device, user, sessions, staffGroup: staffGroupForRole(user?.role) });
+    const sessionActive = sessions.some(
+      (s) => !s.revokedAt && s.expiresAt && s.expiresAt.getTime() > Date.now(),
+    );
+    const status = device.isBlocked
+      ? "blocked"
+      : !device.isVerified
+        ? "pending"
+        : sessionActive
+          ? "active"
+          : "inactive";
+
+    // Bo‘sh OS/Browser bo‘lsa — userAgent dan taxminiy qiymat
+    let os = device.os || "";
+    let browser = device.browser || "";
+    const ua = device.userAgent || "";
+    if ((!os || os === "Unknown") && ua) {
+      if (/Windows/i.test(ua)) os = "Windows";
+      else if (/Android/i.test(ua)) os = "Android";
+      else if (/iPhone|iPad|iOS/i.test(ua)) os = "iOS";
+      else if (/Mac OS/i.test(ua)) os = "macOS";
+      else if (/Linux/i.test(ua)) os = "Linux";
+    }
+    if ((!browser || browser === "Unknown") && ua) {
+      if (/Edg\//i.test(ua)) browser = "Edge";
+      else if (/Chrome\//i.test(ua)) browser = "Chrome";
+      else if (/Firefox\//i.test(ua)) browser = "Firefox";
+      else if (/Safari\//i.test(ua) && !/Chrome/i.test(ua)) browser = "Safari";
+    }
+
+    res.json({
+      device: {
+        ...device,
+        os: os || null,
+        browser: browser || null,
+        status,
+        sessionActive,
+        staffGroup: staffGroupForRole(user?.role),
+        fullName: user?.fullName || "",
+        phone: user?.phone || null,
+        login: user?.login || "",
+        role: user?.role || "",
+        departmentName: user?.departmentName || null,
+        enforced: Boolean(user?.enforced),
+      },
+      user,
+      sessions,
+      staffGroup: staffGroupForRole(user?.role),
+    });
   },
 );
 

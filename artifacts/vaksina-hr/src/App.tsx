@@ -1,4 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { lazy, Suspense, type ComponentType } from 'react';
 import { ThemeProvider } from './components/theme-provider';
 import { I18nProvider } from './i18n/I18nProvider';
 import { Toaster } from './components/ui/toaster';
@@ -55,11 +56,27 @@ import DavomatAnalyticsPage from './pages/davomat/analytics';
 import DavomatFacePage from './pages/davomat/face';
 import DavomatQrPage from './pages/davomat/qr';
 import SmenaFilialPage from './pages/smena-filial/index';
-import JavobOlishPage from './pages/javob-olish/index';
 import BoglanishPage from './pages/boglanish/index';
 import NotificationsPage from './pages/notifications/index';
 import TgEntryPage from './pages/tg-entry';
 import NotFound from './pages/not-found';
+
+const JavobOlishPage = lazy(() => import('./pages/javob-olish/index'));
+const JavobOlishHolatPage = lazy(() => import('./pages/javob-olish/holat'));
+
+function LazyPage({ component: Component }: { component: ComponentType<any> }) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+          Yuklanmoqda…
+        </div>
+      }
+    >
+      <Component />
+    </Suspense>
+  );
+}
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -175,7 +192,8 @@ function Router() {
       <ProtectedRoute path="/davomat/analytics" component={DavomatAnalyticsPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
-      <ProtectedRoute path="/javob-olish" component={JavobOlishPage} />
+      <ProtectedRoute path="/javob-olish/holat" component={() => <LazyPage component={JavobOlishHolatPage} />} />
+      <ProtectedRoute path="/javob-olish" component={() => <LazyPage component={JavobOlishPage} />} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/boglanish" component={BoglanishPage} />
       <ProtectedRoute path="/distribyutsiya" component={DistribyutsiyaPage} />

@@ -108,6 +108,7 @@ import { HR_ROLES, userRoleLabel, isDeptHeadRole, DEPT_HEAD_ROLES } from "@/lib/
 import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
+import { TaskReturnDialog } from "@/components/vazifalar/TaskReturnDialog";
 import {
   downloadTasksExcel,
   downloadTasksPdf,
@@ -3594,3 +3595,4 @@ function TaskCard({
     </article>
   );
 }
+

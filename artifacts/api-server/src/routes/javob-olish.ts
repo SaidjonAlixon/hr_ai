@@ -295,12 +295,29 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       res.status(403).json({ error: "Ruxsat yo‘q" });
       return;
     }
+  } else if (scope === "approved-by-me") {
+    if (!isHrApprover(role)) {
+      res.status(403).json({ error: "Faqat HR ko‘radi" });
+      return;
+    }
+    rows = await db
+      .select()
+      .from(javobOlishRequestsTable)
+      .where(
+        and(
+          eq(javobOlishRequestsTable.decidedById, req.userId!),
+          eq(javobOlishRequestsTable.status, "approved"),
+        ),
+      )
+      .orderBy(desc(javobOlishRequestsTable.decidedAt), desc(javobOlishRequestsTable.workDate))
+      .limit(500);
+    canDecide = false;
   } else if (scope === "all" && isLead(role)) {
     rows = await db
       .select()
       .from(javobOlishRequestsTable)
       .orderBy(desc(javobOlishRequestsTable.createdAt))
-      .limit(200);
+      .limit(500);
     if (isCoordRole(role) && me) {
       const scopeIds = await coordinatorScopeEmployeeIds(me.id);
       rows = rows.filter((r) => scopeIds.has(r.employeeId) || r.coordinatorUserId === req.userId);

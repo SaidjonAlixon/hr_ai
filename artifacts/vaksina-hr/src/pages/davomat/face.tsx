@@ -1232,7 +1232,7 @@ export default function DavomatFacePage() {
     Boolean(checkInAtIso) &&
     dayStatus !== "absent" &&
     dayStatus !== "leave" &&
-    !(verified?.nextAction === "done" || workplace?.today.complete);
+    (verified?.nextAction || workplace?.today.nextAction) === "out";
 
   const workDateYmd =
     workplace?.workDate ||
@@ -1329,8 +1329,9 @@ export default function DavomatFacePage() {
       : false;
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
-  const done = nextAction === "done" || workplace?.today.complete;
-  const hasIn = nextAction === "out" || done || Boolean(checkInAtIso);
+  // 2-filial: 1-smena Ketdi bo‘lsa ham nextAction="in" — kun yopilmagan
+  const done = nextAction === "done";
+  const hasIn = nextAction === "out" || (done && Boolean(checkInAtIso));
   const shiftEndHm =
     workplace?.shift?.end ||
     (user?.role ? workShiftForUserRole(user.role).end : null) ||
@@ -1871,9 +1872,13 @@ export default function DavomatFacePage() {
   const department = user?.departmentName;
   const phone = user?.phone;
   const shownFace = verified?.faceImage || faceImage;
-  const dayComplete = !verified && Boolean(workplace?.today.complete);
+  const dayComplete = !verified && Boolean(workplace?.today.complete) && nextAction === "done";
   const checkInLabel = verified?.checkIn || workplace?.today.checkIn || "—";
-  const checkOutLabel = verified?.checkOut || workplace?.today.checkOut || "—";
+  // 2-filial: 1-smena Ketdi bo‘lsa ham keyingi Keldim uchun ketishni yashiramiz
+  const checkOutLabel =
+    nextAction === "in" && !done
+      ? "—"
+      : verified?.checkOut || workplace?.today.checkOut || "—";
   const closedWork = done
     ? workedMinutesFromPunch({
         checkIn: checkInLabel,

@@ -5,10 +5,14 @@ import {
   CalendarDays,
   Check,
   CheckCircle2,
+  Clock,
   Clock3,
+  FileDown,
+  FileSpreadsheet,
   Loader2,
   PhoneCall,
   Send,
+  ShieldCheck,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -35,6 +39,11 @@ import {
   type JavobRequestItem,
   type JavobShiftInfo,
 } from "../../lib/javob-olish-api";
+import {
+  buildJavobApprovedExport,
+  exportJavobApprovedExcel,
+  exportJavobApprovedPdf,
+} from "../../lib/javob-olish-export";
 
 type RequestMode = "day" | "hour";
 
@@ -65,6 +74,21 @@ function isOpenStatus(status: string) {
   return status === "pending" || status === "pending_coord" || status === "pending_hr";
 }
 
+function formatDecidedAt(v?: string | null) {
+  if (!v) return "—";
+  try {
+    return new Date(v).toLocaleString("uz-UZ", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch {
+    return "—";
+  }
+}
+
 export default function JavobOlishPage() {
   const { t } = useI18n();
   const { toast } = useToast();
@@ -87,6 +111,7 @@ export default function JavobOlishPage() {
   const [note, setNote] = useState("");
   const [shifts, setShifts] = useState<Record<string, JavobShiftInfo>>({});
   const [shiftsLoading, setShiftsLoading] = useState(false);
+  const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
 
   const selectedYmds = useMemo(
     () => selectedDates.map(dateToYmd).sort((a, b) => a.localeCompare(b)),
@@ -141,6 +166,35 @@ export default function JavobOlishPage() {
     queryFn: () => fetchJavobRequests("pending"),
     enabled: canDecideQueue,
   });
+
+  const approvedByMeQ = useQuery({
+    queryKey: ["javob-olish", "approved-by-me"],
+    queryFn: () => fetchJavobRequests("approved-by-me"),
+    enabled: isHr,
+  });
+
+  async function runApprovedExport(kind: "excel" | "pdf") {
+    const items = approvedByMeQ.data?.items ?? [];
+    if (!items.length) {
+      toast({ title: t("javob.exportEmpty"), variant: "destructive" });
+      return;
+    }
+    setExporting(kind);
+    try {
+      const payload = buildJavobApprovedExport(items);
+      if (kind === "excel") await exportJavobApprovedExcel(payload);
+      else await exportJavobApprovedPdf(payload);
+      toast({ title: t("javob.exportOk") });
+    } catch (e) {
+      toast({
+        title: t("javob.exportFail"),
+        description: e instanceof Error ? e.message : undefined,
+        variant: "destructive",
+      });
+    } finally {
+      setExporting(null);
+    }
+  }
 
   const submitMut = useMutation({
     mutationFn: () => {
@@ -248,24 +302,26 @@ export default function JavobOlishPage() {
           type="button"
           onClick={() => switchMode("day")}
           className={cn(
-            "rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+            "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
             mode === "day"
               ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
+          <CalendarDays className="h-4 w-4 shrink-0" />
           {t("javob.modeDay")}
         </button>
         <button
           type="button"
           onClick={() => switchMode("hour")}
           className={cn(
-            "rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+            "inline-flex items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
             mode === "hour"
               ? "bg-card text-foreground shadow-sm"
               : "text-muted-foreground hover:text-foreground",
           )}
         >
+          <Clock className="h-4 w-4 shrink-0" />
           {t("javob.modeHour")}
         </button>
       </div>
@@ -487,6 +543,130 @@ export default function JavobOlishPage() {
         </Card>
       ) : null}
 
+      {isHr ? (
+        <Card className="overflow-hidden border-emerald-200/60 shadow-sm">
+          <CardHeader className="border-b bg-gradient-to-br from-emerald-50 via-card to-card py-3 dark:from-emerald-950/30">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <ShieldCheck className="h-4 w-4 text-emerald-600" />
+                  {t("javob.approvedByMeTitle")}
+                </CardTitle>
+                <p className="mt-1 text-xs text-muted-foreground">{t("javob.approvedByMeHint")}</p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9 gap-1.5"
+                  disabled={exporting !== null || !(approvedByMeQ.data?.items.length)}
+                  onClick={() => void runApprovedExport("excel")}
+                >
+                  {exporting === "excel" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-700" />
+                  )}
+                  {t("javob.exportExcel")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-9 gap-1.5"
+                  disabled={exporting !== null || !(approvedByMeQ.data?.items.length)}
+                  onClick={() => void runApprovedExport("pdf")}
+                >
+                  {exporting === "pdf" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <FileDown className="h-3.5 w-3.5 text-rose-700" />
+                  )}
+                  {t("javob.exportPdf")}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2 pt-3">
+            {approvedByMeQ.isLoading ? (
+              <p className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                …
+              </p>
+            ) : (approvedByMeQ.data?.items.length ?? 0) === 0 ? (
+              <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+                {t("javob.approvedByMeEmpty")}
+              </p>
+            ) : (
+              approvedByMeQ.data!.items.map((item) => {
+                const hourly = isHourlyRequest(item);
+                return (
+                  <div
+                    key={item.id}
+                    className="space-y-2 rounded-xl border border-border bg-card p-3 shadow-sm"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0 space-y-1">
+                        <p className="truncate text-sm font-semibold text-foreground">
+                          {item.fullName || `#${item.employeeId}`}
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                          <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
+                            {hourly ? (
+                              <Clock className="h-3 w-3" />
+                            ) : (
+                              <CalendarDays className="h-3 w-3" />
+                            )}
+                            {requestKindLabel(item, t)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <CalendarDays className="h-3 w-3" />
+                            {formatYmdDisplay(item.workDate)}
+                          </span>
+                          <span className="inline-flex items-center gap-1">
+                            <Clock3 className="h-3 w-3" />
+                            {item.fromHm}–{item.toHm}
+                          </span>
+                          {item.durationLabel ? (
+                            <span>· {t("javob.duration")}: {item.durationLabel}</span>
+                          ) : null}
+                        </div>
+                        <p className="text-[10px] text-muted-foreground">
+                          {t("javob.shift")}: {item.shiftStartHm}–{item.shiftEndHm}
+                          {item.shiftOvernight ? ` (${t("javob.nextDay")})` : ""}
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-900">
+                        {t("javob.statusApproved")}
+                      </span>
+                    </div>
+                    <p className="rounded-lg bg-muted/50 px-2.5 py-2 text-xs text-foreground">
+                      <span className="font-semibold">{t("javob.note")}: </span>
+                      {item.note || "—"}
+                    </p>
+                    {item.decisionNote ? (
+                      <p className="rounded-lg border border-emerald-200 bg-emerald-50/80 px-2.5 py-2 text-[11px] text-emerald-950">
+                        <span className="font-semibold">{t("javob.hrDecisionNote")}: </span>
+                        {item.decisionNote}
+                      </p>
+                    ) : null}
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+                      <span>
+                        {t("javob.sentAt")}: {item.createdAtLabel || "—"}
+                      </span>
+                      <span>
+                        {t("javob.approvedAt")}: {formatDecidedAt(item.decidedAt)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader className="py-3">
           <CardTitle className="text-base">{t("javob.myRequests")}</CardTitle>
@@ -541,3 +721,4 @@ export default function JavobOlishPage() {
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { canManageUsers } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -44,6 +45,7 @@ import {
   type DeviceSettings,
 } from "@/lib/device-security-api";
 import {
+  Building2,
   Loader2,
   MonitorSmartphone,
   RefreshCw,
@@ -52,6 +54,8 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShieldOff,
+  Store,
+  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -72,12 +76,52 @@ function fmt(v: string | null | undefined) {
 
 function StatusBadge({ status }: { status: string }) {
   if (status === "active")
-    return <Badge className="bg-emerald-100 text-emerald-800">Faol</Badge>;
+    return (
+      <Badge className="bg-emerald-100 text-emerald-800" title="Hozir faol session bor">
+        Hozir onlayn
+      </Badge>
+    );
   if (status === "pending")
-    return <Badge className="bg-amber-100 text-amber-900">Tasdiqlash kutilmoqda</Badge>;
+    return (
+      <Badge className="bg-amber-100 text-amber-900" title="Admin tasdiqlashi kerak">
+        Tasdiqlash kutilmoqda
+      </Badge>
+    );
   if (status === "blocked")
-    return <Badge className="bg-rose-100 text-rose-800">Bloklangan</Badge>;
-  return <Badge variant="secondary">Faol emas</Badge>;
+    return (
+      <Badge className="bg-rose-100 text-rose-800" title="Kirish taqiqlangan">
+        Bloklangan
+      </Badge>
+    );
+  if (status === "inactive")
+    return (
+      <Badge className="bg-sky-100 text-sky-900" title="Tasdiqlangan, lekin hozir session yo‘q">
+        Offline (tasdiqlangan)
+      </Badge>
+    );
+  return <Badge variant="secondary">Noma’lum</Badge>;
+}
+
+function displayOsBrowser(os?: string | null, browser?: string | null) {
+  const o = (os || "").trim();
+  const b = (browser || "").trim();
+  if (!o && !b) return "Aniqlanmagan";
+  if (!o) return b;
+  if (!b) return o;
+  return `${o} · ${b}`;
+}
+
+function ActionBtn({
+  children,
+  hint,
+  ...props
+}: React.ComponentProps<typeof Button> & { hint: string }) {
+  return (
+    <div className="flex min-w-[9.5rem] flex-col gap-0.5">
+      <Button {...props}>{children}</Button>
+      <span className="px-0.5 text-[10px] leading-tight text-muted-foreground">{hint}</span>
+    </div>
+  );
 }
 
 export default function AdminQurilmalarPage() {
@@ -117,6 +161,40 @@ export default function AdminQurilmalarPage() {
   const [logs, setLogs] = useState<Array<Record<string, unknown>>>([]);
   const [events, setEvents] = useState<Array<Record<string, unknown>>>([]);
   const [busy, setBusy] = useState(false);
+  const [showOffice, setShowOffice] = useState(true);
+  const [showPharmacy, setShowPharmacy] = useState(true);
+  const [enforceQ, setEnforceQ] = useState("");
+  const [enforceStatus, setEnforceStatus] = useState<"all" | "on" | "off">("all");
+
+  const filteredEnforceUsers = useMemo(() => {
+    const qn = enforceQ.trim().toLowerCase();
+    return enforceUsers.filter((u) => {
+      const g = String(u.staffGroup || "").toLowerCase();
+      if (!showOffice && g === "office") return false;
+      if (!showPharmacy && g === "pharmacy") return false;
+      if (!showOffice && !showPharmacy) return false;
+      if (enforceStatus === "on" && !u.enforced) return false;
+      if (enforceStatus === "off" && u.enforced) return false;
+      if (!qn) return true;
+      const hay = [u.fullName, u.login, u.role, u.departmentName, u.staffGroup]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      return hay.includes(qn);
+    });
+  }, [enforceUsers, showOffice, showPharmacy, enforceQ, enforceStatus]);
+
+  const enforceCounts = useMemo(() => {
+    const office = enforceUsers.filter((u) => u.staffGroup === "office");
+    const pharmacy = enforceUsers.filter((u) => u.staffGroup === "pharmacy");
+    return {
+      office: office.length,
+      pharmacy: pharmacy.length,
+      officeOn: office.filter((u) => u.enforced).length,
+      pharmacyOn: pharmacy.filter((u) => u.enforced).length,
+      filteredOn: filteredEnforceUsers.filter((u) => u.enforced).length,
+    };
+  }, [enforceUsers, filteredEnforceUsers]);
 
   const load = useCallback(async () => {
     if (!allowed) return;
@@ -207,16 +285,26 @@ export default function AdminQurilmalarPage() {
         <Kpi icon={<ShieldAlert className="h-4 w-4 text-rose-700" />} label="Shubhali (7 kun)" value={summary.suspicious} />
       </div>
 
-      <Tabs defaultValue="devices">
-        <TabsList className="flex h-auto flex-wrap gap-1">
-          <TabsTrigger value="devices">Qurilmalar</TabsTrigger>
-          <TabsTrigger value="enforce">Majburiy userlar</TabsTrigger>
-          <TabsTrigger value="settings">Sozlamalar</TabsTrigger>
-          <TabsTrigger value="history">Login tarixi</TabsTrigger>
-          <TabsTrigger value="events">Security events</TabsTrigger>
+      <Tabs defaultValue="devices" className="space-y-4">
+        <TabsList className="ds-tabs">
+          <TabsTrigger value="devices" className="ds-tab">
+            Qurilmalar
+          </TabsTrigger>
+          <TabsTrigger value="enforce" className="ds-tab">
+            Majburiy userlar
+          </TabsTrigger>
+          <TabsTrigger value="settings" className="ds-tab">
+            Sozlamalar
+          </TabsTrigger>
+          <TabsTrigger value="history" className="ds-tab">
+            Login tarixi
+          </TabsTrigger>
+          <TabsTrigger value="events" className="ds-tab">
+            Security events
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="devices" className="mt-4 space-y-4">
+        <TabsContent value="devices" className="mt-0 space-y-4">
           <div className="flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -233,8 +321,8 @@ export default function AdminQurilmalarPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Barcha holatlar</SelectItem>
-                <SelectItem value="active">Faol</SelectItem>
-                <SelectItem value="pending">Kutilmoqda</SelectItem>
+                <SelectItem value="active">Hozir onlayn</SelectItem>
+                <SelectItem value="pending">Tasdiqlash kutilmoqda</SelectItem>
                 <SelectItem value="blocked">Bloklangan</SelectItem>
               </SelectContent>
             </Select>
@@ -249,11 +337,11 @@ export default function AdminQurilmalarPage() {
                     <th className="px-3 py-2">Login / tel</th>
                     <th className="px-3 py-2">Bo‘lim</th>
                     <th className="px-3 py-2">Qurilma</th>
-                    <th className="px-3 py-2">OS / Browser</th>
+                    <th className="px-3 py-2">Tizim / Brauzer</th>
                     <th className="px-3 py-2">IP</th>
-                    <th className="px-3 py-2">Oxirgi</th>
-                    <th className="px-3 py-2">Status</th>
-                    <th className="px-3 py-2">Asosiy</th>
+                    <th className="px-3 py-2">Oxirgi faollik</th>
+                    <th className="px-3 py-2">Holat</th>
+                    <th className="px-3 py-2">Asosiy?</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -277,14 +365,14 @@ export default function AdminQurilmalarPage() {
                         <div className="text-muted-foreground">{d.deviceType}</div>
                       </td>
                       <td className="px-3 py-2 text-xs">
-                        {d.os || "—"} / {d.browser || "—"}
+                        {displayOsBrowser(d.os, d.browser)}
                       </td>
                       <td className="px-3 py-2 font-mono text-xs">{d.lastIp || d.ipAddress || "—"}</td>
                       <td className="px-3 py-2 text-xs tabular-nums">{fmt(d.lastSeenAt)}</td>
                       <td className="px-3 py-2">
                         <StatusBadge status={d.status} />
                       </td>
-                      <td className="px-3 py-2">{d.isPrimary ? "✅" : "—"}</td>
+                      <td className="px-3 py-2 text-xs">{d.isPrimary ? "Ha · asosiy" : "Yo‘q"}</td>
                     </tr>
                   ))}
                   {!loading && devices.length === 0 ? (
@@ -300,38 +388,169 @@ export default function AdminQurilmalarPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="enforce" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Device security majburiy qilinadigan userlar</CardTitle>
-            </CardHeader>
-            <CardContent className="max-h-[480px] space-y-2 overflow-y-auto">
-              {enforceUsers.map((u) => (
-                <div
-                  key={u.id}
-                  className="flex items-center justify-between gap-3 rounded-lg border px-3 py-2"
+        <TabsContent value="enforce" className="mt-0 space-y-4">
+          <Card className="overflow-hidden border-border/70 shadow-sm">
+            <CardHeader className="space-y-4 border-b bg-gradient-to-br from-slate-50 to-white pb-4 dark:from-slate-900/40 dark:to-background">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Users className="h-4 w-4 text-primary" />
+                    Majburiy userlar
+                  </CardTitle>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Ofis yoki Dorixona bo‘yicha belgilang — ro‘yxat chiqadi, qidirib filter qiling
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <Badge variant="secondary" className="tabular-nums">
+                    Ko‘rsatilmoqda: {filteredEnforceUsers.length}
+                  </Badge>
+                  <Badge className="bg-emerald-100 text-emerald-800 tabular-nums dark:bg-emerald-500/15 dark:text-emerald-300">
+                    Yoqilgan: {enforceCounts.filteredOn}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-all",
+                    showOffice
+                      ? "border-sky-300 bg-sky-50/80 shadow-sm dark:border-sky-500/40 dark:bg-sky-500/10"
+                      : "border-border/70 bg-card hover:bg-muted/40",
+                  )}
                 >
-                  <div className="min-w-0">
-                    <div className="truncate font-medium">{u.fullName}</div>
-                    <div className="truncate text-xs text-muted-foreground">
-                      {u.login} · {u.role} · {u.staffGroup}
-                      {u.departmentName ? ` · ${u.departmentName}` : ""}
+                  <Checkbox
+                    checked={showOffice}
+                    onCheckedChange={(v) => setShowOffice(v === true)}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 font-semibold text-foreground">
+                      <Building2 className="h-4 w-4 text-sky-600" />
+                      Ofis
                     </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Ofis xodimlari · {enforceCounts.office} ta · yoqilgan {enforceCounts.officeOn}
+                    </p>
                   </div>
-                  <Switch
-                    checked={u.enforced}
-                    disabled={busy}
-                    onCheckedChange={(v) =>
-                      void run(() => setUserEnforce(u.id, v), v ? "Majburiy yoqildi" : "O‘chirildi")
-                    }
+                </label>
+
+                <label
+                  className={cn(
+                    "flex cursor-pointer items-start gap-3 rounded-xl border p-3.5 transition-all",
+                    showPharmacy
+                      ? "border-violet-300 bg-violet-50/80 shadow-sm dark:border-violet-500/40 dark:bg-violet-500/10"
+                      : "border-border/70 bg-card hover:bg-muted/40",
+                  )}
+                >
+                  <Checkbox
+                    checked={showPharmacy}
+                    onCheckedChange={(v) => setShowPharmacy(v === true)}
+                    className="mt-0.5"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 font-semibold text-foreground">
+                      <Store className="h-4 w-4 text-violet-600" />
+                      Dorixona
+                    </div>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      Mudir, farmasevt, stajyor, koordinator · {enforceCounts.pharmacy} ta · yoqilgan{" "}
+                      {enforceCounts.pharmacyOn}
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    className="h-10 rounded-xl border-border/70 bg-background pl-9"
+                    placeholder="Ism, login, rol, bo‘lim bo‘yicha qidirish…"
+                    value={enforceQ}
+                    onChange={(e) => setEnforceQ(e.target.value)}
                   />
                 </div>
-              ))}
+                <Select
+                  value={enforceStatus}
+                  onValueChange={(v) => setEnforceStatus(v as "all" | "on" | "off")}
+                >
+                  <SelectTrigger className="h-10 w-full rounded-xl sm:w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Barcha holat</SelectItem>
+                    <SelectItem value="on">Faqat yoqilgan</SelectItem>
+                    <SelectItem value="off">Faqat o‘chirilgan</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </CardHeader>
+
+            <CardContent className="max-h-[min(560px,60vh)] space-y-2 overflow-y-auto p-3 sm:p-4">
+              {!showOffice && !showPharmacy ? (
+                <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+                  Ofis yoki Dorixona checkboxini belgilang — xodimlar shu yerda chiqadi
+                </div>
+              ) : filteredEnforceUsers.length === 0 ? (
+                <div className="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground">
+                  Mos xodim topilmadi
+                </div>
+              ) : (
+                filteredEnforceUsers.map((u) => (
+                  <div
+                    key={u.id}
+                    className={cn(
+                      "flex items-center justify-between gap-3 rounded-xl border px-3 py-2.5 transition-colors",
+                      u.enforced
+                        ? "border-emerald-200/80 bg-emerald-50/40 dark:border-emerald-500/25 dark:bg-emerald-500/5"
+                        : "border-border/60 bg-card hover:bg-muted/30",
+                    )}
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="truncate font-medium">{u.fullName}</span>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "text-[10px]",
+                            u.staffGroup === "pharmacy"
+                              ? "border-violet-200 text-violet-700 dark:border-violet-500/30 dark:text-violet-300"
+                              : "border-sky-200 text-sky-700 dark:border-sky-500/30 dark:text-sky-300",
+                          )}
+                        >
+                          {u.staffGroup === "pharmacy" ? "Dorixona" : "Ofis"}
+                        </Badge>
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-muted-foreground">
+                        {u.login} · {u.role}
+                        {u.departmentName ? ` · ${u.departmentName}` : ""}
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <span className="hidden text-[11px] text-muted-foreground sm:inline">
+                        {u.enforced ? "Majburiy" : "O‘chirilgan"}
+                      </span>
+                      <Switch
+                        checked={u.enforced}
+                        disabled={busy}
+                        onCheckedChange={(v) =>
+                          void run(
+                            () => setUserEnforce(u.id, v),
+                            v ? "Majburiy yoqildi" : "O‘chirildi",
+                          )
+                        }
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
             </CardContent>
           </Card>
         </TabsContent>
 
-        <TabsContent value="settings" className="mt-4">
+        <TabsContent value="settings" className="mt-0">
           {settings ? (
             <Card>
               <CardContent className="space-y-4 pt-5">
@@ -435,7 +654,7 @@ export default function AdminQurilmalarPage() {
           ) : null}
         </TabsContent>
 
-        <TabsContent value="history" className="mt-4">
+        <TabsContent value="history" className="mt-0">
           <Card>
             <CardContent className="overflow-x-auto p-0">
               <table className="w-full text-sm">
@@ -464,7 +683,7 @@ export default function AdminQurilmalarPage() {
           </Card>
         </TabsContent>
 
-        <TabsContent value="events" className="mt-4">
+        <TabsContent value="events" className="mt-0">
           <Card>
             <CardContent className="space-y-2 p-4">
               {events.map((e) => (
@@ -490,99 +709,200 @@ export default function AdminQurilmalarPage() {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>Qurilma tafsilotlari</DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              Xodimning qaysi telefon/kompyuterdan kirgani va nima qilish mumkinligi.
+            </p>
           </DialogHeader>
           {detail ? (
-            <div className="space-y-2 text-sm">
-              <Row label="Xodim" value={String(detail.user.fullName || "")} />
-              <Row label="Qurilma" value={detail.device.deviceName || "—"} />
-              <Row label="Device ID" value={detail.device.deviceId} mono />
-              <Row label="OS" value={detail.device.os || "—"} />
-              <Row label="Browser" value={detail.device.browser || "—"} />
-              <Row label="IP" value={detail.device.lastIp || detail.device.ipAddress || "—"} mono />
-              <Row label="Birinchi" value={fmt(detail.device.firstSeenAt)} />
-              <Row label="Oxirgi" value={fmt(detail.device.lastSeenAt)} />
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Status:</span>
-                <StatusBadge status={detail.device.status} />
-                {detail.device.isPrimary ? <Badge>Asosiy</Badge> : null}
+            <div className="space-y-3 text-sm">
+              <div className="rounded-xl border bg-muted/30 p-3 space-y-2">
+                <Row
+                  label="Xodim"
+                  value={String(detail.user.fullName || detail.device.fullName || "—")}
+                />
+                <Row
+                  label="Login"
+                  value={String(detail.user.login || detail.device.login || "—")}
+                />
+                <Row
+                  label="Qurilma nomi"
+                  value={detail.device.deviceName || "Nomsiz qurilma"}
+                />
+                <Row
+                  label="Turi"
+                  value={
+                    detail.device.deviceType === "mobile"
+                      ? "Telefon / planshet"
+                      : detail.device.deviceType === "desktop"
+                        ? "Kompyuter"
+                        : detail.device.deviceType === "tablet"
+                          ? "Planshet"
+                          : detail.device.deviceType || "Aniqlanmagan"
+                  }
+                />
+                <Row label="Tizim (OS)" value={detail.device.os?.trim() || "Aniqlanmagan"} />
+                <Row label="Brauzer" value={detail.device.browser?.trim() || "Aniqlanmagan"} />
+                <Row
+                  label="IP manzil"
+                  value={detail.device.lastIp || detail.device.ipAddress || "—"}
+                  mono
+                />
+                <Row label="Birinchi marta ko‘rilgan" value={fmt(detail.device.firstSeenAt)} />
+                <Row label="Oxirgi faollik" value={fmt(detail.device.lastSeenAt)} />
+                <Row
+                  label="Oxirgi login"
+                  value={fmt(detail.device.lastLoginAt)}
+                />
+                <div className="flex flex-wrap items-center gap-2 border-t border-border/60 pt-2">
+                  <span className="text-muted-foreground">Holat:</span>
+                  <StatusBadge status={detail.device.status} />
+                  {detail.device.isPrimary ? (
+                    <Badge title="Shu xodim uchun asosiy ruxsat etilgan qurilma">
+                      Asosiy qurilma
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline">Asosiy emas</Badge>
+                  )}
+                </div>
+                <p className="text-[11px] leading-snug text-muted-foreground">
+                  {detail.device.status === "active"
+                    ? "Xodim hozir shu qurilmadan tizimda."
+                    : detail.device.status === "inactive"
+                      ? "Qurilma tasdiqlangan, lekin hozir ochiq session yo‘q (offline)."
+                      : detail.device.status === "pending"
+                        ? "Hali tasdiqlanmagan — kirish to‘liq ochilmaydi."
+                        : detail.device.status === "blocked"
+                          ? "Bloklangan — bu qurilmadan kirish mumkin emas."
+                          : "Holat aniqlanmadi."}
+                </p>
+                <details className="text-[11px] text-muted-foreground">
+                  <summary className="cursor-pointer select-none font-medium text-foreground/80">
+                    Ichki identifikator (Device ID)
+                  </summary>
+                  <p className="mt-1 break-all font-mono text-[10px]">{detail.device.deviceId}</p>
+                </details>
               </div>
+
+              {(detail.sessions?.length ?? 0) > 0 ? (
+                <div className="rounded-xl border p-3">
+                  <p className="mb-2 text-xs font-semibold text-foreground">
+                    Sessionlar ({detail.sessions.length})
+                  </p>
+                  <ul className="max-h-28 space-y-1 overflow-y-auto text-[11px] text-muted-foreground">
+                    {detail.sessions.slice(0, 8).map((s) => {
+                      const revoked = Boolean(s.revokedAt);
+                      const expired =
+                        s.expiresAt && new Date(String(s.expiresAt)).getTime() <= Date.now();
+                      const live = !revoked && !expired;
+                      return (
+                        <li key={String(s.id)} className="flex justify-between gap-2">
+                          <span>{fmt(String(s.createdAt || ""))}</span>
+                          <span className={live ? "font-medium text-emerald-700" : ""}>
+                            {live ? "Ochiq" : revoked ? "Yopilgan" : "Muddati o‘tgan"}
+                          </span>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              ) : null}
             </div>
           ) : (
             <Loader2 className="h-5 w-5 animate-spin" />
           )}
-          <DialogFooter className="flex-wrap gap-2 sm:justify-start">
-            {detail && !detail.device.isVerified ? (
-              <Button
-                size="sm"
-                disabled={busy}
-                onClick={() => void run(() => approveDevice(detail.device.id), "Tasdiqlandi")}
-              >
-                Tasdiqlash
-              </Button>
-            ) : null}
-            {detail && !detail.device.isVerified ? (
-              <Button
-                size="sm"
-                variant="destructive"
-                disabled={busy}
-                onClick={() => void run(() => rejectDevice(detail.device.id), "Rad etildi")}
-              >
-                Rad etish
-              </Button>
-            ) : null}
-            {detail ? (
-              <>
-                <Button
+          <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col sm:space-x-0">
+            <p className="text-[11px] font-medium text-muted-foreground">Amallar</p>
+            <div className="flex flex-wrap gap-3">
+              {detail && !detail.device.isVerified ? (
+                <ActionBtn
                   size="sm"
-                  variant="secondary"
+                  hint="Kirishga ruxsat beradi"
                   disabled={busy}
-                  onClick={() => void run(() => setPrimaryDevice(detail.device.id), "Asosiy qilindi")}
+                  onClick={() => void run(() => approveDevice(detail.device.id), "Tasdiqlandi")}
                 >
-                  Asosiy qurilma
-                </Button>
-                {detail.device.isBlocked ? (
-                  <Button
+                  Tasdiqlash
+                </ActionBtn>
+              ) : null}
+              {detail && !detail.device.isVerified ? (
+                <ActionBtn
+                  size="sm"
+                  variant="destructive"
+                  hint="Rad etib bloklaydi"
+                  disabled={busy}
+                  onClick={() => void run(() => rejectDevice(detail.device.id), "Rad etildi")}
+                >
+                  Rad etish
+                </ActionBtn>
+              ) : null}
+              {detail ? (
+                <>
+                  {!detail.device.isPrimary ? (
+                    <ActionBtn
+                      size="sm"
+                      variant="secondary"
+                      hint="Shu qurilmani asosiy qiladi"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(() => setPrimaryDevice(detail.device.id), "Asosiy qilindi")
+                      }
+                    >
+                      Asosiy qilish
+                    </ActionBtn>
+                  ) : (
+                    <ActionBtn size="sm" variant="secondary" hint="Allaqachon asosiy" disabled>
+                      Asosiy qurilma
+                    </ActionBtn>
+                  )}
+                  {detail.device.isBlocked ? (
+                    <ActionBtn
+                      size="sm"
+                      hint="Yana kirishga ruxsat"
+                      disabled={busy}
+                      onClick={() =>
+                        void run(() => unblockDevice(detail.device.id), "Blokdan chiqarildi")
+                      }
+                    >
+                      Blokdan chiqarish
+                    </ActionBtn>
+                  ) : (
+                    <ActionBtn
+                      size="sm"
+                      variant="destructive"
+                      hint="Shu qurilmadan kirishni taqiqlaydi"
+                      disabled={busy}
+                      onClick={() => void run(() => blockDevice(detail.device.id), "Bloklandi")}
+                    >
+                      Bloklash
+                    </ActionBtn>
+                  )}
+                  <ActionBtn
                     size="sm"
+                    variant="outline"
+                    hint="Faqat shu qurilmadagi ochiq kirishni yopadi"
                     disabled={busy}
-                    onClick={() => void run(() => unblockDevice(detail.device.id), "Blokdan chiqarildi")}
+                    onClick={() =>
+                      void run(() => revokeDeviceSessions(detail.device.id), "Session tugatildi")
+                    }
                   >
-                    Blokdan chiqarish
-                  </Button>
-                ) : (
-                  <Button
+                    Sessionni yopish
+                  </ActionBtn>
+                  <ActionBtn
                     size="sm"
-                    variant="destructive"
+                    variant="outline"
+                    hint="Xodimning barcha qurilmalaridan chiqaradi"
                     disabled={busy}
-                    onClick={() => void run(() => blockDevice(detail.device.id), "Bloklandi")}
+                    onClick={() =>
+                      void run(
+                        () => revokeAllUserSessions(detail.device.userId),
+                        "Barcha sessionlar tugatildi",
+                      )
+                    }
                   >
-                    Bloklash
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(() => revokeDeviceSessions(detail.device.id), "Session tugatildi")
-                  }
-                >
-                  Sessionni tugatish
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={busy}
-                  onClick={() =>
-                    void run(
-                      () => revokeAllUserSessions(detail.device.userId),
-                      "Barcha sessionlar tugatildi",
-                    )
-                  }
-                >
-                  Barcha sessionlarni tugatish
-                </Button>
-              </>
-            ) : null}
+                    Barcha sessionlarni yopish
+                  </ActionBtn>
+                </>
+              ) : null}
+            </div>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -600,12 +920,12 @@ function Kpi({
   value: number;
 }) {
   return (
-    <Card>
+    <Card className="border-border/70 shadow-sm transition-shadow hover:shadow-md">
       <CardContent className="flex items-center gap-3 p-4">
-        <div className="rounded-lg bg-muted p-2">{icon}</div>
+        <div className="rounded-xl bg-muted/80 p-2.5 ring-1 ring-border/50">{icon}</div>
         <div>
-          <div className="text-2xl font-bold tabular-nums">{value}</div>
-          <div className="text-xs text-muted-foreground">{label}</div>
+          <div className="text-2xl font-bold tabular-nums tracking-tight">{value}</div>
+          <div className="text-xs font-medium text-muted-foreground">{label}</div>
         </div>
       </CardContent>
     </Card>
@@ -615,8 +935,10 @@ function Kpi({
 function Row({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div className="flex justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
-      <span className={cn("text-right font-medium", mono && "font-mono text-xs")}>{value}</span>
+      <span className="shrink-0 text-muted-foreground">{label}</span>
+      <span className={cn("max-w-[60%] break-words text-right font-medium", mono && "font-mono text-xs")}>
+        {value || "—"}
+      </span>
     </div>
   );
 }

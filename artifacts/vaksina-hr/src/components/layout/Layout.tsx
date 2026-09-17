@@ -41,6 +41,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   Check,
+  Eye,
 } from 'lucide-react';
 import {
   useLogout,
@@ -125,7 +126,7 @@ const NAV_SECTIONS: {
     id: 'main',
     label: 'Asosiy',
     icon: Layers,
-    paths: ['/dashboard', '/kirish', '/javob-olish', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it'],
+    paths: ['/dashboard', '/kirish', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it'],
   },
   {
     id: 'work',
@@ -244,6 +245,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/boglanish')) return '/boglanish';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
+  if (path.startsWith('/javob-olish/holat')) return '/javob-olish/holat';
   if (path.startsWith('/javob-olish')) return '/javob-olish';
   if (path.startsWith('/vazifalar/tahlil')) return '/vazifalar/tahlil';
   if (path.startsWith('/vazifalar')) return '/vazifalar';
@@ -723,6 +725,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
   const javobNav = { name: 'Javob olish', path: '/javob-olish', icon: PhoneCall };
+  const javobHolatNav = { name: 'Javob olish holati', path: '/javob-olish/holat', icon: Eye };
   const davomatQrNav = { name: 'Davomat QR', path: '/davomat-qr', icon: ScanFace };
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
@@ -752,6 +755,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
     if (isLimitedOfficeStaffRole(role)) {
       return next;
+    }
+    // HR — Javob olish holatini kuzatish (Asosiy)
+    if (hasHrOversightNav(role) && !next.some((i) => i.path === '/javob-olish/holat')) {
+      const dashIdx = next.findIndex((i) => i.path === '/dashboard');
+      const at = dashIdx >= 0 ? dashIdx + 1 : 0;
+      next = [...next.slice(0, at), javobHolatNav, ...next.slice(at)];
     }
     // Farmasevt / mudir / stajyor / ofis — Javob olish Asosiyda doim ko‘rinsin
     if (
@@ -785,12 +794,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const at = javobIdx >= 0 ? javobIdx + 1 : dashIdx >= 0 ? dashIdx + 1 : 0;
         next = [...next.slice(0, at), oylikNav, ...next.slice(at)];
       }
-      if (canViewReviziya(user.role) && !next.some((i) => i.path === '/reviziya')) {
+      if (canViewReviziya(role) && !next.some((i) => i.path === '/reviziya')) {
         const orgIdx = next.findIndex((i) => i.path === '/tashkiliy-tuzilma');
         const at = orgIdx >= 0 ? orgIdx + 1 : next.length;
         next = [...next.slice(0, at), reviziyaNav, ...next.slice(at)];
       }
-      if (canViewDavomat(user.role) && !next.some((i) => i.path === '/davomat/analytics')) {
+      if (canViewDavomat(role) && !next.some((i) => i.path === '/davomat/analytics')) {
         const davIdx = next.findIndex((i) => i.path === '/davomat');
         const at = davIdx >= 0 ? davIdx : next.length;
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
@@ -850,6 +859,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const hrMenejerNav: NavItem[] = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    javobHolatNav,
     { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
     { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
     orgNav,
@@ -869,6 +879,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const hrOversightNav: NavItem[] = [
     { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+    javobHolatNav,
     orgNav,
     oylikNav,
     hisobNav,
@@ -897,6 +908,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     admin: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
+      javobHolatNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -930,6 +942,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     asoschi: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
+      javobHolatNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -977,6 +990,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     director: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      javobHolatNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1425,14 +1439,25 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               ),
           )}
         >
-          <item.icon
-            className={cn(
-              'transition-colors',
-              opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
-              !opts.nested &&
-                (active ? 'text-white' : 'text-white/55 group-hover:text-white/90'),
-            )}
-          />
+          {item.icon ? (
+            <item.icon
+              className={cn(
+                'transition-colors',
+                opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
+                !opts.nested &&
+                  (active ? 'text-white' : 'text-white/55 group-hover:text-white/90'),
+              )}
+            />
+          ) : (
+            <ListTodo
+              className={cn(
+                'transition-colors',
+                opts.nested ? 'h-3.5 w-3.5' : 'h-4 w-4 min-w-[16px]',
+                !opts.nested &&
+                  (active ? 'text-white' : 'text-white/55 group-hover:text-white/90'),
+              )}
+            />
+          )}
           {opts.collapsed && <NavBadge count={count} collapsed pulse={pulse} tone="soft" />}
         </span>
         {!opts.collapsed && (

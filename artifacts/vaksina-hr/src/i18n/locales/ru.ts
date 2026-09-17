@@ -81,6 +81,7 @@ export const ru: Messages = {
   "nav.davomatAnalytics": "Аналитика посещаемости",
   "nav.smena": "Смена и филиал",
   "nav.javobOlish": "Ответ на звонок",
+  "nav.javobOlishHolat": "Статус ответа на звонок",
   "nav.checklistStatus": "Статус чек-листа",
   "nav.pharmacy": "Сеть аптек",
   "nav.boglanish": "Связь",

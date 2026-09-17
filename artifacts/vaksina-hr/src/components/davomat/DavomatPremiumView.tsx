@@ -95,8 +95,9 @@ type Props = {
 
 export function DavomatPremiumView(p: Props) {
   const { toast } = useToast();
-  const inDone = Boolean(p.hasIn || (p.checkInLabel && p.checkInLabel !== "—"));
-  const outDone = Boolean(p.done || (p.checkOutLabel && p.checkOutLabel !== "—"));
+  const inDone = Boolean(p.hasIn || p.done);
+  /** Faqat kun butunlay yopilganda «Ketdi» — 2-filial Keldim kutayotganda ochiq */
+  const outDone = Boolean(p.done);
   /** Joriy soat 19:00+ → kechasi.png (clockLabel Toshkent) */
   const nightHero = (() => {
     const h = Number(String(p.clockLabel).split(":")[0]);
@@ -302,28 +303,7 @@ export function DavomatPremiumView(p: Props) {
                   (p.outsideZone || !p.canOpenFace) && "dv-method-card-locked",
                 )}
               >
-                {p.onDismissMethods ? (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    aria-label="Face ID yopish"
-                    className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/25 md:hidden"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      p.onDismissMethods?.();
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        p.onDismissMethods?.();
-                      }
-                    }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </span>
-                ) : p.selectedMethod === "FACE_ID" && !p.outsideZone ? (
+                {p.selectedMethod === "FACE_ID" && !p.outsideZone ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
@@ -356,28 +336,7 @@ export function DavomatPremiumView(p: Props) {
                   (p.outsideZone || !p.canOpenQr) && "dv-method-card-locked",
                 )}
               >
-                {p.onDismissMethods ? (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    aria-label="QR yopish"
-                    className="absolute right-1.5 top-1.5 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-black/45 text-white ring-1 ring-white/25 md:hidden"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      p.onDismissMethods?.();
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        p.onDismissMethods?.();
-                      }
-                    }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </span>
-                ) : p.selectedMethod === "QR" && !p.outsideZone ? (
+                {p.selectedMethod === "QR" && !p.outsideZone ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>

@@ -284,6 +284,44 @@ export function activePunchSlotsAt(
   return out;
 }
 
+/** Bir kunda 2+ turli filial biriktirilganmi */
+export function isMultiBranchDay(slots: ResolvedDaySlot[]): boolean {
+  return slots.length >= 2 && new Set(slots.map((s) => s.branchId)).size >= 2;
+}
+
+/**
+ * Overlay oynada 1-smena va 2-smena birga aktiv bo‘lishi mumkin (17:00 atrofida).
+ * GPS/UI uchun: hozir ishlayotgan, yo‘q bo‘lsa keyingi, yo‘q bo‘lsa oxirgi smenani tanlash.
+ */
+export function preferActivePunchSlot(
+  slots: ActivePunchSlot[],
+  nowMs: number,
+): ActivePunchSlot | null {
+  if (!slots.length) return null;
+  const running = slots
+    .filter((s) => nowMs >= s.startMs && nowMs <= s.endMs)
+    .sort((a, b) => b.startMs - a.startMs);
+  if (running[0]) return running[0];
+  const upcoming = slots
+    .filter((s) => nowMs < s.startMs)
+    .sort((a, b) => a.startMs - b.startMs);
+  if (upcoming[0]) return upcoming[0];
+  return [...slots].sort((a, b) => b.endMs - a.endMs)[0] ?? null;
+}
+
+/**
+ * Asosiy yozuvda Ketdi bosilgan, lekin boshqa filial/smena hali ochilmagan — 2-filial «Keldim».
+ * punchedShiftKeys: segment yoki asosiy yozuvdan yopilgan smenalar.
+ */
+export function hasOpenMultiBranchShift(
+  daySlots: ResolvedDaySlot[],
+  punchedShiftKeys: Iterable<string>,
+): boolean {
+  if (!isMultiBranchDay(daySlots)) return false;
+  const done = new Set([...punchedShiftKeys].map((k) => String(k).toLowerCase()));
+  return daySlots.some((s) => !done.has(String(s.shiftKey).toLowerCase()));
+}
+
 /**
  * Davomat uchun slotlar: avvalo oynadagi, yo‘q bo‘lsa kunning barcha biriktirilgan slotlari.
  * Keldim/Ketdim istalgan vaqtda qabul qilinadi; soat hisobi smena rejasi bo‘yicha.

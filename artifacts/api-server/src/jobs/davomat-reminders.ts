@@ -123,7 +123,7 @@ async function loadLinkedStaff() {
     .where(
       and(
         isNotNull(employeesTable.userId),
-        sql`coalesce(${employeesTable.employmentStatus}, 'working') <> 'dismissed'`,
+        sql`coalesce(${employeesTable.employmentStatus}, 'working') not in ('dismissed', 'closed')`,
       ),
     );
 }

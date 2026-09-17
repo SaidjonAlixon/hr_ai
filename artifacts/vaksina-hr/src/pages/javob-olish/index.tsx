@@ -15,6 +15,7 @@ import {
 import { isBefore, startOfDay } from "date-fns";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
 import { Calendar } from "../../components/ui/calendar";
 import { useToast } from "../../hooks/use-toast";
@@ -30,15 +31,38 @@ import {
   formatYmdDisplay,
   rejectJavobRequest,
   submitJavobRequests,
+  type JavobDayInput,
+  type JavobRequestItem,
   type JavobShiftInfo,
 } from "../../lib/javob-olish-api";
 
+type RequestMode = "day" | "hour";
+
+type DayTimes = { fromHm: string; toHm: string };
+
 function statusBadge(status: string, t: (k: string) => string) {
-  if (status === "pending") return { label: t("javob.statusPending"), className: "bg-amber-100 text-amber-900" };
+  if (status === "pending" || status === "pending_coord") {
+    return { label: t("javob.statusPendingCoord"), className: "bg-amber-100 text-amber-900" };
+  }
+  if (status === "pending_hr") {
+    return { label: t("javob.statusPendingHr"), className: "bg-sky-100 text-sky-900" };
+  }
   if (status === "approved") return { label: t("javob.statusApproved"), className: "bg-emerald-100 text-emerald-900" };
   if (status === "rejected") return { label: t("javob.statusRejected"), className: "bg-rose-100 text-rose-900" };
   if (status === "cancelled") return { label: t("javob.statusCancelled"), className: "bg-muted text-muted-foreground" };
   return { label: status, className: "bg-muted text-muted-foreground" };
+}
+
+function isHourlyRequest(item: JavobRequestItem) {
+  return item.kind === "hour" || item.fromHm !== item.shiftStartHm || item.toHm !== item.shiftEndHm;
+}
+
+function requestKindLabel(item: JavobRequestItem, t: (k: string) => string) {
+  return isHourlyRequest(item) ? t("javob.modeHour") : t("javob.modeDay");
+}
+
+function isOpenStatus(status: string) {
+  return status === "pending" || status === "pending_coord" || status === "pending_hr";
 }
 
 export default function JavobOlishPage() {
@@ -47,9 +71,19 @@ export default function JavobOlishPage() {
   const { user } = useAuth();
   const qc = useQueryClient();
   const role = user?.role || "";
-  const isCoord = role === "koordinator" || role === "admin" || isDirectorRole(role) || role.startsWith("hr");
+  const isCoord = role === "koordinator";
+  const isHr =
+    role === "hr_menejer" ||
+    role === "hr_direktor" ||
+    role === "hr" ||
+    role === "hr_kadr_rahbar" ||
+    role === "admin" ||
+    isDirectorRole(role);
+  const canDecideQueue = isCoord || isHr;
 
+  const [mode, setMode] = useState<RequestMode>("day");
   const [selectedDates, setSelectedDates] = useState<Date[]>([]);
+  const [dayTimes, setDayTimes] = useState<Record<string, DayTimes>>({});
   const [note, setNote] = useState("");
   const [shifts, setShifts] = useState<Record<string, JavobShiftInfo>>({});
   const [shiftsLoading, setShiftsLoading] = useState(false);
@@ -86,6 +120,17 @@ export default function JavobOlishPage() {
     };
   }, [selectedYmds.join("|")]);
 
+  // Tanlangan kunlar o‘zgasa — soatlik rejimda bo‘sh slotlar
+  useEffect(() => {
+    setDayTimes((prev) => {
+      const next: Record<string, DayTimes> = {};
+      for (const ymd of selectedYmds) {
+        next[ymd] = prev[ymd] || { fromHm: "", toHm: "" };
+      }
+      return next;
+    });
+  }, [selectedYmds.join("|")]);
+
   const mineQ = useQuery({
     queryKey: ["javob-olish", "mine"],
     queryFn: () => fetchJavobRequests("mine"),
@@ -94,7 +139,7 @@ export default function JavobOlishPage() {
   const pendingQ = useQuery({
     queryKey: ["javob-olish", "pending"],
     queryFn: () => fetchJavobRequests("pending"),
-    enabled: isCoord,
+    enabled: canDecideQueue,
   });
 
   const submitMut = useMutation({
@@ -102,14 +147,34 @@ export default function JavobOlishPage() {
       const n = note.trim();
       if (!selectedYmds.length) throw new Error(t("javob.pickDaysHint"));
       if (n.length < 3) throw new Error(t("javob.noteRequired"));
-      return submitJavobRequests({
-        dates: selectedYmds,
-        note: n,
+
+      if (mode === "hour") {
+        for (const ymd of selectedYmds) {
+          const tm = dayTimes[ymd];
+          if (!tm?.fromHm || !tm?.toHm) {
+            throw new Error(`${formatYmdDisplay(ymd)}: ${t("javob.timeRequired")}`);
+          }
+          if (tm.fromHm === tm.toHm) {
+            throw new Error(`${formatYmdDisplay(ymd)}: ${t("javob.timeRangeInvalid")}`);
+          }
+        }
+      }
+
+      const days: JavobDayInput[] = selectedYmds.map((ymd) => {
+        const base: JavobDayInput = { workDate: ymd, note: n };
+        if (mode === "hour") {
+          base.fromHm = dayTimes[ymd]?.fromHm;
+          base.toHm = dayTimes[ymd]?.toHm;
+        }
+        return base;
       });
+
+      return submitJavobRequests(days);
     },
     onSuccess: (r) => {
       toast({ title: t("javob.sentOk"), description: r.message });
       setSelectedDates([]);
+      setDayTimes({});
       setNote("");
       void qc.invalidateQueries({ queryKey: ["javob-olish"] });
     },
@@ -141,7 +206,32 @@ export default function JavobOlishPage() {
     setSelectedDates((prev) => prev.filter((d) => dateToYmd(d) !== ymd));
   }
 
+  function setTime(ymd: string, field: "fromHm" | "toHm", value: string) {
+    setDayTimes((prev) => ({
+      ...prev,
+      [ymd]: { fromHm: prev[ymd]?.fromHm || "", toHm: prev[ymd]?.toHm || "", [field]: value },
+    }));
+  }
+
+  function switchMode(next: RequestMode) {
+    setMode(next);
+    if (next === "day") {
+      setDayTimes((prev) => {
+        const cleared: Record<string, DayTimes> = {};
+        for (const ymd of Object.keys(prev)) cleared[ymd] = { fromHm: "", toHm: "" };
+        return cleared;
+      });
+    }
+  }
+
   const todayStart = startOfDay(new Date());
+  const hourTimesReady =
+    mode === "day" ||
+    (selectedYmds.length > 0 &&
+      selectedYmds.every((ymd) => {
+        const tm = dayTimes[ymd];
+        return Boolean(tm?.fromHm && tm?.toHm && tm.fromHm !== tm.toHm);
+      }));
 
   return (
     <div className="mx-auto max-w-3xl space-y-5 p-4 pb-28">
@@ -153,13 +243,45 @@ export default function JavobOlishPage() {
         <p className="mt-1 text-sm text-muted-foreground">{t("javob.subtitle")}</p>
       </div>
 
+      <div className="grid grid-cols-2 gap-2 rounded-2xl border border-border bg-muted/40 p-1">
+        <button
+          type="button"
+          onClick={() => switchMode("day")}
+          className={cn(
+            "rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+            mode === "day"
+              ? "bg-card text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {t("javob.modeDay")}
+        </button>
+        <button
+          type="button"
+          onClick={() => switchMode("hour")}
+          className={cn(
+            "rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+            mode === "hour"
+              ? "bg-card text-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {t("javob.modeHour")}
+        </button>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        {mode === "day" ? t("javob.modeDayHint") : t("javob.modeHourHint")}
+      </p>
+
       <Card className="overflow-hidden border-primary/15 shadow-sm">
         <CardHeader className="border-b bg-gradient-to-br from-primary/10 via-card to-card py-4">
           <CardTitle className="flex items-center gap-2 text-base">
             <CalendarDays className="h-4 w-4 text-primary" />
             {t("javob.calendarTitle")}
           </CardTitle>
-          <p className="text-xs text-muted-foreground">{t("javob.calendarHint")}</p>
+          <p className="text-xs text-muted-foreground">
+            {mode === "day" ? t("javob.calendarHintDay") : t("javob.calendarHintHour")}
+          </p>
         </CardHeader>
         <CardContent className="flex flex-col items-center gap-4 pt-4 sm:flex-row sm:items-start sm:justify-center">
           <Calendar
@@ -176,34 +298,62 @@ export default function JavobOlishPage() {
             {selectedYmds.length === 0 ? (
               <p className="text-xs text-muted-foreground">{t("javob.pickDaysHint")}</p>
             ) : (
-              <ul className="space-y-1.5">
+              <ul className="space-y-2">
                 {selectedYmds.map((ymd) => {
                   const shift = shifts[ymd];
+                  const tm = dayTimes[ymd] || { fromHm: "", toHm: "" };
                   return (
-                    <li
-                      key={ymd}
-                      className="flex items-start justify-between gap-2 rounded-lg bg-card px-2.5 py-1.5 text-xs"
-                    >
-                      <span className="min-w-0">
-                        <span className="inline-flex items-center gap-1.5 font-medium">
-                          <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
-                          {formatYmdDisplay(ymd)}
-                        </span>
-                        {shift ? (
-                          <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
-                            <Clock3 className="h-3 w-3" />
-                            {t("javob.shift")} {shift.shiftStartHm}–{shift.shiftEndHm}
+                    <li key={ymd} className="space-y-1.5 rounded-lg bg-card px-2.5 py-2 text-xs">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className="min-w-0">
+                          <span className="inline-flex items-center gap-1.5 font-medium">
+                            <Check className="h-3.5 w-3.5 shrink-0 text-emerald-600" />
+                            {formatYmdDisplay(ymd)}
                           </span>
-                        ) : null}
-                      </span>
-                      <button
-                        type="button"
-                        className="shrink-0 text-muted-foreground hover:text-rose-600"
-                        onClick={() => removeDay(ymd)}
-                        aria-label={t("ui.cancel")}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                          {shift ? (
+                            <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                              <Clock3 className="h-3 w-3" />
+                              {t("javob.shift")} {shift.shiftStartHm}–{shift.shiftEndHm}
+                            </span>
+                          ) : null}
+                        </span>
+                        <button
+                          type="button"
+                          className="shrink-0 text-muted-foreground hover:text-rose-600"
+                          onClick={() => removeDay(ymd)}
+                          aria-label={t("ui.cancel")}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                      {mode === "hour" ? (
+                        <div className="grid grid-cols-2 gap-1.5 pt-0.5">
+                          <div>
+                            <label className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+                              {t("javob.from")}
+                            </label>
+                            <Input
+                              type="time"
+                              value={tm.fromHm}
+                              onChange={(e) => setTime(ymd, "fromHm", e.target.value)}
+                              className="h-8 px-2 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <label className="mb-0.5 block text-[10px] font-medium text-muted-foreground">
+                              {t("javob.to")}
+                            </label>
+                            <Input
+                              type="time"
+                              value={tm.toHm}
+                              onChange={(e) => setTime(ymd, "toHm", e.target.value)}
+                              className="h-8 px-2 text-xs"
+                            />
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[10px] text-muted-foreground">{t("javob.fullShiftHint")}</p>
+                      )}
                     </li>
                   );
                 })}
@@ -241,7 +391,7 @@ export default function JavobOlishPage() {
             <Button
               type="button"
               className="h-11 w-full text-sm font-semibold"
-              disabled={submitMut.isPending}
+              disabled={submitMut.isPending || !hourTimesReady}
               onClick={() => submitMut.mutate()}
             >
               {submitMut.isPending ? (
@@ -249,17 +399,21 @@ export default function JavobOlishPage() {
               ) : (
                 <Send className="mr-2 h-4 w-4" />
               )}
-              {t("javob.submit")}
+              {mode === "hour" ? t("javob.submitHour") : t("javob.submitDay")}
             </Button>
           </CardContent>
         </Card>
       ) : null}
 
-      {isCoord ? (
+      {canDecideQueue ? (
         <Card>
           <CardHeader className="py-3">
-            <CardTitle className="text-base">{t("javob.coordTitle")}</CardTitle>
-            <p className="text-xs text-muted-foreground">{t("javob.coordHint")}</p>
+            <CardTitle className="text-base">
+              {isHr && !isCoord ? t("javob.hrTitle") : t("javob.coordTitle")}
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              {isHr && !isCoord ? t("javob.hrHint") : t("javob.coordHint")}
+            </p>
           </CardHeader>
           <CardContent className="space-y-2 pt-0">
             {(pendingQ.data?.items.length ?? 0) === 0 ? (
@@ -277,8 +431,14 @@ export default function JavobOlishPage() {
                           {item.fullName || `#${item.employeeId}`}
                         </p>
                         <p className="text-[11px] text-muted-foreground">
-                          {formatYmdDisplay(item.workDate)} · {t("javob.shift")} {item.shiftStartHm}–
-                          {item.shiftEndHm}
+                          {formatYmdDisplay(item.workDate)} · {requestKindLabel(item, t)} · {item.fromHm}–
+                          {item.toHm}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {t("javob.shift")} {item.shiftStartHm}–{item.shiftEndHm}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">
+                          {t("javob.sentAt")}: {item.createdAtLabel || "—"}
                         </p>
                       </div>
                       <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", badge.className)}>
@@ -289,6 +449,16 @@ export default function JavobOlishPage() {
                       <span className="font-semibold">{t("javob.note")}: </span>
                       {item.note}
                     </p>
+                    {item.escalatedNote ? (
+                      <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-950">
+                        {item.escalatedNote}
+                      </p>
+                    ) : null}
+                    {item.coordDecidedAt && item.status === "pending_hr" && !item.escalatedAt ? (
+                      <p className="text-[11px] text-emerald-800">
+                        {t("javob.coordApprovedWaitingHr")}
+                      </p>
+                    ) : null}
                     <div className="grid grid-cols-2 gap-2">
                       <Button
                         type="button"
@@ -306,7 +476,7 @@ export default function JavobOlishPage() {
                         onClick={() => decideMut.mutate({ id: item.id, action: "approve" })}
                       >
                         <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                        {t("javob.approve")}
+                        {item.status === "pending_hr" ? t("javob.approveFinal") : t("javob.approve")}
                       </Button>
                     </div>
                   </div>
@@ -335,16 +505,21 @@ export default function JavobOlishPage() {
                   className="flex items-start justify-between gap-2 rounded-xl border border-border px-3 py-2.5"
                 >
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground">{formatYmdDisplay(item.workDate)}</p>
+                    <p className="text-sm font-medium text-foreground">
+                      {formatYmdDisplay(item.workDate)} · {requestKindLabel(item, t)}
+                    </p>
                     <p className="truncate text-[11px] text-muted-foreground">
-                      {t("javob.shift")} {item.shiftStartHm}–{item.shiftEndHm} · {item.note}
+                      {item.fromHm}–{item.toHm} · {item.note}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">
+                      {t("javob.sentAt")}: {item.createdAtLabel || "—"}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-col items-end gap-1">
                     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", badge.className)}>
                       {badge.label}
                     </span>
-                    {item.status === "pending" ? (
+                    {isOpenStatus(item.status) ? (
                       <Button
                         type="button"
                         size="sm"

@@ -8,6 +8,11 @@ export function isTexnikRole(_role?: string | null) {
   return false;
 }
 
+/** Dorixona xodimi — filial avto */
+export function isPharmacyOpsRole(role?: string | null) {
+  return role === "mudir" || role === "farmasevt" || role === "stajyor";
+}
+
 /** AyTi zayavka — barcha autentifikatsiyalangan foydalanuvchilar */
 export function canCreateOpsTicket(dept: "it" | "texnik", role?: string | null) {
   if (!role) return false;
@@ -19,16 +24,28 @@ export function canViewOpsDept(dept: "it" | "texnik", role?: string | null) {
   return canCreateOpsTicket(dept, role);
 }
 
-/** Holat / qabul / bajarish — faqat AyTi yoki admin/asoschi */
+/** Bo‘lim boshlig‘i (+ admin/direktor) — barcha arizalar + yo‘naltirish */
+export function isOpsDeptHead(dept: "it" | "texnik", role?: string | null) {
+  if (dept !== "it" || !role) return false;
+  if (hasFullPlatformAccess(role) || isDirectorRole(role)) return true;
+  return role === "it_rahbar";
+}
+
+/** Holat / qabul / bajarish — AyTi xodimi yoki rahbar */
 export function canManageOpsDept(dept: "it" | "texnik", role?: string | null) {
   if (dept !== "it") return false;
   if (hasFullPlatformAccess(role) || isDirectorRole(role)) return true;
   return isItRole(role);
 }
 
-/** Barcha arizalarni ko‘rish (doska) */
+/** Barcha arizalarni ko‘rish (doska) — faqat rahbar */
 export function canViewAllOpsTickets(dept: "it" | "texnik", role?: string | null) {
-  return canManageOpsDept(dept, role);
+  return isOpsDeptHead(dept, role);
+}
+
+/** Xodimga yo‘naltirish — faqat rahbar */
+export function canAssignOpsTicket(dept: "it" | "texnik", role?: string | null) {
+  return isOpsDeptHead(dept, role);
 }
 
 export const IT_CATEGORIES = [
@@ -59,6 +76,12 @@ export const TICKET_STATUS = [
   { value: "done", label: "Bajarildi" },
   { value: "verified", label: "Tasdiqlangan" },
   { value: "closed", label: "Yopilgan" },
+] as const;
+
+export const VERIFY_RESULTS = [
+  { value: "done", label: "Bajarildi" },
+  { value: "partial", label: "Qisman" },
+  { value: "not_done", label: "Bajarilmadi" },
 ] as const;
 
 export const ACCEPT_STATUSES = new Set(["accepted", "in_progress", "waiting_parts"]);

@@ -622,6 +622,13 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
         .set({ fullName: formatPersonName(String(updates.fullName)) })
         .where(eq(employeesTable.userId, id));
     }
+    if (updates.status !== undefined) {
+      const { employmentFromUserStatus } = await import("../lib/staff-directory");
+      await db
+        .update(employeesTable)
+        .set({ employmentStatus: employmentFromUserStatus(String(updates.status)) })
+        .where(eq(employeesTable.userId, id));
+    }
   }
   res.json(publicUser(updated));
 });

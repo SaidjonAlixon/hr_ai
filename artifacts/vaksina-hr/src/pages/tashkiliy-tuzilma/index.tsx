@@ -510,6 +510,7 @@ function makeManagerBranchLive(
   const tr = trainers[n - 1];
   const coordNodes = coords.map((c) => ({
     ...buildCoordinatorNode(c, mudirsByCoord.get(c.id) ?? [], staffByMgr, usersById),
+    /** Chartda ham, side panelda ham ochilsin */
     inChart: true,
   }));
   return {
@@ -533,8 +534,11 @@ function makeManagerBranchLive(
         tone: "coord",
         icon: Waypoints,
         count: coordNodes.length,
-        expandable: coordNodes.length > 0,
-        expandHint: `${coordNodes.length} ta koordinator · bosing`,
+        expandable: true,
+        expandHint:
+          coordNodes.length > 0
+            ? `${coordNodes.length} ta koordinator · bosing`
+            : "Ro‘yxat · bosing",
         children: coordNodes,
       },
       {
@@ -551,7 +555,31 @@ function makeManagerBranchLive(
 function buildHrTree(employees: Employee[], users: User[]): OrgNode {
   const usersById = new Map((users ?? []).map((u) => [u.id, u]));
   const people = employees.filter((e) => isActiveEmp(e) && !isAdminLinked(e, usersById));
-  const coords = people.filter((e) => empKind(e, usersById) === "coordinator");
+  const coordsFromEmp = people.filter((e) => empKind(e, usersById) === "coordinator");
+  /** Login bor, lekin employees.orgRole bog‘lanmagan koordinatorlar ham chiqsin */
+  const coordUserIds = new Set(
+    coordsFromEmp.map((e) => e.userId).filter((id): id is number => id != null),
+  );
+  const orphanCoordUsers = activeUsers(users, "koordinator").filter((u) => !coordUserIds.has(u.id));
+  const coords: Employee[] = [
+    ...coordsFromEmp,
+    ...orphanCoordUsers.map(
+      (u) =>
+        ({
+          id: -u.id,
+          fullName: u.fullName,
+          position: "Koordinator",
+          departmentId: 0,
+          hiredAt: "",
+          orgRole: "coordinator",
+          userId: u.id,
+          employmentStatus: "working",
+          reportsToId: null,
+          location: null,
+          createdAt: new Date().toISOString(),
+        }) as Employee,
+    ),
+  ];
   const mudirs = people.filter((e) => empKind(e, usersById) === "manager");
   const staff = people.filter((e) => {
     const role = empKind(e, usersById);
@@ -715,6 +743,12 @@ function chartChildren(node: OrgNode): OrgNode[] {
 
 function drillChildren(node: OrgNode): OrgNode[] {
   return (node.children ?? []).filter((c) => c.inChart === false);
+}
+
+/** Side panel / drill — hub tugmalar uchun barcha bolalar */
+function panelChildren(node: OrgNode): OrgNode[] {
+  if (node.id.startsWith("koordinatorlar-")) return node.children ?? [];
+  return drillChildren(node);
 }
 
 function collectBuses(node: OrgNode, buses: OrgBus[]) {
@@ -1071,7 +1105,7 @@ function TeamCard({
 }) {
   const tone = TONES[node.tone];
   const Icon = node.icon;
-  const deeper = drillChildren(node).length > 0;
+  const deeper = panelChildren(node).length > 0;
 
   return (
     <button
@@ -1159,7 +1193,15 @@ function TeamPanel({
             <TeamCard key={item.id} node={item} selected={selectedId === item.id} onOpen={onOpen} />
           ))
         ) : (
-          <p className="px-2 py-8 text-center text-sm text-muted-foreground">Hali xodim biriktirilmagan</p>
+          <p className="px-2 py-8 text-center text-sm text-muted-foreground">
+            Hali xodim biriktirilmagan.
+            {title === "Koordinatorlar" ? (
+              <>
+                <br />
+                <span className="text-xs">Aptekalar tarmog‘ida koordinator yarating yoki login bog‘lang.</span>
+              </>
+            ) : null}
+          </p>
         )}
       </div>
     </aside>
@@ -1230,12 +1272,13 @@ export default function TashkiliyTuzilmaPage() {
         return;
       }
       if (id.startsWith("koordinatorlar-")) {
-        setOpenCoordGroupId((prev) => (prev === id ? null : id));
-        setFocusPath([]);
+        const opening = openCoordGroupId !== id;
+        setOpenCoordGroupId(opening ? id : null);
+        setFocusPath(opening ? [id] : []);
         return;
       }
       const node = findNode(orgTree, id);
-      const kids = node ? drillChildren(node) : [];
+      const kids = node ? panelChildren(node) : [];
       if (!kids.length) return;
       setFocusPath((prev) => {
         if (prev[prev.length - 1] === id) return prev;
@@ -1245,7 +1288,7 @@ export default function TashkiliyTuzilmaPage() {
         return [...prev, id];
       });
     },
-    [orgTree],
+    [orgTree, openCoordGroupId],
   );
 
   const redrawLines = useCallback(() => {
@@ -1401,7 +1444,7 @@ export default function TashkiliyTuzilmaPage() {
 
   const focusId = focusPath[focusPath.length - 1] ?? null;
   const focusNode = focusId ? findNode(orgTree, focusId) : null;
-  const focusItems = focusNode ? drillChildren(focusNode) : [];
+  const focusItems = focusNode ? panelChildren(focusNode) : [];
   const crumbs = focusPath
     .map((id) => findNode(orgTree, id))
     .filter((n): n is OrgNode => !!n)

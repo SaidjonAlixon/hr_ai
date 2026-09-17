@@ -14,7 +14,8 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { notifyByRoles, notifyUser } from "../lib/notify";
+import { notifyUser } from "../lib/notify";
+import { notifyReviziyaStakeholders } from "../lib/reviziya-notify";
 import {
   DOC_TYPES,
   DOC_TYPE_LABEL,
@@ -117,8 +118,9 @@ async function maybeWatchlist(branchName: string | null | undefined, shortage: n
         reason: "Ketma-ket 2 marta kamomad",
         consecutiveCount: 2,
       });
-      await notifyByRoles({
-        roles: ["reviziya_rahbar", "director", "asoschi", "admin", "sb_boshliq"],
+      await notifyReviziyaStakeholders({
+        branchName,
+        includeReviziyaRahbar: true,
         text: `${branchName}: ketma-ket 2 marta kamomad — nazorat ro‘yxatiga qo‘shildi`,
         type: "reviziya_watchlist",
         linkUrl: "/reviziya",
@@ -161,11 +163,32 @@ router.get("/reviziya/branches", requireAuth, async (req: AuthRequest, res): Pro
       fullName: employeesTable.fullName,
       location: employeesTable.location,
       userId: employeesTable.userId,
+      reportsToId: employeesTable.reportsToId,
     })
     .from(employeesTable)
-    .where(eq(employeesTable.orgRole, "manager"));
+    .where(and(eq(employeesTable.orgRole, "manager"), eq(employeesTable.employmentStatus, "working")));
+
+  let filtered = rows;
+  if (req.userRole === "mudir") {
+    const [me] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId || 0))
+      .limit(1);
+    filtered = me ? rows.filter((r) => r.id === me.id) : [];
+  } else if (req.userRole === "koordinator") {
+    const [me] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId || 0))
+      .limit(1);
+    filtered = me ? rows.filter((r) => r.reportsToId === me.id) : [];
+  } else if (req.userRole === "revizor") {
+    filtered = [];
+  }
+
   res.json(
-    rows.map((r) => ({
+    filtered.map((r) => ({
       id: r.id,
       branchName: r.location || r.fullName,
       responsibleName: r.fullName,
@@ -197,6 +220,23 @@ router.get("/reviziya/documents", requireAuth, async (req: AuthRequest, res): Pr
       .where(eq(employeesTable.userId, req.userId || 0))
       .limit(1);
     if (me?.location) conditions.push(eq(revisionDocumentsTable.branchName, me.location));
+  } else if (req.userRole === "koordinator") {
+    const [me] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId || 0))
+      .limit(1);
+    if (me) {
+      const managed = await db
+        .select({ location: employeesTable.location, fullName: employeesTable.fullName })
+        .from(employeesTable)
+        .where(and(eq(employeesTable.orgRole, "manager"), eq(employeesTable.reportsToId, me.id)));
+      const names = managed.map((m) => m.location || m.fullName).filter(Boolean);
+      if (names.length) conditions.push(inArray(revisionDocumentsTable.branchName, names));
+      else conditions.push(eq(revisionDocumentsTable.id, -1));
+    }
+  } else if (req.userRole === "revizor") {
+    conditions.push(eq(revisionDocumentsTable.revizorId, req.userId || 0));
   }
   const where = conditions.length ? and(...conditions) : undefined;
   const rows = await db
@@ -214,6 +254,20 @@ router.get("/reviziya/documents/:id", requireAuth, async (req: AuthRequest, res)
   const [row] = await db.select().from(revisionDocumentsTable).where(eq(revisionDocumentsTable.id, id));
   if (!row) {
     res.status(404).json({ error: "Hujjat topilmadi" });
+    return;
+  }
+  if (req.userRole === "mudir") {
+    const [me] = await db
+      .select({ location: employeesTable.location })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId || 0))
+      .limit(1);
+    if (me?.location && row.branchName !== me.location) {
+      res.status(403).json({ error: "Bu hujjatga ruxsat yo‘q" });
+      return;
+    }
+  } else if (req.userRole === "revizor" && row.revizorId && row.revizorId !== req.userId) {
+    res.status(403).json({ error: "Bu hujjatga ruxsat yo‘q" });
     return;
   }
   const logs = await db
@@ -299,8 +353,10 @@ router.post("/reviziya/documents", requireAuth, async (req: AuthRequest, res): P
   }
 
   if (created.shortageAmount >= SHORTAGE_LIMIT) {
-    await notifyByRoles({
-      roles: ["reviziya_rahbar", "director", "asoschi", "admin", "sb_boshliq"],
+    await notifyReviziyaStakeholders({
+      branchName: created.branchName,
+      assignedRevizorId: created.revizorId,
+      includeReviziyaRahbar: true,
       text: `${created.branchName || "Filial"}: kamomad limiti oshdi (${Math.round(created.shortageAmount)} so‘m)`,
       type: "reviziya_shortage",
       linkUrl: `/reviziya/hujjat/${created.id}`,
@@ -439,16 +495,20 @@ router.post("/reviziya/documents/:id/advance", requireAuth, async (req: AuthRequ
   });
 
   if (next === "signed") {
-    await notifyByRoles({
-      roles: ["moliya", "director", "asoschi", "admin"],
+    await notifyReviziyaStakeholders({
+      branchName: row.branchName,
+      assignedRevizorId: row.revizorId,
+      includeReviziyaRahbar: true,
       text: `${row.docNo} Reviziya rahbari imzoladi — buxgalteriya tasdig‘i kutilmoqda`,
       type: "reviziya_accounting",
       linkUrl: `/reviziya/hujjat/${id}`,
     });
   }
   if (next === "awaiting_explanation") {
-    await notifyByRoles({
-      roles: ["mudir", "reviziya_rahbar"],
+    await notifyReviziyaStakeholders({
+      branchName: row.branchName,
+      assignedRevizorId: row.revizorId,
+      includeReviziyaRahbar: true,
       text: `${row.branchName || "Filial"}: tushuntirish xati talab qilinadi`,
       type: "reviziya_explanation",
       linkUrl: `/reviziya/hujjat/${id}`,
@@ -717,7 +777,7 @@ router.get("/reviziya/export", requireAuth, async (req: AuthRequest, res): Promi
     return;
   }
   const rows = await db.select().from(revisionDocumentsTable).orderBy(desc(revisionDocumentsTable.createdAt)).limit(2000);
-  await audit({ userId: req.userId, userName: req.userName, action: "export", detail: `${rows.length} hujjat` });
+  await audit({ userId: req.userId, action: "export", detail: `${rows.length} hujjat` });
   res.json({ rows });
 });
 

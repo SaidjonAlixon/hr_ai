@@ -1,26 +1,30 @@
 import React, { useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
-  Plus,
   Wrench,
   Cpu,
   AlertTriangle,
   CircleDot,
   CheckCircle2,
-  ListTodo,
   ExternalLink,
   Loader2,
   Users,
   Check,
+  MapPin,
+  Send,
+  ThumbsUp,
+  ThumbsDown,
+  MinusCircle,
+  UserCheck,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { useReviziyaBranches } from "@/lib/reviziya-api";
 import {
   useOpsDash,
   useOpsMeta,
@@ -34,6 +38,7 @@ import {
   canManageOpsDept,
   canViewOpsDept,
   isItRole,
+  isOpsDeptHead,
 } from "@/lib/roles";
 import { AddDeptStaffButton } from "@/components/dept/AddDeptStaffDialog";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -56,11 +61,10 @@ const STATUS_KEYS: Record<string, string> = {
   closed: "ops.status.closed",
 };
 
-const PRIO_KEYS: Record<string, string> = {
-  low: "ops.prio.low",
-  normal: "ops.prio.normal",
-  high: "ops.prio.high",
-  urgent: "ops.prio.urgent",
+const VERIFY_LABEL: Record<string, string> = {
+  done: "ops.rate.done",
+  partial: "ops.rate.partial",
+  not_done: "ops.rate.notDone",
 };
 
 const TASK_STATUS_LABEL: Record<string, string> = {
@@ -95,6 +99,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   const allowed = canViewOpsDept(dept, user?.role);
   const canManage = canManageOpsDept(dept, user?.role);
   const canCreate = canCreateOpsTicket(dept, user?.role);
+  const isHead = isOpsDeptHead(dept, user?.role);
   const isIt = dept === "it";
   const isItStaff = isIt && isItRole(user?.role);
   const canAddStaff =
@@ -105,19 +110,15 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   const dash = useOpsDash(dept);
   const tickets = useOpsTickets(dept);
   const mut = useOpsMutations(dept);
-  const branches = useReviziyaBranches();
 
-  const defaultTab: Tab = isItStaff ? "tasks" : canCreate ? "new" : "board";
+  const formMode = meta.data?.formMode || "office";
+  const myBranch = meta.data?.myBranch || null;
+  const canAssign = Boolean(meta.data?.canAssign || isHead);
+
+  const defaultTab: Tab = isItStaff && !isHead ? "board" : canCreate ? "new" : "board";
   const [tab, setTab] = useState<Tab>(defaultTab);
   const [busyId, setBusyId] = useState<number | null>(null);
-  const [form, setForm] = useState({
-    title: "",
-    category: "",
-    branchName: "",
-    priority: "normal",
-    description: "",
-    assigneeId: "",
-  });
+  const [form, setForm] = useState({ title: "", description: "" });
 
   const tasksQ = useGetTasks(
     { board: "active" },
@@ -154,8 +155,12 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   const title = isIt ? t("ops.title.it") : t("ops.title.texnik");
   const hint = isIt
     ? isItStaff
-      ? t("ops.hint.it")
-      : t("ops.hint.itPublic")
+      ? isHead
+        ? t("ops.hint.itHead")
+        : t("ops.hint.itStaff")
+      : formMode === "pharmacy"
+        ? t("ops.hint.itPharmacy")
+        : t("ops.hint.itOffice")
     : t("ops.hint.texnik");
 
   if (!allowed) {
@@ -165,22 +170,11 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   const submit = async () => {
     try {
       await mut.create.mutateAsync({
-        title: form.title,
-        category: form.category || meta.data?.categories?.[0]?.value,
-        branchName: form.branchName,
-        priority: form.priority,
-        description: form.description,
-        assigneeId: form.assigneeId ? Number(form.assigneeId) : undefined,
+        title: form.title.trim(),
+        description: form.description.trim(),
       });
       toast({ title: t("ops.created") });
-      setForm({
-        title: "",
-        category: "",
-        branchName: "",
-        priority: "normal",
-        description: "",
-        assigneeId: "",
-      });
+      setForm({ title: "", description: "" });
       setTab("board");
     } catch (e: unknown) {
       toast({ title: e instanceof Error ? e.message : t("ui.error"), variant: "destructive" });
@@ -231,7 +225,6 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   };
 
   const d = dash.data;
-  const cats: Array<{ value: string; label: string }> = meta.data?.categories || [];
   const staff: Array<{ id: number; fullName: string }> = meta.data?.staff || [];
 
   const tabs: Array<{ id: Tab; label: string; badge?: number; show?: boolean }> = [
@@ -257,53 +250,63 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
         <div className="dept-hero-body">
           <p className="dept-eyebrow">{isIt ? t("ops.eyebrow.it") : t("ops.eyebrow.texnik")}</p>
           <div className="mt-1 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h1 className="dept-title flex items-center gap-2">
-                {isIt ? <Cpu className="h-6 w-6" /> : <Wrench className="h-6 w-6" />}
+            <div className="min-w-0">
+              <h1 className="dept-title flex items-center gap-2.5">
+                {isIt ? <Cpu className="h-6 w-6 shrink-0 opacity-90" /> : <Wrench className="h-6 w-6 shrink-0 opacity-90" />}
                 {title}
               </h1>
               <p className="dept-desc">{hint}</p>
             </div>
-            <div className="flex flex-wrap items-center gap-1.5">
-              <AddDeptStaffButton enabled={canAddStaff} size="sm" className="h-9" />
-              {tabs
-                .filter((x) => x.show)
-                .map((x) => (
-                  <button
-                    key={x.id}
-                    type="button"
-                    onClick={() => setTab(x.id)}
-                    className={cn("dept-tab", tab === x.id ? "dept-tab--active" : "dept-tab--idle")}
-                  >
-                    {x.label}
-                    {x.badge ? (
-                      <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-bold text-white">
-                        {x.badge}
-                      </span>
-                    ) : null}
-                  </button>
-                ))}
-            </div>
+            {canAddStaff ? <AddDeptStaffButton enabled={canAddStaff} size="sm" className="h-9" /> : null}
+          </div>
+          <div className="dept-nav-pills">
+            {tabs
+              .filter((x) => x.show)
+              .map((x) => (
+                <button
+                  key={x.id}
+                  type="button"
+                  onClick={() => setTab(x.id)}
+                  className={cn(
+                    "dept-nav-pill",
+                    tab === x.id ? "dept-nav-pill--active" : "dept-nav-pill--idle",
+                  )}
+                >
+                  {x.label}
+                  {x.badge ? (
+                    <span className="ml-0.5 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-bold text-white">
+                      {x.badge}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
           </div>
         </div>
       </div>
 
       <div className="dept-page-inner">
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {isItStaff ? (
-            <Kpi
-              icon={ListTodo}
-              label={t("ops.kpi.tasks")}
-              value={myTasks.filter((x) => x.status === "todo" || x.status === "in_progress").length}
-            />
-          ) : null}
-          <Kpi icon={CircleDot} label={t("ops.kpi.open")} value={d?.open ?? "—"} />
-          <Kpi icon={AlertTriangle} label={t("ops.kpi.urgent")} value={d?.urgent ?? "—"} warn={!!d?.urgent} />
-          <Kpi
-            icon={CheckCircle2}
-            label={t("ops.kpi.awaitVerify")}
-            value={d?.awaitingVerify ?? d?.byStatus?.done ?? 0}
-          />
+        <div className="dept-kpi-row">
+          <div className="dept-kpi-modern">
+            <span className="dept-icon-slate">
+              <CircleDot className="h-4 w-4" />
+            </span>
+            <p className="dept-kpi-label">{t("ops.kpi.open")}</p>
+            <p className="dept-kpi-value">{d?.open ?? "—"}</p>
+          </div>
+          <div className={cn("dept-kpi-modern", !!d?.urgent && "dept-kpi-modern--warn")}>
+            <span className={d?.urgent ? "dept-icon-amber" : "dept-icon-slate"}>
+              <AlertTriangle className="h-4 w-4" />
+            </span>
+            <p className="dept-kpi-label">{t("ops.kpi.urgent")}</p>
+            <p className="dept-kpi-value">{d?.urgent ?? "—"}</p>
+          </div>
+          <div className="dept-kpi-modern">
+            <span className="dept-icon-slate">
+              <CheckCircle2 className="h-4 w-4" />
+            </span>
+            <p className="dept-kpi-label">{t("ops.kpi.awaitVerify")}</p>
+            <p className="dept-kpi-value">{d?.awaitingVerify ?? 0}</p>
+          </div>
         </div>
 
         {tab === "tasks" && isItStaff ? (
@@ -373,105 +376,73 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
 
         {tab === "new" && canCreate ? (
           <div className="dept-form">
-            <p className="mb-1 font-semibold">{t("ops.formTitle")}</p>
-            <p className="mb-4 text-xs text-muted-foreground">{t("ops.formHint")}</p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="sm:col-span-2">
-                <Label className="text-xs">{t("ops.field.title")}</Label>
+            <div className="dept-form-head">
+              <p className="dept-form-title">{t("ops.formTitle")}</p>
+              <p className="dept-form-hint">
+                {formMode === "pharmacy" ? t("ops.formHintPharmacy") : t("ops.formHintOffice")}
+              </p>
+            </div>
+
+            {formMode === "pharmacy" ? (
+              <div className="mb-4 flex items-center gap-2 rounded-xl border border-teal-200/70 bg-teal-50/80 px-3.5 py-2.5 text-sm text-teal-900 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
+                <MapPin className="h-4 w-4 shrink-0" />
+                <span>
+                  <span className="font-semibold">{t("ops.field.branch")}: </span>
+                  {myBranch || t("ops.branchMissing")}
+                </span>
+              </div>
+            ) : null}
+
+            <div className="grid gap-4">
+              <div className="dept-field">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t("ops.field.title")}
+                </Label>
                 <Input
                   value={form.title}
                   onChange={(e) => setForm({ ...form, title: e.target.value })}
                   placeholder={t("ops.ph.title")}
+                  className="h-11 rounded-xl"
                 />
               </div>
-              <div>
-                <Label className="text-xs">{t("ops.field.category")}</Label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  value={form.category}
-                  onChange={(e) => setForm({ ...form, category: e.target.value })}
-                >
-                  {cats.map((c) => (
-                    <option key={c.value} value={c.value}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label className="text-xs">{t("ops.field.branch")}</Label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  value={form.branchName}
-                  onChange={(e) => setForm({ ...form, branchName: e.target.value })}
-                >
-                  <option value="">{t("ops.pick")}</option>
-                  {(branches.data || []).map((b) => (
-                    <option key={b.id} value={b.branchName}>
-                      {b.branchName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <Label className="text-xs">{t("ops.field.priority")}</Label>
-                <select
-                  className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                  value={form.priority}
-                  onChange={(e) => setForm({ ...form, priority: e.target.value })}
-                >
-                  <option value="low">{t("ops.prio.low")}</option>
-                  <option value="normal">{t("ops.prio.normal")}</option>
-                  <option value="high">{t("ops.prio.high")}</option>
-                  <option value="urgent">{t("ops.prio.urgent")}</option>
-                </select>
-              </div>
-              {canManage ? (
-                <div>
-                  <Label className="text-xs">{t("ops.field.assignee")}</Label>
-                  <select
-                    className="mt-1 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm"
-                    value={form.assigneeId}
-                    onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}
-                  >
-                    <option value="">{t("ops.assigneeLater")}</option>
-                    {staff.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.fullName}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : null}
-              <div className="sm:col-span-2">
-                <Label className="text-xs">{t("ops.field.desc")}</Label>
-                <Input
+              <div className="dept-field">
+                <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  {t("ops.field.desc")}
+                </Label>
+                <Textarea
                   value={form.description}
                   onChange={(e) => setForm({ ...form, description: e.target.value })}
-                  placeholder={t("ops.ph.desc")}
+                  placeholder={
+                    formMode === "pharmacy" ? t("ops.ph.descPharmacy") : t("ops.ph.descOffice")
+                  }
+                  className="min-h-[120px] resize-y rounded-xl"
+                  maxLength={1000}
                 />
               </div>
             </div>
+
             <Button
-              className="mt-4"
+              className="mt-6 h-11 w-full gap-2 rounded-xl text-sm font-semibold sm:w-auto sm:min-w-[220px]"
               onClick={submit}
-              disabled={mut.create.isPending || !form.title.trim()}
+              disabled={
+                mut.create.isPending ||
+                !form.title.trim() ||
+                form.description.trim().length < 3 ||
+                (formMode === "pharmacy" && !myBranch)
+              }
             >
-              <Plus className="h-4 w-4" /> {t("ops.submit")}
+              {mut.create.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+              {t("ops.submit")}
             </Button>
           </div>
         ) : null}
 
         {tab === "board" ? (
           <div className="space-y-3">
-            <div className="flex flex-wrap gap-2">
-              {cats.map((c) => (
-                <span key={c.value} className="dept-chip">
-                  {c.label}
-                  {d?.byCat?.[c.value] ? ` · ${d.byCat[c.value]}` : ""}
-                </span>
-              ))}
-            </div>
             {tickets.isLoading ? (
               <Skeleton className="h-32" />
             ) : (
@@ -479,28 +450,29 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
                 <TicketCard
                   key={ticket.id}
                   ticket={ticket}
-                  cats={cats}
                   staff={staff}
                   canManage={canManage}
+                  canAssign={canAssign}
                   isCreator={ticket.createdById === user?.id}
+                  isAssignee={ticket.assigneeId === user?.id}
                   busy={busyId === ticket.id}
                   t={t}
-                  onAccept={() =>
-                    runTicketAction(ticket.id, { action: "accept" }, t("ops.toast.accepted"))
+                  onAssign={(assigneeId) =>
+                    runTicketAction(
+                      ticket.id,
+                      { action: "assign", assigneeId },
+                      t("ops.toast.assigned"),
+                    )
                   }
                   onComplete={() =>
                     runTicketAction(ticket.id, { action: "complete" }, t("ops.toast.completed"))
                   }
-                  onVerify={() =>
-                    runTicketAction(ticket.id, { action: "verify" }, t("ops.toast.verified"))
-                  }
-                  onStatus={(status) => mut.patch.mutate({ id: ticket.id, status })}
-                  onAssignee={(assigneeId) =>
-                    mut.patch.mutate({
-                      id: ticket.id,
-                      assigneeId: assigneeId || null,
-                      ...(assigneeId && ticket.status === "new" ? { action: "accept" } : {}),
-                    })
+                  onRate={(verifyResult) =>
+                    runTicketAction(
+                      ticket.id,
+                      { action: "verify", verifyResult },
+                      t("ops.toast.rated"),
+                    )
                   }
                 />
               ))
@@ -516,7 +488,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
             <div className="rounded-xl border border-border bg-card p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="font-semibold text-foreground flex items-center gap-2">
+                  <p className="flex items-center gap-2 font-semibold text-foreground">
                     <Users className="h-4 w-4" /> {t("ops.staff.title")}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">{t("ops.staff.hint")}</p>
@@ -542,69 +514,85 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
 
 function TicketCard({
   ticket,
-  cats,
   staff,
   canManage,
+  canAssign,
   isCreator,
+  isAssignee,
   busy,
   t,
-  onAccept,
+  onAssign,
   onComplete,
-  onVerify,
-  onStatus,
-  onAssignee,
+  onRate,
 }: {
   ticket: OpsTicket;
-  cats: Array<{ value: string; label: string }>;
   staff: Array<{ id: number; fullName: string }>;
   canManage: boolean;
+  canAssign: boolean;
   isCreator: boolean;
+  isAssignee: boolean;
   busy: boolean;
   t: (k: string) => string;
-  onAccept: () => void;
+  onAssign: (assigneeId: number) => void;
   onComplete: () => void;
-  onVerify: () => void;
-  onStatus: (status: string) => void;
-  onAssignee: (assigneeId: string) => void;
+  onRate: (verifyResult: "done" | "partial" | "not_done") => void;
 }) {
-  const needsAccept = ticket.status === "new" || ticket.status === "assigned";
   const canComplete =
-    ticket.status === "accepted" ||
-    ticket.status === "in_progress" ||
-    ticket.status === "waiting_parts" ||
-    ticket.status === "assigned";
-  const canVerify = ticket.status === "done" && (isCreator || canManage);
+    (canManage || isAssignee) &&
+    ticket.status !== "done" &&
+    ticket.status !== "verified" &&
+    ticket.status !== "closed";
+  const needsRate = isCreator && ticket.status === "done";
   const isDone = ticket.status === "verified" || ticket.status === "closed";
 
   return (
     <div className="dept-ticket flex-col items-stretch gap-3 sm:flex-row sm:items-start">
-      <div className="min-w-0 flex-1">
-        <p className="text-xs font-mono text-muted-foreground">{ticket.ticketNo}</p>
-        <p className="font-semibold text-foreground">{ticket.title}</p>
-        <p className="text-xs text-muted-foreground">
-          {cats.find((c) => c.value === ticket.category)?.label || ticket.category}
-          {" · "}
-          {ticket.branchName || t("ui.branch")}
-          {" · "}
-          {t(PRIO_KEYS[ticket.priority] || "ops.prio.normal")}
-          {ticket.createdByName ? ` · ${ticket.createdByName}` : ""}
-        </p>
+      <div className="min-w-0 flex-1 space-y-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs font-mono text-muted-foreground">{ticket.ticketNo}</p>
+          <span className="dept-status">{t(STATUS_KEYS[ticket.status] || ticket.status)}</span>
+          {ticket.verifyResult ? (
+            <span
+              className={cn(
+                "rounded-full px-2 py-0.5 text-[10px] font-semibold",
+                ticket.verifyResult === "done" && "bg-emerald-100 text-emerald-800",
+                ticket.verifyResult === "partial" && "bg-amber-100 text-amber-900",
+                ticket.verifyResult === "not_done" && "bg-rose-100 text-rose-800",
+              )}
+            >
+              {t(VERIFY_LABEL[ticket.verifyResult] || ticket.verifyResult)}
+            </span>
+          ) : null}
+        </div>
+        <p className="text-base font-semibold text-foreground">{ticket.title}</p>
         {ticket.description ? (
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{ticket.description}</p>
+          <p className="text-sm leading-relaxed text-muted-foreground">{ticket.description}</p>
         ) : null}
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          {ticket.branchName ? (
+            <span className="inline-flex items-center gap-1">
+              <MapPin className="h-3 w-3" /> {ticket.branchName}
+            </span>
+          ) : null}
+          {ticket.createdByName ? <span>{ticket.createdByName}</span> : null}
+          {ticket.assigneeName ? (
+            <span className="inline-flex items-center gap-1 font-medium text-foreground">
+              <UserCheck className="h-3 w-3 text-teal-600" />
+              {t("ops.assignedTo")}: {ticket.assigneeName}
+              {ticket.assignedByName ? ` (${t("ops.assignedBy")} ${ticket.assignedByName})` : ""}
+            </span>
+          ) : canAssign && ticket.status === "new" ? (
+            <span className="text-amber-700">{t("ops.awaitAssign")}</span>
+          ) : null}
+        </div>
 
-        <div className="mt-3 grid gap-1.5 rounded-lg border border-border/70 bg-muted/40 p-2.5 text-[11px]">
+        <div className="grid gap-1.5 rounded-xl border border-border/70 bg-muted/30 p-2.5 text-[11px]">
+          <TimelineRow done label={t("ops.timeline.created")} at={fmtDt(ticket.createdAt)} by={ticket.createdByName} />
           <TimelineRow
-            done
-            label={t("ops.timeline.created")}
-            at={fmtDt(ticket.createdAt)}
-            by={ticket.createdByName}
-          />
-          <TimelineRow
-            done={Boolean(ticket.acceptedAt)}
+            done={Boolean(ticket.acceptedAt || ticket.assigneeId)}
             label={t("ops.timeline.accepted")}
             at={fmtDt(ticket.acceptedAt)}
-            by={ticket.acceptedByName || ticket.assigneeName}
+            by={ticket.assigneeName || ticket.acceptedByName}
           />
           <TimelineRow
             done={Boolean(ticket.completedAt)}
@@ -616,65 +604,76 @@ function TicketCard({
             done={Boolean(ticket.verifiedAt) || isDone}
             label={t("ops.timeline.verified")}
             at={fmtDt(ticket.verifiedAt)}
-            by={ticket.verifiedByName}
+            by={
+              ticket.verifyResult
+                ? `${ticket.verifiedByName || ""} · ${t(VERIFY_LABEL[ticket.verifyResult] || "")}`
+                : ticket.verifiedByName
+            }
           />
         </div>
       </div>
 
-      <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[180px]">
-        <span className="dept-status self-start">
-          {t(STATUS_KEYS[ticket.status] || ticket.status)}
-        </span>
-
-        {canManage && needsAccept && !ticket.acceptedAt ? (
-          <Button size="sm" disabled={busy} onClick={onAccept} className="gap-1">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
-            {t("ops.action.accept")}
-          </Button>
+      <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[200px]">
+        {canAssign && !isDone && ticket.status !== "done" ? (
+          <select
+            className="dept-select h-10 text-xs"
+            value={ticket.assigneeId ? String(ticket.assigneeId) : ""}
+            disabled={busy}
+            onChange={(e) => {
+              const v = Number(e.target.value);
+              if (v) onAssign(v);
+            }}
+          >
+            <option value="">{t("ops.pickAssignee")}</option>
+            {staff.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.fullName}
+              </option>
+            ))}
+          </select>
         ) : null}
 
-        {canManage && (canComplete || ticket.status === "accepted") && ticket.status !== "done" && !isDone ? (
+        {canComplete ? (
           <Button size="sm" variant="secondary" disabled={busy} onClick={onComplete} className="gap-1">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
             {t("ops.action.complete")}
           </Button>
         ) : null}
 
-        {canVerify ? (
-          <Button size="sm" disabled={busy} onClick={onVerify} className="gap-1 bg-emerald-600 hover:bg-emerald-700">
-            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-            {t("ops.action.verify")}
-          </Button>
-        ) : null}
-
-        {canManage ? (
-          <>
-            <select
-              className="rounded-lg border border-border bg-background px-2 py-1 text-xs"
-              value={ticket.status}
-              onChange={(e) => onStatus(e.target.value)}
-            >
-              {Object.entries(STATUS_KEYS)
-                .filter(([k]) => k !== "assigned")
-                .map(([k, key]) => (
-                  <option key={k} value={k}>
-                    {t(key)}
-                  </option>
-                ))}
-            </select>
-            <select
-              className="rounded-lg border border-border bg-background px-2 py-1 text-xs"
-              value={ticket.assigneeId ? String(ticket.assigneeId) : ""}
-              onChange={(e) => onAssignee(e.target.value)}
-            >
-              <option value="">{t("ops.assigneeLater")}</option>
-              {staff.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.fullName}
-                </option>
-              ))}
-            </select>
-          </>
+        {needsRate ? (
+          <div className="space-y-1.5 rounded-xl border border-emerald-200/80 bg-emerald-50/50 p-2 dark:border-emerald-900 dark:bg-emerald-950/30">
+            <p className="text-[11px] font-semibold text-emerald-900 dark:text-emerald-100">
+              {t("ops.rateTitle")}
+            </p>
+            <div className="grid gap-1.5">
+              <Button
+                size="sm"
+                disabled={busy}
+                className="h-9 justify-start gap-1.5 bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => onRate("done")}
+              >
+                <ThumbsUp className="h-3.5 w-3.5" /> {t("ops.rate.done")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                className="h-9 justify-start gap-1.5 border-amber-300 text-amber-900"
+                onClick={() => onRate("partial")}
+              >
+                <MinusCircle className="h-3.5 w-3.5" /> {t("ops.rate.partial")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                className="h-9 justify-start gap-1.5 border-rose-300 text-rose-800"
+                onClick={() => onRate("not_done")}
+              >
+                <ThumbsDown className="h-3.5 w-3.5" /> {t("ops.rate.notDone")}
+              </Button>
+            </div>
+          </div>
         ) : null}
       </div>
     </div>
@@ -702,28 +701,6 @@ function TimelineRow({
         {at}
         {by ? <span className="block text-[10px]">{by}</span> : null}
       </span>
-    </div>
-  );
-}
-
-function Kpi({
-  icon: Icon,
-  label,
-  value,
-  warn,
-}: {
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-  value: React.ReactNode;
-  warn?: boolean;
-}) {
-  return (
-    <div className={cn("dept-kpi", warn && "dept-kpi--warn")}>
-      <span className={warn ? "dept-icon-amber" : "dept-icon-slate"}>
-        <Icon className="h-4 w-4" />
-      </span>
-      <p className="dept-kpi-label">{label}</p>
-      <p className="dept-kpi-value">{value}</p>
     </div>
   );
 }

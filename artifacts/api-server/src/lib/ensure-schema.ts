@@ -715,6 +715,55 @@ CREATE TABLE IF NOT EXISTS revision_audit_log (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS revision_audit_log_doc_idx ON revision_audit_log (document_id);
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS visit_id INTEGER;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS entity_type TEXT;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS entity_id INTEGER;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS user_role TEXT;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS old_value JSONB;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS new_value JSONB;
+CREATE INDEX IF NOT EXISTS revision_audit_log_visit_idx ON revision_audit_log (visit_id);
+
+CREATE TABLE IF NOT EXISTS revision_visits (
+  id SERIAL PRIMARY KEY,
+  branch_id INTEGER NOT NULL,
+  branch_name TEXT NOT NULL,
+  revision_date TEXT,
+  scheduled_date TEXT,
+  scheduled_start_time TEXT,
+  scheduled_end_time TEXT,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  completed_by_id INTEGER,
+  duration_minutes INTEGER,
+  assigned_employee_id INTEGER,
+  assigned_employee_name TEXT,
+  workflow_status TEXT NOT NULL DEFAULT 'ASSIGNED',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  shortage_amount INTEGER NOT NULL DEFAULT 0,
+  excess_amount INTEGER NOT NULL DEFAULT 0,
+  collected_amount INTEGER NOT NULL DEFAULT 0,
+  remaining_amount INTEGER NOT NULL DEFAULT 0,
+  act_number TEXT,
+  act_url TEXT,
+  receipt_url TEXT,
+  extra_docs JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes TEXT,
+  responsible_name TEXT,
+  next_revision_date TEXT,
+  next_revision_date_override TEXT,
+  cycle_months INTEGER,
+  created_by_id INTEGER,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS revision_visits_branch_idx ON revision_visits (branch_id);
+CREATE INDEX IF NOT EXISTS revision_visits_status_idx ON revision_visits (workflow_status);
+CREATE INDEX IF NOT EXISTS revision_visits_scheduled_idx ON revision_visits (scheduled_date);
+CREATE INDEX IF NOT EXISTS revision_visits_assigned_idx ON revision_visits (assigned_employee_id);
+CREATE INDEX IF NOT EXISTS revision_visits_revision_date_idx ON revision_visits (revision_date);
+CREATE INDEX IF NOT EXISTS revision_visits_created_idx ON revision_visits (created_at);
 
 CREATE TABLE IF NOT EXISTS ops_tickets (
   id SERIAL PRIMARY KEY,
@@ -746,6 +795,8 @@ ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
 ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS completed_by_id INTEGER;
 ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verified_by_id INTEGER;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS assigned_by_id INTEGER;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verify_result TEXT;
 
 CREATE TABLE IF NOT EXISTS department_job_titles (
   id SERIAL PRIMARY KEY,
@@ -983,9 +1034,19 @@ CREATE INDEX IF NOT EXISTS javob_olish_emp_idx ON javob_olish_requests (employee
 CREATE INDEX IF NOT EXISTS javob_olish_date_idx ON javob_olish_requests (work_date);
 CREATE INDEX IF NOT EXISTS javob_olish_status_idx ON javob_olish_requests (status);
 CREATE INDEX IF NOT EXISTS javob_olish_coord_idx ON javob_olish_requests (coordinator_user_id);
+ALTER TABLE javob_olish_requests ADD COLUMN IF NOT EXISTS coord_decided_by_id INTEGER;
+ALTER TABLE javob_olish_requests ADD COLUMN IF NOT EXISTS coord_decided_at TIMESTAMPTZ;
+ALTER TABLE javob_olish_requests ADD COLUMN IF NOT EXISTS coord_decision_note TEXT;
+ALTER TABLE javob_olish_requests ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+ALTER TABLE javob_olish_requests ADD COLUMN IF NOT EXISTS escalated_note TEXT;
+UPDATE javob_olish_requests
+  SET escalated_note = REPLACE(escalated_note, 'Escalate:', 'HR ga o‘tkazilgan:')
+  WHERE escalated_note LIKE '%Escalate:%';
+UPDATE javob_olish_requests SET status = 'pending_coord' WHERE status = 'pending';
+DROP INDEX IF EXISTS javob_olish_pending_uidx;
 CREATE UNIQUE INDEX IF NOT EXISTS javob_olish_pending_uidx
   ON javob_olish_requests (employee_id, work_date)
-  WHERE status = 'pending';
+  WHERE status IN ('pending', 'pending_coord', 'pending_hr');
 
 -- Web Push (Chrome / Safari PWA) — telefonda tizim bildirishnomasi
 CREATE TABLE IF NOT EXISTS push_subscriptions (
@@ -1044,7 +1105,122 @@ CREATE TABLE IF NOT EXISTS lokatsiya_bot_users (
 );
 CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_last_seen_idx ON lokatsiya_bot_users (last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_blocked_idx ON lokatsiya_bot_users (is_blocked);
+
+-- ========== Device Security (opt-in) ==========
+ALTER TABLE users ADD COLUMN IF NOT EXISTS device_security_enforced BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS device_security_settings (
+  id SERIAL PRIMARY KEY,
+  enforcement_mode TEXT NOT NULL DEFAULT 'selected',
+  office_max_devices INTEGER NOT NULL DEFAULT 2,
+  pharmacy_max_devices INTEGER NOT NULL DEFAULT 1,
+  office_require_approve BOOLEAN NOT NULL DEFAULT TRUE,
+  pharmacy_require_approve BOOLEAN NOT NULL DEFAULT TRUE,
+  office_block_foreign BOOLEAN NOT NULL DEFAULT TRUE,
+  pharmacy_block_foreign BOOLEAN NOT NULL DEFAULT TRUE,
+  office_verify_qr BOOLEAN NOT NULL DEFAULT TRUE,
+  pharmacy_verify_qr BOOLEAN NOT NULL DEFAULT TRUE,
+  office_verify_face BOOLEAN NOT NULL DEFAULT TRUE,
+  pharmacy_verify_face BOOLEAN NOT NULL DEFAULT TRUE,
+  log_ip_changes BOOLEAN NOT NULL DEFAULT TRUE,
+  suspicious_notify BOOLEAN NOT NULL DEFAULT TRUE,
+  updated_by_id INTEGER,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+INSERT INTO device_security_settings (id)
+SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM device_security_settings WHERE id = 1);
+
+CREATE TABLE IF NOT EXISTS user_devices (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  device_id TEXT NOT NULL,
+  device_token_hash TEXT NOT NULL,
+  device_name TEXT,
+  device_type TEXT NOT NULL DEFAULT 'unknown',
+  slot TEXT NOT NULL DEFAULT 'general',
+  os TEXT,
+  os_version TEXT,
+  browser TEXT,
+  browser_version TEXT,
+  user_agent TEXT,
+  ip_address TEXT,
+  last_ip TEXT,
+  approx_location TEXT,
+  first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_login_at TIMESTAMPTZ,
+  is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+  is_verified BOOLEAN NOT NULL DEFAULT FALSE,
+  is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+  blocked_at TIMESTAMPTZ,
+  blocked_by INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS user_devices_device_id_uidx ON user_devices (device_id);
+CREATE INDEX IF NOT EXISTS user_devices_user_idx ON user_devices (user_id);
+CREATE INDEX IF NOT EXISTS user_devices_user_verified_idx ON user_devices (user_id, is_verified);
+
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  device_row_id INTEGER,
+  session_token_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at TIMESTAMPTZ NOT NULL,
+  revoked_at TIMESTAMPTZ,
+  ip_address TEXT,
+  user_agent TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS user_sessions_token_uidx ON user_sessions (session_token_hash);
+CREATE INDEX IF NOT EXISTS user_sessions_user_idx ON user_sessions (user_id);
+
+CREATE TABLE IF NOT EXISTS login_audit_logs (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER,
+  device_row_id INTEGER,
+  device_id TEXT,
+  ip_address TEXT,
+  user_agent TEXT,
+  action TEXT NOT NULL,
+  status TEXT NOT NULL,
+  failure_reason TEXT,
+  meta JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS login_audit_user_idx ON login_audit_logs (user_id);
+CREATE INDEX IF NOT EXISTS login_audit_created_idx ON login_audit_logs (created_at);
+
+CREATE TABLE IF NOT EXISTS device_change_requests (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  old_device_row_id INTEGER,
+  new_device_row_id INTEGER,
+  status TEXT NOT NULL DEFAULT 'pending',
+  reason TEXT,
+  requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  reviewed_at TIMESTAMPTZ,
+  reviewed_by INTEGER
+);
+CREATE INDEX IF NOT EXISTS device_change_req_user_idx ON device_change_requests (user_id);
+CREATE INDEX IF NOT EXISTS device_change_req_status_idx ON device_change_requests (status);
+
+CREATE TABLE IF NOT EXISTS security_events (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER,
+  device_row_id INTEGER,
+  event_type TEXT NOT NULL,
+  severity TEXT NOT NULL DEFAULT 'medium',
+  metadata JSONB,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  resolved_at TIMESTAMPTZ,
+  resolved_by INTEGER
+);
+CREATE INDEX IF NOT EXISTS security_events_user_idx ON security_events (user_id);
+CREATE INDEX IF NOT EXISTS security_events_created_idx ON security_events (created_at);
 `);
+    await ensureRevisionVisitsSchema();
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");
     throw err;
@@ -1064,5 +1240,71 @@ CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_blocked_idx ON lokatsiya_bot_user
     await ensureDistribyutsiyaSetup();
   } catch (err) {
     logger.warn({ err }, "Distribyutsiya setup skipped");
+  }
+}
+
+/** Filial reviziya sikli — ENSURE_SQL oxirida bo‘lishiga qaramay alohida kafolat */
+const REVISION_VISITS_SQL = `
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS visit_id INTEGER;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS entity_type TEXT;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS entity_id INTEGER;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS user_role TEXT;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS reason TEXT;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS old_value JSONB;
+ALTER TABLE revision_audit_log ADD COLUMN IF NOT EXISTS new_value JSONB;
+CREATE INDEX IF NOT EXISTS revision_audit_log_visit_idx ON revision_audit_log (visit_id);
+
+CREATE TABLE IF NOT EXISTS revision_visits (
+  id SERIAL PRIMARY KEY,
+  branch_id INTEGER NOT NULL,
+  branch_name TEXT NOT NULL,
+  revision_date TEXT,
+  scheduled_date TEXT,
+  scheduled_start_time TEXT,
+  scheduled_end_time TEXT,
+  started_at TIMESTAMPTZ,
+  completed_at TIMESTAMPTZ,
+  completed_by_id INTEGER,
+  duration_minutes INTEGER,
+  assigned_employee_id INTEGER,
+  assigned_employee_name TEXT,
+  workflow_status TEXT NOT NULL DEFAULT 'ASSIGNED',
+  priority TEXT NOT NULL DEFAULT 'normal',
+  shortage_amount INTEGER NOT NULL DEFAULT 0,
+  excess_amount INTEGER NOT NULL DEFAULT 0,
+  collected_amount INTEGER NOT NULL DEFAULT 0,
+  remaining_amount INTEGER NOT NULL DEFAULT 0,
+  act_number TEXT,
+  act_url TEXT,
+  receipt_url TEXT,
+  extra_docs JSONB NOT NULL DEFAULT '[]'::jsonb,
+  notes TEXT,
+  responsible_name TEXT,
+  next_revision_date TEXT,
+  next_revision_date_override TEXT,
+  cycle_months INTEGER,
+  created_by_id INTEGER,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS revision_visits_branch_idx ON revision_visits (branch_id);
+CREATE INDEX IF NOT EXISTS revision_visits_status_idx ON revision_visits (workflow_status);
+CREATE INDEX IF NOT EXISTS revision_visits_scheduled_idx ON revision_visits (scheduled_date);
+CREATE INDEX IF NOT EXISTS revision_visits_assigned_idx ON revision_visits (assigned_employee_id);
+CREATE INDEX IF NOT EXISTS revision_visits_revision_date_idx ON revision_visits (revision_date);
+CREATE INDEX IF NOT EXISTS revision_visits_created_idx ON revision_visits (created_at);
+`;
+
+export async function ensureRevisionVisitsSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(REVISION_VISITS_SQL);
+    logger.info("Revision visits schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Revision visits schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
   }
 }

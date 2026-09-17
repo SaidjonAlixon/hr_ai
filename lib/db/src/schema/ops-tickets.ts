@@ -16,6 +16,8 @@ export const opsTicketsTable = pgTable("ops_tickets", {
   status: text("status").notNull().default("new"),
   createdById: integer("created_by_id"),
   assigneeId: integer("assignee_id"),
+  /** Bo‘lim boshlig‘i kimga yo‘naltirdi */
+  assignedById: integer("assigned_by_id"),
   /** AyTi qabul qilgan vaqt */
   acceptedAt: timestamp("accepted_at", { withTimezone: true }),
   acceptedById: integer("accepted_by_id"),
@@ -25,6 +27,8 @@ export const opsTicketsTable = pgTable("ops_tickets", {
   /** Ariza egasi tasdiqlagan vaqt */
   verifiedAt: timestamp("verified_at", { withTimezone: true }),
   verifiedById: integer("verified_by_id"),
+  /** done | partial | not_done — ariza egasi bahosi */
+  verifyResult: text("verify_result"),
   closedAt: timestamp("closed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),

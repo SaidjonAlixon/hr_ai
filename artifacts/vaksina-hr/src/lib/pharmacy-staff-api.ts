@@ -368,9 +368,18 @@ export function useDismissPharmacyEmployee() {
       qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
       qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
       qc.invalidateQueries({ queryKey: ["/api/staffing/alerts"] });
+      qc.invalidateQueries({ queryKey: ["davomat"] });
+      qc.invalidateQueries({ queryKey: ["davomat-analytics"] });
       qc.invalidateQueries({
-        predicate: (q) =>
-          JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+        predicate: (q) => {
+          const key = JSON.stringify(q.queryKey).toLowerCase();
+          return (
+            key.includes("employee") ||
+            key.includes("davomat") ||
+            key.includes("staff") ||
+            key.includes("pharmacy")
+          );
+        },
       });
     },
   });

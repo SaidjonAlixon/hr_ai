@@ -109,9 +109,12 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
 import {
-  TaskReturnDialog,
-  type TaskReturnPayload,
-} from "@/components/vazifalar/TaskReturnDialog";
+  downloadTasksExcel,
+  downloadTasksPdf,
+  type TaskExportColumnId,
+  type TaskExportPayload,
+  type TaskExportRow,
+} from "@/lib/vazifalar-export";
 
 type BoardCol = "past" | "today" | "progress" | "review" | "completed";
 type BoardView = "kanban" | "list" | "calendar";
@@ -438,8 +441,7 @@ export default function VazifalarPage() {
   const [viewMode, setViewMode] = useState<BoardView>(() => {
     const v = deepLinkParams.get("view");
     if (v === "list" || v === "calendar" || v === "kanban") return v;
-    // Mobil: ro‘yxat — barcha vazifalar bir ko‘rinishda
-    if (typeof window !== "undefined" && window.innerWidth < 768) return "list";
+    // Mobil ham desktop kabi kanban (bo‘limlar) bilan ochilsin
     return "kanban";
   });
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
@@ -914,29 +916,124 @@ export default function VazifalarPage() {
     setEditOpen(true);
   }
 
-  function exportCsv() {
-    const rows = [
-      ["ID", "Title", "Status", "Priority", "Assignee", "Due", "CreatedBy"].join(","),
-      ...filtered.map((t) =>
-        [
-          t.id,
-          `"${(t.title || "").replace(/"/g, '""')}"`,
-          t.status,
-          t.priority,
-          `"${(t.assigneeName || "").replace(/"/g, '""')}"`,
-          t.dueAt || "",
-          `"${(t.createdByName || "").replace(/"/g, '""')}"`,
-        ].join(","),
-      ),
-    ];
-    const blob = new Blob([rows.join("\n")], { type: "text/csv;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `topshiriqlar-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    toast({ title: t("tasks.exportDone") });
+  function formatExportDate(iso: string | null | undefined) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString("uz-UZ", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+    } catch {
+      return iso;
+    }
+  }
+
+  function statusLabelUz(status: Vazifa["status"]) {
+    switch (status) {
+      case "todo":
+        return "Rejalashtirilgan";
+      case "in_progress":
+        return "Jarayonda";
+      case "done":
+        return "Tekshiruvda";
+      case "verified":
+        return "Tasdiqlangan";
+      case "cancelled":
+        return "Bekor";
+      default:
+        return status;
+    }
+  }
+
+  function buildExportPayload(): TaskExportPayload {
+    const stamp = new Date().toISOString().slice(0, 10);
+    const colLabels: Record<BoardCol, string> = {
+      past: t("tasks.overdue"),
+      today: t("tasks.today"),
+      progress: t("tasks.inProgress"),
+      review: t("tasks.review"),
+      completed: t("tasks.done"),
+    };
+    const colColors: Record<BoardCol, string> = {
+      past: "#f43f5e",
+      today: "#f59e0b",
+      progress: "#0ea5e9",
+      review: "#8b5cf6",
+      completed: "#10b981",
+    };
+
+    const rows: TaskExportRow[] = filtered.map((task) => {
+      const col = boardColumnFor(task);
+      return {
+        id: task.id,
+        title: task.title || "—",
+        description: (task.description || "").trim(),
+        column: colLabels[col],
+        columnId: col as TaskExportColumnId,
+        status: statusLabelUz(task.status),
+        statusRaw: task.status,
+        priority: t(PRIORITY_KEYS[task.priority] || PRIORITY_KEYS.normal!),
+        priorityRaw: task.priority,
+        taskType: taskTypeLabel(task.meta?.taskType, t),
+        assignee: task.assigneeName || "—",
+        createdBy: task.createdByName || "—",
+        dueAt: formatExportDate(task.dueAt),
+        completedAt: formatExportDate(task.completedAt),
+        result: (task.completionNote || "").trim(),
+        branchOrDept: cleanPlaceLabel(task.meta?.branchOrDept) || "—",
+        acceptedAt: formatExportDate(task.acceptedAt),
+      };
+    });
+
+    return {
+      title: "Topshiriqlar hisoboti",
+      generatedAt: new Date().toISOString(),
+      stamp,
+      kpi: {
+        total: kpi.total,
+        overdue: kpi.overdue,
+        today: kpi.today,
+        progress: kpi.progress,
+        done: kpi.done,
+      },
+      columns: (Object.keys(colLabels) as BoardCol[]).map((id) => ({
+        id: id as TaskExportColumnId,
+        label: colLabels[id],
+        count: byColumn[id].length,
+        color: colColors[id],
+      })),
+      topPeople: topAssignees.slice(0, 5).map((p) => ({ name: p.name, count: p.count })),
+      rows,
+    };
+  }
+
+  async function exportExcel() {
+    try {
+      toast({ title: "Excel tayyorlanmoqda…" });
+      await downloadTasksExcel(buildExportPayload());
+      toast({ title: t("tasks.exportDone"), description: t("tasks.exportExcelHint") });
+    } catch (e: unknown) {
+      toast({
+        title: e instanceof Error ? e.message : "Excel eksport xatosi",
+        variant: "destructive",
+      });
+    }
+  }
+
+  async function exportPdf() {
+    try {
+      toast({ title: "PDF hisobot tayyorlanmoqda…" });
+      await downloadTasksPdf(buildExportPayload());
+      toast({ title: t("tasks.exportDone"), description: t("tasks.exportPdfHint") });
+    } catch (e: unknown) {
+      toast({
+        title: e instanceof Error ? e.message : "PDF eksport xatosi",
+        variant: "destructive",
+      });
+    }
   }
 
   function openEdit(task: Vazifa) {
@@ -2584,14 +2681,14 @@ export default function VazifalarPage() {
                     icon: FileSpreadsheet,
                     label: t("tasks.quick.excel"),
                     tone: "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10",
-                    onClick: exportCsv,
+                    onClick: () => void exportExcel(),
                   },
                   {
                     key: "pdf",
                     icon: FileText,
                     label: t("tasks.quick.pdf"),
                     tone: "text-rose-600 dark:text-rose-400 hover:bg-rose-500/10",
-                    onClick: () => window.print(),
+                    onClick: () => void exportPdf(),
                   },
                   {
                     key: "tpl",

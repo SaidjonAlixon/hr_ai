@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { FaceScanDialog } from "@/components/FaceScanDialog";
-import { QrScanDialog, primeQrCamera } from "@/components/QrScanDialog";
+import { QrScanDialog } from "@/components/QrScanDialog";
 import { DavomatPremiumView, type PremiumMethod } from "@/components/davomat/DavomatPremiumView";
 import {
   DavomatCoachFinger,
@@ -71,8 +71,12 @@ import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 import { formatSom, useOylikMe } from "@/lib/oylik-api";
 import { workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
 import {
+  gpsEnableTipKey,
   queryCameraPermission,
+  queryGeolocationPermission,
+  rememberGpsGranted,
   requestDavomatPermissions,
+  wasGpsGrantedBefore,
 } from "@/lib/davomat-permissions";
 
 const FACE_SNAP_KEY = "davomat-face-snap";
@@ -930,13 +934,16 @@ export default function DavomatFacePage() {
     void fetchDavomatSite().then(setSite);
   }, []);
 
-  /** Face ID model + kamera keshini fonida isitish — skan ochilganda kutish bo‘lmasin */
+  /** Face ID model — kamera ruxsatini fonida qayta so‘ramaymiz (bir marta yetadi) */
   useEffect(() => {
     preloadFaceModels();
+    void queryCameraPermission().then((state) => {
+      if (state === "granted") setCameraGranted(true);
+    });
+    // Faqat ruxsat holatini tekshirish — getUserMedia yo‘q (dialog qayta chiqmasin)
     void warmCamera("user").then((ok) => {
       if (ok) setCameraGranted(true);
     });
-    void primeQrCamera();
   }, []);
 
   useEffect(() => {
@@ -1052,6 +1059,7 @@ export default function DavomatFacePage() {
         speed,
       };
     });
+    rememberGpsGranted();
     setGpsError(null);
   };
 
@@ -1099,6 +1107,17 @@ export default function DavomatFacePage() {
     compassRef.current = 1;
   }, [onCompass]);
 
+  const gpsErrorMessage = useCallback(
+    (code: string | null | undefined): string => {
+      if (!code) return t("davomat.gpsFailed");
+      if (code === "gps_unsupported") return t("davomat.gpsUnsupported");
+      if (code === "gps_denied") return t("davomat.gpsDenied");
+      if (code === "gps_services_off") return t(gpsEnableTipKey());
+      return t("davomat.gpsFailed");
+    },
+    [t],
+  );
+
   const startWatch = useCallback(() => {
     if (!navigator.geolocation) return;
     if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
@@ -1108,10 +1127,13 @@ export default function DavomatFacePage() {
         setGpsError(
           err.code === 1
             ? t("davomat.gpsDenied")
-            : t("davomat.gpsFailed"),
+            : err.code === 2 || err.code === 3
+              ? t(gpsEnableTipKey())
+              : t("davomat.gpsFailed"),
         );
       },
-      { enableHighAccuracy: true, maximumAge: 500, timeout: 12_000 },
+      // maximumAge — keshdan tez; highAccuracy fonida yangilanadi
+      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 8_000 },
     );
     void startCompass();
   }, [t, startCompass]);
@@ -1123,7 +1145,12 @@ export default function DavomatFacePage() {
     void queryCameraPermission().then((state) => {
       if (state === "granted") setCameraGranted(true);
     });
-    // GPS allaqachon bo‘lsa — kompasni ham yoqamiz
+    // Allaqachon ruxsat berilgan bo‘lsa — tugmasiz darhol kuzatish
+    void queryGeolocationPermission().then((state) => {
+      if (state === "granted" || wasGpsGrantedBefore()) {
+        startWatch();
+      }
+    });
     void startCompass();
     return () => {
       if (watchRef.current != null) navigator.geolocation.clearWatch(watchRef.current);
@@ -1131,13 +1158,13 @@ export default function DavomatFacePage() {
       window.removeEventListener("deviceorientation", onCompass as EventListener, true);
       compassRef.current = null;
     };
-  }, [t, onCompass, startCompass]);
+  }, [t, onCompass, startCompass, startWatch]);
 
   const requestLocationPermission = async () => {
     preloadFaceModels();
     setGpsSharing(true);
     try {
-      const result = await requestDavomatPermissions();
+      const result = await requestDavomatPermissions({ gpsTimeoutMs: 8_000 });
 
       if (result.camera) {
         setCameraGranted(true);
@@ -1149,12 +1176,8 @@ export default function DavomatFacePage() {
         applyGps(result.gps);
         startWatch();
         setGpsError(null);
-      } else if (result.gpsError === "gps_unsupported") {
-        setGpsError(t("davomat.gpsUnsupported"));
-      } else if (result.gpsError === "gps_denied") {
-        setGpsError(t("davomat.gpsDenied"));
       } else if (result.gpsError) {
-        setGpsError(t("davomat.gpsFailed"));
+        setGpsError(gpsErrorMessage(result.gpsError));
       }
 
       if (result.gps && result.camera) {
@@ -1181,7 +1204,7 @@ export default function DavomatFacePage() {
       } else if (!result.gps && result.camera) {
         toast({
           title: t("davomat.gpsNotGranted"),
-          description: result.gpsError === "gps_denied" ? t("davomat.gpsAskAgain") : t("davomat.gpsFailed"),
+          description: gpsErrorMessage(result.gpsError),
           variant: "destructive",
         });
       } else {
@@ -1193,14 +1216,12 @@ export default function DavomatFacePage() {
               : null;
         toast({
           title: t("davomat.gpsNotGranted"),
-          description:
-            camMsg ||
-            (result.gpsError === "gps_denied" ? t("davomat.gpsAskAgain") : t("davomat.gpsFailed")),
+          description: camMsg || gpsErrorMessage(result.gpsError),
           variant: "destructive",
         });
       }
     } finally {
-        setGpsSharing(false);
+      setGpsSharing(false);
     }
   };
 
@@ -1951,7 +1972,9 @@ export default function DavomatFacePage() {
   const mapNeedsGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
   const gpsDenied =
     Boolean(gpsError) &&
-    /ruxsat|denied|sozlama|berilmadi|bermadingiz|ask again/i.test(gpsError || "");
+    /ruxsat|denied|sozlama|berilmadi|bermadingiz|ask again|joylashuv|локац|location|настройк/i.test(
+      gpsError || "",
+    );
   const addressHint =
     dayPlanLine ||
     workplace?.employee?.location ||

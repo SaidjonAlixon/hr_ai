@@ -293,7 +293,7 @@ function requestStatusBadge(status: RequestStatus | string) {
     case 'announced':
       return <Badge className="bg-violet-100 text-violet-800 hover:bg-violet-100">E'lon qilingan</Badge>;
     case 'closed':
-      return <Badge className="bg-gray-800 text-foreground dark:text-white hover:bg-gray-800">Yopilgan</Badge>;
+      return <Badge className="bg-slate-700 text-white hover:bg-slate-700">Yopilgan</Badge>;
     default:
       return <Badge>{status}</Badge>;
   }

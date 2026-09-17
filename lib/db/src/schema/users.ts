@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, timestamp, integer, boolean } from "drizzle-orm/pg-core";
 
 export const usersTable = pgTable("users", {
   id: serial("id").primaryKey(),
@@ -11,5 +11,7 @@ export const usersTable = pgTable("users", {
   status: text("status").notNull().default("active"), // active|vacant|terminated|on_leave
   /** Telegram user id (string) — bot orqali bog‘langan akkaunt */
   telegramId: text("telegram_id"),
+  /** Device security majburiy (enforcementMode=selected) */
+  deviceSecurityEnforced: boolean("device_security_enforced").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -1,6 +1,6 @@
 /**
- * Javob olish — har bir tanlangan sana uchun alohida so‘rov.
- * Xodim yaratadi → koordinator tasdiqlaydi/rad etadi.
+ * Javob olish — 1-koordinator → (8 soat) HR menejer/direktor → yakuniy.
+ * Tasdiqlangan soat/kun davomat jarimasidan ozod.
  */
 import { Router, type IRouter } from "express";
 import { and, desc, eq, inArray, or } from "drizzle-orm";
@@ -26,19 +26,31 @@ const router: IRouter = Router();
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
+const OPEN_STATUSES = ["pending", "pending_coord", "pending_hr"] as const;
 
-function isLead(role: string) {
-  return role === "admin" || isDirectorRole(role) || role === "koordinator" || isHrRole(role);
+function isCoordRole(role: string) {
+  return role === "koordinator";
 }
 
-function todayTashkentYmd() {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+function isHrApprover(role: string) {
+  return (
+    role === "hr_menejer" ||
+    role === "hr_direktor" ||
+    role === "hr" ||
+    role === "hr_kadr_rahbar" ||
+    role === "admin" ||
+    isDirectorRole(role)
+  );
+}
+
+function isLead(role: string) {
+  return role === "admin" || isDirectorRole(role) || isCoordRole(role) || isHrRole(role);
 }
 
 function durationMinutes(fromHm: string, toHm: string): number {
   let a = hmToMinutes(fromHm);
   let b = hmToMinutes(toHm);
-  if (b <= a) b += 24 * 60; // tungi oralik
+  if (b <= a) b += 24 * 60;
   return b - a;
 }
 
@@ -48,6 +60,20 @@ function formatDuration(mins: number): string {
   if (h && m) return `${h} soat ${m} daqiqa`;
   if (h) return `${h} soat`;
   return `${m} daqiqa`;
+}
+
+function fmtDt(d: Date | string | null | undefined) {
+  if (!d) return "—";
+  const x = typeof d === "string" ? new Date(d) : d;
+  if (Number.isNaN(x.getTime())) return "—";
+  return x.toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 async function empByUserId(userId: number) {
@@ -110,7 +136,6 @@ async function resolveShiftForDate(
   };
 }
 
-/** Xodimning koordinator userId sini topish (org daraxti bo‘ylab) */
 async function findCoordinatorUserId(empId: number): Promise<number | null> {
   let currentId: number | null = empId;
   for (let i = 0; i < 6 && currentId; i++) {
@@ -163,10 +188,14 @@ async function coordinatorScopeEmployeeIds(coordEmpId: number): Promise<Set<numb
   return ids;
 }
 
-function serializeRow(
-  r: typeof javobOlishRequestsTable.$inferSelect,
-  empName?: string | null,
-) {
+function normalizeStatus(s: string) {
+  if (s === "pending") return "pending_coord";
+  return s;
+}
+
+function serializeRow(r: typeof javobOlishRequestsTable.$inferSelect, empName?: string | null) {
+  const status = normalizeStatus(r.status);
+  const fullDay = r.fromHm === r.shiftStartHm && r.toHm === r.shiftEndHm;
   return {
     id: r.id,
     employeeId: r.employeeId,
@@ -183,16 +212,23 @@ function serializeRow(
     durationMinutes: r.durationMinutes,
     durationLabel: formatDuration(r.durationMinutes),
     note: r.note,
-    status: r.status,
+    status,
+    kind: fullDay ? "day" : "hour",
     coordinatorUserId: r.coordinatorUserId,
+    coordDecidedById: r.coordDecidedById,
+    coordDecidedAt: r.coordDecidedAt,
+    coordDecisionNote: r.coordDecisionNote,
+    escalatedAt: r.escalatedAt,
+    escalatedNote: r.escalatedNote,
     decidedById: r.decidedById,
     decidedAt: r.decidedAt,
     decisionNote: r.decisionNote,
     createdAt: r.createdAt,
+    createdAtLabel: fmtDt(r.createdAt),
+    escalatedAtLabel: fmtDt(r.escalatedAt),
   };
 }
 
-/** Tanlangan sanalar uchun smena (UI avto-to‘ldirish) */
 router.get("/javob-olish/shifts", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const me = await empByUserId(req.userId!);
   if (!me) {
@@ -217,12 +253,11 @@ router.get("/javob-olish/shifts", requireAuth, async (req: AuthRequest, res): Pr
   res.json({ items });
 });
 
-/** Mening so‘rovlarim + (koordinator) doira so‘rovlari */
 router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
   const me = await empByUserId(req.userId!);
   const statusFilter = req.query.status ? String(req.query.status) : null;
-  const scope = String(req.query.scope || "mine"); // mine | pending | all
+  const scope = String(req.query.scope || "mine");
 
   const people = await db
     .select({ id: employeesTable.id, fullName: employeesTable.fullName })
@@ -230,15 +265,35 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
   const nameById = new Map(people.map((p) => [p.id, p.fullName]));
 
   let rows: (typeof javobOlishRequestsTable.$inferSelect)[] = [];
+  let canDecide = false;
 
-  if (scope === "pending" && (role === "koordinator" || isLead(role))) {
-    let q = db.select().from(javobOlishRequestsTable).where(eq(javobOlishRequestsTable.status, "pending"));
-    rows = await q.orderBy(desc(javobOlishRequestsTable.createdAt));
-    if (role === "koordinator" && me) {
+  if (scope === "pending") {
+    if (role === "admin" || isDirectorRole(role)) {
+      rows = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(inArray(javobOlishRequestsTable.status, ["pending", "pending_coord", "pending_hr"]))
+        .orderBy(desc(javobOlishRequestsTable.createdAt));
+      canDecide = true;
+    } else if (isCoordRole(role) && me) {
+      rows = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(inArray(javobOlishRequestsTable.status, ["pending", "pending_coord"]))
+        .orderBy(desc(javobOlishRequestsTable.createdAt));
       const scopeIds = await coordinatorScopeEmployeeIds(me.id);
-      rows = rows.filter(
-        (r) => scopeIds.has(r.employeeId) || r.coordinatorUserId === req.userId,
-      );
+      rows = rows.filter((r) => scopeIds.has(r.employeeId) || r.coordinatorUserId === req.userId);
+      canDecide = true;
+    } else if (isHrApprover(role)) {
+      rows = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(eq(javobOlishRequestsTable.status, "pending_hr"))
+        .orderBy(desc(javobOlishRequestsTable.createdAt));
+      canDecide = true;
+    } else {
+      res.status(403).json({ error: "Ruxsat yo‘q" });
+      return;
     }
   } else if (scope === "all" && isLead(role)) {
     rows = await db
@@ -246,12 +301,11 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       .from(javobOlishRequestsTable)
       .orderBy(desc(javobOlishRequestsTable.createdAt))
       .limit(200);
-    if (role === "koordinator" && me) {
+    if (isCoordRole(role) && me) {
       const scopeIds = await coordinatorScopeEmployeeIds(me.id);
-      rows = rows.filter(
-        (r) => scopeIds.has(r.employeeId) || r.coordinatorUserId === req.userId,
-      );
+      rows = rows.filter((r) => scopeIds.has(r.employeeId) || r.coordinatorUserId === req.userId);
     }
+    canDecide = isCoordRole(role) || isHrApprover(role);
   } else {
     if (!me) {
       res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
@@ -269,14 +323,11 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
 
   res.json({
     items: rows.map((r) => serializeRow(r, nameById.get(r.employeeId))),
-    canDecide: role === "koordinator" || isLead(role),
+    canDecide,
+    roleScope: isHrApprover(role) ? "hr" : isCoordRole(role) ? "coord" : "none",
   });
 });
 
-/**
- * Ko‘p kunlik yuborish — har sana alohida record.
- * Sodda format: { dates: [...], note } — soat kerak emas, smena avto, bitta izoh.
- */
 router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
   const me = await empByUserId(req.userId!);
@@ -309,7 +360,7 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
 
   const batchNote = sharedNote || String(daysRaw[0]?.note || "").trim();
   if (!batchNote || batchNote.length < 3) {
-    res.status(400).json({ error: "Izoh majburiy — «Nima sababdan javob olmoqchisiz?»" });
+    res.status(400).json({ error: "Izoh majburiy — sababni yozing" });
     return;
   }
   if (batchNote.length > 800) {
@@ -340,7 +391,6 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     seen.add(workDate);
 
     const shift = await resolveShiftForDate(me, workDate, role);
-    // Soat ixtiyoriy — bo‘lmasa to‘liq smena oynasi
     let fromHm = String(raw.fromHm || "").trim() || shift.shiftStartHm;
     let toHm = String(raw.toHm || "").trim() || shift.shiftEndHm;
     if (!HM.test(fromHm) || !HM.test(toHm)) {
@@ -358,14 +408,13 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     });
   }
 
-  // Pending takrorini tekshirish
   const existing = await db
     .select({ workDate: javobOlishRequestsTable.workDate })
     .from(javobOlishRequestsTable)
     .where(
       and(
         eq(javobOlishRequestsTable.employeeId, me.id),
-        eq(javobOlishRequestsTable.status, "pending"),
+        inArray(javobOlishRequestsTable.status, [...OPEN_STATUSES]),
         inArray(
           javobOlishRequestsTable.workDate,
           prepared.map((p) => p.workDate),
@@ -374,7 +423,7 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     );
   if (existing.length) {
     res.status(409).json({
-      error: `Bu sanalarda allaqachon kutilayotgan so‘rov bor: ${existing.map((e) => e.workDate).join(", ")}`,
+      error: `Bu sanalarda allaqachon ochiq so‘rov bor: ${existing.map((e) => e.workDate).join(", ")}`,
     });
     return;
   }
@@ -398,7 +447,7 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
         toHm: p.toHm,
         durationMinutes: p.durationMinutes,
         note: p.note,
-        status: "pending",
+        status: "pending_coord",
         coordinatorUserId: coordUserId,
       })
       .returning();
@@ -407,7 +456,10 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
 
   const count = created.length;
   const datesTxt = prepared.map((p) => p.workDate).join(", ");
-  const notifyText = `${me.fullName}: ${count} ta javob olish so‘rovi (${datesTxt}). Har bir kunni alohida tasdiqlang.`;
+  const timeTxt = prepared
+    .map((p) => `${p.workDate} ${p.fromHm}–${p.toHm}`)
+    .join("; ");
+  const notifyText = `${me.fullName}: javob olish so‘rovi (${count} ta). ${timeTxt}. Sabab: ${batchNote}. Yuborilgan: ${fmtDt(new Date())}. 8 soat ichida javob bering.`;
 
   if (coordUserId) {
     await notifyUser({
@@ -418,8 +470,8 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     });
   } else {
     await notifyByRoles({
-      roles: ["koordinator", "admin"],
-      text: notifyText,
+      roles: ["koordinator", "hr_menejer", "hr_direktor", "admin"],
+      text: `${notifyText} (1-koordinator topilmadi — HR ko‘rib chiqing)`,
       type: "javob_olish",
       linkUrl: "/javob-olish",
     });
@@ -428,7 +480,7 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
   res.status(201).json({
     ok: true,
     count,
-    message: `${count} ta kun uchun javob olish so‘rovi yuborildi.`,
+    message: `${count} ta kun uchun so‘rov 1-koordinatorga yuborildi.`,
     items: created.map((r) => serializeRow(r, me.fullName)),
   });
 });
@@ -453,8 +505,9 @@ router.post("/javob-olish/:id/cancel", requireAuth, async (req: AuthRequest, res
     res.status(404).json({ error: "So‘rov topilmadi" });
     return;
   }
-  if (row.status !== "pending") {
-    res.status(400).json({ error: "Faqat kutilayotgan so‘rovni bekor qilish mumkin" });
+  const st = normalizeStatus(row.status);
+  if (st !== "pending_coord" && st !== "pending_hr") {
+    res.status(400).json({ error: "Faqat ochiq so‘rovni bekor qilish mumkin" });
     return;
   }
   if (!me || row.employeeId !== me.id) {
@@ -472,13 +525,9 @@ router.post("/javob-olish/:id/cancel", requireAuth, async (req: AuthRequest, res
 async function decide(
   req: AuthRequest,
   res: import("express").Response,
-  status: "approved" | "rejected",
+  decision: "approved" | "rejected",
 ): Promise<void> {
   const role = req.userRole || "";
-  if (!(role === "koordinator" || isLead(role))) {
-    res.status(403).json({ error: "Faqat koordinator tasdiqlashi / rad etishi mumkin" });
-    return;
-  }
   const id = Number(req.params.id);
   const decisionNote = req.body?.note ? String(req.body.note).slice(0, 400) : null;
   const [row] = await db
@@ -490,53 +539,131 @@ async function decide(
     res.status(404).json({ error: "So‘rov topilmadi" });
     return;
   }
-  if (row.status !== "pending") {
-    res.status(400).json({ error: "So‘rov allaqachon yopilgan" });
+
+  const status = normalizeStatus(row.status);
+  const now = new Date();
+
+  /** 1-bosqich: koordinator */
+  if (status === "pending_coord") {
+    if (!(isCoordRole(role) || role === "admin" || isDirectorRole(role))) {
+      res.status(403).json({ error: "Avval 1-koordinator javob beradi" });
+      return;
+    }
+    if (isCoordRole(role)) {
+      const me = await empByUserId(req.userId!);
+      if (me) {
+        const scope = await coordinatorScopeEmployeeIds(me.id);
+        if (!scope.has(row.employeeId) && row.coordinatorUserId !== req.userId) {
+          res.status(403).json({ error: "Bu so‘rov sizning doirangizda emas" });
+          return;
+        }
+      }
+    }
+
+    if (decision === "rejected") {
+      const [updated] = await db
+        .update(javobOlishRequestsTable)
+        .set({
+          status: "rejected",
+          coordDecidedById: req.userId!,
+          coordDecidedAt: now,
+          coordDecisionNote: decisionNote,
+          decidedById: req.userId!,
+          decidedAt: now,
+          decisionNote,
+          updatedAt: now,
+        })
+        .where(eq(javobOlishRequestsTable.id, id))
+        .returning();
+      if (row.userId) {
+        await notifyUser({
+          userId: row.userId,
+          text: `${row.workDate} javob olish so‘rovingiz koordinator tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+          type: "javob_olish_decision",
+          linkUrl: "/javob-olish",
+        });
+      }
+      const [emp] = await db
+        .select({ fullName: employeesTable.fullName })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, row.employeeId))
+        .limit(1);
+      res.json({ ok: true, item: serializeRow(updated, emp?.fullName) });
+      return;
+    }
+
+    // Koordinator tasdiqladi → HR yakuniy
+    const [updated] = await db
+      .update(javobOlishRequestsTable)
+      .set({
+        status: "pending_hr",
+        coordDecidedById: req.userId!,
+        coordDecidedAt: now,
+        coordDecisionNote: decisionNote,
+        updatedAt: now,
+      })
+      .where(eq(javobOlishRequestsTable.id, id))
+      .returning();
+
+    const [emp] = await db
+      .select({ fullName: employeesTable.fullName })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, row.employeeId))
+      .limit(1);
+
+    await notifyByRoles({
+      roles: ["hr_menejer", "hr_direktor", "admin"],
+      text: `${emp?.fullName || "Xodim"}: koordinator tasdiqladi — HR yakuniy ruxsat kerak. ${row.workDate} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. Yuborilgan: ${fmtDt(row.createdAt)}.`,
+      type: "javob_olish",
+      linkUrl: "/javob-olish",
+    });
+
+    res.json({ ok: true, item: serializeRow(updated, emp?.fullName) });
     return;
   }
 
-  if (role === "koordinator") {
-    const me = await empByUserId(req.userId!);
-    if (me) {
-      const scope = await coordinatorScopeEmployeeIds(me.id);
-      if (!scope.has(row.employeeId) && row.coordinatorUserId !== req.userId) {
-        res.status(403).json({ error: "Bu so‘rov sizning doirangizda emas" });
-        return;
-      }
+  /** 2-bosqich: HR */
+  if (status === "pending_hr") {
+    if (!isHrApprover(role)) {
+      res.status(403).json({ error: "Yakuniy ruxsatni HR beradi" });
+      return;
     }
+
+    const [updated] = await db
+      .update(javobOlishRequestsTable)
+      .set({
+        status: decision === "approved" ? "approved" : "rejected",
+        decidedById: req.userId!,
+        decidedAt: now,
+        decisionNote,
+        updatedAt: now,
+      })
+      .where(eq(javobOlishRequestsTable.id, id))
+      .returning();
+
+    if (row.userId) {
+      await notifyUser({
+        userId: row.userId,
+        text:
+          decision === "approved"
+            ? `${row.workDate} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (HR). Bu vaqt/kun jarima qilinmaydi.`
+            : `${row.workDate} javob olish so‘rovingiz HR tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+        type: "javob_olish_decision",
+        linkUrl: "/javob-olish",
+      });
+    }
+
+    const [emp] = await db
+      .select({ fullName: employeesTable.fullName })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, row.employeeId))
+      .limit(1);
+
+    res.json({ ok: true, item: serializeRow(updated, emp?.fullName) });
+    return;
   }
 
-  const [updated] = await db
-    .update(javobOlishRequestsTable)
-    .set({
-      status,
-      decidedById: req.userId!,
-      decidedAt: new Date(),
-      decisionNote,
-      updatedAt: new Date(),
-    })
-    .where(eq(javobOlishRequestsTable.id, id))
-    .returning();
-
-  if (row.userId) {
-    await notifyUser({
-      userId: row.userId,
-      text:
-        status === "approved"
-          ? `${row.workDate} kunidagi javob olish so‘rovingiz tasdiqlandi (${row.fromHm}–${row.toHm}).`
-          : `${row.workDate} kunidagi javob olish so‘rovingiz rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
-      type: "javob_olish_decision",
-      linkUrl: "/javob-olish",
-    });
-  }
-
-  const [emp] = await db
-    .select({ fullName: employeesTable.fullName })
-    .from(employeesTable)
-    .where(eq(employeesTable.id, row.employeeId))
-    .limit(1);
-
-  res.json({ ok: true, item: serializeRow(updated, emp?.fullName) });
+  res.status(400).json({ error: "So‘rov allaqachon yopilgan" });
 }
 
 export default router;

@@ -31,8 +31,10 @@ export type OpsTicket = {
   status: string;
   createdById: number | null;
   assigneeId: number | null;
+  assignedById?: number | null;
   createdByName?: string | null;
   assigneeName?: string | null;
+  assignedByName?: string | null;
   acceptedAt?: string | null;
   acceptedById?: number | null;
   acceptedByName?: string | null;
@@ -42,22 +44,28 @@ export type OpsTicket = {
   verifiedAt?: string | null;
   verifiedById?: number | null;
   verifiedByName?: string | null;
+  verifyResult?: string | null;
   closedAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
 
+export type OpsMeta = {
+  categories: Array<{ value: string; label: string }>;
+  staff: Array<{ id: number; fullName: string }>;
+  canManage: boolean;
+  canCreate: boolean;
+  canViewAll: boolean;
+  canAssign: boolean;
+  isDeptHead: boolean;
+  formMode: "pharmacy" | "office" | "staff";
+  myBranch: string | null;
+};
+
 export function useOpsMeta(dept: "it" | "texnik") {
   return useQuery({
     queryKey: ["ops", dept, "meta"],
-    queryFn: () =>
-      json<{
-        categories: Array<{ value: string; label: string }>;
-        staff: Array<{ id: number; fullName: string }>;
-        canManage: boolean;
-        canCreate: boolean;
-        canViewAll: boolean;
-      }>(`/api/ops-tickets/meta?dept=${dept}`),
+    queryFn: () => json<OpsMeta>(`/api/ops-tickets/meta?dept=${dept}`),
   });
 }
 

@@ -1,8 +1,7 @@
 import React, { useState } from 'react';
-import { useLogin } from '@workspace/api-client-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLocation } from 'wouter';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, ShieldAlert, ShieldQuestion } from 'lucide-react';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -15,15 +14,26 @@ import { LanguageSwitcher } from '../components/language-switcher';
 import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import { useI18n } from '../i18n/I18nProvider';
-
 import { isStajyor, isLimitedOfficeStaffRole } from '../lib/roles';
+import { loginWithDevice, requestDeviceChange } from '../lib/device-security-api';
+
+type DeviceGate =
+  | null
+  | {
+      code: 'DEVICE_PENDING' | 'DEVICE_NOT_AUTHORIZED';
+      message: string;
+      deviceName?: string;
+      canRequestChange?: boolean;
+    };
 
 export default function Login() {
   const [login, setLogin] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const { mutate, isPending } = useLogin();
+  const [pending, setPending] = useState(false);
+  const [gate, setGate] = useState<DeviceGate>(null);
+  const [requesting, setRequesting] = useState(false);
   const { switchToUser } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
@@ -42,7 +52,7 @@ export default function Login() {
     setLocation('/dashboard');
   };
 
-  const handleLogin = (e?: React.FormEvent) => {
+  const handleLogin = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const loginTrim = compactCredential(login);
     const passwordTrim = compactCredential(password);
@@ -50,98 +60,147 @@ export default function Login() {
     if (passwordTrim !== password) setPassword(passwordTrim);
     if (!loginTrim || !passwordTrim) return;
 
-    mutate({ data: { login: loginTrim, password: passwordTrim } }, {
-      onSuccess: (data) => {
-        goAfterLogin(data.user);
-      },
-      onError: (err) => {
-        const data = (err as { data?: { error?: string }; message?: string } | undefined)?.data;
-        const msg =
-          (typeof data?.error === 'string' && data.error) ||
-          (typeof (err as { message?: string })?.message === 'string'
-            ? String((err as { message?: string }).message).replace(/^HTTP \d+ [^:]+:\s*/, '')
-            : null) ||
-          t('login.errorDefault');
+    setPending(true);
+    setGate(null);
+    try {
+      const data = await loginWithDevice(loginTrim, passwordTrim);
+      goAfterLogin(data.user);
+    } catch (err) {
+      const data = (err as { data?: Record<string, unknown>; code?: string })?.data || {};
+      const code = String((err as { code?: string }).code || data.code || '');
+      const message = String(
+        data.message || data.error || (err as Error).message || t('login.errorDefault'),
+      );
+      if (code === 'DEVICE_PENDING' || code === 'DEVICE_NOT_AUTHORIZED') {
+        setGate({
+          code: code as 'DEVICE_PENDING' | 'DEVICE_NOT_AUTHORIZED',
+          message,
+          deviceName: (data.device as { name?: string } | undefined)?.name,
+          canRequestChange: Boolean(data.canRequestChange) || code === 'DEVICE_NOT_AUTHORIZED',
+        });
+      } else {
         toast({
           title: t('login.errorTitle'),
-          description: msg,
+          description: message,
           variant: 'destructive',
         });
       }
-    });
+    } finally {
+      setPending(false);
+    }
   };
 
-  const demoAccounts = [
-    { label: "Admin", login: "admin", pass: "admin123" },
-    { label: "Rekruter", login: "recruiter1", pass: "pass123" },
-    { label: "HR", login: "hr1", pass: "pass123" },
-    { label: "Trener", login: "trainer1", pass: "pass123" },
-    { label: "Direktor", login: "director1", pass: "pass123" },
-    { label: "Bo'lim boshlig'i", login: "dept_head1", pass: "pass123" },
-    { label: "Mudir", login: "mudir1", pass: "pass123" },
-    { label: "Koordinator", login: "koordinator1", pass: "pass123" },
-    { label: "Farmasevt", login: "farmasevt1", pass: "pass123" },
-    { label: "Stajyor", login: "stajyor1", pass: "pass123" },
-  ];
+  const handleRequestChange = async () => {
+    setRequesting(true);
+    try {
+      await requestDeviceChange('Login sahifasidan so‘rov');
+      toast({
+        title: 'So‘rov yuborildi',
+        description: 'Administrator tasdig‘ini kuting.',
+      });
+    } catch (err) {
+      toast({
+        title: 'Yuborilmadi',
+        description: (err as Error).message,
+        variant: 'destructive',
+      });
+    } finally {
+      setRequesting(false);
+    }
+  };
+
+  if (gate) {
+    const pendingGate = gate.code === 'DEVICE_PENDING';
+    return (
+      <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-50 to-slate-100 p-4 dark:from-slate-950 dark:to-slate-900">
+        <div className="absolute right-4 top-4 flex gap-2">
+          <LanguageSwitcher />
+          <ThemeToggle />
+        </div>
+        <Card className="w-full max-w-md border-2 shadow-lg">
+          <CardHeader className="space-y-3 text-center">
+            <div
+              className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${
+                pendingGate ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+              }`}
+            >
+              {pendingGate ? <ShieldQuestion className="h-7 w-7" /> : <ShieldAlert className="h-7 w-7" />}
+            </div>
+            <CardTitle className="text-xl">
+              {pendingGate ? 'Yangi qurilma' : 'Qurilma tasdiqlanmagan'}
+            </CardTitle>
+            <CardDescription className="text-sm leading-relaxed">{gate.message}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {gate.deviceName ? (
+              <div className="rounded-lg border bg-muted/40 px-3 py-2">
+                <div className="text-xs text-muted-foreground">Qurilma</div>
+                <div className="font-medium">{gate.deviceName}</div>
+              </div>
+            ) : null}
+            {pendingGate ? (
+              <p className="text-center text-xs text-muted-foreground">
+                Status: Tasdiqlash kutilmoqda — admin panelga bildirishnoma yuborildi.
+              </p>
+            ) : (
+              <p className="text-center text-xs text-muted-foreground">
+                Dashboard, QR va Face ID ochilmaydi. Asosiy qurilmangizdan kiring.
+              </p>
+            )}
+          </CardContent>
+          <CardFooter className="flex flex-col gap-2">
+            {gate.canRequestChange ? (
+              <Button
+                className="w-full"
+                variant="secondary"
+                disabled={requesting}
+                onClick={() => void handleRequestChange()}
+              >
+                Qurilmani almashtirish so‘rash
+              </Button>
+            ) : null}
+            <Button className="w-full" variant="outline" onClick={() => setGate(null)}>
+              Orqaga
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="absolute right-4 top-4 safe-top z-20 flex items-center gap-2">
+    <div className="relative flex min-h-screen items-center justify-center bg-[#eef1f5] p-4 dark:from-slate-950 dark:to-slate-900 dark:bg-gradient-to-br">
+      <div className="absolute right-4 top-4 flex gap-2">
         <LanguageSwitcher />
         <ThemeToggle />
       </div>
-
-      {HELP_ASSISTANT_ENABLED ? (
-        <>
-          <button
-            type="button"
-            onClick={() => setHelpOpen(true)}
-            className="fixed z-40 flex h-16 w-16 items-center justify-center rounded-full bg-violet-600 text-white shadow-xl shadow-violet-600/40 ring-[6px] ring-violet-500/25 transition hover:bg-violet-700 hover:scale-105 active:scale-95 sm:h-[4.5rem] sm:w-[4.5rem]"
-            style={{
-              right: "max(1.25rem, env(safe-area-inset-right))",
-              bottom: "max(1.5rem, env(safe-area-inset-bottom))",
-            }}
-            aria-label={t('login.helpAria')}
-            title={t('common.help')}
-          >
-            <OperatorHeadsetIcon className="h-9 w-9 sm:h-10 sm:w-10" />
-          </button>
-
-          <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} variant="login" />
-        </>
-      ) : null}
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <img
-            src={`${import.meta.env.BASE_URL}logo3d.png`}
-            alt="VAKSINA MED HR"
-            className="mx-auto h-28 w-auto max-w-full object-contain sm:h-36"
-          />
-        </div>
-
-        <Card className="border-t-4 border-t-primary shadow-xl">
-          <CardHeader>
-            <CardTitle>{t('login.title')}</CardTitle>
-            <CardDescription>
-              {t('login.subtitle')}
-            </CardDescription>
+      <div className="flex w-full max-w-md flex-col items-center gap-5">
+        <img
+          src={`${import.meta.env.BASE_URL}logo3d-light.png`}
+          alt="VAKSINA MED HR"
+          width={800}
+          height={220}
+          decoding="async"
+          className="h-28 w-auto max-w-[min(100%,420px)] object-contain sm:h-32"
+        />
+        <Card className="w-full border-t-[3px] border-t-[#1e3a8a] shadow-lg dark:border-t-primary">
+          <CardHeader className="space-y-1 text-center">
+            <CardTitle className="text-2xl font-bold tracking-tight text-[#1e3a8a] dark:text-foreground">
+              {t('login.title')}
+            </CardTitle>
+            <CardDescription>{t('login.subtitle')}</CardDescription>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
+          <form onSubmit={(e) => void handleLogin(e)}>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="login">{t('login.login')}</Label>
-                <Input 
-                  id="login" 
-                  value={login} 
-                  onChange={(e) => setLogin(compactCredential(e.target.value))}
-                  onBlur={() => setLogin((v) => compactCredential(v))}
-                  onPaste={(e) => {
-                    e.preventDefault();
-                    setLogin(compactCredential(e.clipboardData.getData('text')));
-                  }}
-                  placeholder={t('login.loginPlaceholder')}
+                <Input
+                  id="login"
                   autoComplete="username"
-                  required 
+                  value={login}
+                  onChange={(e) => setLogin(e.target.value)}
+                  placeholder={t('login.loginPlaceholder')}
+                  className="bg-slate-50 dark:bg-background"
                 />
               </div>
               <div className="space-y-2">
@@ -150,73 +209,43 @@ export default function Login() {
                   <Input
                     id="password"
                     type={showPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(compactCredential(e.target.value))}
-                    onBlur={() => setPassword((v) => compactCredential(v))}
-                    onPaste={(e) => {
-                      e.preventDefault();
-                      setPassword(compactCredential(e.clipboardData.getData('text')));
-                    }}
-                    placeholder={t('login.passwordPlaceholder')}
-                    className="pr-10"
                     autoComplete="current-password"
-                    required
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={t('login.passwordPlaceholder')}
+                    className="bg-slate-50 pr-10 dark:bg-background"
                   />
                   <button
                     type="button"
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-muted"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground"
                     onClick={() => setShowPassword((v) => !v)}
-                    aria-label={showPassword ? t('login.hidePassword') : t('login.showPassword')}
+                    aria-label="Toggle password"
                   >
-                    {showPassword ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
+                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                   </button>
                 </div>
               </div>
-              <Button type="submit" className="w-full" disabled={isPending}>
-                {isPending ? t('login.submitting') : t('login.submit')}
+            </CardContent>
+            <CardFooter className="flex flex-col gap-3">
+              <Button type="submit" className="w-full bg-[#1e3a8a] hover:bg-[#1e3a8a]/90" disabled={pending}>
+                {pending ? t('login.submitting') : t('login.submit')}
               </Button>
-            </form>
-          </CardContent>
-          
-          {import.meta.env.DEV && (
-            <CardFooter className="flex flex-col items-stretch pt-0 border-t mt-6 bg-background/50">
-              <div className="text-sm font-medium text-center text-gray-500 py-4">
-                {t('login.demoTitle')}
-              </div>
-              <div className="grid grid-cols-2 gap-2 pb-4">
-                {demoAccounts.map((acc) => (
-                  <Button
-                    key={acc.login}
-                    variant="outline"
-                    size="sm"
-                    className="justify-start text-xs h-8"
-                    onClick={() => {
-                      setLogin(acc.login);
-                      setPassword(acc.pass);
-                      setTimeout(() => {
-                        mutate(
-                          { data: { login: acc.login, password: acc.pass } },
-                          {
-                            onSuccess: (data) => {
-                              goAfterLogin(data.user);
-                            },
-                          },
-                        );
-                      }, 100);
-                    }}
-                  >
-                    {acc.label}
-                  </Button>
-                ))}
-              </div>
+              {HELP_ASSISTANT_ENABLED ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  className="gap-2 text-muted-foreground"
+                  onClick={() => setHelpOpen(true)}
+                >
+                  <OperatorHeadsetIcon className="h-4 w-4" />
+                  {t('login.help')}
+                </Button>
+              ) : null}
             </CardFooter>
-          )}
+          </form>
         </Card>
       </div>
+      <HelpAssistantDialog open={helpOpen} onOpenChange={setHelpOpen} />
     </div>
   );
 }

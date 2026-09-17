@@ -96,9 +96,66 @@ export const revisionWatchlistTable = pgTable("revision_watchlist", {
 export const revisionAuditLogTable = pgTable("revision_audit_log", {
   id: serial("id").primaryKey(),
   documentId: integer("document_id"),
+  visitId: integer("visit_id"),
+  entityType: text("entity_type"),
+  entityId: integer("entity_id"),
   userId: integer("user_id"),
   userName: text("user_name"),
+  userRole: text("user_role"),
   action: text("action").notNull(),
   detail: text("detail"),
+  reason: text("reason"),
+  oldValue: jsonb("old_value").$type<Record<string, unknown> | null>(),
+  newValue: jsonb("new_value").$type<Record<string, unknown> | null>(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+/**
+ * Filial reviziya sikli / tashriflari.
+ * Har bir yozuv alohida moliyaviy natija — eski undirish yangi reviziyaga o‘tmaydi.
+ * branchId = employees.id (orgRole=manager).
+ */
+export type RevisionExtraDoc = { url: string; name?: string };
+
+export const revisionVisitsTable = pgTable("revision_visits", {
+  id: serial("id").primaryKey(),
+  branchId: integer("branch_id").notNull(),
+  branchName: text("branch_name").notNull(),
+  /** Rejalashtirilgan / o‘tkazilgan sana YYYY-MM-DD */
+  revisionDate: text("revision_date"),
+  scheduledDate: text("scheduled_date"),
+  scheduledStartTime: text("scheduled_start_time"),
+  scheduledEndTime: text("scheduled_end_time"),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  completedById: integer("completed_by_id"),
+  durationMinutes: integer("duration_minutes"),
+  /** users.id — biriktirilgan revizor */
+  assignedEmployeeId: integer("assigned_employee_id"),
+  assignedEmployeeName: text("assigned_employee_name"),
+  /** ASSIGNED | ACCEPTED | IN_PROGRESS | COMPLETED | CANCELLED */
+  workflowStatus: text("workflow_status").notNull().default("ASSIGNED"),
+  /** normal | high | urgent */
+  priority: text("priority").notNull().default("normal"),
+  /** so‘m, butun son */
+  shortageAmount: integer("shortage_amount").notNull().default(0),
+  excessAmount: integer("excess_amount").notNull().default(0),
+  collectedAmount: integer("collected_amount").notNull().default(0),
+  remainingAmount: integer("remaining_amount").notNull().default(0),
+  actNumber: text("act_number"),
+  actUrl: text("act_url"),
+  receiptUrl: text("receipt_url"),
+  extraDocs: jsonb("extra_docs").$type<RevisionExtraDoc[]>().notNull().default([]),
+  notes: text("notes"),
+  responsibleName: text("responsible_name"),
+  /** Avtomatik hisoblangan keyingi sana */
+  nextRevisionDate: text("next_revision_date"),
+  /** Faqat override permission bilan */
+  nextRevisionDateOverride: text("next_revision_date_override"),
+  /** 3 | 4 | 6 — SIKL hisobi uchun */
+  cycleMonths: integer("cycle_months"),
+  createdById: integer("created_by_id"),
+  updatedById: integer("updated_by_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

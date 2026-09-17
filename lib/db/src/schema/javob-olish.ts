@@ -2,7 +2,11 @@ import { pgTable, text, serial, timestamp, integer, index } from "drizzle-orm/pg
 
 /**
  * Javob olish so‘rovlari — HAR BIR SANA alohida yozuv.
- * status: pending | approved | rejected | cancelled
+ * status:
+ *   pending_coord — 1-koordinator kutmoqda
+ *   pending_hr — HR kutmoqda (koordinator tasdiqlagan yoki 8 soat escalate)
+ *   approved — yakuniy (HR)
+ *   rejected | cancelled
  */
 export const javobOlishRequestsTable = pgTable(
   "javob_olish_requests",
@@ -11,20 +15,25 @@ export const javobOlishRequestsTable = pgTable(
     employeeId: integer("employee_id").notNull(),
     userId: integer("user_id"),
     workDate: text("work_date").notNull(), // YYYY-MM-DD
-    /** Snapshot: smena oynasi */
     shiftType: text("shift_type"),
     shiftLabel: text("shift_label"),
     shiftStartHm: text("shift_start_hm").notNull(),
     shiftEndHm: text("shift_end_hm").notNull(),
     shiftOvernight: integer("shift_overnight").notNull().default(0),
-    /** Javob olish oralig‘i */
     fromHm: text("from_hm").notNull(),
     toHm: text("to_hm").notNull(),
     durationMinutes: integer("duration_minutes").notNull().default(0),
-    /** Majburiy izoh — kun uchun alohida */
     note: text("note").notNull(),
-    status: text("status").notNull().default("pending"),
+    status: text("status").notNull().default("pending_coord"),
     coordinatorUserId: integer("coordinator_user_id"),
+    /** Koordinator qarori */
+    coordDecidedById: integer("coord_decided_by_id"),
+    coordDecidedAt: timestamp("coord_decided_at", { withTimezone: true }),
+    coordDecisionNote: text("coord_decision_note"),
+    /** 8 soat ichida javob yo‘q → escalate */
+    escalatedAt: timestamp("escalated_at", { withTimezone: true }),
+    escalatedNote: text("escalated_note"),
+    /** Yakuniy qaror (HR) */
     decidedById: integer("decided_by_id"),
     decidedAt: timestamp("decided_at", { withTimezone: true }),
     decisionNote: text("decision_note"),

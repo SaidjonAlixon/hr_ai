@@ -149,6 +149,16 @@ export async function markStaffingSearchingByRequestId(requestId: number): Promi
       .set({ employmentStatus: "searching", workflowStatus: "confirmed" })
       .where(eq(staffingAlertsTable.id, alert.id));
 
+    /** Bo‘shatilgan xodim kartasini qayta «qidirilmoqda» qilmaymiz */
+    const [emp] = await db
+      .select({ employmentStatus: employeesTable.employmentStatus })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, alert.employeeId))
+      .limit(1);
+    if (emp && (emp.employmentStatus === "dismissed" || emp.employmentStatus === "closed")) {
+      continue;
+    }
+
     await db
       .update(employeesTable)
       .set({ employmentStatus: "searching" })
@@ -186,6 +196,16 @@ export async function resolveStaffingHireByVacancyId(vacancyId: number): Promise
       .update(staffingAlertsTable)
       .set({ workflowStatus: "closed", employmentStatus: "working" })
       .where(eq(staffingAlertsTable.id, alert.id));
+
+    /** Bo‘shatilgan yozuvni qayta «ishlamoqda» qilib tiriltirmaymiz */
+    const [emp] = await db
+      .select({ employmentStatus: employeesTable.employmentStatus })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, alert.employeeId))
+      .limit(1);
+    if (emp && (emp.employmentStatus === "dismissed" || emp.employmentStatus === "closed")) {
+      continue;
+    }
 
     await db
       .update(employeesTable)

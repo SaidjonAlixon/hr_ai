@@ -25,11 +25,19 @@ export type JavobRequestItem = {
   durationLabel: string;
   note: string;
   status: string;
+  kind?: "day" | "hour";
   coordinatorUserId: number | null;
+  coordDecidedById?: number | null;
+  coordDecidedAt?: string | null;
+  coordDecisionNote?: string | null;
+  escalatedAt?: string | null;
+  escalatedNote?: string | null;
   decidedById: number | null;
   decidedAt?: string | null;
   decisionNote: string | null;
   createdAt?: string;
+  createdAtLabel?: string;
+  escalatedAtLabel?: string;
 };
 
 export type JavobDayInput = {
@@ -62,9 +70,11 @@ export function fetchJavobShifts(dates: string[]) {
 }
 
 export function fetchJavobRequests(scope: "mine" | "pending" | "all" = "mine") {
-  return apiJson<{ items: JavobRequestItem[]; canDecide: boolean }>(
-    `/javob-olish?scope=${scope}`,
-  );
+  return apiJson<{
+    items: JavobRequestItem[];
+    canDecide: boolean;
+    roleScope?: "coord" | "hr" | "none";
+  }>(`/javob-olish?scope=${scope}`);
 }
 
 export function submitJavobRequests(body: { dates: string[]; note: string } | JavobDayInput[]) {

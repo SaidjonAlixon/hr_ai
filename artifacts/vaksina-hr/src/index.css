@@ -1221,10 +1221,64 @@
 }
 
 .dept-form {
-  @apply rounded-2xl border border-border/80 bg-card p-5 shadow-sm;
+  @apply rounded-3xl border border-border/70 bg-card p-5 shadow-sm sm:p-7;
 }
 .dark .dept-form {
   @apply border-slate-700/55 bg-slate-900/60 shadow-lg;
+}
+
+.dept-form-head {
+  @apply mb-5 border-b border-border/60 pb-4;
+}
+
+.dept-form-title {
+  @apply text-lg font-semibold tracking-tight text-foreground;
+}
+
+.dept-form-hint {
+  @apply mt-1 text-sm text-muted-foreground;
+}
+
+.dept-field {
+  @apply space-y-1.5;
+}
+
+.dept-select {
+  @apply mt-0 h-11 w-full rounded-xl border border-border bg-background px-3 text-sm outline-none transition focus:border-primary/50 focus:ring-2 focus:ring-primary/15;
+}
+
+.dept-kpi-row {
+  @apply grid grid-cols-3 gap-2.5 sm:gap-3;
+}
+
+.dept-kpi-modern {
+  @apply flex flex-col gap-2 rounded-2xl border border-border/70 bg-card px-3.5 py-3.5 shadow-sm;
+}
+.dark .dept-kpi-modern {
+  @apply border-slate-700/55 bg-slate-900/65;
+}
+
+.dept-kpi-modern--warn {
+  @apply border-amber-300/70 bg-amber-50/50;
+}
+.dark .dept-kpi-modern--warn {
+  @apply border-amber-500/30 bg-amber-950/30;
+}
+
+.dept-nav-pills {
+  @apply mt-4 flex flex-wrap gap-1 rounded-2xl bg-black/15 p-1 backdrop-blur-sm;
+}
+
+.dept-nav-pill {
+  @apply inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-[13px] font-semibold transition;
+}
+
+.dept-nav-pill--idle {
+  @apply text-white/80 hover:bg-white/10 hover:text-white;
+}
+
+.dept-nav-pill--active {
+  @apply bg-white text-slate-900 shadow-md;
 }
 
 .dept-ticket {

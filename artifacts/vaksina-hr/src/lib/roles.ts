@@ -64,6 +64,13 @@ export function canViewOpsDept(dept: "it" | "texnik", role?: string | null): boo
   return canCreateOpsTicket(dept, role);
 }
 
+/** Bo‘lim boshlig‘i — yo‘naltirish + barcha arizalar */
+export function isOpsDeptHead(dept: "it" | "texnik", role?: string | null): boolean {
+  if (dept !== "it" || !role) return false;
+  if (hasFullPlatformAccess(role) || isDirectorRole(role)) return true;
+  return role === "it_rahbar";
+}
+
 /** AyTi ariza holati / qabul / bajarish — AyTi xodimi, admin, asoschi, direktor */
 export function canManageOpsDept(dept: "it" | "texnik", role?: string | null): boolean {
   if (dept !== "it") return false;
@@ -71,9 +78,17 @@ export function canManageOpsDept(dept: "it" | "texnik", role?: string | null): b
   return isItRole(role);
 }
 
-/** Barcha arizalar doskasi */
+/** Barcha arizalar doskasi — faqat rahbar */
 export function canViewAllOpsTickets(dept: "it" | "texnik", role?: string | null): boolean {
-  return canManageOpsDept(dept, role);
+  return isOpsDeptHead(dept, role);
+}
+
+export function canAssignOpsTicket(dept: "it" | "texnik", role?: string | null): boolean {
+  return isOpsDeptHead(dept, role);
+}
+
+export function isPharmacyOpsRole(role?: string | null): boolean {
+  return role === "mudir" || role === "farmasevt" || role === "stajyor";
 }
 
 export function canViewReviziya(role?: string | null): boolean {
@@ -85,8 +100,38 @@ export function canViewReviziya(role?: string | null): boolean {
     role === "moliya" ||
     role === "sb" ||
     role === "sb_boshliq" ||
+    role === "mudir" ||
+    role === "koordinator"
+  );
+}
+
+export function canViewAllReviziyaBranches(role?: string | null): boolean {
+  return (
+    role === "reviziya_rahbar" ||
+    hasFullPlatformAccess(role) ||
+    isDirectorRole(role) ||
+    role === "moliya" ||
+    role === "sb" ||
+    role === "sb_boshliq"
+  );
+}
+
+export function canAssignReviziya(role?: string | null): boolean {
+  return role === "reviziya_rahbar" || hasFullPlatformAccess(role) || isDirectorRole(role) || role === "koordinator";
+}
+
+export function canCreateReviziyaVisit(role?: string | null): boolean {
+  return (
+    isReviziyaRole(role) ||
+    hasFullPlatformAccess(role) ||
+    isDirectorRole(role) ||
+    role === "koordinator" ||
     role === "mudir"
   );
+}
+
+export function canOverrideRevisionSchedule(role?: string | null): boolean {
+  return role === "reviziya_rahbar" || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
 /** Direktor bilan bir xil asosiy huquq (Asoschi ham shu yerda). */

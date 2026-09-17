@@ -7,6 +7,7 @@ import { Route, Switch, Router as WouterRouter, Redirect } from 'wouter';
 import { AuthProvider } from './contexts/AuthContext';
 import { Layout } from './components/layout/Layout';
 import { RealtimeSync } from './lib/realtime-sync';
+import { DeviceSecurityListener } from './components/DeviceSecurityListener';
 
 // Pages
 import Login from './pages/login';
@@ -44,6 +45,7 @@ import AdminFacesPage from './pages/admin/faces';
 import AdminSmenaSozlamalarPage from './pages/admin/smena-sozlamalar';
 import AdminDavomatQrPage from './pages/admin/davomat-qr';
 import AdminTestPage from './pages/admin/test';
+import AdminQurilmalarPage from './pages/admin/qurilmalar';
 import DistribyutsiyaPage from './pages/distribyutsiya/index';
 import EmployeesPage from './pages/employees/index';
 import EmployeesOtherPage from './pages/employees/other';
@@ -188,6 +190,7 @@ function Router() {
       <ProtectedRoute path="/admin/smena-sozlamalar" component={AdminSmenaSozlamalarPage} />
       <ProtectedRoute path="/admin/davomat-qr" component={AdminDavomatQrPage} />
       <ProtectedRoute path="/admin/test" component={AdminTestPage} />
+      <ProtectedRoute path="/admin/qurilmalar" component={AdminQurilmalarPage} />
       
       <Route component={NotFound} />
     </Switch>
@@ -201,6 +204,7 @@ function App() {
         <QueryClientProvider client={queryClient}>
           <AuthProvider>
             <RealtimeSync />
+            <DeviceSecurityListener />
             <TooltipProvider>
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
                 <Router />

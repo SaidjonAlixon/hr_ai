@@ -532,6 +532,8 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           });
           void qc.invalidateQueries({ queryKey: getGetEmployeesQueryKey() });
           void qc.invalidateQueries({ queryKey: ["staff"] });
+          void qc.invalidateQueries({ queryKey: ["davomat"] });
+          void qc.invalidateQueries({ queryKey: ["davomat-analytics"] });
           toast({ title: t("emp.statusSaved") });
         },
         onError: (err) => {

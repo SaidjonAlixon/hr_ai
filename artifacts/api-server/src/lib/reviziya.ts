@@ -17,8 +17,48 @@ export function canViewReviziya(role?: string | null): boolean {
     role === "moliya" ||
     role === "sb" ||
     role === "sb_boshliq" ||
+    role === "mudir" ||
+    role === "koordinator"
+  );
+}
+
+/** Barcha filiallar holati (dashboard global) */
+export function canViewAllReviziyaBranches(role?: string | null): boolean {
+  return (
+    role === "reviziya_rahbar" ||
+    role === "admin" ||
+    isDirectorRole(role) ||
+    role === "moliya" ||
+    role === "sb" ||
+    role === "sb_boshliq"
+  );
+}
+
+export function canAssignReviziya(role?: string | null): boolean {
+  return (
+    role === "reviziya_rahbar" ||
+    role === "admin" ||
+    isDirectorRole(role) ||
+    role === "koordinator"
+  );
+}
+
+export function canCreateReviziyaVisit(role?: string | null): boolean {
+  return (
+    isReviziyaRole(role) ||
+    role === "admin" ||
+    isDirectorRole(role) ||
+    role === "koordinator" ||
     role === "mudir"
   );
+}
+
+export function canOverrideRevisionSchedule(role?: string | null): boolean {
+  return role === "reviziya_rahbar" || role === "admin" || isDirectorRole(role);
+}
+
+export function canCorrectReviziyaAmounts(role?: string | null): boolean {
+  return role === "reviziya_rahbar" || role === "admin" || isDirectorRole(role) || role === "moliya";
 }
 
 export function canCreateReviziyaDoc(role?: string | null): boolean {

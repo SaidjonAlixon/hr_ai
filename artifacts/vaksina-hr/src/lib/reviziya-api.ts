@@ -157,3 +157,132 @@ export async function flushOffline() {
   localStorage.removeItem(OFFLINE_KEY);
   return arr.length;
 }
+
+/* ── Filial reviziya sikli (visits) ── */
+
+export type VisitDashBranch = {
+  branchId: number;
+  branchName: string;
+  mudirName: string;
+  region: string;
+  lastRevisionDate: string | null;
+  nextRevisionDate: string | null;
+  daysLeft: number | null;
+  cycleStatus: string;
+  cycleStatusLabel: string;
+  shortageAmount: number;
+  collectedAmount: number;
+  remainingAmount: number;
+  assignedRevizorName: string | null;
+  activeVisitId: number | null;
+  workflowStatus: string | null;
+};
+
+export type VisitDashResponse = {
+  today: string;
+  scope: string;
+  stats: {
+    totalBranches: number;
+    completedOk: number;
+    tezOrada: number;
+    muddatiOtgan: number;
+    siklOtkazilgan: number;
+    yangiOchilgan: number;
+    jarayonda: number;
+    totalShortage: number;
+    totalCollected: number;
+    totalRemaining: number;
+  };
+  branches: VisitDashBranch[];
+  pagination: { page: number; limit: number; total: number; pages: number };
+};
+
+export function useReviziyaVisitsMeta() {
+  return useQuery({
+    queryKey: ["reviziya", "visits", "meta"],
+    queryFn: () => json<any>("/api/reviziya/visits/meta"),
+  });
+}
+
+export function useReviziyaVisitsDashboard(params?: Record<string, string | number | undefined>) {
+  const qs = new URLSearchParams();
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v !== undefined && v !== "") qs.set(k, String(v));
+    }
+  }
+  const s = qs.toString();
+  return useQuery({
+    queryKey: ["reviziya", "visits", "dashboard", params],
+    queryFn: () => json<VisitDashResponse>(`/api/reviziya/visits/dashboard${s ? `?${s}` : ""}`),
+  });
+}
+
+export function useReviziyaBranchDetail(branchId?: number | null) {
+  return useQuery({
+    queryKey: ["reviziya", "visits", "branch", branchId],
+    enabled: !!branchId,
+    queryFn: () => json<any>(`/api/reviziya/visits/branch/${branchId}`),
+  });
+}
+
+export function useReviziyaMyTasks() {
+  return useQuery({
+    queryKey: ["reviziya", "visits", "my-tasks"],
+    queryFn: () => json<any>("/api/reviziya/visits/my-tasks"),
+  });
+}
+
+export function useReviziyaCalendar(from: string, to: string) {
+  return useQuery({
+    queryKey: ["reviziya", "visits", "calendar", from, to],
+    enabled: !!from && !!to,
+    queryFn: () => json<{ events: any[] }>(`/api/reviziya/visits/calendar?from=${from}&to=${to}`),
+  });
+}
+
+export function useReviziyaRevizors() {
+  return useQuery({
+    queryKey: ["reviziya", "visits", "revizors"],
+    queryFn: () => json<Array<{ id: number; fullName: string; role: string }>>("/api/reviziya/visits/revizors"),
+  });
+}
+
+export function useReviziyaVisitMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["reviziya", "visits"] });
+  return {
+    create: useMutation({
+      mutationFn: (body: unknown) => json("/api/reviziya/visits", { method: "POST", body: JSON.stringify(body) }),
+      onSuccess: invalidate,
+    }),
+    update: useMutation({
+      mutationFn: ({ id, ...body }: { id: number } & Record<string, unknown>) =>
+        json(`/api/reviziya/visits/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+      onSuccess: invalidate,
+    }),
+    assign: useMutation({
+      mutationFn: ({ id, ...body }: { id: number } & Record<string, unknown>) =>
+        json(`/api/reviziya/visits/${id}/assign`, { method: "POST", body: JSON.stringify(body) }),
+      onSuccess: invalidate,
+    }),
+    accept: useMutation({
+      mutationFn: (id: number) => json(`/api/reviziya/visits/${id}/accept`, { method: "POST", body: "{}" }),
+      onSuccess: invalidate,
+    }),
+    start: useMutation({
+      mutationFn: (id: number) => json(`/api/reviziya/visits/${id}/start`, { method: "POST", body: "{}" }),
+      onSuccess: invalidate,
+    }),
+    complete: useMutation({
+      mutationFn: ({ id, ...body }: { id: number } & Record<string, unknown>) =>
+        json(`/api/reviziya/visits/${id}/complete`, { method: "POST", body: JSON.stringify(body) }),
+      onSuccess: invalidate,
+    }),
+    cancel: useMutation({
+      mutationFn: ({ id, reason }: { id: number; reason?: string }) =>
+        json(`/api/reviziya/visits/${id}/cancel`, { method: "POST", body: JSON.stringify({ reason }) }),
+      onSuccess: invalidate,
+    }),
+  };
+}

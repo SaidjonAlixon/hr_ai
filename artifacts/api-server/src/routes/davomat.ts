@@ -31,7 +31,11 @@ import {
   staffFilterLabelUz,
 } from "../lib/davomat-staff-filter";
 import { isOfisRestDay } from "../lib/ofis-weekend";
-import { forceBroadcastDavomatToAll, davomatBroadcastTelegramReady, davomatBroadcastMessage } from "../jobs/davomat-reminders";
+import {
+  applyJavobExemptionToMetrics,
+  loadApprovedJavobExemptions,
+  type JavobExemption,
+} from "../lib/javob-exemptions";
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
@@ -547,7 +551,12 @@ async function loadActiveEmployees(filters: {
       : [];
   const deptMap = new Map(depts.map((d) => [d.id, d.name]));
 
-  const rows = staff.map((s) => ({
+  const rows = staff
+    .filter((s) => {
+      const st = String(s.employmentStatus || "").toLowerCase();
+      return st !== "dismissed" && st !== "closed";
+    })
+    .map((s) => ({
     id: s.id,
     fullName: s.fullName,
     position: s.position,
@@ -637,6 +646,7 @@ function buildReport(
   from: string,
   to: string,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
+  exemptions: Map<string, JavobExemption> = new Map(),
 ) {
   const dates = eachDateInclusive(from, to);
   const byEmpDate = new Map<string, (typeof records)[0]>();
@@ -752,9 +762,15 @@ function buildReport(
           position: e.position,
         });
         const rec = byEmpDate.get(`${e.id}|${date}`);
+        const ex = exemptions.get(`${e.id}|${date}`);
         if (!rec || (!rec.checkInAt && (rec.status === "absent" || !rec.status))) {
           if (restDay) {
             return emptyDayMetrics(date, "rest");
+          }
+          if (ex?.fullDay) {
+            return emptyDayMetrics(date, "leave", {
+              notes: "Javob olish (tasdiqlangan)",
+            });
           }
           return emptyDayMetrics(date, "absent");
         }
@@ -772,7 +788,9 @@ function buildReport(
             recordId: rec.id,
           });
         }
-        const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, staffHours(e));
+        const hours = staffHours(e);
+        const raw = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hours);
+        const m = applyJavobExemptionToMetrics(raw, ex, hours?.graceMinutes ?? 15);
         return {
           date,
           ...m,
@@ -782,7 +800,11 @@ function buildReport(
               ? rec.notes
                 ? `${rec.notes} · Qo'shimcha ish (ixtiyoriy)`
                 : "Qo'shimcha ish (ixtiyoriy, dam kuni)"
-              : rec.notes,
+              : ex
+                ? rec.notes
+                  ? `${rec.notes} · Javob olish (jarimasiz)`
+                  : "Javob olish (jarimasiz)"
+                : rec.notes,
           recordId: rec.id,
           restDayWork: !!(restDay && rec.checkInAt),
         };
@@ -876,6 +898,21 @@ function buildReport(
   };
 }
 
+async function buildReportWithJavob(
+  employees: Awaited<ReturnType<typeof loadActiveEmployees>>,
+  records: Awaited<ReturnType<typeof loadRecords>>,
+  from: string,
+  to: string,
+  defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
+) {
+  const dates = eachDateInclusive(from, to);
+  const exemptions = await loadApprovedJavobExemptions(
+    employees.map((e) => e.id),
+    dates,
+  );
+  return buildReport(employees, records, from, to, defs, exemptions);
+}
+
 router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
   try {
@@ -895,7 +932,7 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
       employees.map((e) => e.id),
     );
     const defs = await getEffectiveShiftDefs();
-    res.json(buildReport(employees, records, from, to, defs));
+    res.json(await buildReportWithJavob(employees, records, from, to, defs));
   } catch (err) {
     console.error("GET /davomat error:", err);
     res.status(503).json({ error: "Davomat yuklanmadi" });
@@ -915,13 +952,13 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
     const employeeIds = employees.map((e) => e.id);
     const records = await loadRecords(from, to, employeeIds);
     const defs = await getEffectiveShiftDefs();
-    const report = buildReport(employees, records, from, to, defs);
+    const report = await buildReportWithJavob(employees, records, from, to, defs);
 
     const span = eachDateInclusive(from, to).length;
     const prevTo = addDays(from, -1);
     const prevFrom = addDays(prevTo, -(span - 1));
     const prevRecords = await loadRecords(prevFrom, prevTo, employeeIds);
-    const prevReport = buildReport(employees, prevRecords, prevFrom, prevTo, defs);
+    const prevReport = await buildReportWithJavob(employees, prevRecords, prevFrom, prevTo, defs);
 
     const meta = employees.map((e) => ({
       id: e.id,
@@ -943,7 +980,7 @@ async function ownEmployeeReport(empId: number) {
   const employees = await loadActiveEmployees({ employeeId: String(empId) });
   const records = await loadRecords(from, to, [empId]);
   const defs = await getEffectiveShiftDefs();
-  const report = buildReport(employees, records, from, to, defs);
+  const report = await buildReportWithJavob(employees, records, from, to, defs);
   return {
     from,
     to,
@@ -959,7 +996,7 @@ router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise
     const employees = await loadActiveEmployees({});
     const records = await loadRecords(date, date, employees.map((e) => e.id));
     const defs = await getEffectiveShiftDefs();
-    const report = buildReport(employees, records, date, date, defs);
+    const report = await buildReportWithJavob(employees, records, date, date, defs);
     const day = report.days[0];
     res.json({
       date,
@@ -1309,7 +1346,7 @@ const ROLE_POSITION: Record<string, string> = {
 };
 
 async function findEmployeeByUserId(userId: number): Promise<WorkplaceEmp | null> {
-  const [emp] = await db
+  const rows = await db
     .select({
       id: employeesTable.id,
       userId: employeesTable.userId,
@@ -1322,11 +1359,24 @@ async function findEmployeeByUserId(userId: number): Promise<WorkplaceEmp | null
       assignedBranchId: employeesTable.assignedBranchId,
       shiftType: employeesTable.shiftType,
       shiftLabel: employeesTable.shiftLabel,
+      employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable)
-    .where(eq(employeesTable.userId, userId))
-    .limit(1);
-  return emp ?? null;
+    .where(eq(employeesTable.userId, userId));
+  const active = rows.find(
+    (r) => r.employmentStatus !== "dismissed" && r.employmentStatus !== "closed",
+  );
+  if (!active) return null;
+  const { employmentStatus: _es, ...emp } = active;
+  return emp;
+}
+
+class DismissedEmployeeError extends Error {
+  code = "employee_dismissed" as const;
+  constructor() {
+    super("Xodim bo‘shatilgan — davomatga kiritilmaydi");
+    this.name = "DismissedEmployeeError";
+  }
 }
 
 /**
@@ -1334,6 +1384,7 @@ async function findEmployeeByUserId(userId: number): Promise<WorkplaceEmp | null
  * — userId bo‘yicha topadi
  * — yoki F.I.Sh. mos kelgan xodimni bog‘laydi
  * — yo‘q bo‘lsa avtomatik yaratadi
+ * — bo‘shatilgan kartani qayta yaratmaydi
  */
 async function ensureEmployeeForUser(user: {
   id: number;
@@ -1341,8 +1392,37 @@ async function ensureEmployeeForUser(user: {
   role: string;
   departmentId: number | null;
 }): Promise<WorkplaceEmp> {
-  const existing = await findEmployeeByUserId(user.id);
-  if (existing) return existing;
+  const linked = await db
+    .select({
+      id: employeesTable.id,
+      userId: employeesTable.userId,
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+      shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
+      employmentStatus: employeesTable.employmentStatus,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, user.id));
+
+  const dismissedLinked = linked.find(
+    (r) => r.employmentStatus === "dismissed" || r.employmentStatus === "closed",
+  );
+  const activeLinked = linked.find(
+    (r) => r.employmentStatus !== "dismissed" && r.employmentStatus !== "closed",
+  );
+  if (dismissedLinked && !activeLinked) {
+    throw new DismissedEmployeeError();
+  }
+  if (activeLinked) {
+    const { employmentStatus: _es, ...emp } = activeLinked;
+    return emp;
+  }
 
   const all = await db
     .select({
@@ -1366,7 +1446,8 @@ async function ensureEmployeeForUser(user: {
     (e) =>
       normalizeName(e.fullName) === target &&
       (e.userId == null || e.userId === user.id) &&
-      (e.employmentStatus || "working") !== "dismissed",
+      (e.employmentStatus || "working") !== "dismissed" &&
+      (e.employmentStatus || "working") !== "closed",
   );
 
   if (byName) {
@@ -1450,8 +1531,13 @@ async function ensureAllActiveUsersLinked(): Promise<number> {
     .where(eq(usersTable.status, "active"));
   let n = 0;
   for (const u of users) {
-    await ensureEmployeeForUser(u);
-    n += 1;
+    try {
+      await ensureEmployeeForUser(u);
+      n += 1;
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) continue;
+      throw err;
+    }
   }
   return n;
 }
@@ -2198,7 +2284,19 @@ async function resolveFaceAtSite(opts: {
     return { ok: false, status: 403, body: { error: "Profil faol emas", code: "user_inactive" } };
   }
 
-  const emp = await ensureEmployeeForUser(user);
+  let emp: WorkplaceEmp;
+  try {
+    emp = await ensureEmployeeForUser(user);
+  } catch (err) {
+    if (err instanceof DismissedEmployeeError) {
+      return {
+        ok: false,
+        status: 403,
+        body: { error: err.message, code: err.code },
+      };
+    }
+    throw err;
+  }
   const gate = await geoGate(
     emp,
     user.role,
@@ -2265,7 +2363,16 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       res.status(404).json({ error: "Foydalanuvchi topilmadi" });
       return;
     }
-    const emp = await ensureEmployeeForUser(user);
+    let emp: WorkplaceEmp;
+    try {
+      emp = await ensureEmployeeForUser(user);
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) {
+        res.status(403).json({ error: err.message, code: err.code });
+        return;
+      }
+      throw err;
+    }
     const today = todayTashkent();
     const yesterday = addDaysYmd(today, -1);
     const defs = await getEffectiveShiftDefs();
@@ -2508,7 +2615,12 @@ router.get("/davomat/me/status", requireAuth, async (req: AuthRequest, res): Pro
       .where(eq(usersTable.id, req.userId!))
       .limit(1);
 
-    const emp = user ? await ensureEmployeeForUser(user) : null;
+    const emp = user
+      ? await ensureEmployeeForUser(user).catch((err) => {
+          if (err instanceof DismissedEmployeeError) return null;
+          throw err;
+        })
+      : null;
     let nextAction: "in" | "out" | "done" | "unlinked" = "unlinked";
     let checkIn = "—";
     let checkOut = "—";
@@ -2652,7 +2764,16 @@ router.get("/davomat/me", requireAuth, async (req: AuthRequest, res): Promise<vo
       res.status(404).json({ error: "Foydalanuvchi topilmadi" });
       return;
     }
-    const emp = await ensureEmployeeForUser(user);
+    let emp: WorkplaceEmp;
+    try {
+      emp = await ensureEmployeeForUser(user);
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) {
+        res.status(403).json({ error: err.message, code: err.code });
+        return;
+      }
+      throw err;
+    }
     const own = await ownEmployeeReport(emp.id);
     res.json({
       from: own.from,
@@ -2905,7 +3026,16 @@ router.post("/davomat/geo-check", requireAuth, async (req: AuthRequest, res): Pr
       res.status(404).json({ error: "Foydalanuvchi topilmadi" });
       return;
     }
-    const emp = await ensureEmployeeForUser(user);
+    let emp: WorkplaceEmp;
+    try {
+      emp = await ensureEmployeeForUser(user);
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) {
+        res.status(403).json({ error: err.message, code: err.code });
+        return;
+      }
+      throw err;
+    }
     const gate = await geoGate(
       emp,
       user.role,
@@ -2952,7 +3082,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       to,
       employees.map((e) => e.id),
     );
-    const report = buildReport(employees, records, from, to, await getEffectiveShiftDefs());
+    const report = await buildReportWithJavob(employees, records, from, to, await getEffectiveShiftDefs());
 
     const workbook = new ExcelJS.Workbook();
     workbook.creator = "VAKSINA MED HR";
@@ -4068,7 +4198,25 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
 
-    const emp = await ensureEmployeeForUser(user);
+    let emp: WorkplaceEmp;
+    try {
+      emp = await ensureEmployeeForUser(user);
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) {
+        await writePunchAudit({
+          userId: req.userId,
+          verificationMethod: "QR",
+          action,
+          finalResult: "denied",
+          failureReason: err.code,
+          ipAddress: ip,
+          deviceId,
+        });
+        res.status(403).json({ error: err.message, code: err.code });
+        return;
+      }
+      throw err;
+    }
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const effective = await effectiveBranchIdForDay(emp);
     const myBranchId = effective.branchId;
@@ -4466,7 +4614,22 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
       res.status(404).json({ error: "User topilmadi" });
       return;
     }
-    const emp = await ensureEmployeeForUser(user);
+    let emp: WorkplaceEmp;
+    try {
+      emp = await ensureEmployeeForUser(user);
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) {
+        res.status(403).json({
+          error: err.message,
+          code: err.code,
+          methods: [],
+          pharmacyStaff: false,
+          officeStaff: false,
+        });
+        return;
+      }
+      throw err;
+    }
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const adminQrAnywhere = isAdminQrAnywhere(user.role);
     /** Apteka emas — ofis / boshqa rollar (bo‘limi bo‘lmasa ham QR ko‘rinadi) */

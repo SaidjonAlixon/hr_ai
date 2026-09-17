@@ -139,6 +139,12 @@ export function userStatusFromEmployment(status: string): string {
   return "vacant";
 }
 
+/** Bo‘shatilgan / yopilgan — davomat va «Faol xodimlar»dan chiqariladi */
+export function isDismissedEmploymentStatus(status: string | null | undefined): boolean {
+  const s = String(status || "").trim().toLowerCase();
+  return s === "dismissed" || s === "closed";
+}
+
 function staffPhotoUrl(userId: number, hasFace: boolean, employeePhoto: string | null): string | null {
   if (hasFace) return `/api/staff/${userId}/avatar`;
   return employeePhoto?.trim() || null;
@@ -243,10 +249,35 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
   const fallbackDeptId = fallbackDept?.id ?? 1;
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
 
-  return staffUsers.map((u) => {
+  const healUserToTerminated: number[] = [];
+  const healEmpToDismissed: number[] = [];
+
+  const mapped = staffUsers.map((u) => {
     const emp = empByUser.get(u.id);
     const hasFace = faceSet.has(u.id);
     const userStatus = normalizeUserStatus(u.status);
+    const fromUser = employmentFromUserStatus(u.status);
+    let employmentStatus = emp?.employmentStatus || fromUser;
+
+    /** Desync tuzatish: bo‘shatilgan ↔ terminated bir xil bo‘lsin */
+    if (isActiveStaffUser(u.status) && isDismissedEmploymentStatus(employmentStatus)) {
+      if (u.id) healUserToTerminated.push(u.id);
+      employmentStatus = "dismissed";
+    } else if (
+      userStatus === "terminated" &&
+      emp?.id &&
+      !isDismissedEmploymentStatus(emp.employmentStatus)
+    ) {
+      healEmpToDismissed.push(emp.id);
+      employmentStatus = "dismissed";
+    } else if (!isActiveStaffUser(u.status) && fromUser === "dismissed") {
+      employmentStatus = isDismissedEmploymentStatus(emp?.employmentStatus)
+        ? String(emp!.employmentStatus)
+        : "dismissed";
+    } else if (!isActiveStaffUser(u.status) && fromUser === "on_leave") {
+      employmentStatus = "on_leave";
+    }
+
     if (emp) {
       return {
         ...emp,
@@ -256,7 +287,7 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
         userStatus,
         userRole: u.role,
         orgRole: emp.orgRole || orgRoleFromUserRole(u.role),
-        employmentStatus: emp.employmentStatus || employmentFromUserStatus(u.status),
+        employmentStatus,
         photoUrl: staffPhotoUrl(u.id, hasFace, emp.photoUrl),
         fixedSalary: Math.max(0, Math.round(Number(emp.fixedSalary ?? 0))),
         bonusPercent: Math.max(0, Number(emp.bonusPercent ?? 30)),
@@ -277,7 +308,7 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
       longitude: null,
       shiftType: "one",
       shiftLabel: null,
-      employmentStatus: employmentFromUserStatus(u.status),
+      employmentStatus,
       userId: u.id,
       photoUrl: staffPhotoUrl(u.id, hasFace, null),
       login: u.login ?? null,
@@ -290,6 +321,30 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
       updatedAt: u.createdAt,
     };
   });
+
+  if (healUserToTerminated.length) {
+    await Promise.all(
+      healUserToTerminated.map((uid) =>
+        db.update(usersTable).set({ status: "terminated" }).where(eq(usersTable.id, uid)),
+      ),
+    ).catch(() => undefined);
+  }
+  if (healEmpToDismissed.length) {
+    await Promise.all(
+      healEmpToDismissed.map((eid) =>
+        db
+          .update(employeesTable)
+          .set({ employmentStatus: "dismissed" })
+          .where(eq(employeesTable.id, eid)),
+      ),
+    ).catch(() => undefined);
+  }
+
+  if (group === "active") {
+    return mapped.filter((row) => !isDismissedEmploymentStatus(row.employmentStatus));
+  }
+
+  return mapped;
 }
 
 const PHARMACY_ORG_ROLES = ["coordinator", "manager", "pharmacist", "intern", "supervisor"] as const;

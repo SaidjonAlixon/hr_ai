@@ -20,6 +20,7 @@ import {
   AlarmClock,
   Network,
   ScanFace,
+  MonitorSmartphone,
   ChevronDown,
   ChevronLeft,
   Pin,
@@ -176,7 +177,7 @@ const NAV_SECTIONS: {
     id: 'admin',
     label: 'Sozlamalar',
     icon: Settings,
-    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test'],
+    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar'],
   },
 ];
 
@@ -256,6 +257,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/admin/smena-sozlamalar')) return '/admin/smena-sozlamalar';
   if (path.startsWith('/admin/davomat-qr')) return '/admin/davomat-qr';
   if (path.startsWith('/admin/test')) return '/admin/test';
+  if (path.startsWith('/admin/qurilmalar')) return '/admin/qurilmalar';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
   if (path.startsWith('/dashboard')) return '/dashboard';
@@ -831,8 +833,17 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           ...next.slice(at),
         ];
       }
+      if (!next.some((i) => i.path === '/admin/qurilmalar')) {
+        const usersIdx = next.findIndex((i) => i.path === '/admin/users');
+        const at = usersIdx >= 0 ? usersIdx + 1 : next.length;
+        next = [
+          ...next.slice(0, at),
+          { name: 'Qurilmalar', path: '/admin/qurilmalar', icon: MonitorSmartphone },
+          ...next.slice(at),
+        ];
+      }
     } else {
-      next = next.filter((i) => i.path !== '/admin/users');
+      next = next.filter((i) => i.path !== '/admin/users' && i.path !== '/admin/qurilmalar');
     }
     return ensureTaskAnalyticsNav(next);
   }
@@ -907,6 +918,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Users },
+      { name: 'Qurilmalar', path: '/admin/qurilmalar', icon: MonitorSmartphone },
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
@@ -1004,6 +1016,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     mudir: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
+      { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1018,6 +1031,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     koordinator: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       javobNav,
+      { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -2064,7 +2078,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/eslatmalar') ||
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
-                location.startsWith('/tashkiliy-tuzilma')
+                location.startsWith('/tashkiliy-tuzilma') ||
+                location.startsWith('/reviziya')
                 ? 'h-full max-w-none'
                 : location === '/pharmacy-network'
                   ? 'max-w-none'

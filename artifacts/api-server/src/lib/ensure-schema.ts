@@ -895,6 +895,27 @@ CREATE TABLE IF NOT EXISTS employee_branch_assignments (
 CREATE INDEX IF NOT EXISTS emp_branch_assign_emp_idx ON employee_branch_assignments (employee_id);
 CREATE INDEX IF NOT EXISTS emp_branch_assign_range_idx ON employee_branch_assignments (valid_from, valid_to);
 
+-- Kunlik smena segmentlari (ko‘p filial kelish/ketish)
+CREATE TABLE IF NOT EXISTS attendance_shift_segments (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  work_date TEXT NOT NULL,
+  shift_key TEXT NOT NULL,
+  check_in_at TIMESTAMPTZ,
+  check_out_at TIMESTAMPTZ,
+  branch_id INTEGER,
+  branch_label TEXT,
+  status TEXT NOT NULL DEFAULT 'open',
+  source TEXT NOT NULL DEFAULT 'face',
+  notes TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS attendance_segments_emp_date_shift_uidx
+  ON attendance_shift_segments (employee_id, work_date, shift_key);
+CREATE INDEX IF NOT EXISTS attendance_segments_emp_date_idx
+  ON attendance_shift_segments (employee_id, work_date);
+
 -- Kunlik smena rejasi
 CREATE TABLE IF NOT EXISTS employee_day_shift_plans (
   id SERIAL PRIMARY KEY,

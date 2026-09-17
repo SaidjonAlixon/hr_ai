@@ -1112,14 +1112,20 @@ router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promis
       return;
     }
 
-    await db
-      .delete(attendanceShiftSegmentsTable)
-      .where(
-        and(
-          eq(attendanceShiftSegmentsTable.employeeId, employeeId),
-          eq(attendanceShiftSegmentsTable.workDate, workDate),
-        ),
-      );
+    try {
+      await db
+        .delete(attendanceShiftSegmentsTable)
+        .where(
+          and(
+            eq(attendanceShiftSegmentsTable.employeeId, employeeId),
+            eq(attendanceShiftSegmentsTable.workDate, workDate),
+          ),
+        );
+    } catch (segErr) {
+      const msg = String((segErr as Error)?.message || segErr);
+      if (!/does not exist|relation/i.test(msg)) throw segErr;
+      console.warn("attendance_shift_segments missing — skipped", msg);
+    }
 
     const deleted = await db
       .delete(attendanceRecordsTable)
@@ -1141,7 +1147,11 @@ router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promis
     });
   } catch (err) {
     console.error("POST /davomat/reset error:", err);
-    res.status(503).json({ error: "Bekor qilinmadi" });
+    const detail = err instanceof Error ? err.message : String(err);
+    res.status(503).json({
+      error: "Bekor qilinmadi",
+      detail: detail.slice(0, 240),
+    });
   }
 });
 

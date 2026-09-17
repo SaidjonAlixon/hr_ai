@@ -45,7 +45,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "../../components/ui/alert-dialog";
 import {
   Popover,
@@ -281,9 +280,22 @@ type EditState = {
   checkOut: string;
   status: string;
   notes: string;
-  /** Haqiqiy yozuv bor — bekor qilish mumkin */
-  canReset: boolean;
 };
+
+type ResetTarget = {
+  employeeId: number;
+  fullName: string;
+  workDate: string;
+};
+
+function dayHasPunch(day?: DavomatDayMetrics | null): boolean {
+  if (!day) return false;
+  return Boolean(
+    day.recordId ||
+      (day.checkIn && day.checkIn !== "—") ||
+      (day.checkOut && day.checkOut !== "—"),
+  );
+}
 
 type Section = "schedule" | "totals";
 type CalMode = "day" | "week" | "month" | "range";
@@ -327,7 +339,9 @@ export default function DavomatPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
+  const [resetTarget, setResetTarget] = useState<ResetTarget | null>(null);
   const [saving, setSaving] = useState(false);
+  const [resetting, setResetting] = useState(false);
 
   const { data: departments } = useGetDepartments();
 
@@ -696,7 +710,17 @@ export default function DavomatPage() {
       checkOut: hasOut ? day!.checkOut : "",
       status: day?.status === "absent" && !day.recordId ? "auto" : day?.status || "auto",
       notes: day?.notes || "",
-      canReset: Boolean(day?.recordId || hasIn || hasOut),
+    });
+  };
+
+  const openReset = (emp: DavomatEmployee, workDate: string) => {
+    if (!canReset) return;
+    const day = emp.days.find((d) => d.date === workDate);
+    if (!dayHasPunch(day)) return;
+    setResetTarget({
+      employeeId: emp.id,
+      fullName: emp.fullName,
+      workDate,
     });
   };
 
@@ -726,19 +750,19 @@ export default function DavomatPage() {
     }
   };
 
-  const resetEdit = async () => {
-    if (!edit || !canReset) return;
-    setSaving(true);
+  const confirmReset = async () => {
+    if (!resetTarget || !canReset) return;
+    setResetting(true);
     try {
       await resetDavomatManual({
-        employeeId: edit.employeeId,
-        workDate: edit.workDate,
+        employeeId: resetTarget.employeeId,
+        workDate: resetTarget.workDate,
       });
       toast({
         title: t("davomat.resetDone"),
-        description: `${edit.fullName} · ${edit.workDate}`,
+        description: `${resetTarget.fullName} · ${resetTarget.workDate}`,
       });
-      setEdit(null);
+      setResetTarget(null);
       await load();
     } catch (err) {
       toast({
@@ -747,11 +771,11 @@ export default function DavomatPage() {
         variant: "destructive",
       });
     } finally {
-      setSaving(false);
+      setResetting(false);
     }
   };
 
-  const editHasPunch = Boolean(edit?.canReset && canReset);
+  const showRowActions = canEdit || canReset;
 
   if (!allowed) {
     return (
@@ -1475,14 +1499,22 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">Ketish</th>
                         <th className="px-3 py-2">Ishlagan</th>
                         <TimingHeaderCells workStart={activeWorkHours.start} workEnd={activeWorkHours.end} />
-                        {canEdit ? <th className="px-3 py-2 w-10" /> : null}
+                        {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                       </tr>
                     </thead>
                     <tbody>
                       {visibleEmployeesForDay.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={staffFilter === "all" ? (canEdit ? 12 : 11) : canEdit ? 11 : 10}
+                            colSpan={
+                              staffFilter === "all"
+                                ? showRowActions
+                                  ? 12
+                                  : 11
+                                : showRowActions
+                                  ? 11
+                                  : 10
+                            }
                             className="px-3 py-10 text-center text-sm text-muted-foreground"
                           >
                             Tanlangan holat bo‘yicha xodim topilmadi
@@ -1533,17 +1565,34 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                             <TimeMetric value={day!.overtimeLabel} />
                           </td>
-                          {canEdit ? (
-                            <td className="px-3 py-2">
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 w-8 p-0"
-                                onClick={() => openEdit(emp, selectedDay)}
-                              >
-                                <Pencil className="h-3.5 w-3.5" />
-                              </Button>
+                          {showRowActions ? (
+                            <td className="px-2 py-2">
+                              <div className="flex items-center gap-0.5">
+                                {canEdit ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0"
+                                    title={t("davomat.editTitle")}
+                                    onClick={() => openEdit(emp, selectedDay)}
+                                  >
+                                    <Pencil className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : null}
+                                {canReset && dayHasPunch(day) ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                    title={t("davomat.resetBtn")}
+                                    onClick={() => openReset(emp, selectedDay)}
+                                  >
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : null}
+                              </div>
                             </td>
                           ) : null}
                         </tr>
@@ -1677,7 +1726,7 @@ export default function DavomatPage() {
                           Ishlagan
                         </th>
                           <TimingHeaderCells workStart={detailWorkHours.start} workEnd={detailWorkHours.end} />
-                          {canEdit ? <th className="px-3 py-2 w-10" /> : null}
+                          {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                         </tr>
                       </thead>
                       <tbody>
@@ -1702,17 +1751,34 @@ export default function DavomatPage() {
                             <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                               <TimeMetric value={d.overtimeLabel} />
                             </td>
-                            {canEdit ? (
-                              <td className="px-3 py-2">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-8 w-8 p-0"
-                                  onClick={() => openEdit(detailEmployee, d.date)}
-                                >
-                                  <Pencil className="h-3.5 w-3.5" />
-                                </Button>
+                            {showRowActions ? (
+                              <td className="px-2 py-2">
+                                <div className="flex items-center gap-0.5">
+                                  {canEdit ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-8 w-8 p-0"
+                                      title={t("davomat.editTitle")}
+                                      onClick={() => openEdit(detailEmployee, d.date)}
+                                    >
+                                      <Pencil className="h-3.5 w-3.5" />
+                                    </Button>
+                                  ) : null}
+                                  {canReset && dayHasPunch(d) ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-8 w-8 p-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
+                                      title={t("davomat.resetBtn")}
+                                      onClick={() => openReset(detailEmployee, d.date)}
+                                    >
+                                      <RotateCcw className="h-3.5 w-3.5" />
+                                    </Button>
+                                  ) : null}
+                                </div>
                               </td>
                             ) : null}
                           </tr>
@@ -1781,61 +1847,50 @@ export default function DavomatPage() {
               </div>
             </div>
           ) : null}
-          <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
-            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-              {editHasPunch ? (
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="destructive"
-                      className="gap-1.5"
-                      disabled={saving}
-                    >
-                      <RotateCcw className="h-4 w-4" />
-                      {t("davomat.resetBtn")}
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>{t("davomat.resetTitle")}</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        {edit ? (
-                          <>
-                            <span className="font-medium text-foreground">{edit.fullName}</span>
-                            {" · "}
-                            {edit.workDate}
-                            <br />
-                          </>
-                        ) : null}
-                        {t("davomat.resetDesc")}
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>{t("ui.cancelFull")}</AlertDialogCancel>
-                      <AlertDialogAction
-                        onClick={() => void resetEdit()}
-                        className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                      >
-                        {t("davomat.resetBtn")}
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              ) : null}
-            </div>
-            <div className="flex w-full gap-2 sm:w-auto sm:justify-end">
-              <Button type="button" variant="outline" onClick={() => setEdit(null)}>
-                Bekor
-              </Button>
-              <Button type="button" onClick={() => void saveEdit()} disabled={saving}>
-                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-                Saqlash
-              </Button>
-            </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setEdit(null)}>
+              Bekor
+            </Button>
+            <Button type="button" onClick={() => void saveEdit()} disabled={saving}>
+              {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Saqlash
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <AlertDialog open={Boolean(resetTarget)} onOpenChange={(o) => !o && !resetting && setResetTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("davomat.resetTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {resetTarget ? (
+                <>
+                  <span className="font-medium text-foreground">{resetTarget.fullName}</span>
+                  {" · "}
+                  {resetTarget.workDate}
+                  <br />
+                </>
+              ) : null}
+              {t("davomat.resetDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={resetting}>{t("ui.cancelFull")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={resetting}
+              onClick={(e) => {
+                e.preventDefault();
+                void confirmReset();
+              }}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {resetting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1 h-4 w-4" />}
+              {t("davomat.resetBtn")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

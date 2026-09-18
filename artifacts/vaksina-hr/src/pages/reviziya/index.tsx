@@ -41,12 +41,12 @@ export default function ReviziyaPage() {
                   <AddDeptStaffButton enabled className="h-9 bg-white text-slate-900 hover:bg-white/90" />
                 ) : null}
                 <span className="dept-badge">
-                  {isReviziyaRole(user?.role)
-                    ? user?.role === "reviziya_rahbar"
+                {isReviziyaRole(user?.role)
+                  ? user?.role === "reviziya_rahbar"
                       ? t("reviziya.role.head")
                       : t("reviziya.role.revizor")
-                    : userRoleLabel(user?.role)}
-                </span>
+                  : userRoleLabel(user?.role)}
+              </span>
               </div>
             </div>
           </div>

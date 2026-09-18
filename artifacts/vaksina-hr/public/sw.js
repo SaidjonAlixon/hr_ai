@@ -1,10 +1,28 @@
-/* VAKSINA HR — Web Push service worker (Chrome / Safari PWA) */
+/* VAKSINA HR — Web Push + GPS keepalive service worker */
 self.addEventListener("install", (event) => {
   self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(self.clients.claim());
+});
+
+/** Mijozlarni uyg‘otish — GPS qayta yuborilsin */
+function nudgeClients() {
+  return self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
+    for (const client of list) {
+      try {
+        client.postMessage({ type: "vaksina-gps-nudge" });
+      } catch (_) {}
+    }
+  });
+}
+
+self.addEventListener("message", (event) => {
+  const data = event.data || {};
+  if (data && data.type === "vaksina-gps-ping") {
+    event.waitUntil(nudgeClients());
+  }
 });
 
 self.addEventListener("push", (event) => {
@@ -22,15 +40,18 @@ self.addEventListener("push", (event) => {
   }
 
   event.waitUntil(
-    self.registration.showNotification(data.title || "VAKSINA HR", {
-      body: data.body || "",
-      icon: "/faviconni.png",
-      badge: "/faviconni.png",
-      tag: data.tag || "vaksina-hr",
-      renotify: true,
-      requireInteraction: true,
-      data: { url: data.url || "/" },
-    }),
+    Promise.all([
+      self.registration.showNotification(data.title || "VAKSINA HR", {
+        body: data.body || "",
+        icon: "/faviconni.png",
+        badge: "/faviconni.png",
+        tag: data.tag || "vaksina-hr",
+        renotify: true,
+        requireInteraction: true,
+        data: { url: data.url || "/" },
+      }),
+      nudgeClients(),
+    ]),
   );
 });
 

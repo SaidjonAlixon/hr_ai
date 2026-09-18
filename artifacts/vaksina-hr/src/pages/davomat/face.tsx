@@ -67,7 +67,8 @@ import { useI18n } from "@/i18n/I18nProvider";
 import type { User } from "@workspace/api-client-react";
 import { canViewDavomat } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
-import { ensureMobileTrack } from "@/lib/mobile-attendance-api";
+import { formatPersonName } from "@/lib/person-name";
+import { ensureMobileTrack, endMobileAttendance } from "@/lib/mobile-attendance-api";
 import { MOBILE_GPS_GRANTED_EVENT } from "@/components/davomat/MobileGpsBackgroundTracker";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
 import { formatSom, useOylikMe } from "@/lib/oylik-api";
@@ -1030,10 +1031,13 @@ export default function DavomatFacePage() {
       typeof pos.coords.speed === "number" && Number.isFinite(pos.coords.speed)
         ? pos.coords.speed
         : null;
-    const movingFast = speed != null && speed > 1.8;
+    const movingFast = speed != null && speed > 0.6;
+    const accRaw = pos.coords.accuracy;
+    const acc =
+      typeof accRaw === "number" && Number.isFinite(accRaw) ? Math.round(accRaw) : 25;
 
     setGps((prev) => {
-      // Asosiy: kompas (telefon oldi). GPS heading faqat tez harakat + kompas yo‘q.
+      // Asosiy: kompas (telefon oldi). GPS heading — yurishda / kompas yo‘q.
       let nextHeading = lastCompassRef.current;
       if (nextHeading == null && movingFast && gpsHeading != null) {
         nextHeading = gpsHeading;
@@ -1041,7 +1045,7 @@ export default function DavomatFacePage() {
       if (nextHeading == null && prev) {
         const dLat = Math.abs(pos.coords.latitude - prev.lat);
         const dLng = Math.abs(pos.coords.longitude - prev.lng);
-        if (dLat > 1.2e-6 || dLng > 1.2e-6) {
+        if (dLat > 2.5e-7 || dLng > 2.5e-7) {
           const toRad = (d: number) => (d * Math.PI) / 180;
           const φ1 = toRad(prev.lat);
           const φ2 = toRad(pos.coords.latitude);
@@ -1055,10 +1059,21 @@ export default function DavomatFacePage() {
         }
       }
 
+      let lat = pos.coords.latitude;
+      let lng = pos.coords.longitude;
+      if (prev && acc > 12) {
+        const jumpM = haversineMeters(prev.lat, prev.lng, lat, lng) || 0;
+        if (jumpM < 80) {
+          const alpha = jumpM < 3 ? 0.55 : jumpM < 15 ? 0.72 : 0.88;
+          lat = prev.lat + (lat - prev.lat) * alpha;
+          lng = prev.lng + (lng - prev.lng) * alpha;
+        }
+      }
+
       return {
-      lat: pos.coords.latitude,
-      lng: pos.coords.longitude,
-      accuracy: Math.round(pos.coords.accuracy || 0),
+        lat,
+        lng,
+        accuracy: acc,
         heading: nextHeading,
         speed,
       };
@@ -1136,8 +1151,8 @@ export default function DavomatFacePage() {
               : t("davomat.gpsFailed"),
         );
       },
-      // maximumAge — keshdan tez; highAccuracy fonida yangilanadi
-      { enableHighAccuracy: true, maximumAge: 30_000, timeout: 8_000 },
+      // Tez yangilanish — yurishda marker harakati silliq
+      { enableHighAccuracy: true, maximumAge: 2_000, timeout: 12_000 },
     );
     void startCompass();
   }, [t, startCompass]);
@@ -1172,7 +1187,7 @@ export default function DavomatFacePage() {
     preloadFaceModels();
     setGpsSharing(true);
     const safety = window.setTimeout(() => {
-      setGpsSharing(false);
+          setGpsSharing(false);
       gpsShareLockRef.current = false;
     }, 14_000);
     try {
@@ -1255,7 +1270,7 @@ export default function DavomatFacePage() {
       }
     } finally {
       window.clearTimeout(safety);
-      setGpsSharing(false);
+        setGpsSharing(false);
       gpsShareLockRef.current = false;
     }
   };
@@ -1365,6 +1380,8 @@ export default function DavomatFacePage() {
   /** Admin ko‘chma ruxsat — yashil zonadan tashqarida ham davomat */
   const mobileAnywhere = Boolean(workplace?.mobileAnywhere);
   const geoOk = adminQrAnywhere || mobileAnywhere || inside;
+  /** Xarita: ko‘chma ruxsat / admin — «hududda» ko‘rinishi (bloklanmasin) */
+  const mapInside = inside || mobileAnywhere || adminQrAnywhere;
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   // 2-filial: 1-smena Ketdi bo‘lsa ham nextAction="in" — kun yopilmagan
@@ -1760,6 +1777,7 @@ export default function DavomatFacePage() {
             : result.message || "Davomat qayd etildi",
         });
         applyHistory(result.employee);
+        syncMobileRoute(action);
         unlock();
         refreshQuiet();
         return;
@@ -1806,6 +1824,7 @@ export default function DavomatFacePage() {
         description: result.message,
       });
       applyHistory(result.employee);
+      syncMobileRoute(action);
       unlock();
       refreshQuiet();
     } catch (err) {
@@ -1835,7 +1854,7 @@ export default function DavomatFacePage() {
           checkInAt: err.checkInAt || verified.checkInAt,
           checkOutAt: null,
         });
-        toast({
+      toast({
           title: "Kun yopildi",
           description: err.message,
           variant: "destructive",
@@ -1887,8 +1906,11 @@ export default function DavomatFacePage() {
     [adminQrAnywhere, gps, geoOk, verified?.nextAction, workplace, user?.fullName, t],
   );
 
-  const displayName =
-    verified?.fullName || workplace?.employee.fullName || user?.fullName || t("davomat.employee");
+  const displayName = formatPersonName(
+    verified?.fullName || workplace?.employee.fullName || user?.fullName || "",
+  );
+  const personName =
+    displayName && !/^(xodim|employee|user)$/i.test(displayName.trim()) ? displayName : "";
   const displayShift = useMemo(() => {
     if (workplace?.shift) return workplace.shift;
     if (!user?.role) return null;
@@ -2000,7 +2022,6 @@ export default function DavomatFacePage() {
     await refreshFaceStatus();
   };
 
-  const firstName = displayName.trim().split(/\s+/)[0] || displayName;
   const roleLine = [position, workplaceTitle].filter(Boolean).join(" · ");
   const dayPlanLine =
     workplace?.dayPlan?.slots && workplace.dayPlan.slots.length > 0
@@ -2030,9 +2051,37 @@ export default function DavomatFacePage() {
     department ||
     null;
   const outsideWarn =
-    remain != null
-      ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`
-      : "Hududdan tashqaridasiz — yashil zonaga kiring";
+    mobileAnywhere
+      ? "Ko‘chma ruxsat — istalgan joydan Face ID"
+      : remain != null
+        ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`
+        : "Hududdan tashqaridasiz — yashil zonaga kiring";
+
+  const syncMobileRoute = (action: "in" | "out") => {
+    if (!mobileAnywhere || !gps) return;
+    if (action === "in") {
+      void ensureMobileTrack({
+        latitude: gps.lat,
+        longitude: gps.lng,
+        accuracy: gps.accuracy,
+      }).catch(() => undefined);
+      window.dispatchEvent(
+        new CustomEvent(MOBILE_GPS_GRANTED_EVENT, {
+          detail: {
+            latitude: gps.lat,
+            longitude: gps.lng,
+            accuracy: gps.accuracy,
+          },
+        }),
+      );
+    } else {
+      void endMobileAttendance({
+        latitude: gps.lat,
+        longitude: gps.lng,
+        accuracy: gps.accuracy,
+      }).catch(() => undefined);
+    }
+  };
 
   const cta = (() => {
     if (done) {
@@ -2194,7 +2243,7 @@ export default function DavomatFacePage() {
                       return (
     <>
       <DavomatPremiumView
-        firstName={firstName}
+        personName={personName}
         roleLine={roleLine}
         dateLabel={dateLabel}
         dateWeekday={dateParts.weekday}
@@ -2207,7 +2256,7 @@ export default function DavomatFacePage() {
         planOut={displayShift?.end || null}
         hasIn={hasIn}
         done={Boolean(done)}
-        inside={inside}
+        inside={mapInside}
         distance={distance}
         allowedMeters={allowedMeters}
         siteLat={site.latitude}
@@ -2222,6 +2271,7 @@ export default function DavomatFacePage() {
         gpsDenied={gpsDenied || Boolean(gpsError)}
         gpsSharing={gpsSharing}
         methodsReady={methodsReady}
+        mobileAnywhere={mobileAnywhere}
         showMethodPicker={Boolean(methodsReady && !done && !methodReady && !methodsHidden)}
         onDismissMethods={() => setMethodsHidden(true)}
         selectedMethod={selectedMethod}

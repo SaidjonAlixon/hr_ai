@@ -280,7 +280,8 @@ export default function AdminKochmaDavomatPage() {
               Ko‘chma davomat
             </h1>
             <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Erkin lokatsiyada davomat — filial geofencesiz. Ruxsat faqat admin beradi.
+              Faqat siz belgilagan xodimlar — filial geofencesiz davomat. Jonli kuzatuv alohida
+              (barcha xodimlar).
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">

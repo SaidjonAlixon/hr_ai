@@ -174,6 +174,9 @@ export async function fetchMobileLive(employeeId?: number) {
     today: string;
     count: number;
     onlineCount: number;
+    offlineCount?: number;
+    pharmacyCount?: number;
+    officeCount?: number;
     polledAt: string;
     live: Array<{
       sessionId: number | null;
@@ -182,6 +185,9 @@ export async function fetchMobileLive(employeeId?: number) {
       fullName: string | null;
       position: string | null;
       location: string | null;
+      orgRole?: string | null;
+      userRole?: string | null;
+      workplace?: "pharmacy" | "office";
       status: string;
       presence: "online" | "offline";
       securityStatus: string;
@@ -302,6 +308,31 @@ export async function trackMobilePoint(body: {
     method: "POST",
     body: JSON.stringify(body),
   });
+}
+
+/** Orqa fon / sahifa yopilishida — javob kutmasdan yuborish */
+export function trackMobilePointKeepalive(body: {
+  sessionId: number;
+  latitude: number;
+  longitude: number;
+  accuracy?: number;
+}): void {
+  const payload = JSON.stringify(body);
+  try {
+    if (typeof navigator !== "undefined" && typeof navigator.sendBeacon === "function") {
+      const blob = new Blob([payload], { type: "application/json" });
+      if (navigator.sendBeacon(`/api/mobile-attendance/track`, blob)) return;
+    }
+  } catch {
+    /* fall through */
+  }
+  void fetch(`/api/mobile-attendance/track`, {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: payload,
+    keepalive: true,
+  }).catch(() => undefined);
 }
 
 export async function ensureMobileTrack(gps?: {

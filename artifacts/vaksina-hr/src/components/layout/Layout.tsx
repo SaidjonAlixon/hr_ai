@@ -2194,9 +2194,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               location.startsWith('/vazifalar/tahlil') ||
               location.startsWith('/chat') ||
               location.startsWith('/kirish') ||
-              location.startsWith('/tashkiliy-tuzilma')
+              location.startsWith('/tashkiliy-tuzilma') ||
+              location.startsWith('/logistika')
               ? 'overflow-hidden p-0'
-              : 'overflow-x-hidden overflow-y-auto p-3 sm:p-6',
+              : location === '/hisobkitob'
+                ? 'overflow-x-hidden overflow-y-auto p-1 sm:p-2'
+                : 'overflow-x-hidden overflow-y-auto p-3 sm:p-6',
           )}
         >
           <div
@@ -2214,7 +2217,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/chat') ||
                 location.startsWith('/kirish') ||
                 location.startsWith('/tashkiliy-tuzilma') ||
-                location.startsWith('/reviziya')
+                location.startsWith('/reviziya') ||
+                location.startsWith('/logistika') ||
+                location.startsWith('/admin/kochma-live') ||
+                location.startsWith('/admin/kochma-xarita')
                 ? 'h-full max-w-none'
                 : location === '/pharmacy-network'
                   ? 'max-w-none'

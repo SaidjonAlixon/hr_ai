@@ -7,15 +7,15 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   MobileRouteMap,
+  formatRouteDistance,
+  formatRouteDuration,
   routeDistanceMeters,
   type RoutePoint,
 } from "@/components/davomat/MobileRouteMap";
 import { ExternalMapsLinks } from "@/components/davomat/ExternalMapsLinks";
 import {
-  fetchMobilePermissions,
   fetchMobileSessionDetail,
   fetchMobileSessions,
-  type MobilePermissionRow,
 } from "@/lib/mobile-attendance-api";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -133,7 +133,6 @@ export default function AdminKochmaXaritaPage() {
   const allowed = canManageUsers(user?.role);
 
   const [date, setDate] = useState(todayYmdLocal);
-  const [perms, setPerms] = useState<MobilePermissionRow[]>([]);
   const [empId, setEmpId] = useState<number | "">("");
   const [daySessions, setDaySessions] = useState<SessionRow[]>([]);
   const [empSessions, setEmpSessions] = useState<SessionRow[]>([]);
@@ -145,15 +144,6 @@ export default function AdminKochmaXaritaPage() {
 
   const employees = useMemo(() => {
     const map = new Map<number, { id: number; name: string; position: string | null }>();
-    for (const p of perms) {
-      if (!map.has(p.employeeId)) {
-        map.set(p.employeeId, {
-          id: p.employeeId,
-          name: p.fullName || `Xodim #${p.employeeId}`,
-          position: p.position ?? null,
-        });
-      }
-    }
     for (const s of daySessions) {
       if (!map.has(s.employeeId)) {
         map.set(s.employeeId, {
@@ -167,7 +157,7 @@ export default function AdminKochmaXaritaPage() {
     return [...map.values()]
       .filter((e) => !q || e.name.toLowerCase().includes(q) || String(e.position || "").toLowerCase().includes(q))
       .sort((a, b) => a.name.localeCompare(b.name, "uz"));
-  }, [perms, daySessions, empQ]);
+  }, [daySessions, empQ]);
 
   const selectedEmp = employees.find((e) => e.id === empId);
   const selectedSession = empSessions.find((s) => s.id === sessionId) || daySessions.find((s) => s.id === sessionId);
@@ -175,11 +165,7 @@ export default function AdminKochmaXaritaPage() {
   const loadBase = useCallback(async () => {
     setLoadingList(true);
     try {
-      const [p, s] = await Promise.all([
-        fetchMobilePermissions("active"),
-        fetchMobileSessions({ from: date, to: date }),
-      ]);
-      setPerms(p.permissions);
+      const s = await fetchMobileSessions({ from: date, to: date });
       setDaySessions(s.sessions as SessionRow[]);
     } catch (e) {
       toast({
@@ -255,8 +241,7 @@ export default function AdminKochmaXaritaPage() {
   }, [sessionId, empSessions, daySessions, toast]);
 
   const distanceM = points.length >= 2 ? routeDistanceMeters(points) : 0;
-  const distanceLabel =
-    distanceM < 1000 ? `${Math.round(distanceM)} m` : `${(distanceM / 1000).toFixed(2)} km`;
+  const distanceLabel = formatRouteDistance(distanceM);
 
   if (!allowed) {
     return <div className="p-6 text-sm text-muted-foreground">Faqat admin uchun.</div>;
@@ -388,7 +373,7 @@ export default function AdminKochmaXaritaPage() {
                           {fmtTime(s.startTime)} — {fmtTime(s.endTime)}
                         </div>
                         <div className="text-muted-foreground">
-                          {s.durationMin != null ? `${s.durationMin} daq` : "ochiq"}
+                          {s.durationMin != null ? formatRouteDuration(s.durationMin) : "ochiq"}
                         </div>
                       </div>
                       <Badge
@@ -426,7 +411,11 @@ export default function AdminKochmaXaritaPage() {
                 </div>
                 <div className="flex items-center gap-1.5 pt-1 font-semibold text-sky-800 dark:text-sky-200">
                   <Route className="h-3.5 w-3.5" />
-                  Masofa: {distanceLabel} · {points.length} nuqta
+                  A → B: {distanceLabel}
+                  {selectedSession.durationMin != null
+                    ? ` · ${formatRouteDuration(selectedSession.durationMin)}`
+                    : ""}{" "}
+                  · {points.length} nuqta
                 </div>
               </div>
               <div className="mt-3 border-t border-sky-200/60 pt-3 dark:border-sky-900">

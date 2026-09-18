@@ -22,7 +22,8 @@ import type { DavomatDayMetrics } from "@/lib/davomat-api";
 export type PremiumMethod = "FACE_ID" | "QR";
 
 type Props = {
-  firstName: string;
+  /** To‘liq ism familiya (birinchi so‘z emas) */
+  personName: string;
   roleLine: string;
   dateLabel: string;
   dateWeekday?: string;
@@ -50,6 +51,8 @@ type Props = {
   gpsDenied?: boolean;
   gpsSharing: boolean;
   methodsReady: boolean;
+  /** Admin ko‘chma ruxsat — istalgan joydan davomat */
+  mobileAnywhere?: boolean;
   showMethodPicker: boolean;
   onDismissMethods?: () => void;
   selectedMethod: PremiumMethod;
@@ -131,10 +134,14 @@ export function DavomatPremiumView(p: Props) {
                 Orqaga
               </Link>
               <p className="text-[15px] text-white/85 drop-shadow-sm">Assalomu alaykum</p>
-              <h1 className="mt-0.5 truncate text-2xl font-bold tracking-tight text-white drop-shadow-sm">
-                {p.firstName}
-              </h1>
-              <p className="mt-0.5 truncate text-sm text-white/70">{p.roleLine}</p>
+              {p.personName ? (
+                <h1 className="mt-0.5 text-xl font-bold leading-snug tracking-tight text-white drop-shadow-sm sm:text-2xl">
+                  {p.personName}
+                </h1>
+              ) : null}
+              {p.roleLine ? (
+                <p className="mt-0.5 truncate text-sm text-white/70">{p.roleLine}</p>
+              ) : null}
             </div>
             <div className="dv-date-badge shrink-0">
               {p.dateWeekday ? (
@@ -254,6 +261,7 @@ export function DavomatPremiumView(p: Props) {
             headingDeg={p.headingDeg}
             accuracyMeters={p.accuracyMeters}
             inside={p.inside}
+            mobileAnywhere={Boolean(p.mobileAnywhere)}
             allowedMeters={p.allowedMeters}
             label={p.workplaceTitle}
             addressHint={p.addressHint}

@@ -334,9 +334,9 @@ function boardColumnFor(task: Vazifa, now = new Date()): BoardCol {
 
   const dueAt = task.dueAt || task.createdAt;
   if (dueAt) {
-    const due = startOfDay(new Date(dueAt));
-    const today = startOfDay(now);
-    if (due.getTime() === today.getTime()) return "today";
+  const due = startOfDay(new Date(dueAt));
+  const today = startOfDay(now);
+  if (due.getTime() === today.getTime()) return "today";
   }
   return "progress";
 }
@@ -583,11 +583,11 @@ export default function VazifalarPage() {
           location: x.location,
         });
         return {
-          key: `employee:${x.id}`,
+      key: `employee:${x.id}`,
           name: String(x.fullName || "").trim(),
           label: `${x.fullName}${metaParts.length ? ` · ${metaParts.join(" · ")}` : ""}`,
-          kind: "employee" as const,
-          id: x.id as number,
+      kind: "employee" as const,
+      id: x.id as number,
           meta: metaParts.join(" · "),
           departmentId: x.departmentId != null ? Number(x.departmentId) : null,
           departmentName: deptName || null,
@@ -706,7 +706,7 @@ export default function VazifalarPage() {
       } else {
         list = [];
       }
-      const q = search.trim().toLowerCase();
+    const q = search.trim().toLowerCase();
       if (q && q !== (user?.fullName || "").toLowerCase()) {
         list = list.filter(
           (t) =>
@@ -733,9 +733,9 @@ export default function VazifalarPage() {
       const q = search.trim().toLowerCase();
       if (q) {
         list = list.filter(
-          (t) =>
-            t.title.toLowerCase().includes(q) ||
-            (t.assigneeName || "").toLowerCase().includes(q) ||
+      (t) =>
+        t.title.toLowerCase().includes(q) ||
+        (t.assigneeName || "").toLowerCase().includes(q) ||
             (t.description || "").toLowerCase().includes(q) ||
             String(t.id).includes(q),
         );
@@ -1324,7 +1324,7 @@ export default function VazifalarPage() {
 
   function renderTaskCard(task: Vazifa, colId: BoardCol) {
     const overdue = colId === "past" || isTaskOverdue(task);
-    return (
+  return (
       <TaskCard
         key={task.id}
         task={task}
@@ -1439,26 +1439,26 @@ export default function VazifalarPage() {
           <div className="min-w-0">
             <div className="flex items-center justify-between gap-2">
               <h1 className="text-xl font-bold tracking-tight text-foreground md:text-[1.75rem]">
-                {t("tasks.title")}
-              </h1>
-              {canAssign && (
-                <Button
+              {t("tasks.title")}
+            </h1>
+          {canAssign && (
+            <Button
                   size="sm"
-                  onClick={() => openCreate("today")}
+              onClick={() => openCreate("today")}
                   className="h-9 shrink-0 gap-1.5 px-3 shadow-sm md:hidden"
-                >
-                  <Plus className="h-4 w-4" />
-                  {t("tasks.new")}
-                </Button>
-              )}
-            </div>
+            >
+              <Plus className="h-4 w-4" />
+              {t("tasks.new")}
+            </Button>
+          )}
+        </div>
             <p className="mt-0.5 hidden max-w-2xl text-sm leading-relaxed text-muted-foreground md:mt-1 md:block">
               {t("tasks.subtitle")}
             </p>
             <p className="mt-0.5 text-[11px] text-muted-foreground md:hidden">
               {kpi.total} ta · {kpi.overdue > 0 ? `${kpi.overdue} kechikkan` : "navbatda"}
             </p>
-          </div>
+        </div>
           <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
             <div
               role="tablist"
@@ -1482,9 +1482,9 @@ export default function VazifalarPage() {
                   );
                 }
                 return (
-                  <button
+                        <button
                     key={tab.id}
-                    type="button"
+                          type="button"
                     role="tab"
                     aria-selected={active}
                     className={className}
@@ -1492,7 +1492,7 @@ export default function VazifalarPage() {
                   >
                     {tab.icon}
                     <span className="hidden sm:inline">{t(tab.labelKey)}</span>
-                  </button>
+                        </button>
                 );
               })}
             </div>
@@ -1501,9 +1501,9 @@ export default function VazifalarPage() {
                 <Plus className="h-4 w-4" />
                 {t("tasks.new")}
               </Button>
-            )}
-          </div>
-        </div>
+                      )}
+                    </div>
+                  </div>
 
         {/* Mobil: ixcham gorizontal KPI; desktop: to‘liq kartalar */}
         <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mt-4 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-5">
@@ -1553,14 +1553,14 @@ export default function VazifalarPage() {
               </button>
             );
           })}
-        </div>
+      </div>
 
         <div className={cn(surface, "mt-3 p-2 md:mt-4 md:p-2.5")}>
           <div className="mb-0 flex items-center justify-between gap-2 lg:mb-2 lg:hidden">
             <button
               type="button"
               onClick={() => setFiltersOpen((v) => !v)}
-              className={cn(
+                    className={cn(
                 "inline-flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-3 py-2 text-xs font-semibold text-foreground",
                 filtersOpen && "border-primary/40 bg-primary/5 text-primary",
               )}
@@ -1570,7 +1570,7 @@ export default function VazifalarPage() {
               {activeFilterCount > 0 ? (
                 <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
                   {activeFilterCount}
-                </span>
+                  </span>
               ) : null}
             </button>
             {activeFilterCount > 0 ? (
@@ -1589,7 +1589,7 @@ export default function VazifalarPage() {
                 {t("tasks.filter.dateClear")}
               </button>
             ) : null}
-          </div>
+                </div>
           <div
             className={cn(
               "flex-col gap-2 lg:flex lg:flex-row lg:items-center",
@@ -1610,7 +1610,7 @@ export default function VazifalarPage() {
             </SelectContent>
           </Select>
 
-          <Select
+                  <Select
             value={
               assigneeFilter === null
                 ? "me"
@@ -1618,7 +1618,7 @@ export default function VazifalarPage() {
                   ? "all"
                   : `${assigneeFilter.kind}:${assigneeFilter.id}`
             }
-            onValueChange={(v) => {
+                    onValueChange={(v) => {
               if (v === "me") {
                 resetStaffFilterToMe();
                 return;
@@ -1648,8 +1648,8 @@ export default function VazifalarPage() {
           >
             <SelectTrigger className={cn(control, "w-full lg:w-[160px]")}>
               <SelectValue placeholder={t("tasks.filter.me")} />
-            </SelectTrigger>
-            <SelectContent>
+                    </SelectTrigger>
+                    <SelectContent>
               <SelectItem value="me">{t("tasks.filter.me")}</SelectItem>
               {canBrowseAll ? (
                 <SelectItem value="all">{t("tasks.filter.allStaff")}</SelectItem>
@@ -1689,10 +1689,10 @@ export default function VazifalarPage() {
               ).map((tp) => (
                 <SelectItem key={tp} value={tp}>
                   {taskTypeLabel(tp, t)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
 
           <div className="flex w-full items-center gap-1.5 lg:w-auto">
             <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
@@ -1818,12 +1818,12 @@ export default function VazifalarPage() {
                 />
               </PopoverContent>
             </Popover>
-          </div>
+            </div>
 
           <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-            <PopoverTrigger asChild>
+                  <PopoverTrigger asChild>
               <button
-                type="button"
+                      type="button"
                 className={cn(
                   control,
                   "flex min-w-0 flex-1 items-center gap-2 rounded-md border px-3 text-left transition",
@@ -1835,8 +1835,8 @@ export default function VazifalarPage() {
                 )}
               >
                 <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                <span
-                  className={cn(
+                      <span
+                        className={cn(
                     "min-w-0 flex-1 truncate",
                     search.trim() ||
                       (assigneeFilter !== null && assigneeFilter !== "all")
@@ -1849,7 +1849,7 @@ export default function VazifalarPage() {
                     : "") ||
                     search ||
                     t("tasks.searchShort")}
-                </span>
+                      </span>
                 {search.trim() ||
                 (assigneeFilter !== null && assigneeFilter !== "all") ? (
                   <span
@@ -1875,10 +1875,10 @@ export default function VazifalarPage() {
                   <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
                 )}
               </button>
-            </PopoverTrigger>
-            <PopoverContent
+                  </PopoverTrigger>
+                  <PopoverContent
               className="z-[80] w-[var(--radix-popover-trigger-width)] p-0"
-              align="start"
+                    align="start"
               sideOffset={6}
             >
               <Command shouldFilter={false}>
@@ -1893,7 +1893,7 @@ export default function VazifalarPage() {
                   placeholder={t("tasks.searchEmployee")}
                 />
                 <CommandList className="max-h-72">
-                  <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
+                        <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
                   <CommandGroup heading={t("tasks.filterByAssignee")}>
                     <CommandItem
                       value="__me__"
@@ -1946,10 +1946,10 @@ export default function VazifalarPage() {
                         assigneeFilter.kind === o.kind &&
                         assigneeFilter.id === o.id;
                       return (
-                        <CommandItem
-                          key={o.key}
-                          value={o.label}
-                          onSelect={() => {
+                            <CommandItem
+                              key={o.key}
+                              value={o.label}
+                              onSelect={() => {
                             setAssigneeFilter({ kind: o.kind, id: o.id, name: o.name });
                             setSearch(o.name);
                             setSearchOpen(false);
@@ -1965,30 +1965,30 @@ export default function VazifalarPage() {
                               {o.meta}
                             </span>
                           </span>
-                          <Check
-                            className={cn(
+                              <Check
+                                className={cn(
                               "h-4 w-4 shrink-0 text-primary",
                               active ? "opacity-100" : "opacity-0",
                             )}
                           />
-                        </CommandItem>
+                            </CommandItem>
                       );
                     })}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-          </div>
-        </div>
-      </div>
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              </div>
+              </div>
+              </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4 md:p-5">
         <div key={viewMode} className="min-h-0 min-w-0 animate-in fade-in-0 duration-200">
           {isLoading ? (
             <div className="flex h-full items-center justify-center text-muted-foreground">
               {t("ui.loading")}
-            </div>
+                </div>
           ) : viewMode === "list" ? (
             <div className="space-y-3">
               <div className="flex items-center justify-between gap-2">
@@ -1997,8 +1997,8 @@ export default function VazifalarPage() {
                   <p className="text-xs text-muted-foreground">
                     {filtered.length} {t("tasks.filteredCount")}
                   </p>
-                </div>
-              </div>
+            </div>
+            </div>
 
               {/* Mobil: kartalar — jadval emas */}
               <div className="space-y-2.5 md:hidden">
@@ -2042,8 +2042,8 @@ export default function VazifalarPage() {
                               {task.description ? (
                                 <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
                                   {task.description}
-                                </div>
-                              ) : null}
+              </div>
+            ) : null}
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
@@ -2053,7 +2053,7 @@ export default function VazifalarPage() {
                                 <span className="truncate text-muted-foreground">
                                   {task.assigneeName || "—"}
                                 </span>
-                              </div>
+          </div>
                             </td>
                             <td
                               className={cn(
@@ -2077,7 +2077,7 @@ export default function VazifalarPage() {
                               {t(`tasks.status.${task.status}`)}
                             </td>
                             <td className="px-4 py-3 text-right">
-                              <Button
+            <Button
                                 size="sm"
                                 variant="ghost"
                                 className="h-7 text-xs"
@@ -2087,7 +2087,7 @@ export default function VazifalarPage() {
                                 }}
                               >
                                 {t("tasks.analytics.openTask")}
-                              </Button>
+            </Button>
                             </td>
                           </tr>
                         );
@@ -2236,7 +2236,7 @@ export default function VazifalarPage() {
                                 </button>
                               );
                             })}
-                          </div>
+                </div>
                         </div>
                       );
                     })}
@@ -2326,10 +2326,10 @@ export default function VazifalarPage() {
                     </p>
                   </div>
                   {canAssign && (
-                    <Button
+                <Button
                       size="sm"
                       className="h-8"
-                      onClick={() => {
+                  onClick={() => {
                         const d = new Date(selectedCalDay);
                         d.setHours(18, 0, 0, 0);
                         setCreateDueAt(d.toISOString());
@@ -2339,8 +2339,8 @@ export default function VazifalarPage() {
                     >
                       <Plus className="mr-1 h-3.5 w-3.5" />
                       {t("tasks.new")}
-                    </Button>
-                  )}
+                </Button>
+              )}
                 </div>
                 <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
                   {selectedDayTasks.length === 0 ? (
@@ -2553,7 +2553,7 @@ export default function VazifalarPage() {
                   <button
                     key={day}
                     type="button"
-                    onClick={() => {
+                      onClick={() => {
                       pickCalendarDay(dayStart);
                       switchView("calendar");
                     }}
@@ -2580,7 +2580,7 @@ export default function VazifalarPage() {
                   </button>
                 );
               })}
-            </div>
+                  </div>
           </div>
 
           <div className={cn(surface, "p-3.5")}>
@@ -2627,7 +2627,7 @@ export default function VazifalarPage() {
               )}
               {todaySchedule.length === 0 && byColumn.today.length === 0 && (
                 <p className="text-xs text-muted-foreground">{t("tasks.empty.today")}</p>
-              )}
+                )}
             </div>
           </div>
 
@@ -2935,7 +2935,7 @@ export default function VazifalarPage() {
               <DialogDescription className="text-sm font-medium text-white/95">
                 {t("tasks.extend.subtitle")}
               </DialogDescription>
-            </DialogHeader>
+          </DialogHeader>
             {activeTask ? (
               <div className="relative mt-3 rounded-xl border border-white/30 bg-[#061428]/55 px-3 py-2.5 backdrop-blur">
                 <p className="truncate text-sm font-semibold text-white">{activeTask.title}</p>
@@ -3001,17 +3001,17 @@ export default function VazifalarPage() {
                 </Label>
                 <div className="relative">
                   <Calendar className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#0b5fff]" />
-                  <Input
-                    type="datetime-local"
-                    value={extendDue}
+              <Input
+                type="datetime-local"
+                value={extendDue}
                     disabled={requestExtension.isPending}
                     onChange={(e) => {
                       setExtendDue(e.target.value);
                       setExtendPresetDays(null);
                     }}
                     className="h-11 rounded-xl border-[#0b5fff]/40 bg-white pl-10 font-medium text-slate-900 focus-visible:border-[#0b5fff] focus-visible:ring-[#0b5fff]/25 dark:border-slate-600 dark:bg-slate-950 dark:text-white"
-                  />
-                </div>
+              />
+            </div>
               </div>
             </div>
 
@@ -3032,7 +3032,7 @@ export default function VazifalarPage() {
             <div className="rounded-xl border border-[#0b5fff]/35 bg-[#eef4ff] px-3 py-2.5 text-[12px] font-medium leading-snug text-[#0a2540] dark:border-[#5b9dff]/45 dark:bg-[#102a4a] dark:text-white">
               <SendHorizontal className="mr-1 inline h-3.5 w-3.5 text-[#0b5fff] dark:text-[#7eb6ff]" />
               {t("tasks.extend.flowHint")}
-            </div>
+          </div>
 
             <div className="flex gap-2 pb-1">
               <Button
@@ -3043,16 +3043,16 @@ export default function VazifalarPage() {
                 className="h-11 flex-1 rounded-xl border-slate-300 font-semibold"
               >
                 {t("ui.cancel")}
-              </Button>
-              <Button
+            </Button>
+            <Button
                 type="button"
-                onClick={() => void handleExtend()}
+              onClick={() => void handleExtend()}
                 disabled={requestExtension.isPending || !extendDue}
                 className="h-11 flex-1 rounded-xl bg-gradient-to-r from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white shadow-md shadow-[#0b5fff]/25 hover:opacity-95"
-              >
+            >
                 <Send className="mr-1.5 h-4 w-4" />
                 {t("tasks.extend.submit")}
-              </Button>
+            </Button>
             </div>
           </div>
         </DialogContent>
@@ -3384,15 +3384,15 @@ function TaskCard({
         </a>
       )}
 
-      <div
-        className={cn(
+        <div
+          className={cn(
           "mb-2 flex items-center gap-1.5 text-[11px]",
           dueDateToneClass(task.dueAt, task.status),
         )}
       >
         <Calendar className="h-3 w-3 shrink-0" />
         <span>{task.dueAt ? formatDate(task.dueAt) : t("tasks.noDue")}</span>
-      </div>
+          </div>
 
       {(column === "progress" || isAccepted || column === "today") &&
         !awaitingReview &&
@@ -3401,26 +3401,26 @@ function TaskCard({
             <div className="mb-1 flex items-center justify-between text-[10px] font-semibold text-muted-foreground">
               <span>{t("tasks.progress")}</span>
               <span className="tabular-nums text-primary">{progress}%</span>
-            </div>
+        </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-primary transition-all"
                 style={{ width: `${progress}%` }}
               />
-            </div>
-          </div>
-        )}
+        </div>
+        </div>
+      )}
 
       {(awaitingReview || isVerified) &&
         (task.completionNote || (task.completionAttachments?.length ?? 0) > 0) && (
           <div className="mb-2 rounded-lg border border-emerald-200/80 bg-emerald-50/80 px-2 py-1 text-[10px] text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200">
             <span className="font-semibold">{t("tasks.result")} </span>
-            {task.completionNote
-              ? task.completionNote.slice(0, 60) +
-                (task.completionNote.length > 60 ? "…" : "")
-              : `${task.completionAttachments.length} ta fayl`}
-          </div>
-        )}
+          {task.completionNote
+            ? task.completionNote.slice(0, 60) +
+              (task.completionNote.length > 60 ? "…" : "")
+            : `${task.completionAttachments.length} ta fayl`}
+        </div>
+      )}
 
       {!awaitingReview &&
       !isVerified &&
@@ -3452,7 +3452,7 @@ function TaskCard({
       <div className="flex items-center gap-2 border-t border-border/60 pt-2">
         <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-[9px] font-bold text-primary-foreground">
           {initials || "?"}
-        </span>
+            </span>
         <span className="min-w-0 flex-1 truncate text-[11px] font-medium text-foreground">
           {task.assigneeName || "—"}
           {Array.isArray(task.meta?.assigneeHistory) &&
@@ -3468,13 +3468,13 @@ function TaskCard({
           {msgCount}
         </span>
         <span className="inline-flex items-center gap-0.5 text-[10px] text-muted-foreground">
-          <Paperclip className="h-3 w-3" />
+              <Paperclip className="h-3 w-3" />
           {files.length + (task.completionAttachments?.length ?? 0)}
-        </span>
+            </span>
         <span className="text-[10px] font-medium tabular-nums text-muted-foreground/50">
           TK-{task.id}
         </span>
-      </div>
+        </div>
 
       {assigneeFrozen ? (
         <p className="mt-2 w-full rounded-md bg-rose-500/15 px-2 py-1.5 text-center text-[10px] font-bold text-rose-700 ring-1 ring-rose-300/60 dark:bg-rose-950/50 dark:text-rose-300 dark:ring-rose-700/50">
@@ -3527,8 +3527,8 @@ function TaskCard({
           </>
         )}
         {showApprove && (
-          <button
-            type="button"
+            <button
+              type="button"
             className="flex w-full items-center justify-center gap-1.5 rounded-md bg-emerald-600 py-2 text-[12px] font-bold text-white shadow-sm hover:bg-emerald-700"
             onClick={() => {
               startTransition(() => {
@@ -3538,18 +3538,18 @@ function TaskCard({
           >
             <CheckCircle2 className="h-4 w-4" />
             Tasdiqlash
-          </button>
+            </button>
         )}
         {showApprove && (
-          <button
-            type="button"
+            <button
+              type="button"
             className="flex w-full items-center justify-center gap-1.5 rounded-md bg-gradient-to-r from-[#0a2540]/10 to-[#0b5fff]/15 py-2 text-[11px] font-bold text-[#0a2540] ring-1 ring-[#0b5fff]/35 hover:from-[#0a2540]/15 hover:to-[#0b5fff]/25 dark:text-sky-100 dark:ring-[#0b5fff]/40"
             onClick={onOpenReturn}
-          >
+            >
             <RotateCcw className="h-3.5 w-3.5" />
-            {t("tasks.rework")}
+              {t("tasks.rework")}
             {reworkCount > 0 ? ` · ${reworkCount}` : ""}
-          </button>
+            </button>
         )}
         {showExtReview && (
           <>

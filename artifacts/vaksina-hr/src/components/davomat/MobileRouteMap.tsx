@@ -22,6 +22,8 @@ type Props = {
   liveMode?: boolean;
   /** Live da oxirgi nuqtaga kuzatib borsin */
   followLive?: boolean;
+  /** «Xodimni top» tugmasi matni */
+  locateLabel?: string;
 };
 
 const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -61,6 +63,24 @@ export function routeDistanceMeters(points: RoutePoint[]): number {
     total += haversineM(points[i - 1]!, points[i]!);
   }
   return total;
+}
+
+/** 0–59 daq → "N daq"; 60+ → "H soat M daq" */
+export function formatRouteDuration(minutes: number | null | undefined): string {
+  if (minutes == null || !Number.isFinite(minutes)) return "—";
+  const m = Math.max(0, Math.round(minutes));
+  if (m < 60) return `${m} daq`;
+  const h = Math.floor(m / 60);
+  const r = m % 60;
+  if (r === 0) return `${h} soat`;
+  return `${h} soat ${r} daq`;
+}
+
+/** A → B yo‘l masofasi */
+export function formatRouteDistance(meters: number | null | undefined): string {
+  if (meters == null || !Number.isFinite(meters) || meters <= 0) return "0 m";
+  if (meters < 1000) return `${Math.round(meters)} m`;
+  return `${(meters / 1000).toFixed(2)} km`;
 }
 
 function pinIcon(letter: string, color: string, subtitle: string) {
@@ -111,6 +131,7 @@ export function MobileRouteMap({
   emptyHint = "Xodim/sessiya tanlang — yo‘nalish shu yerda chiqadi",
   liveMode = false,
   followLive = true,
+  locateLabel = "Xodimni top",
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -129,11 +150,23 @@ export function MobileRouteMap({
     [points],
   );
 
+  const locateTarget = useMemo(() => {
+    if (cleanPoints.length === 0) return null;
+    const live = [...cleanPoints].reverse().find((p) => p.kind === "live");
+    return live || cleanPoints[cleanPoints.length - 1]!;
+  }, [cleanPoints]);
+
+  const goToEmployee = () => {
+    const map = mapRef.current;
+    const target = locateTarget;
+    if (!map || !target) return;
+    userPanned.current = false;
+    map.setView([target.lat, target.lng], Math.max(map.getZoom(), 17), { animate: true });
+  };
+
   const distanceLabel = useMemo(() => {
     if (cleanPoints.length < 2) return null;
-    const m = routeDistanceMeters(cleanPoints);
-    if (m < 1000) return `${Math.round(m)} m`;
-    return `${(m / 1000).toFixed(2)} km`;
+    return formatRouteDistance(routeDistanceMeters(cleanPoints));
   }, [cleanPoints]);
 
   useEffect(() => {
@@ -275,7 +308,7 @@ export function MobileRouteMap({
       />
       {distanceLabel ? (
         <div className="pointer-events-none absolute left-3 top-3 z-[1000] rounded-xl border border-border/80 bg-background/95 px-3 py-1.5 text-xs font-semibold shadow-md backdrop-blur">
-          Yo‘l: {distanceLabel}
+          A → B: {distanceLabel}
         </div>
       ) : null}
       {cleanPoints.length > 0 ? (
@@ -292,17 +325,28 @@ export function MobileRouteMap({
           {emptyHint}
         </div>
       ) : null}
-      {liveMode && cleanPoints.length > 0 ? (
+      {locateTarget ? (
         <button
           type="button"
-          className="absolute bottom-4 right-3 z-[1000] rounded-xl border border-sky-300 bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white shadow-md hover:bg-sky-700"
-          onClick={() => {
-            userPanned.current = false;
-            const last = cleanPoints[cleanPoints.length - 1];
-            if (last && mapRef.current) mapRef.current.setView([last.lat, last.lng], 16, { animate: true });
-          }}
+          className="absolute bottom-4 right-3 z-[1000] inline-flex items-center gap-1.5 rounded-xl border border-sky-300 bg-sky-600 px-3 py-2 text-xs font-semibold text-white shadow-md hover:bg-sky-700"
+          onClick={goToEmployee}
+          title={locateLabel}
         >
-          Kuzatish
+          <svg
+            viewBox="0 0 24 24"
+            width="14"
+            height="14"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden
+          >
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v3M12 19v3M2 12h3M19 12h3" />
+          </svg>
+          {locateLabel}
         </button>
       ) : null}
     </div>

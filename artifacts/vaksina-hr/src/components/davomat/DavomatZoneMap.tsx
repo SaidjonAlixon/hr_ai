@@ -13,6 +13,8 @@ type Props = {
   headingDeg?: number | null;
   accuracyMeters?: number | null;
   inside: boolean;
+  /** Ko‘chma ruxsat — zona tashqarisida ham OK */
+  mobileAnywhere?: boolean;
   allowedMeters: number;
   label: string;
   addressHint?: string | null;
@@ -106,6 +108,7 @@ export function DavomatZoneMap({
   headingDeg,
   accuracyMeters,
   inside,
+  mobileAnywhere = false,
   allowedMeters,
   label,
   addressHint,
@@ -361,7 +364,9 @@ export function DavomatZoneMap({
 
     if (animRef.current != null) cancelAnimationFrame(animRef.current);
 
-    const duration = distMoved > 0.4 ? Math.min(700, Math.max(220, distMoved * 40)) : 0;
+    // Yurishda tezroq va silliqroq kuzatish
+    const duration =
+      distMoved > 0.15 ? Math.min(480, Math.max(120, distMoved * 28)) : 0;
     const t0 = performance.now();
     const insideChanged =
       !!userRef.current?.getElement()?.querySelector(".dv-lf-user-wrap") &&
@@ -399,8 +404,9 @@ export function DavomatZoneMap({
         accuracyRef.current.setRadius(acc);
       }
 
-      if (followRef.current) {
-        map.panTo([lat, lng], { animate: !done, duration: 0.25 });
+      // Harakatda har doim kuzatib boring
+      if (followRef.current || distMoved > 1.5) {
+        map.panTo([lat, lng], { animate: !done && distMoved > 0.5, duration: 0.2 });
       }
 
       if (done) lastUser.current = { lat, lng, heading: h };
@@ -416,7 +422,6 @@ export function DavomatZoneMap({
       const ease = 1 - (1 - p) * (1 - p);
       const lat = from.lat + (to.lat - from.lat) * ease;
       const lng = from.lng + (to.lng - from.lng) * ease;
-      // Joylashuv silliq; heading — joriy kompas (kechikmasin)
       applyFrame(lat, lng, lastHeading.current, p >= 1);
       if (p < 1) animRef.current = requestAnimationFrame(tick);
       else animRef.current = null;
@@ -465,10 +470,15 @@ export function DavomatZoneMap({
         <div
           className={cn(
             "dv-map-status",
-            inside ? "dv-map-status-ok" : "dv-map-status-far",
+            inside || mobileAnywhere ? "dv-map-status-ok" : "dv-map-status-far",
           )}
         >
-          {inside ? (
+          {mobileAnywhere ? (
+            <>
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              Ko‘chma ruxsat · istalgan joy
+            </>
+          ) : inside ? (
             <>
               <CheckCircle2 className="h-3.5 w-3.5" />
               Siz bu hududasiz

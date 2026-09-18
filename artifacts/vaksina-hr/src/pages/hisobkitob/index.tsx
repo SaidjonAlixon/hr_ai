@@ -172,10 +172,10 @@ export default function HisobkitobPage() {
   };
 
   return (
-    <div className="dept-page">
+    <div className="dept-page w-full max-w-none">
       <div className="dept-hero dept-hero-primary">
         <div className="dept-hero-glow" />
-        <div className="dept-hero-body flex flex-wrap items-center justify-between gap-3">
+        <div className="dept-hero-body !mx-0 flex w-full !max-w-none flex-wrap items-center justify-between gap-3 !px-2 sm:!px-3 md:!px-4">
           <div>
             <p className="dept-eyebrow">{t("hisob.finance")}</p>
             <h1 className="dept-title flex items-center gap-2">
@@ -197,7 +197,7 @@ export default function HisobkitobPage() {
         </div>
       </div>
 
-      <div className="dept-page-inner">
+      <div className="dept-page-inner !max-w-none w-full px-2 sm:px-3 md:px-4">
 
       {sheets.isLoading || detail.isLoading || (!d && mut.create.isPending) ? (
         <Skeleton className="h-80 rounded-xl" />

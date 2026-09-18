@@ -5,8 +5,11 @@ import { canManageUsers } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   MobileRouteMap,
+  formatRouteDistance,
+  formatRouteDuration,
   routeDistanceMeters,
   type RoutePoint,
 } from "@/components/davomat/MobileRouteMap";
@@ -73,6 +76,10 @@ function rowKey(l: LiveRow): string {
   return l.sessionId != null ? `s:${l.sessionId}` : `e:${l.employeeId}`;
 }
 
+function workplaceOf(l: LiveRow): "pharmacy" | "office" {
+  return l.workplace === "pharmacy" ? "pharmacy" : "office";
+}
+
 export default function AdminKochmaLivePage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -80,30 +87,50 @@ export default function AdminKochmaLivePage() {
 
   const [liveList, setLiveList] = useState<LiveRow[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
+  const [pharmacyCount, setPharmacyCount] = useState(0);
+  const [officeCount, setOfficeCount] = useState(0);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [points, setPoints] = useState<RoutePoint[]>([]);
   const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [polledAt, setPolledAt] = useState<string | null>(null);
 
+  const [showDorixona, setShowDorixona] = useState(true);
+  const [showOfis, setShowOfis] = useState(true);
+  const [showOnline, setShowOnline] = useState(true);
+  const [showOffline, setShowOffline] = useState(true);
+
   const selected = liveList.find((l) => rowKey(l) === selectedKey) || null;
   const selectedSessionId = selected?.sessionId ?? null;
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return liveList;
-    return liveList.filter(
-      (l) =>
+    return liveList.filter((l) => {
+      const wp = workplaceOf(l);
+      if (wp === "pharmacy" && !showDorixona) return false;
+      if (wp === "office" && !showOfis) return false;
+      if (l.presence === "online" && !showOnline) return false;
+      if (l.presence === "offline" && !showOffline) return false;
+      if (!needle) return true;
+      return (
         String(l.fullName || "").toLowerCase().includes(needle) ||
-        String(l.position || "").toLowerCase().includes(needle),
-    );
-  }, [liveList, q]);
+        String(l.position || "").toLowerCase().includes(needle) ||
+        String(l.location || "").toLowerCase().includes(needle)
+      );
+    });
+  }, [liveList, q, showDorixona, showOfis, showOnline, showOffline]);
 
   const refreshList = useCallback(async () => {
     try {
       const r = await fetchMobileLive();
       setLiveList(r.live);
       setOnlineCount(Number(r.onlineCount ?? r.live.filter((l) => l.presence === "online").length));
+      setPharmacyCount(
+        Number(r.pharmacyCount ?? r.live.filter((l) => workplaceOf(l) === "pharmacy").length),
+      );
+      setOfficeCount(
+        Number(r.officeCount ?? r.live.filter((l) => workplaceOf(l) === "office").length),
+      );
       setPolledAt(r.polledAt);
       setSelectedKey((prev) => {
         if (prev && r.live.some((l) => rowKey(l) === prev)) return prev;
@@ -148,15 +175,45 @@ export default function AdminKochmaLivePage() {
   }, [selectedSessionId]);
 
   const distanceM = points.length >= 2 ? routeDistanceMeters(points) : 0;
-  const distanceLabel =
-    distanceM < 1000 ? `${Math.round(distanceM)} m` : `${(distanceM / 1000).toFixed(2)} km`;
+  const distanceLabel = formatRouteDistance(distanceM);
+
+  const mapPoints = useMemo((): RoutePoint[] => {
+    if (points.length > 0) {
+      const last = points[points.length - 1]!;
+      if (selected?.presence === "online" && last.kind !== "live") {
+        return [...points, { ...last, kind: "live" as const }];
+      }
+      return points;
+    }
+    const lat = selected?.liveLatitude ?? selected?.startLatitude;
+    const lng = selected?.liveLongitude ?? selected?.startLongitude;
+    if (
+      lat != null &&
+      lng != null &&
+      Number.isFinite(Number(lat)) &&
+      Number.isFinite(Number(lng)) &&
+      !(Number(lat) === 0 && Number(lng) === 0)
+    ) {
+      return [
+        {
+          lat: Number(lat),
+          lng: Number(lng),
+          kind: selected?.presence === "online" ? "live" : "end",
+          time: selected?.liveAt ? fmtTime(selected.liveAt) : null,
+          accuracy: selected?.liveAccuracy ?? null,
+          label: selected?.fullName || undefined,
+        },
+      ];
+    }
+    return [];
+  }, [points, selected]);
 
   if (!allowed) {
     return <div className="p-6 text-sm text-muted-foreground">Faqat admin uchun.</div>;
   }
 
   return (
-    <div className="mx-auto flex max-w-[1400px] flex-col gap-4 pb-28">
+    <div className="flex w-full max-w-none flex-col gap-4 pb-28">
       <header className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
         <div className="flex flex-col gap-4 bg-gradient-to-br from-emerald-50 via-card to-sky-50/40 px-4 py-5 sm:flex-row sm:items-center sm:justify-between sm:px-6 dark:from-emerald-950/40 dark:to-sky-950/20">
           <div className="min-w-0">
@@ -179,8 +236,9 @@ export default function AdminKochmaLivePage() {
               <Radio className="h-6 w-6 text-emerald-600" />
               Jonli kuzatuv
             </h1>
-            <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Davomatda lokatsiya ruxsati berilgan xodimlar — qayerdaligi va harakati real vaqtda.
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              Barcha xodimlar (login bor) — lokatsiya berganlari online, bermaganlari offline. Ko‘chma
+              davomat ruxsatidan mustaqil.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -202,9 +260,14 @@ export default function AdminKochmaLivePage() {
           </div>
         </div>
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground sm:px-6">
-          <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
-            <Signal className="h-3.5 w-3.5 text-emerald-600" />
-            {onlineCount} online · {liveList.length} jami
+          <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1 font-medium text-foreground">
+            <span className="inline-flex items-center gap-1.5">
+              <Signal className="h-3.5 w-3.5 text-emerald-600" />
+              {onlineCount} online · {liveList.length - onlineCount} offline · {liveList.length} jami
+            </span>
+            <span className="text-muted-foreground">
+              Dorixona {pharmacyCount} · Ofis {officeCount}
+            </span>
           </span>
           <span className="tabular-nums">
             Yangilandi: {polledAt ? fmtTime(polledAt) : "—"} · har 5–8 soniya
@@ -212,7 +275,7 @@ export default function AdminKochmaLivePage() {
         </div>
       </header>
 
-      <div className="grid gap-4 lg:grid-cols-[340px_1fr]">
+      <div className="grid gap-4 lg:grid-cols-[380px_1fr] xl:grid-cols-[400px_1fr]">
         <aside className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm">
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
@@ -226,22 +289,62 @@ export default function AdminKochmaLivePage() {
             />
           </div>
 
+          <div className="rounded-xl border border-border bg-muted/30 p-3">
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Filtr
+            </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox
+                  checked={showDorixona}
+                  onCheckedChange={(v) => setShowDorixona(v === true)}
+                />
+                <span>Dorixona</span>
+                <span className="text-[11px] text-muted-foreground">({pharmacyCount})</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox checked={showOfis} onCheckedChange={(v) => setShowOfis(v === true)} />
+                <span>Ofis</span>
+                <span className="text-[11px] text-muted-foreground">({officeCount})</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox checked={showOnline} onCheckedChange={(v) => setShowOnline(v === true)} />
+                <span className="text-emerald-700 dark:text-emerald-300">Online</span>
+              </label>
+              <label className="flex cursor-pointer items-center gap-2 text-sm">
+                <Checkbox checked={showOffline} onCheckedChange={(v) => setShowOffline(v === true)} />
+                <span className="text-slate-600 dark:text-slate-300">Offline</span>
+              </label>
+            </div>
+          </div>
+
           <div className="min-h-0 flex-1">
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Kuzatuvdagi xodimlar
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Kuzatuvdagi xodimlar
+              </div>
+              <span className="text-[11px] tabular-nums text-muted-foreground">
+                {filtered.length} / {liveList.length}
+              </span>
             </div>
             <div className="max-h-[52vh] space-y-1.5 overflow-y-auto pr-0.5">
               {filtered.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
-                  {loading ? "Yuklanmoqda…" : "Hozir kuzatiladigan xodim yo‘q"}
+                  {loading
+                    ? "Yuklanmoqda…"
+                    : liveList.length === 0
+                      ? "Xodimlar topilmadi"
+                      : "Filtr bo‘yicha xodim topilmadi"}
                   <p className="mt-2 text-[11px]">
-                    Ko‘chma ruxsat berilgan xodim Davomatda lokatsiyaga ruxsat bersa — bu yerda chiqadi.
+                    Har bir xodim Davomatda lokatsiyaga ruxsat bersa — online bo‘ladi. Bu ro‘yxat
+                    ko‘chma belgilashdan mustaqil.
                   </p>
                 </div>
               ) : (
                 filtered.map((l) => {
                   const key = rowKey(l);
                   const online = l.presence === "online";
+                  const wp = workplaceOf(l);
                   return (
                     <button
                       key={key}
@@ -261,22 +364,35 @@ export default function AdminKochmaLivePage() {
                           </div>
                           <div className="truncate text-[11px] text-muted-foreground">
                             {l.position || "—"}
+                            {l.location ? ` · ${l.location}` : ""}
                           </div>
                         </div>
-                        <Badge
-                          className={cn(
-                            "shrink-0 rounded-md border-0 text-[10px] text-white",
-                            online ? "bg-emerald-600" : "bg-slate-500",
-                          )}
-                        >
-                          {online ? "ONLINE" : "OFFLINE"}
-                        </Badge>
+                        <div className="flex shrink-0 flex-col items-end gap-1">
+                          <Badge
+                            className={cn(
+                              "rounded-md border-0 text-[10px] text-white",
+                              online ? "bg-emerald-600" : "bg-slate-500",
+                            )}
+                          >
+                            {online ? "ONLINE" : "OFFLINE"}
+                          </Badge>
+                          <span
+                            className={cn(
+                              "rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide",
+                              wp === "pharmacy"
+                                ? "bg-sky-100 text-sky-800 dark:bg-sky-950 dark:text-sky-200"
+                                : "bg-violet-100 text-violet-800 dark:bg-violet-950 dark:text-violet-200",
+                            )}
+                          >
+                            {wp === "pharmacy" ? "Dorixona" : "Ofis"}
+                          </span>
+                        </div>
                       </div>
                       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] tabular-nums text-muted-foreground">
                         {l.startTime ? <span>{fmtTime(l.startTime)} dan</span> : <span>GPS kutilmoqda</span>}
                         {l.sessionId != null ? (
                           <>
-                            <span>{l.durationMin} daq</span>
+                            <span>{formatRouteDuration(l.durationMin)}</span>
                             <span>{l.pointCount} nuqta</span>
                           </>
                         ) : null}
@@ -308,6 +424,10 @@ export default function AdminKochmaLivePage() {
                   {selected.presence === "online" ? "Online" : "Offline"}
                 </Badge>
               </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                {workplaceOf(selected) === "pharmacy" ? "Dorixona" : "Ofis"}
+                {selected.location ? ` · ${selected.location}` : ""}
+              </div>
               <div className="mt-2 space-y-1 text-muted-foreground">
                 <div className="flex justify-between gap-2">
                   <span>Boshlanish</span>
@@ -318,7 +438,13 @@ export default function AdminKochmaLivePage() {
                   <span className="font-medium tabular-nums text-foreground">{fmtTime(selected.liveAt)}</span>
                 </div>
                 <div className="flex justify-between gap-2">
-                  <span>Masofa</span>
+                  <span>Davomiylik</span>
+                  <span className="font-medium tabular-nums text-foreground">
+                    {formatRouteDuration(selected.durationMin)}
+                  </span>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <span>A → B yo‘l</span>
                   <span className="inline-flex items-center gap-1 font-semibold text-sky-800 dark:text-sky-200">
                     <Route className="h-3.5 w-3.5" />
                     {distanceLabel} · {points.length} nuqta
@@ -362,17 +488,18 @@ export default function AdminKochmaLivePage() {
             ) : null}
           </div>
           <MobileRouteMap
-            points={points}
+            points={mapPoints}
             height="min(74vh, 720px)"
             liveMode={selected?.presence === "online"}
             followLive={selected?.presence === "online"}
+            locateLabel="Xodimni top"
             className="min-h-[min(74vh,720px)] w-full"
             emptyHint={
               liveList.length === 0
-                ? "Xodim Davomat sahifasida lokatsiyaga ruxsat bersa — joyi shu yerda chiqadi"
-                : selectedSessionId == null
-                  ? "Bu xodim hali GPS bermagan yoki lokatsiya o‘chirilgan (offline)"
-                  : "Chapdan xodimni tanlang — joriy joy pulsatsiya bilan chiqadi"
+                ? "Xodimlar yuklanmagan"
+                : !selected
+                  ? "Chapdan xodimni tanlang"
+                  : "Bu xodim hali GPS bermagan yoki lokatsiya o‘chirilgan (offline)"
             }
           />
         </section>

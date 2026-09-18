@@ -96,7 +96,6 @@ import {
 import { clientIp, writePunchAudit } from "../lib/punch-audit";
 import {
   findActivePermissionForEmployee,
-  getMobileSettings,
 } from "../lib/mobile-attendance";
 
 const router: IRouter = Router();
@@ -1717,11 +1716,8 @@ async function geoGate(
   // Admin bergan ko‘chma ruxsat — yashil zona (geofence) talab qilinmaydi
   let mobileAnywhere = false;
   try {
-    const [settings, perm] = await Promise.all([
-      getMobileSettings(),
-      findActivePermissionForEmployee(emp.id),
-    ]);
-    mobileAnywhere = Boolean(settings.enabled && perm);
+    const perm = await findActivePermissionForEmployee(emp.id);
+    mobileAnywhere = Boolean(perm && perm.allowAnywhere !== false);
   } catch {
     mobileAnywhere = false;
   }
@@ -2740,11 +2736,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
 
     let mobileAnywhere = false;
     try {
-      const [ms, mp] = await Promise.all([
-        getMobileSettings(),
-        findActivePermissionForEmployee(emp.id),
-      ]);
-      mobileAnywhere = Boolean(ms.enabled && mp);
+      const mp = await findActivePermissionForEmployee(emp.id);
+      mobileAnywhere = Boolean(mp && mp.allowAnywhere !== false);
     } catch {
       mobileAnywhere = false;
     }

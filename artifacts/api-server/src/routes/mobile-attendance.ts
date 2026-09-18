@@ -2,7 +2,7 @@
  * Ko‘chma davomat API — faqat admin ruxsat boshqaruvi; xodim start/end/track.
  */
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, lte, inArray, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lte, inArray, sql, isNotNull } from "drizzle-orm";
 import {
   db,
   employeesTable,
@@ -297,9 +297,7 @@ router.post("/mobile-attendance/permissions", requireAuth, async (req: AuthReque
           allowStartAnywhere: b.allowStartAnywhere !== false,
           allowEndAnywhere: b.allowEndAnywhere !== false,
           routeTrackingEnabled:
-            typeof b.routeTrackingEnabled === "boolean"
-              ? b.routeTrackingEnabled
-              : settings.routeTrackingDefault,
+            typeof b.routeTrackingEnabled === "boolean" ? b.routeTrackingEnabled : true,
           gpsIntervalMin:
             b.gpsIntervalMin != null ? Number(b.gpsIntervalMin) : settings.gpsIntervalMin,
           maxAccuracyMeters:
@@ -399,39 +397,98 @@ router.patch(
   },
 );
 
-/** GET /mobile-attendance/live — bugungi kuzatuv (online/offline) */
+/** GET /mobile-attendance/live — barcha xodimlar (ko‘chma ruxsatdan mustaqil), online/offline */
 router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireAdmin(req, res)) return;
   try {
     const today = mobileTodayYmd();
     const qEmp = Number((req.query as { employeeId?: string }).employeeId);
     const ONLINE_MS = 90_000;
+    const PHARMACY_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
+    const PHARMACY_ORG = new Set(["manager", "pharmacist", "intern", "coordinator", "supervisor"]);
+    const workplaceOf = (userRole: string | null | undefined, orgRole: string | null | undefined) => {
+      const ur = String(userRole || "").toLowerCase();
+      const org = String(orgRole || "").toLowerCase();
+      return PHARMACY_ROLES.has(ur) || PHARMACY_ORG.has(org) ? "pharmacy" : "office";
+    };
 
-    const conditions = [
+    const empConditions = [isNotNull(employeesTable.userId)];
+    if (Number.isFinite(qEmp) && qEmp > 0) {
+      empConditions.push(eq(employeesTable.id, qEmp));
+    }
+
+    const empRows = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        position: employeesTable.position,
+        location: employeesTable.location,
+        orgRole: employeesTable.orgRole,
+        userId: employeesTable.userId,
+        employmentStatus: employeesTable.employmentStatus,
+        userRole: usersTable.role,
+      })
+      .from(employeesTable)
+      .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
+      .where(and(...empConditions))
+      .orderBy(employeesTable.fullName)
+      .limit(2000);
+
+    // Bir user — bitta kartochka
+    const score = (e: (typeof empRows)[0]) => {
+      let s = 0;
+      if (e.userRole) s += 20;
+      if (e.position) s += 5;
+      const st = String(e.employmentStatus || "").toLowerCase();
+      if (st === "working" || st === "new" || st === "active") s += 10;
+      return s;
+    };
+    const byUser = new Map<number, (typeof empRows)[0]>();
+    for (const e of empRows) {
+      if (e.userId == null) continue;
+      const st = String(e.employmentStatus || "").toLowerCase();
+      if (st === "dismissed" || st === "closed") continue;
+      const prev = byUser.get(e.userId);
+      if (!prev || score(e) > score(prev) || (score(e) === score(prev) && e.id > prev.id)) {
+        byUser.set(e.userId, e);
+      }
+    }
+    const employees = [...byUser.values()];
+
+    const sessionConditions = [
       eq(mobileAttendanceSessionsTable.status, "open"),
       eq(mobileAttendanceSessionsTable.workDate, today),
     ];
     if (Number.isFinite(qEmp) && qEmp > 0) {
-      conditions.push(eq(mobileAttendanceSessionsTable.employeeId, qEmp));
+      sessionConditions.push(eq(mobileAttendanceSessionsTable.employeeId, qEmp));
     }
 
-    const rows = await db
-      .select({
-        session: mobileAttendanceSessionsTable,
-        fullName: employeesTable.fullName,
-        position: employeesTable.position,
-        location: employeesTable.location,
-      })
+    const sessionRows = await db
+      .select({ session: mobileAttendanceSessionsTable })
       .from(mobileAttendanceSessionsTable)
-      .leftJoin(employeesTable, eq(employeesTable.id, mobileAttendanceSessionsTable.employeeId))
-      .where(and(...conditions))
+      .where(and(...sessionConditions))
       .orderBy(desc(mobileAttendanceSessionsTable.startTime))
-      .limit(100);
+      .limit(500);
+
+    const sessionByEmp = new Map<number, (typeof sessionRows)[0]["session"]>();
+    for (const { session: s } of sessionRows) {
+      if (!sessionByEmp.has(s.employeeId)) sessionByEmp.set(s.employeeId, s);
+    }
 
     const live = [];
-    const seenEmp = new Set<number>();
-    for (const { session: s, fullName, position, location } of rows) {
-      seenEmp.add(s.employeeId);
+    const seen = new Set<number>();
+
+    const pushFromSession = async (
+      s: (typeof sessionRows)[0]["session"],
+      meta: {
+        fullName: string | null;
+        position: string | null;
+        location: string | null;
+        orgRole: string | null;
+        userRole: string | null;
+        userId: number | null;
+      },
+    ) => {
       const [lastPt] = await db
         .select()
         .from(mobileLocationPointsTable)
@@ -454,10 +511,13 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
       live.push({
         sessionId: s.id,
         employeeId: s.employeeId,
-        userId: s.userId,
-        fullName: formatPersonName(fullName) || fullName,
-        position,
-        location,
+        userId: meta.userId ?? s.userId,
+        fullName: formatPersonName(meta.fullName) || meta.fullName,
+        position: meta.position,
+        location: meta.location,
+        orgRole: meta.orgRole,
+        userRole: meta.userRole,
+        workplace: workplaceOf(meta.userRole, meta.orgRole),
         status: s.status,
         presence,
         securityStatus: s.securityStatus,
@@ -473,46 +533,75 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
         durationMin: s.startTime
           ? Math.round((Date.now() - s.startTime.getTime()) / 60_000)
           : 0,
+        source: "live",
       });
+    };
+
+    for (const e of employees) {
+      seen.add(e.id);
+      const open = sessionByEmp.get(e.id);
+      if (open) {
+        await pushFromSession(open, {
+          fullName: e.fullName,
+          position: e.position,
+          location: e.location,
+          orgRole: e.orgRole ?? null,
+          userRole: e.userRole ?? null,
+          userId: e.userId,
+        });
+      } else {
+        live.push({
+          sessionId: null,
+          employeeId: e.id,
+          userId: e.userId,
+          fullName: formatPersonName(e.fullName) || e.fullName,
+          position: e.position,
+          location: e.location,
+          orgRole: e.orgRole ?? null,
+          userRole: e.userRole ?? null,
+          workplace: workplaceOf(e.userRole, e.orgRole),
+          status: "waiting",
+          presence: "offline",
+          securityStatus: "ok",
+          routeTrackingEnabled: true,
+          startTime: null,
+          startLatitude: null,
+          startLongitude: null,
+          liveLatitude: null,
+          liveLongitude: null,
+          liveAccuracy: null,
+          liveAt: null,
+          pointCount: 0,
+          durationMin: 0,
+          source: "live",
+        });
+      }
     }
 
-    // Ruxsat bor, lekin hali lokatsiya bermagan — offline ro‘yxatda
-    const perms = await db
-      .select({
-        perm: mobileAttendancePermissionsTable,
-        fullName: employeesTable.fullName,
-        position: employeesTable.position,
-        location: employeesTable.location,
-      })
-      .from(mobileAttendancePermissionsTable)
-      .leftJoin(employeesTable, eq(employeesTable.id, mobileAttendancePermissionsTable.employeeId))
-      .where(eq(mobileAttendancePermissionsTable.status, "active"))
-      .limit(400);
-
-    for (const { perm: p, fullName, position, location } of perms) {
-      if (!p.employeeId || seenEmp.has(p.employeeId)) continue;
-      if (Number.isFinite(qEmp) && qEmp > 0 && p.employeeId !== qEmp) continue;
-      if (!permissionCoversToday(p, today)) continue;
-      live.push({
-        sessionId: null,
-        employeeId: p.employeeId,
-        userId: p.userId,
-        fullName: formatPersonName(fullName) || fullName,
-        position,
-        location,
-        status: "waiting",
-        presence: "offline",
-        securityStatus: "ok",
-        routeTrackingEnabled: true,
-        startTime: null,
-        startLatitude: null,
-        startLongitude: null,
-        liveLatitude: null,
-        liveLongitude: null,
-        liveAccuracy: null,
-        liveAt: null,
-        pointCount: 0,
-        durationMin: 0,
+    // Sessiyasi bor, lekin employee ro‘yxatida chiqmaganlar
+    for (const { session: s } of sessionRows) {
+      if (seen.has(s.employeeId)) continue;
+      const [emp] = await db
+        .select({
+          fullName: employeesTable.fullName,
+          position: employeesTable.position,
+          location: employeesTable.location,
+          orgRole: employeesTable.orgRole,
+          userId: employeesTable.userId,
+          userRole: usersTable.role,
+        })
+        .from(employeesTable)
+        .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
+        .where(eq(employeesTable.id, s.employeeId))
+        .limit(1);
+      seen.add(s.employeeId);
+      await pushFromSession(s, {
+        fullName: emp?.fullName ?? null,
+        position: emp?.position ?? null,
+        location: emp?.location ?? null,
+        orgRole: emp?.orgRole ?? null,
+        userRole: emp?.userRole ?? null,
+        userId: emp?.userId ?? s.userId,
       });
     }
 
@@ -522,10 +611,15 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
     });
 
     const onlineCount = live.filter((l) => l.presence === "online").length;
+    const pharmacyCount = live.filter((l) => l.workplace === "pharmacy").length;
+    const officeCount = live.filter((l) => l.workplace === "office").length;
     res.json({
       today,
       count: live.length,
       onlineCount,
+      offlineCount: live.length - onlineCount,
+      pharmacyCount,
+      officeCount,
       live,
       polledAt: new Date().toISOString(),
     });
@@ -1132,24 +1226,16 @@ router.post("/mobile-attendance/end", requireAuth, async (req: AuthRequest, res)
   }
 });
 
-/** POST /mobile-attendance/ensure-track — ruxsat bo‘lsa bugungi tracking sessiyasini ochadi */
+/** POST /mobile-attendance/ensure-track — GPS berilsa jonli kuzatuv sessiyasi (ko‘chma ruxsatsiz ham) */
 router.post("/mobile-attendance/ensure-track", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-    const settings = await getMobileSettings();
-    if (!settings.enabled) {
-      res.json({ ok: false, reason: "disabled", allowed: false });
-      return;
-    }
     const emp = await findEmployeeForUser(req.userId!);
     if (!emp) {
       res.json({ ok: false, reason: "employee_missing", allowed: false });
       return;
     }
+    // Ko‘chma davomat ruxsati shart emas — faqat jonli GPS kuzatuv
     const perm = await findActivePermissionForEmployee(emp.id);
-    if (!perm) {
-      res.json({ ok: false, reason: "no_permission", allowed: false });
-      return;
-    }
     const today = mobileTodayYmd();
     const [open] = await db
       .select()
@@ -1165,12 +1251,19 @@ router.post("/mobile-attendance/ensure-track", requireAuth, async (req: AuthRequ
       .limit(1);
 
     if (open) {
+      if (!open.routeTrackingEnabled) {
+        await db
+          .update(mobileAttendanceSessionsTable)
+          .set({ routeTrackingEnabled: true, updatedAt: new Date() })
+          .where(eq(mobileAttendanceSessionsTable.id, open.id));
+      }
       res.json({
         ok: true,
         allowed: true,
         sessionId: open.id,
-        routeTrackingEnabled: Boolean(open.routeTrackingEnabled || perm.routeTrackingEnabled || true),
+        routeTrackingEnabled: true,
         created: false,
+        mobilePermission: Boolean(perm),
       });
       return;
     }
@@ -1179,7 +1272,6 @@ router.post("/mobile-attendance/ensure-track", requireAuth, async (req: AuthRequ
     const lng = Number(req.body?.longitude);
     const accuracy = req.body?.accuracy != null ? Number(req.body.accuracy) : null;
     const hasGps = Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180;
-    // Boshlash tugmasi yo‘q — faqat haqiqiy GPS bilan sessiya ochiladi
     if (!hasGps) {
       res.json({ ok: false, reason: "gps_required", allowed: true });
       return;
@@ -1191,9 +1283,9 @@ router.post("/mobile-attendance/ensure-track", requireAuth, async (req: AuthRequ
       .values({
         employeeId: emp.id,
         userId: emp.userId,
-        permissionId: perm.id,
+        permissionId: perm?.id ?? null,
         workDate: today,
-        shiftKey: perm.shiftKey,
+        shiftKey: perm?.shiftKey ?? null,
         status: "open",
         securityStatus: "ok",
         ipAddress: clientIp(req),
@@ -1204,7 +1296,7 @@ router.post("/mobile-attendance/ensure-track", requireAuth, async (req: AuthRequ
         startAccuracy: Number.isFinite(accuracy as number) ? (accuracy as number) : null,
         startLocationTs: now,
         routeTrackingEnabled: true,
-        notes: "auto_gps_grant",
+        notes: perm ? "auto_gps_grant" : "live_gps_only",
       })
       .returning();
 
@@ -1224,6 +1316,7 @@ router.post("/mobile-attendance/ensure-track", requireAuth, async (req: AuthRequ
       sessionId: session!.id,
       routeTrackingEnabled: true,
       created: true,
+      mobilePermission: Boolean(perm),
     });
   } catch (err) {
     console.error("POST mobile ensure-track", err);
@@ -1256,12 +1349,11 @@ router.post("/mobile-attendance/track", requireAuth, async (req: AuthRequest, re
       return;
     }
     if (!open.routeTrackingEnabled) {
-      // auto_ensure yoki eski sessiya — ruxsat bor bo‘lsa baribir qabul qilamiz
-      const perm = await findActivePermissionForEmployee(emp.id);
-      if (!perm) {
-        res.status(403).json({ error: "Yo‘nalish qaydi o‘chirilgan", code: "TRACKING_OFF" });
-        return;
-      }
+      // Jonli kuzatuv sessiyasi — tracking yoqiladi (ko‘chma ruxsat shart emas)
+      await db
+        .update(mobileAttendanceSessionsTable)
+        .set({ routeTrackingEnabled: true, updatedAt: new Date() })
+        .where(eq(mobileAttendanceSessionsTable.id, open.id));
     }
     const settings = await getMobileSettings();
     const gps = validateGpsInput({

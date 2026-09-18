@@ -1366,22 +1366,31 @@ export default function DavomatFacePage() {
   }, [gps, site.latitude, site.longitude]);
 
   const allowedMeters = workplace?.allowedMeters || site.allowedMeters || DAVOMAT_GEOFENCE_METERS;
-  const remain = distance != null ? Math.max(0, distance - allowedMeters) : null;
+  /** GPS shovqin / aniqlik — chegarada «Yana 0 m» deb yolg‘on tashqari ko‘rsatmaslik */
+  const geofenceSlackM = Math.min(
+    25,
+    Math.max(8, Math.round(((gps?.accuracy && gps.accuracy > 0 ? gps.accuracy : 15) * 0.35))),
+  );
+  const effectiveAllowedM = allowedMeters + geofenceSlackM;
+  const remain = distance != null ? Math.max(0, distance - effectiveAllowedM) : null;
   /** Filial GPS yo‘q bo‘lsa ofis nuqtasiga tushib «Hududdasiz» deb yolg‘on yashil ko‘rsatilmasin */
   const workplaceGpsMissing = workplace?.employee.hasGps === false;
-  /** Smena oynasi faqat ma’lumot — Keldim/Ketdimni bloklamaydi */
+  /** Smena/filial tayyor emas — alohida xabar; geografik «inside» bilan aralashtirilmasin */
   const gpsNotReady = workplace?.gpsReady === false;
-  const inside =
-    !workplaceGpsMissing &&
-    !gpsNotReady &&
-    distance != null
-      ? distance <= allowedMeters
-      : false;
+  const workplaceGateBlocked = workplaceGpsMissing || gpsNotReady;
+  /**
+   * Faqat masofa. Avval gpsReady/hasGps bilan AND qilinganda hudud ichida
+   * (qolgan 0 m) bo‘lsa ham «Hududdan tashqaridasiz» chiqardi.
+   */
+  const geoInside =
+    distance != null &&
+    (distance <= effectiveAllowedM || Math.round(Math.max(0, distance - allowedMeters)) <= 0);
+  const inside = !workplaceGateBlocked && geoInside;
   /** Admin ko‘chma ruxsat — yashil zonadan tashqarida ham davomat */
   const mobileAnywhere = Boolean(workplace?.mobileAnywhere);
-  const geoOk = adminQrAnywhere || mobileAnywhere || inside;
-  /** Xarita: ko‘chma ruxsat / admin — «hududda» ko‘rinishi (bloklanmasin) */
-  const mapInside = inside || mobileAnywhere || adminQrAnywhere;
+  const geoOk = adminQrAnywhere || mobileAnywhere || geoInside;
+  /** Xarita: geografik hudud yoki ko‘chma/admin — «hududda» */
+  const mapInside = geoInside || mobileAnywhere || adminQrAnywhere;
 
   const nextAction = verified?.nextAction || workplace?.today.nextAction || "in";
   // 2-filial: 1-smena Ketdi bo‘lsa ham nextAction="in" — kun yopilmagan
@@ -1474,7 +1483,7 @@ export default function DavomatFacePage() {
     // Face/QR uchun kamera majburiy (admin ham)
     if (showDualMethods && !cameraGranted) return "permission";
     if (!adminQrAnywhere && (!gps || gpsError)) return "permission";
-    if (!adminQrAnywhere && !mobileAnywhere && !inside) return "zone";
+    if (!adminQrAnywhere && !mobileAnywhere && !geoInside) return "zone";
     if (showDualMethods) {
       // Apteka/ofis/admin: avval Face ID yoki QR; tasdiqdan keyin Keldim/Ketdim
       if (!hasIn && !methodReady) return "face";
@@ -1482,7 +1491,7 @@ export default function DavomatFacePage() {
       return "ketdim";
     }
     if (!gps || gpsError) return "permission";
-    if (!mobileAnywhere && !inside) return "zone";
+    if (!mobileAnywhere && !geoInside) return "zone";
     if (!verified) return "face";
     if (!hasIn) return "keldim";
     return "ketdim";
@@ -1491,7 +1500,7 @@ export default function DavomatFacePage() {
     faceRegistered,
     gps,
     gpsError,
-    inside,
+    geoInside,
     mobileAnywhere,
     verified,
     hasIn,
@@ -2037,8 +2046,8 @@ export default function DavomatFacePage() {
     !mobileAnywhere &&
     Boolean(gps) &&
     !gpsError &&
-    !inside &&
-    !done;
+    !done &&
+    (!geoInside || workplaceGateBlocked);
   const mapNeedsGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
   const gpsDenied =
     Boolean(gpsError) &&
@@ -2050,12 +2059,18 @@ export default function DavomatFacePage() {
     workplace?.employee?.location ||
     department ||
     null;
-  const outsideWarn =
-    mobileAnywhere
-      ? "Ko‘chma ruxsat — istalgan joydan Face ID"
-      : remain != null
+  const outsideWarn = mobileAnywhere
+    ? "Ko‘chma ruxsat — istalgan joydan Face ID"
+    : workplaceGateBlocked
+      ? workplace?.gpsError ||
+        (workplaceGpsMissing
+          ? "Filial GPS kiritilmagan — koordinator lokatsiyani qo‘shsin"
+          : "Bugun filial/smena tayyor emas — davomat yopiq")
+      : remain != null && remain > 0
         ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`
-        : "Hududdan tashqaridasiz — yashil zonaga kiring";
+        : !geoInside
+          ? "Hududdan tashqaridasiz — yashil zonaga kiring"
+          : null;
 
   const syncMobileRoute = (action: "in" | "out") => {
     if (!mobileAnywhere || !gps) return;
@@ -2093,10 +2108,22 @@ export default function DavomatFacePage() {
       };
     }
     if (outsideZone) {
+      if (workplaceGateBlocked) {
+        return {
+          label: workplaceGpsMissing ? "Filial GPS yo‘q" : "Davomat yopiq",
+          sub:
+            workplace?.gpsError ||
+            (workplaceGpsMissing
+              ? "Koordinator filial lokatsiyasini kiritsin"
+              : "Bugun filial/smena biriktirilmagan"),
+          disabled: true,
+          tone: "warn" as const,
+        };
+      }
       return {
         label: "Hududdan tashqaridasiz",
         sub:
-          remain != null
+          remain != null && remain > 0
             ? `Yana ${formatMetersOrKm(Math.max(0, remain))} yaqinlashin`
             : "Avval yashil zona ichiga kiring",
         disabled: true,

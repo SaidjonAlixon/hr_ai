@@ -106,6 +106,7 @@ export default function AdminKochmaLivePage() {
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return liveList.filter((l) => {
+      if (!String(l.fullName || "").trim()) return false;
       const wp = workplaceOf(l);
       if (wp === "pharmacy" && !showDorixona) return false;
       if (wp === "office" && !showOfis) return false;
@@ -360,7 +361,7 @@ export default function AdminKochmaLivePage() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
                           <div className="truncate font-semibold text-sm">
-                            {l.fullName || `Xodim #${l.employeeId}`}
+                            {l.fullName}
                           </div>
                           <div className="truncate text-[11px] text-muted-foreground">
                             {l.position || "—"}

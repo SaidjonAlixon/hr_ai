@@ -470,7 +470,11 @@ export function DavomatZoneMap({
         <div
           className={cn(
             "dv-map-status",
-            inside || mobileAnywhere ? "dv-map-status-ok" : "dv-map-status-far",
+            inside ||
+              mobileAnywhere ||
+              (distanceMeters != null && Math.max(0, distanceMeters - allowedMeters) < 0.5)
+              ? "dv-map-status-ok"
+              : "dv-map-status-far",
           )}
         >
           {mobileAnywhere ? (
@@ -478,7 +482,8 @@ export function DavomatZoneMap({
               <CheckCircle2 className="h-3.5 w-3.5" />
               Ko‘chma ruxsat · istalgan joy
             </>
-          ) : inside ? (
+          ) : inside ||
+            (distanceMeters != null && Math.max(0, distanceMeters - allowedMeters) < 0.5) ? (
             <>
               <CheckCircle2 className="h-3.5 w-3.5" />
               Siz bu hududasiz

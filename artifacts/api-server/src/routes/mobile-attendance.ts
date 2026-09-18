@@ -411,6 +411,16 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
       const org = String(orgRole || "").toLowerCase();
       return PHARMACY_ROLES.has(ur) || PHARMACY_ORG.has(org) ? "pharmacy" : "office";
     };
+    const pickName = (...names: Array<string | null | undefined>) => {
+      for (const n of names) {
+        const raw = String(n || "").trim();
+        if (!raw) continue;
+        if (/^xodim\s*#?\s*\d+$/i.test(raw)) continue;
+        const formatted = formatPersonName(raw) || raw;
+        if (formatted) return formatted;
+      }
+      return null;
+    };
 
     const empConditions = [isNotNull(employeesTable.userId)];
     if (Number.isFinite(qEmp) && qEmp > 0) {
@@ -427,6 +437,7 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
         userId: employeesTable.userId,
         employmentStatus: employeesTable.employmentStatus,
         userRole: usersTable.role,
+        userFullName: usersTable.fullName,
       })
       .from(employeesTable)
       .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
@@ -434,9 +445,10 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
       .orderBy(employeesTable.fullName)
       .limit(2000);
 
-    // Bir user — bitta kartochka
+    // Bir user — bitta kartochka (ismli yozuv afzal)
     const score = (e: (typeof empRows)[0]) => {
       let s = 0;
+      if (pickName(e.fullName, e.userFullName)) s += 50;
       if (e.userRole) s += 20;
       if (e.position) s += 5;
       const st = String(e.employmentStatus || "").toLowerCase();
@@ -471,12 +483,15 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
       .limit(500);
 
     const sessionByEmp = new Map<number, (typeof sessionRows)[0]["session"]>();
+    const sessionByUser = new Map<number, (typeof sessionRows)[0]["session"]>();
     for (const { session: s } of sessionRows) {
       if (!sessionByEmp.has(s.employeeId)) sessionByEmp.set(s.employeeId, s);
+      if (s.userId != null && !sessionByUser.has(s.userId)) sessionByUser.set(s.userId, s);
     }
 
-    const live = [];
-    const seen = new Set<number>();
+    const live: Array<Record<string, unknown>> = [];
+    const seenEmp = new Set<number>();
+    const seenSession = new Set<number>();
 
     const pushFromSession = async (
       s: (typeof sessionRows)[0]["session"],
@@ -489,6 +504,10 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
         userId: number | null;
       },
     ) => {
+      if (seenSession.has(s.id)) return;
+      seenSession.add(s.id);
+      seenEmp.add(s.employeeId);
+
       const [lastPt] = await db
         .select()
         .from(mobileLocationPointsTable)
@@ -508,11 +527,14 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
         .from(mobileLocationPointsTable)
         .where(eq(mobileLocationPointsTable.sessionId, s.id));
 
+      const name = pickName(meta.fullName);
+      if (!name) return; // Ism yo‘q — ro‘yxatga qo‘shilmaydi
+
       live.push({
         sessionId: s.id,
         employeeId: s.employeeId,
         userId: meta.userId ?? s.userId,
-        fullName: formatPersonName(meta.fullName) || meta.fullName,
+        fullName: name,
         position: meta.position,
         location: meta.location,
         orgRole: meta.orgRole,
@@ -538,23 +560,45 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
     };
 
     for (const e of employees) {
-      seen.add(e.id);
-      const open = sessionByEmp.get(e.id);
+      seenEmp.add(e.id);
+      const open =
+        sessionByEmp.get(e.id) ||
+        (e.userId != null ? sessionByUser.get(e.userId) : undefined);
+      const name = pickName(e.fullName, e.userFullName);
       if (open) {
+        // Sessiyadagi employee uchun ham users ismini olish
+        let sessionUserName: string | null = null;
+        if (open.userId != null) {
+          const [u] = await db
+            .select({ fullName: usersTable.fullName })
+            .from(usersTable)
+            .where(eq(usersTable.id, open.userId))
+            .limit(1);
+          sessionUserName = u?.fullName ?? null;
+        }
+        let sessionEmpName: string | null = e.fullName;
+        if (open.employeeId !== e.id) {
+          const [se] = await db
+            .select({ fullName: employeesTable.fullName })
+            .from(employeesTable)
+            .where(eq(employeesTable.id, open.employeeId))
+            .limit(1);
+          sessionEmpName = se?.fullName ?? e.fullName;
+        }
         await pushFromSession(open, {
-          fullName: e.fullName,
+          fullName: pickName(e.fullName, e.userFullName, sessionEmpName, sessionUserName),
           position: e.position,
           location: e.location,
           orgRole: e.orgRole ?? null,
           userRole: e.userRole ?? null,
           userId: e.userId,
         });
-      } else {
+      } else if (name) {
         live.push({
           sessionId: null,
           employeeId: e.id,
           userId: e.userId,
-          fullName: formatPersonName(e.fullName) || e.fullName,
+          fullName: name,
           position: e.position,
           location: e.location,
           orgRole: e.orgRole ?? null,
@@ -578,9 +622,9 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
       }
     }
 
-    // Sessiyasi bor, lekin employee ro‘yxatida chiqmaganlar
+    // Sessiyasi bor, lekin yuqorida chiqmaganlar — users.fullName fallback
     for (const { session: s } of sessionRows) {
-      if (seen.has(s.employeeId)) continue;
+      if (seenSession.has(s.id)) continue;
       const [emp] = await db
         .select({
           fullName: employeesTable.fullName,
@@ -589,14 +633,25 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
           orgRole: employeesTable.orgRole,
           userId: employeesTable.userId,
           userRole: usersTable.role,
+          userFullName: usersTable.fullName,
         })
         .from(employeesTable)
         .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
         .where(eq(employeesTable.id, s.employeeId))
         .limit(1);
-      seen.add(s.employeeId);
+
+      let userName = emp?.userFullName ?? null;
+      if (!userName && s.userId != null) {
+        const [u] = await db
+          .select({ fullName: usersTable.fullName })
+          .from(usersTable)
+          .where(eq(usersTable.id, s.userId))
+          .limit(1);
+        userName = u?.fullName ?? null;
+      }
+
       await pushFromSession(s, {
-        fullName: emp?.fullName ?? null,
+        fullName: pickName(emp?.fullName, userName),
         position: emp?.position ?? null,
         location: emp?.location ?? null,
         orgRole: emp?.orgRole ?? null,

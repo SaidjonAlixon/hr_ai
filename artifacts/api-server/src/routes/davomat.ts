@@ -1728,8 +1728,9 @@ async function geoGate(
     const point = resolved.point;
     const distanceMeters = haversineMeters(latitude, longitude, point.latitude, point.longitude);
     const effectiveRadius = geofenceMetersForKind(point.kind);
-    if (!mobileAnywhere && distanceMeters > effectiveRadius) {
-      const remainMeters = distanceMeters - effectiveRadius;
+    const GEOFENCE_SLACK_M = 8;
+    if (!mobileAnywhere && distanceMeters > effectiveRadius + GEOFENCE_SLACK_M) {
+      const remainMeters = Math.max(0, distanceMeters - effectiveRadius);
       return {
         ok: false,
         status: 403,
@@ -1783,21 +1784,9 @@ async function geoGate(
     }
   }
 
-  // Biriktirish tizimi bor — faqat slot bo‘yicha (legacy filialga qaytmaymiz)
-  if (hasSlotSystem) {
-    if (!daySlots.length) {
-      return {
-        ok: false,
-        status: 403,
-        body: {
-          error: "Bugun sizga filial/smena biriktirilmagan. Davomat qilib bo‘lmaydi.",
-          code: "no_assignment_today",
-          workDate: today,
-          daySlots: [],
-          fullName: emp.fullName,
-        },
-      };
-    }
+  // Biriktirish tizimi + bugun slot bor — slot filiali; yo‘q bo‘lsa legacy o‘z filialiga tushamiz
+  const GEOFENCE_SLACK_M = 8;
+  if (hasSlotSystem && daySlots.length > 0) {
     // Vaqt oynasi tashqarisida ham ruxsat — soat hisobi smena rejasiga bog‘langan
 
     const radius = geofenceMetersForKind("branch");
@@ -1875,8 +1864,8 @@ async function geoGate(
     }
     const best = candidates[0]!;
     // Faqat biriktirilgan filialga ruxsat — boshqa filialdagi GPS rad (ko‘chma ruxsat bo‘lsa o‘tadi)
-    if (!mobileAnywhere && best.distanceMeters > radius) {
-      const remainMeters = best.distanceMeters - radius;
+    if (!mobileAnywhere && best.distanceMeters > radius + GEOFENCE_SLACK_M) {
+      const remainMeters = Math.max(0, best.distanceMeters - radius);
       const allowed = candidates
         .map((c) => `${c.label} (${formatShiftKeyUz(c.slot.shiftKey)})`)
         .join(", ");
@@ -1922,7 +1911,7 @@ async function geoGate(
     };
   }
 
-  // Legacy (slot yo‘q): bitta doimiy filial — smena vaqti bloklamaydi
+  // Legacy (slot yo‘q yoki bugun biriktirilmagan): bitta doimiy filial — smena vaqti bloklamaydi
   const resolved = await resolveDavomatPoint(emp, userRole);
   if (!resolved.ok) return resolved;
   const point = resolved.point;
@@ -1933,8 +1922,8 @@ async function geoGate(
     (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
   );
 
-  if (!mobileAnywhere && distanceMeters > effectiveRadius) {
-    const remainMeters = distanceMeters - effectiveRadius;
+  if (!mobileAnywhere && distanceMeters > effectiveRadius + GEOFENCE_SLACK_M) {
+    const remainMeters = Math.max(0, distanceMeters - effectiveRadius);
     return {
       ok: false,
       status: 403,
@@ -2729,8 +2718,9 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
 
     const shiftWindowOpen = allSlots.length === 0 ? true : activeNow.length > 0;
     let gpsError: string | null = resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q");
-    if (allSlots.length > 0 && !daySlots.length) {
-      gpsError = "Bugun sizga filial/smena biriktirilmagan — davomat yopiq.";
+    // Slot yo‘q kun — legacy o‘z filiali GPS bilan davomat ochiq (yolg‘on «Yana 0 m» emas)
+    if (allSlots.length > 0 && !daySlots.length && resolved.ok) {
+      gpsError = null;
     }
     // Smena vaqti tashqarisida ham Keldim/Ketdim ochiq — faqat biriktirilgan filial GPS talab
 
@@ -2751,7 +2741,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         longitude: point.longitude,
         kind: point.kind,
       },
-      gpsReady: resolved.ok && (allSlots.length === 0 || daySlots.length > 0),
+      // Filial GPS bor bo‘lsa zonani ochiq ko‘rsat — kun sloti yo‘q bo‘lsa legacy filial
+      gpsReady: resolved.ok,
       gpsError,
       shiftWindowOpen,
       workDate,

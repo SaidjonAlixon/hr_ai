@@ -82,7 +82,7 @@ export default function LogistikaPage({ params }: Props) {
         <Truck className="mx-auto mb-3 h-10 w-10 text-muted-foreground" />
         <h1 className="text-lg font-semibold">Ruxsat yo‘q</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Logistika bo‘limini faqat direktor, HR direktor va admin ko‘radi.
+          Logistika bo‘limini hozircha faqat admin ko‘radi.
         </p>
       </div>
     );

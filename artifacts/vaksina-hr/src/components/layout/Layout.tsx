@@ -736,6 +736,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/kochma-live') && !canManageUsers(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/logistika') && !canViewLogistika(user.role)) {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/admin/smena-sozlamalar') && !canManageSettings(user.role)) {
       setLocation('/dashboard');
     }

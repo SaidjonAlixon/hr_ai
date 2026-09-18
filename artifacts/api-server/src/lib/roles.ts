@@ -303,17 +303,10 @@ export function canAccessBoglanish(role?: string | null): boolean {
 }
 
 /**
- * VaksinaMed Logistika SSO — default: admin, asoschi, director, hr_direktor.
- * Env `VAKSINAMED_ALLOWED_ROLES` bilan kengaytiriladi (vergul bilan).
+ * VaksinaMed Logistika SSO — hozircha faqat admin (boshqa rollar yo‘q).
  */
 export function canViewLogistika(role?: string | null): boolean {
-  const r = String(role || "").trim().toLowerCase();
-  const fromEnv = String(process.env.VAKSINAMED_ALLOWED_ROLES || "")
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (fromEnv.length) return fromEnv.includes(r);
-  return r === "admin" || r === "asoschi" || r === "director" || r === "hr_direktor";
+  return String(role || "").trim().toLowerCase() === "admin";
 }
 
 export function canAccessKirish(role?: string | null): boolean {

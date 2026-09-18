@@ -134,7 +134,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const [poseIndex, setPoseIndex] = useState(0);
   const [poseFill, setPoseFill] = useState(0);
   const [liveSteps, setLiveSteps] = useState<Challenge[]>(mode === "enroll" ? FALLBACK_ENROLL : FALLBACK_LOGIN);
-  /** Default: old (selfie) kamera */
+  /** Default: old (selfie) kamera — almashtirish mumkin */
   const [facing, setFacing] = useState<CameraFacing>("user");
   const [switching, setSwitching] = useState(false);
   const facingRef = useRef<CameraFacing>("user");
@@ -549,7 +549,6 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             </div>
           ) : null}
 
-          {/* Mobil: X yopish + kamera almashtirish */}
           <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
             <button
               type="button"

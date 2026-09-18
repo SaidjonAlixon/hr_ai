@@ -133,12 +133,27 @@ function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStr
     list.push({
       audio: false,
       video: {
+        deviceId: { exact: deviceId },
+        width: { ideal: facing === "user" ? 640 : 1280 },
+      },
+    });
+    list.push({
+      audio: false,
+      video: {
         deviceId: { ideal: deviceId },
         width: { ideal: facing === "user" ? 640 : 1280 },
       },
     });
   }
-  // ideal — exact emas (exact fail qayta dialog/xato beradi)
+  // Avvalo exact facingMode — QR/Face ID noto‘g‘ri kameraga tushmasin
+  list.push({
+    audio: false,
+    video: {
+      facingMode: { exact: facing },
+      width: { ideal: facing === "user" ? 640 : 1280 },
+      height: { ideal: facing === "user" ? 480 : 720 },
+    },
+  });
   list.push({
     audio: false,
     video: {
@@ -148,8 +163,18 @@ function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStr
     },
   });
   list.push({ audio: false, video: { facingMode: facing } });
-  list.push({ audio: false, video: true });
+  // Umumiy video:true YO‘Q — old/orqa aralashib ketmasin
   return list;
+}
+
+function reportedFacing(stream: MediaStream): CameraFacing | null {
+  try {
+    const fm = stream.getVideoTracks()[0]?.getSettings?.()?.facingMode;
+    if (fm === "user" || fm === "environment") return fm;
+  } catch {
+    /* ignore */
+  }
+  return null;
 }
 
 /** Face ID — standart old (selfie) kamera */
@@ -174,6 +199,11 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
   for (const constraints of preferredConstraints(facing, stored)) {
     try {
       const stream = await tryGet(constraints, 8000);
+      const got = reportedFacing(stream);
+      if (got && got !== facing) {
+        stream.getTracks().forEach((t) => t.stop());
+        continue;
+      }
       remember(facing, stream, constraints);
       return stream;
     } catch (e) {

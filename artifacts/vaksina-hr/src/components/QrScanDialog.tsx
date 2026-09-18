@@ -1,5 +1,5 @@
 /**
- * Full-screen QR scanner — mobil uchun aniq ko‘rsatma + ramka.
+ * Full-screen QR scanner.
  * Default: orqa kamera; old/orqa almashtirish mumkin.
  */
 import React, { useEffect, useRef, useState } from "react";
@@ -42,6 +42,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
   const [opening, setOpening] = useState(false);
+  /** Default: orqa kamera */
   const [facing, setFacing] = useState<CameraFacing>("environment");
   const facingRef = useRef<CameraFacing>("environment");
   facingRef.current = facing;
@@ -317,7 +318,7 @@ export function QrScanDialog({ open, onOpenChange, stream: streamProp, onDetecte
           <p className="mx-auto max-w-[20rem] px-4 text-center text-sm font-medium leading-snug text-white">
             QR kodni yashil burchakli ramka ichiga tuting
             <span className="mt-1 block text-xs text-white/60">
-              {facing === "environment" ? "Orqa kamera" : "Old kamera"}
+              {facing === "environment" ? "Orqa kamera" : "Old kamera"} · almashtirish tugmasi yuqorida
             </span>
           </p>
         </div>

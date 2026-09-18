@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   useGetDepartments,
@@ -333,6 +334,7 @@ function StatusControl({
 
 export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const { t } = useI18n();
+  const [, setLocation] = useLocation();
   const meta =
     group === "active"
       ? { title: t("emp.activeTitle"), subtitle: t("emp.activeSub"), empty: t("emp.activeEmpty") }
@@ -353,7 +355,15 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
   const [deptFilter, setDeptFilter] = useState("all");
   const [roleFilter, setRoleFilter] = useState("all");
   const [workplaceFilter, setWorkplaceFilter] = useState<WorkplaceFilter>("ofis");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(() => {
+    if (typeof window === "undefined") return "all";
+    try {
+      const s = new URLSearchParams(window.location.search).get("status");
+      return s && s !== "all" ? s : "all";
+    } catch {
+      return "all";
+    }
+  });
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [pendingId, setPendingId] = useState<number | null>(null);
 
@@ -399,7 +409,10 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       deptLocked ? "own-dept" : deptFilter,
       isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
       effectiveRoleFilter,
-      statusFilter,
+      // Faol sahifada dismissed/on_leave API bo‘sh qaytaradi — filtrni so‘rovga bermaymiz
+      group === "active" && (statusFilter === "dismissed" || statusFilter === "on_leave")
+        ? "all"
+        : statusFilter,
     ),
     queryFn: () =>
       fetchStaff(group, {
@@ -408,8 +421,33 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           deptAsRoleKey || effectiveDeptFilter === "all" ? "all" : effectiveDeptFilter,
         workplace: isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
         role: effectiveRoleFilter !== "all" ? effectiveRoleFilter : undefined,
-        status: statusFilter !== "all" ? statusFilter : undefined,
+        status:
+          group === "active" && (statusFilter === "dismissed" || statusFilter === "on_leave")
+            ? undefined
+            : statusFilter !== "all"
+              ? statusFilter
+              : undefined,
       }),
+    staleTime: 30_000,
+  });
+
+  /** Bo‘shatilgan / ta’til — «Boshqa holat» guruhida; Faol sahifa kartochkalari uchun */
+  const otherWorkplace = isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace;
+  const { data: otherEmployees } = useQuery({
+    queryKey: staffQueryKey(
+      "other",
+      "",
+      deptLocked ? "own-dept" : "all",
+      otherWorkplace,
+      effectiveRoleFilter,
+      "all",
+    ),
+    queryFn: () =>
+      fetchStaff("other", {
+        workplace: otherWorkplace,
+        role: effectiveRoleFilter !== "all" ? effectiveRoleFilter : undefined,
+      }),
+    enabled: allowed && group === "active",
     staleTime: 30_000,
   });
 
@@ -451,13 +489,39 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       if (effectiveRoleFilter !== "all" && !matchesStaffRole(e, effectiveRoleFilter)) return false;
       return true;
     });
+    const otherAll = (Array.isArray(otherEmployees) ? otherEmployees : []).filter((e) => {
+      if ((staffContact(e).userRole || "") === "admin") return false;
+      if (effectiveRoleFilter !== "all" && !matchesStaffRole(e, effectiveRoleFilter)) return false;
+      if (isPharmacyRoleKey(effectiveRoleFilter)) return true;
+      if (effectiveWorkplace === "dorixona") return isDorixonaStaff(e);
+      if (effectiveWorkplace === "ofis") return !isDorixonaStaff(e);
+      return true;
+    });
+    const leaveSource = group === "active" ? otherAll : all;
+    const dismissedSource = group === "active" ? otherAll : all;
     return {
       total: all.length,
       working: all.filter((e) => (e.employmentStatus || "working") === "working").length,
-      on_leave: all.filter((e) => e.employmentStatus === "on_leave").length,
-      dismissed: all.filter((e) => e.employmentStatus === "dismissed").length,
+      on_leave: leaveSource.filter((e) => e.employmentStatus === "on_leave").length,
+      dismissed: dismissedSource.filter((e) => e.employmentStatus === "dismissed").length,
     };
-  }, [workplaceScoped, effectiveRoleFilter]);
+  }, [workplaceScoped, effectiveRoleFilter, otherEmployees, group, effectiveWorkplace]);
+
+  const goOtherStatus = (status: string) => {
+    setLocation(`/employees/other?status=${encodeURIComponent(status)}`);
+  };
+
+  const applyStatusFilter = (v: string) => {
+    if (group === "active" && (v === "dismissed" || v === "on_leave")) {
+      goOtherStatus(v);
+      return;
+    }
+    setStatusFilter(v);
+    if (group === "other") {
+      const base = "/employees/other";
+      setLocation(v === "all" ? base : `${base}?status=${encodeURIComponent(v)}`);
+    }
+  };
 
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -520,21 +584,19 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
       { id, data: { employmentStatus: employmentStatus as Employee["employmentStatus"] } },
       {
         onSuccess: () => {
-          void qc.invalidateQueries({
-            queryKey: staffQueryKey(
-              group,
-              search,
-              deptLocked ? "own-dept" : deptFilter,
-              isPharmacyRoleKey(effectiveRoleFilter) ? "all" : effectiveWorkplace,
-              effectiveRoleFilter,
-              statusFilter,
-            ),
-          });
-          void qc.invalidateQueries({ queryKey: getGetEmployeesQueryKey() });
           void qc.invalidateQueries({ queryKey: ["staff"] });
+          void qc.invalidateQueries({ queryKey: getGetEmployeesQueryKey() });
           void qc.invalidateQueries({ queryKey: ["davomat"] });
           void qc.invalidateQueries({ queryKey: ["davomat-analytics"] });
-          toast({ title: t("emp.statusSaved") });
+          const movedAway =
+            employmentStatus === "dismissed" || employmentStatus === "on_leave";
+          toast({
+            title: t("emp.statusSaved"),
+            description: movedAway ? t("emp.statusMovedOther") : undefined,
+          });
+          if (group === "active" && movedAway) {
+            goOtherStatus(employmentStatus);
+          }
         },
         onError: (err) => {
           toast({
@@ -704,27 +766,50 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
         </div>
       ) : null}
 
-      {group === "active" ? (
+      {group === "active" || group === "other" ? (
         <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
-          {[
-            { l: t("ui.total"), n: counts.total, filter: "all", accent: "border-l-primary" },
-            { l: t("emp.working"), n: counts.working, filter: "working", accent: "border-l-emerald-500" },
-            { l: t("emp.leave"), n: counts.on_leave, filter: "on_leave", accent: "border-l-amber-500" },
-            { l: t("emp.dismissed"), n: counts.dismissed, filter: "dismissed", accent: "border-l-rose-500" },
-          ].map((c) => (
+          {(group === "active"
+            ? [
+                { l: t("ui.total"), n: counts.total, filter: "all", accent: "border-l-primary", nav: null as string | null },
+                { l: t("emp.working"), n: counts.working, filter: "working", accent: "border-l-emerald-500", nav: null },
+                { l: t("emp.leave"), n: counts.on_leave, filter: "on_leave", accent: "border-l-amber-500", nav: "on_leave" },
+                { l: t("emp.dismissed"), n: counts.dismissed, filter: "dismissed", accent: "border-l-rose-500", nav: "dismissed" },
+              ]
+            : [
+                { l: t("ui.total"), n: counts.total, filter: "all", accent: "border-l-primary", nav: null as string | null },
+                { l: t("emp.leave"), n: counts.on_leave, filter: "on_leave", accent: "border-l-amber-500", nav: null },
+                { l: t("emp.dismissed"), n: counts.dismissed, filter: "dismissed", accent: "border-l-rose-500", nav: null },
+                {
+                  l: t("emp.other"),
+                  n: Math.max(0, counts.total - counts.on_leave - counts.dismissed),
+                  filter: "all",
+                  accent: "border-l-slate-400",
+                  nav: null,
+                },
+              ]
+          ).map((c) => (
             <button
-              key={c.l}
+              key={`${group}-${c.l}-${c.filter}`}
               type="button"
-              onClick={() => setStatusFilter(c.filter)}
+              onClick={() => {
+                if (c.nav) {
+                  goOtherStatus(c.nav);
+                  return;
+                }
+                applyStatusFilter(c.filter);
+              }}
               className={cn(
                 "rounded-xl border border-border bg-card px-3 py-2.5 text-left shadow-sm transition hover:bg-muted/50",
                 "border-l-[3px]",
                 c.accent,
-                statusFilter === c.filter && "ring-1 ring-primary/20",
+                statusFilter === c.filter && !c.nav && "ring-1 ring-primary/20",
               )}
             >
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{c.l}</p>
               <p className="text-xl font-semibold tabular-nums text-foreground">{isLoading ? "…" : c.n}</p>
+              {group === "active" && c.nav ? (
+                <p className="mt-0.5 text-[10px] text-muted-foreground">{t("emp.other")}</p>
+              ) : null}
             </button>
           ))}
         </div>
@@ -816,8 +901,8 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                 </Select>
               </>
             )}
-            {group === "active" ? (
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
+            {group === "active" || group === "other" ? (
+              <Select value={statusFilter} onValueChange={applyStatusFilter}>
                 <SelectTrigger className="h-9 w-full text-sm lg:w-[180px]">
                   <SelectValue placeholder={t("ui.status")} />
                 </SelectTrigger>
@@ -826,6 +911,9 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
                   {staffStatuses(t).map((s) => (
                     <SelectItem key={s.value} value={s.value}>
                       {s.label}
+                      {group === "active" && (s.value === "dismissed" || s.value === "on_leave")
+                        ? ` → ${t("emp.other")}`
+                        : ""}
                     </SelectItem>
                   ))}
                 </SelectContent>

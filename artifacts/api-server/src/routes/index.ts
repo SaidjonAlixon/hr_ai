@@ -50,6 +50,7 @@ import deviceSecurityRouter from "./device-security";
 import mobileAttendanceRouter from "./mobile-attendance";
 import boglanishRouter from "./boglanish";
 import telegramFilialRouter from "./telegram-filial";
+import vaksinamedRouter from "./vaksinamed";
 
 const router: IRouter = Router();
 
@@ -58,6 +59,7 @@ router.use(uploadsRouter);
 router.use(pharmacyNetworkRouter);
 router.use(boglanishRouter);
 router.use(telegramFilialRouter);
+router.use(vaksinamedRouter);
 router.use(jobsRouter);
 router.use(branchNeedsRouter);
 router.use(branchAuditsRouter);

@@ -51,6 +51,7 @@ import AdminKochmaDavomatPage from './pages/admin/kochma-davomat';
 import AdminKochmaXaritaPage from './pages/admin/kochma-xarita';
 import AdminKochmaLivePage from './pages/admin/kochma-live';
 import DavomatKochmaPage from './pages/davomat/kochma';
+import LogistikaPage, { LogistikaIndexRedirect } from './pages/logistika/index';
 import DistribyutsiyaPage from './pages/distribyutsiya/index';
 import EmployeesPage from './pages/employees/index';
 import EmployeesOtherPage from './pages/employees/other';
@@ -201,6 +202,8 @@ function Router() {
       <ProtectedRoute path="/javob-olish" component={() => <LazyPage component={JavobOlishPage} />} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/boglanish" component={BoglanishPage} />
+      <ProtectedRoute path="/logistika/:section" component={LogistikaPage} />
+      <ProtectedRoute path="/logistika" component={LogistikaIndexRedirect} />
       <ProtectedRoute path="/distribyutsiya" component={DistribyutsiyaPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/internships" component={InternshipsPage} />

@@ -302,6 +302,20 @@ export function canAccessBoglanish(role?: string | null): boolean {
   return role === "mudir" || role === "koordinator" || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
+/**
+ * VaksinaMed Logistika SSO — default: admin, asoschi, director, hr_direktor.
+ * Env `VAKSINAMED_ALLOWED_ROLES` bilan kengaytiriladi (vergul bilan).
+ */
+export function canViewLogistika(role?: string | null): boolean {
+  const r = String(role || "").trim().toLowerCase();
+  const fromEnv = String(process.env.VAKSINAMED_ALLOWED_ROLES || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (fromEnv.length) return fromEnv.includes(r);
+  return r === "admin" || r === "asoschi" || r === "director" || r === "hr_direktor";
+}
+
 export function canAccessKirish(role?: string | null): boolean {
   return role === "stajyor" || hasFullPlatformAccess(role);
 }

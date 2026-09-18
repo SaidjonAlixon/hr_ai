@@ -38,7 +38,7 @@ import {
 } from "../lib/javob-exemptions";
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import { maybeBackfillFacePhoto } from "./face";
-import { displayBranchName, gpsFromLocationField } from "../lib/geo-location";
+import { displayBranchName, excelFilialLabel, gpsFromLocationField } from "../lib/geo-location";
 import { dedupeBranchesWithGps } from "../lib/branch-dedupe";
 import {
   computeDayAttendance,
@@ -541,6 +541,21 @@ function smenaLabelForEmployee(e: {
   const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
   if (w.key === "office") return "Asosiy ofis";
   return `${w.label}da ishlaydiganlar`;
+}
+
+/** Excel Filial ustuni — GPS yo‘q; ofis → asosiy ofis */
+function excelFilialForEmployee(e: {
+  location?: string | null;
+  userRole?: string | null;
+  orgRole?: string | null;
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+}): string {
+  if (EXTERNAL_USER_ROLES.has(e.userRole || "")) {
+    return excelFilialLabel(e.location) || "—";
+  }
+  const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
+  return excelFilialLabel(e.location, { isOffice: w.key === "office" });
 }
 
 /** reportsTo zanjiri: mudir/farmasevt/stajyor → koordinator F.I.Sh. */
@@ -3401,7 +3416,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       q.departmentId ? `Bo'lim ID: ${q.departmentId}` : "Bo'lim: barcha",
       `Xodimlar guruhi: ${staffFilterLabelUz(staffFilter)}`,
       q.search ? `Qidiruv: ${q.search}` : null,
-      q.location ? `Filial: ${q.location}` : null,
+      q.location ? `Filial: ${excelFilialLabel(q.location)}` : null,
       `Xodimlar: ${employees.length} ta`,
     ]
       .filter(Boolean)
@@ -3592,7 +3607,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         e.fullName,
         e.position,
         e.departmentName || "—",
-        e.location || "—",
+        excelFilialForEmployee(e),
         smenaLabelForEmployee(e),
         `${empHours.start}–${empHours.end}`,
       ];
@@ -3723,7 +3738,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         e.fullName,
         e.position,
         e.departmentName || "—",
-        e.location || "—",
+        excelFilialForEmployee(e),
         smenaLabelForEmployee(e),
         empHours,
         e.totals.present,
@@ -3876,7 +3891,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
           e.fullName,
           e.position,
           smenaLabelForEmployee(e),
-          e.location || "—",
+          excelFilialForEmployee(e),
           e.departmentName || "—",
           e.phone || "—",
           coordinatorNameFromLinks(e.id, coordById),

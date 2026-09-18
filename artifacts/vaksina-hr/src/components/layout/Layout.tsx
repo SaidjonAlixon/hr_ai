@@ -40,6 +40,7 @@ import {
   PhoneCall,
   Phone,
   Truck,
+  Fuel,
   GripVertical,
   RotateCcw,
   SlidersHorizontal,
@@ -70,7 +71,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewLogistika, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -174,6 +175,18 @@ const NAV_SECTIONS: {
     paths: ['/pharmacy-network', '/boglanish', '/checklist', '/ehtiyoj'],
   },
   {
+    id: 'logistika',
+    label: 'Logistika',
+    icon: Truck,
+    paths: [
+      '/logistika/dashboard',
+      '/logistika/boshqaruv',
+      '/logistika/live',
+      '/logistika/davomat',
+      '/logistika/panel',
+    ],
+  },
+  {
     id: 'distribution',
     label: 'Distribyutsiya',
     icon: Truck,
@@ -229,6 +242,7 @@ function pathIsActive(location: string, path: string) {
   if (!location.startsWith(`${path}/`)) return false;
   // /vazifalar should not highlight when on /vazifalar/tahlil
   if (path === '/vazifalar' && location.startsWith('/vazifalar/tahlil')) return false;
+  if (path === '/logistika' && location.startsWith('/logistika/')) return false;
   return true;
 }
 
@@ -247,6 +261,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/checklist-holati')) return '/checklist-holati';
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
+  if (path.startsWith('/logistika')) return path;
   if (path.startsWith('/boglanish')) return '/boglanish';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
   if (path.startsWith('/ehtiyoj')) return '/ehtiyoj';
@@ -777,6 +792,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'AyTi', path: '/it', icon: Cpu };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
+  const logistikaNavItems: NavItem[] = [
+    { name: 'Dashboard / VHK', path: '/logistika/dashboard', icon: LayoutDashboard },
+    { name: 'Boshqaruv', path: '/logistika/boshqaruv', icon: Fuel },
+    { name: 'Live', path: '/logistika/live', icon: Radio },
+    { name: 'GPS Davomat', path: '/logistika/davomat', icon: ClipboardCheck },
+    { name: 'Panel', path: '/logistika/panel', icon: Settings },
+  ];
 
   const taskAnalyticsNav: NavItem = {
     name: 'Topshiriqlar tahlili',
@@ -1444,7 +1466,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   )
     .filter((item) => item.path !== '/admin/users' || canManageUsers(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
-    .filter((item) => item.path !== '/davomat-kochma');
+    .filter((item) => item.path !== '/davomat-kochma')
+    .concat(canViewLogistika(userRole) ? logistikaNavItems : []);
 
   const toggleNav = () => {
     if (typeof window !== 'undefined' && window.matchMedia('(min-width: 768px)').matches) {

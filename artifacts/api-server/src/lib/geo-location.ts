@@ -44,10 +44,21 @@ export function parseGpsText(raw: string): { lat: number; lng: number } | null {
   return null;
 }
 
-const GPS_SUFFIX = /\s*\|gps:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\s*$/i;
+const GPS_SUFFIX = /\s*[|·]?\s*gps:\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(-?\d+(?:\.\d+)?))?\s*$/i;
+/** Qator ichidagi / yangi qatordagi gps:lat[,lng] qoldiqlari */
+const GPS_INLINE = /(?:\r?\n|\s)*[|·]?\s*gps:\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?/gi;
 
 export function stripGpsSuffix(location: string | null | undefined): string {
-  return String(location || "").replace(GPS_SUFFIX, "").trim();
+  let s = String(location || "")
+    .replace(/\u00a0/g, " ")
+    .replace(GPS_INLINE, "")
+    .replace(GPS_SUFFIX, "")
+    .replace(/\s*[|·]\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  // Faqat koordinata qolgan bo‘lsa — bo‘sh
+  if (/^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$/.test(s)) return "";
+  return s;
 }
 
 const BRANCH_NAME_FIX: Record<string, string> = {
@@ -57,9 +68,24 @@ const BRANCH_NAME_FIX: Record<string, string> = {
   asia: "ТАШСЕЛМАШ",
 };
 
+const OFFICE_NAME_RE =
+  /^(asosiy\s*ofis|asosy\s*ofis|главн(ый|ого)?\s*офис|main\s*office|ofis|офис)$/i;
+
 export function displayBranchName(location: string | null | undefined): string {
   const raw = stripGpsSuffix(location);
   return BRANCH_NAME_FIX[raw.toLowerCase()] || raw;
+}
+
+/** Excel / hisobot: faqat filial nomi; ofis → «asosiy ofis»; GPS yo‘q */
+export function excelFilialLabel(
+  location: string | null | undefined,
+  opts?: { isOffice?: boolean },
+): string {
+  if (opts?.isOffice) return "asosiy ofis";
+  const name = displayBranchName(location).trim();
+  if (!name || name === "—" || name === "-" || name === "Filial") return "—";
+  if (OFFICE_NAME_RE.test(name)) return "asosiy ofis";
+  return name;
 }
 
 export function gpsFromLocationField(

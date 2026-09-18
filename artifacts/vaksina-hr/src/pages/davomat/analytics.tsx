@@ -909,7 +909,7 @@ export function DavomatAnalyticsDashboard({
     if (seg === "office" || seg === "pharmacy" || seg === "all") return seg;
     return "office";
   }, [embedded, initialSegment, search, fullDash]);
-  const [preset, setPreset] = useState<RangePreset>("30d");
+  const [preset, setPreset] = useState<RangePreset>("today");
   const [dynamicsChart, setDynamicsChart] = useState<"line" | "bar" | "both">("both");
   const [customFrom, setCustomFrom] = useState(() => addDaysYmd(tashkentTodayYmd(), -6));
   const [customTo, setCustomTo] = useState(() => tashkentTodayYmd());

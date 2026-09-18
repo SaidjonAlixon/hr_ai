@@ -331,6 +331,15 @@ export function canViewDistribyutsiya(role?: string | null): boolean {
   return role === "distrib_rahbar" || role === "distrib_hr";
 }
 
+/**
+ * VaksinaMed Logistika (GPS) — alohida top-level menyu.
+ * Default: admin, asoschi, director, hr_direktor (env bilan kengaytiriladi).
+ */
+export function canViewLogistika(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return r === "admin" || r === "asoschi" || r === "director" || r === "hr_direktor";
+}
+
 export function canManageDistribyutsiya(role?: string | null): boolean {
   return canManageSettings(role) || role === "distrib_rahbar" || role === "distrib_hr";
 }

@@ -172,6 +172,50 @@ export async function syncCoordinatorVisitOnPunch(opts: {
   return open;
 }
 
+/** Cheklist sahifasidan tashrif ochish (Face ID dan keyin yoki GPS ichida) */
+export async function startCoordinatorVisit(opts: {
+  userId: number;
+  employeeId: number;
+  fullName: string;
+  branchId: number;
+  branchLabel?: string | null;
+  workDate: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}): Promise<
+  | { ok: true; visit: CoordVisitRow }
+  | { ok: false; status: number; error: string; code: string }
+> {
+  const gate = await assertCoordinatorPunchAllowed({
+    userId: opts.userId,
+    action: "in",
+    branchId: opts.branchId,
+    branchLabel: opts.branchLabel,
+  });
+  if (!gate.ok) {
+    if (gate.code === "already_in_branch") {
+      const open = await getOpenCoordinatorVisit(opts.userId);
+      if (open) return { ok: true, visit: open };
+    }
+    return gate;
+  }
+  const visit = await syncCoordinatorVisitOnPunch({
+    userId: opts.userId,
+    employeeId: opts.employeeId,
+    fullName: opts.fullName,
+    action: "in",
+    branchId: opts.branchId,
+    branchLabel: opts.branchLabel,
+    workDate: opts.workDate,
+    latitude: opts.latitude,
+    longitude: opts.longitude,
+  });
+  if (!visit) {
+    return { ok: false, status: 503, error: "Tashrif ochilmadi", code: "visit_create_failed" };
+  }
+  return { ok: true, visit };
+}
+
 /** Ketdim: izoh bilan filial tashrifini yopish (Face ID dan oldin/keyin) */
 export async function finishCoordinatorVisitWithNote(opts: {
   userId: number;

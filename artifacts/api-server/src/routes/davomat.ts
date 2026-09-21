@@ -40,6 +40,7 @@ import {
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
 import {
   assertCoordinatorPunchAllowed,
+  getOpenCoordinatorVisit,
   syncCoordinatorVisitOnPunch,
   serializeVisit,
 } from "../lib/coordinator-visits";
@@ -1786,6 +1787,38 @@ async function geoGate(
       }
     }
 
+    // Koordinator + cheklist filial: GPS filial zonasida bo‘lsa tashrif shu filialga ochiladi
+    if (
+      userRole === "koordinator" &&
+      preferredBranchId != null &&
+      Number.isFinite(preferredBranchId) &&
+      preferredBranchId > 0
+    ) {
+      const coords = await branchCoordsById(preferredBranchId);
+      if (coords) {
+        const GEOFENCE_SLACK_M = 8;
+        const branchDist = haversineMeters(latitude, longitude, coords.lat, coords.lng);
+        const branchR = geofenceMetersForKind("branch");
+        if (mobileAnywhere || branchDist <= branchR + GEOFENCE_SLACK_M) {
+          return {
+            ok: true,
+            distanceMeters: branchDist,
+            effectiveRadius: branchR,
+            point: {
+              latitude: coords.lat,
+              longitude: coords.lng,
+              label: coords.label,
+              kind: "branch",
+            },
+            resolvedBranchId: preferredBranchId,
+            resolvedBranchLabel: coords.label,
+            activeShiftKey: null,
+            daySlots: [],
+          };
+        }
+      }
+    }
+
     const resolved = await resolveDavomatPoint(emp, userRole);
     if (!resolved.ok) return resolved;
     const point = resolved.point;
@@ -3315,6 +3348,30 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
         branchLabel: resolved.gate.resolvedBranchLabel,
       });
       if (!gateVisit.ok) {
+        // Shu filialda allaqachon Keldim — cheklistga qaytaramiz
+        if (gateVisit.code === "already_in_branch" && action === "in") {
+          const open = await getOpenCoordinatorVisit(resolved.user.id);
+          const own = await ownEmployeeReport(resolved.emp.id);
+          const day = own.employee?.days?.[0];
+          res.json({
+            ok: true,
+            action: "in",
+            fullName: resolved.user.fullName || resolved.emp.fullName,
+            message: gateVisit.error,
+            checkIn: day?.checkIn || "—",
+            checkOut: day?.checkOut || "—",
+            checkInAt: null,
+            checkOutAt: null,
+            workedHours: day?.workedHours || "0:00",
+            distanceMeters: resolved.gate.distanceMeters,
+            employee: own.employee,
+            coordinatorVisit: open ? serializeVisit(open) : null,
+            checklistRedirect: true,
+            attendanceAlreadyMarked: true,
+            checklistHint: "Tashrif ochiq — Cheklist bo‘limida to‘ldiring.",
+          });
+          return;
+        }
         await writePunchAudit({
           employeeId: resolved.emp.id,
           userId: resolved.user.id,
@@ -3351,6 +3408,56 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       daySlots: resolved.gate.daySlots,
     });
     if (!punched.ok) {
+      // Kunlik davomat allaqachon bor — lekkin filial tashrifini ochish mumkin
+      const punchCode = String(punched.body?.code || "");
+      if (
+        resolved.user.role === "koordinator" &&
+        resolved.user.id &&
+        action === "in" &&
+        (punchCode === "already_in" || punchCode === "already_complete") &&
+        resolved.gate.resolvedBranchId
+      ) {
+        try {
+          const workDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+          const synced = await syncCoordinatorVisitOnPunch({
+            userId: resolved.user.id,
+            employeeId: resolved.emp.id,
+            fullName: resolved.user.fullName || resolved.emp.fullName,
+            action: "in",
+            branchId: resolved.gate.resolvedBranchId,
+            branchLabel: resolved.gate.resolvedBranchLabel,
+            workDate,
+            latitude,
+            longitude,
+          });
+          const open = synced || (await getOpenCoordinatorVisit(resolved.user.id));
+          if (open && open.branchId === resolved.gate.resolvedBranchId) {
+            const own = await ownEmployeeReport(resolved.emp.id);
+            const day = own.employee?.days?.[0];
+            res.json({
+              ok: true,
+              action: "in",
+              fullName: resolved.user.fullName || resolved.emp.fullName,
+              message:
+                "Davomat allaqachon belgilangan. Filial tashrifi ochildi — endi Cheklistni to‘ldiring.",
+              checkIn: String(punched.body.checkIn || day?.checkIn || "—"),
+              checkOut: String(punched.body.checkOut || day?.checkOut || "—"),
+              checkInAt: (punched.body.checkInAt as string | null) || null,
+              checkOutAt: (punched.body.checkOutAt as string | null) || null,
+              workedHours: day?.workedHours || "0:00",
+              distanceMeters: resolved.gate.distanceMeters,
+              employee: own.employee,
+              coordinatorVisit: serializeVisit(open),
+              checklistRedirect: true,
+              attendanceAlreadyMarked: true,
+              checklistHint: "Keldim qabul qilindi. Endi Cheklist bo‘limida to‘ldiring.",
+            });
+            return;
+          }
+        } catch (e) {
+          console.error("coordinator visit sync on already_in error:", e);
+        }
+      }
       await writePunchAudit({
         employeeId: resolved.emp.id,
         userId: resolved.user.id,
@@ -3413,6 +3520,9 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       sessionSwitched: !expectedUserId || expectedUserId !== resolved.user.id,
       ownerVerified: Boolean(expectedUserId),
       coordinatorVisit,
+      checklistRedirect: Boolean(
+        action === "in" && resolved.user.role === "koordinator" && coordinatorVisit,
+      ),
       checklistHint:
         action === "in" && resolved.user.role === "koordinator"
           ? "Keldim qabul qilindi. Endi Cheklist bo‘limida shu filialni to‘ldiring — Ketdimdan oldin."

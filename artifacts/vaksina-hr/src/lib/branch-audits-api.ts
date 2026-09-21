@@ -346,9 +346,25 @@ export function useMyCoordinatorVisit(enabled = true) {
         `/branch-audits/my-visit`,
       ),
     enabled,
-    refetchInterval: 60_000,
+    refetchInterval: 15_000,
     refetchIntervalInBackground: false,
-    staleTime: 30_000,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
+}
+
+export async function startCoordinatorVisit(payload: {
+  branchId: number;
+  latitude?: number | null;
+  longitude?: number | null;
+}) {
+  return apiFetch<{
+    ok: boolean;
+    visit: CoordinatorVisitSession;
+    message: string;
+  }>(`/branch-audits/my-visit/start`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 

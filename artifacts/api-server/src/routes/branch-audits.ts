@@ -29,6 +29,7 @@ import {
   getOpenCoordinatorVisit,
   listCoordinatorVisits,
   serializeVisit,
+  startCoordinatorVisit,
 } from "../lib/coordinator-visits";
 import {
   isTestOfficeCoordinatorUserId,
@@ -1205,6 +1206,126 @@ router.get("/branch-audits/my-visit", requireAuth, async (req: AuthRequest, res)
   } catch (err) {
     console.error("GET /branch-audits/my-visit error:", err);
     res.status(503).json({ error: "Tashrif holati yuklanmadi" });
+  }
+});
+
+/**
+ * Filial tashrifini ochish (cheklist Keldim) — Face ID bo‘lmasa ham GPS bilan.
+ */
+router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya kerak" });
+    return;
+  }
+  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat koordinator" });
+    return;
+  }
+  try {
+    const branchId = Number(req.body?.branchId);
+    if (!Number.isFinite(branchId) || branchId <= 0) {
+      res.status(400).json({ error: "Filial tanlang" });
+      return;
+    }
+    const latitude =
+      req.body?.latitude != null && Number.isFinite(Number(req.body.latitude))
+        ? Number(req.body.latitude)
+        : null;
+    const longitude =
+      req.body?.longitude != null && Number.isFinite(Number(req.body.longitude))
+        ? Number(req.body.longitude)
+        : null;
+
+    const [emp] = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.userId, req.userId))
+      .limit(1);
+    if (!emp) {
+      res.status(404).json({ error: "Koordinator profili topilmadi" });
+      return;
+    }
+
+    const [branch] = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        location: employeesTable.location,
+        latitude: employeesTable.latitude,
+        longitude: employeesTable.longitude,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, branchId))
+      .limit(1);
+    if (!branch) {
+      res.status(404).json({ error: "Filial topilmadi" });
+      return;
+    }
+
+    const branchLabel =
+      displayBranchName(branch.location) || branch.location || branch.fullName || `Filial #${branchId}`;
+
+    // GPS tekshiruvi (filial koordinatasi bo‘lsa)
+    if (
+      branch.latitude != null &&
+      branch.longitude != null &&
+      Number.isFinite(branch.latitude) &&
+      Number.isFinite(branch.longitude)
+    ) {
+      if (latitude == null || longitude == null) {
+        res.status(400).json({ error: "GPS majburiy", code: "gps_required" });
+        return;
+      }
+      const R = 6371000;
+      const toRad = (d: number) => (d * Math.PI) / 180;
+      const dLat = toRad(branch.latitude - latitude);
+      const dLng = toRad(branch.longitude - longitude);
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(latitude)) * Math.cos(toRad(branch.latitude)) * Math.sin(dLng / 2) ** 2;
+      const dist = Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(a))));
+      if (dist > 120) {
+        res.status(403).json({
+          error: `Filial hududidan tashqaridasiz (${dist} m). Yashil zonaga kiring.`,
+          code: "outside_geofence",
+          distanceMeters: dist,
+        });
+        return;
+      }
+    }
+
+    const workDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+    const [user] = await db
+      .select({ fullName: usersTable.fullName })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId))
+      .limit(1);
+
+    const result = await startCoordinatorVisit({
+      userId: req.userId,
+      employeeId: emp.id,
+      fullName: user?.fullName || emp.fullName,
+      branchId,
+      branchLabel,
+      workDate,
+      latitude,
+      longitude,
+    });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error, code: result.code });
+      return;
+    }
+    res.json({
+      ok: true,
+      visit: serializeVisit(result.visit),
+      message: `«${branchLabel}» tashrifi ochildi. Endi cheklistni to‘ldiring.`,
+    });
+  } catch (err) {
+    console.error("POST /branch-audits/my-visit/start error:", err);
+    res.status(503).json({ error: "Tashrif ochilmadi" });
   }
 });
 

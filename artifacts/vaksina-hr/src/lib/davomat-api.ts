@@ -313,6 +313,10 @@ export async function facePunchDavomat(payload: {
     createdAt?: string;
   } | null;
   sessionSwitched?: boolean;
+  checklistRedirect?: boolean;
+  checklistHint?: string;
+  coordinatorVisit?: { id: number; branchId: number } | null;
+  attendanceAlreadyMarked?: boolean;
 }> {
   /** AI anti-spoof ~180k char limitti — siqilmasa «Yuz rasmi olinmadi» chiqadi */
   const snapshot = payload.snapshot

@@ -1839,12 +1839,19 @@ export default function DavomatFacePage() {
       }
       toast({
         title: action === "in" ? t("davomat.btnIn") : t("davomat.leftToast"),
-        description: result.message,
+        description: result.checklistHint || result.message,
       });
       applyHistory(result.employee);
       syncMobileRoute(action);
       unlock();
       refreshQuiet();
+      // Cheklist oqimi: Keldim → darhol cheklist sahifasiga
+      if (
+        action === "in" &&
+        (checklistBranchId || result.checklistRedirect || result.coordinatorVisit)
+      ) {
+        window.setTimeout(() => setLocation("/checklist"), 450);
+      }
     } catch (err) {
       if (
         err instanceof DavomatApiError &&

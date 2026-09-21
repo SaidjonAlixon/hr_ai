@@ -51,6 +51,7 @@ import {
   useDeleteBranchAudit,
   useMyCoordinatorVisit,
   finishCoordinatorVisit,
+  startCoordinatorVisit,
   AUDIT_GEOFENCE_METERS,
   haversineMeters,
   type AuditAnswer,
@@ -58,7 +59,7 @@ import {
   type BranchAudit,
   type AuditBranchOption,
 } from "@/lib/branch-audits-api";
-import { Link } from "wouter";
+import { useLocation } from "wouter";
 import { useQueryClient } from "@tanstack/react-query";
 import { FinishVisitDialog } from "./finish-visit-dialog";
 import {
@@ -317,6 +318,8 @@ export default function ChecklistPage() {
   const { data: myVisitData, refetch: refetchMyVisit } = useMyCoordinatorVisit(isCoord);
   const openVisit = myVisitData?.visit ?? null;
   const qc = useQueryClient();
+  const [, setLocation] = useLocation();
+  const [keldimBusy, setKeldimBusy] = useState(false);
 
   const [managerId, setManagerId] = useState<string>("");
   const [finishOpen, setFinishOpen] = useState(false);
@@ -346,6 +349,21 @@ export default function ChecklistPage() {
     if (!openVisit?.branchId) return;
     setManagerId(String(openVisit.branchId));
   }, [openVisit?.branchId]);
+
+  // Sahifa fokusga kelganda tashrif holatini yangilash
+  useEffect(() => {
+    if (!isCoord) return;
+    const onFocus = () => {
+      void refetchMyVisit();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    void refetchMyVisit();
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [isCoord, refetchMyVisit]);
 
   const selectedBranch = useMemo(
     () => branches.find((b) => String(b.id) === managerId) || null,
@@ -418,6 +436,33 @@ export default function ChecklistPage() {
       (Boolean(selectedBranch) &&
         withinGeofence &&
         (!isCoord || (openVisit != null && String(openVisit.branchId) === managerId))));
+
+  const goKeldim = async () => {
+    if (!managerId) return;
+    // GPS ichida — tashrifni ochib cheklistga o‘tamiz (Face ID shart emas agar zona ichida)
+    if (withinGeofence && gps) {
+      setKeldimBusy(true);
+      try {
+        const res = await startCoordinatorVisit({
+          branchId: Number(managerId),
+          latitude: gps.lat,
+          longitude: gps.lng,
+        });
+        await refetchMyVisit();
+        void qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+        toast({
+          title: "Keldim qabul qilindi",
+          description: res.message || "Endi cheklistni to‘ldiring",
+        });
+        return;
+      } catch {
+        // Face ID orqali
+      } finally {
+        setKeldimBusy(false);
+      }
+    }
+    setLocation(`/davomat-face?branchId=${managerId}&action=in`);
+  };
 
   const remainMeters =
     distanceMeters != null
@@ -939,10 +984,14 @@ export default function ChecklistPage() {
                       Ketdim qilish
                     </Button>
                   ) : (
-                    <Button asChild size="sm" className="shrink-0">
-                      <Link href={`/davomat-face?branchId=${managerId}&action=in`}>
-                        Keldim qilish
-                      </Link>
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="shrink-0"
+                      disabled={keldimBusy}
+                      onClick={() => void goKeldim()}
+                    >
+                      {keldimBusy ? "Ochilmoqda…" : "Keldim qilish"}
                     </Button>
                   )}
                 </div>
@@ -1316,7 +1365,7 @@ export default function ChecklistPage() {
       </div>
 
       {/* Mobile sticky save bar */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-white/95 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur sm:hidden">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background/95 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:hidden dark:border-slate-700/60 dark:bg-slate-950/95">
         <div className="mb-2 flex items-center justify-between text-xs text-muted-foreground">
           <span>
             <span className={cn("text-base font-bold", scoreTone(live.scorePercent))}>
@@ -1328,8 +1377,8 @@ export default function ChecklistPage() {
               className={cn(
                 "font-medium",
                 canFillChecklist
-                  ? "text-emerald-600"
-                  : "text-rose-600",
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : "text-rose-600 dark:text-rose-400",
               )}
             >
               {monthFull

@@ -36,7 +36,7 @@ function dbErrDetail(err: unknown): string {
 async function loadSessionUser(
   req: AuthRequest,
 ): Promise<{ id: number; role: string; deviceSecurityEnforced: boolean } | null> {
-  return withDbRetry(() => loadSessionUserOnce(req), { attempts: 3, label: "loadSessionUser" });
+  return withDbRetry(() => loadSessionUserOnce(req), { attempts: 2, label: "loadSessionUser" });
 }
 
 async function loadSessionUserOnce(

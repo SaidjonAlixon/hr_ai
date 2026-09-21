@@ -48,27 +48,55 @@ const isVercel = Boolean(process.env.VERCEL);
 const publicResolver = new dns.Resolver();
 publicResolver.setServers(["8.8.8.8", "1.1.1.1"]);
 
+/**
+ * Node `net.connect` `options.all === true` bo‘lsa callback ikkinchi argumenti
+ * `{address,family}[]` bo‘lishi shart. String qaytarsak ulanish osilib
+ * "timeout exceeded when trying to connect" beradi.
+ */
 function lookupWithDnsFallback(
   hostname: string,
   options:
-    | dns.LookupOneOptions
+    | dns.LookupOptions
     | number
     | ((err: NodeJS.ErrnoException | null, address: string, family: number) => void),
   callback?: (err: NodeJS.ErrnoException | null, address: string, family: number) => void,
 ) {
   const cb = typeof options === "function" ? options : callback;
+  const opts = typeof options === "object" && options ? options : {};
+  const all = Boolean((opts as dns.LookupOptions).all);
   if (!cb) return;
-  dns.lookup(hostname, { family: 4 }, (err, address, family) => {
-    if (!err && address) {
-      cb(null, address, family);
+
+  const finish = (ip: string) => {
+    if (all) {
+      (cb as unknown as (err: null, addresses: Array<{ address: string; family: number }>) => void)(
+        null,
+        [{ address: ip, family: 4 }],
+      );
       return;
     }
+    cb(null, ip, 4);
+  };
+
+  dns.lookup(hostname, { family: 4, all: false }, (err, address) => {
+    if (!err && address) {
+      finish(address);
+      return;
+    }
+    // 8.8.8.8 faqat lokal router DNS yiqilganda. Vercel UDP 53 ni bloklaydi — u yerda chaqirilmaydi.
     publicResolver.resolve4(hostname, (resolveErr, addresses) => {
-      if (resolveErr || !addresses?.[0]) {
-        cb(err ?? resolveErr ?? new Error("DNS lookup failed"), "", 4);
+      const ip = addresses?.[0];
+      if (!ip) {
+        if (all) {
+          (cb as unknown as (err: NodeJS.ErrnoException, addresses: never[]) => void)(
+            (err ?? resolveErr ?? new Error("DNS lookup failed")) as NodeJS.ErrnoException,
+            [],
+          );
+          return;
+        }
+        cb((err ?? resolveErr ?? new Error("DNS lookup failed")) as NodeJS.ErrnoException, "", 4);
         return;
       }
-      cb(null, addresses[0], 4);
+      finish(ip);
     });
   });
 }
@@ -88,14 +116,15 @@ const poolConfig: PoolConfigWithLookup = {
   ssl: isLocal ? undefined : { rejectUnauthorized: false },
   max: isVercel ? 1 : 8,
   min: 0,
-  connectionTimeoutMillis: isVercel ? 12_000 : 25_000,
+  connectionTimeoutMillis: isVercel ? 8_000 : 25_000,
   idleTimeoutMillis: isVercel ? 5_000 : 20_000,
   allowExitOnIdle: true,
   keepAlive: !isLocal,
   keepAliveInitialDelayMillis: isVercel ? 5_000 : 10_000,
 };
 
-if (!isLocal) {
+// Vercel o‘z DNS ini ishlatsin. Custom lookup (options.all) ulanishni timeout qilardi.
+if (!isLocal && !isVercel) {
   poolConfig.lookup = lookupWithDnsFallback;
 }
 

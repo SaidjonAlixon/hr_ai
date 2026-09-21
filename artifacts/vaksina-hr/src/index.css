@@ -213,19 +213,19 @@
 }
 
 .app-sidebar-nav-item {
-  @apply text-slate-600 hover:bg-slate-900/[0.05] hover:text-slate-900;
+  @apply text-slate-700 hover:bg-indigo-50 hover:text-slate-950;
 }
 
 .app-sidebar-nav-item-active {
-  @apply bg-violet-500/12 text-slate-900 shadow-[inset_0_0_0_1px_rgba(91,76,219,0.2)];
+  @apply bg-indigo-100 text-indigo-950 shadow-[inset_0_0_0_1px_rgba(99,102,241,0.35)] font-semibold;
 }
 
 .dark .app-sidebar-nav-item {
-  @apply text-white/75 hover:bg-white/[0.07] hover:text-white;
+  @apply text-white/75 hover:bg-white/[0.07] hover:text-white font-normal;
 }
 
 .dark .app-sidebar-nav-item-active {
-  @apply bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] ring-0;
+  @apply bg-white/12 text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.12)] ring-0 font-normal;
 }
 
 .app-sidebar-section-open {
@@ -245,19 +245,21 @@
 }
 
 .app-sidebar-section-trigger {
-  color: rgb(15 23 42 / 0.88);
+  color: #1e293b;
+  font-weight: 600;
 }
 
 .app-sidebar-section-trigger:hover {
-  background: rgb(15 23 42 / 0.05);
+  background: #eef2ff;
 }
 
 .app-sidebar-section-trigger-open {
-  background: rgb(15 23 42 / 0.06);
+  background: #e0e7ff;
 }
 
 .dark .app-sidebar-section-trigger {
   color: rgb(255 255 255 / 0.88);
+  font-weight: 500;
 }
 
 .dark .app-sidebar-section-trigger:hover {
@@ -295,18 +297,20 @@
 }
 
 .app-sidebar-nested-item {
-  color: rgb(51 65 85 / 0.92);
+  color: #334155;
+  font-weight: 500;
 }
 
 .app-sidebar-nested-item:hover {
-  background: rgb(15 23 42 / 0.05);
+  background: #eef2ff;
+  color: #1e1b4b;
 }
 
 .app-sidebar-nested-item-active {
-  background: linear-gradient(90deg, rgb(124 109 255 / 0.18) 0%, rgb(124 109 255 / 0.06) 100%);
+  background: linear-gradient(90deg, rgb(99 102 241 / 0.22) 0%, rgb(99 102 241 / 0.08) 100%);
   color: #1e1b4b;
-  font-weight: 600;
-  box-shadow: inset 3px 0 0 0 #7c6dff;
+  font-weight: 700;
+  box-shadow: inset 3px 0 0 0 #6366f1;
 }
 
 .dark .app-sidebar-nested-item {
@@ -357,25 +361,40 @@
 }
 
 .app-sidebar-collapse-btn {
-  background: rgb(15 23 42 / 0.04);
-  border: 1px solid rgb(15 23 42 / 0.08);
+  background: #eef2ff;
+  border: 1px solid #c7d2fe;
+  color: #312e81;
+  font-weight: 600;
+}
+
+.app-sidebar-collapse-btn:hover {
+  background: #e0e7ff;
+  color: #1e1b4b;
 }
 
 .dark .app-sidebar-collapse-btn {
-  background: rgb(255 255 255 / 0.05);
-  border: 1px solid rgb(255 255 255 / 0.08);
+  background: rgb(255 255 255 / 0.08);
+  border: 1px solid rgb(255 255 255 / 0.14);
+  color: rgb(255 255 255 / 0.85);
+}
+
+.dark .app-sidebar-collapse-btn:hover {
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
 }
 
 .app-sidebar-profile-card {
   @apply rounded-xl p-2;
-  background: rgb(15 23 42 / 0.04);
-  border: 1px solid rgb(15 23 42 / 0.08);
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 0.06);
   overflow: hidden;
 }
 
 .dark .app-sidebar-profile-card {
   background: rgb(255 255 255 / 0.06);
   border-color: rgb(255 255 255 / 0.1);
+  box-shadow: none;
 }
 
 .app-sidebar-profile-avatar {
@@ -402,37 +421,37 @@
 .app-sidebar-profile-role {
   @apply mt-0.5 inline-flex max-w-full truncate rounded-md px-0 py-0 text-[11px] font-medium normal-case tracking-normal;
   background: transparent;
-  color: rgb(71 85 105 / 0.9);
+  color: #475569;
   border: none;
 }
 
 .dark .app-sidebar-profile-role {
   background: transparent;
-  color: rgb(255 255 255 / 0.5);
+  color: rgb(255 255 255 / 0.55);
   border: none;
 }
 
 .app-sidebar-profile-action {
   @apply shrink-0 rounded-md p-1.5 transition-colors;
-  border: none;
-  color: rgb(255 255 255 / 0.65);
-  background: transparent;
+  border: 1px solid #c7d2fe;
+  color: #4338ca;
+  background: #eef2ff;
 }
 
 .app-sidebar-profile-action:hover {
-  color: rgb(255 255 255);
-  background: rgb(255 255 255 / 0.1);
-  border: none;
+  color: #1e1b4b;
+  background: #e0e7ff;
+  border-color: #a5b4fc;
 }
 
 .dark .app-sidebar-profile-action {
   border: none;
-  color: rgb(255 255 255 / 0.65);
+  color: rgb(255 255 255 / 0.75);
   background: transparent;
 }
 
 .dark .app-sidebar-profile-action:hover {
-  color: rgb(255 255 255);
+  color: #fff;
   background: rgb(255 255 255 / 0.12);
   border: none;
 }
@@ -442,7 +461,7 @@
 }
 
 .app-sidebar-face-id-btn--pending {
-  @apply border border-violet-300/30 bg-violet-500/15 text-violet-100 hover:bg-violet-500/25;
+  @apply border border-indigo-300 bg-indigo-50 text-indigo-800 hover:bg-indigo-100;
 }
 
 .dark .app-sidebar-face-id-btn--pending {
@@ -450,7 +469,7 @@
 }
 
 .app-sidebar-face-id-btn--linked {
-  @apply border border-emerald-300/30 bg-emerald-500/15 text-emerald-100 hover:bg-emerald-500/25;
+  @apply border border-emerald-400 bg-emerald-50 text-emerald-800 hover:bg-emerald-100;
 }
 
 .dark .app-sidebar-face-id-btn--linked {

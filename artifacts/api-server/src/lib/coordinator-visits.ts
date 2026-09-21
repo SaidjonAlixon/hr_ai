@@ -107,6 +107,15 @@ export async function assertCoordinatorPunchAllowed(opts: {
         error: `«Ketdim» faqat tashrif qilgan filialda: «${prev}». Boshqa joyda Ketdim qilib bo‘lmaydi.`,
       };
     }
+    if (!open.checklistAt) {
+      return {
+        ok: false,
+        status: 403,
+        code: "need_checklist",
+        error:
+          "Avval Cheklistni to‘ldirib «Saqlash» qiling. Keyin «Ketdim» ochiladi.",
+      };
+    }
   }
   return { ok: true };
 }
@@ -251,6 +260,15 @@ export async function finishCoordinatorVisitWithNote(opts: {
       status: 400,
       code: "no_open_visit",
       error: "Yopiladigan ochiq tashrif yo‘q. Avval filialda «Keldim» qiling.",
+    };
+  }
+  if (!open.checklistAt || !open.checklistAuditId) {
+    return {
+      ok: false,
+      status: 403,
+      code: "need_checklist",
+      error:
+        "Avval cheklistni to‘ldirib «Saqlash» qiling. Keyin «Ketdim» ochiladi.",
     };
   }
 

@@ -1889,13 +1889,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <nav className="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2 md:px-2.5">
           <div
             className={cn(
-              'mb-2 rounded-xl border border-slate-200 bg-slate-50/80 p-1.5 dark:border-white/10 dark:bg-white/[0.06]',
+              'mb-2 rounded-xl border border-indigo-200 bg-white p-1.5 shadow-sm dark:border-white/10 dark:bg-white/[0.06] dark:shadow-none',
               desktopCollapsed && 'md:hidden',
             )}
           >
             {navEditMode ? (
               <div className="space-y-1.5">
-                <p className="px-1.5 pt-0.5 text-[10px] font-medium leading-snug text-violet-100/85">
+                <p className="px-1.5 pt-0.5 text-[10px] font-medium leading-snug text-indigo-800 dark:text-violet-100/85">
                   {t('nav.layout.editHint')}
                 </p>
                 <div className="flex flex-wrap gap-1">
@@ -1907,7 +1907,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                       navDragRef.current = null;
                       toast({ title: t('nav.layout.saved') });
                     }}
-                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-violet-500/90 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-violet-500"
+                    className="inline-flex flex-1 items-center justify-center gap-1 rounded-lg bg-indigo-600 px-2 py-1.5 text-[11px] font-semibold text-white hover:bg-indigo-500 dark:bg-violet-500/90 dark:hover:bg-violet-500"
                   >
                     <Check className="h-3.5 w-3.5" />
                     {t('nav.layout.done')}
@@ -1915,7 +1915,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                   <button
                     type="button"
                     onClick={resetNavLayout}
-                    className="inline-flex items-center justify-center gap-1 rounded-lg bg-slate-900/5 px-2 py-1.5 text-[11px] font-medium text-slate-700 hover:bg-slate-900/10 dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/15"
+                    className="inline-flex items-center justify-center gap-1 rounded-lg border border-slate-300 bg-slate-100 px-2 py-1.5 text-[11px] font-semibold text-slate-800 hover:bg-slate-200 dark:border-transparent dark:bg-white/10 dark:text-white/85 dark:hover:bg-white/15"
                     title={t('nav.layout.reset')}
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
@@ -1930,12 +1930,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                   setDesktopCollapsed(false);
                   setNavEditMode(true);
                 }}
-                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-medium text-slate-600 transition hover:bg-slate-900/5 hover:text-slate-900 dark:text-white/75 dark:hover:bg-white/10 dark:hover:text-white"
+                className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-[11px] font-semibold text-slate-800 transition hover:bg-indigo-50 hover:text-indigo-950 dark:font-medium dark:text-white/75 dark:hover:bg-white/10 dark:hover:text-white"
               >
-                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-violet-200" />
+                <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-violet-200" />
                 <span className="min-w-0 flex-1">{t('nav.layout.customize')}</span>
                 {navIsCustom ? (
-                  <span className="rounded-md bg-violet-400/25 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-violet-100">
+                  <span className="rounded-md bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-800 dark:bg-violet-400/25 dark:font-semibold dark:text-violet-100">
                     {t('nav.layout.customBadge')}
                   </span>
                 ) : null}
@@ -2027,10 +2027,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 <span className="app-sidebar-profile-name">{profileDisplayName(user.fullName)}</span>
                 <span className="mt-px flex min-w-0 items-center gap-1.5">
                   {userRoleLabel(user.role) ? (
-                    <span className="truncate text-[10px] text-slate-500 dark:text-white/50">{userRoleLabel(user.role)}</span>
+                    <span className="truncate text-[10px] font-medium text-slate-600 dark:text-white/50">{userRoleLabel(user.role)}</span>
                   ) : null}
-                  <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-medium text-emerald-400">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                  <span className="inline-flex shrink-0 items-center gap-1 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 dark:bg-emerald-400" />
                     {t('common.online')}
                   </span>
                 </span>
@@ -2039,12 +2039,12 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             <div className="flex shrink-0 items-center gap-0.5">
               <ThemeToggle
                 variant="sidebar"
-                className="app-sidebar-profile-action h-7 w-7 rounded-md border-0 [&_svg]:h-3.5 [&_svg]:w-3.5"
+                className="app-sidebar-profile-action h-7 w-7 rounded-md [&_svg]:h-3.5 [&_svg]:w-3.5"
               />
               <button
                 type="button"
                 onClick={handleLogout}
-                className="app-sidebar-profile-action"
+                className="app-sidebar-profile-action h-7 w-7"
                 title={t('common.logout')}
               >
                 <LogOut className="h-3.5 w-3.5" />
@@ -2062,7 +2062,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
             type="button"
             onClick={toggleNav}
             className={cn(
-              'app-sidebar-collapse-btn flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-medium text-slate-500 transition-colors hover:bg-slate-900/5 hover:text-slate-900 dark:text-white/65 dark:hover:bg-white/10 dark:hover:text-white',
+              'app-sidebar-collapse-btn flex w-full items-center justify-center gap-1.5 rounded-lg px-2 py-1.5 text-[11px] font-semibold transition-colors',
               desktopCollapsed && 'md:hidden',
             )}
             aria-label={t('common.collapseMenu')}

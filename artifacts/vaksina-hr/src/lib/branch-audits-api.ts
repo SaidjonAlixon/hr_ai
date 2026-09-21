@@ -464,9 +464,15 @@ export function useCreateBranchAudit() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["branch-audits"] });
-      qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
-      qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
+      // Faqat faol so‘rovlarni yangilash — to‘liq ro‘yxatni kutib UI qotmasin
+      void qc.invalidateQueries({
+        queryKey: ["branch-audits"],
+        refetchType: "active",
+      });
+      void qc.invalidateQueries({
+        queryKey: ["branch-audits", "my-visit"],
+        refetchType: "active",
+      });
     },
   });
 }

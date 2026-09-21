@@ -596,6 +596,11 @@ export default function ChecklistPage() {
 
   function pickBranch(id: string) {
     const day = visitDate || todayIso();
+    // Ochiq tashrifdagi filial — qayta tanlash mumkin (Ketdim kutilyapti)
+    if (openVisit && String(openVisit.branchId) === id) {
+      setManagerId(id);
+      return;
+    }
     const alreadyToday = history.some(
       (a) => String(a.managerEmployeeId) === id && String(a.visitDate || "") === day,
     );
@@ -614,6 +619,7 @@ export default function ChecklistPage() {
     if (!openVisit) return;
     setFinishing(true);
     try {
+      const started = openVisit.checkInAt ? new Date(openVisit.checkInAt).getTime() : NaN;
       const result = await finishCoordinatorVisit({
         note,
         latitude: gps?.lat ?? null,
@@ -623,13 +629,23 @@ export default function ChecklistPage() {
       setManagerId("");
       clearAnswers();
       await qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
-      await qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
       void refetchMyVisit();
+      const elapsed =
+        Number.isFinite(started)
+          ? Math.round((Date.now() - started) / 60_000)
+          : null;
+      const elapsedLabel =
+        elapsed == null
+          ? null
+          : elapsed < 60
+            ? `${elapsed} daqiqa`
+            : `${Math.floor(elapsed / 60)} soat ${elapsed % 60} daq`;
       toast({
         title: "Filial yopildi",
         description:
-          result.message ||
-          "Tashrif yakunlandi. Keyingi filialni tanlab «Keldim» qilishingiz mumkin.",
+          (elapsedLabel ? `Tashrif: ${elapsedLabel}. ` : "") +
+          (result.message ||
+            "Tashrif yakunlandi. Keyingi filialni tanlab «Keldim» qilishingiz mumkin."),
       });
     } catch (err) {
       toast({
@@ -644,6 +660,11 @@ export default function ChecklistPage() {
 
   function readFreshGps(): Promise<{ lat: number; lng: number; accuracy: number | null }> {
     return new Promise((resolve, reject) => {
+      // Mavjud GPS yangi bo‘lsa — qayta so‘ramaymiz (mobil qotishni oldini oladi)
+      if (gps && Number.isFinite(gps.lat) && Number.isFinite(gps.lng)) {
+        resolve(gps);
+        return;
+      }
       if (!navigator.geolocation) {
         reject(new Error(t("checklist.needLoc")));
         return;
@@ -659,7 +680,7 @@ export default function ChecklistPage() {
           resolve(next);
         },
         () => reject(new Error(t("checklist.needLoc"))),
-        { enableHighAccuracy: true, maximumAge: 0, timeout: 20000 },
+        { enableHighAccuracy: true, maximumAge: 60_000, timeout: 8000 },
       );
     });
   }
@@ -683,18 +704,37 @@ export default function ChecklistPage() {
       return;
     }
     if (visitedToday) {
+      if (
+        isCoord &&
+        openVisit &&
+        String(openVisit.branchId) === managerId &&
+        openVisit.checklistAt
+      ) {
+        toast({
+          title: "Cheklist allaqachon saqlangan",
+          description: "Endi qizil «Ketdim» tugmasini bosing.",
+        });
+        return;
+      }
       toast({
         title: t("checklist.todayVisitedTitle"),
         description: t("checklist.todayVisitedHint"),
         variant: "destructive",
       });
-      resetForm();
       return;
     }
     if (live.answered === 0) {
       toast({
         title: t("checklist.pickAnswer"),
         description: t("checklist.checklistHint"),
+        variant: "destructive",
+      });
+      return;
+    }
+    if (isCoord && (!openVisit || String(openVisit.branchId) !== managerId)) {
+      toast({
+        title: "Avval «Keldim» qiling",
+        description: "Cheklist faqat ochiq tashrifda saqlanadi.",
         variant: "destructive",
       });
       return;
@@ -753,6 +793,20 @@ export default function ChecklistPage() {
           ? { checkLatitude: saveGps.lat, checkLongitude: saveGps.lng }
           : {}),
       });
+
+      // Koordinator: tashrif ochiq qoladi — faqat javoblarni tozalaymiz, Ketdim ochiladi
+      if (isCoord && openVisit && String(openVisit.branchId) === managerId) {
+        clearAnswers();
+        await refetchMyVisit();
+        void qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+        toast({
+          title: "Cheklist saqlandi",
+          description: "Endi qizil «Ketdim» tugmasi ochildi — vaqtni ko‘rib yakunlang.",
+        });
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        return;
+      }
+
       toast({
         title: t("checklist.savedOk"),
         description: t("checklist.todayVisitedAfterSave"),
@@ -938,7 +992,9 @@ export default function ChecklistPage() {
                 className={cn(
                   "sm:col-span-2 rounded-2xl border px-3 py-3 sm:px-4",
                   openVisit && String(openVisit.branchId) === managerId
-                    ? "border-emerald-300/80 bg-emerald-50/90 dark:border-emerald-500/30 dark:bg-emerald-950/40"
+                    ? openVisit.checklistAt
+                      ? "border-rose-300/80 bg-rose-50/90 dark:border-rose-500/30 dark:bg-rose-950/40"
+                      : "border-emerald-300/80 bg-emerald-50/90 dark:border-emerald-500/30 dark:bg-emerald-950/40"
                     : "border-amber-300/80 bg-amber-50/90 dark:border-amber-500/30 dark:bg-amber-950/40",
                 )}
               >
@@ -947,12 +1003,16 @@ export default function ChecklistPage() {
                     <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
                       <Clock3 className="h-4 w-4 shrink-0" />
                       {openVisit && String(openVisit.branchId) === managerId
-                        ? "Ochiq tashrif — Ketdim qilinmagan"
+                        ? openVisit.checklistAt
+                          ? "Cheklist saqlandi — endi Ketdim"
+                          : "Ochiq tashrif — avval cheklistni saqlang"
                         : "Filial tanlandi — endi «Keldim» qiling"}
                     </p>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {openVisit && String(openVisit.branchId) === managerId
-                        ? `Filial: «${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni to‘ldiring. Tayyor bo‘lgach «Ketdim qilish» → izoh → «Tugatish».`
+                        ? openVisit.checklistAt
+                          ? `Filial: «${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Qizil «Ketdim» → vaqt → Ha → izoh → Tugatish.`
+                          : `Filial: «${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni to‘liq to‘ldirib «Saqlash» qiling — keyin «Ketdim» ochiladi.`
                         : `Tanlangan: «${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Face ID (Davomat) da GPS ichida «Keldim» bosing — keyin cheklist ochiladi.`}
                     </p>
                     {openVisit && String(openVisit.branchId) === managerId ? (
@@ -974,15 +1034,27 @@ export default function ChecklistPage() {
                     ) : null}
                   </div>
                   {openVisit && String(openVisit.branchId) === managerId ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="shrink-0"
-                      onClick={() => setFinishOpen(true)}
-                    >
-                      Ketdim qilish
-                    </Button>
+                    openVisit.checklistAt ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="shrink-0 bg-rose-600 text-white hover:bg-rose-700"
+                        onClick={() => setFinishOpen(true)}
+                      >
+                        Ketdim
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="shrink-0 opacity-60"
+                        disabled
+                        title="Avval cheklistni saqlang"
+                      >
+                        Ketdim (cheklist kerak)
+                      </Button>
+                    )
                   ) : (
                     <Button
                       type="button"
@@ -1549,6 +1621,7 @@ export default function ChecklistPage() {
           "Filial"
         }
         checkInAt={openVisit?.checkInAt}
+        checklistAt={openVisit?.checklistAt}
         submitting={finishing}
         onFinish={handleFinishVisit}
       />

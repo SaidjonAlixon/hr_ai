@@ -702,9 +702,9 @@ export default function Dashboard() {
           {canViewHolatFull(role) && (
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-0.5">
-                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tarmoq holati</p>
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tarmoq hisoboti</p>
                 <Link href="/admin/holat" className="text-xs font-medium text-[#0b3a5c] hover:underline dark:text-sky-400">
-                  Holat →
+                  Hisobot →
                 </Link>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">

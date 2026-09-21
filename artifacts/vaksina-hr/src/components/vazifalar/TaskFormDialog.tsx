@@ -179,8 +179,8 @@ type Props = {
   branchOptions: string[];
   currentUserName?: string | null;
   currentUserRole?: string | null;
-  /** manage = yaratish/tahrirlash; work = ijrochi (asoslar o‘qish) */
-  mode?: "manage" | "work";
+  /** manage = yaratish/tahrirlash; work = ijrochi; view = faqat ko‘rish (auditor) */
+  mode?: "manage" | "work" | "view";
   /** Ijrochi rejimida beruvchi ismi / lavozimi */
   assignerName?: string | null;
   assignerRole?: string | null;
@@ -824,6 +824,8 @@ export function TaskFormDialog({
   const { toast } = useToast();
   const sendTaskMessage = useSendTaskMessage();
   const isWork = mode === "work";
+  const isView = mode === "view";
+  const isReadOnly = isWork || isView;
   const canPrivateVisibility = canSetPrivateTaskVisibility(currentUserRole);
   const descRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1633,34 +1635,48 @@ export function TaskFormDialog({
                 <span
                   className={cn(
                     "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide",
-                    isWork
-                      ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-800"
-                      : "bg-sky-100 text-sky-800 ring-1 ring-sky-200 dark:bg-sky-950 dark:text-sky-200 dark:ring-sky-800",
+                    isView
+                      ? "bg-slate-100 text-slate-700 ring-1 ring-slate-200 dark:bg-slate-900 dark:text-slate-200 dark:ring-slate-700"
+                      : isWork
+                        ? "bg-emerald-100 text-emerald-800 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-200 dark:ring-emerald-800"
+                        : "bg-sky-100 text-sky-800 ring-1 ring-sky-200 dark:bg-sky-950 dark:text-sky-200 dark:ring-sky-800",
                   )}
                 >
-                  {isWork ? t("tasks.work.roleBadge") : t("tasks.form.assignerBadge")}
+                  {isView
+                    ? "Ko‘rish rejimi"
+                    : isWork
+                      ? t("tasks.work.roleBadge")
+                      : t("tasks.form.assignerBadge")}
                 </span>
               </div>
               <DialogTitle
                 className={cn(
                   "bg-clip-text text-base font-bold tracking-tight text-transparent sm:text-xl",
-                  isWork
-                    ? "bg-gradient-to-r from-teal-800 to-emerald-600 dark:from-emerald-200 dark:to-teal-300"
-                    : "bg-gradient-to-r from-[#0a2540] to-[#0b5fff] dark:from-white dark:to-sky-300",
+                  isView
+                    ? "bg-gradient-to-r from-[#0a2540] to-slate-600 dark:from-white dark:to-slate-300"
+                    : isWork
+                      ? "bg-gradient-to-r from-teal-800 to-emerald-600 dark:from-emerald-200 dark:to-teal-300"
+                      : "bg-gradient-to-r from-[#0a2540] to-[#0b5fff] dark:from-white dark:to-sky-300",
                 )}
               >
-                {isWork
-                  ? t("tasks.work.title")
-                  : editing
-                    ? t("tasks.edit")
-                    : t("tasks.form.createTitle")}
+                {isView
+                  ? "Topshiriqni ko‘rish"
+                  : isWork
+                    ? t("tasks.work.title")
+                    : editing
+                      ? t("tasks.edit")
+                      : t("tasks.form.createTitle")}
               </DialogTitle>
               <DialogDescription className="hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
-                {isWork ? t("tasks.work.subtitle") : t("tasks.form.createSubtitle")}
+                {isView
+                  ? "Faqat ko‘rish — o‘zgartirish va yozish mumkin emas"
+                  : isWork
+                    ? t("tasks.work.subtitle")
+                    : t("tasks.form.createSubtitle")}
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-1.5 pt-0.5">
-              {!isWork && (
+              {!isReadOnly && (
               <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
                 <PopoverTrigger asChild>
                   <Button
@@ -1813,7 +1829,11 @@ export function TaskFormDialog({
                         : "text-sky-700 dark:text-sky-300",
                     )}
                   >
-                    {isWork ? t("tasks.work.roleBadge") : t("tasks.form.tracking")}
+                  {isView
+                    ? "Ko‘rish"
+                    : isWork
+                      ? t("tasks.work.roleBadge")
+                      : t("tasks.form.tracking")}
                   </p>
                   <span
                     className={cn(
@@ -1848,7 +1868,7 @@ export function TaskFormDialog({
             )}
 
             <SectionCard title={t("tasks.form.section.main")} tint="blue">
-            {isWork ? (
+            {(isWork || isView) ? (
               <div className="space-y-3">
                 <div>
                   <p className={cn(LABEL, "mb-1")}>{t("tasks.form.taskName")}</p>
@@ -1967,7 +1987,7 @@ export function TaskFormDialog({
             )}
             </SectionCard>
 
-            {isWork ? (
+            {(isWork || isView) ? (
               <>
                 <SectionCard title={t("tasks.form.assigner")} tint="teal">
                   <div className="flex items-center gap-3">
@@ -2856,7 +2876,7 @@ export function TaskFormDialog({
                     )}
                   </div>
                   <p className="truncate text-sm font-bold leading-tight text-[#0a2540] dark:text-slate-50">
-                    {isWork ? (
+                    {(isWork || isView) ? (
                       assignerDisplayName
                     ) : (
                       <>
@@ -2872,7 +2892,7 @@ export function TaskFormDialog({
                   </p>
                   {(isWork ? assignerDisplayRole : roleLabel) ? (
                     <p className="truncate text-[11px] font-medium capitalize text-slate-500 dark:text-slate-400">
-                      {isWork ? assignerDisplayRole : roleLabel}
+                      {(isWork || isView) ? assignerDisplayRole : roleLabel}
                     </p>
                   ) : null}
                 </div>
@@ -3147,7 +3167,16 @@ export function TaskFormDialog({
             )}
 
             <div className="mt-auto hidden flex-col gap-2 border-t border-slate-200/80 pt-4 dark:border-slate-800 sm:flex-row xl:flex">
-              {isWork ? (
+              {isView ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 rounded-xl"
+                  onClick={() => onOpenChange(false)}
+                >
+                  Yopish
+                </Button>
+              ) : isWork ? (
                 <>
                   {needsWorkAccept && (
                     <Button
@@ -3495,7 +3524,11 @@ export function TaskFormDialog({
                 </div>
 
                 <div className="relative z-[2] border-t border-border bg-background p-2.5">
-                  {workOverdueLocked ? (
+                  {isView ? (
+                    <p className="rounded-xl bg-slate-50 px-3 py-2 text-center text-[11px] font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                      Ko‘rish rejimi — chatga yozish mumkin emas
+                    </p>
+                  ) : workOverdueLocked ? (
                     <p className="rounded-xl bg-rose-50 px-3 py-2 text-center text-[11px] font-medium text-rose-800 dark:bg-rose-950/40 dark:text-rose-200">
                       {workAcceptLocked
                         ? t("tasks.form.acceptLocked")
@@ -3781,7 +3814,16 @@ export function TaskFormDialog({
           {mobilePanel !== "side" ? (
             <div className="shrink-0 border-t border-slate-200/80 bg-white/95 px-3 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/95 xl:hidden">
               <div className="flex flex-col gap-2 sm:flex-row">
-                {isWork ? (
+                {isView ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 rounded-xl"
+                    onClick={() => onOpenChange(false)}
+                  >
+                    Yopish
+                  </Button>
+                ) : isWork ? (
                   <>
                     {needsWorkAccept && (
                       <Button

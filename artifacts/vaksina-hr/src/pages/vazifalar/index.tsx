@@ -50,6 +50,8 @@ import {
   canBrowseAllTasks,
   canDeleteTaskUi,
   canManageTaskUi,
+  canSeePrivateTasks,
+  isTaskAuditViewer,
   isTaskOverdue,
 } from "@/lib/vazifalar-permissions";
 import { Input } from "@/components/ui/input";
@@ -436,6 +438,8 @@ export default function VazifalarPage() {
   const deepAssigneeId = deepLinkParams.get("assigneeId");
   const canAssign = canAssignTasks(user?.role);
   const canBrowseAll = canBrowseAllTasks(user?.role);
+  const canSeePrivate = canSeePrivateTasks(user?.role);
+  const isAuditViewer = isTaskAuditViewer(user?.role);
 
   const [search, setSearch] = useState(deepQ || "");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -490,6 +494,7 @@ export default function VazifalarPage() {
   const [completeOpen, setCompleteOpen] = useState(false);
   const [extendOpen, setExtendOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const [viewDialogMode, setViewDialogMode] = useState<"work" | "view">("work");
   const [editing, setEditing] = useState<Vazifa | null>(null);
   const [activeTask, setActiveTask] = useState<Vazifa | null>(null);
   const [createDueAt, setCreateDueAt] = useState<string | null>(null);
@@ -695,6 +700,18 @@ export default function VazifalarPage() {
         t.candidateId == null &&
         !t.pipelineStage,
     );
+    // Maxfiy — faqat admin (yoki o‘zi beruvchi/ijrochi) ko‘radi
+    if (!canSeePrivate) {
+      list = list.filter((t) => {
+        const vis = (t.meta as { visibility?: string } | null | undefined)?.visibility;
+        if (vis !== "private") return true;
+        if (!user?.id) return false;
+        return (
+          t.createdById === user.id ||
+          (t.assigneeKind === "user" && t.assigneeId === user.id)
+        );
+      });
+    }
     if (assigneeFilter === null) {
       // O‘zim — menga kelgan + men qo‘ygan (boshqalarga ham)
       if (user?.id) {
@@ -800,6 +817,7 @@ export default function VazifalarPage() {
     assigneeDeptKey,
     user?.id,
     user?.fullName,
+    canSeePrivate,
   ]);
 
   function clearSearchFilter() {
@@ -1040,14 +1058,16 @@ export default function VazifalarPage() {
   function openEdit(task: Vazifa) {
     const canManage = canManageTaskUi(task, user?.id, user?.role);
     const assignee = isAssigneeOf(task);
-    // Ijrochi (tahrirlash huquqi yo‘q) — work; boshqalar ko‘rish; manage — tahrirlash
+    // Ijrochi (tahrirlash huquqi yo‘q) — work; auditor / boshqa kuzatuvchi — faqat ko‘rish
     if (assignee && !canManage) {
       setActiveTask(task);
+      setViewDialogMode("work");
       setViewOpen(true);
       return;
     }
     if (!canManage) {
       setActiveTask(task);
+      setViewDialogMode(isAuditViewer || !assignee ? "view" : "work");
       setViewOpen(true);
       return;
     }
@@ -1066,6 +1086,7 @@ export default function VazifalarPage() {
       return;
     }
     setActiveTask(task);
+    setViewDialogMode("work");
     setViewOpen(true);
   }
 
@@ -2797,7 +2818,7 @@ export default function VazifalarPage() {
       <TaskFormDialog
         open={viewOpen}
         onOpenChange={setViewOpen}
-        mode="work"
+        mode={viewDialogMode}
         editing={activeTask}
         assigneeOptions={assigneeOptions}
         branchOptions={branchOptions}

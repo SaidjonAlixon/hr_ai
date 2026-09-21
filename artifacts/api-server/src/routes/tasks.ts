@@ -190,12 +190,28 @@ function denyIfAssigneeOverdue(
 /**
  * Ko‘rinish:
  * - sof admin: Maxfiy + oddiy — hammasi (to‘liq kuzatuv)
+ * - HR auditor: oddiy (Maxfiy emas) barcha topshiriqlar — faqat o‘rganish / ko‘rish
  * - beruvchi / oluvchi: o‘z vazifasi
- * - boshqalar: faqat o‘ziga tegishli (asoschi/direktor/HR ham to‘liq doskani ko‘rmaydi)
+ * - boshqalar: faqat o‘ziga tegishli
  */
+function isPrivateTask(row: typeof tasksTable.$inferSelect): boolean {
+  const meta =
+    row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+      ? (row.meta as Record<string, unknown>)
+      : {};
+  return meta.visibility === "private";
+}
+
+function isHrAuditorRole(role?: string | null) {
+  return (role ?? "").trim().toLowerCase() === "hr_auditor";
+}
+
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
   if (isStrictAdminRole(role)) return true;
-  return isCreator(row, userId) || isAssignee(row, userId);
+  if (isCreator(row, userId) || isAssignee(row, userId)) return true;
+  // Auditor: Maxfiydan tashqari barcha topshiriqlarni ko‘radi (tahrirlash yo‘q)
+  if (isHrAuditorRole(role) && !isPrivateTask(row)) return true;
+  return false;
 }
 
 function isAllowedAttachmentUrl(url: string) {

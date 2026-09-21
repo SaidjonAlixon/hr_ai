@@ -129,11 +129,20 @@ export const attendancePunchAuditTable = pgTable(
     deviceId: text("device_id"),
     ipAddress: text("ip_address"),
     meta: jsonb("meta").$type<Record<string, unknown>>(),
+    /**
+     * Xatolik holati (admin kuzatuvi):
+     * open | bartaraf | yechim | bajarilgan
+     */
+    resolutionStatus: text("resolution_status").notNull().default("open"),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByUserId: integer("resolved_by_user_id"),
+    resolutionNote: text("resolution_note"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [
     index("attendance_punch_audit_emp_idx").on(t.employeeId),
     index("attendance_punch_audit_created_idx").on(t.createdAt),
+    index("attendance_punch_audit_resolution_idx").on(t.resolutionStatus),
   ],
 );
 

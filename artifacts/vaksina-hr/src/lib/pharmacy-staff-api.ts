@@ -75,10 +75,19 @@ export function parseGpsText(raw: string): { lat: number; lng: number } | null {
   return null;
 }
 
-const GPS_SUFFIX = /\s*\|gps:(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)\s*$/i;
+const GPS_SUFFIX = /\s*[|·｜│]?\s*gps:\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(-?\d+(?:\.\d+)?))?\s*$/i;
+const GPS_INLINE = /(?:\r?\n|\s)*[|·｜│]?\s*gps:\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?/gi;
 
 export function stripGpsSuffix(location: string | null | undefined): string {
-  return String(location || "").replace(GPS_SUFFIX, "").trim();
+  let s = String(location || "")
+    .replace(/\u00a0/g, " ")
+    .replace(GPS_INLINE, "")
+    .replace(GPS_SUFFIX, "")
+    .replace(/\s*[|·｜│]\s*$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/^-?\d+(?:\.\d+)?\s*,\s*-?\d+(?:\.\d+)?$/.test(s)) return "";
+  return s;
 }
 
 const BRANCH_NAME_FIX: Record<string, string> = {

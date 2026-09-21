@@ -44,16 +44,16 @@ export function parseGpsText(raw: string): { lat: number; lng: number } | null {
   return null;
 }
 
-const GPS_SUFFIX = /\s*[|·]?\s*gps:\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(-?\d+(?:\.\d+)?))?\s*$/i;
+const GPS_SUFFIX = /\s*[|·｜│]?\s*gps:\s*(-?\d+(?:\.\d+)?)\s*(?:,\s*(-?\d+(?:\.\d+)?))?\s*$/i;
 /** Qator ichidagi / yangi qatordagi gps:lat[,lng] qoldiqlari */
-const GPS_INLINE = /(?:\r?\n|\s)*[|·]?\s*gps:\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?/gi;
+const GPS_INLINE = /(?:\r?\n|\s)*[|·｜│]?\s*gps:\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?/gi;
 
 export function stripGpsSuffix(location: string | null | undefined): string {
   let s = String(location || "")
     .replace(/\u00a0/g, " ")
     .replace(GPS_INLINE, "")
     .replace(GPS_SUFFIX, "")
-    .replace(/\s*[|·]\s*$/g, "")
+    .replace(/\s*[|·｜│]\s*$/g, "")
     .replace(/\s+/g, " ")
     .trim();
   // Faqat koordinata qolgan bo‘lsa — bo‘sh

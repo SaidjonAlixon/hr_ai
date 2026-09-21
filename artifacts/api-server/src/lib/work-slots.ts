@@ -117,6 +117,20 @@ export function slotCoversDate(slot: WorkSlotRow, workDate: string): boolean {
   return true;
 }
 
+export function expandWorkSlotShiftKeys(key: WorkSlotShiftKey | string): ShiftKey[] {
+  const s = String(key || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  if (s === "one+two" || s === "1+2" || s === "onetwo") return ["one", "two"];
+  if (s === "two+three" || s === "2+3" || s === "twothree") return ["two", "three"];
+  if (s === "one" || s === "1") return ["one"];
+  if (s === "two" || s === "2") return ["two"];
+  if (s === "three" || s === "3") return ["three"];
+  if (s === "office") return ["office"];
+  return ["one"];
+}
+
 /**
  * Shu kun uchun amal qiladigan slotlar.
  * Bir xil smena uchun bir nechta bo‘lsa — eng ustuvor mode qoladi.
@@ -135,8 +149,11 @@ export function resolveSlotsForDay(
 
   const byShift = new Map<ShiftKey, WorkSlotRow>();
   for (const s of covering) {
-    const key = s.shiftKey as ShiftKey;
-    if (!byShift.has(key)) byShift.set(key, s);
+    for (const key of expandWorkSlotShiftKeys(s.shiftKey)) {
+      if (!byShift.has(key)) {
+        byShift.set(key, { ...s, shiftKey: key });
+      }
+    }
   }
 
   return [...byShift.values()]

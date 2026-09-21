@@ -872,6 +872,11 @@ CREATE TABLE IF NOT EXISTS attendance_punch_audit (
 );
 CREATE INDEX IF NOT EXISTS attendance_punch_audit_emp_idx ON attendance_punch_audit (employee_id);
 CREATE INDEX IF NOT EXISTS attendance_punch_audit_created_idx ON attendance_punch_audit (created_at);
+ALTER TABLE attendance_punch_audit ADD COLUMN IF NOT EXISTS resolution_status TEXT NOT NULL DEFAULT 'open';
+ALTER TABLE attendance_punch_audit ADD COLUMN IF NOT EXISTS resolved_at TIMESTAMPTZ;
+ALTER TABLE attendance_punch_audit ADD COLUMN IF NOT EXISTS resolved_by_user_id INTEGER;
+ALTER TABLE attendance_punch_audit ADD COLUMN IF NOT EXISTS resolution_note TEXT;
+CREATE INDEX IF NOT EXISTS attendance_punch_audit_resolution_idx ON attendance_punch_audit (resolution_status);
 
 -- Smena / ofis sozlamalari (admin «Smena sozlamalari»)
 CREATE TABLE IF NOT EXISTS attendance_pay_settings (

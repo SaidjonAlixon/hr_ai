@@ -2065,7 +2065,7 @@ export default function DavomatFacePage() {
       ? workplace?.gpsError ||
         (workplaceGpsMissing
           ? "Filial GPS kiritilmagan — koordinator lokatsiyani qo‘shsin"
-          : "Bugun filial/smena tayyor emas — davomat yopiq")
+          : "Doimiy filial GPS tayyor emas — Smena/filial yoki Xatoliklar bo‘limini tekshiring")
       : remain != null && remain > 0
         ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`
         : !geoInside
@@ -2115,7 +2115,7 @@ export default function DavomatFacePage() {
             workplace?.gpsError ||
             (workplaceGpsMissing
               ? "Koordinator filial lokatsiyasini kiritsin"
-              : "Bugun filial/smena biriktirilmagan"),
+              : "Doimiy filial GPS tayyor emas yoki lokatsiya yo‘q — Smena/filialni tekshiring"),
           disabled: true,
           tone: "warn" as const,
         };

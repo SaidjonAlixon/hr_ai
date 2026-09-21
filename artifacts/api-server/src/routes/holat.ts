@@ -4,6 +4,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canViewHolat, canViewHolatFull } from "../lib/roles";
 import { buildHolatReport, type HolatReport } from "../lib/holat";
+import { buildCoordinatorHisobot } from "../lib/holat-attendance-report";
 
 const router: IRouter = Router();
 
@@ -190,7 +191,7 @@ async function holatWorkbook(report: HolatReport) {
 
 router.get("/holat", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canViewHolat(req.userRole)) {
-    res.status(403).json({ error: "Holat sizga ochiq emas" });
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
     return;
   }
   try {
@@ -203,13 +204,45 @@ router.get("/holat", requireAuth, async (req: AuthRequest, res): Promise<void> =
     res.json(report);
   } catch (err) {
     console.error("GET /holat error:", err);
-    res.status(503).json({ error: "Holat yuklanmadi" });
+    res.status(503).json({ error: "Hisobot yuklanmadi" });
+  }
+});
+
+/** Koordinator davomat hisoboti: sana oralig‘i + filial/xodim/foiz */
+router.get("/holat/coordinator-report", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewHolat(req.userRole)) {
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
+    return;
+  }
+  const coordinatorId = Number(req.query.coordinatorId);
+  if (!Number.isFinite(coordinatorId) || coordinatorId <= 0) {
+    res.status(400).json({ error: "coordinatorId kerak" });
+    return;
+  }
+  try {
+    const full = canViewHolatFull(req.userRole);
+    const report = await buildCoordinatorHisobot({
+      coordinatorEmployeeId: coordinatorId,
+      from: typeof req.query.from === "string" ? req.query.from : null,
+      to: typeof req.query.to === "string" ? req.query.to : null,
+      full,
+      scopeRole: req.userRole,
+      scopeUserId: req.userId,
+    });
+    if (!report) {
+      res.status(404).json({ error: "Koordinator topilmadi" });
+      return;
+    }
+    res.json(report);
+  } catch (err) {
+    console.error("GET /holat/coordinator-report error:", err);
+    res.status(503).json({ error: "Hisobot yuklanmadi" });
   }
 });
 
 router.get("/holat/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canViewHolat(req.userRole)) {
-    res.status(403).json({ error: "Holat sizga ochiq emas" });
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
     return;
   }
   try {
@@ -226,7 +259,7 @@ router.get("/holat/export", requireAuth, async (req: AuthRequest, res): Promise<
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
-    res.setHeader("Content-Disposition", `attachment; filename="VAKSINA_Holat_${stamp}.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="VAKSINA_Hisobot_${stamp}.xlsx"`);
     res.setHeader("Cache-Control", "no-store");
     res.send(buffer);
   } catch (err) {

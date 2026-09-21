@@ -14,6 +14,7 @@ import {
   employeeDayShiftPlansTable,
   employeeWorkSlotsTable,
   attendanceShiftSegmentsTable,
+  attendancePunchAuditTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import {
@@ -48,6 +49,7 @@ import {
   type ShiftDefinition,
   addDaysYmd,
   DEFAULT_SHIFT_DEFS,
+  normalizeShiftKey,
 } from "../lib/attendance-engine";
 import {
   resolveSlotsForDay,
@@ -58,6 +60,7 @@ import {
   isMultiBranchDay,
   preferActivePunchSlot,
   hasOpenMultiBranchShift,
+  slotCoversDate,
   type WorkSlotRow,
   type ResolvedDaySlot,
 } from "../lib/work-slots";
@@ -94,6 +97,7 @@ import {
   verifyDepartmentQrPayload,
 } from "../lib/department-attendance-qr";
 import { clientIp, writePunchAudit } from "../lib/punch-audit";
+import { punchErrorHelp, resolvePunchErrorCode } from "../lib/punch-error-help";
 import {
   findActivePermissionForEmployee,
 } from "../lib/mobile-attendance";
@@ -4576,16 +4580,35 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       const slotRows = await loadActiveWorkSlots(emp.id);
       const todaySlots = resolveSlotsForDay(todayTashkent(), slotRows);
       const allowedBranchIds = new Set<number>();
-      if (slotRows.length > 0) {
-        // Slot tizimi: faqat bugungi rejadagi filiallar
+      if (todaySlots.length > 0) {
+        // Bugungi reja (rotatsiya / slot) — faqat shu filiallar
         for (const s of todaySlots) allowedBranchIds.add(s.branchId);
       } else if (myBranchId) {
+        // Standart doimiy filial: bugun alohida rotatsiya qo‘yilmagan bo‘lsa ham ishlayveradi
         allowedBranchIds.add(myBranchId);
       }
-      if (!adminAnywhere && slotRows.length > 0 && !todaySlots.length) {
+      if (!adminAnywhere && allowedBranchIds.size === 0) {
+        await writePunchAudit({
+          employeeId: emp.id,
+          userId: user.id,
+          verificationMethod: "QR",
+          action,
+          finalResult: "denied",
+          failureReason: "no_assignment_today",
+          ipAddress: ip,
+          deviceId,
+          meta: {
+            hasSlots: slotRows.length > 0,
+            todaySlots: 0,
+            myBranchId,
+          },
+        });
         res.status(403).json({
-          error: "Bugun sizga filial/smena biriktirilmagan — QR davomat yopiq.",
+          error:
+            "Filial biriktirilmagan — avval Smena/filialda doimiy filial belgilansin. Boshqa filialga borish uchun rotatsiya kerak.",
           code: "no_assignment_today",
+          fixHint:
+            "Mudir yoki koordinator: Smena va filial → doimiy filial saqlansin. Boshqa joyga ish uchun kunlik rotatsiya qo‘shilsin.",
         });
         return;
       }
@@ -4598,10 +4621,21 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           action,
           qrResult: "wrong_branch",
           finalResult: "denied",
-          failureReason: "QR boshqa filialga tegishli",
+          failureReason: "qr_wrong_branch",
+          gpsDistance: hasGps
+            ? null
+            : null,
           ipAddress: ip,
           deviceId,
-          meta: { qrBranchId: branchQr.row.branchId, myBranchId, allowed: [...allowedBranchIds] },
+          meta: {
+            code: "qr_wrong_branch",
+            qrBranchId: branchQr.row.branchId,
+            myBranchId,
+            assignedBranchId: myBranchId,
+            allowed: [...allowedBranchIds],
+            latitude: hasGps ? latitudeRaw : null,
+            longitude: hasGps ? longitudeRaw : null,
+          },
         });
         res.status(403).json({
           error: "Bu QR bugungi smena/filial rejangizga mos emas. Faqat belgilangan filial QR i bilan davomat qiling.",
@@ -4609,6 +4643,8 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           myBranchId,
           qrBranchId: branchQr.row.branchId,
           allowedBranchIds: [...allowedBranchIds],
+          fixHint:
+            "O‘z filialingiz QR ini skanerlang. Boshqa filialga ishlash uchun mudir/koordinator kunlik rotatsiya qo‘shishi kerak.",
         });
         return;
       }
@@ -4644,9 +4680,20 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
             gpsDistance: typeof gate.body.distanceMeters === "number" ? gate.body.distanceMeters : null,
             qrResult: "ok",
             finalResult: "denied",
-            failureReason: String(gate.body.error || "geofence"),
+            failureReason: String(gate.body.code || gate.body.error || "geofence"),
             ipAddress: ip,
             deviceId,
+            meta: {
+              code: String(gate.body.code || "outside_geofence"),
+              latitude,
+              longitude,
+              myBranchId,
+              assignedBranchId: myBranchId,
+              workplace: gate.body.workplace || null,
+              distanceMeters: gate.body.distanceMeters ?? null,
+              remainMeters: gate.body.remainMeters ?? null,
+              allowedMeters: gate.body.allowedMeters ?? null,
+            },
           });
           res.status(gate.status).json(gate.body);
           return;
@@ -4978,6 +5025,798 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
   } catch (err) {
     console.error("GET /davomat/methods error:", err);
     res.status(503).json({ error: "Usullar yuklanmadi" });
+  }
+});
+
+/** Davomat xatoliklari — kimda nima xato + yechim + lokatsiya */
+router.get("/davomat/xatoliklar", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewDavomat(req.userRole) && !hasFullPlatformAccess(req.userRole) && !isDirectorRole(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const days = Math.min(30, Math.max(1, Number(req.query.days) || 7));
+    const limit = Math.min(300, Math.max(20, Number(req.query.limit) || 100));
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+
+    const rows = await db
+      .select({
+        id: attendancePunchAuditTable.id,
+        employeeId: attendancePunchAuditTable.employeeId,
+        userId: attendancePunchAuditTable.userId,
+        branchId: attendancePunchAuditTable.branchId,
+        verificationMethod: attendancePunchAuditTable.verificationMethod,
+        action: attendancePunchAuditTable.action,
+        gpsResult: attendancePunchAuditTable.gpsResult,
+        gpsDistance: attendancePunchAuditTable.gpsDistance,
+        faceResult: attendancePunchAuditTable.faceResult,
+        qrResult: attendancePunchAuditTable.qrResult,
+        finalResult: attendancePunchAuditTable.finalResult,
+        failureReason: attendancePunchAuditTable.failureReason,
+        meta: attendancePunchAuditTable.meta,
+        resolutionStatus: attendancePunchAuditTable.resolutionStatus,
+        resolvedAt: attendancePunchAuditTable.resolvedAt,
+        resolvedByUserId: attendancePunchAuditTable.resolvedByUserId,
+        resolutionNote: attendancePunchAuditTable.resolutionNote,
+        createdAt: attendancePunchAuditTable.createdAt,
+      })
+      .from(attendancePunchAuditTable)
+      .where(
+        and(
+          gte(attendancePunchAuditTable.createdAt, since),
+          eq(attendancePunchAuditTable.finalResult, "denied"),
+        ),
+      )
+      .orderBy(desc(attendancePunchAuditTable.createdAt))
+      .limit(limit);
+
+    const empIds = [
+      ...new Set(rows.map((r) => r.employeeId).filter((id): id is number => typeof id === "number")),
+    ];
+    const userIds = [
+      ...new Set(rows.map((r) => r.userId).filter((id): id is number => typeof id === "number")),
+    ];
+    const branchIdsFromMeta = new Set<number>();
+    for (const r of rows) {
+      if (r.branchId) branchIdsFromMeta.add(r.branchId);
+      const m =
+        r.meta && typeof r.meta === "object" && !Array.isArray(r.meta)
+          ? (r.meta as Record<string, unknown>)
+          : {};
+      for (const k of ["myBranchId", "qrBranchId", "assignedBranchId"] as const) {
+        const n = Number(m[k]);
+        if (Number.isFinite(n) && n > 0) branchIdsFromMeta.add(n);
+      }
+      const allowed = m.allowed;
+      if (Array.isArray(allowed)) {
+        for (const a of allowed) {
+          const n = Number(a);
+          if (Number.isFinite(n) && n > 0) branchIdsFromMeta.add(n);
+        }
+      }
+    }
+
+    const emps =
+      empIds.length === 0
+        ? []
+        : await db
+            .select({
+              id: employeesTable.id,
+              fullName: employeesTable.fullName,
+              location: employeesTable.location,
+              assignedBranchId: employeesTable.assignedBranchId,
+              userId: employeesTable.userId,
+              reportsToId: employeesTable.reportsToId,
+              orgRole: employeesTable.orgRole,
+              latitude: employeesTable.latitude,
+              longitude: employeesTable.longitude,
+            })
+            .from(employeesTable)
+            .where(inArray(employeesTable.id, empIds));
+
+    /** Koordinator zanjiri: reportsTo + assignedBranch */
+    const graph = new Map<
+      number,
+      {
+        id: number;
+        fullName: string;
+        location: string | null;
+        assignedBranchId: number | null;
+        userId: number | null;
+        reportsToId: number | null;
+        orgRole: string | null;
+        latitude: number | null;
+        longitude: number | null;
+      }
+    >();
+    for (const e of emps) graph.set(e.id, e);
+    let frontier = [
+      ...new Set(
+        emps.flatMap((e) =>
+          [e.reportsToId, e.assignedBranchId].filter((x): x is number => typeof x === "number" && x > 0),
+        ),
+      ),
+    ];
+    for (let depth = 0; depth < 5 && frontier.length > 0; depth++) {
+      const missing = frontier.filter((id) => !graph.has(id));
+      if (!missing.length) break;
+      const more = await db
+        .select({
+          id: employeesTable.id,
+          fullName: employeesTable.fullName,
+          location: employeesTable.location,
+          assignedBranchId: employeesTable.assignedBranchId,
+          userId: employeesTable.userId,
+          reportsToId: employeesTable.reportsToId,
+          orgRole: employeesTable.orgRole,
+          latitude: employeesTable.latitude,
+          longitude: employeesTable.longitude,
+        })
+        .from(employeesTable)
+        .where(inArray(employeesTable.id, missing));
+      const next: number[] = [];
+      for (const m of more) {
+        graph.set(m.id, m);
+        if (m.reportsToId && !graph.has(m.reportsToId)) next.push(m.reportsToId);
+        if (m.assignedBranchId && !graph.has(m.assignedBranchId)) next.push(m.assignedBranchId);
+      }
+      frontier = next;
+    }
+
+    for (const e of graph.values()) {
+      if (e.assignedBranchId) branchIdsFromMeta.add(e.assignedBranchId);
+      branchIdsFromMeta.add(e.id);
+      if (e.userId) userIds.push(e.userId);
+    }
+    const uniqueUserIds = [...new Set(userIds.filter((id): id is number => typeof id === "number"))];
+
+    const branchIdList = [...branchIdsFromMeta];
+    const branches =
+      branchIdList.length === 0
+        ? []
+        : await db
+            .select({
+              id: employeesTable.id,
+              fullName: employeesTable.fullName,
+              location: employeesTable.location,
+              latitude: employeesTable.latitude,
+              longitude: employeesTable.longitude,
+            })
+            .from(employeesTable)
+            .where(inArray(employeesTable.id, branchIdList));
+
+    const users =
+      uniqueUserIds.length === 0
+        ? []
+        : await db
+            .select({
+              id: usersTable.id,
+              fullName: usersTable.fullName,
+              role: usersTable.role,
+              login: usersTable.login,
+              phone: usersTable.phone,
+            })
+            .from(usersTable)
+            .where(inArray(usersTable.id, uniqueUserIds));
+
+    const empMap = new Map(emps.map((e) => [e.id, e]));
+    const userMap = new Map(users.map((u) => [u.id, u]));
+    const branchMap = new Map(branches.map((b) => [b.id, b]));
+
+    const isCoordinatorNode = (node: { orgRole: string | null; userId: number | null }) => {
+      if (node.orgRole === "coordinator") return true;
+      if (node.userId != null) {
+        const u = userMap.get(node.userId);
+        if (u?.role === "koordinator") return true;
+      }
+      return false;
+    };
+
+    const resolveCoordinator = (empId: number | null | undefined) => {
+      if (empId == null) return null;
+      const walkFrom = (startId: number) => {
+        let currentId: number | null = startId;
+        const visited = new Set<number>();
+        while (currentId && !visited.has(currentId)) {
+          visited.add(currentId);
+          const node = graph.get(currentId);
+          if (!node) break;
+          if (isCoordinatorNode(node)) {
+            const u = node.userId != null ? userMap.get(node.userId) : null;
+            return {
+              employeeId: node.id,
+              userId: node.userId,
+              fullName: u?.fullName || node.fullName,
+              login: u?.login || null,
+              phone: u?.phone || null,
+            };
+          }
+          currentId = node.reportsToId;
+        }
+        return null;
+      };
+      const emp = graph.get(empId);
+      if (!emp) return null;
+      if (emp.reportsToId) {
+        const c = walkFrom(emp.reportsToId);
+        if (c) return c;
+      }
+      if (emp.assignedBranchId) {
+        const c = walkFrom(emp.assignedBranchId);
+        if (c) return c;
+      }
+      if (isCoordinatorNode(emp)) {
+        const u = emp.userId != null ? userMap.get(emp.userId) : null;
+        return {
+          employeeId: emp.id,
+          userId: emp.userId,
+          fullName: u?.fullName || emp.fullName,
+          login: u?.login || null,
+          phone: u?.phone || null,
+        };
+      }
+      return null;
+    };
+
+    const branchLabel = (id: number | null | undefined) => {
+      if (id == null) return null;
+      const b = branchMap.get(id) || graph.get(id);
+      if (!b) return `#${id}`;
+      return (
+        displayBranchName(b.location) ||
+        displayBranchName(b.fullName) ||
+        (b.fullName ? String(b.fullName) : null) ||
+        `#${id}`
+      );
+    };
+
+    const items = rows.map((r) => {
+      const meta =
+        r.meta && typeof r.meta === "object" && !Array.isArray(r.meta)
+          ? (r.meta as Record<string, unknown>)
+          : {};
+      const codeRaw = resolvePunchErrorCode({
+        metaCode: meta.code,
+        failureReason: r.failureReason,
+        qrResult: r.qrResult,
+        gpsResult: r.gpsResult,
+        faceResult: r.faceResult,
+      });
+      const help = punchErrorHelp(codeRaw);
+      const emp = r.employeeId != null ? empMap.get(r.employeeId) : null;
+      const usr = r.userId != null ? userMap.get(r.userId) : null;
+
+      const myBranchId =
+        Number(meta.myBranchId) ||
+        emp?.assignedBranchId ||
+        r.branchId ||
+        null;
+      const qrBranchId = Number(meta.qrBranchId) || null;
+      const assignedBranchId = emp?.assignedBranchId || myBranchId;
+
+      const liveLat =
+        typeof meta.latitude === "number"
+          ? meta.latitude
+          : typeof meta.lat === "number"
+            ? meta.lat
+            : null;
+      const liveLng =
+        typeof meta.longitude === "number"
+          ? meta.longitude
+          : typeof meta.lng === "number"
+            ? meta.lng
+            : null;
+      const workplaceLat =
+        typeof meta.workplaceLat === "number"
+          ? meta.workplaceLat
+          : meta.workplace && typeof meta.workplace === "object"
+            ? Number((meta.workplace as Record<string, unknown>).latitude)
+            : null;
+      const workplaceLng =
+        typeof meta.workplaceLng === "number"
+          ? meta.workplaceLng
+          : meta.workplace && typeof meta.workplace === "object"
+            ? Number((meta.workplace as Record<string, unknown>).longitude)
+            : null;
+      const workplaceLabelRaw =
+        typeof meta.workplaceLabel === "string"
+          ? meta.workplaceLabel
+          : meta.workplace && typeof meta.workplace === "object"
+            ? String((meta.workplace as Record<string, unknown>).location || "")
+            : branchLabel(assignedBranchId);
+      const workplaceLabel = displayBranchName(workplaceLabelRaw) || workplaceLabelRaw;
+
+      const wrongBranch =
+        help.code === "qr_wrong_branch" ||
+        r.qrResult === "wrong_branch" ||
+        (qrBranchId != null &&
+          assignedBranchId != null &&
+          qrBranchId !== assignedBranchId);
+
+      return {
+        id: r.id,
+        createdAt: r.createdAt.toISOString(),
+        method: r.verificationMethod,
+        action: r.action,
+        code: help.code,
+        title: help.title,
+        meaning: help.meaning,
+        fix: help.fix,
+        severity: help.severity,
+        failureReason: r.failureReason,
+        gpsDistance: r.gpsDistance,
+        branchId: r.branchId,
+        wrongBranch,
+        assignedBranch: {
+          id: assignedBranchId,
+          label: branchLabel(assignedBranchId),
+        },
+        scannedBranch: qrBranchId
+          ? { id: qrBranchId, label: branchLabel(qrBranchId) }
+          : null,
+        allowedBranchIds: Array.isArray(meta.allowed)
+          ? (meta.allowed as unknown[]).map(Number).filter((n) => Number.isFinite(n))
+          : null,
+        liveLocation:
+          liveLat != null && liveLng != null && Number.isFinite(liveLat) && Number.isFinite(liveLng)
+            ? {
+                latitude: liveLat,
+                longitude: liveLng,
+                mapsUrl: `https://www.google.com/maps?q=${liveLat},${liveLng}`,
+                distanceMeters: r.gpsDistance,
+              }
+            : null,
+        workplace: {
+          label: workplaceLabel || null,
+          latitude: workplaceLat != null && Number.isFinite(workplaceLat) ? workplaceLat : null,
+          longitude: workplaceLng != null && Number.isFinite(workplaceLng) ? workplaceLng : null,
+        },
+        employee: emp
+          ? {
+              id: emp.id,
+              fullName: emp.fullName,
+              location: displayBranchName(emp.location) || null,
+              assignedBranchId: emp.assignedBranchId,
+              phone: usr?.phone || null,
+            }
+          : null,
+        user: usr
+          ? { id: usr.id, fullName: usr.fullName, role: usr.role, login: usr.login, phone: usr.phone }
+          : null,
+        coordinator: resolveCoordinator(emp?.id ?? r.employeeId),
+        resolutionStatus: (r.resolutionStatus as string) || "open",
+        resolvedAt: r.resolvedAt ? r.resolvedAt.toISOString() : null,
+        resolvedByUserId: r.resolvedByUserId ?? null,
+        resolutionNote: r.resolutionNote ?? null,
+        meta,
+      };
+    });
+
+    /** Bir xil muammo (xodim+kod+filiallar) — faqat eng oxirgisi */
+    const dedupeKey = (it: (typeof items)[number]) =>
+      [
+        it.employee?.id ?? it.user?.id ?? "x",
+        it.code,
+        it.assignedBranch?.id ?? "",
+        it.scannedBranch?.id ?? "",
+        it.wrongBranch ? "wb" : "",
+      ].join("|");
+
+    const seen = new Map<string, (typeof items)[number] & { repeatCount: number }>();
+    for (const it of items) {
+      const k = dedupeKey(it);
+      const prev = seen.get(k);
+      if (!prev) {
+        seen.set(k, { ...it, repeatCount: 1 });
+      } else {
+        prev.repeatCount += 1;
+      }
+    }
+    const uniqueItems = [...seen.values()];
+
+    const byCode = new Map<string, number>();
+    const byResolution = { bajarilmagan: 0, bajarilgan: 0 };
+    type CoordRank = {
+      employeeId: number | null;
+      userId: number | null;
+      fullName: string;
+      login: string | null;
+      total: number;
+      open: number;
+      employeeIds: Set<number>;
+    };
+    const byCoord = new Map<string, CoordRank>();
+
+    for (const it of uniqueItems) {
+      byCode.set(it.code, (byCode.get(it.code) || 0) + 1);
+      const st = String(it.resolutionStatus || "open");
+      const isOpen = st === "open" || !st;
+      if (isOpen) byResolution.bajarilmagan += 1;
+      else byResolution.bajarilgan += 1;
+
+      const c = it.coordinator;
+      const key = c?.employeeId != null ? `e:${c.employeeId}` : c?.userId != null ? `u:${c.userId}` : "none";
+      let rank = byCoord.get(key);
+      if (!rank) {
+        rank = {
+          employeeId: c?.employeeId ?? null,
+          userId: c?.userId ?? null,
+          fullName: c?.fullName || "Koordinator topilmadi",
+          login: c?.login ?? null,
+          total: 0,
+          open: 0,
+          employeeIds: new Set(),
+        };
+        byCoord.set(key, rank);
+      }
+      rank.total += 1;
+      if (isOpen) rank.open += 1;
+      if (it.employee?.id) rank.employeeIds.add(it.employee.id);
+    }
+
+    const coordinatorRanking = [...byCoord.values()]
+      .map((r) => ({
+        employeeId: r.employeeId,
+        userId: r.userId,
+        fullName: r.fullName,
+        login: r.login,
+        total: r.total,
+        open: r.open,
+        staffWithIssues: r.employeeIds.size,
+      }))
+      .sort((a, b) => b.open - a.open || b.total - a.total);
+
+    res.json({
+      generatedAt: new Date().toISOString(),
+      days,
+      total: uniqueItems.length,
+      rawTotal: items.length,
+      statusCounts: byResolution,
+      coordinatorRanking,
+      summary: [...byCode.entries()]
+        .map(([code, count]) => {
+          const h = punchErrorHelp(code);
+          return {
+            code: h.code,
+            count,
+            title: h.title,
+            meaning: h.meaning,
+            fix: h.fix,
+            severity: h.severity,
+          };
+        })
+        .sort((a, b) => b.count - a.count),
+      items: uniqueItems,
+    });
+  } catch (err) {
+    console.error("GET /davomat/xatoliklar error:", err);
+    res.status(503).json({ error: "Xatoliklar yuklanmadi" });
+  }
+});
+
+/** open = bajarilmagan; bajarilgan (+ eski bartaraf/yechim) = bajarilgan */
+const RESOLUTION_STATUSES = new Set(["open", "bajarilgan", "bartaraf", "yechim"]);
+
+/** Xatolik holati: bajarilgan | open (bajarilmagan) */
+router.post("/davomat/xatoliklar/:id/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole;
+  const allowed =
+    hasFullPlatformAccess(role) ||
+    isDirectorRole(role) ||
+    role === "koordinator" ||
+    role === "mudir" ||
+    role === "hr_direktor" ||
+    role === "hr_auditor" ||
+    role === "admin";
+  if (!allowed) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) {
+    res.status(400).json({ error: "id noto‘g‘ri" });
+    return;
+  }
+  let status = String(req.body?.status || "").trim().toLowerCase();
+  if (status === "bajarilmagan") status = "open";
+  if (status === "bartaraf" || status === "yechim") status = "bajarilgan";
+  if (!RESOLUTION_STATUSES.has(status) || (status !== "open" && status !== "bajarilgan")) {
+    res.status(400).json({
+      error: "status: bajarilgan | bajarilmagan (open)",
+    });
+    return;
+  }
+  const note =
+    typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 500) : null;
+
+  try {
+    const [row] = await db
+      .select({ id: attendancePunchAuditTable.id })
+      .from(attendancePunchAuditTable)
+      .where(eq(attendancePunchAuditTable.id, id))
+      .limit(1);
+    if (!row) {
+      res.status(404).json({ error: "Xatolik topilmadi" });
+      return;
+    }
+    const isOpen = status === "open";
+    await db
+      .update(attendancePunchAuditTable)
+      .set({
+        resolutionStatus: status,
+        resolvedAt: isOpen ? null : new Date(),
+        resolvedByUserId: isOpen ? null : req.userId ?? null,
+        resolutionNote: note || null,
+      })
+      .where(eq(attendancePunchAuditTable.id, id));
+
+    res.json({
+      ok: true,
+      id,
+      status,
+      message: isOpen ? "Holat: Bajarilmagan" : "Holat: Bajarilgan",
+    });
+  } catch (err) {
+    console.error("POST /davomat/xatoliklar/:id/status error:", err);
+    res.status(503).json({ error: "Holat saqlanmadi" });
+  }
+});
+
+/**
+ * Tezkor yechim — taklifni qo‘llash (faqat bitta audit).
+ * Body: { employeeId, auditId, mode, branchId?, note? }
+ * mode:
+ *  - assign_branch — doimiy filial biriktirish
+ *  - rotate_today — bugun uchun skaner filialiga kunlik rotatsiya
+ *  - mark_yechim — faqat «Bajarilgan» belgilash
+ */
+router.post("/davomat/xatoliklar/fix-branch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole;
+  const allowed =
+    hasFullPlatformAccess(role) ||
+    isDirectorRole(role) ||
+    role === "koordinator" ||
+    role === "mudir" ||
+    role === "hr_direktor" ||
+    role === "hr_auditor" ||
+    role === "admin";
+  if (!allowed) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  const employeeId = Number(req.body?.employeeId);
+  const auditId = Number(req.body?.auditId);
+  const mode = String(req.body?.mode || "assign_branch").trim();
+  if (!Number.isFinite(employeeId) || employeeId <= 0) {
+    res.status(400).json({ error: "employeeId kerak" });
+    return;
+  }
+  if (!Number.isFinite(auditId) || auditId <= 0) {
+    res.status(400).json({ error: "auditId kerak — faqat bitta xatolik yozuvi tiklanadi" });
+    return;
+  }
+  try {
+    const [audit] = await db
+      .select({
+        id: attendancePunchAuditTable.id,
+        employeeId: attendancePunchAuditTable.employeeId,
+        failureReason: attendancePunchAuditTable.failureReason,
+      })
+      .from(attendancePunchAuditTable)
+      .where(eq(attendancePunchAuditTable.id, auditId))
+      .limit(1);
+    if (!audit) {
+      res.status(404).json({ error: "Xatolik yozuvi topilmadi" });
+      return;
+    }
+    if (audit.employeeId != null && audit.employeeId !== employeeId) {
+      res.status(400).json({ error: "auditId boshqa xodimga tegishli" });
+      return;
+    }
+
+    const markDone = async (note: string) => {
+      await db
+        .update(attendancePunchAuditTable)
+        .set({
+          resolutionStatus: "bajarilgan",
+          resolvedAt: new Date(),
+          resolvedByUserId: req.userId ?? null,
+          resolutionNote: note.slice(0, 500),
+        })
+        .where(eq(attendancePunchAuditTable.id, auditId));
+    };
+
+    if (mode === "mark_yechim" || mode === "mark_done") {
+      const note = String(req.body?.note || "Qo‘lda bajarilgan belgilandi");
+      await markDone(note);
+      res.json({
+        ok: true,
+        mode: "mark_done",
+        auditId,
+        employeeId,
+        message: "Shu xatolik «Bajarilgan» qilindi.",
+        result: {
+          summary: "Yechim qo‘llandi",
+          steps: [
+            "1) Shu bitta xatolik yozuvi «Bajarilgan» holatiga o‘tkazildi.",
+            "2) Filial va smena sozlamalari o‘zgartirilmadi.",
+            "3) Xodimga: keyingi safar to‘g‘ri joyda (o‘z filial QR/GPS) davomat qilishini ayting.",
+          ],
+        },
+      });
+      return;
+    }
+
+    const [emp] = await db
+      .select()
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employeeId))
+      .limit(1);
+    if (!emp) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+
+    if (mode === "rotate_today") {
+      let branchId = Number(req.body?.branchId);
+      if (!Number.isFinite(branchId) || branchId <= 0) {
+        res.status(400).json({
+          error: "Rotatsiya uchun branchId (skaner filial) kerak",
+          code: "branch_required",
+        });
+        return;
+      }
+      const [branch] = await db
+        .select({
+          id: employeesTable.id,
+          location: employeesTable.location,
+          fullName: employeesTable.fullName,
+        })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, branchId))
+        .limit(1);
+      if (!branch) {
+        res.status(404).json({ error: "Filial topilmadi" });
+        return;
+      }
+      const label = displayBranchName(branch.location) || branch.location || branch.fullName || "Filial";
+      const today = todayTashkent();
+      const shiftKey = normalizeShiftKey(emp.shiftType, emp.shiftLabel);
+      const existing = await loadActiveWorkSlots(employeeId);
+      let deactivated = 0;
+      for (const s of existing) {
+        if (s.mode === "days" && Array.isArray(s.workDates) && s.workDates.includes(today) && s.id) {
+          await db
+            .update(employeeWorkSlotsTable)
+            .set({ active: false })
+            .where(eq(employeeWorkSlotsTable.id, s.id));
+          deactivated += 1;
+        }
+      }
+      await db.insert(employeeWorkSlotsTable).values({
+        employeeId,
+        branchId,
+        branchLabel: label,
+        shiftKey: shiftKey === "office" ? "one" : shiftKey,
+        mode: "days",
+        validFrom: today,
+        validTo: today,
+        weekdays: null,
+        workDates: [today],
+        note: "Xatoliklar → bugungi rotatsiya (Tiklash)",
+        active: true,
+      });
+      await markDone(`Bugun rotatsiya: ${label}`);
+      res.json({
+        ok: true,
+        mode: "rotate_today",
+        auditId,
+        employeeId,
+        branchId,
+        branchLabel: label,
+        workDate: today,
+        message: `${emp.fullName}: bugun «${label}» filialida davomat ochildi. Xatolik bajarilgan.`,
+        result: {
+          summary: "Kunlik rotatsiya qo‘llandi",
+          steps: [
+            `1) ${emp.fullName} uchun bugun (${today}) «${label}» filialiga rotatsiya qo‘yildi.`,
+            deactivated
+              ? `2) Shu kunga eski ${deactivated} ta kunlik biriktirish o‘chirildi.`
+              : "2) Eski kunlik biriktirish yo‘q edi.",
+            "3) Doimiy filial o‘zgarmadi — faqat bugun.",
+            "4) Shu xatolik «Bajarilgan» qilindi.",
+            "5) Xodim endi shu filial QR/GPS da «Keldim/Ketdim» qila oladi.",
+          ],
+        },
+      });
+      return;
+    }
+
+    // assign_branch
+    let branchId = Number(req.body?.branchId);
+    if (!Number.isFinite(branchId) || branchId <= 0) {
+      branchId = emp.assignedBranchId || (emp.orgRole === "manager" ? emp.id : emp.reportsToId) || 0;
+    }
+    if (!branchId) {
+      res.status(400).json({
+        error: "Doimiy filial topilmadi — branchId yuboring yoki avval filial biriktiring",
+        code: "branch_unassigned",
+        fixHint: "Smena va filial sahifasida filialni tanlang.",
+      });
+      return;
+    }
+    const [branch] = await db
+      .select({
+        id: employeesTable.id,
+        location: employeesTable.location,
+        fullName: employeesTable.fullName,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, branchId))
+      .limit(1);
+    if (!branch) {
+      res.status(404).json({ error: "Filial topilmadi" });
+      return;
+    }
+    const label = displayBranchName(branch.location) || branch.location || branch.fullName || "Filial";
+    await db
+      .update(employeesTable)
+      .set({
+        assignedBranchId: branchId === emp.id ? null : branchId,
+        location: label,
+        updatedAt: new Date(),
+      })
+      .where(eq(employeesTable.id, employeeId));
+
+    const today = todayTashkent();
+    const existing = await loadActiveWorkSlots(employeeId);
+    const hasPermanent = existing.some(
+      (s) => s.mode === "permanent" && s.branchId === branchId && slotCoversDate(s, today),
+    );
+    let slotCreated = false;
+    if (!hasPermanent) {
+      const shiftKey = normalizeShiftKey(emp.shiftType, emp.shiftLabel);
+      await db.insert(employeeWorkSlotsTable).values({
+        employeeId,
+        branchId,
+        branchLabel: label,
+        shiftKey: shiftKey === "office" ? "one" : shiftKey,
+        mode: "permanent",
+        validFrom: today,
+        validTo: null,
+        weekdays: null,
+        workDates: null,
+        note: "Xatoliklar → tezkor tiklash",
+        active: true,
+      });
+      slotCreated = true;
+    }
+
+    await markDone(`Filial tiklandi: ${label}`);
+
+    res.json({
+      ok: true,
+      mode: "assign_branch",
+      auditId,
+      employeeId,
+      branchId,
+      branchLabel: label,
+      message: `${emp.fullName}: doimiy filial «${label}» ga biriktirildi. Shu xatolik «Bajarilgan».`,
+      result: {
+        summary: "Doimiy filial biriktirildi",
+        steps: [
+          `1) ${emp.fullName} ga doimiy filial «${label}» biriktirildi.`,
+          slotCreated
+            ? "2) Permanent smena/filial slot yaratildi."
+            : "2) Permanent slot allaqachon bor edi — yangilandi.",
+          "3) Shu xatolik «Bajarilgan» qilindi.",
+          "4) Xodim endi shu filial QR/GPS da davomat qila oladi.",
+        ],
+      },
+    });
+  } catch (err) {
+    console.error("POST /davomat/xatoliklar/fix-branch error:", err);
+    res.status(503).json({ error: "Tiklash amalga oshmadi" });
   }
 });
 

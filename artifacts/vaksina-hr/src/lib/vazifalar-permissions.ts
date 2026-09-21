@@ -4,6 +4,9 @@ import type { Vazifa } from "@/lib/vazifalar-api";
 /** To‘liq kuzatuv (Maxfiy + oddiy) — faqat sof admin */
 export const TASK_ALL_VISIBILITY_ROLES = new Set(["admin"]);
 
+/** Maxfiysiz barcha topshiriqlarni ko‘rish (auditor) */
+export const TASK_AUDIT_BROWSE_ROLES = new Set(["hr_auditor"]);
+
 /** Qabul qilish muddati — yaratilgan (yoki qayta biriktirilgan) vaqtdan */
 export const ACCEPT_DEADLINE_MS: Record<string, number> = {
   low: 6 * 60 * 60 * 1000,
@@ -95,8 +98,19 @@ export function isTaskDirector(role?: string | null) {
 }
 
 /** Sof admin — Maxfiy va oddiy barcha topshiriqlarni kuzatadi */
+export function canSeePrivateTasks(role?: string | null) {
+  return TASK_ALL_VISIBILITY_ROLES.has(normalizeUserRole(role));
+}
+
+/** «Barchani» filtri: admin (maxfiy+oddiy) yoki HR auditor (faqat oddiy) */
 export function canBrowseAllTasks(role?: string | null) {
-  return normalizeUserRole(role) === "admin";
+  const r = normalizeUserRole(role);
+  return TASK_ALL_VISIBILITY_ROLES.has(r) || TASK_AUDIT_BROWSE_ROLES.has(r);
+}
+
+/** HR auditor — boshqalarning topshiriqlarini faqat ko‘rish */
+export function isTaskAuditViewer(role?: string | null) {
+  return TASK_AUDIT_BROWSE_ROLES.has(normalizeUserRole(role));
 }
 
 /**

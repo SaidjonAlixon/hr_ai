@@ -5,10 +5,11 @@ import { db, usersTable, employeesTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { parseGpsText, displayBranchName } from "../lib/geo-location";
-import { dedupeActiveBranches } from "../lib/branch-dedupe";
+import { dedupeActiveBranches, weakerDuplicateBranchIds } from "../lib/branch-dedupe";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
 import {
+  assertHardDeleteScope,
   canHardDeletePharmacyNetwork,
   hardDeletePharmacyEmployee,
 } from "../lib/delete-pharmacy-staff";
@@ -866,8 +867,9 @@ router.post(
  * Mudir o‘chirilsa — filial + ostidagi barcha xodimlar ham yo‘qoladi.
  */
 async function handleHardDelete(req: AuthRequest, res: import("express").Response): Promise<void> {
-  if (!canHardDeletePharmacyNetwork(req.userRole ?? undefined)) {
-    res.status(403).json({ error: "Faqat admin/HR o‘chira oladi" });
+  const role = req.userRole ?? undefined;
+  if (!canHardDeletePharmacyNetwork(role)) {
+    res.status(403).json({ error: "O‘chirish uchun ruxsat yo‘q" });
     return;
   }
   const body = (req.body ?? {}) as {
@@ -895,6 +897,27 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
     res.status(400).json({ error: "Noto‘g‘ri xodim" });
     return;
   }
+
+  // Koordinator doirasini tekshirish (admin/HR — cheklovsiz)
+  if (role === "koordinator" && req.userId) {
+    let scopeTargetId = Number.isFinite(employeeId) ? employeeId : 0;
+    if (!scopeTargetId && userId) {
+      const [byUser] = await db
+        .select({ id: employeesTable.id })
+        .from(employeesTable)
+        .where(eq(employeesTable.userId, userId))
+        .limit(1);
+      scopeTargetId = byUser?.id ?? 0;
+    }
+    if (scopeTargetId) {
+      const scopeErr = await assertHardDeleteScope(role, req.userId, scopeTargetId);
+      if (scopeErr) {
+        res.status(403).json({ error: scopeErr });
+        return;
+      }
+    }
+  }
+
   try {
     const result = await hardDeletePharmacyEmployee(
       Number.isFinite(employeeId) ? employeeId : 0,
@@ -927,6 +950,103 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
 router.post("/pharmacy-network/hard-delete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   await handleHardDelete(req, res);
 });
+
+/**
+ * Bir xil nomdagi dublikat filiallardan zaiflarini (mudirsiz) o‘chiradi.
+ * Admin / HR / koordinator.
+ */
+router.post(
+  "/pharmacy-network/cleanup-duplicate-branches",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    const role = req.userRole ?? "";
+    if (!canHardDeletePharmacyNetwork(role)) {
+      res.status(403).json({ error: "Ruxsat yo‘q" });
+      return;
+    }
+    try {
+      const managers = await db
+        .select({
+          id: employeesTable.id,
+          fullName: employeesTable.fullName,
+          location: employeesTable.location,
+          userId: employeesTable.userId,
+          employmentStatus: employeesTable.employmentStatus,
+          latitude: employeesTable.latitude,
+          longitude: employeesTable.longitude,
+          reportsToId: employeesTable.reportsToId,
+        })
+        .from(employeesTable)
+        .where(eq(employeesTable.orgRole, "manager"));
+
+      let scoped = managers;
+      if (role === "koordinator" && req.userId) {
+        const [coord] = await db
+          .select({ id: employeesTable.id })
+          .from(employeesTable)
+          .where(and(eq(employeesTable.userId, req.userId), eq(employeesTable.orgRole, "coordinator")))
+          .limit(1);
+        if (!coord) {
+          res.status(403).json({ error: "Koordinator profili topilmadi" });
+          return;
+        }
+        scoped = managers.filter((m) => m.reportsToId === coord.id);
+      }
+
+      const onlyName = String((req.body ?? {}).name ?? "").trim().toLowerCase();
+      const purgeEmpty = Boolean((req.body ?? {}).purgeEmptyBranches);
+      const candidates = onlyName
+        ? scoped.filter((m) => {
+            const key = `${displayBranchName(m.location) || m.fullName}`.toLowerCase();
+            return key.includes(onlyName);
+          })
+        : scoped;
+
+      const dropIds = new Set(weakerDuplicateBranchIds(candidates));
+
+      // GPS yo‘q + mudirsiz (login yo‘q) bo‘sh filial kartalarini ham o‘chirish
+      // Masalan: «16-йиллик · filial yo‘q» — smena xodim ro‘yxatida kerak emas
+      if (purgeEmpty || onlyName) {
+        for (const m of candidates) {
+          const noGps =
+            m.latitude == null ||
+            m.longitude == null ||
+            !Number.isFinite(m.latitude) ||
+            !Number.isFinite(m.longitude);
+          const emptyMudir =
+            m.userId == null ||
+            m.employmentStatus === "no_manager" ||
+            m.employmentStatus === "need_hire";
+          if (noGps && emptyMudir) dropIds.add(m.id);
+        }
+      }
+
+      const removed: Array<{ id: number; fullName: string; deletedEmployees: number }> = [];
+      for (const id of dropIds) {
+        const result = await hardDeletePharmacyEmployee(id);
+        if (result.ok) {
+          removed.push({
+            id,
+            fullName: result.fullName,
+            deletedEmployees: result.deletedEmployees,
+          });
+        }
+      }
+      res.json({
+        ok: true,
+        removedCount: removed.length,
+        removed,
+        message:
+          removed.length > 0
+            ? `${removed.length} ta dublikat filial o‘chirildi`
+            : "Dublikat filial topilmadi",
+      });
+    } catch (err) {
+      console.error("pharmacy-network cleanup-duplicate-branches error:", err);
+      res.status(503).json({ error: "Dublikatlarni tozalash amalga oshmadi" });
+    }
+  },
+);
 
 router.post("/pharmacy-network/dismiss", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canDismissPharmacyNetwork(req.userRole ?? undefined)) {

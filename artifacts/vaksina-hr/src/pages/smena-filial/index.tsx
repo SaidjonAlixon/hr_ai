@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CalendarDays,
@@ -21,6 +21,8 @@ import { dateToYmd, formatYmdDisplay } from "../../lib/javob-olish-api";
 import {
   createWorkSlot,
   deleteWorkSlot,
+  changeShiftOnly,
+  updateWorkSlotShift,
   fetchAllWorkSlots,
   fetchSmenaMe,
   todayTashkentYmd,
@@ -31,6 +33,7 @@ import {
   type SmenaBranch,
   type WorkSlotItem,
 } from "../../lib/smena-api";
+import { useCleanupDuplicateBranches } from "../../lib/pharmacy-staff-api";
 
 const SHIFT_KEYS: { value: SlotShiftKey; label: string; hint: string }[] = [
   { value: "one", label: "1-smena", hint: "08:00–17:00" },
@@ -136,13 +139,18 @@ function PersonPlanBoard({
   name,
   slots,
   onRemove,
+  onChangeShift,
+  changingSlotId,
   confirmRemove,
 }: {
   name: string;
   slots: WorkSlotItem[];
   onRemove: (id: number) => void;
+  onChangeShift: (slotId: number, shiftKey: SlotShiftKey) => void;
+  changingSlotId: number | null;
   confirmRemove: string;
 }) {
+  const [editSlotId, setEditSlotId] = useState<number | null>(null);
   const branchCount = new Set(slots.map((s) => s.branchId)).size;
   const shiftCount = new Set(slots.map((s) => s.shiftKey)).size;
   const sorted = [...slots].sort((a, b) => {
@@ -185,50 +193,91 @@ function PersonPlanBoard({
       </div>
 
       <div className="space-y-2">
-        {sorted.map((s, idx) => (
-          <div
-            key={s.id}
-            className="relative overflow-hidden rounded-xl border border-border/80 bg-card px-3 py-2.5 shadow-sm"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1 space-y-1.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <span className="rounded-md bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background">
-                    #{idx + 1}
-                  </span>
-                  <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
-                    {modeBadge(s)}
-                  </span>
-                  <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
-                    {shiftLabelOf(s)}
-                  </span>
+        {sorted.map((s, idx) => {
+          const editing = editSlotId === s.id;
+          const busy = changingSlotId === s.id;
+          return (
+            <div
+              key={s.id}
+              className="relative overflow-hidden rounded-xl border border-border/80 bg-card px-3 py-2.5 shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="rounded-md bg-foreground px-1.5 py-0.5 text-[10px] font-bold text-background">
+                      #{idx + 1}
+                    </span>
+                    <span className="rounded-md bg-primary/15 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary">
+                      {modeBadge(s)}
+                    </span>
+                    <span className="rounded-md bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-bold text-amber-800 dark:text-amber-300">
+                      {shiftLabelOf(s)}
+                    </span>
+                  </div>
+                  <p className="flex items-start gap-1.5 text-sm font-semibold leading-snug text-foreground">
+                    <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
+                    <span className="min-w-0 break-words">{s.branchLabel || `Filial #${s.branchId}`}</span>
+                  </p>
+                  <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Clock3 className="h-3 w-3 shrink-0" />
+                    {shiftHintOf(s.shiftKey) || shiftLabelOf(s)}
+                  </p>
+                  <p className="flex items-start gap-1.5 text-[11px] font-medium text-foreground/80">
+                    <CalendarDays className="mt-0.5 h-3 w-3 shrink-0" />
+                    <span>{daysTextOf(s)}</span>
+                  </p>
                 </div>
-                <p className="flex items-start gap-1.5 text-sm font-semibold leading-snug text-foreground">
-                  <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary" />
-                  <span className="min-w-0 break-words">{s.branchLabel || `Filial #${s.branchId}`}</span>
-                </p>
-                <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                  <Clock3 className="h-3 w-3 shrink-0" />
-                  {shiftHintOf(s.shiftKey) || shiftLabelOf(s)}
-                </p>
-                <p className="flex items-start gap-1.5 text-[11px] font-medium text-foreground/80">
-                  <CalendarDays className="mt-0.5 h-3 w-3 shrink-0" />
-                  <span>{daysTextOf(s)}</span>
-                </p>
+                <div className="flex shrink-0 flex-col gap-1">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-8 px-2 text-[11px]"
+                    disabled={busy}
+                    onClick={() => setEditSlotId(editing ? null : s.id)}
+                  >
+                    {editing ? "Yopish" : "Smena"}
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-rose-600"
+                    onClick={() => {
+                      if (window.confirm(confirmRemove)) onRemove(s.id);
+                    }}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-8 w-8 shrink-0 text-rose-600"
-                onClick={() => {
-                  if (window.confirm(confirmRemove)) onRemove(s.id);
-                }}
-              >
-                <Trash2 className="h-4 w-4" />
-              </Button>
+              {editing ? (
+                <div className="mt-2 border-t border-border/60 pt-2">
+                  <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                    Filial o‘zgarmaydi · faqat smenani tanlang
+                  </p>
+                  <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                    {SHIFT_KEYS.map((opt) => (
+                      <Button
+                        key={opt.value}
+                        size="sm"
+                        type="button"
+                        variant={s.shiftKey === opt.value ? "default" : "outline"}
+                        disabled={busy || s.shiftKey === opt.value}
+                        className="h-auto flex-col gap-0.5 py-1.5 text-[11px]"
+                        onClick={() => {
+                          onChangeShift(s.id, opt.value);
+                          setEditSlotId(null);
+                        }}
+                      >
+                        <span>{opt.label}</span>
+                        <span className="text-[9px] font-normal opacity-80">{opt.hint}</span>
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {branchCount >= 2 ? (
@@ -271,15 +320,38 @@ export default function SmenaFilialPage() {
     [selectedDates],
   );
 
+  const cleanupDupBranches = useCleanupDuplicateBranches();
+  const orphanCleanupDone = useRef(false);
+
   useEffect(() => {
-    if (!data) return;
-    if (!canManage) return;
+    if (!data || !canManage || orphanCleanupDone.current) return;
+    orphanCleanupDone.current = true;
+    cleanupDupBranches.mutate(
+      { name: "йиллик", purgeEmptyBranches: true },
+      {
+        onSuccess: (res) => {
+          if (res.removedCount > 0) {
+            void qc.invalidateQueries({ queryKey: ["smena-me"] });
+            toast({
+              title: "Bo‘sh filial kartalari o‘chirildi",
+              description: res.message,
+            });
+          }
+        },
+      },
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data, canManage]);
 
   const staff = useMemo(() => {
-    return (data?.assignable ?? []).filter(
-      (p) => p.orgRole === "pharmacist" || p.orgRole === "intern" || p.orgRole === "manager",
-    );
+    return (data?.assignable ?? []).filter((p) => {
+      if (!(p.orgRole === "pharmacist" || p.orgRole === "intern" || p.orgRole === "manager")) {
+        return false;
+      }
+      // Bo‘sh filial kartalari (masalan «16-йиллик · filial yo‘q») — xodim tanlashda kerak emas
+      if (p.orgRole === "manager" && !p.assignedBranchName) return false;
+      return true;
+    });
   }, [data?.assignable]);
 
   const branches = useMemo(() => {
@@ -379,11 +451,54 @@ export default function SmenaFilialPage() {
     onError: (e: Error) => toast({ title: t("smena.saveFail"), description: e.message, variant: "destructive" }),
   });
 
+  const [shiftOnlyKey, setShiftOnlyKey] = useState<SlotShiftKey>("one");
+  const [changingSlotId, setChangingSlotId] = useState<number | null>(null);
+
+  const changeSlotShift = useMutation({
+    mutationFn: ({ slotId, shiftKey }: { slotId: number; shiftKey: SlotShiftKey }) => {
+      setChangingSlotId(slotId);
+      return updateWorkSlotShift(slotId, shiftKey);
+    },
+    onSuccess: (r) => {
+      setChangingSlotId(null);
+      void qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
+      void qc.invalidateQueries({ queryKey: ["smena-me"] });
+      toast({
+        title: "Smena o‘zgardi",
+        description: r.message || `${r.item.branchLabel || "Filial"} · ${shiftLabelOf(r.item)}`,
+      });
+    },
+    onError: (e: Error) => {
+      setChangingSlotId(null);
+      toast({ title: t("smena.saveFail"), description: e.message, variant: "destructive" });
+    },
+  });
+
+  const saveShiftOnly = useMutation({
+    mutationFn: async () => {
+      if (!pickedPersonId) throw new Error("Avval xodimni tanlang");
+      return changeShiftOnly(pickedPersonId, shiftOnlyKey);
+    },
+    onSuccess: (r) => {
+      void qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
+      void qc.invalidateQueries({ queryKey: ["smena-me"] });
+      toast({ title: "Smena o‘zgardi", description: r.message });
+    },
+    onError: (e: Error) => toast({ title: t("smena.saveFail"), description: e.message, variant: "destructive" }),
+  });
+
   function pickPerson(p: SmenaAssignable) {
     setPickedPersonId(p.id);
     setPickedBranchId(null);
     setBranchQ("");
     setPeopleQ("");
+    const cur = String(p.shiftType || "one").toLowerCase() as SlotShiftKey;
+    setShiftOnlyKey(
+      SHIFT_KEYS.some((x) => x.value === cur) ? cur : "one",
+    );
+    setPickedShift(
+      SHIFT_KEYS.some((x) => x.value === cur) ? cur : "one",
+    );
   }
 
   function cancelEdit() {
@@ -620,17 +735,63 @@ export default function SmenaFilialPage() {
                       name={picked.fullName}
                       slots={slotsForPicked}
                       onRemove={(id) => removeSlot.mutate(id)}
+                      onChangeShift={(slotId, shiftKey) =>
+                        changeSlotShift.mutate({ slotId, shiftKey })
+                      }
+                      changingSlotId={changingSlotId}
                       confirmRemove={t("smena.confirmRemoveSlot")}
                     />
                   </div>
 
+                  {/* Filialni ko‘chirmasdan faqat smena */}
+                  {(picked.assignedBranchId ||
+                    slotsForPicked.length > 0 ||
+                    picked.orgRole === "manager") && (
+                    <div className="rounded-2xl border border-amber-300/60 bg-amber-50/80 p-3 dark:border-amber-500/30 dark:bg-amber-950/30">
+                      <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
+                        Faqat smenani o‘zgartirish
+                      </p>
+                      <p className="mt-0.5 text-[11px] leading-snug text-amber-900/80 dark:text-amber-200/80">
+                        Hozirgi filial qoladi — boshqa filialga ko‘chirilmaydi.
+                        {picked.assignedBranchName
+                          ? ` Filial: ${picked.assignedBranchName}.`
+                          : ""}
+                      </p>
+                      <div className="mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
+                        {SHIFT_KEYS.map((opt) => (
+                          <Button
+                            key={opt.value}
+                            size="sm"
+                            type="button"
+                            variant={shiftOnlyKey === opt.value ? "default" : "outline"}
+                            onClick={() => setShiftOnlyKey(opt.value)}
+                            className="h-auto flex-col gap-0.5 py-1.5"
+                          >
+                            <span className="text-xs">{opt.label}</span>
+                            <span className="text-[9px] font-normal opacity-80">{opt.hint}</span>
+                          </Button>
+                        ))}
+                      </div>
+                      <Button
+                        className="mt-2.5 w-full"
+                        variant="secondary"
+                        disabled={saveShiftOnly.isPending}
+                        onClick={() => saveShiftOnly.mutate()}
+                      >
+                        {saveShiftOnly.isPending
+                          ? t("ui.loading")
+                          : "Smenani saqlash (filial o‘zgarmaydi)"}
+                      </Button>
+                    </div>
+                  )}
+
                   {/* 2-QADAM: filial */}
                   <div>
                     <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      2. {nextSlotNo === 1 ? "1-filialni tanlang" : `${nextSlotNo}-filialni tanlang`}
+                      2. {nextSlotNo === 1 ? "Yangi filial qo‘shish (ixtiyoriy)" : `${nextSlotNo}-filialni tanlang`}
                     </label>
                     <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
-                      Yashil = smena bo‘sh. Sariq = boshqa xodim bor. Ko‘k = shu xodimning o‘zi.
+                      Faqat smena kerak bo‘lsa — yuqoridagi sariq blokdan foydalaning. Bu yerda yangi filial qo‘shiladi.
                     </p>
                     <SearchBox value={branchQ} onChange={setBranchQ} placeholder={t("smena.searchBranch")} />
                     <CompactList className="mt-2 max-h-64">

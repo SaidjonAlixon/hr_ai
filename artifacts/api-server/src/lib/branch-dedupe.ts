@@ -60,6 +60,47 @@ function branchScore(row: BranchDedupeRow): number {
   return s;
 }
 
+export function scoreBranchRow(row: BranchDedupeRow): number {
+  return branchScore(row);
+}
+
+/**
+ * Bir xil nomdagi dublikat filiallardan (mudirsiz / zaif) o‘chiriladigan ID lar.
+ * Faqat aniq zaif nusxalar: userId yo‘q yoki no_manager — asosiy (loginli) filial saqlanadi.
+ */
+export function weakerDuplicateBranchIds<T extends BranchDedupeRow>(rows: T[]): number[] {
+  const groups = new Map<string, T[]>();
+  for (const row of rows) {
+    if (!isActiveBranchStatus(row.employmentStatus)) continue;
+    const key = branchDedupeKey(row.location, row.fullName);
+    if (!key) continue;
+    const list = groups.get(key) ?? [];
+    list.push(row);
+    groups.set(key, list);
+  }
+  const drop: number[] = [];
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => {
+      const d = branchScore(b) - branchScore(a);
+      if (d !== 0) return d;
+      return a.id - b.id;
+    });
+    const keep = list[0]!;
+    for (let i = 1; i < list.length; i++) {
+      const weak = list[i]!;
+      const clearlyWeak =
+        weak.userId == null ||
+        weak.employmentStatus === "no_manager" ||
+        weak.employmentStatus === "need_hire" ||
+        (keep.userId != null && weak.userId == null) ||
+        (branchScore(keep) - branchScore(weak) >= 25);
+      if (clearlyWeak) drop.push(weak.id);
+    }
+  }
+  return drop;
+}
+
 export function isActiveBranchStatus(status: string | null | undefined): boolean {
   return !INACTIVE.has(String(status || "working"));
 }

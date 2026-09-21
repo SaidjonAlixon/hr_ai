@@ -356,6 +356,39 @@ export function useHardDeletePharmacyEmployee() {
   });
 }
 
+export type CleanupDuplicateBranchesResult = {
+  ok: true;
+  removedCount: number;
+  removed: Array<{ id: number; fullName: string; deletedEmployees: number }>;
+  message: string;
+};
+
+/** Bir xil nomdagi dublikat (mudirsiz) filiallarni o‘chirish */
+export function useCleanupDuplicateBranches() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data?: { name?: string; purgeEmptyBranches?: boolean }) =>
+      apiFetch<CleanupDuplicateBranchesResult>(
+        `/pharmacy-network/cleanup-duplicate-branches`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: data?.name ?? "",
+            purgeEmptyBranches: data?.purgeEmptyBranches === true,
+          }),
+        },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+      qc.invalidateQueries({ queryKey: ["/api/staffing/alerts"] });
+      qc.invalidateQueries({ queryKey: ["smena-me"] });
+      qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
+    },
+  });
+}
+
 export type DismissPharmacyResult = {
   ok: true;
   kind: "mudir" | "staff";

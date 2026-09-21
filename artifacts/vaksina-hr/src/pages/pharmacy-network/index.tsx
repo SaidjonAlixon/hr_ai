@@ -50,6 +50,7 @@ import {
   useCreatePharmacyStaff,
   useDismissPharmacyEmployee,
   useHardDeletePharmacyEmployee,
+  useCleanupDuplicateBranches,
   useSaveManagerLocation,
   useOwnMudirCredentials,
   useOwnStaffLogins,
@@ -69,6 +70,7 @@ type ShiftType = 'one' | 'two' | 'custom';
 type BranchEmployee = Employee & {
   latitude?: number | null;
   longitude?: number | null;
+  assignedBranchId?: number | null;
 };
 
 function initials(name: string) {
@@ -339,13 +341,16 @@ export default function PharmacyNetworkPage() {
   const createStaff = useCreatePharmacyStaff();
   const dismissStaff = useDismissPharmacyEmployee();
   const hardDeleteStaff = useHardDeletePharmacyEmployee();
+  const cleanupDupBranches = useCleanupDuplicateBranches();
   const saveBranchGps = useSaveManagerLocation();
+  const dupCleanupDone = useRef(false);
 
   const canAddMudir = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
   const canAddTeam = user?.role === 'mudir';
   const canAddStaff = canAddMudir || canAddTeam;
   const canHardDelete =
     user?.role === 'admin' ||
+    user?.role === 'koordinator' ||
     isHrRole(user?.role) ||
     isDirectorRole(user?.role);
   const canPickFilialForStaff = canAddMudir;
@@ -353,6 +358,27 @@ export default function PharmacyNetworkPage() {
   const isMudirOnly = user?.role === 'mudir';
   const isKoordinatorOnly = user?.role === 'koordinator';
   const canDismissStaff = isKoordinatorOnly || isMudirOnly || canHardDelete;
+
+  // Dublikat (mudirsiz) filiallarni bir marta tozalash
+  useEffect(() => {
+    if (!canHardDelete || dupCleanupDone.current) return;
+    dupCleanupDone.current = true;
+    cleanupDupBranches.mutate(
+      { name: "йиллик", purgeEmptyBranches: true },
+      {
+        onSuccess: (res) => {
+          if (res.removedCount > 0) {
+            toast({
+              title: 'Dublikat filiallar tozalandi',
+              description: res.message,
+            });
+          }
+        },
+      },
+    );
+    // faqat bir marta (sahifa ochilganda)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canHardDelete]);
 
   const canSeeFullNetwork =
     isHrRole(user?.role) ||
@@ -411,7 +437,7 @@ export default function PharmacyNetworkPage() {
   const [search, setSearch] = useState('');
   const [coordinatorFilter, setCoordinatorFilter] = useState<string>('all');
   const [shiftFilter, setShiftFilter] = useState<string>('all');
-  const [teamFilter, setTeamFilter] = useState<'all' | 'with' | 'without'>('all');
+  const [teamFilter, setTeamFilter] = useState<'all' | 'with' | 'without' | 'no_manager'>('all');
 
   const [addOpen, setAddOpen] = useState(false);
   const [firstName, setFirstName] = useState('');
@@ -486,15 +512,20 @@ export default function PharmacyNetworkPage() {
 
   const pharmacistsByManager = useMemo(() => {
     const map = new Map<number, Employee[]>();
-    for (const p of orgPeople.filter(
-      (e) =>
-        (e.orgRole === 'pharmacist' || e.orgRole === 'intern' || e.orgRole === 'supervisor') &&
-        empStatus(e) !== 'dismissed',
-    )) {
-      if (!p.reportsToId) continue;
-      const list = map.get(p.reportsToId) ?? [];
-      list.push(p);
-      map.set(p.reportsToId, list);
+    const staffRoles = new Set(['pharmacist', 'intern', 'supervisor']);
+    for (const p of orgPeople) {
+      if (!staffRoles.has(p.orgRole || '') || empStatus(p) === 'dismissed') continue;
+      const branchIds = new Set<number>();
+      if (p.reportsToId) branchIds.add(p.reportsToId);
+      const assigned = (p as BranchEmployee).assignedBranchId;
+      if (assigned) branchIds.add(assigned);
+      for (const mid of branchIds) {
+        const mgr = orgPeople.find((e) => e.id === mid && e.orgRole === 'manager');
+        if (!mgr) continue;
+        const list = map.get(mid) ?? [];
+        if (!list.some((x) => x.id === p.id)) list.push(p);
+        map.set(mid, list);
+      }
     }
     for (const [, list] of map) {
       list.sort((a, b) => {
@@ -567,9 +598,13 @@ export default function PharmacyNetworkPage() {
   const managers = useMemo(() => {
     const q = search.trim().toLowerCase();
     const allowedCoordIds = new Set(filteredCoordinators.map((c) => c.id));
+    // Admin/HR: koordinatorsiz (reportsToId yo‘q) mudirsiz filiallar ham ko‘rinsin
     let list = isMudirOnly
       ? allManagers
-      : allManagers.filter((m) => m.reportsToId != null && allowedCoordIds.has(m.reportsToId));
+      : allManagers.filter((m) => {
+          if (m.reportsToId == null) return canSeeFullNetwork && !isKoordinatorOnly;
+          return allowedCoordIds.has(m.reportsToId);
+        });
 
     if (shiftFilter !== 'all') {
       list = list.filter((m) => {
@@ -581,23 +616,45 @@ export default function PharmacyNetworkPage() {
     if (q) {
       list = list.filter((m) => {
         if (nameMatch(m, q)) return true;
+        if ((m.location || '').toLowerCase().includes(q)) return true;
         return (pharmacistsByManager.get(m.id) ?? []).some((p) => nameMatch(p, q));
       });
     }
 
     return list;
-  }, [allManagers, filteredCoordinators, shiftFilter, search, pharmacistsByManager, isMudirOnly]);
+  }, [
+    allManagers,
+    filteredCoordinators,
+    shiftFilter,
+    search,
+    pharmacistsByManager,
+    isMudirOnly,
+    canSeeFullNetwork,
+    isKoordinatorOnly,
+  ]);
 
   const teamStats = useMemo(() => {
     let withTeam = 0;
+    let noManager = 0;
     for (const m of managers) {
       if (staffCounts(pharmacistsByManager.get(m.id) ?? []).total > 0) withTeam += 1;
+      if (isNoManagerStatus(empStatus(m)) || !m.userId) noManager += 1;
     }
-    return { total: managers.length, withTeam, without: managers.length - withTeam };
+    return {
+      total: managers.length,
+      withTeam,
+      without: managers.length - withTeam,
+      noManager,
+    };
   }, [managers, pharmacistsByManager]);
 
   const visibleManagers = useMemo(() => {
     if (teamFilter === 'all') return managers;
+    if (teamFilter === 'no_manager') {
+      return managers.filter(
+        (m) => isNoManagerStatus(empStatus(m)) || !m.userId,
+      );
+    }
     return managers.filter((m) => {
       const has = staffCounts(pharmacistsByManager.get(m.id) ?? []).total > 0;
       return teamFilter === 'with' ? has : !has;
@@ -1378,6 +1435,7 @@ export default function PharmacyNetworkPage() {
                 ['all', `Barchasi (${teamStats.total})`],
                 ['with', `Jamoa bor (${teamStats.withTeam})`],
                 ['without', `Jamoa yo‘q (${teamStats.without})`],
+                ['no_manager', `Mudir yo‘q (${teamStats.noManager})`],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1387,7 +1445,7 @@ export default function PharmacyNetworkPage() {
                 className={cn(
                   'rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition-colors',
                   teamFilter === key
-                    ? key === 'without'
+                    ? key === 'without' || key === 'no_manager'
                       ? 'bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/40'
                       : key === 'with'
                         ? 'bg-emerald-100 text-emerald-800 ring-emerald-300 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-500/40'

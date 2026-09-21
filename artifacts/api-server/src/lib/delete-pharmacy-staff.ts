@@ -29,7 +29,71 @@ import { syncStaffingAlertForEmployee } from "./staffing-alert";
 const STAFF_ORG = new Set(["pharmacist", "intern", "supervisor", "manager"]);
 
 export function canHardDeletePharmacyNetwork(role?: string): boolean {
-  return role === "admin" || isHrRole(role) || isDirectorRole(role);
+  return (
+    role === "admin" ||
+    role === "koordinator" ||
+    isHrRole(role) ||
+    isDirectorRole(role)
+  );
+}
+
+/** Koordinator faqat o‘z doirasidagi filial/xodimni o‘chira oladi */
+export async function assertHardDeleteScope(
+  role: string,
+  actorUserId: number,
+  targetId: number,
+): Promise<string | null> {
+  if (role === "admin" || isHrRole(role) || isDirectorRole(role)) return null;
+  if (role !== "koordinator") return "Ruxsat yo‘q";
+
+  const [actor] = await db
+    .select({ id: employeesTable.id, orgRole: employeesTable.orgRole })
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, actorUserId))
+    .limit(1);
+  if (!actor || actor.orgRole !== "coordinator") {
+    return "Koordinator profili topilmadi";
+  }
+
+  const [target] = await db
+    .select({
+      id: employeesTable.id,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.id, targetId))
+    .limit(1);
+  if (!target) return "Xodim topilmadi";
+
+  if (target.orgRole === "manager") {
+    if (target.reportsToId === actor.id) return null;
+    return "Faqat o‘zingizga bog‘liq filialni o‘chira olasiz";
+  }
+
+  if (STAFF_ORG.has(target.orgRole || "")) {
+    if (target.reportsToId === actor.id) return null;
+    if (target.reportsToId) {
+      const [mgr] = await db
+        .select({ reportsToId: employeesTable.reportsToId })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, target.reportsToId))
+        .limit(1);
+      if (mgr?.reportsToId === actor.id) return null;
+    }
+    if (target.assignedBranchId) {
+      const [branch] = await db
+        .select({ reportsToId: employeesTable.reportsToId })
+        .from(employeesTable)
+        .where(eq(employeesTable.id, target.assignedBranchId))
+        .limit(1);
+      if (branch?.reportsToId === actor.id) return null;
+    }
+    return "Faqat o‘zingizga bog‘liq xodimni o‘chira olasiz";
+  }
+
+  return "Bu yozuvni o‘chirib bo‘lmaydi";
 }
 
 export async function purgeUserSideEffects(userIds: number[]) {
@@ -91,6 +155,11 @@ export async function purgeEmployeeSideEffects(employeeIds: number[]) {
     .update(employeesTable)
     .set({ reportsToId: null })
     .where(inArray(employeesTable.reportsToId, employeeIds));
+
+  await db
+    .update(employeesTable)
+    .set({ assignedBranchId: null })
+    .where(inArray(employeesTable.assignedBranchId, employeeIds));
 
   // employee assignee vazifalari
   await db
@@ -191,14 +260,25 @@ export async function hardDeletePharmacyEmployee(
 
   if (target.orgRole === "manager") {
     kind = "filial";
+    // Filial o‘chirilsa — reportsToId yoki assignedBranchId bilan bog‘langan xodimlar ham
     const staff = await db
       .select({
         id: employeesTable.id,
         userId: employeesTable.userId,
       })
       .from(employeesTable)
-      .where(eq(employeesTable.reportsToId, target.id));
-    toDelete.push(...staff);
+      .where(
+        or(
+          eq(employeesTable.reportsToId, target.id),
+          eq(employeesTable.assignedBranchId, target.id),
+        ),
+      );
+    const seen = new Set<number>();
+    for (const s of staff) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id);
+      toDelete.push(s);
+    }
   } else {
     // Farmasevt/stajyor hard-delete: smena uchun «xodim kerak» slot + ogohlantirish
     const [full] = await db.select().from(employeesTable).where(eq(employeesTable.id, target.id)).limit(1);

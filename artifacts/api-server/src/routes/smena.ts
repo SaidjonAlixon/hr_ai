@@ -13,7 +13,7 @@ import { notifyUser } from "../lib/notify";
 import { isPharmacyShiftStaff, normalizeShiftType, shiftWindow, parseShiftKeys, encodeShiftKeys, validateShiftCombination } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { displayBranchName } from "../lib/geo-location";
-import { dedupeBranchesWithGps } from "../lib/branch-dedupe";
+import { dedupeActiveBranches } from "../lib/branch-dedupe";
 import {
   validateSlotInput,
   conflictAmongSlots,
@@ -89,13 +89,15 @@ async function listBranches() {
     })
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, MANAGER_ORG));
-  return dedupeBranchesWithGps(rows)
+  // Smena picker: GPS bo‘lmagan / mudirsiz filiallar ham ko‘rinsin
+  return dedupeActiveBranches(rows)
     .map((b) => ({
       id: b.id,
       name: displayBranchName(b.location) || (b.location || "").split("|")[0].trim() || b.fullName,
       managerName: b.fullName,
-      hasGps: true,
+      hasGps: hasGps(b),
       reportsToId: b.reportsToId,
+      noManager: b.employmentStatus === "no_manager" || b.userId == null,
     }))
     .sort((a, b) => a.name.localeCompare(b.name, "uz"));
 }
@@ -251,6 +253,8 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
     for (const p of people) {
       if (!canAssignTarget({ role, me, target: p, scope })) continue;
       if (p.id === me.id && (role === "farmasevt" || p.orgRole === "pharmacist")) continue;
+      // GPS yo‘q / bo‘sh filial kartalari — smena xodim tanlashda chiqmasin
+      if (p.orgRole === MANAGER_ORG && !hasGps(p)) continue;
       assignable.push({
         id: p.id,
         fullName: p.fullName,
@@ -260,7 +264,9 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
         assignedBranchName:
           branchName(p.assignedBranchId) ||
           branchName(p.orgRole === MANAGER_ORG ? p.id : p.reportsToId) ||
-          null,
+          (p.orgRole === MANAGER_ORG
+            ? displayBranchName(p.location) || p.fullName
+            : null),
       });
     }
     assignable.sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
@@ -1122,6 +1128,228 @@ router.delete("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pr
     .where(eq(employeeWorkSlotsTable.id, id));
   await syncPrimaryFromSlots(row.employeeId);
   res.json({ ok: true });
+});
+
+/**
+ * Filialni o‘zgartirmasdan faqat smenani almashtirish.
+ * branchId saqlanadi — xodim boshqa filialga ko‘chmaydi.
+ */
+router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const role = req.userRole || "";
+    const me = await empByUserId(req.userId!);
+    if (!me) {
+      res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
+      return;
+    }
+    if (!(role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG)) {
+      res.status(403).json({ error: "Smena o‘zgartirish huquqi yo‘q" });
+      return;
+    }
+    const id = Number(req.params.id);
+    const [row] = await db.select().from(employeeWorkSlotsTable).where(eq(employeeWorkSlotsTable.id, id)).limit(1);
+    if (!row || !row.active) {
+      res.status(404).json({ error: "Slot topilmadi" });
+      return;
+    }
+    const target = await empById(row.employeeId);
+    if (!target) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
+    if (!canAssignTarget({ role, me, target, scope })) {
+      res.status(403).json({ error: "Bu xodimning smenasini o‘zgartirish huquqi yo‘q" });
+      return;
+    }
+
+    const newShiftRaw = String(req.body?.shiftKey ?? "").trim();
+    if (!newShiftRaw) {
+      res.status(400).json({ error: "Yangi smenani tanlang" });
+      return;
+    }
+    const parsed = validateSlotInput({
+      mode: row.mode,
+      shiftKey: newShiftRaw,
+      validFrom: row.validFrom,
+      validTo: row.validTo,
+      weekdays: row.weekdays,
+      workDates: row.workDates,
+    });
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error });
+      return;
+    }
+    if (parsed.shiftKey === row.shiftKey) {
+      res.json({
+        ok: true,
+        item: {
+          ...mapSlotRow(row),
+          modeLabel: formatModeUz(row.mode),
+          shiftLabel: formatShiftKeyUz(row.shiftKey),
+        },
+        unchanged: true,
+      });
+      return;
+    }
+
+    const existing = await db
+      .select()
+      .from(employeeWorkSlotsTable)
+      .where(and(eq(employeeWorkSlotsTable.employeeId, row.employeeId), eq(employeeWorkSlotsTable.active, true)));
+    const defs = await getEffectiveShiftDefs();
+    const proposed: WorkSlotRow[] = existing.map((r) => {
+      if (r.id === row.id) {
+        return { ...mapSlotRow(r), shiftKey: parsed.shiftKey };
+      }
+      return mapSlotRow(r);
+    });
+    const sampleTo =
+      row.validTo ||
+      (Array.isArray(row.workDates) && row.workDates.length
+        ? String(row.workDates[row.workDates.length - 1])
+        : addDaysYmd(row.validFrom, 28));
+    const conflict = conflictAmongSlots(proposed, row.validFrom, sampleTo, defs);
+    if (conflict) {
+      res.status(400).json({ error: conflict });
+      return;
+    }
+
+    const [updated] = await db
+      .update(employeeWorkSlotsTable)
+      .set({ shiftKey: parsed.shiftKey, updatedAt: new Date() })
+      .where(eq(employeeWorkSlotsTable.id, id))
+      .returning();
+
+    await syncPrimaryFromSlots(row.employeeId);
+
+    res.json({
+      ok: true,
+      item: {
+        ...mapSlotRow(updated!),
+        modeLabel: formatModeUz(updated!.mode),
+        shiftLabel: formatShiftKeyUz(updated!.shiftKey),
+      },
+      message: `Smena o‘zgardi · filial «${updated!.branchLabel || row.branchLabel}» o‘zgarmadi`,
+    });
+  } catch (err) {
+    console.error("PATCH /smena/slots/:id error:", err);
+    res.status(500).json({ error: "Smena o‘zgartirilmadi" });
+  }
+});
+
+/**
+ * Xodimning joriy filialida faqat smenani almashtirish (filial ID o‘zgarmaydi).
+ * Slot bo‘lmasa — employee.shiftType yangilanadi; bo‘lsa — asosiy doimiy slot yangilanadi.
+ */
+router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const role = req.userRole || "";
+    const me = await empByUserId(req.userId!);
+    if (!me) {
+      res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
+      return;
+    }
+    if (!(role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG)) {
+      res.status(403).json({ error: "Smena o‘zgartirish huquqi yo‘q" });
+      return;
+    }
+    const employeeId = Number(req.params.employeeId);
+    const target = await empById(employeeId);
+    if (!target) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
+    if (!canAssignTarget({ role, me, target, scope })) {
+      res.status(403).json({ error: "Bu xodimning smenasini o‘zgartirish huquqi yo‘q" });
+      return;
+    }
+    if (!isPharmacyShiftStaff(null, target.orgRole)) {
+      res.status(400).json({ error: "Smena faqat mudir, farmasevt va stajyor uchun" });
+      return;
+    }
+
+    const shiftRaw = String(req.body?.shiftKey ?? req.body?.shiftType ?? "").trim();
+    if (!shiftRaw) {
+      res.status(400).json({ error: "Smenani tanlang" });
+      return;
+    }
+    const defs = await getEffectiveShiftDefs();
+    const applied = applyShiftTypePatch(shiftRaw, defs);
+    if (!applied.ok) {
+      res.status(400).json({ error: applied.error, warning: applied.warning });
+      return;
+    }
+
+    const slots = await db
+      .select()
+      .from(employeeWorkSlotsTable)
+      .where(and(eq(employeeWorkSlotsTable.employeeId, employeeId), eq(employeeWorkSlotsTable.active, true)));
+
+    const branchId =
+      target.assignedBranchId ||
+      (target.orgRole === MANAGER_ORG ? target.id : target.reportsToId) ||
+      slots[0]?.branchId ||
+      null;
+    if (!branchId) {
+      res.status(400).json({ error: "Avval filial biriktirilgan bo‘lishi kerak" });
+      return;
+    }
+
+    const atBranch = slots.filter((s) => s.branchId === branchId);
+    const permanentAtBranch = atBranch.filter((s) => s.mode === "permanent");
+    const toUpdate = permanentAtBranch[0] || atBranch[0] || null;
+
+    if (toUpdate) {
+      const others = slots.filter((s) => s.id !== toUpdate.id);
+      const proposed: WorkSlotRow[] = [
+        ...others.map(mapSlotRow),
+        { ...mapSlotRow(toUpdate), shiftKey: applied.shiftType as WorkSlotRow["shiftKey"] },
+      ];
+      const sampleTo = toUpdate.validTo || addDaysYmd(toUpdate.validFrom, 28);
+      const conflict = conflictAmongSlots(proposed, toUpdate.validFrom, sampleTo, defs);
+      if (conflict) {
+        res.status(400).json({ error: conflict });
+        return;
+      }
+      await db
+        .update(employeeWorkSlotsTable)
+        .set({ shiftKey: applied.shiftType, updatedAt: new Date() })
+        .where(eq(employeeWorkSlotsTable.id, toUpdate.id));
+      await syncPrimaryFromSlots(employeeId);
+    } else {
+      await db
+        .update(employeesTable)
+        .set({
+          shiftType: applied.shiftType,
+          shiftLabel: applied.shiftLabel,
+          updatedAt: new Date(),
+        })
+        .where(eq(employeesTable.id, employeeId));
+    }
+
+    const branch = await empById(branchId);
+    const branchName =
+      displayBranchName(branch?.location) ||
+      (branch?.location || "").split("|")[0].trim() ||
+      branch?.fullName ||
+      (target.location || "").split("|")[0].trim() ||
+      "Filial";
+
+    res.json({
+      ok: true,
+      shiftOnly: true,
+      shiftType: applied.shiftType,
+      shiftLabel: applied.shiftLabel,
+      branchId,
+      branchName,
+      message: `Smena «${applied.shiftLabel}» · filial «${branchName}» o‘zgarmadi`,
+    });
+  } catch (err) {
+    console.error("PATCH /smena/shift-only error:", err);
+    res.status(500).json({ error: "Smena o‘zgartirilmadi" });
+  }
 });
 
 /** Bugungi kun rejasini ko‘rish */

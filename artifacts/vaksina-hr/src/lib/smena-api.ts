@@ -134,6 +134,34 @@ export function assignSmenaBranch(
   });
 }
 
+/** Filialni o‘zgartirmasdan faqat smena */
+export function changeShiftOnly(employeeId: number, shiftKey: SlotShiftKey | string) {
+  return apiJson<{
+    ok: boolean;
+    shiftOnly: boolean;
+    shiftType: string;
+    shiftLabel: string;
+    branchId: number;
+    branchName: string;
+    message: string;
+  }>(`/smena/shift-only/${employeeId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ shiftKey }),
+  });
+}
+
+export function updateWorkSlotShift(slotId: number, shiftKey: SlotShiftKey | string) {
+  return apiJson<{
+    ok: boolean;
+    item: WorkSlotItem;
+    message?: string;
+    unchanged?: boolean;
+  }>(`/smena/slots/${slotId}`, {
+    method: "PATCH",
+    body: JSON.stringify({ shiftKey }),
+  });
+}
+
 export function createDayRotation(body: {
   employeeId: number;
   branchId: number;

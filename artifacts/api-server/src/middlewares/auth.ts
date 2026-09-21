@@ -1,6 +1,13 @@
 import type { Request, Response, NextFunction } from "express";
 import { and, eq } from "drizzle-orm";
-import { db, usersTable, userDevicesTable, userSessionsTable } from "@workspace/db";
+import {
+  db,
+  usersTable,
+  userDevicesTable,
+  userSessionsTable,
+  withDbRetry,
+  isTransientDbError,
+} from "@workspace/db";
 import { canManageUsers } from "../lib/roles";
 import {
   clientIp,
@@ -21,7 +28,18 @@ export interface AuthRequest extends Request {
   secureSessionId?: number;
 }
 
+function dbErrDetail(err: unknown): string {
+  const e = err as { message?: string; cause?: { message?: string; code?: string }; code?: string };
+  return [e?.code, e?.message, e?.cause?.code, e?.cause?.message].filter(Boolean).join(" | ");
+}
+
 async function loadSessionUser(
+  req: AuthRequest,
+): Promise<{ id: number; role: string; deviceSecurityEnforced: boolean } | null> {
+  return withDbRetry(() => loadSessionUserOnce(req), { attempts: 3, label: "loadSessionUser" });
+}
+
+async function loadSessionUserOnce(
   req: AuthRequest,
 ): Promise<{ id: number; role: string; deviceSecurityEnforced: boolean } | null> {
   const sessionCookie = req.cookies?.session;
@@ -45,7 +63,8 @@ async function loadSessionUser(
         deviceSecurityEnforced: usersTable.deviceSecurityEnforced,
       })
       .from(usersTable)
-      .where(eq(usersTable.id, session.userId));
+      .where(eq(usersTable.id, session.userId))
+      .limit(1);
     if (!user || (user.status !== "active" && user.status !== "on_leave")) {
       return null;
     }
@@ -75,7 +94,8 @@ async function loadSessionUser(
       deviceSecurityEnforced: usersTable.deviceSecurityEnforced,
     })
     .from(usersTable)
-    .where(eq(usersTable.id, decoded.userId));
+    .where(eq(usersTable.id, decoded.userId))
+    .limit(1);
 
   if (!user || (user.status !== "active" && user.status !== "on_leave")) {
     return null;
@@ -221,8 +241,12 @@ export async function requireAuth(
     if (!ok) return;
     next();
   } catch (err) {
-    console.error("requireAuth db error:", err);
-    res.status(503).json({ error: "Server vaqtincha ishlamayapti, qayta urinib ko‘ring" });
+    console.error("requireAuth db error:", dbErrDetail(err));
+    res.status(503).json({
+      error: isTransientDbError(err)
+        ? "Baza bilan aloqa vaqtincha yo‘q — qayta urinib ko‘ring"
+        : "Server vaqtincha ishlamayapti, qayta urinib ko‘ring",
+    });
   }
 }
 
@@ -239,7 +263,7 @@ export async function optionalAuth(
       req.userRole = user.role;
     }
   } catch (err) {
-    console.error("optionalAuth db error:", err);
+    console.error("optionalAuth db error:", dbErrDetail(err));
   }
   next();
 }

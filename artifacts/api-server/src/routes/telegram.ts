@@ -46,28 +46,38 @@ function statusBlockMessage(status?: string | null) {
   return "Foydalanuvchi faol emas";
 }
 
+let telegramSchemaReady: Promise<void> | null = null;
+
 async function ensureTelegramSchema() {
-  await db.execute(sql`
-    ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id text
-  `);
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS telegram_auth_tokens (
-      id serial PRIMARY KEY,
-      token text NOT NULL UNIQUE,
-      user_id integer NOT NULL,
-      telegram_user_id text NOT NULL,
-      chat_id text NOT NULL,
-      used boolean NOT NULL DEFAULT false,
-      expires_at timestamptz NOT NULL,
-      created_at timestamptz NOT NULL DEFAULT now()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS telegram_auth_tokens_user_idx ON telegram_auth_tokens (user_id)
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS telegram_auth_tokens_tg_idx ON telegram_auth_tokens (telegram_user_id)
-  `);
+  if (!telegramSchemaReady) {
+    telegramSchemaReady = (async () => {
+      await db.execute(sql`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS telegram_id text
+      `);
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS telegram_auth_tokens (
+          id serial PRIMARY KEY,
+          token text NOT NULL UNIQUE,
+          user_id integer NOT NULL,
+          telegram_user_id text NOT NULL,
+          chat_id text NOT NULL,
+          used boolean NOT NULL DEFAULT false,
+          expires_at timestamptz NOT NULL,
+          created_at timestamptz NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS telegram_auth_tokens_user_idx ON telegram_auth_tokens (user_id)
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS telegram_auth_tokens_tg_idx ON telegram_auth_tokens (telegram_user_id)
+      `);
+    })().catch((err) => {
+      telegramSchemaReady = null;
+      throw err;
+    });
+  }
+  await telegramSchemaReady;
 }
 
 async function getUserWithDept(userId: number) {

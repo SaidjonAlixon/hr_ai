@@ -14,9 +14,9 @@ type SyncPayload = {
   newMessages: ChatMessage[];
 };
 
-const POLL_CHAT_MS = 4_500;
-const POLL_IDLE_MS = 20_000;
-const BACKOFF_MAX_MS = 45_000;
+const POLL_CHAT_MS = 6_000;
+const POLL_IDLE_MS = 45_000;
+const BACKOFF_MAX_MS = 60_000;
 
 function activeChatIdFromUrl(): number | null {
   try {

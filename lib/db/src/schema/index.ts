@@ -10,6 +10,7 @@ export * from "./tasks";
 export * from "./staffing";
 export * from "./branch-needs";
 export * from "./branch-audits";
+export * from "./coordinator-visits";
 export * from "./reminders";
 export * from "./goals";
 export * from "./chat";

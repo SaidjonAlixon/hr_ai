@@ -50,6 +50,7 @@ import {
   useCreatePharmacyStaff,
   useDismissPharmacyEmployee,
   useHardDeletePharmacyEmployee,
+  useChangePharmacyOrgRole,
   useCleanupDuplicateBranches,
   useSaveManagerLocation,
   useOwnMudirCredentials,
@@ -341,6 +342,7 @@ export default function PharmacyNetworkPage() {
   const createStaff = useCreatePharmacyStaff();
   const dismissStaff = useDismissPharmacyEmployee();
   const hardDeleteStaff = useHardDeletePharmacyEmployee();
+  const changeOrgRole = useChangePharmacyOrgRole();
   const cleanupDupBranches = useCleanupDuplicateBranches();
   const saveBranchGps = useSaveManagerLocation();
   const dupCleanupDone = useRef(false);
@@ -464,10 +466,21 @@ export default function PharmacyNetworkPage() {
     id: number;
     userId: number | null;
     fullName: string;
-    kind: 'filial' | 'staff';
+    kind: 'filial' | 'staff' | 'mudir';
     staffCount?: number;
-    mode: 'hard' | 'dismiss';
+    mode: 'hard' | 'dismiss' | 'pick';
+    scope?: 'person' | 'branch';
+    branchName?: string;
+    options?: Array<{
+      id: number;
+      userId: number | null;
+      fullName: string;
+      roleKey: 'mudir' | 'farmasevt' | 'stajyor';
+      label: string;
+    }>;
+    pickKey?: string;
   } | null>(null);
+  const [editOrgRole, setEditOrgRole] = useState<'manager' | 'pharmacist' | 'intern'>('pharmacist');
 
   const canDismissPerson = (person: Employee) => {
     if (!canDismissStaff) return false;
@@ -733,6 +746,13 @@ export default function PharmacyNetworkPage() {
     setEditFirstName(parts.length <= 1 ? person.fullName || '' : parts.slice(0, -1).join(' '));
     setEditLastName(parts.length <= 1 ? '' : parts[parts.length - 1]);
     setEditPhone(String((person as Employee & { phone?: string | null }).phone || ''));
+    const role =
+      person.orgRole === 'manager'
+        ? 'manager'
+        : person.orgRole === 'intern'
+          ? 'intern'
+          : 'pharmacist';
+    setEditOrgRole(role);
     const rawShift = String(person.shiftType || 'one').toLowerCase().trim();
     if (rawShift === 'two' || rawShift === '2' || rawShift === '2-smena') {
       setShiftType('two');
@@ -757,14 +777,59 @@ export default function PharmacyNetworkPage() {
   };
 
   const openDeleteTarget = (person: Employee, staffCount = 0) => {
-    const kind = person.orgRole === 'manager' ? 'filial' : 'staff';
+    if (person.orgRole === 'manager') {
+      openDeleteBranchPicker(person, staffCount);
+      return;
+    }
     setDeleteTarget({
       id: person.id,
       userId: person.userId ?? null,
       fullName: person.fullName,
-      kind,
-      staffCount: kind === 'filial' ? staffCount : 0,
+      kind: 'staff',
+      staffCount: 0,
       mode: 'hard',
+      scope: 'person',
+    });
+  };
+
+  const openDeleteBranchPicker = (manager: Employee, staffCount = 0) => {
+    const team = pharmacistsByManager.get(manager.id) ?? [];
+    const options: NonNullable<typeof deleteTarget>['options'] = [];
+    const noMudir = isNoManagerStatus(empStatus(manager)) || !manager.userId;
+    if (!noMudir) {
+      options.push({
+        id: manager.id,
+        userId: manager.userId ?? null,
+        fullName: manager.fullName,
+        roleKey: 'mudir',
+        label: `Mudir — ${manager.fullName}`,
+      });
+    }
+    for (const ph of team) {
+      if (empStatus(ph) === 'dismissed') continue;
+      if (empStatus(ph) === 'need_hire' && !ph.userId) continue;
+      const roleKey =
+        ph.orgRole === 'intern' ? 'stajyor' : ('farmasevt' as const);
+      options.push({
+        id: ph.id,
+        userId: ph.userId ?? null,
+        fullName: ph.fullName,
+        roleKey,
+        label: `${roleKey === 'stajyor' ? 'Stajyor' : 'Farmasevt'} — ${ph.fullName}`,
+      });
+    }
+    const branchName =
+      displayBranchName(manager.location) || manager.location || manager.fullName;
+    setDeleteTarget({
+      id: manager.id,
+      userId: manager.userId ?? null,
+      fullName: manager.fullName,
+      kind: 'filial',
+      staffCount,
+      mode: 'pick',
+      branchName,
+      options,
+      pickKey: options[0] ? `person:${options[0].id}` : 'branch',
     });
   };
 
@@ -781,35 +846,60 @@ export default function PharmacyNetworkPage() {
   };
 
   const confirmHardDelete = () => {
-    if (!deleteTarget || deleteTarget.mode !== 'hard') return;
-    hardDeleteStaff.mutate(
-      {
-        employeeId: deleteTarget.id,
-        userId: deleteTarget.userId,
-        fullName: deleteTarget.fullName,
+    if (!deleteTarget || (deleteTarget.mode !== 'hard' && deleteTarget.mode !== 'pick')) return;
+
+    let payload = {
+      employeeId: deleteTarget.id,
+      userId: deleteTarget.userId,
+      fullName: deleteTarget.fullName,
+      scope: (deleteTarget.scope ?? 'person') as 'person' | 'branch',
+    };
+
+    if (deleteTarget.mode === 'pick') {
+      const key = deleteTarget.pickKey || '';
+      if (key === 'branch') {
+        payload = {
+          employeeId: deleteTarget.id,
+          userId: deleteTarget.userId,
+          fullName: deleteTarget.fullName,
+          scope: 'branch',
+        };
+      } else if (key.startsWith('person:')) {
+        const id = parseInt(key.slice(7), 10);
+        const opt = deleteTarget.options?.find((o) => o.id === id);
+        if (!opt) return;
+        payload = {
+          employeeId: opt.id,
+          userId: opt.userId,
+          fullName: opt.fullName,
+          scope: 'person',
+        };
+      } else {
+        return;
+      }
+    }
+
+    hardDeleteStaff.mutate(payload, {
+      onSuccess: (data) => {
+        setDeleteTarget(null);
+        setEditTarget(null);
+        setExpandedId(null);
+        void refetch();
+        void refetchAlerts();
+        toast({
+          title: 'O‘chirildi',
+          description: data.message,
+        });
       },
-      {
-        onSuccess: (data) => {
-          setDeleteTarget(null);
-          setEditTarget(null);
-          setExpandedId(null);
-          void refetch();
-          void refetchAlerts();
-          toast({
-            title: 'O‘chirildi',
-            description: data.message,
-          });
-        },
-        onError: (err: Error) => {
-          void refetch();
-          toast({
-            title: 'O‘chirilmadi',
-            description: err.message || 'Xatolik',
-            variant: 'destructive',
-          });
-        },
+      onError: (err: Error) => {
+        void refetch();
+        toast({
+          title: 'O‘chirilmadi',
+          description: err.message || 'Xatolik',
+          variant: 'destructive',
+        });
       },
-    );
+    });
   };
 
   const confirmDismiss = () => {
@@ -963,41 +1053,97 @@ export default function PharmacyNetworkPage() {
       toast({ title: 'Ism kiriting', variant: 'destructive' });
       return;
     }
-    patchProfile.mutate(
-      {
-        employeeId: editTarget.id,
-        firstName: editFirstName.trim(),
-        lastName: editLastName.trim(),
-        fullName,
-        phone: editPhone.trim(),
-        shiftType,
-        shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : null,
-        ...(canEditStatus ? { employmentStatus } : {}),
-      },
-      {
-        onSuccess: () => {
-          toast({
-            title: 'Saqlandi',
-            description:
-              canEditStatus && employmentStatus === 'no_manager'
-                ? t('pharmacy.markedNoMudir')
-                : canEditStatus && employmentStatus !== 'working'
-                  ? 'Holat yangilandi — ogohlantirish yuborildi'
-                  : 'Ism va maʼlumot yangilandi',
-          });
-          setEditTarget(null);
-          refetch();
-          refetchAlerts();
+
+    const currentRole =
+      editTarget.orgRole === 'manager'
+        ? 'manager'
+        : editTarget.orgRole === 'intern'
+          ? 'intern'
+          : editTarget.orgRole === 'pharmacist' || editTarget.orgRole === 'supervisor'
+            ? 'pharmacist'
+            : null;
+    const roleChanged =
+      canHardDelete &&
+      currentRole != null &&
+      editOrgRole !== currentRole &&
+      editTarget.orgRole !== 'coordinator';
+
+    const finishOk = (extra?: string) => {
+      toast({
+        title: 'Saqlandi',
+        description:
+          extra ||
+          (canEditStatus && employmentStatus === 'no_manager'
+            ? t('pharmacy.markedNoMudir')
+            : canEditStatus && employmentStatus !== 'working'
+              ? 'Holat yangilandi — ogohlantirish yuborildi'
+              : 'Ism va maʼlumot yangilandi'),
+      });
+      setEditTarget(null);
+      refetch();
+      refetchAlerts();
+    };
+
+    const runProfile = () => {
+      patchProfile.mutate(
+        {
+          employeeId: editTarget.id,
+          firstName: editFirstName.trim(),
+          lastName: editLastName.trim(),
+          fullName,
+          phone: editPhone.trim(),
+          shiftType,
+          shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : null,
+          ...(canEditStatus ? { employmentStatus } : {}),
         },
-        onError: (err: any) => {
-          toast({
-            title: 'Xatolik',
-            description: err?.message || 'Saqlashda xatolik',
-            variant: 'destructive',
-          });
+        {
+          onSuccess: () => finishOk(),
+          onError: (err: Error) => {
+            toast({ title: 'Saqlanmadi', description: err.message, variant: 'destructive' });
+          },
         },
-      },
-    );
+      );
+    };
+
+    if (roleChanged) {
+      // Avval ism/telefon, keyin rol (rol promote bo‘lsa id o‘zgarishi mumkin)
+      patchProfile.mutate(
+        {
+          employeeId: editTarget.id,
+          firstName: editFirstName.trim(),
+          lastName: editLastName.trim(),
+          fullName,
+          phone: editPhone.trim(),
+          shiftType,
+          shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : null,
+          ...(canEditStatus ? { employmentStatus } : {}),
+        },
+        {
+          onSuccess: () => {
+            changeOrgRole.mutate(
+              { employeeId: editTarget.id, newOrgRole: editOrgRole },
+              {
+                onSuccess: (data) => finishOk(data.message),
+                onError: (err: Error) => {
+                  toast({
+                    title: 'Rol o‘zgarmadi',
+                    description: err.message || 'Xatolik',
+                    variant: 'destructive',
+                  });
+                  refetch();
+                },
+              },
+            );
+          },
+          onError: (err: Error) => {
+            toast({ title: 'Saqlanmadi', description: err.message, variant: 'destructive' });
+          },
+        },
+      );
+      return;
+    }
+
+    runProfile();
   };
 
   const saveBranchLocation = (manager: BranchEmployee) => {
@@ -2411,6 +2557,33 @@ export default function PharmacyNetworkPage() {
                 placeholder="+998 90 123 45 67"
               />
             </div>
+            {canHardDelete &&
+              editTarget &&
+              editTarget.orgRole !== 'coordinator' &&
+              !(isNoManagerStatus(empStatus(editTarget)) && !editTarget.userId) && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Lavozim / rol</p>
+                <Select
+                  value={editOrgRole}
+                  onValueChange={(v) =>
+                    setEditOrgRole(v as 'manager' | 'pharmacist' | 'intern')
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="manager">Mudir</SelectItem>
+                    <SelectItem value="pharmacist">Farmasevt</SelectItem>
+                    <SelectItem value="intern">Stajyor</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Mudirni farmasevt/stajyor qilsangiz filial saqlanadi. Farmasevt/stajyorni mudir
+                  qilsangiz — joriy mudir bilan almashtiriladi.
+                </p>
+              </div>
+            )}
             {canEditStatus && (
               <div className="space-y-2">
                 <p className="text-sm font-medium">Xodim holati</p>
@@ -2520,7 +2693,10 @@ export default function PharmacyNetworkPage() {
               <Button variant="ghost" onClick={() => setEditTarget(null)}>
                 Bekor qilish
               </Button>
-              <Button onClick={saveEditor} disabled={patchProfile.isPending}>
+              <Button
+                onClick={saveEditor}
+                disabled={patchProfile.isPending || changeOrgRole.isPending}
+              >
                 Saqlash
               </Button>
             </div>
@@ -2729,16 +2905,18 @@ export default function PharmacyNetworkPage() {
       </Dialog>
 
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
-        <AlertDialogContent>
+        <AlertDialogContent className="max-w-md">
           <AlertDialogHeader>
             <AlertDialogTitle>
               {deleteTarget?.mode === 'dismiss'
                 ? deleteTarget?.kind === 'filial'
                   ? t('pharmacy.dismissMudirQ')
                   : t('pharmacy.dismissStaffQ')
-                : deleteTarget?.kind === 'filial'
-                  ? t('pharmacy.deleteBranchQ')
-                  : t('pharmacy.deleteStaffQ')}
+                : deleteTarget?.mode === 'pick'
+                  ? 'Kimni o‘chirasiz?'
+                  : deleteTarget?.kind === 'filial'
+                    ? t('pharmacy.deleteBranchQ')
+                    : t('pharmacy.deleteStaffQ')}
             </AlertDialogTitle>
             <AlertDialogDescription asChild>
               <div className="space-y-2 text-sm text-muted-foreground">
@@ -2761,19 +2939,86 @@ export default function PharmacyNetworkPage() {
                       </p>
                     )}
                   </>
+                ) : deleteTarget?.mode === 'pick' ? (
+                  <>
+                    <p>
+                      Filial:{' '}
+                      <span className="font-semibold text-foreground">
+                        {deleteTarget.branchName || deleteTarget.fullName}
+                      </span>
+                    </p>
+                    <p className="text-xs">
+                      Mudir, farmasevt yoki stajyorni alohida tanlang. Mudir o‘chirilsa filial qoladi —
+                      o‘rni bo‘sh bo‘ladi.
+                    </p>
+                    <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-md border border-border p-2">
+                      {(deleteTarget.options ?? []).map((opt) => (
+                        <label
+                          key={opt.id}
+                          className={cn(
+                            'flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-muted',
+                            deleteTarget.pickKey === `person:${opt.id}` && 'bg-muted',
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="delete-pick"
+                            className="mt-1"
+                            checked={deleteTarget.pickKey === `person:${opt.id}`}
+                            onChange={() =>
+                              setDeleteTarget((prev) =>
+                                prev ? { ...prev, pickKey: `person:${opt.id}` } : prev,
+                              )
+                            }
+                          />
+                          <span>
+                            <span className="font-medium text-foreground">{opt.label}</span>
+                            <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                              Faqat shu odam o‘chadi, qolganlar saqlanadi
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                      <label
+                        className={cn(
+                          'flex cursor-pointer items-start gap-2 rounded-md border border-rose-200 bg-rose-50/80 px-2 py-1.5 text-sm dark:border-rose-500/40 dark:bg-rose-950/30',
+                          deleteTarget.pickKey === 'branch' && 'ring-1 ring-rose-400',
+                        )}
+                      >
+                        <input
+                          type="radio"
+                          name="delete-pick"
+                          className="mt-1"
+                          checked={deleteTarget.pickKey === 'branch'}
+                          onChange={() =>
+                            setDeleteTarget((prev) =>
+                              prev ? { ...prev, pickKey: 'branch' } : prev,
+                            )
+                          }
+                        />
+                        <span>
+                          <span className="font-medium text-rose-800 dark:text-rose-300">
+                            Butun filialni o‘chirish
+                          </span>
+                          <span className="mt-0.5 block text-[11px] text-rose-700 dark:text-rose-400">
+                            Mudir + {(deleteTarget.staffCount ?? 0) > 0
+                              ? `${deleteTarget.staffCount} ta xodim`
+                              : 'barcha xodimlar'}{' '}
+                            ham yo‘qoladi
+                          </span>
+                        </span>
+                      </label>
+                    </div>
+                    <p className="text-rose-700">
+                      Login, parol, davomat va bog‘liq ma’lumotlar o‘chadi. Qaytarib bo‘lmaydi.
+                    </p>
+                  </>
                 ) : (
                   <>
                     <p>
                       <span className="font-semibold text-foreground">{deleteTarget?.fullName}</span>{' '}
-                      {deleteTarget?.kind === 'filial'
-                        ? 'filiali va mudiri tizimdan butunlay o‘chiriladi.'
-                        : 'tizimdan butunlay o‘chiriladi.'}
+                      tizimdan butunlay o‘chiriladi. Filial saqlanadi — o‘rni bo‘sh qoladi.
                     </p>
-                    {deleteTarget?.kind === 'filial' && (deleteTarget.staffCount ?? 0) > 0 ? (
-                      <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-rose-800 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-300">
-                        Shu filialdagi {deleteTarget.staffCount} ta farmasevt/stajyor ham o‘chadi.
-                      </p>
-                    ) : null}
                     <p className="text-rose-700">
                       Login, parol, davomat, Face ID va boshqa bog‘liq ma’lumotlar ham yo‘qoladi. Qaytarib
                       bo‘lmaydi.
@@ -2795,7 +3040,11 @@ export default function PharmacyNetworkPage() {
                   ? 'bg-amber-600 hover:bg-amber-700'
                   : 'bg-rose-600 hover:bg-rose-700'
               }
-              disabled={hardDeleteStaff.isPending || dismissStaff.isPending}
+              disabled={
+                hardDeleteStaff.isPending ||
+                dismissStaff.isPending ||
+                (deleteTarget?.mode === 'pick' && !deleteTarget.pickKey)
+              }
               onClick={(e) => {
                 e.preventDefault();
                 if (deleteTarget?.mode === 'dismiss') confirmDismiss();
@@ -2808,7 +3057,9 @@ export default function PharmacyNetworkPage() {
                   : 'Ha, bo‘shatish'
                 : hardDeleteStaff.isPending
                   ? 'O‘chirilmoqda…'
-                  : 'Ha, o‘chirish'}
+                  : deleteTarget?.mode === 'pick' && deleteTarget.pickKey === 'branch'
+                    ? 'Ha, butun filial'
+                    : 'Ha, o‘chirish'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

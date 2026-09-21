@@ -184,6 +184,7 @@ export function fetchDavomat(params: {
   departmentId?: string;
   location?: string;
   employeeId?: string;
+  staffFilter?: string;
 }): Promise<DavomatReport> {
   const q = new URLSearchParams();
   q.set("from", params.from);
@@ -192,6 +193,7 @@ export function fetchDavomat(params: {
   if (params.departmentId) q.set("departmentId", params.departmentId);
   if (params.location) q.set("location", params.location);
   if (params.employeeId) q.set("employeeId", params.employeeId);
+  if (params.staffFilter && params.staffFilter !== "all") q.set("staffFilter", params.staffFilter);
   return apiJson<DavomatReport>(`/davomat?${q}`);
 }
 
@@ -277,6 +279,8 @@ export async function facePunchDavomat(payload: {
   longitude: number;
   accuracy?: number;
   action: "in" | "out";
+  /** Cheklist dan tanlangan filial (mudir employee id) */
+  branchId?: number;
   snapshot?: string;
   liveness?: {
     blinked?: boolean;

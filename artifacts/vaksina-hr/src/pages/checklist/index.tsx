@@ -18,6 +18,7 @@ import {
   Crosshair,
   Search,
   ChevronDown,
+  Clock3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,8 @@ import {
   useBranchAudits,
   useCreateBranchAudit,
   useDeleteBranchAudit,
+  useMyCoordinatorVisit,
+  finishCoordinatorVisit,
   AUDIT_GEOFENCE_METERS,
   haversineMeters,
   type AuditAnswer,
@@ -55,6 +58,9 @@ import {
   type BranchAudit,
   type AuditBranchOption,
 } from "@/lib/branch-audits-api";
+import { Link } from "wouter";
+import { useQueryClient } from "@tanstack/react-query";
+import { FinishVisitDialog } from "./finish-visit-dialog";
 import {
   gpsFromLocationField,
   displayBranchName,
@@ -307,8 +313,14 @@ export default function ChecklistPage() {
   const { data: history = [], isLoading: historyLoading } = useBranchAudits();
   const createAudit = useCreateBranchAudit();
   const deleteAudit = useDeleteBranchAudit();
+  const isCoord = user?.role === "koordinator";
+  const { data: myVisitData, refetch: refetchMyVisit } = useMyCoordinatorVisit(isCoord);
+  const openVisit = myVisitData?.visit ?? null;
+  const qc = useQueryClient();
 
   const [managerId, setManagerId] = useState<string>("");
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishing, setFinishing] = useState(false);
   const [visitDate, setVisitDate] = useState(todayIso());
   const [generalNote, setGeneralNote] = useState("");
   const [categories, setCategories] = useState<AuditCategory[]>(() =>
@@ -328,6 +340,12 @@ export default function ChecklistPage() {
   const saveLockRef = useRef(false);
 
   const canWrite = user?.role === "koordinator" || user?.role === "admin";
+
+  // Ochiq tashrif bo‘lsa — faqat shu filial
+  useEffect(() => {
+    if (!openVisit?.branchId) return;
+    setManagerId(String(openVisit.branchId));
+  }, [openVisit?.branchId]);
 
   const selectedBranch = useMemo(
     () => branches.find((b) => String(b.id) === managerId) || null,
@@ -396,7 +414,10 @@ export default function ChecklistPage() {
   const canFillChecklist =
     !monthFull &&
     !visitedToday &&
-    (user?.role === "admin" || (Boolean(selectedBranch) && withinGeofence));
+    (user?.role === "admin" ||
+      (Boolean(selectedBranch) &&
+        withinGeofence &&
+        (!isCoord || (openVisit != null && String(openVisit.branchId) === managerId))));
 
   const remainMeters =
     distanceMeters != null
@@ -542,6 +563,38 @@ export default function ChecklistPage() {
       return;
     }
     setManagerId(id);
+  }
+
+  async function handleFinishVisit(note: string) {
+    if (!openVisit) return;
+    setFinishing(true);
+    try {
+      const result = await finishCoordinatorVisit({
+        note,
+        latitude: gps?.lat ?? null,
+        longitude: gps?.lng ?? null,
+      });
+      setFinishOpen(false);
+      setManagerId("");
+      clearAnswers();
+      await qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+      await qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
+      void refetchMyVisit();
+      toast({
+        title: "Filial yopildi",
+        description:
+          result.message ||
+          "Tashrif yakunlandi. Keyingi filialni tanlab «Keldim» qilishingiz mumkin.",
+      });
+    } catch (err) {
+      toast({
+        title: "Yopilmadi",
+        description: (err as Error)?.message || "Qayta urinib ko‘ring",
+        variant: "destructive",
+      });
+    } finally {
+      setFinishing(false);
+    }
   }
 
   function readFreshGps(): Promise<{ lat: number; lng: number; accuracy: number | null }> {
@@ -791,8 +844,27 @@ export default function ChecklistPage() {
                 value={managerId}
                 onChange={pickBranch}
                 visitedTodayIds={visitedTodayIds}
-                disabled={branchesLoading || branches.length === 0}
+                disabled={
+                  branchesLoading ||
+                  branches.length === 0 ||
+                  (isCoord && Boolean(openVisit))
+                }
               />
+              {isCoord && !managerId ? (
+                <p className="rounded-xl border border-sky-300 bg-sky-50 px-2.5 py-2 text-[11px] font-medium text-sky-900 dark:border-sky-700 dark:bg-sky-950/40 dark:text-sky-200">
+                  Avval filialni tanlang — keyin «Keldim» / «Ketdim» chiqadi.
+                </p>
+              ) : null}
+              {isCoord && openVisit && managerId && String(openVisit.branchId) === managerId ? (
+                <p className="rounded-xl border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-[11px] font-medium text-emerald-900 dark:border-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-200">
+                  Filial Keldim bo‘yicha qulflangan. Boshqa filial uchun avval «Ketdim» qiling.
+                </p>
+              ) : null}
+              {isCoord && openVisit && managerId && String(openVisit.branchId) !== managerId ? (
+                <p className="rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+                  Ochiq tashrif boshqa filialda: «{openVisit.branchLabel || "Filial"}». Avval u yerda «Ketdim» qiling.
+                </p>
+              ) : null}
               {visitedToday ? (
                 <p className="rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
                   {t("checklist.todayVisitedHint")}
@@ -815,6 +887,67 @@ export default function ChecklistPage() {
                 </span>
               </div>
             </div>
+
+            {isCoord && managerId ? (
+              <div
+                className={cn(
+                  "sm:col-span-2 rounded-2xl border px-3 py-3 sm:px-4",
+                  openVisit && String(openVisit.branchId) === managerId
+                    ? "border-emerald-300/80 bg-emerald-50/90 dark:border-emerald-500/30 dark:bg-emerald-950/40"
+                    : "border-amber-300/80 bg-amber-50/90 dark:border-amber-500/30 dark:bg-amber-950/40",
+                )}
+              >
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+                      <Clock3 className="h-4 w-4 shrink-0" />
+                      {openVisit && String(openVisit.branchId) === managerId
+                        ? "Ochiq tashrif — Ketdim qilinmagan"
+                        : "Filial tanlandi — endi «Keldim» qiling"}
+                    </p>
+                    <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                      {openVisit && String(openVisit.branchId) === managerId
+                        ? `Filial: «${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni to‘ldiring. Tayyor bo‘lgach «Ketdim qilish» → izoh → «Tugatish».`
+                        : `Tanlangan: «${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Face ID (Davomat) da GPS ichida «Keldim» bosing — keyin cheklist ochiladi.`}
+                    </p>
+                    {openVisit && String(openVisit.branchId) === managerId ? (
+                      <p className="mt-1 text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
+                        Keldim:{" "}
+                        {new Date(openVisit.checkInAt).toLocaleTimeString("uz-UZ", {
+                          timeZone: "Asia/Tashkent",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                        {openVisit.checklistAt
+                          ? ` · Cheklist: ${new Date(openVisit.checklistAt).toLocaleTimeString("uz-UZ", {
+                              timeZone: "Asia/Tashkent",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}`
+                          : " · Cheklist hali saqlanmagan"}
+                      </p>
+                    ) : null}
+                  </div>
+                  {openVisit && String(openVisit.branchId) === managerId ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="shrink-0"
+                      onClick={() => setFinishOpen(true)}
+                    >
+                      Ketdim qilish
+                    </Button>
+                  ) : (
+                    <Button asChild size="sm" className="shrink-0">
+                      <Link href={`/davomat-face?branchId=${managerId}&action=in`}>
+                        Keldim qilish
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ) : null}
 
             {selectedBranch ? (
               <div className="space-y-3 rounded-2xl border border-border/80 bg-card p-3 shadow-sm sm:col-span-2 sm:p-4">
@@ -994,11 +1127,11 @@ export default function ChecklistPage() {
                 {t("checklist.note")}
               </Label>
               <Textarea
-                rows={3}
+                rows={2}
                 value={generalNote}
                 onChange={(e) => setGeneralNote(e.target.value)}
                 placeholder={t("checklist.notePh")}
-                className="min-h-[80px] rounded-xl text-base sm:text-sm"
+                className="min-h-[64px] rounded-xl text-base sm:text-sm"
                 disabled={!canFillChecklist && user?.role === "koordinator"}
               />
             </div>
@@ -1356,6 +1489,20 @@ export default function ChecklistPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      <FinishVisitDialog
+        open={finishOpen}
+        onOpenChange={setFinishOpen}
+        branchLabel={
+          openVisit?.branchLabel ||
+          selectedBranch?.location ||
+          selectedBranch?.managerName ||
+          "Filial"
+        }
+        checkInAt={openVisit?.checkInAt}
+        submitting={finishing}
+        onFinish={handleFinishVisit}
+      />
     </div>
   );
 }

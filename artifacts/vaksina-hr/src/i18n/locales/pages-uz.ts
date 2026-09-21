@@ -802,7 +802,7 @@ export const pagesUz: Messages = {
   "checklist.visitDate": "Tashrif sanasi",
   "checklist.visitName": "Tashrif",
   "checklist.month": "Oy",
-  "checklist.note": "Umumiy izoh / eslatma",
+  "checklist.note": "Umumiy izoh / eslatma (ixtiyoriy)",
   "checklist.notePh": "Masalan: Konditsionerdan suv oqyapti — ustalarga aytilgan",
   "checklist.coordName": "Koordinator F.I.Sh",
   "checklist.checklistHint": "Har bir bandni tanlang — boshida tanlanmagan",

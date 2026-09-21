@@ -1,11 +1,12 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, and } from "drizzle-orm";
+import { desc, eq, and, inArray } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import {
   db,
   branchAuditsTable,
   employeesTable,
   usersTable,
+  coordinatorBranchVisitsTable,
   type AuditCategory,
   type AuditChecklistItem,
 } from "@workspace/db";
@@ -21,6 +22,21 @@ import {
 } from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 import { dedupeActiveBranches } from "../lib/branch-dedupe";
+import {
+  assertChecklistAllowedForCoordinator,
+  attachChecklistToOpenVisit,
+  finishCoordinatorVisitWithNote,
+  getOpenCoordinatorVisit,
+  listCoordinatorVisits,
+  serializeVisit,
+} from "../lib/coordinator-visits";
+import {
+  isTestOfficeCoordinatorUserId,
+  maybePurgeTestCoordinatorAfterVisit,
+  TEST_COORD_MAX_VISITS,
+  TEST_OFFICE_LAT,
+  TEST_OFFICE_LNG,
+} from "../lib/test-office-coordinator";
 
 const router: IRouter = Router();
 
@@ -87,12 +103,98 @@ function sanitizeCategories(raw: unknown): AuditCategory[] {
 }
 
 async function enrich(row: typeof branchAuditsTable.$inferSelect) {
+  const [visit] = await db
+    .select({
+      checkoutNote: coordinatorBranchVisitsTable.checkoutNote,
+      checkOutAt: coordinatorBranchVisitsTable.checkOutAt,
+    })
+    .from(coordinatorBranchVisitsTable)
+    .where(eq(coordinatorBranchVisitsTable.checklistAuditId, row.id))
+    .limit(1);
+
+  let checkoutNote = visit?.checkoutNote ?? null;
+  if (!checkoutNote) {
+    const [byKey] = await db
+      .select({ checkoutNote: coordinatorBranchVisitsTable.checkoutNote })
+      .from(coordinatorBranchVisitsTable)
+      .where(
+        and(
+          eq(coordinatorBranchVisitsTable.coordinatorUserId, row.coordinatorId),
+          eq(coordinatorBranchVisitsTable.branchId, row.managerEmployeeId),
+          eq(coordinatorBranchVisitsTable.workDate, row.visitDate),
+        ),
+      )
+      .orderBy(desc(coordinatorBranchVisitsTable.id))
+      .limit(1);
+    checkoutNote = byKey?.checkoutNote ?? null;
+  }
+
   return {
     ...row,
     branchLocation: displayBranchName(row.branchLocation) || row.branchLocation,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    checkoutNote,
+    visitCheckOutAt: visit?.checkOutAt ? visit.checkOutAt.toISOString() : null,
   };
+}
+
+async function enrichMany(rows: Array<typeof branchAuditsTable.$inferSelect>) {
+  if (!rows.length) return [];
+  const ids = rows.map((r) => r.id);
+  const visits = await db
+    .select({
+      checklistAuditId: coordinatorBranchVisitsTable.checklistAuditId,
+      coordinatorUserId: coordinatorBranchVisitsTable.coordinatorUserId,
+      branchId: coordinatorBranchVisitsTable.branchId,
+      workDate: coordinatorBranchVisitsTable.workDate,
+      checkoutNote: coordinatorBranchVisitsTable.checkoutNote,
+      checkOutAt: coordinatorBranchVisitsTable.checkOutAt,
+    })
+    .from(coordinatorBranchVisitsTable)
+    .where(inArray(coordinatorBranchVisitsTable.checklistAuditId, ids));
+
+  const byAudit = new Map(
+    visits
+      .filter((v) => v.checklistAuditId != null)
+      .map((v) => [v.checklistAuditId!, v]),
+  );
+
+  // Fallback: auditga bog‘lanmagan, lekin sana+filial+koordinator mos
+  const needFallback = rows.filter((r) => !byAudit.has(r.id));
+  const byKey = new Map<string, (typeof visits)[0]>();
+  if (needFallback.length) {
+    const coordIds = [...new Set(needFallback.map((r) => r.coordinatorId))];
+    const extra = await db
+      .select({
+        checklistAuditId: coordinatorBranchVisitsTable.checklistAuditId,
+        coordinatorUserId: coordinatorBranchVisitsTable.coordinatorUserId,
+        branchId: coordinatorBranchVisitsTable.branchId,
+        workDate: coordinatorBranchVisitsTable.workDate,
+        checkoutNote: coordinatorBranchVisitsTable.checkoutNote,
+        checkOutAt: coordinatorBranchVisitsTable.checkOutAt,
+      })
+      .from(coordinatorBranchVisitsTable)
+      .where(inArray(coordinatorBranchVisitsTable.coordinatorUserId, coordIds));
+    for (const v of extra) {
+      const k = `${v.coordinatorUserId}|${v.branchId}|${v.workDate}`;
+      if (!byKey.has(k) && v.checkoutNote) byKey.set(k, v);
+    }
+  }
+
+  return rows.map((row) => {
+    const v =
+      byAudit.get(row.id) ||
+      byKey.get(`${row.coordinatorId}|${row.managerEmployeeId}|${row.visitDate}`);
+    return {
+      ...row,
+      branchLocation: displayBranchName(row.branchLocation) || row.branchLocation,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
+      checkoutNote: v?.checkoutNote ?? null,
+      visitCheckOutAt: v?.checkOutAt ? v.checkOutAt.toISOString() : null,
+    };
+  });
 }
 
 function answerLabel(a: "yes" | "no" | null | undefined) {
@@ -467,7 +569,7 @@ router.get("/branch-audits", requireAuth, async (req: AuthRequest, res): Promise
     return;
   }
   const rows = await loadFilteredAudits(req);
-  res.json(await Promise.all(rows.map(enrich)));
+  res.json(await enrichMany(rows));
 });
 
 router.get("/branch-audits/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -1082,6 +1184,126 @@ router.get("/branch-audits/ranking", requireAuth, async (req: AuthRequest, res):
   }
 });
 
+/** Koordinatorning ochiq tashrifi (Keldim qilingan, Ketdim yo‘q) */
+router.get("/branch-audits/my-visit", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya kerak" });
+    return;
+  }
+  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+    res.json({ visit: null });
+    return;
+  }
+  try {
+    const open = await getOpenCoordinatorVisit(req.userId);
+    res.json({
+      visit: open ? serializeVisit(open) : null,
+      message: open
+        ? `Ochiq tashrif: «${open.branchLabel || "Filial"}». Cheklistni shu yerda yakunlang, keyin «Ketdim» qiling.`
+        : "Hozir ochiq filial tashrifi yo‘q. Avval Face ID bilan filialda «Keldim» qiling.",
+    });
+  } catch (err) {
+    console.error("GET /branch-audits/my-visit error:", err);
+    res.status(503).json({ error: "Tashrif holati yuklanmadi" });
+  }
+});
+
+/**
+ * Ketdim: izoh yozilgach filial tashrifini yopish — keyingi filialga o‘tish mumkin.
+ */
+router.post("/branch-audits/my-visit/finish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya kerak" });
+    return;
+  }
+  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat koordinator" });
+    return;
+  }
+  try {
+    const note = String(req.body?.note || "").trim();
+    const latitude =
+      req.body?.latitude != null && Number.isFinite(Number(req.body.latitude))
+        ? Number(req.body.latitude)
+        : null;
+    const longitude =
+      req.body?.longitude != null && Number.isFinite(Number(req.body.longitude))
+        ? Number(req.body.longitude)
+        : null;
+
+    const result = await finishCoordinatorVisitWithNote({
+      userId: req.userId,
+      note,
+      latitude,
+      longitude,
+    });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error, code: result.code });
+      return;
+    }
+
+    const visit = serializeVisit(result.visit);
+    res.json({
+      ok: true,
+      visit,
+      message: `«${visit.branchLabel || "Filial"}» yopildi. Keyingi filialni tanlashingiz mumkin.`,
+    });
+  } catch (err) {
+    console.error("POST /branch-audits/my-visit/finish error:", err);
+    res.status(503).json({ error: "Tashrif yopilmadi" });
+  }
+});
+
+/**
+ * Rahbariyat monitoringi — Keldim/Ketdim vaqtlari, filialda qolish, cheklist vaqti.
+ */
+router.get("/branch-audits/visit-monitor", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewChecklistStatus(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q" });
+    return;
+  }
+  try {
+    const from = String(req.query.from || "").trim() || undefined;
+    const to = String(req.query.to || "").trim() || undefined;
+    const coordinatorUserId = req.query.coordinatorId
+      ? parseInt(String(req.query.coordinatorId), 10)
+      : undefined;
+    const branchId = req.query.branchId ? parseInt(String(req.query.branchId), 10) : undefined;
+    const items = await listCoordinatorVisits({
+      from,
+      to,
+      coordinatorUserId: Number.isFinite(coordinatorUserId) ? coordinatorUserId : undefined,
+      branchId: Number.isFinite(branchId!) ? branchId : undefined,
+      limit: 800,
+    });
+
+    const openCount = items.filter((i) => i.stillOpen).length;
+    const withChecklist = items.filter((i) => i.checklistAt).length;
+    const closedWithDur = items.filter((i) => i.durationMinutes != null && !i.stillOpen);
+    const avgStay =
+      closedWithDur.length > 0
+        ? Math.round(closedWithDur.reduce((s, i) => s + (i.durationMinutes || 0), 0) / closedWithDur.length)
+        : null;
+
+    res.json({
+      items,
+      summary: {
+        total: items.length,
+        openCount,
+        withChecklist,
+        avgStayMinutes: avgStay,
+        avgStayLabel:
+          avgStay != null
+            ? `${Math.floor(avgStay / 60)} soat ${avgStay % 60} daq`
+            : "—",
+      },
+    });
+  } catch (err) {
+    console.error("GET /branch-audits/visit-monitor error:", err);
+    res.status(503).json({ error: "Monitoring yuklanmadi" });
+  }
+});
+
 router.get("/branch-audits/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireRole(req, VIEW_ROLES)) {
     res.status(403).json({ error: "Ruxsat yo'q" });
@@ -1170,6 +1392,17 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       res.status(403).json({ error: "Bu filial sizga biriktirilmagan" });
       return;
     }
+    const visitGate = await assertChecklistAllowedForCoordinator({
+      userId: req.userId,
+      branchId: managerEmployeeId,
+    });
+    if (!visitGate.ok) {
+      res.status(visitGate.status).json({
+        error: visitGate.error,
+        code: visitGate.code,
+      });
+      return;
+    }
   }
 
   /** Oyiga 1 filialga max 4 tashrif — tizim o‘zi raqamlaydi */
@@ -1208,37 +1441,50 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
   const branchLat = manager.latitude ?? fromLoc?.lat ?? null;
   const branchLng = manager.longitude ?? fromLoc?.lng ?? null;
 
-  // Koordinator: filial GPS dan 70 m ichida bo‘lishi shart
+  // Koordinator: filial GPS dan 70 m ichida (test ofis koordinator — asosiy ofis yashil zona)
   if (req.userRole === "koordinator") {
-    if (branchLat == null || branchLng == null) {
-      res.status(400).json({
-        error: "Filial lokatsiyasi bazada yo‘q — Aptekalar tarmog‘ida koordinata saqlang",
-      });
-      return;
-    }
     if (Number.isNaN(checkLat) || Number.isNaN(checkLng)) {
       res.status(400).json({
         error: "GPS yoqilmagan — joylashuvingizni ruxsat bering",
       });
       return;
     }
-    distanceMeters = haversineMeters(
-      checkLat,
-      checkLng,
-      branchLat,
-      branchLng,
-    );
     savedCheckLat = checkLat;
     savedCheckLng = checkLng;
-    if (distanceMeters > AUDIT_GEOFENCE_METERS) {
-      const remain = distanceMeters - AUDIT_GEOFENCE_METERS;
-      res.status(403).json({
-        error: `Filialdan uzoqdasiz: ${distanceMeters} m. Yana ${remain} m yaqinlashishingiz kerak (ruxsat: ${AUDIT_GEOFENCE_METERS} m).`,
-        distanceMeters,
-        remainMeters: remain,
-        allowedMeters: AUDIT_GEOFENCE_METERS,
-      });
-      return;
+
+    const isTestOffice = await isTestOfficeCoordinatorUserId(req.userId);
+    if (isTestOffice) {
+      const officeDist = haversineMeters(checkLat, checkLng, TEST_OFFICE_LAT, TEST_OFFICE_LNG);
+      const officeAllowed = 100 + 8;
+      if (officeDist > officeAllowed) {
+        res.status(403).json({
+          error: `Ofis yashil zonasidan tashqaridasiz: ${officeDist} m (ruxsat ~100 m). Asosiy ofisga boring.`,
+          distanceMeters: officeDist,
+          remainMeters: officeDist - 100,
+          allowedMeters: 100,
+          code: "outside_office_geofence",
+        });
+        return;
+      }
+      distanceMeters = officeDist;
+    } else {
+      if (branchLat == null || branchLng == null) {
+        res.status(400).json({
+          error: "Filial lokatsiyasi bazada yo‘q — Aptekalar tarmog‘ida koordinata saqlang",
+        });
+        return;
+      }
+      distanceMeters = haversineMeters(checkLat, checkLng, branchLat, branchLng);
+      if (distanceMeters > AUDIT_GEOFENCE_METERS) {
+        const remain = distanceMeters - AUDIT_GEOFENCE_METERS;
+        res.status(403).json({
+          error: `Filialdan uzoqdasiz: ${distanceMeters} m. Yana ${remain} m yaqinlashishingiz kerak (ruxsat: ${AUDIT_GEOFENCE_METERS} m).`,
+          distanceMeters,
+          remainMeters: remain,
+          allowedMeters: AUDIT_GEOFENCE_METERS,
+        });
+        return;
+      }
     }
   }
 
@@ -1268,6 +1514,32 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
         status: "saved",
       })
       .returning();
+
+    if (req.userRole === "koordinator" && req.userId && created) {
+      try {
+        await attachChecklistToOpenVisit({
+          coordinatorUserId: req.userId,
+          branchId: managerEmployeeId,
+          auditId: created.id,
+        });
+      } catch (e) {
+        console.error("attach checklist to visit error:", e);
+      }
+
+      try {
+        const purge = await maybePurgeTestCoordinatorAfterVisit(req.userId);
+        if (purge.purged) {
+          res.status(201).json({
+            ...(await enrich(created)),
+            testCoordinatorPurged: true,
+            testCoordinatorMessage: `${TEST_COORD_MAX_VISITS} ta tashrif yakunlandi — test koordinator bazadan o‘chirildi.`,
+          });
+          return;
+        }
+      } catch (e) {
+        console.error("test coordinator purge error:", e);
+      }
+    }
 
     res.status(201).json(await enrich(created));
   } catch (err: any) {

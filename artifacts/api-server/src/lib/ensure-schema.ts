@@ -262,6 +262,34 @@ WHERE a.manager_employee_id = b.manager_employee_id
 CREATE UNIQUE INDEX IF NOT EXISTS branch_audits_manager_visit_date_uidx
   ON branch_audits (manager_employee_id, visit_date);
 
+-- Koordinator filial tashriflari (Keldim → Cheklist → Ketdim)
+CREATE TABLE IF NOT EXISTS coordinator_branch_visits (
+  id SERIAL PRIMARY KEY,
+  coordinator_user_id INTEGER NOT NULL,
+  coordinator_employee_id INTEGER,
+  coordinator_name TEXT,
+  branch_id INTEGER NOT NULL,
+  branch_label TEXT,
+  work_date TEXT NOT NULL,
+  check_in_at TIMESTAMPTZ NOT NULL,
+  check_out_at TIMESTAMPTZ,
+  check_in_latitude DOUBLE PRECISION,
+  check_in_longitude DOUBLE PRECISION,
+  check_out_latitude DOUBLE PRECISION,
+  check_out_longitude DOUBLE PRECISION,
+  checklist_audit_id INTEGER,
+  checklist_at TIMESTAMPTZ,
+  status TEXT NOT NULL DEFAULT 'open',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS coord_visits_user_status_idx
+  ON coordinator_branch_visits (coordinator_user_id, status);
+CREATE INDEX IF NOT EXISTS coord_visits_branch_idx ON coordinator_branch_visits (branch_id);
+CREATE INDEX IF NOT EXISTS coord_visits_work_date_idx ON coordinator_branch_visits (work_date);
+CREATE INDEX IF NOT EXISTS coord_visits_checklist_idx ON coordinator_branch_visits (checklist_audit_id);
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS checkout_note TEXT;
+
 -- Employees GPS (checklist geofence) + employment + org
 DO $$
 BEGIN

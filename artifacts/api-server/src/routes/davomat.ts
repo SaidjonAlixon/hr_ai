@@ -38,6 +38,17 @@ import {
   type JavobExemption,
 } from "../lib/javob-exemptions";
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
+import {
+  assertCoordinatorPunchAllowed,
+  syncCoordinatorVisitOnPunch,
+  serializeVisit,
+} from "../lib/coordinator-visits";
+import {
+  isTestOfficeCoordinatorName,
+  resolveTestOfficeVisitBranch,
+  TEST_OFFICE_LAT,
+  TEST_OFFICE_LNG,
+} from "../lib/test-office-coordinator";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, excelFilialLabel, gpsFromLocationField } from "../lib/geo-location";
 import { dedupeBranchesWithGps } from "../lib/branch-dedupe";
@@ -599,8 +610,9 @@ async function loadActiveEmployees(filters: {
   location?: string;
   search?: string;
   employeeId?: string;
+  staffFilter?: string;
 }) {
-  const staff = await loadStaffFromUsers("active");
+  const staff = await loadStaffFromUsers("active", { skipFacePhotos: true });
   const deptIds = [...new Set(staff.map((s) => s.departmentId))];
   const depts =
     deptIds.length > 0
@@ -637,6 +649,8 @@ async function loadActiveEmployees(filters: {
     ? await resolveDepartmentFilter(filters.departmentId)
     : null;
 
+  const staffSeg = parseDavomatStaffFilter(filters.staffFilter);
+
   return rows.filter((e) => {
     if (filters.employeeId && e.id !== Number(filters.employeeId)) return false;
     if (departmentFilter) {
@@ -649,6 +663,9 @@ async function loadActiveEmployees(filters: {
       const q = filters.search.toLowerCase();
       const hay = [e.fullName, e.position, e.departmentName, e.location].filter(Boolean).join(" ").toLowerCase();
       if (!hay.includes(q)) return false;
+    }
+    if (staffSeg !== "all" && staffSeg !== "external") {
+      if (!matchesDavomatStaffFilter(e, staffSeg)) return false;
     }
     return true;
   });
@@ -690,7 +707,18 @@ async function scopeDeptHeadDavomatEmployees<
 async function loadRecords(from: string, to: string, employeeIds: number[]) {
   if (!employeeIds.length) return [];
   return db
-    .select()
+    .select({
+      id: attendanceRecordsTable.id,
+      employeeId: attendanceRecordsTable.employeeId,
+      workDate: attendanceRecordsTable.workDate,
+      checkInAt: attendanceRecordsTable.checkInAt,
+      checkOutAt: attendanceRecordsTable.checkOutAt,
+      status: attendanceRecordsTable.status,
+      source: attendanceRecordsTable.source,
+      checkLatitude: attendanceRecordsTable.checkLatitude,
+      checkLongitude: attendanceRecordsTable.checkLongitude,
+      notes: attendanceRecordsTable.notes,
+    })
     .from(attendanceRecordsTable)
     .where(
       and(
@@ -717,105 +745,10 @@ function buildReport(
   const staffHours = (e: (typeof employees)[0]) =>
     hoursForStaff(e.orgRole, e.shiftType, e.userRole, e.shiftLabel, defs);
 
-  const dayStats = dates.map((date) => {
-    let present = 0;
-    let late = 0;
-    let incomplete = 0;
-    let leave = 0;
-    let absent = 0;
-    const presentList: string[] = [];
-    const absentList: string[] = [];
-    const lateList: string[] = [];
-    const farFromOffice: Array<{
-      employeeId: number;
-      fullName: string;
-      position: string | null;
-      departmentName: string | null;
-      checkIn: string | null;
-      officeDistanceMeters: number;
-    }> = [];
-
-    for (const e of employees) {
-      const restDay = isOfisRestDay(date, {
-        userRole: e.userRole,
-        orgRole: e.orgRole,
-        position: e.position,
-      });
-      const rec = byEmpDate.get(`${e.id}|${date}`);
-      if (
-        rec?.checkLatitude != null &&
-        rec?.checkLongitude != null &&
-        Number.isFinite(rec.checkLatitude) &&
-        Number.isFinite(rec.checkLongitude)
-      ) {
-        const officeM = haversineMeters(
-          rec.checkLatitude,
-          rec.checkLongitude,
-          DAVOMAT_SITE_LAT,
-          DAVOMAT_SITE_LNG,
-        );
-        if (officeM > 1000) {
-          farFromOffice.push({
-            employeeId: e.id,
-            fullName: e.fullName,
-            position: e.position ?? null,
-            departmentName: e.departmentName ?? null,
-            checkIn: rec.checkInAt ? formatHm(rec.checkInAt as Date) : null,
-            officeDistanceMeters: officeM,
-          });
-        }
-      }
-      if (!rec || (!rec.checkInAt && rec.status === "absent")) {
-        if (restDay) {
-          // Ofis dam kuni — kelmagan deb hisoblanmaydi
-          continue;
-        }
-        absent += 1;
-        absentList.push(e.fullName);
-        continue;
-      }
-      if (rec.status === "leave") {
-        leave += 1;
-        continue;
-      }
-      if (restDay && !rec.checkInAt) {
-        continue;
-      }
-      const m = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, staffHours(e));
-      if (m.status === "late") {
-        late += 1;
-        lateList.push(e.fullName);
-        present += 1;
-        presentList.push(e.fullName);
-      } else if (m.status === "incomplete") {
-        incomplete += 1;
-        present += 1;
-        presentList.push(e.fullName);
-      } else if (m.status === "absent") {
-        if (restDay) continue;
-        absent += 1;
-        absentList.push(e.fullName);
-      } else {
-        present += 1;
-        presentList.push(e.fullName);
-      }
-    }
-    return {
-      date,
-      present,
-      late,
-      incomplete,
-      leave,
-      absent,
-      presentList,
-      absentList,
-      lateList,
-      farFromOffice,
-    };
-  });
-
+  // Bitta o'tishda employee kunlari — dayStats shundan (ikki marta computeMetrics yo'q)
   const employeeRows = employees
     .map((e) => {
+      const hours = staffHours(e);
       const days = dates.map((date) => {
         const restDay = isOfisRestDay(date, {
           userRole: e.userRole,
@@ -849,7 +782,6 @@ function buildReport(
             recordId: rec.id,
           });
         }
-        const hours = staffHours(e);
         const raw = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hours);
         const m = applyJavobExemptionToMetrics(raw, ex, hours?.graceMinutes ?? 15);
         return {
@@ -871,39 +803,36 @@ function buildReport(
         };
       });
 
-      const totals = days.reduce(
-        (acc, d) => {
-          if (d.status === "absent") acc.absent += 1;
-          else if (d.status === "leave") acc.leave += 1;
-          else if (d.status === "rest") acc.rest += 1;
-          else {
-            acc.present += 1;
-            if (d.status === "late") acc.late += 1;
-            if (d.status === "incomplete") acc.incomplete += 1;
-            if (d.restDayWork) acc.extraWork += 1;
-          }
-          acc.workedMinutes += d.workedMinutes;
-          acc.lateArrivalMin += d.lateArrivalMin;
-          acc.earlyArrivalMin += d.earlyArrivalMin;
-          acc.earlyLeaveMin += d.earlyLeaveMin;
-          acc.overtimeMin += d.overtimeMin;
-          return acc;
-        },
-        {
-          present: 0,
-          absent: 0,
-          late: 0,
-          incomplete: 0,
-          leave: 0,
-          rest: 0,
-          extraWork: 0,
-          workedMinutes: 0,
-          lateArrivalMin: 0,
-          earlyArrivalMin: 0,
-          earlyLeaveMin: 0,
-          overtimeMin: 0,
-        },
-      );
+      const totals = {
+        present: 0,
+        absent: 0,
+        late: 0,
+        incomplete: 0,
+        leave: 0,
+        rest: 0,
+        extraWork: 0,
+        workedMinutes: 0,
+        lateArrivalMin: 0,
+        earlyArrivalMin: 0,
+        earlyLeaveMin: 0,
+        overtimeMin: 0,
+      };
+      for (const d of days) {
+        if (d.status === "absent") totals.absent += 1;
+        else if (d.status === "leave") totals.leave += 1;
+        else if (d.status === "rest") totals.rest += 1;
+        else {
+          totals.present += 1;
+          if (d.status === "late") totals.late += 1;
+          if (d.status === "incomplete") totals.incomplete += 1;
+          if (d.restDayWork) totals.extraWork += 1;
+        }
+        totals.workedMinutes += d.workedMinutes;
+        totals.lateArrivalMin += d.lateArrivalMin;
+        totals.earlyArrivalMin += d.earlyArrivalMin;
+        totals.earlyLeaveMin += d.earlyLeaveMin;
+        totals.overtimeMin += d.overtimeMin;
+      }
 
       return {
         id: e.id,
@@ -917,10 +846,8 @@ function buildReport(
         phone: e.phone ?? null,
         shiftType: normalizeShiftType(e.shiftType, e.shiftLabel),
         shiftLabel: e.shiftLabel,
-        ...(() => {
-          const h = staffHours(e);
-          return { workStart: h.start, workEnd: h.end };
-        })(),
+        workStart: hours.start,
+        workEnd: hours.end,
         days,
         totals: {
           ...totals,
@@ -934,17 +861,102 @@ function buildReport(
     })
     .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
 
+  const empById = new Map(employees.map((e) => [e.id, e]));
+  const farByDate = new Map<
+    string,
+    Array<{
+      employeeId: number;
+      fullName: string;
+      position: string | null;
+      departmentName: string | null;
+      checkIn: string | null;
+      officeDistanceMeters: number;
+    }>
+  >();
+  for (const rec of records) {
+    if (
+      rec.checkLatitude == null ||
+      rec.checkLongitude == null ||
+      !Number.isFinite(rec.checkLatitude) ||
+      !Number.isFinite(rec.checkLongitude)
+    ) {
+      continue;
+    }
+    const officeM = haversineMeters(
+      rec.checkLatitude,
+      rec.checkLongitude,
+      DAVOMAT_SITE_LAT,
+      DAVOMAT_SITE_LNG,
+    );
+    if (officeM <= 1000) continue;
+    const emp = empById.get(rec.employeeId);
+    if (!emp) continue;
+    const list = farByDate.get(rec.workDate) ?? [];
+    list.push({
+      employeeId: emp.id,
+      fullName: emp.fullName,
+      position: emp.position ?? null,
+      departmentName: emp.departmentName ?? null,
+      checkIn: rec.checkInAt ? formatHm(rec.checkInAt as Date) : null,
+      officeDistanceMeters: officeM,
+    });
+    farByDate.set(rec.workDate, list);
+  }
+
+  const dayStats = dates.map((date, di) => {
+    let present = 0;
+    let late = 0;
+    let incomplete = 0;
+    let leave = 0;
+    let absent = 0;
+    for (const e of employeeRows) {
+      const d = e.days[di];
+      if (!d || d.status === "rest") continue;
+      if (d.status === "absent") absent += 1;
+      else if (d.status === "leave") leave += 1;
+      else {
+        present += 1;
+        if (d.status === "late") late += 1;
+        if (d.status === "incomplete") incomplete += 1;
+      }
+    }
+    return {
+      date,
+      present,
+      late,
+      incomplete,
+      leave,
+      absent,
+      // FE ismlar ro'yxatini ishlatmaydi — payloadni engillashtiramiz
+      presentList: [] as string[],
+      absentList: [] as string[],
+      lateList: [] as string[],
+      farFromOffice: farByDate.get(date) ?? [],
+    };
+  });
+
+  let presentPersonDays = 0;
+  let absentPersonDays = 0;
+  let latePersonDays = 0;
+  let totalWorkedMin = 0;
+  let totalLateMin = 0;
+  for (const e of employeeRows) {
+    presentPersonDays += e.totals.present;
+    absentPersonDays += e.totals.absent;
+    latePersonDays += e.totals.late;
+    totalWorkedMin += e.totals.workedMinutes;
+    totalLateMin += e.totals.lateArrivalMin;
+  }
+
   const summary = {
     employees: employees.length,
     days: dates.length,
-    presentPersonDays: employeeRows.reduce((s, e) => s + e.totals.present, 0),
-    absentPersonDays: employeeRows.reduce((s, e) => s + e.totals.absent, 0),
-    latePersonDays: employeeRows.reduce((s, e) => s + e.totals.late, 0),
-    totalWorkedHours: fmtHours(employeeRows.reduce((s, e) => s + e.totals.workedMinutes, 0)),
-    totalLateMinutes: employeeRows.reduce((s, e) => s + e.totals.lateArrivalMin, 0),
-    totalLateLabel: fmtSignedMin(
-      employeeRows.reduce((s, e) => s + e.totals.lateArrivalMin, 0),
-    ),
+    presentPersonDays,
+    absentPersonDays,
+    latePersonDays,
+    totalWorkedHours: fmtHours(totalWorkedMin),
+    totalLateMinutes: totalLateMin,
+    totalLateLabel: fmtSignedMin(totalLateMin),
   };
 
   return {
@@ -985,6 +997,7 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
       location: q.location,
       search: q.search,
       employeeId: q.employeeId,
+      staffFilter: q.staffFilter,
     });
     employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
     const records = await loadRecords(
@@ -1716,6 +1729,7 @@ async function geoGate(
   longitude: number,
   _accuracyMeters?: number,
   action: "in" | "out" = "in",
+  preferredBranchId?: number | null,
 ): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
   // Admin bergan ko‘chma ruxsat — yashil zona (geofence) talab qilinmaydi
   let mobileAnywhere = false;
@@ -1727,6 +1741,51 @@ async function geoGate(
   }
 
   if (!usesBranchDavomat(userRole, emp.orgRole)) {
+    // TEST koordinator: ofis yashil zonasida — biriktirilgan test filialga tashrif
+    if (
+      userRole === "koordinator" &&
+      isTestOfficeCoordinatorName(emp.fullName) &&
+      emp.userId
+    ) {
+      const officeDist = haversineMeters(latitude, longitude, TEST_OFFICE_LAT, TEST_OFFICE_LNG);
+      const officeR = geofenceMetersForKind("office");
+      const GEOFENCE_SLACK_M = 8;
+      if (mobileAnywhere || officeDist <= officeR + GEOFENCE_SLACK_M) {
+        const visitBranch = await resolveTestOfficeVisitBranch({
+          coordinatorEmployeeId: emp.id,
+          coordinatorUserId: emp.userId,
+          preferredBranchId: preferredBranchId ?? null,
+        });
+        if (!visitBranch) {
+          return {
+            ok: false,
+            status: 403,
+            body: {
+              error:
+                "Test filiallar yo‘q. Admin: POST /api/admin/test-office-coordinator qayta yaratsin.",
+              code: "test_branches_missing",
+              fullName: emp.fullName,
+            },
+          };
+        }
+        return {
+          ok: true,
+          distanceMeters: officeDist,
+          effectiveRadius: officeR,
+          point: {
+            latitude: TEST_OFFICE_LAT,
+            longitude: TEST_OFFICE_LNG,
+            label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL} → ${visitBranch.branchLabel}`,
+            kind: "office",
+          },
+          resolvedBranchId: visitBranch.branchId,
+          resolvedBranchLabel: visitBranch.branchLabel,
+          activeShiftKey: null,
+          daySlots: [],
+        };
+      }
+    }
+
     const resolved = await resolveDavomatPoint(emp, userRole);
     if (!resolved.ok) return resolved;
     const point = resolved.point;
@@ -2427,6 +2486,7 @@ async function resolveFaceAtSite(opts: {
   /** Login/parol sessiya — faqat shu user Face ID si. */
   expectedUserId?: number;
   expectedFullName?: string;
+  preferredBranchId?: number | null;
 }): Promise<
   | {
       ok: true;
@@ -2499,6 +2559,7 @@ async function resolveFaceAtSite(opts: {
     opts.longitude,
     opts.accuracy,
     opts.action === "out" ? "out" : "in",
+    opts.preferredBranchId,
   );
   if (!gate.ok) {
     return { ok: false, status: gate.status, body: gate.body };
@@ -3226,6 +3287,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       }
     }
 
+    const preferredBranchId = Number(req.body?.branchId);
     const resolved = await resolveFaceAtSite({
       descriptor,
       latitude,
@@ -3235,12 +3297,43 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       action,
       expectedUserId,
       expectedFullName,
+      preferredBranchId:
+        Number.isFinite(preferredBranchId) && preferredBranchId > 0 ? preferredBranchId : null,
     });
     if (!resolved.ok) {
       res.status(resolved.status).json(resolved.body);
       return;
     }
     await maybeBackfillFacePhoto(resolved.faceId, req.body?.snapshot ?? req.body?.photo);
+
+    // Koordinator: ochiq filial tashrifi (Ketdim yo‘q) bo‘lsa boshqa filialga o‘tishni bloklash
+    if (resolved.user.role === "koordinator" && resolved.user.id) {
+      const gateVisit = await assertCoordinatorPunchAllowed({
+        userId: resolved.user.id,
+        action,
+        branchId: resolved.gate.resolvedBranchId,
+        branchLabel: resolved.gate.resolvedBranchLabel,
+      });
+      if (!gateVisit.ok) {
+        await writePunchAudit({
+          employeeId: resolved.emp.id,
+          userId: resolved.user.id,
+          verificationMethod: "FACE_ID",
+          action,
+          gpsResult: "ok",
+          gpsDistance: resolved.gate.distanceMeters,
+          faceResult: "ok",
+          finalResult: "denied",
+          failureReason: gateVisit.code,
+          ipAddress: clientIp(req),
+        });
+        res.status(gateVisit.status).json({
+          error: gateVisit.error,
+          code: gateVisit.code,
+        });
+        return;
+      }
+    }
 
     const punched = await applyFacePunch({
       emp: resolved.emp,
@@ -3273,6 +3366,33 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       res.status(punched.status).json(punched.body);
       return;
     }
+
+    let coordinatorVisit = null;
+    if (resolved.user.role === "koordinator" && resolved.user.id) {
+      try {
+        const workDate =
+          typeof punched.payload.workDate === "string"
+            ? punched.payload.workDate
+            : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+        const synced = await syncCoordinatorVisitOnPunch({
+          userId: resolved.user.id,
+          employeeId: resolved.emp.id,
+          fullName: resolved.user.fullName || resolved.emp.fullName,
+          action,
+          branchId: resolved.gate.resolvedBranchId,
+          branchLabel: resolved.gate.resolvedBranchLabel,
+          workDate,
+          latitude,
+          longitude,
+          checkoutNote:
+            action === "out" ? String(req.body?.checkoutNote || "").trim() || null : null,
+        });
+        coordinatorVisit = synced ? serializeVisit(synced) : null;
+      } catch (e) {
+        console.error("coordinator visit sync error:", e);
+      }
+    }
+
     await writePunchAudit({
       employeeId: resolved.emp.id,
       userId: resolved.user.id,
@@ -3292,6 +3412,13 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       user: sessionUser,
       sessionSwitched: !expectedUserId || expectedUserId !== resolved.user.id,
       ownerVerified: Boolean(expectedUserId),
+      coordinatorVisit,
+      checklistHint:
+        action === "in" && resolved.user.role === "koordinator"
+          ? "Keldim qabul qilindi. Endi Cheklist bo‘limida shu filialni to‘ldiring — Ketdimdan oldin."
+          : action === "out" && resolved.user.role === "koordinator"
+            ? "Ketdim qabul qilindi. Keyingi filialga o‘tishingiz mumkin."
+            : undefined,
     });
   } catch (err) {
     console.error("POST /davomat/face-punch error:", err);
@@ -4766,6 +4893,28 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         });
         res.status(punched.status).json(punched.body);
         return;
+      }
+
+      if (user.role === "koordinator" && user.id) {
+        try {
+          const workDate =
+            typeof punched.payload.workDate === "string"
+              ? punched.payload.workDate
+              : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+          await syncCoordinatorVisitOnPunch({
+            userId: user.id,
+            employeeId: emp.id,
+            fullName: user.fullName || emp.fullName,
+            action,
+            branchId: punchBranchId,
+            branchLabel: branchQr.row.branchLabel || matchingSlot?.branchLabel || null,
+            workDate,
+            latitude,
+            longitude,
+          });
+        } catch (e) {
+          console.error("coordinator visit sync (qr) error:", e);
+        }
       }
 
       await writePunchAudit({

@@ -320,7 +320,7 @@ export function useCreatePharmacyStaff() {
 
 export type HardDeletePharmacyResult = {
   ok: true;
-  kind: "filial" | "staff";
+  kind: "filial" | "mudir" | "staff";
   fullName: string;
   deletedEmployees: number;
   deletedUsers: number;
@@ -334,6 +334,7 @@ export function useHardDeletePharmacyEmployee() {
       employeeId: number;
       userId?: number | null;
       fullName?: string | null;
+      scope?: "person" | "branch";
     }) =>
       apiFetch<HardDeletePharmacyResult>(`/pharmacy-network/hard-delete`, {
         method: "POST",
@@ -341,6 +342,7 @@ export function useHardDeletePharmacyEmployee() {
           employeeId: data.employeeId,
           userId: data.userId ?? null,
           fullName: data.fullName ?? null,
+          scope: data.scope ?? "person",
         }),
       }),
     onSuccess: () => {
@@ -422,6 +424,40 @@ export function useDismissPharmacyEmployee() {
             key.includes("pharmacy")
           );
         },
+      });
+    },
+  });
+}
+
+export type ChangePharmacyRoleResult = {
+  ok: true;
+  fullName: string;
+  orgRole: "manager" | "pharmacist" | "intern";
+  message: string;
+};
+
+export function useChangePharmacyOrgRole() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      employeeId: number;
+      newOrgRole: "manager" | "pharmacist" | "intern";
+    }) =>
+      apiFetch<ChangePharmacyRoleResult>(`/pharmacy-network/change-role`, {
+        method: "POST",
+        body: JSON.stringify({
+          employeeId: data.employeeId,
+          newOrgRole: data.newOrgRole,
+        }),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+      qc.invalidateQueries({ queryKey: ["/api/staffing/alerts"] });
+      qc.invalidateQueries({
+        predicate: (q) =>
+          JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
       });
     },
   });

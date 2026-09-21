@@ -15,6 +15,7 @@ import {
   Filter,
   Trash2,
   Loader2,
+  Clock3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -48,6 +49,7 @@ import {
 import { CoveragePanel } from "./coverage-panel";
 import { ChecklistDashboard, type ChecklistDashNav } from "./dashboard-panel";
 import { CoordinatorRankingBoard } from "./ranking-panel";
+import { VisitMonitorPanel } from "./visit-monitor-panel";
 import { useI18n } from "@/i18n/I18nProvider";
 
 function scoreTone(pct: number) {
@@ -399,10 +401,14 @@ export default function ChecklistHolatiPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-4 sm:max-w-3xl">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5 sm:max-w-4xl">
           <TabsTrigger value="dashboard" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
             {t("checklist.tab.dashboard")}
+          </TabsTrigger>
+          <TabsTrigger value="vaqt" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
+            <Clock3 className="h-3.5 w-3.5 shrink-0" />
+            Vaqt
           </TabsTrigger>
           <TabsTrigger value="reyting" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <Trophy className="h-3.5 w-3.5 shrink-0" />
@@ -425,6 +431,9 @@ export default function ChecklistHolatiPage() {
             onOpenCoverage={openCoverage}
             onOpenVisit={(a) => setViewing(a)}
           />
+        </TabsContent>
+        <TabsContent value="vaqt" className="mt-0">
+          <VisitMonitorPanel enabled={allowedFull} />
         </TabsContent>
         <TabsContent value="reyting" className="mt-0">
           <CoordinatorRankingBoard
@@ -687,6 +696,12 @@ export default function ChecklistHolatiPage() {
                               <span className="text-muted-foreground">GPS yo‘q</span>
                             )}
                           </p>
+                          {a.checkoutNote ? (
+                            <p className="mt-2 line-clamp-2 rounded-lg border border-sky-200/70 bg-sky-50/80 px-2.5 py-1.5 text-[11px] leading-snug text-sky-950 dark:border-sky-500/30 dark:bg-sky-950/40 dark:text-sky-100">
+                              <span className="font-semibold">Ketdim izohi: </span>
+                              {a.checkoutNote}
+                            </p>
+                          ) : null}
                         </div>
                         <span className="text-xs font-medium text-muted-foreground sm:pt-1">
                           Batafsil →
@@ -782,8 +797,33 @@ export default function ChecklistHolatiPage() {
                   </p>
                 ) : null}
               </div>
+              {viewing.checkoutNote ? (
+                <div className="rounded-xl border border-[#0b3a5c]/20 bg-gradient-to-br from-sky-50 to-card p-3 dark:border-sky-500/30 dark:from-sky-950/40">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0b3a5c] dark:text-sky-300">
+                    Ketdim izohi — bu yerda nima qilindi
+                  </p>
+                  <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+                    {viewing.checkoutNote}
+                  </p>
+                  {viewing.visitCheckOutAt ? (
+                    <p className="mt-2 text-[11px] text-muted-foreground">
+                      Yopilgan:{" "}
+                      {new Date(viewing.visitCheckOutAt).toLocaleString("uz-UZ", {
+                        timeZone: "Asia/Tashkent",
+                      })}
+                    </p>
+                  ) : null}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed px-3 py-2 text-xs text-muted-foreground">
+                  Ketdim izohi hali yo‘q (koordinator «Tugatish»da yozganda paydo bo‘ladi)
+                </p>
+              )}
               {viewing.generalNote ? (
-                <p className="rounded-lg bg-amber-50 p-3 text-amber-950">{viewing.generalNote}</p>
+                <p className="rounded-lg bg-amber-50 p-3 text-amber-950 dark:bg-amber-950/30 dark:text-amber-100">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide">Cheklist eslatma · </span>
+                  {viewing.generalNote}
+                </p>
               ) : null}
               {viewing.categories?.map((cat) => (
                 <div key={cat.id}>

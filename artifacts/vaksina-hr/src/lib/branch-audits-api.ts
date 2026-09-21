@@ -26,6 +26,9 @@ export type BranchAudit = {
   coordinatorId: number;
   coordinatorName: string | null;
   generalNote: string | null;
+  /** Ketdimda yozilgan: «bugun bu yerda nima qildingiz» — Cheklist holati uchun */
+  checkoutNote?: string | null;
+  visitCheckOutAt?: string | null;
   categories: AuditCategory[];
   scorePercent: number;
   answeredCount: number;
@@ -314,6 +317,88 @@ export function useCoordinatorRanking(period: RankingPeriod, enabled = true) {
   });
 }
 
+export type CoordinatorVisitSession = {
+  id: number;
+  coordinatorUserId: number;
+  coordinatorEmployeeId: number | null;
+  coordinatorName: string | null;
+  branchId: number;
+  branchLabel: string | null;
+  workDate: string;
+  checkInAt: string;
+  checkOutAt: string | null;
+  checklistAuditId: number | null;
+  checklistAt: string | null;
+  checkoutNote?: string | null;
+  status: string;
+  durationMinutes: number | null;
+  durationLabel: string;
+  checklistAfterCheckInMinutes: number | null;
+  checklistAfterCheckInLabel: string;
+  stillOpen: boolean;
+};
+
+export function useMyCoordinatorVisit(enabled = true) {
+  return useQuery({
+    queryKey: ["branch-audits", "my-visit"],
+    queryFn: () =>
+      apiFetch<{ visit: CoordinatorVisitSession | null; message: string }>(
+        `/branch-audits/my-visit`,
+      ),
+    enabled,
+    refetchInterval: 60_000,
+    refetchIntervalInBackground: false,
+    staleTime: 30_000,
+  });
+}
+
+export async function finishCoordinatorVisit(payload: {
+  note: string;
+  latitude?: number | null;
+  longitude?: number | null;
+}) {
+  return apiFetch<{
+    ok: boolean;
+    visit: CoordinatorVisitSession;
+    message: string;
+  }>(`/branch-audits/my-visit/finish`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function useVisitMonitor(
+  params: { from?: string; to?: string; coordinatorId?: string; branchId?: string },
+  enabled = true,
+) {
+  return useQuery({
+    queryKey: ["branch-audits", "visit-monitor", params],
+    queryFn: () => {
+      const sp = new URLSearchParams();
+      if (params.from) sp.set("from", params.from);
+      if (params.to) sp.set("to", params.to);
+      if (params.coordinatorId && params.coordinatorId !== "all") {
+        sp.set("coordinatorId", params.coordinatorId);
+      }
+      if (params.branchId && params.branchId !== "all") {
+        sp.set("branchId", params.branchId);
+      }
+      const qs = sp.toString();
+      return apiFetch<{
+        items: CoordinatorVisitSession[];
+        summary: {
+          total: number;
+          openCount: number;
+          withChecklist: number;
+          avgStayMinutes: number | null;
+          avgStayLabel: string;
+        };
+      }>(`/branch-audits/visit-monitor${qs ? `?${qs}` : ""}`);
+    },
+    enabled,
+  });
+}
+
 export function useAuditCoverage(
   params: { from?: string; to?: string },
   enabled = true,
@@ -364,6 +449,8 @@ export function useCreateBranchAudit() {
       }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["branch-audits"] });
+      qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+      qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
     },
   });
 }
@@ -375,6 +462,7 @@ export function useDeleteBranchAudit() {
       apiFetch<void>(`/branch-audits/${id}`, { method: "DELETE" }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["branch-audits"] });
+      qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
     },
   });
 }

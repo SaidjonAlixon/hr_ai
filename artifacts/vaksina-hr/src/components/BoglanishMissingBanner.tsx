@@ -32,7 +32,7 @@ export function BoglanishMissingBanner() {
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), 60_000);
+    const id = window.setInterval(() => void load(), 180_000);
     const onSaved = () => void load();
     window.addEventListener("boglanish:saved", onSaved);
     return () => {

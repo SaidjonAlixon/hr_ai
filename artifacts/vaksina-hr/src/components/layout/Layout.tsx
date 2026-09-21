@@ -501,8 +501,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     {
       query: {
         enabled: !!user,
-        staleTime: 45_000,
-        refetchInterval: 90_000,
+        staleTime: 60_000,
+        refetchInterval: 180_000,
         refetchOnWindowFocus: false,
       },
     } as any,
@@ -553,8 +553,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const { data: dashboardStats } = useGetDashboardStats({
     query: {
       enabled: !!user,
-      staleTime: 60_000,
-      refetchInterval: 120_000,
+      staleTime: 90_000,
+      refetchInterval: 180_000,
       refetchOnWindowFocus: false,
     },
   } as any);
@@ -569,8 +569,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const { data: requests } = useGetRequests(undefined, {
     query: {
       enabled: !!user && isHrLike,
-      staleTime: 60_000,
-      refetchInterval: 120_000,
+      staleTime: 90_000,
+      refetchInterval: 180_000,
       refetchOnWindowFocus: false,
     },
   } as any);

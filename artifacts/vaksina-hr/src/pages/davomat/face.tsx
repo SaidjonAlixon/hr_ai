@@ -835,6 +835,14 @@ export default function DavomatFacePage() {
   const [, setLocation] = useLocation();
   const oylikMe = useOylikMe();
   const isTgMiniApp = useMemo(() => isTelegramMiniAppContext(), []);
+  const checklistBranchId = useMemo(() => {
+    try {
+      const id = Number(new URL(window.location.href).searchParams.get("branchId"));
+      return Number.isFinite(id) && id > 0 ? id : null;
+    } catch {
+      return null;
+    }
+  }, []);
   useTelegramMiniAppChrome();
   const { toast } = useToast();
   const canReport = canViewDavomat(user?.role);
@@ -1813,6 +1821,7 @@ export default function DavomatFacePage() {
         action,
         snapshot: snap,
         liveness: verified.liveness,
+        ...(checklistBranchId ? { branchId: checklistBranchId } : {}),
       });
       setVerified({
         ...verified,

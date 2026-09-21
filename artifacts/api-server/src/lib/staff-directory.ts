@@ -154,7 +154,10 @@ const orgRank = (org: string | null) =>
   ({ manager: 5, coordinator: 4, pharmacist: 3, supervisor: 2, intern: 1 }[org || ""] ?? 0);
 
 /** Foydalanuvchilar bazasidan xodimlar — Xodimlar / Oylik / Hisob-kitob uchun yagona manba */
-export async function loadStaffFromUsers(group: "active" | "other" = "active"): Promise<StaffRow[]> {
+export async function loadStaffFromUsers(
+  group: "active" | "other" = "active",
+  opts?: { skipFacePhotos?: boolean },
+): Promise<StaffRow[]> {
   const users = await db
     .select({
       id: usersTable.id,
@@ -179,23 +182,33 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
 
   const userIds = staffUsers.map((u) => u.id);
 
-  await Promise.all(
-    staffUsers.map(async (u) => {
-      const [linked] = await db
-        .select({ id: employeesTable.id })
-        .from(employeesTable)
-        .where(eq(employeesTable.userId, u.id))
-        .limit(1);
-      if (!linked) {
-        await ensureEmployeeForNewUser({
-          id: u.id,
-          fullName: u.fullName,
-          role: u.role,
-          departmentId: u.departmentId,
-        });
-      }
-    }),
+  // Bitta so‘rovda bog‘langan xodimlarni olish (N+1 o‘rniga)
+  const existingLinks = await db
+    .select({ userId: employeesTable.userId })
+    .from(employeesTable)
+    .where(inArray(employeesTable.userId, userIds));
+  const linkedUserIds = new Set(
+    existingLinks.map((r) => r.userId).filter((id): id is number => id != null),
   );
+  const missing = staffUsers.filter((u) => !linkedUserIds.has(u.id));
+  // Yangi userlar kam bo‘ladi — faqat ular uchun ensure
+  if (missing.length) {
+    const chunk = 20;
+    for (let i = 0; i < missing.length; i += chunk) {
+      await Promise.all(
+        missing.slice(i, i + chunk).map((u) =>
+          ensureEmployeeForNewUser({
+            id: u.id,
+            fullName: u.fullName,
+            role: u.role,
+            departmentId: u.departmentId,
+          }).catch((err) => {
+            console.error("ensureEmployeeForNewUser", u.id, err);
+          }),
+        ),
+      );
+    }
+  }
 
   let empRows: StaffRow[] = [];
   try {
@@ -232,11 +245,16 @@ export async function loadStaffFromUsers(group: "active" | "other" = "active"): 
     }));
   }
 
-  const faces = await db
-    .select({ userId: faceProfilesTable.userId, photoUrl: faceProfilesTable.photoUrl })
-    .from(faceProfilesTable)
-    .where(inArray(faceProfilesTable.userId, userIds));
-  const faceSet = new Set(faces.filter((f) => f.photoUrl?.trim()).map((f) => f.userId));
+  const faceSet = new Set<number>();
+  if (!opts?.skipFacePhotos) {
+    const faces = await db
+      .select({ userId: faceProfilesTable.userId, photoUrl: faceProfilesTable.photoUrl })
+      .from(faceProfilesTable)
+      .where(inArray(faceProfilesTable.userId, userIds));
+    for (const f of faces) {
+      if (f.photoUrl?.trim() && f.userId != null) faceSet.add(f.userId);
+    }
+  }
 
   const empByUser = new Map<number, StaffRow>();
   for (const r of empRows.sort((a, b) => orgRank(b.orgRole) - orgRank(a.orgRole) || a.id - b.id)) {

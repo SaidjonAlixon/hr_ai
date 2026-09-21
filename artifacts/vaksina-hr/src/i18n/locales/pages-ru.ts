@@ -801,7 +801,7 @@ export const pagesRu: Messages = {
   "checklist.visitDate": "Дата визита",
   "checklist.visitName": "Визит",
   "checklist.month": "Месяц",
-  "checklist.note": "Общий комментарий / заметка",
+  "checklist.note": "Общий комментарий / заметка (необязательно)",
   "checklist.notePh": "Например: Из кондиционера течёт вода — передано техникам",
   "checklist.coordName": "ФИО координатора",
   "checklist.checklistHint": "Отметьте каждый пункт — сначала не выбрано",

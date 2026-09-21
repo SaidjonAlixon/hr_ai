@@ -10,8 +10,11 @@ import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
 import {
   assertHardDeleteScope,
+  canChangePharmacyOrgRole,
   canHardDeletePharmacyNetwork,
+  changePharmacyOrgRole,
   hardDeletePharmacyEmployee,
+  type PharmacyOrgRoleChange,
 } from "../lib/delete-pharmacy-staff";
 import {
   canDismissPharmacyNetwork,
@@ -864,7 +867,8 @@ router.post(
 
 /**
  * Filial (mudir) yoki xodimni butunlay o‘chirish.
- * Mudir o‘chirilsa — filial + ostidagi barcha xodimlar ham yo‘qoladi.
+ * scope=person (default): faqat tanlangan odam; mudir o‘chirilsa filial qoladi.
+ * scope=branch: butun filial + jamoa.
  */
 async function handleHardDelete(req: AuthRequest, res: import("express").Response): Promise<void> {
   const role = req.userRole ?? undefined;
@@ -876,6 +880,8 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
     employeeId?: number | string;
     userId?: number | string | null;
     fullName?: string | null;
+    scope?: string | null;
+    keepBranch?: boolean | null;
   };
   const fromParam = req.params.employeeId;
   const employeeId = parseInt(
@@ -892,6 +898,11 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
       ? parseInt(String(userIdRaw), 10)
       : null;
   const fullName = String(body.fullName ?? req.query.fullName ?? "").trim() || null;
+  const scopeRaw = String(body.scope ?? req.query.scope ?? "").trim().toLowerCase();
+  const scope: "person" | "branch" =
+    scopeRaw === "branch" || body.keepBranch === false
+      ? "branch"
+      : "person";
 
   if (!Number.isFinite(employeeId) && !userId && !fullName) {
     res.status(400).json({ error: "Noto‘g‘ri xodim" });
@@ -924,22 +935,26 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
       {
         userId: userId != null && Number.isFinite(userId) ? userId : null,
         fullName,
+        scope,
       },
     );
     if (!result.ok) {
       res.status(result.status).json({ error: result.error });
       return;
     }
+    const defaultMsg =
+      result.kind === "filial"
+        ? `Filial va mudir «${result.fullName}» butunlay o‘chirildi (${result.deletedEmployees} yozuv)`
+        : result.kind === "mudir"
+          ? `Mudir «${result.fullName}» o‘chirildi — filial saqlandi`
+          : `«${result.fullName}» butunlay o‘chirildi`;
     res.json({
       ok: true,
       kind: result.kind,
       fullName: result.fullName,
       deletedEmployees: result.deletedEmployees,
       deletedUsers: result.deletedUsers,
-      message:
-        result.kind === "filial"
-          ? `Filial va mudir «${result.fullName}» butunlay o‘chirildi (${result.deletedEmployees} yozuv)`
-          : `«${result.fullName}» butunlay o‘chirildi`,
+      message: result.message || defaultMsg,
     });
   } catch (err) {
     console.error("pharmacy-network hard-delete error:", err);
@@ -949,6 +964,58 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
 
 router.post("/pharmacy-network/hard-delete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   await handleHardDelete(req, res);
+});
+
+/**
+ * Mudir / farmasevt / stajyor rollarini almashtirish (admin + koordinator + HR).
+ */
+router.post("/pharmacy-network/change-role", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole ?? "";
+  if (!canChangePharmacyOrgRole(role)) {
+    res.status(403).json({ error: "Rolni o‘zgartirish uchun ruxsat yo‘q" });
+    return;
+  }
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    return;
+  }
+  const body = (req.body ?? {}) as {
+    employeeId?: number | string;
+    newOrgRole?: string;
+    orgRole?: string;
+  };
+  const employeeId = parseInt(String(body.employeeId ?? ""), 10);
+  const rawRole = String(body.newOrgRole ?? body.orgRole ?? "")
+    .trim()
+    .toLowerCase();
+  const map: Record<string, PharmacyOrgRoleChange> = {
+    manager: "manager",
+    mudir: "manager",
+    pharmacist: "pharmacist",
+    farmasevt: "pharmacist",
+    intern: "intern",
+    stajyor: "intern",
+  };
+  const newOrgRole = map[rawRole];
+  if (!Number.isFinite(employeeId) || employeeId <= 0) {
+    res.status(400).json({ error: "Noto‘g‘ri xodim" });
+    return;
+  }
+  if (!newOrgRole) {
+    res.status(400).json({ error: "Yangi rol: mudir, farmasevt yoki stajyor" });
+    return;
+  }
+  try {
+    const result = await changePharmacyOrgRole(employeeId, newOrgRole, req.userId, role);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("pharmacy-network change-role error:", err);
+    res.status(503).json({ error: "Rolni o‘zgartirish amalga oshmadi" });
+  }
 });
 
 /**
@@ -1023,7 +1090,7 @@ router.post(
 
       const removed: Array<{ id: number; fullName: string; deletedEmployees: number }> = [];
       for (const id of dropIds) {
-        const result = await hardDeletePharmacyEmployee(id);
+        const result = await hardDeletePharmacyEmployee(id, { scope: "branch" });
         if (result.ok) {
           removed.push({
             id,

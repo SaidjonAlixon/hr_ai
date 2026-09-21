@@ -1,4 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  startTransition,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useGetDepartments } from "@workspace/api-client-react";
 import {
   CalendarDays,
@@ -331,8 +338,15 @@ export default function DavomatPage() {
   const [periodFrom, setPeriodFrom] = useState(() => addDaysYmd(todayYmd(), -13));
   const [periodTo, setPeriodTo] = useState(() => todayYmd());
   const [search, setSearch] = useState("");
+  const [searchDebounced, setSearchDebounced] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [staffFilter, setStaffFilter] = useState<DavomatStaffFilter>("office");
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
+    return () => window.clearTimeout(t);
+  }, [search]);
+
   const [dayStatusFilter, setDayStatusFilter] = useState<DayStatusFilter>("all");
   const [selectedEmpId, setSelectedEmpId] = useState<number | "all">("all");
   const [report, setReport] = useState<DavomatReport | null>(null);
@@ -370,27 +384,34 @@ export default function DavomatPage() {
               : rangeFrom
             : selectedDay;
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
     if (!allowed) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const data = await fetchDavomat({
         from,
         to,
-        search: search.trim() || undefined,
+        search: searchDebounced || undefined,
         departmentId: deptFilter !== "all" ? deptFilter : undefined,
+        staffFilter: staffFilter !== "all" ? staffFilter : undefined,
       });
-      setReport(data);
+      if (seq !== loadSeq.current) return;
+      startTransition(() => {
+        setReport(data);
+      });
     } catch (err) {
+      if (seq !== loadSeq.current) return;
       toast({
         title: "Yuklanmadi",
         description: (err as Error)?.message,
         variant: "destructive",
       });
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
-  }, [allowed, from, to, search, deptFilter, toast]);
+  }, [allowed, from, to, searchDebounced, deptFilter, staffFilter, toast]);
 
   useEffect(() => {
     void load();
@@ -412,12 +433,15 @@ export default function DavomatPage() {
   }, [report, staffFilter, farOfficeIds]);
 
   const employeesForDay = useMemo(() => {
-    if (!report) return [];
+    if (!report) return [] as Array<{ emp: (typeof filteredEmployees)[number]; day: (typeof filteredEmployees)[number]["days"][number] }>;
     const date = dayInfo?.date || selectedDay;
-    return filteredEmployees
-      .map((e) => ({ emp: e, day: e.days.find((d) => d.date === date) }))
-      .filter((x) => x.day)
-      .sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "uz"));
+    const rows: Array<{ emp: (typeof filteredEmployees)[number]; day: (typeof filteredEmployees)[number]["days"][number] }> = [];
+    for (const e of filteredEmployees) {
+      const day = e.days.find((d) => d.date === date);
+      if (day) rows.push({ emp: e, day });
+    }
+    rows.sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "uz"));
+    return rows;
   }, [report, selectedDay, dayInfo, filteredEmployees]);
 
   const filteredDayStats = useMemo(() => {
@@ -1461,7 +1485,9 @@ export default function DavomatPage() {
                       <span className="font-semibold text-foreground">
                         Ko‘rsatilmoqda: {visibleEmployeesForDay.length}
                         {dayStatusFilter !== "all" ? ` / ${filteredDayStats.total}` : ""} xodim
-                        {staffFilter !== "all" && report ? ` · jami bazada ${report.summary.employees}` : ""}
+                        {staffFilter !== "all" && report && report.summary.employees > visibleEmployeesForDay.length ? (
+                          ` · filtr: ${report.summary.employees}`
+                        ) : null}
                       </span>
                       {filteredDayStats.incomplete > 0 ? (
                         <>
@@ -1957,6 +1983,15 @@ function PeriodAttendanceGrid({
 
   const tableWidth = NUM_W + NAME_W + dates.length * COL_W;
 
+  const rows = useMemo(
+    () =>
+      employees.map((emp) => ({
+        emp,
+        daysByDate: new Map(emp.days.map((d) => [d.date, d])),
+      })),
+    [employees],
+  );
+
   const updateArrows = useCallback(() => {
     const el = mainRef.current;
     if (!el) return;
@@ -2119,7 +2154,7 @@ function PeriodAttendanceGrid({
                 </tr>
               </thead>
               <tbody>
-                {employees.map((emp, rowIdx) => {
+                {rows.map(({ emp, daysByDate }, rowIdx) => {
                   const zebra = rowIdx % 2 === 0;
                   const stickyBg = zebra ? "bg-card" : "bg-muted";
                   return (
@@ -2152,7 +2187,7 @@ function PeriodAttendanceGrid({
                         </div>
                       </td>
                       {dates.map((date) => {
-                        const day = emp.days.find((d) => d.date === date);
+                        const day = daysByDate.get(date);
                         return (
                           <td key={date} className="px-1 py-1 align-middle">
                             <WeekCell

@@ -42,7 +42,7 @@ export function DavomatAttendanceBanner() {
 
   useEffect(() => {
     void load();
-    const id = window.setInterval(() => void load(), 60_000);
+    const id = window.setInterval(() => void load(), 120_000);
     return () => window.clearInterval(id);
   }, [load]);
 

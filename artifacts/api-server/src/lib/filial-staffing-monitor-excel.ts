@@ -1,5 +1,5 @@
 import ExcelJS from "exceljs";
-import type { StaffingMonitorReport, StaffNeedItem } from "./filial-staffing-monitor";
+import type { ClosedStaffNeedReport, StaffingMonitorReport, StaffNeedItem } from "./filial-staffing-monitor";
 
 function urgencyRank(days: number): number {
   if (days >= 30) return 0;
@@ -255,5 +255,128 @@ export async function buildStaffingMonitorExcel(report: StaffingMonitorReport): 
     buffer,
     filename: `vaksina-xodim-ehtiyoji_${stamp}.xlsx`,
     count: sorted.length,
+  };
+}
+
+/** Topilgan / Topilmagan Excel — filial, smena, kim, izoh (rad uchun to‘liq) */
+export async function buildClosedStaffNeedExcel(report: ClosedStaffNeedReport): Promise<{
+  buffer: Buffer;
+  filename: string;
+  count: number;
+}> {
+  const isFound = report.kind === "found";
+  const title = isFound ? "TOPILGAN" : "TOPILMAGAN (RAD)";
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "Vaksina lokatsiya";
+  wb.created = report.generatedAt;
+
+  const sheet = wb.addWorksheet(isFound ? "Topilgan" : "Topilmagan");
+  const headers = isFound
+    ? [
+        "№",
+        "Tuman",
+        "Filial / joy",
+        "Smena",
+        "Kim kerak",
+        "Son",
+        "Qachon kerak",
+        "Mudir",
+        "Yuboruvchi",
+        "Izoh",
+        "Yuborilgan",
+        "Topilgan sana",
+        "ID",
+      ]
+    : [
+        "№",
+        "Tuman",
+        "Filial / joy",
+        "Smena",
+        "Kim kerak",
+        "Son",
+        "Qachon kerak",
+        "Mudir",
+        "Yuboruvchi",
+        "Ariza izohi",
+        "Rad izohi (to‘liq)",
+        "Yuborilgan",
+        "Rad sanasi",
+        "ID",
+      ];
+
+  sheet.columns = headers.map((h, i) => ({
+    header: h,
+    key: `c${i}`,
+    width: i === 0 || i === headers.length - 1 ? 6 : i === 2 ? 28 : i >= 9 && i <= 10 ? 32 : 16,
+  }));
+
+  sheet.mergeCells(1, 1, 1, headers.length);
+  const titleCell = sheet.getCell(1, 1);
+  titleCell.value = `VAKSINA — XODIM KERAK · ${title} · ${report.periodLabel} · ${report.generatedAtLabel}`;
+  titleCell.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
+  titleCell.fill = {
+    type: "pattern",
+    pattern: "solid",
+    fgColor: { argb: isFound ? "FF16A34A" : "FFDC2626" },
+  };
+  titleCell.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
+  sheet.getRow(1).height = 28;
+
+  headers.forEach((h, i) => {
+    const c = sheet.getCell(2, i + 1);
+    c.value = h;
+    headerStyle(c, isFound ? "FF15803D" : "FFB91C1C");
+  });
+  sheet.getRow(2).height = 22;
+
+  report.rows.forEach((r, idx) => {
+    const base = [
+      idx + 1,
+      r.district,
+      r.branch,
+      r.shift,
+      r.roleLabel,
+      r.count,
+      r.neededBy || "—",
+      r.mudirName || "—",
+      r.coordinatorName || "—",
+    ];
+    const row = isFound
+      ? [...base, r.note || "—", r.createdAtLabel, r.closedAtLabel, r.id]
+      : [...base, r.note || "—", r.rejectReason || "—", r.createdAtLabel, r.closedAtLabel, r.id];
+    const excelRow = sheet.addRow(row);
+    const zebra = idx % 2 === 0 ? "FFF8FAFC" : "FFFFFFFF";
+    excelRow.eachCell((cell, col) => {
+      cell.font = { name: "Calibri", size: 10 };
+      cell.alignment = {
+        vertical: "middle",
+        wrapText: col === 10 || col === 11,
+      };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: zebra } };
+      // Rad izohi — sariq highlight
+      if (!isFound && col === 11) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEF3C7" } };
+        cell.font = { name: "Calibri", size: 10, bold: true };
+      }
+    });
+    excelRow.height = !isFound && (r.rejectReason?.length || 0) > 40 ? 36 : 20;
+  });
+
+  if (report.rows.length === 0) {
+    sheet.addRow(["", "Bu oyda yozuv yo‘q"]);
+  }
+
+  sheet.autoFilter = {
+    from: { row: 2, column: 1 },
+    to: { row: 2 + Math.max(report.rows.length, 1), column: headers.length },
+  };
+
+  const buffer = Buffer.from(await wb.xlsx.writeBuffer());
+  const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, "-");
+  const tag = isFound ? "topilgan" : "topilmagan";
+  return {
+    buffer,
+    filename: `vaksina-xodim-${tag}_${stamp}.xlsx`,
+    count: report.rows.length,
   };
 }

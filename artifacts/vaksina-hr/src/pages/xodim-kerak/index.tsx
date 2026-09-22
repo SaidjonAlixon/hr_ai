@@ -1,9 +1,14 @@
 import React, { useMemo, useState } from "react";
 import { useAuth } from "../../contexts/AuthContext";
 import { useToast } from "../../hooks/use-toast";
-import { isHrManager, isDirectorRole, isDeptHeadRole, hasFullPlatformAccess } from "../../lib/roles";
 import {
-  statusLabel,
+  isHrManager,
+  isDirectorRole,
+  isDeptHeadRole,
+  hasFullPlatformAccess,
+  isHrRole,
+} from "../../lib/roles";
+import {
   useApproveStaffNeed,
   useCancelStaffNeed,
   useCreateStaffNeed,
@@ -15,7 +20,6 @@ import {
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
 import { Textarea } from "../../components/ui/textarea";
-import { Badge } from "../../components/ui/badge";
 import { Skeleton } from "../../components/ui/skeleton";
 import {
   Dialog,
@@ -31,35 +35,116 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../../components/ui/select";
-import { CheckCircle2, Plus, UserPlus, X } from "lucide-react";
+import {
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  ExternalLink,
+  Inbox,
+  MapPin,
+  Plus,
+  Send,
+  User,
+  UserPlus,
+  Users,
+  X,
+} from "lucide-react";
+import { cn } from "../../lib/utils";
 
-function statusBadge(status: string) {
-  if (status === "open" || status === "pending_hr" || status === "searching" || status === "approved") {
-    return <Badge className="bg-sky-100 text-sky-900 hover:bg-sky-100">Ochiq</Badge>;
-  }
-  if (status === "found") {
-    return <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">Topildi</Badge>;
-  }
-  if (status === "rejected") {
-    return <Badge className="bg-rose-100 text-rose-900 hover:bg-rose-100">Rad etilgan</Badge>;
-  }
-  if (status === "cancelled") {
-    return <Badge variant="secondary">Bekor</Badge>;
-  }
-  return <Badge variant="secondary">{statusLabel(status)}</Badge>;
-}
+type TabId = "searching" | "found" | "rejected";
 
 function fmtDt(iso: string | null | undefined) {
   if (!iso) return "—";
   try {
-    return new Date(iso).toLocaleString("uz-UZ", { timeZone: "Asia/Tashkent" });
+    return new Date(iso).toLocaleString("uz-UZ", {
+      timeZone: "Asia/Tashkent",
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
   } catch {
     return iso;
   }
 }
 
+function fmtNeededBy(value: string | null | undefined) {
+  if (!value) return "";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    try {
+      return new Date(`${value}T12:00:00`).toLocaleDateString("uz-UZ", {
+        timeZone: "Asia/Tashkent",
+        day: "2-digit",
+        month: "long",
+        year: "numeric",
+      });
+    } catch {
+      return value;
+    }
+  }
+  return value;
+}
+
+function isAsosiyOfisName(name?: string | null) {
+  const s = String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/['‘’`]/g, "'");
+  return (
+    s === "asosiy ofis" ||
+    s === "ofis / bo'lim" ||
+    s === "ofis / bolim" ||
+    s.includes("asosiy ofis") ||
+    s === "ofis"
+  );
+}
+
+function displayBranchTitle(n: { branchName: string; sourceType?: string; branchLocation?: string | null }) {
+  if (n.sourceType === "office" || isAsosiyOfisName(n.branchName) || isAsosiyOfisName(n.branchLocation)) {
+    return "ASOSIY OFIS";
+  }
+  return n.branchName;
+}
+
+function statusMeta(status: string) {
+  if (["open", "pending_hr", "searching", "approved"].includes(status)) {
+    return {
+      label: "Ochiq ariza",
+      className: "bg-sky-500/15 text-sky-800 ring-sky-500/25 dark:text-sky-200",
+    };
+  }
+  if (status === "found") {
+    return {
+      label: "Topildi",
+      className: "bg-emerald-500/15 text-emerald-800 ring-emerald-500/25 dark:text-emerald-200",
+    };
+  }
+  if (status === "rejected") {
+    return {
+      label: "Rad etilgan",
+      className: "bg-rose-500/15 text-rose-800 ring-rose-500/25 dark:text-rose-200",
+    };
+  }
+  return { label: status, className: "bg-muted text-muted-foreground ring-border" };
+}
+
+function InfoRow({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+  return (
+    <div className="flex items-start gap-2 text-sm">
+      <span className="mt-0.5 shrink-0 text-muted-foreground">{icon}</span>
+      <p className="min-w-0 leading-snug">
+        <span className="font-medium text-foreground/70">{label}: </span>
+        <span className="text-foreground">{value}</span>
+      </p>
+    </div>
+  );
+}
+
 function NeedCard({
   n,
+  index,
   isHr,
   canCancelOwn,
   onApprove,
@@ -68,6 +153,7 @@ function NeedCard({
   busy,
 }: {
   n: StaffNeedRequest;
+  index: number;
   isHr: boolean;
   canCancelOwn: boolean;
   onApprove: (id: number) => void;
@@ -76,79 +162,218 @@ function NeedCard({
   busy: boolean;
 }) {
   const open = ["open", "pending_hr", "approved", "searching"].includes(n.status);
+  const st = statusMeta(n.status);
+  const accent =
+    n.status === "found"
+      ? "border-l-emerald-500"
+      : n.status === "rejected"
+        ? "border-l-rose-500"
+        : "border-l-sky-500";
+  const maps = n.googleMapsUrl || n.yandexMapsUrl;
+
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <p className="text-base font-semibold text-slate-900">{n.branchName}</p>
-          <p className="text-sm text-slate-600">
-            {n.sourceType === "office" ? (
-              <>
-                {n.roleDisplay} · <b>×{n.count}</b>
-              </>
-            ) : (
-              <>
-                {n.shiftDisplay} · {n.roleDisplay} · <b>×{n.count}</b>
-              </>
+    <article
+      className={cn(
+        "overflow-hidden rounded-2xl border border-border bg-card shadow-sm border-l-[3px]",
+        accent,
+      )}
+    >
+      <div className="space-y-3.5 p-4 sm:p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-start gap-2.5">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-xs font-bold text-primary">
+              {index}
+            </span>
+            <div className="min-w-0">
+              <h3 className="truncate text-base font-semibold tracking-tight text-foreground">
+                {displayBranchTitle(n)}
+              </h3>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                {n.sourceType === "office" || isAsosiyOfisName(n.branchName) || isAsosiyOfisName(n.branchLocation)
+                  ? "ASOSIY OFIS"
+                  : "Apteka filiali"}{" "}
+                · #{n.id}
+              </p>
+            </div>
+          </div>
+          <span
+            className={cn(
+              "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset",
+              st.className,
             )}
-          </p>
-          {n.neededBy && <p className="text-xs text-amber-800 mt-0.5">Qachon: {n.neededBy}</p>}
-          {n.managerName && (
-            <p className="text-xs text-slate-500 mt-0.5">Mudir: {n.managerName}</p>
-          )}
-          {n.coordinatorName && (
-            <p className="text-xs text-slate-500">Yuboruvchi: {n.coordinatorName}</p>
-          )}
+          >
+            {n.statusLabel || st.label}
+          </span>
         </div>
-        {statusBadge(n.status)}
-      </div>
 
-      {n.note && <p className="mt-2 text-sm text-slate-700">{n.note}</p>}
-      {n.rejectReason && <p className="mt-2 text-sm text-rose-700">Rad izohi: {n.rejectReason}</p>}
+        <div className="space-y-2 rounded-xl bg-muted/40 px-3 py-3">
+          <InfoRow
+            icon={<Building2 className="h-3.5 w-3.5" />}
+            label="Filial"
+            value={displayBranchTitle(n)}
+          />
+          <InfoRow
+            icon={<MapPin className="h-3.5 w-3.5" />}
+            label="Tuman"
+            value={
+              n.sourceType === "office" || isAsosiyOfisName(n.branchName)
+                ? "ASOSIY OFIS"
+                : n.district || "—"
+            }
+          />
+          <InfoRow
+            icon={<Clock className="h-3.5 w-3.5" />}
+            label="Smena"
+            value={n.shiftDisplay || "—"}
+          />
+          <InfoRow
+            icon={<User className="h-3.5 w-3.5" />}
+            label="Lavozim"
+            value={n.roleDisplay}
+          />
+          <InfoRow
+            icon={<Users className="h-3.5 w-3.5" />}
+            label="Xodim"
+            value={`${n.roleDisplay} ×${n.count}`}
+          />
+          <InfoRow
+            icon={<Send className="h-3.5 w-3.5" />}
+            label="Holat"
+            value={n.statusLabel || st.label}
+          />
+          {n.neededBy ? (
+            <InfoRow
+              icon={<CalendarDays className="h-3.5 w-3.5" />}
+              label="Qachon"
+              value={fmtNeededBy(n.neededBy)}
+            />
+          ) : null}
+          {n.managerName ? (
+            <InfoRow icon={<User className="h-3.5 w-3.5" />} label="Mudir" value={n.managerName} />
+          ) : null}
+          {n.coordinatorName ? (
+            <InfoRow
+              icon={<UserPlus className="h-3.5 w-3.5" />}
+              label="Yuboruvchi"
+              value={n.coordinatorName}
+            />
+          ) : null}
+        </div>
 
-      <div className="mt-3 grid gap-1 text-xs text-slate-500">
-        <p>Yuborilgan: {fmtDt(n.createdAt)}</p>
-        {n.foundAt && (
-          <p>
-            Yopilgan: {fmtDt(n.foundAt)}
-            {n.foundByName || n.hrApprovedByName
-              ? ` · ${n.foundByName || n.hrApprovedByName}`
-              : ""}
-          </p>
-        )}
-        {n.rejectedAt && <p>Rad: {fmtDt(n.rejectedAt)}</p>}
-      </div>
+        {n.note ? (
+          <div className="rounded-xl border border-border bg-card px-3 py-2 text-sm">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Izoh
+            </p>
+            <p className="mt-0.5 leading-snug text-foreground">{n.note}</p>
+          </div>
+        ) : null}
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
-        {isHr && open && (
-          <>
-            <Button
-              size="sm"
-              className="w-full bg-emerald-600 hover:bg-emerald-700 sm:w-auto"
-              disabled={busy}
-              onClick={() => onApprove(n.id)}
-            >
-              <CheckCircle2 className="mr-1 h-4 w-4" />
-              Topildi
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full border-rose-300 text-rose-700 hover:bg-rose-50 sm:w-auto"
-              disabled={busy}
-              onClick={() => onReject(n.id)}
-            >
-              <X className="mr-1 h-4 w-4" />
-              Rad etish
-            </Button>
-          </>
-        )}
-        {canCancelOwn && open && !isHr && (
-          <Button size="sm" variant="ghost" className="w-full sm:w-auto" disabled={busy} onClick={() => onCancel(n.id)}>
-            Bekor qilish
-          </Button>
-        )}
+        {n.rejectReason ? (
+          <div className="rounded-xl bg-rose-500/10 px-3 py-2 text-sm text-rose-800 dark:text-rose-200">
+            <p className="text-[11px] font-semibold uppercase tracking-wide opacity-80">
+              Rad izohi
+            </p>
+            <p className="mt-0.5 leading-snug">{n.rejectReason}</p>
+          </div>
+        ) : null}
+
+        {maps ? (
+          <div className="flex flex-wrap gap-2">
+            {n.googleMapsUrl ? (
+              <a
+                href={n.googleMapsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                Google Maps
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </a>
+            ) : null}
+            {n.yandexMapsUrl ? (
+              <a
+                href={n.yandexMapsUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-xl border border-border bg-background px-3 py-2 text-xs font-semibold text-primary hover:bg-muted"
+              >
+                <MapPin className="h-3.5 w-3.5" />
+                Yandex Maps
+                <ExternalLink className="h-3 w-3 opacity-60" />
+              </a>
+            ) : null}
+          </div>
+        ) : null}
+
+        <div className="grid gap-1 text-xs text-muted-foreground">
+          <p>Yuborilgan: {fmtDt(n.createdAt)}</p>
+          {n.foundAt ? (
+            <p className="text-emerald-700 dark:text-emerald-300">
+              Yopilgan: {fmtDt(n.foundAt)}
+              {n.foundByName || n.hrApprovedByName
+                ? ` · ${n.foundByName || n.hrApprovedByName}`
+                : ""}
+            </p>
+          ) : null}
+          {n.rejectedAt ? (
+            <p className="text-rose-700 dark:text-rose-300">Rad: {fmtDt(n.rejectedAt)}</p>
+          ) : null}
+        </div>
+
+        {(isHr && open) || (canCancelOwn && open && !isHr) ? (
+          <div className="grid grid-cols-2 gap-2 border-t border-border pt-3 sm:flex sm:flex-wrap">
+            {isHr && open ? (
+              <>
+                <Button
+                  size="sm"
+                  className="w-full gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 sm:w-auto"
+                  disabled={busy}
+                  onClick={() => onApprove(n.id)}
+                >
+                  <CheckCircle2 className="h-4 w-4" />
+                  Topildi
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="w-full gap-1.5 rounded-xl border-rose-300 text-rose-700 hover:bg-rose-50 dark:hover:bg-rose-950/40 sm:w-auto"
+                  disabled={busy}
+                  onClick={() => onReject(n.id)}
+                >
+                  <X className="h-4 w-4" />
+                  Rad etish
+                </Button>
+              </>
+            ) : null}
+            {canCancelOwn && open && !isHr ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="col-span-2 w-full gap-1.5 rounded-xl border-amber-400/60 bg-amber-500/10 font-semibold text-amber-900 hover:bg-amber-500/20 dark:border-amber-500/40 dark:text-amber-200 dark:hover:bg-amber-950/50 sm:col-span-1 sm:w-auto"
+                disabled={busy}
+                onClick={() => onCancel(n.id)}
+              >
+                <X className="h-4 w-4" />
+                Bekor qilish
+              </Button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
+    </article>
+  );
+}
+
+function EmptyState({ title, hint }: { title: string; hint: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center rounded-2xl border border-dashed border-border bg-muted/20 px-4 py-10 text-center">
+      <span className="mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+        <Inbox className="h-5 w-5" />
+      </span>
+      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="mt-1 max-w-xs text-xs text-muted-foreground">{hint}</p>
     </div>
   );
 }
@@ -157,16 +382,39 @@ export default function XodimKerakPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const isCoord = user?.role === "koordinator";
+  const isRecruiter = user?.role === "recruiter";
   const isOfficeHead =
     !!user &&
     (isDeptHeadRole(user.role) || hasFullPlatformAccess(user.role)) &&
     !isCoord;
-  const isHr = isHrManager(user?.role) || isDirectorRole(user?.role);
+  const isHr =
+    isHrRole(user?.role) ||
+    hasFullPlatformAccess(user?.role) ||
+    isDirectorRole(user?.role);
   const canCreate = isCoord || isOfficeHead;
+  const canView =
+    canCreate ||
+    isHr ||
+    isRecruiter ||
+    isHrManager(user?.role);
+
+  const [tab, setTab] = useState<TabId>("searching");
 
   const { data: branches = [], isLoading: loadingBranches } = useStaffNeedBranches(isCoord);
-  const { data: openNeeds = [], isLoading: loadingOpen } = useStaffNeeds("open");
-  const { data: history = [], isLoading: loadingHist } = useStaffNeeds("history");
+  const { data: searching = [], isLoading: loadingSearch } = useStaffNeeds("open", {
+    enabled: canView && tab === "searching",
+  });
+  const { data: found = [], isLoading: loadingFound } = useStaffNeeds("found", {
+    enabled: canView && tab === "found",
+  });
+  const { data: rejected = [], isLoading: loadingRejected } = useStaffNeeds("rejected", {
+    enabled: canView && tab === "rejected",
+  });
+
+  // Badge counts — parallel light fetches
+  const { data: openCountList = [] } = useStaffNeeds("open", { enabled: canView });
+  const { data: foundCountList = [] } = useStaffNeeds("found", { enabled: canView });
+  const { data: rejectedCountList = [] } = useStaffNeeds("rejected", { enabled: canView });
 
   const createMut = useCreateStaffNeed();
   const approveMut = useApproveStaffNeed();
@@ -176,7 +424,7 @@ export default function XodimKerakPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejectId, setRejectId] = useState<number | null>(null);
   const [rejectReason, setRejectReason] = useState("");
-  const [branchId, setBranchId] = useState<string>("");
+  const [branchId, setBranchId] = useState("");
   const [shiftType, setShiftType] = useState("one");
   const [roleNeeded, setRoleNeeded] = useState("farmasevt");
   const [count, setCount] = useState("1");
@@ -184,19 +432,42 @@ export default function XodimKerakPage() {
   const [positionText, setPositionText] = useState("");
   const [note, setNote] = useState("");
 
-  const openList = useMemo(
-    () =>
-      openNeeds.filter((n) =>
-        ["open", "pending_hr", "approved", "searching"].includes(n.status),
-      ),
-    [openNeeds],
-  );
+  const list = useMemo(() => {
+    if (tab === "found") return found;
+    if (tab === "rejected") return rejected;
+    return searching.filter((n) =>
+      ["open", "pending_hr", "approved", "searching"].includes(n.status),
+    );
+  }, [tab, searching, found, rejected]);
+
+  const loading =
+    tab === "searching" ? loadingSearch : tab === "found" ? loadingFound : loadingRejected;
 
   const busy =
     createMut.isPending ||
     approveMut.isPending ||
     rejectMut.isPending ||
     cancelMut.isPending;
+
+  const tabs: { id: TabId; label: string; count: number }[] = [
+    {
+      id: "searching",
+      label: "Qidirilmoqda",
+      count: openCountList.filter((n) =>
+        ["open", "pending_hr", "approved", "searching"].includes(n.status),
+      ).length,
+    },
+    { id: "found", label: "Topilgan", count: foundCountList.length },
+    { id: "rejected", label: "Rad etilgan", count: rejectedCountList.length },
+  ];
+
+  if (!canView) {
+    return (
+      <div className="mx-auto max-w-lg px-4 py-10 text-center text-sm text-destructive">
+        Bu bo‘limga ruxsat yo‘q.
+      </div>
+    );
+  }
 
   const submit = () => {
     const cnt = Math.max(1, Math.min(20, parseInt(count, 10) || 1));
@@ -217,12 +488,13 @@ export default function XodimKerakPage() {
         },
         {
           onSuccess: () => {
-            toast({ title: "Ariza ochildi — tizim va botda ko‘rinadi" });
+            toast({ title: "Ariza ochildi — HR va botga yuborildi" });
             setDialogOpen(false);
             setBranchId("");
             setNote("");
             setNeededBy("");
             setCount("1");
+            setTab("searching");
           },
           onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
         },
@@ -243,12 +515,13 @@ export default function XodimKerakPage() {
       },
       {
         onSuccess: () => {
-          toast({ title: "Ariza ochildi — tizimda ko‘rinadi" });
+          toast({ title: "Ariza ochildi — HR va botga yuborildi" });
           setDialogOpen(false);
           setPositionText("");
           setNote("");
           setNeededBy("");
           setCount("1");
+          setTab("searching");
         },
         onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
       },
@@ -268,6 +541,7 @@ export default function XodimKerakPage() {
           toast({ title: "Rad etildi — ariza yopildi" });
           setRejectId(null);
           setRejectReason("");
+          setTab("rejected");
         },
         onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
       },
@@ -275,110 +549,141 @@ export default function XodimKerakPage() {
   };
 
   return (
-    <div className="mx-auto max-w-4xl space-y-6 p-4 md:p-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="flex items-center gap-2 text-2xl font-bold text-slate-900">
-            <UserPlus className="h-7 w-7 text-sky-700" />
-            Xodim kerak
-          </h1>
-          <p className="mt-1 text-sm text-slate-600 max-w-xl">
-            {isCoord
-              ? "Filial → kim kerak → smena → nechta → Yuborish. Ariza darhol ochiladi."
-              : isOfficeHead
-                ? "Qanday xodim kerakligini yozing, nechtasini tanlang va yuboring."
-                : "Zayavkalar: Topildi yoki Rad etish — ikkalasi ham arizani yopadi."}
-          </p>
+    <div className="mx-auto max-w-3xl space-y-5 px-3 py-4 pb-28 sm:space-y-6 sm:px-6 sm:py-6">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+            <UserPlus className="h-5 w-5" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
+              Xodim kerak
+            </h1>
+            <p className="mt-0.5 text-sm leading-snug text-muted-foreground">
+              {isRecruiter
+                ? "Ochiq, topilgan va rad etilgan arizalar — botdagi bilan bir xil ma’lumot."
+                : isHr
+                  ? "Topildi / Rad etish — ikkalasi arizani yopadi. Har bir yangi ariza botga ham boradi."
+                  : canCreate
+                    ? "Filial, kim, smena, son — yuboring. Ariza darhol ochiladi."
+                    : "Xodim ehtiyojlari."}
+            </p>
+          </div>
         </div>
-        {canCreate && (
-          <Button onClick={() => setDialogOpen(true)}>
-            <Plus className="mr-1 h-4 w-4" />
+        {canCreate ? (
+          <Button
+            className="w-full shrink-0 gap-1.5 rounded-xl sm:w-auto"
+            onClick={() => setDialogOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
             Yangi so‘rov
           </Button>
-        )}
+        ) : null}
+      </header>
+
+      <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:overflow-visible sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="flex min-w-max gap-1 rounded-2xl border border-border bg-muted/30 p-1 sm:min-w-0 sm:w-full">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              onClick={() => setTab(t.id)}
+              className={cn(
+                "flex shrink-0 items-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition sm:min-w-0 sm:flex-1 sm:justify-center",
+                tab === t.id
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              <span className="whitespace-nowrap">{t.label}</span>
+              <span
+                className={cn(
+                  "rounded-full px-1.5 py-0.5 text-[11px] tabular-nums",
+                  tab === t.id ? "bg-white/20" : "bg-muted text-muted-foreground",
+                )}
+              >
+                {t.count}
+              </span>
+            </button>
+          ))}
+        </div>
       </div>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-sky-800">
-          Zayavkalar ({openList.length})
-        </h2>
-        {loadingOpen ? (
-          <Skeleton className="h-24 w-full" />
-        ) : openList.length === 0 ? (
-          <p className="text-sm text-slate-500">Hozircha ochiq ariza yo‘q.</p>
+        {loading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-40 w-full rounded-2xl" />
+            <Skeleton className="h-32 w-full rounded-2xl" />
+          </div>
+        ) : list.length === 0 ? (
+          <EmptyState
+            title={
+              tab === "searching"
+                ? "Qidirilayotgan ariza yo‘q"
+                : tab === "found"
+                  ? "Topilgan yo‘q"
+                  : "Rad etilgan yo‘q"
+            }
+            hint="Birinchi yuborilgan yuqorida, oxirgisi pastida."
+          />
         ) : (
-          openList.map((n) => (
-            <NeedCard
-              key={n.id}
-              n={n}
-              isHr={isHr}
-              canCancelOwn={canCreate && n.coordinatorUserId === user?.id}
-              busy={busy}
-              onApprove={(id) =>
-                approveMut.mutate(
-                  { id },
-                  {
-                    onSuccess: () => toast({ title: "Topildi — ariza yopildi" }),
-                    onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
-                  },
-                )
-              }
-              onReject={(id) => {
-                setRejectId(id);
-                setRejectReason("");
-              }}
-              onCancel={(id) =>
-                cancelMut.mutate(id, {
-                  onSuccess: () => toast({ title: "Bekor qilindi" }),
-                  onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
-                })
-              }
-            />
-          ))
-        )}
-      </section>
-
-      <section className="space-y-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-          Yopilgan ({history.length})
-        </h2>
-        {loadingHist ? (
-          <Skeleton className="h-16 w-full" />
-        ) : history.length === 0 ? (
-          <p className="text-sm text-slate-400">Hali yopilgan so‘rov yo‘q.</p>
-        ) : (
-          history.slice(0, 40).map((n) => (
-            <NeedCard
-              key={n.id}
-              n={n}
-              isHr={false}
-              canCancelOwn={false}
-              busy={false}
-              onApprove={() => {}}
-              onReject={() => {}}
-              onCancel={() => {}}
-            />
-          ))
+          <div className="space-y-3">
+            {list.map((n, i) => (
+              <NeedCard
+                key={n.id}
+                n={n}
+                index={i + 1}
+                isHr={isHr}
+                canCancelOwn={canCreate && n.coordinatorUserId === user?.id}
+                busy={busy}
+                onApprove={(id) =>
+                  approveMut.mutate(
+                    { id },
+                    {
+                      onSuccess: () => {
+                        toast({ title: "Topildi — ariza yopildi" });
+                        setTab("found");
+                      },
+                      onError: (e: Error) =>
+                        toast({ title: e.message, variant: "destructive" }),
+                    },
+                  )
+                }
+                onReject={(id) => {
+                  setRejectId(id);
+                  setRejectReason("");
+                }}
+                onCancel={(id) =>
+                  cancelMut.mutate(id, {
+                    onSuccess: () => toast({ title: "Bekor qilindi" }),
+                    onError: (e: Error) =>
+                      toast({ title: e.message, variant: "destructive" }),
+                  })
+                }
+              />
+            ))}
+          </div>
         )}
       </section>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="max-h-[90vh] overflow-y-auto rounded-2xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>
-              {isCoord ? "Yangi so‘rov" : "Yangi so‘rov (ofis)"}
+            <DialogTitle className="flex items-center gap-2">
+              <UserPlus className="h-5 w-5 text-primary" />
+              {isCoord ? "Yangi so‘rov" : "Yangi so‘rov — ASOSIY OFIS"}
             </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3 py-2">
+          <div className="space-y-3.5 py-1">
             {isCoord ? (
               <>
                 <div>
-                  <label className="text-xs font-medium text-slate-600">1. Filial</label>
+                  <label className="text-xs font-semibold text-muted-foreground">1. Filial</label>
                   {loadingBranches ? (
-                    <Skeleton className="mt-1 h-10 w-full" />
+                    <Skeleton className="mt-1.5 h-10 w-full rounded-xl" />
                   ) : (
                     <Select value={branchId} onValueChange={setBranchId}>
-                      <SelectTrigger className="mt-1">
+                      <SelectTrigger className="mt-1.5 rounded-xl">
                         <SelectValue placeholder="Tanlang…" />
                       </SelectTrigger>
                       <SelectContent>
@@ -393,9 +698,9 @@ export default function XodimKerakPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-medium text-slate-600">2. Kim kerak</label>
+                    <label className="text-xs font-semibold text-muted-foreground">2. Kim</label>
                     <Select value={roleNeeded} onValueChange={setRoleNeeded}>
-                      <SelectTrigger className="mt-1">
+                      <SelectTrigger className="mt-1.5 rounded-xl">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -406,9 +711,9 @@ export default function XodimKerakPage() {
                     </Select>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-slate-600">3. Smena</label>
+                    <label className="text-xs font-semibold text-muted-foreground">3. Smena</label>
                     <Select value={shiftType} onValueChange={setShiftType}>
-                      <SelectTrigger className="mt-1">
+                      <SelectTrigger className="mt-1.5 rounded-xl">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -422,9 +727,9 @@ export default function XodimKerakPage() {
               </>
             ) : (
               <div>
-                <label className="text-xs font-medium text-slate-600">1. Qanday xodim?</label>
+                <label className="text-xs font-semibold text-muted-foreground">1. Qanday xodim?</label>
                 <Textarea
-                  className="mt-1"
+                  className="mt-1.5 rounded-xl"
                   rows={3}
                   value={positionText}
                   onChange={(e) => setPositionText(e.target.value)}
@@ -434,11 +739,11 @@ export default function XodimKerakPage() {
             )}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-semibold text-muted-foreground">
                   {isCoord ? "4. Nechta" : "2. Nechta"}
                 </label>
                 <Input
-                  className="mt-1"
+                  className="mt-1.5 rounded-xl"
                   type="number"
                   min={1}
                   max={20}
@@ -447,21 +752,22 @@ export default function XodimKerakPage() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-slate-600">
+                <label className="text-xs font-semibold text-muted-foreground">
                   {isCoord ? "5. Qachon" : "3. Qachon"}
                 </label>
                 <Input
-                  className="mt-1"
+                  className="mt-1.5 rounded-xl"
+                  type="date"
                   value={neededBy}
+                  min={new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" })}
                   onChange={(e) => setNeededBy(e.target.value)}
-                  placeholder="ixtiyoriy"
                 />
               </div>
             </div>
             <div>
-              <label className="text-xs font-medium text-slate-600">Izoh (ixtiyoriy)</label>
+              <label className="text-xs font-semibold text-muted-foreground">Izoh (ixtiyoriy)</label>
               <Textarea
-                className="mt-1"
+                className="mt-1.5 rounded-xl"
                 rows={2}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
@@ -469,11 +775,15 @@ export default function XodimKerakPage() {
             </div>
           </div>
           <DialogFooter className="grid grid-cols-2 gap-2 sm:flex">
-            <Button variant="outline" className="w-full" onClick={() => setDialogOpen(false)}>
+            <Button
+              variant="outline"
+              className="w-full rounded-xl"
+              onClick={() => setDialogOpen(false)}
+            >
               Bekor
             </Button>
             <Button
-              className="w-full"
+              className="w-full rounded-xl"
               disabled={busy || (isCoord ? !branchId : positionText.trim().length < 3)}
               onClick={submit}
             >
@@ -492,19 +802,22 @@ export default function XodimKerakPage() {
           }
         }}
       >
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="rounded-2xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Rad etish — izoh majburiy</DialogTitle>
+            <DialogTitle>Rad etish</DialogTitle>
           </DialogHeader>
+          <p className="text-sm text-muted-foreground">Izoh majburiy — ariza yopiladi.</p>
           <Textarea
+            className="rounded-xl"
             rows={4}
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
             placeholder="Nima uchun rad etilayotganini yozing…"
           />
-          <DialogFooter>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:flex">
             <Button
               variant="outline"
+              className="w-full rounded-xl"
               onClick={() => {
                 setRejectId(null);
                 setRejectReason("");
@@ -512,8 +825,12 @@ export default function XodimKerakPage() {
             >
               Bekor
             </Button>
-            <Button disabled={busy || rejectReason.trim().length < 3} onClick={submitReject}>
-              Rad etish va yopish
+            <Button
+              className="w-full rounded-xl bg-rose-600 hover:bg-rose-700"
+              disabled={busy || rejectReason.trim().length < 3}
+              onClick={submitReject}
+            >
+              Rad etish
             </Button>
           </DialogFooter>
         </DialogContent>

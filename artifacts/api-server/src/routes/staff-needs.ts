@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   db,
   staffNeedRequestsTable,
@@ -23,7 +23,12 @@ import {
   isDeptHeadRole,
 } from "../lib/roles";
 import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
-import { displayBranchName, stripGpsSuffix } from "../lib/geo-location";
+import { displayBranchName, stripGpsSuffix, gpsFromLocationField } from "../lib/geo-location";
+import { districtFromGps } from "../lib/filial-districts";
+import {
+  formatStaffNeedCardLines,
+  formatStaffNeedTelegramHtml,
+} from "../lib/filial-staffing-monitor";
 
 const router: IRouter = Router();
 
@@ -74,11 +79,33 @@ async function actorCoordinator(userId: number) {
   return rows[0] ?? null;
 }
 
+function statusLabelOf(status: string): string {
+  if (status === "open" || status === "pending_hr" || status === "approved" || status === "searching") {
+    return "Ochiq ariza";
+  }
+  if (status === "found") return "Topildi";
+  if (status === "rejected") return "Rad etilgan";
+  if (status === "cancelled") return "Bekor";
+  return status;
+}
+
+function mapsUrls(lat: number | null, lng: number | null) {
+  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return { googleMapsUrl: null as string | null, yandexMapsUrl: null as string | null };
+  }
+  return {
+    googleMapsUrl: `https://www.google.com/maps?q=${lat},${lng}`,
+    yandexMapsUrl: `https://yandex.com/maps/?ll=${lng}%2C${lat}&z=16&pt=${lng},${lat}`,
+  };
+}
+
 async function enrich(row: typeof staffNeedRequestsTable.$inferSelect) {
   let mgr: {
     id: number;
     fullName: string;
     location: string | null;
+    latitude: number | null;
+    longitude: number | null;
   } | null = null;
   if (row.managerEmployeeId) {
     const [m] = await db
@@ -86,6 +113,8 @@ async function enrich(row: typeof staffNeedRequestsTable.$inferSelect) {
         id: employeesTable.id,
         fullName: employeesTable.fullName,
         location: employeesTable.location,
+        latitude: employeesTable.latitude,
+        longitude: employeesTable.longitude,
       })
       .from(employeesTable)
       .where(eq(employeesTable.id, row.managerEmployeeId))
@@ -119,10 +148,27 @@ async function enrich(row: typeof staffNeedRequestsTable.$inferSelect) {
     foundByName = u?.fullName ?? null;
   }
 
-  const isOffice = row.sourceType === "office";
+  const isOffice =
+    row.sourceType === "office" ||
+    /^(ofis\s*\/\s*bo['‘]?lim|asosiy\s*ofis|ofis)$/i.test(String(row.branchLocation || "").trim());
   const branch = isOffice
-    ? "Ofis / bo‘lim"
+    ? "ASOSIY OFIS"
     : branchNameOf(row.branchLocation || mgr?.location, mgr?.fullName || "Filial");
+
+  const fromField = gpsFromLocationField(mgr?.location);
+  const lat =
+    typeof mgr?.latitude === "number" && Number.isFinite(mgr.latitude)
+      ? mgr.latitude
+      : fromField?.lat ?? null;
+  const lng =
+    typeof mgr?.longitude === "number" && Number.isFinite(mgr.longitude)
+      ? mgr.longitude
+      : fromField?.lng ?? null;
+  const district = isOffice ? "ASOSIY OFIS" : districtFromGps(lat, lng);
+  const maps = mapsUrls(lat, lng);
+  const roleDisplay = roleLabelOf(row.roleNeeded, row.positionText);
+  const shiftDisplay = isOffice ? "—" : shiftLabelOf(row.shiftType, row.shiftLabel);
+  const statusLabel = statusLabelOf(row.status);
 
   return {
     ...row,
@@ -133,13 +179,33 @@ async function enrich(row: typeof staffNeedRequestsTable.$inferSelect) {
     foundAt: row.foundAt?.toISOString() ?? null,
     rejectedAt: row.rejectedAt?.toISOString() ?? null,
     branchName: branch,
+    district,
+    latitude: lat,
+    longitude: lng,
+    googleMapsUrl: maps.googleMapsUrl,
+    yandexMapsUrl: maps.yandexMapsUrl,
     managerName: mgr?.fullName ?? null,
     coordinatorName: creator?.fullName ?? null,
     creatorRole: creator?.role ?? null,
     hrApprovedByName: hrName,
     foundByName,
-    shiftDisplay: isOffice ? "—" : shiftLabelOf(row.shiftType, row.shiftLabel),
-    roleDisplay: roleLabelOf(row.roleNeeded, row.positionText),
+    shiftDisplay,
+    roleDisplay,
+    statusLabel,
+    cardText: formatStaffNeedCardLines({
+      branch,
+      district,
+      shift: shiftDisplay,
+      roleLabel: roleDisplay,
+      count: row.count,
+      statusLabel,
+      neededBy: row.neededBy,
+      note: row.note,
+      rejectReason: row.rejectReason,
+      mudirName: mgr?.fullName ?? null,
+      coordinatorName: creator?.fullName ?? null,
+      mapsUrl: maps.googleMapsUrl || maps.yandexMapsUrl,
+    }),
   };
 }
 
@@ -246,9 +312,9 @@ router.get("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<v
   let rows = await db
     .select()
     .from(staffNeedRequestsTable)
-    .orderBy(desc(staffNeedRequestsTable.createdAt));
+    .orderBy(asc(staffNeedRequestsTable.createdAt));
 
-  if (status === "open") {
+  if (status === "open" || status === "searching" || status === "qidirilmoqda") {
     rows = rows.filter((r) => (OPEN_STATUSES as readonly string[]).includes(r.status));
   } else if (status === "pending_hr") {
     rows = rows.filter((r) => r.status === "pending_hr" || r.status === "open");
@@ -258,6 +324,10 @@ router.get("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<v
     );
   } else if (status === "history") {
     rows = rows.filter((r) => ["found", "rejected", "cancelled"].includes(r.status));
+  } else if (status === "found" || status === "topilgan") {
+    rows = rows.filter((r) => r.status === "found");
+  } else if (status === "rejected" || status === "rad") {
+    rows = rows.filter((r) => r.status === "rejected");
   } else if (status) {
     rows = rows.filter((r) => r.status === status);
   }
@@ -373,34 +443,48 @@ router.post("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<
       })
       .returning();
 
+    const enriched = await enrich(created);
+    const notifyText = formatStaffNeedCardLines({
+      branch: enriched.branchName,
+      district: enriched.district,
+      shift: enriched.shiftDisplay,
+      roleLabel: enriched.roleDisplay,
+      count,
+      statusLabel: "Ochiq ariza",
+      neededBy,
+      note,
+      mudirName: enriched.managerName,
+      coordinatorName: enriched.coordinatorName,
+      mapsUrl: enriched.googleMapsUrl || enriched.yandexMapsUrl,
+    });
+
     await notifyByRoles({
       roles: [...HR_ROLES, "admin", "recruiter"],
-      text: `Xodim kerak (ochiq): ${branch} · ${shift} · ${roleL} ×${count}`,
+      text: notifyText,
       type: "new_request",
       linkUrl: "/xodim-kerak",
     });
 
     try {
-      const { notifyFilialRecruitersStaffNeed } = await import("../lib/filial-recruiter-notify");
-      await notifyFilialRecruitersStaffNeed({
-        employee: {
-          fullName: `${roleL} ×${count}`,
-          location: branch,
-          latitude: null,
-          longitude: null,
-          orgRole:
-            roleNeeded === "mudir" ? "manager" : roleNeeded === "stajyor" ? "intern" : "pharmacist",
-          shiftType,
-          shiftLabel: shift,
-        },
-        branchLocation: branch,
-        status: "need_hire",
+      const { notifyFilialRecruitersNewStaffNeed } = await import("../lib/filial-recruiter-notify");
+      await notifyFilialRecruitersNewStaffNeed({
+        html: formatStaffNeedTelegramHtml({
+          branch: enriched.branchName,
+          district: enriched.district,
+          shift: enriched.shiftDisplay,
+          roleLabel: enriched.roleDisplay,
+          count,
+          statusLabel: "Ochiq ariza",
+          neededBy,
+          note,
+          mapsUrl: enriched.googleMapsUrl || enriched.yandexMapsUrl,
+        }),
       });
     } catch (err) {
       console.error("[staff-needs] notify", err);
     }
 
-    res.status(201).json(await enrich(created));
+    res.status(201).json(enriched);
     return;
   }
 
@@ -423,13 +507,13 @@ router.post("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<
       departmentId: deptId,
       position: positionText,
       count,
-      description: `Ofis / bo‘lim — Xodim kerak.`,
+      description: `ASOSIY OFIS — Xodim kerak.`,
       requirements: null,
       salaryRange: null,
       deadline: null,
       reason: `Lavozim: ${positionText}. Son: ${count}.${neededBy ? ` Kerak: ${neededBy}.` : ""}${note ? ` Izoh: ${note}` : ""}`,
-      city: "Ofis",
-      district: "Ofis",
+      city: "ASOSIY OFIS",
+      district: "ASOSIY OFIS",
       priority: "urgent",
       status: "submitted",
       createdById: req.userId,
@@ -441,7 +525,7 @@ router.post("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<
     .values({
       coordinatorUserId: req.userId,
       managerEmployeeId: null,
-      branchLocation: "Ofis / bo‘lim",
+      branchLocation: "ASOSIY OFIS",
       shiftType: "one",
       shiftLabel: null,
       roleNeeded: "custom",
@@ -455,21 +539,52 @@ router.post("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<
     })
     .returning();
 
+  const enrichedOffice = await enrich(created);
+  const officeText = formatStaffNeedCardLines({
+    branch: enrichedOffice.branchName,
+    district: enrichedOffice.district,
+    shift: enrichedOffice.shiftDisplay,
+    roleLabel: enrichedOffice.roleDisplay,
+    count,
+    statusLabel: "Ochiq ariza",
+    neededBy,
+    note,
+    coordinatorName: enrichedOffice.coordinatorName,
+  });
+
   await notifyByRoles({
     roles: [...HR_ROLES, "admin", "recruiter"],
-    text: `Ofis xodim kerak (ochiq): ${positionText} ×${count}`,
+    text: officeText,
     type: "new_request",
     linkUrl: "/xodim-kerak",
   });
 
-  res.status(201).json(await enrich(created));
+  try {
+    const { notifyFilialRecruitersNewStaffNeed } = await import("../lib/filial-recruiter-notify");
+    await notifyFilialRecruitersNewStaffNeed({
+      html: formatStaffNeedTelegramHtml({
+        branch: enrichedOffice.branchName,
+        district: enrichedOffice.district,
+        shift: enrichedOffice.shiftDisplay,
+        roleLabel: enrichedOffice.roleDisplay,
+        count,
+        statusLabel: "Ochiq ariza",
+        neededBy,
+        note,
+      }),
+    });
+  } catch (err) {
+    console.error("[staff-needs] office notify", err);
+  }
+
+  res.status(201).json(enrichedOffice);
 });
 
 /** HR tasdiqlash = Topildi — ariza yopiladi, botdan yo‘qoladi */
 router.post("/staff-needs/:id/approve", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (!isHrManager(role) && !isDirectorRole(role)) {
-    res.status(403).json({ error: "Faqat HR menejer tasdiqlaydi" });
+  if (!isHrManager(role) && !isDirectorRole(role) && !hasFullPlatformAccess(role)) {
+    res.status(403).json({ error: "Faqat HR menejer / admin tasdiqlaydi" });
     return;
   }
 
@@ -520,8 +635,8 @@ router.post("/staff-needs/:id/approve", requireAuth, async (req: AuthRequest, re
 
 router.post("/staff-needs/:id/reject", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
-  if (!isHrManager(role) && !isDirectorRole(role)) {
-    res.status(403).json({ error: "Faqat HR menejer" });
+  if (!isHrManager(role) && !isDirectorRole(role) && !hasFullPlatformAccess(role)) {
+    res.status(403).json({ error: "Faqat HR menejer / admin" });
     return;
   }
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);

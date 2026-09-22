@@ -1,5 +1,5 @@
-import { inArray, sql } from "drizzle-orm";
-import { db, employeesTable, staffNeedRequestsTable } from "@workspace/db";
+import { and, eq, gte, inArray, isNotNull, sql } from "drizzle-orm";
+import { db, employeesTable, staffNeedRequestsTable, usersTable } from "@workspace/db";
 import { displayBranchName, gpsFromLocationField, stripGpsSuffix } from "./geo-location";
 import { districtFromGps, sortDistrictNames } from "./filial-districts";
 import { loadFilialBranches } from "./filial-bot-data";
@@ -196,13 +196,13 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
     const mgr = n.managerEmployeeId != null ? mgrById.get(n.managerEmployeeId) : undefined;
     const isOffice = (n as { sourceType?: string }).sourceType === "office";
     const branch = isOffice
-      ? "Ofis / bo‘lim"
+      ? "ASOSIY OFIS"
       : branchLabel(n.branchLocation || mgr?.location, mgr?.fullName || "Filial");
     const card = isOffice
       ? null
       : branchById.get(n.managerEmployeeId!) || branchByName.get(branch.toLowerCase()) || null;
     const district = isOffice
-      ? "Ofis"
+      ? "ASOSIY OFIS"
       : resolveDistrict(
           mgr?.latitude,
           mgr?.longitude,
@@ -405,6 +405,66 @@ export function buildDismissAlertText(opts: {
   ].join("\n");
 }
 
+/** Platforma + bot — bir xil to‘liq matn (plain) */
+export function formatStaffNeedCardLines(opts: {
+  branch: string;
+  district: string;
+  shift: string;
+  roleLabel: string;
+  count: number;
+  statusLabel: string;
+  neededBy?: string | null;
+  note?: string | null;
+  rejectReason?: string | null;
+  mudirName?: string | null;
+  coordinatorName?: string | null;
+  mapsUrl?: string | null;
+}): string {
+  const lines = [
+    `🏢 Filial: ${opts.branch}`,
+    `🗺 Tuman: ${opts.district}`,
+    `🕐 Smena: ${opts.shift}`,
+    `👤 Lavozim: ${opts.roleLabel}`,
+    `🧾 Xodim: ${opts.roleLabel} ×${opts.count}`,
+    `📌 Holat: ${opts.statusLabel}`,
+  ];
+  if (opts.neededBy) lines.push(`📅 Qachon: ${opts.neededBy}`);
+  if (opts.mudirName) lines.push(`Mudir: ${opts.mudirName}`);
+  if (opts.coordinatorName) lines.push(`Yuboruvchi: ${opts.coordinatorName}`);
+  if (opts.note) lines.push(`Izoh: ${opts.note}`);
+  if (opts.rejectReason) lines.push(`Rad izohi: ${opts.rejectReason}`);
+  if (opts.mapsUrl) lines.push(`📍 Xarita: ${opts.mapsUrl}`);
+  return lines.join("\n");
+}
+
+export function formatStaffNeedTelegramHtml(opts: {
+  branch: string;
+  district: string;
+  shift: string;
+  roleLabel: string;
+  count: number;
+  statusLabel: string;
+  neededBy?: string | null;
+  note?: string | null;
+  mapsUrl?: string | null;
+}): string {
+  const lines = [
+    "🔴 <b>Xodim kerak — yangi ariza</b>",
+    "",
+    `🏢 <b>Filial:</b> ${esc(opts.branch)}`,
+    `🗺 <b>Tuman:</b> ${esc(opts.district)}`,
+    `🕐 <b>Smena:</b> ${esc(opts.shift)}`,
+    `👤 <b>Lavozim:</b> ${esc(opts.roleLabel)}`,
+    `🧾 <b>Xodim:</b> ${esc(opts.roleLabel)} ×${opts.count}`,
+    `📌 <b>Holat:</b> ${esc(opts.statusLabel)}`,
+  ];
+  if (opts.neededBy) lines.push(`📅 <b>Qachon:</b> ${esc(opts.neededBy)}`);
+  if (opts.note) lines.push(`📝 <b>Izoh:</b> ${esc(opts.note)}`);
+  if (opts.mapsUrl) lines.push(`📍 <a href="${esc(opts.mapsUrl)}">Xarita</a>`);
+  lines.push("", "<i>Platforma: /xodim-kerak</i>");
+  return lines.join("\n");
+}
+
 export async function resolveEmployeePlace(employee: {
   fullName: string;
   location?: string | null;
@@ -523,3 +583,155 @@ export function formatNeedBranchesSummary(groups: BranchNeedGroup[]): string {
   ].join("\n");
 }
 
+
+
+export type ClosedStaffNeedKind = "found" | "rejected";
+
+export type ClosedStaffNeedRow = {
+  id: number;
+  branch: string;
+  district: string;
+  shift: string;
+  roleLabel: string;
+  count: number;
+  neededBy: string | null;
+  note: string | null;
+  rejectReason: string | null;
+  mudirName: string | null;
+  coordinatorName: string | null;
+  sourceType: string;
+  createdAtLabel: string;
+  closedAtLabel: string;
+  status: ClosedStaffNeedKind;
+};
+
+export type ClosedStaffNeedReport = {
+  kind: ClosedStaffNeedKind;
+  generatedAt: Date;
+  generatedAtLabel: string;
+  periodLabel: string;
+  rows: ClosedStaffNeedRow[];
+};
+
+/** Topilgan / Topilmagan — joriy oy (Toshkent) yopilgan arizalar */
+export async function loadClosedStaffNeedReport(
+  kind: ClosedStaffNeedKind,
+): Promise<ClosedStaffNeedReport> {
+  const now = new Date();
+  const monthKey = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+  }).format(now);
+  const monthStart = new Date(`${monthKey}-01T00:00:00+05:00`);
+
+  const closedCol =
+    kind === "found" ? staffNeedRequestsTable.foundAt : staffNeedRequestsTable.rejectedAt;
+
+  const [needs, branches] = await Promise.all([
+    db
+      .select()
+      .from(staffNeedRequestsTable)
+      .where(and(eq(staffNeedRequestsTable.status, kind), isNotNull(closedCol), gte(closedCol, monthStart)))
+      .orderBy(sql`${closedCol} DESC NULLS LAST`),
+    loadFilialBranches(true),
+  ]);
+
+  const mgrIds = [
+    ...new Set(
+      needs
+        .map((n) => n.managerEmployeeId)
+        .filter((id): id is number => id != null && Number.isFinite(id)),
+    ),
+  ];
+  const senderIds = [
+    ...new Set(
+      needs
+        .map((n) => n.coordinatorUserId)
+        .filter((id): id is number => id != null && Number.isFinite(id)),
+    ),
+  ];
+
+  const [managers, senders] = await Promise.all([
+    mgrIds.length
+      ? db
+          .select({
+            id: employeesTable.id,
+            fullName: employeesTable.fullName,
+            location: employeesTable.location,
+            latitude: employeesTable.latitude,
+            longitude: employeesTable.longitude,
+          })
+          .from(employeesTable)
+          .where(inArray(employeesTable.id, mgrIds))
+      : Promise.resolve([]),
+    senderIds.length
+      ? db
+          .select({ id: usersTable.id, fullName: usersTable.fullName })
+          .from(usersTable)
+          .where(inArray(usersTable.id, senderIds))
+      : Promise.resolve([]),
+  ]);
+
+  const mgrById = new Map(managers.map((m) => [m.id, m]));
+  const senderById = new Map(senders.map((s) => [s.id, s.fullName]));
+  const branchById = new Map(branches.map((b) => [b.id, b]));
+  const branchByName = new Map(branches.map((b) => [b.name.toLowerCase(), b]));
+  const branchDistrictByName = new Map(branches.map((b) => [b.name.toLowerCase(), b.district]));
+
+  const rows: ClosedStaffNeedRow[] = [];
+  for (const n of needs) {
+    const mgr = n.managerEmployeeId != null ? mgrById.get(n.managerEmployeeId) : undefined;
+    const isOffice = (n as { sourceType?: string }).sourceType === "office";
+    const branch = isOffice
+      ? "ASOSIY OFIS"
+      : branchLabel(n.branchLocation || mgr?.location, mgr?.fullName || "Filial");
+    const card = isOffice
+      ? null
+      : branchById.get(n.managerEmployeeId!) || branchByName.get(branch.toLowerCase()) || null;
+    const district = isOffice
+      ? "ASOSIY OFIS"
+      : resolveDistrict(
+          mgr?.latitude,
+          mgr?.longitude,
+          n.branchLocation || mgr?.location,
+          branchDistrictByName,
+          branch,
+        );
+    const rLabel =
+      n.roleNeeded === "custom" && (n as { positionText?: string | null }).positionText
+        ? String((n as { positionText?: string | null }).positionText)
+        : roleLabel(n.roleNeeded);
+    const closedRaw = kind === "found" ? n.foundAt : n.rejectedAt;
+    const closedAt =
+      closedRaw instanceof Date ? closedRaw : closedRaw ? new Date(closedRaw) : n.updatedAt;
+    const created =
+      n.createdAt instanceof Date ? n.createdAt : n.createdAt ? new Date(n.createdAt) : closedAt;
+
+    rows.push({
+      id: n.id,
+      branch: card?.name || branch,
+      district,
+      shift: isOffice ? "—" : formatShiftLabel(n.shiftLabel, n.shiftType),
+      roleLabel: rLabel,
+      count: Math.max(1, n.count || 1),
+      neededBy: (n as { neededBy?: string | null }).neededBy ?? null,
+      note: n.note ?? null,
+      rejectReason: n.rejectReason ?? null,
+      mudirName: card?.mudirName ?? mgr?.fullName ?? null,
+      coordinatorName: senderById.get(n.coordinatorUserId) ?? card?.coordinatorName ?? null,
+      sourceType: (n as { sourceType?: string }).sourceType || "pharmacy",
+      createdAtLabel: formatTashkent(created),
+      closedAtLabel: formatTashkent(closedAt),
+      status: kind,
+    });
+  }
+
+  return {
+    kind,
+    generatedAt: now,
+    generatedAtLabel: formatTashkent(now),
+    periodLabel: `${monthKey} (joriy oy)`,
+    rows,
+  };
+}

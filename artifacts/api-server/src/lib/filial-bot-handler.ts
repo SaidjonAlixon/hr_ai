@@ -28,9 +28,10 @@ import {
   formatNeedBranchesSummary,
   groupNeedsByBranch,
   loadStaffingMonitorReport,
+  loadClosedStaffNeedReport,
   type BranchNeedGroup,
 } from "./filial-staffing-monitor";
-import { buildStaffingMonitorExcel } from "./filial-staffing-monitor-excel";
+import { buildStaffingMonitorExcel, buildClosedStaffNeedExcel } from "./filial-staffing-monitor-excel";
 import { renderStaffingMonitorPng } from "./filial-staffing-monitor-image";
 import {
   filialAnswerCallback,
@@ -55,6 +56,8 @@ const BTN_SEND_LOCATION = "📍 Joyimni yuborish";
 const BTN_CANCEL_BROADCAST = "❌ Bekor qilish";
 const BTN_CANCEL_NEAREST = "❌ Bekor";
 const BTN_INFO = "📊 Ma’lumot";
+const BTN_FOUND = "✅ Topilgan";
+const BTN_NOT_FOUND = "❌ Topilmagan";
 const BTN_NEED_BRANCHES = "🔴 Xodim kerak filiallar";
 const BTN_NO_GPS = "📍 GPS kiritilmagan";
 const BTN_RECRUITERS = "👑 Admin rekruterlar";
@@ -247,6 +250,7 @@ function userMainKeyboard(access: BotAccess | boolean) {
 
   if (recruiter || admin) {
     rows.push([{ text: BTN_INFO }]);
+    rows.push([{ text: BTN_FOUND }, { text: BTN_NOT_FOUND }]);
     rows.push([{ text: BTN_NEED_BRANCHES }]);
     rows.push([{ text: BTN_NO_GPS }]);
   }
@@ -362,6 +366,36 @@ async function sendLiveStaffingMonitor(chatId: number) {
   } catch (err) {
     console.error("[filial-bot] live monitor", err);
     await filialSendMessage(chatId, "⚠️ Monitoring yuklanmadi. Keyinroq urinib ko‘ring.");
+  }
+}
+
+async function sendClosedStaffNeedExcel(chatId: number, kind: "found" | "rejected") {
+  const label = kind === "found" ? "Topilgan" : "Topilmagan";
+  await filialSendMessage(chatId, `⏳ ${label} Excel tayyorlanmoqda (joriy oy)…`);
+  try {
+    const report = await loadClosedStaffNeedReport(kind);
+    if (!report.rows.length) {
+      await filialSendMessage(
+        chatId,
+        kind === "found"
+          ? "ℹ️ Bu oyda hali <b>Topilgan</b> yozuv yo‘q."
+          : "ℹ️ Bu oyda hali <b>Topilmagan</b> (rad) yozuv yo‘q.",
+        { parse_mode: "HTML" },
+      );
+      return;
+    }
+    const excel = await buildClosedStaffNeedExcel(report);
+    const caption =
+      kind === "found"
+        ? `✅ Topilgan · ${excel.count} ta · ${report.periodLabel}\nFilial, smena, kim, izoh — Excelda`
+        : `❌ Topilmagan · ${excel.count} ta · ${report.periodLabel}\nRad izohi to‘liq — Excelda`;
+    await filialSendDocument(chatId, excel.buffer, excel.filename, {
+      mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      caption,
+    });
+  } catch (err) {
+    console.error("[filial-bot] closed excel", kind, err);
+    await filialSendMessage(chatId, `⚠️ ${label} Excel yuklanmadi. Qayta urinib ko‘ring.`);
   }
 }
 
@@ -1156,6 +1190,30 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
 
     if (
       (recruiter || admin) &&
+      (text === BTN_FOUND || cmd === "/topilgan")
+    ) {
+      await trackUser(user, chatId, { action: "found_excel" });
+      await sendClosedStaffNeedExcel(chatId, "found");
+      await filialSendMessage(chatId, "Asosiy menyu:", {
+        reply_markup: userMainKeyboard(access),
+      });
+      return;
+    }
+
+    if (
+      (recruiter || admin) &&
+      (text === BTN_NOT_FOUND || cmd === "/topilmagan")
+    ) {
+      await trackUser(user, chatId, { action: "not_found_excel" });
+      await sendClosedStaffNeedExcel(chatId, "rejected");
+      await filialSendMessage(chatId, "Asosiy menyu:", {
+        reply_markup: userMainKeyboard(access),
+      });
+      return;
+    }
+
+    if (
+      (recruiter || admin) &&
       (text === BTN_NEED_BRANCHES || cmd === "/kerak" || cmd === "/ehtiyoj")
     ) {
       await trackUser(user, chatId, { action: "need_branches" });
@@ -1323,6 +1381,7 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
           `• ${BTN_BROADCAST} — hammaga xabar`,
           `• ${BTN_RECRUITERS} — rekruterlar roli`,
           `• ${BTN_INFO} — xodim ehtiyoji monitoring`,
+          `• ${BTN_FOUND} / ${BTN_NOT_FOUND} — yopilgan Excel`,
           `• ${BTN_BRANCHES} — filiallar`,
           "",
           `Sizning Telegram ID: <code>${user?.id}</code>`,
@@ -1348,6 +1407,8 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
           "",
           "👤 <b>Rekruter:</b>",
           `• ${BTN_INFO} — jonli monitoring rasm`,
+          `• ${BTN_FOUND} — topilgan Excel (joriy oy)`,
+          `• ${BTN_NOT_FOUND} — topilmagan + rad izohi Excel`,
           `• ${BTN_NEED_BRANCHES} — filial → kim / smena / lavozim`,
           `• ${BTN_NO_GPS} — GPS yo‘q filiallar`,
           "• Har 3 soatda avtomatik + kim bo‘shasa xabar",

@@ -8,6 +8,30 @@ import {
 } from "./filial-staffing-monitor";
 import { filialSendMessage, isFilialBotConfigured } from "./telegram-filial";
 
+/** Yangi «Xodim kerak» arizasi — to‘liq HTML (platforma bilan bir xil) */
+export async function notifyFilialRecruitersNewStaffNeed(opts: {
+  html: string;
+}): Promise<void> {
+  if (!isFilialBotConfigured()) return;
+  try {
+    const targets = await listRecruiterBroadcastTargets();
+    for (const t of targets) {
+      try {
+        await filialSendMessage(t.chat_id, opts.html, { parse_mode: "HTML" });
+      } catch (err) {
+        const msg = (err as Error)?.message || String(err);
+        if (isBlockedSendError(msg)) {
+          await markLokatsiyaUserBlocked(t.telegram_user_id).catch(() => undefined);
+        }
+        logger.warn({ err, chatId: t.chat_id }, "Recruiter staff-need alert yuborilmadi");
+      }
+      await new Promise((r) => setTimeout(r, 40));
+    }
+  } catch (err) {
+    logger.warn({ err }, "notifyFilialRecruitersNewStaffNeed failed");
+  }
+}
+
 /** Xodim bo‘shatilganda / need_hire — rekruterlarga darhol xabar */
 export async function notifyFilialRecruitersStaffNeed(opts: {
   employee: {

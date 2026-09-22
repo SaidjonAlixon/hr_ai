@@ -34,12 +34,19 @@ export type StaffNeedRequest = {
   createdAt: string;
   updatedAt: string;
   branchName: string;
+  district?: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  googleMapsUrl?: string | null;
+  yandexMapsUrl?: string | null;
   managerName: string | null;
   coordinatorName: string | null;
   hrApprovedByName: string | null;
   foundByName: string | null;
   shiftDisplay: string;
   roleDisplay: string;
+  statusLabel?: string;
+  cardText?: string;
 };
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {

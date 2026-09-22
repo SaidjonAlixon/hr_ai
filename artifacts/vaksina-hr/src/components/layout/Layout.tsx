@@ -149,6 +149,12 @@ const NAV_SECTIONS: {
     paths: ['/requests'],
   },
   {
+    id: 'xodimKerak',
+    label: 'Xodim kerak',
+    icon: UserPlus,
+    paths: ['/xodim-kerak'],
+  },
+  {
     id: 'staff',
     label: 'Xodimlar',
     icon: Users,
@@ -174,7 +180,7 @@ const NAV_SECTIONS: {
     id: 'pharmacy',
     label: "Apteka tarmog'i",
     icon: Store,
-    paths: ['/pharmacy-network', '/boglanish', '/checklist', '/ehtiyoj', '/xodim-kerak'],
+    paths: ['/pharmacy-network', '/boglanish', '/checklist', '/ehtiyoj'],
   },
   {
     id: 'logistika',
@@ -570,6 +576,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const staffNeedsEnabled =
     !!user &&
     (user.role === 'koordinator' ||
+      user.role === 'recruiter' ||
       isHrManager(user.role) ||
       isDeptHeadRole(user.role) ||
       hasFullPlatformAccess(user.role));
@@ -927,7 +934,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       next = [...next.slice(0, at), davomatQrNav, ...next.slice(at)];
     }
     if (
-      (role === 'koordinator' || isDeptHeadRole(role) || isHrManager(role) || hasFullPlatformAccess(role)) &&
+      (role === 'koordinator' ||
+        role === 'recruiter' ||
+        isDeptHeadRole(role) ||
+        isHrManager(role) ||
+        hasFullPlatformAccess(role)) &&
       !next.some((i) => i.path === '/xodim-kerak')
     ) {
       const after = next.findIndex(
@@ -1164,6 +1175,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+      { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     director: [
@@ -1545,6 +1557,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/xatoliklar' || canViewDavomatXatoliklar(userRole))
     .filter((item) => item.path !== '/davomat-kochma')
+    // Arizalar — faqat HR rollari; qolganlarga Xodim kerak alohida bo‘lim
+    .filter((item) => item.path !== '/requests' || isHrRole(userRole))
     .concat(canViewLogistika(userRole) ? logistikaNavItems : []);
 
   const toggleNav = () => {

@@ -320,19 +320,38 @@ async function sendLiveStaffingMonitor(chatId: number) {
     const report = await loadStaffingMonitorReport();
     const caption = buildStaffingMonitorCaption(report, { maxItems: 12 });
     const shortCap = [
-      `📊 <b>Xodim ehtiyoji</b> · ${report.totalNeeds} ta`,
-      `${esc(report.generatedAtLabel)}`,
+      "📊 <b>Xodim ehtiyoji — jonli</b>",
+      `${esc(report.generatedAtLabel)} (Toshkent)`,
+      "",
+      `🔴 Jami: <b>${report.totalNeeds}</b> · 🟡 Qidiruv: <b>${report.searchingCount}</b>`,
+      `🟠 Yollash: <b>${report.needHireCount}</b> · ⚫ Bo‘shatilgan: <b>${report.dismissedCount}</b>`,
+      `⚠️ Ehtiyojli filial: <b>${report.gapBranches}</b>/${report.totalBranches}`,
+      "",
       esc(report.analysisLine),
+      "",
+      "<i>Pastda to‘liq tuman / smena / filiallar</i>",
     ].join("\n");
+
+    let photoOk = false;
     try {
       const png = await renderStaffingMonitorPng(report);
-      await filialSendPhoto(chatId, png, {
-        caption: shortCap.slice(0, 1024),
-        parse_mode: "HTML",
-        filename: "vaksina-xodim-ehtiyoji.png",
-      });
+      if (png?.length) {
+        await filialSendPhoto(chatId, png, {
+          caption: shortCap.slice(0, 1024),
+          parse_mode: "HTML",
+          filename: "vaksina-xodim-ehtiyoji.png",
+        });
+        photoOk = true;
+      }
     } catch (imgErr) {
       console.error("[filial-bot] monitor png", imgErr);
+    }
+    if (!photoOk) {
+      await filialSendMessage(
+        chatId,
+        "⚠️ Monitoring rasm yuklanmadi — matn versiyasi:",
+        { parse_mode: "HTML" },
+      );
     }
     await filialSendMessage(chatId, caption, { parse_mode: "HTML" });
 

@@ -829,7 +829,9 @@ router.get("/mobile-attendance/me", requireAuth, async (req: AuthRequest, res): 
       res.json({ allowed: false, reason: "globally_disabled", employee: emp });
       return;
     }
-    const perm = await findActivePermissionForEmployee(emp.id);
+    const perm = await findActivePermissionForEmployee(emp.id, {
+      userId: emp.userId ?? req.userId,
+    });
     if (!perm) {
       res.json({ allowed: false, reason: "no_permission", employee: emp });
       return;

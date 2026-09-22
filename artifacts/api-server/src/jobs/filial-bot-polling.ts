@@ -43,7 +43,7 @@ async function applyBotProfile() {
       "setMyDescription",
       () =>
         filialSetMyDescription(
-          "Vaksina lokatsiya — filialni tanlang, lokatsiya, mudir/koordinator va telefon raqamlarini ko‘ring.",
+          "Vaksina lokatsiya — filial, tuman kesimi, bog‘lanish. Rekruterlar uchun xodim ehtiyoji monitoring.",
         ),
     ],
     [
@@ -52,9 +52,14 @@ async function applyBotProfile() {
         filialSetMyCommands([
           { command: "start", description: "Filiallar ro‘yxati" },
           { command: "filiallar", description: "Filiallarni ko‘rish" },
-          { command: "yordam", description: "Yordam" },
+          { command: "kesim", description: "Filiallar kesimi — tumanlar" },
+          { command: "malumot", description: "Xodim ehtiyoji (rekruter)" },
+          { command: "kerak", description: "Xodim kerak filiallar" },
+          { command: "gpsyoq", description: "GPS kiritilmagan filiallar" },
           { command: "yaqin", description: "Eng yaqin 3 ta filial" },
+          { command: "yordam", description: "Yordam" },
           { command: "admin", description: "Admin panel" },
+          { command: "rekruterlar", description: "Admin rekruterlar" },
           { command: "id", description: "Telegram ID" },
         ]),
     ],

@@ -92,7 +92,7 @@ import {
   TaskAttachmentViewer,
   isImageAtt as isImageAttShared,
 } from "@/components/vazifalar/TaskAttachmentViewer";
-import { isTaskOverdue, isAcceptOverdue, acceptDeadlineAt } from "@/lib/vazifalar-permissions";
+import { isTaskOverdue, isAcceptOverdue, acceptDeadlineAt, acceptDeadlineHours } from "@/lib/vazifalar-permissions";
 import { isOfisWorkplace, isWeekendYmd } from "@/lib/ofis-weekend";
 import { canSetPrivateTaskVisibility } from "@/lib/roles";
 
@@ -234,51 +234,124 @@ const PRIORITIES = [
 ] as const;
 
 const FIELD =
-  "h-10 rounded-xl border-slate-200/90 bg-[#f4f7fb] text-slate-900 shadow-none transition-all placeholder:text-slate-400 focus-visible:border-[#0b5fff] focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-[#0b5fff]/25 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-50";
+  "h-10 rounded-xl border-slate-200/80 bg-white text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.8)] transition-all placeholder:text-slate-400 focus-visible:border-[#0b5fff] focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-[#0b5fff]/20 dark:border-slate-600 dark:bg-slate-950 dark:text-slate-50 dark:shadow-none";
+
+/** Butun maydon bosilganda native sana/soat picker ochilsin */
+const PICKER_FIELD =
+  "cursor-pointer [&::-webkit-calendar-picker-indicator]:absolute [&::-webkit-calendar-picker-indicator]:inset-0 [&::-webkit-calendar-picker-indicator]:h-full [&::-webkit-calendar-picker-indicator]:w-full [&::-webkit-calendar-picker-indicator]:cursor-pointer [&::-webkit-calendar-picker-indicator]:opacity-0";
+
+function openNativePicker(el: HTMLInputElement | null) {
+  if (!el) return;
+  el.focus();
+  try {
+    const anyEl = el as HTMLInputElement & { showPicker?: () => void };
+    if (typeof anyEl.showPicker === "function") {
+      anyEl.showPicker();
+      return;
+    }
+  } catch {
+    /* ignore */
+  }
+  el.click();
+}
 
 const LABEL =
-  "text-[13px] font-semibold text-[#0a2540] dark:text-slate-100";
+  "text-[12px] font-semibold tracking-wide text-[#0a2540]/80 dark:text-slate-200";
 
 const CARD =
-  "rounded-2xl border border-white/80 bg-white/95 p-4 shadow-[0_1px_2px_rgba(10,37,64,0.04),0_10px_28px_rgba(11,95,255,0.07)] ring-1 ring-slate-900/[0.04] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 dark:ring-white/5";
+  "rounded-2xl border border-slate-200/60 bg-white/95 p-4 shadow-[0_1px_2px_rgba(10,37,64,0.04),0_10px_28px_rgba(10,37,64,0.06)] ring-1 ring-slate-900/[0.025] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-none dark:ring-white/[0.04]";
+
+const TINT_STYLES = {
+  blue: {
+    bar: "from-[#07203a] via-[#0b5fff] to-[#5eb8ff]",
+    glow: "bg-[#0b5fff]/35",
+    wash: "from-[#0b5fff]/[0.10] via-[#0b5fff]/[0.03] to-transparent",
+    title: "text-[#0a4fd6] dark:text-sky-300",
+    dot: "bg-[#0b5fff] shadow-[0_0_8px_rgba(11,95,255,0.55)]",
+  },
+  teal: {
+    bar: "from-[#0f4c4a] via-[#14b8a6] to-[#67e8f9]",
+    glow: "bg-teal-400/40",
+    wash: "from-teal-500/[0.11] via-teal-500/[0.03] to-transparent",
+    title: "text-teal-700 dark:text-teal-300",
+    dot: "bg-teal-500 shadow-[0_0_8px_rgba(20,184,166,0.5)]",
+  },
+  violet: {
+    bar: "from-[#312e81] via-[#6366f1] to-[#a5b4fc]",
+    glow: "bg-indigo-400/35",
+    wash: "from-indigo-500/[0.10] via-indigo-500/[0.03] to-transparent",
+    title: "text-indigo-700 dark:text-indigo-300",
+    dot: "bg-indigo-500 shadow-[0_0_8px_rgba(99,102,241,0.5)]",
+  },
+  amber: {
+    bar: "from-[#9a3412] via-[#f59e0b] to-[#fbbf24]",
+    glow: "bg-amber-400/40",
+    wash: "from-amber-500/[0.12] via-amber-500/[0.04] to-transparent",
+    title: "text-amber-800 dark:text-amber-300",
+    dot: "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]",
+  },
+  emerald: {
+    bar: "from-[#064e3b] via-[#10b981] to-[#5eead4]",
+    glow: "bg-emerald-400/35",
+    wash: "from-emerald-500/[0.11] via-emerald-500/[0.03] to-transparent",
+    title: "text-emerald-800 dark:text-emerald-300",
+    dot: "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]",
+  },
+} as const;
+
+function CardAccent({ tint = "blue" }: { tint?: keyof typeof TINT_STYLES }) {
+  const style = TINT_STYLES[tint] || TINT_STYLES.blue;
+  return (
+    <>
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 z-[1] h-[4px] bg-gradient-to-r",
+          style.bar,
+        )}
+      />
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-3 top-0 z-[1] h-3 rounded-full blur-md",
+          style.glow,
+        )}
+      />
+      <div
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-[4.5rem] bg-gradient-to-b",
+          style.wash,
+        )}
+      />
+    </>
+  );
+}
 
 function SectionCard({
   title,
-  tint,
+  tint = "blue",
   children,
   className,
 }: {
   title: string;
-  tint?: "blue" | "teal" | "violet" | "amber" | "emerald";
+  tint?: keyof typeof TINT_STYLES;
   children: React.ReactNode;
   className?: string;
 }) {
-  const tintBar =
-    tint === "teal"
-      ? "from-teal-400 to-cyan-500"
-      : tint === "violet"
-        ? "from-violet-400 to-fuchsia-500"
-        : tint === "amber"
-          ? "from-amber-400 to-orange-500"
-          : tint === "emerald"
-            ? "from-emerald-500 to-teal-400"
-            : "from-[#0b5fff] to-sky-400";
-  const titleTone =
-    tint === "emerald"
-      ? "text-emerald-800 dark:text-emerald-300"
-      : "text-[#0a2540]/65 dark:text-slate-400";
+  const style = TINT_STYLES[tint] || TINT_STYLES.blue;
   return (
     <section className={cn(CARD, "relative overflow-hidden", className)}>
-      <div
-        className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r",
-          tintBar,
-        )}
-      />
-      <p className={cn("mb-3 pt-1 text-[11px] font-bold uppercase tracking-[0.14em]", titleTone)}>
-        {title}
-      </p>
-      <div className="space-y-3.5">{children}</div>
+      <CardAccent tint={tint} />
+      <div className="relative mb-3.5 flex items-center gap-2 pt-1">
+        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
+        <p
+          className={cn(
+            "text-[11px] font-bold uppercase tracking-[0.13em]",
+            style.title,
+          )}
+        >
+          {title}
+        </p>
+      </div>
+      <div className="relative space-y-3.5">{children}</div>
     </section>
   );
 }
@@ -837,6 +910,8 @@ export function TaskFormDialog({
   const [priority, setPriority] = useState("normal");
   const [dueDate, setDueDate] = useState("");
   const [dueTime, setDueTime] = useState("18:00");
+  const dueDateRef = useRef<HTMLInputElement>(null);
+  const dueTimeRef = useRef<HTMLInputElement>(null);
   const [assigneeKey, setAssigneeKey] = useState("");
   const [assigneeOpen, setAssigneeOpen] = useState(false);
   const [multiAssigneeKeys, setMultiAssigneeKeys] = useState<string[]>([]);
@@ -855,6 +930,9 @@ export function TaskFormDialog({
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [reminderOffset, setReminderOffset] = useState("1d");
   const [recurrence, setRecurrence] = useState("none");
+  const [recurrencePeriod, setRecurrencePeriod] = useState<"daily" | "weekly" | "monthly">(
+    "weekly",
+  );
   const [visibility, setVisibility] = useState<"all" | "private">("all");
   const [extraOpen, setExtraOpen] = useState(false);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -922,7 +1000,13 @@ export function TaskFormDialog({
       setNotes(meta.notes || "");
       setReminderEnabled(meta.reminderEnabled ?? true);
       setReminderOffset(meta.reminderOffset || "1d");
-      setRecurrence(meta.recurrence || "none");
+      {
+        const r = meta.recurrence || "none";
+        setRecurrence(r);
+        if (r === "daily" || r === "weekly" || r === "monthly") {
+          setRecurrencePeriod(r);
+        }
+      }
       setVisibility(
         canPrivateVisibility && meta.visibility === "private" ? "private" : "all",
       );
@@ -964,6 +1048,7 @@ export function TaskFormDialog({
     setReminderEnabled(true);
     setReminderOffset("1d");
     setRecurrence("none");
+    setRecurrencePeriod("weekly");
     setVisibility("all");
     setMessages([]);
     setHistory([
@@ -1212,6 +1297,16 @@ export function TaskFormDialog({
       return;
     }
     const dueLocal = joinDue(dueDate, dueTime);
+    if ((reminderEnabled || recurrence !== "none") && !dueLocal) {
+      toast({
+        title: "Muddat majburiy",
+        description: reminderEnabled
+          ? "Eslatma uchun muddat belgilang"
+          : "Takrorlanuvchi topshiriq uchun muddat belgilang",
+        variant: "destructive",
+      });
+      return;
+    }
     if (dueLocal && isWeekendYmd(dueDate)) {
       const ofisHit = useMulti
         ? multiSpecs.some((s) => {
@@ -1241,9 +1336,9 @@ export function TaskFormDialog({
       tags,
       taskType,
       branchOrDept: branchOrDept || undefined,
-      reminderEnabled,
-      reminderOffset,
-      recurrence,
+      reminderEnabled: !!reminderEnabled,
+      reminderOffset: reminderEnabled ? reminderOffset : undefined,
+      recurrence: recurrence === "none" ? "none" : recurrence,
       visibility: canPrivateVisibility && visibility === "private" ? "private" : "all",
       notes: notes.trim() || undefined,
       verifiedAt: (editing?.meta as TaskMeta | null | undefined)?.verifiedAt,
@@ -1614,21 +1709,23 @@ export function TaskFormDialog({
       >
         <div
           className={cn(
-            "relative flex h-full min-h-0 flex-col overflow-hidden border shadow-[0_24px_80px_rgba(10,37,64,0.18)] sm:rounded-3xl",
+            "relative flex h-full min-h-0 flex-col overflow-hidden border shadow-[0_28px_90px_rgba(10,37,64,0.22)] sm:rounded-3xl",
             isWork
-              ? "border-teal-200/70 bg-gradient-to-br from-teal-50 via-emerald-50/40 to-slate-50 dark:border-teal-900 dark:from-slate-950 dark:via-emerald-950/30 dark:to-slate-950"
-              : "border-slate-200/60 bg-gradient-to-br from-[#eef4ff] via-[#f7f9fc] to-[#e8fff7] dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950",
+              ? "border-teal-200/60 bg-gradient-to-br from-[#f2fbf8] via-[#f7fafb] to-[#eef6ff] dark:border-teal-900 dark:from-slate-950 dark:via-emerald-950/20 dark:to-slate-950"
+              : "border-slate-200/50 bg-gradient-to-br from-[#f5f8ff] via-[#f8fafc] to-[#f0f7ff] dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950",
           )}
         >
           <div
             className={cn(
-              "h-1.5 w-full bg-gradient-to-r",
+              "relative h-[4px] w-full shrink-0 overflow-hidden bg-gradient-to-r",
               isWork
-                ? "from-teal-700 via-emerald-500 to-cyan-400"
-                : "from-[#0a2540] via-[#0b5fff] to-teal-400",
+                ? "from-teal-800 via-emerald-500 to-cyan-400"
+                : "from-[#06101c] via-[#0b5fff] to-sky-400",
             )}
-          />
-          <DialogHeader className="space-y-1 border-b border-slate-200/70 bg-white/75 px-4 py-3 text-left backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/80 sm:px-5 sm:py-4">
+          >
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent" />
+          </div>
+          <DialogHeader className="space-y-1 border-b border-slate-200/60 bg-white/85 px-4 py-3.5 text-left backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/85 sm:px-5 sm:py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 space-y-1">
               <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -1808,7 +1905,7 @@ export function TaskFormDialog({
           {/* LEFT */}
           <div
             className={cn(
-              "min-h-0 space-y-3 overflow-y-auto rounded-2xl border border-white/50 bg-white/35 p-3 shadow-sm backdrop-blur-[2px] dark:border-slate-800/60 dark:bg-slate-950/30 sm:p-3.5",
+              "min-h-0 space-y-3 overflow-y-auto rounded-2xl border border-slate-200/40 bg-gradient-to-b from-white/70 to-white/40 p-3 shadow-inner backdrop-blur-[2px] dark:border-slate-800/60 dark:from-slate-950/50 dark:to-slate-950/30 sm:p-3.5",
               mobilePanel === "main" ? "block" : "hidden xl:block",
             )}
           >
@@ -2579,13 +2676,39 @@ export function TaskFormDialog({
             <div className="space-y-1.5">
               <Label className={LABEL}>{t("tasks.deadline")}</Label>
               <div className="grid grid-cols-2 gap-2">
-                <div className="relative">
-                  <Calendar className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#0b5fff]" />
-                  <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={cn(FIELD, "pl-8")} />
+                <div
+                  className="relative cursor-pointer"
+                  onClick={() => openNativePicker(dueDateRef.current)}
+                >
+                  <Calendar className="pointer-events-none absolute left-2.5 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-[#0b5fff]" />
+                  <Input
+                    ref={dueDateRef}
+                    type="date"
+                    value={dueDate}
+                    onChange={(e) => setDueDate(e.target.value)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openNativePicker(e.currentTarget);
+                    }}
+                    className={cn(FIELD, PICKER_FIELD, "relative pl-8")}
+                  />
                 </div>
-                <div className="relative">
-                  <Clock className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[#0b5fff]" />
-                  <Input type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} className={cn(FIELD, "pl-8")} />
+                <div
+                  className="relative cursor-pointer"
+                  onClick={() => openNativePicker(dueTimeRef.current)}
+                >
+                  <Clock className="pointer-events-none absolute left-2.5 top-1/2 z-[1] h-3.5 w-3.5 -translate-y-1/2 text-[#0b5fff]" />
+                  <Input
+                    ref={dueTimeRef}
+                    type="time"
+                    value={dueTime}
+                    onChange={(e) => setDueTime(e.target.value)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openNativePicker(e.currentTarget);
+                    }}
+                    className={cn(FIELD, PICKER_FIELD, "relative pl-8")}
+                  />
                 </div>
               </div>
               {dueDate && isWeekendYmd(dueDate) ? (
@@ -2615,13 +2738,7 @@ export function TaskFormDialog({
               <p className="text-[10px] leading-snug text-muted-foreground">
                 {t("tasks.form.acceptWindow")}:{" "}
                 <span className="font-semibold text-foreground">
-                  {priority === "low"
-                    ? "6 soat"
-                    : priority === "high"
-                      ? "1 soat"
-                      : priority === "urgent"
-                        ? "10 daqiqa"
-                        : "3 soat"}
+                  {acceptDeadlineHours(priority)} soat
                 </span>
                 {" "}ichida qabul qilinmasa —{" "}
                 <span className="font-bold text-rose-600 dark:text-rose-400">
@@ -2827,7 +2944,7 @@ export function TaskFormDialog({
           {/* MIDDLE (settings) */}
           <div
             className={cn(
-              "min-h-0 flex-col overflow-y-auto rounded-2xl border border-white/50 bg-white/35 p-3 shadow-sm backdrop-blur-[2px] dark:border-slate-800/60 dark:bg-slate-950/30 sm:p-3.5",
+              "min-h-0 flex-col overflow-y-auto rounded-2xl border border-slate-200/40 bg-gradient-to-b from-white/70 to-white/40 p-3 shadow-inner backdrop-blur-[2px] dark:border-slate-800/60 dark:from-slate-950/50 dark:to-slate-950/30 sm:p-3.5",
               mobilePanel === "settings" ? "flex" : "hidden xl:flex",
             )}
           >
@@ -2847,14 +2964,9 @@ export function TaskFormDialog({
                 )}
               </div>
             )}
-            <div className={cn(CARD, "relative mb-3 shrink-0 !p-3")}>
-              <div
-                className={cn(
-                  "pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r",
-                  isWork ? "from-teal-700 to-emerald-500" : "from-[#0a2540] to-[#0b5fff]",
-                )}
-              />
-              <div className="flex items-center gap-3 pt-1">
+            <div className={cn(CARD, "relative mb-3 shrink-0 overflow-hidden !p-3")}>
+              <CardAccent tint={isWork ? "emerald" : "blue"} />
+              <div className="relative flex items-center gap-3 pt-1">
                 <span
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white shadow-md shadow-blue-500/25 ring-2 ring-white dark:ring-slate-800"
                   aria-hidden
@@ -2899,10 +3011,10 @@ export function TaskFormDialog({
               </div>
             </div>
 
-            <div className={cn(CARD, "relative mb-3 shrink-0 !p-3.5")}>
-              <div className="pointer-events-none absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r from-emerald-400 to-[#0b5fff]" />
-              <div className="mb-3 flex items-center justify-between gap-2 pt-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#0a2540]/65 dark:text-slate-400">
+            <div className={cn(CARD, "relative mb-3 shrink-0 overflow-hidden !p-3.5")}>
+              <CardAccent tint="teal" />
+              <div className="relative mb-3 flex items-center justify-between gap-2 pt-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-teal-700 dark:text-teal-300">
                   {t("tasks.form.taskStatus")}
                 </p>
                 <span className="rounded-full bg-[#eef4ff] px-2 py-0.5 text-[9px] font-bold text-[#0b5fff] ring-1 ring-blue-200 dark:bg-blue-950 dark:text-blue-300">
@@ -3030,8 +3142,8 @@ export function TaskFormDialog({
 
             {!isWork && (
               <>
-            <div className={cn(CARD, "mb-3 space-y-2")}>
-              <label className="flex items-center gap-2 text-sm font-semibold text-[#0a2540] dark:text-slate-100">
+            <div className={cn(CARD, "mb-3 space-y-2.5 !p-3.5")}>
+              <label className="flex items-center gap-2.5 text-sm font-semibold text-[#0a2540] dark:text-slate-100">
                 <Checkbox checked={reminderEnabled} onCheckedChange={(v) => setReminderEnabled(!!v)} />
                 {t("tasks.form.setReminder")}
               </label>
@@ -3047,31 +3159,49 @@ export function TaskFormDialog({
                   <SelectItem value="1w">{t("tasks.form.remind.1w")}</SelectItem>
                 </SelectContent>
               </Select>
-              <p className="text-[11px] text-slate-500">{t("tasks.form.remindHint")}</p>
+              <p className="text-[11px] leading-snug text-slate-500">{t("tasks.form.remindHint")}</p>
             </div>
 
-            <div className={cn(CARD, "mb-3 space-y-2")}>
-              <label className="flex items-center gap-2 text-sm font-semibold text-[#0a2540] dark:text-slate-100">
+            <div className={cn(CARD, "mb-3 space-y-2.5 !p-3.5")}>
+              <label className="flex items-center gap-2.5 text-sm font-semibold text-[#0a2540] dark:text-slate-100">
                 <Checkbox
                   checked={recurrence !== "none"}
-                  onCheckedChange={(v) => setRecurrence(v ? "weekly" : "none")}
+                  onCheckedChange={(v) => {
+                    if (v) setRecurrence(recurrencePeriod);
+                    else setRecurrence("none");
+                  }}
                 />
                 {t("tasks.form.recurring")}
               </label>
-              <Select value={recurrence} onValueChange={setRecurrence}>
+              <Select
+                value={recurrence === "none" ? recurrencePeriod : recurrence}
+                onValueChange={(v) => {
+                  if (v === "daily" || v === "weekly" || v === "monthly") {
+                    setRecurrencePeriod(v);
+                    setRecurrence(v);
+                  } else {
+                    setRecurrence("none");
+                  }
+                }}
+                disabled={recurrence === "none"}
+              >
                 <SelectTrigger className={cn(FIELD, "h-9")}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">{t("tasks.form.recur.none")}</SelectItem>
                   <SelectItem value="daily">{t("tasks.form.recur.daily")}</SelectItem>
                   <SelectItem value="weekly">{t("tasks.form.recur.weekly")}</SelectItem>
                   <SelectItem value="monthly">{t("tasks.form.recur.monthly")}</SelectItem>
                 </SelectContent>
               </Select>
+              {recurrence !== "none" ? (
+                <p className="text-[11px] leading-snug text-slate-500">
+                  Tasdiqlangandan keyin avtomatik yangi topshiriq ochiladi
+                </p>
+              ) : null}
             </div>
 
-            <div className={cn(CARD, "mb-3 space-y-2")}>
+            <div className={cn(CARD, "mb-3 space-y-2.5 !p-3.5")}>
               <p className="text-sm font-semibold text-[#0a2540] dark:text-slate-100">{t("tasks.form.visibility")}</p>
               <div className="grid gap-2">
                 <button
@@ -3149,11 +3279,12 @@ export function TaskFormDialog({
             )}
 
             {isWork && editing?.dueAt && (
-              <div className={cn(CARD, "mb-3 space-y-2")}>
-                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-slate-500">
+              <div className={cn(CARD, "relative mb-3 overflow-hidden space-y-2")}>
+                <CardAccent tint="amber" />
+                <p className="relative pt-1 text-[10px] font-bold uppercase tracking-[0.12em] text-amber-800 dark:text-amber-300">
                   {t("tasks.deadline")}
                 </p>
-                <p className="flex items-center gap-2 text-sm font-semibold text-[#0a2540] dark:text-slate-50">
+                <p className="relative flex items-center gap-2 text-sm font-semibold text-[#0a2540] dark:text-slate-50">
                   <Calendar className="h-4 w-4 text-[#0b5fff]" />
                   {formatStatusTime(editing.dueAt)}
                 </p>
@@ -3268,8 +3399,9 @@ export function TaskFormDialog({
               mobilePanel === "side" ? "flex min-h-[calc(100dvh-11rem)]" : "hidden xl:flex",
             )}
           >
-            <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-1 rounded-t-2xl bg-gradient-to-r from-[#0b5fff] to-sky-400" />
-            <div className="relative flex border-b border-slate-200/70 bg-white/90 pt-1 dark:border-slate-800 dark:bg-slate-900/90">
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[4px] bg-gradient-to-r from-[#07203a] via-[#0b5fff] to-[#5eb8ff]" />
+            <div className="pointer-events-none absolute inset-x-6 top-0 z-[2] h-3 rounded-full bg-[#0b5fff]/30 blur-md" />
+            <div className="relative flex border-b border-slate-200/60 bg-white/95 pt-1.5 dark:border-slate-800 dark:bg-slate-900/95">
               {(
                 [
                   { id: "chat" as const, label: t("tasks.form.tab.chat"), icon: MessageCircle },

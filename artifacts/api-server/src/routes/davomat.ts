@@ -21,6 +21,7 @@ import {
   canViewDavomat,
   canEditDavomatManual,
   canResetDavomatManual,
+  canViewDavomatXatoliklar,
   isDirectorRole,
   hasFullPlatformAccess,
   canViewFullDavomatDashboard,
@@ -111,7 +112,7 @@ import {
 import { clientIp, writePunchAudit } from "../lib/punch-audit";
 import { punchErrorHelp, resolvePunchErrorCode } from "../lib/punch-error-help";
 import {
-  findActivePermissionForEmployee,
+  employeeHasMobileAnywhere,
 } from "../lib/mobile-attendance";
 
 const router: IRouter = Router();
@@ -1735,8 +1736,7 @@ async function geoGate(
   // Admin bergan ko‘chma ruxsat — yashil zona (geofence) talab qilinmaydi
   let mobileAnywhere = false;
   try {
-    const perm = await findActivePermissionForEmployee(emp.id);
-    mobileAnywhere = Boolean(perm && perm.allowAnywhere !== false);
+    mobileAnywhere = await employeeHasMobileAnywhere(emp.id, emp.userId);
   } catch {
     mobileAnywhere = false;
   }
@@ -2384,7 +2384,7 @@ async function applyFacePunch(opts: {
         };
       }
 
-      // Ketdim: 2-smena → ertasi 02:00; 3-smena → ertalab 10:00; 1/ofis → 23:55
+      // Ketdim: ombor → tugash+2soat; 2-smena → ertasi 02:00; 3-smena → ertalab 10:00; 1/ofis → 23:55
       if (action === "out" && existing?.checkInAt) {
         const sched = workScheduleForStaff(
           userRole,
@@ -2396,9 +2396,14 @@ async function applyFacePunch(opts: {
         const deadlineOpts = {
           shiftKey: sched.key,
           shiftKeys: sched.keys,
+          warehouse: Boolean(sched.warehouse),
+          shiftType: punchShiftType,
+          workDateYmd: workDate,
+          endHm: sched.end,
+          overnight: Boolean(sched.overnight),
         };
         const deadlineAt = checkoutDeadlineAt(workDate, sched.end, sched.overnight, deadlineOpts);
-        const deadlineHm = checkoutDeadlineHmFor({ ...deadlineOpts, overnight: sched.overnight });
+        const deadlineHm = checkoutDeadlineHmFor(deadlineOpts);
         if (now.getTime() > deadlineAt.getTime()) {
           await tx
             .update(attendanceRecordsTable)
@@ -2408,8 +2413,9 @@ async function applyFacePunch(opts: {
               updatedAt: new Date(),
             })
             .where(eq(attendanceRecordsTable.id, existing.id));
-          const ruleNote =
-            deadlineHm === CHECKOUT_DEADLINE_SHIFT_TWO_HM
+          const ruleNote = sched.warehouse
+            ? `Ombor smena: «Ketdim» tugash (${sched.end}) dan keyin 2 soat ichida.`
+            : deadlineHm === CHECKOUT_DEADLINE_SHIFT_TWO_HM
               ? `2-smena: «Ketdim» ertasi kun ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} gacha (23:55 emas).`
               : deadlineHm === CHECKOUT_DEADLINE_SHIFT_THREE_HM
                 ? `3-smena: «Ketdim» ertalab ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} gacha.`
@@ -2824,8 +2830,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
 
     let mobileAnywhere = false;
     try {
-      const mp = await findActivePermissionForEmployee(emp.id);
-      mobileAnywhere = Boolean(mp && mp.allowAnywhere !== false);
+      mobileAnywhere = await employeeHasMobileAnywhere(emp.id, emp.userId ?? user.id);
     } catch {
       mobileAnywhere = false;
     }
@@ -2873,7 +2878,15 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           activeKey ? null : punchShiftLabel,
           defs,
         );
-        const deadlineOpts = { shiftKey: w.key, shiftKeys: w.keys, overnight: Boolean(w.overnight) };
+        const deadlineOpts = {
+          shiftKey: w.key,
+          shiftKeys: w.keys,
+          overnight: Boolean(w.overnight),
+          warehouse: Boolean(w.warehouse),
+          shiftType: activeKey || punchShiftType,
+          workDateYmd: workDate,
+          endHm: w.end,
+        };
         const deadlineAt = checkoutDeadlineAt(workDate, w.end, w.overnight, deadlineOpts);
         return {
           type: w.key,
@@ -2886,6 +2899,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           start: w.start,
           end: w.end,
           overnight: Boolean(w.overnight),
+          warehouse: Boolean(w.warehouse),
           warnHm: w.warnHm,
           warnText: w.warnText,
           checkoutDeadlineHm: checkoutDeadlineHmFor(deadlineOpts),
@@ -4744,6 +4758,15 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
 
+    if (user.role === "koordinator") {
+      res.status(403).json({
+        error:
+          "Koordinator uchun QR o‘chirilgan. Cheklist va davomatni faqat Face ID orqali tasdiqlang.",
+        code: "coordinator_face_only",
+      });
+      return;
+    }
+
     const adminAnywhere = isAdminQrAnywhere(user.role);
     const hasGps = Number.isFinite(latitudeRaw) && Number.isFinite(longitudeRaw);
 
@@ -5104,14 +5127,22 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
 
-    // Ofis QR: asosiy ofis yashil zonasi (100 m)
+    // Ofis QR: asosiy ofis yashil zonasi (100 m) — ko‘chma ruxsat bo‘lsa istalgan joy
+    let mobileAnywhere = false;
+    try {
+      mobileAnywhere = await employeeHasMobileAnywhere(emp.id, emp.userId ?? user.id);
+    } catch {
+      mobileAnywhere = false;
+    }
+    const skipOfficeGeofence = adminAnywhere || mobileAnywhere;
+
     let latitude = hasGps ? latitudeRaw : DAVOMAT_SITE_LAT;
     let longitude = hasGps ? longitudeRaw : DAVOMAT_SITE_LNG;
     let distanceMeters = 0;
     let allowedMeters = DAVOMAT_OFFICE_GEOFENCE_METERS;
-    let gpsResult: string = adminAnywhere ? "admin_bypass" : "ok";
+    let gpsResult: string = skipOfficeGeofence ? (adminAnywhere ? "admin_bypass" : "mobile_anywhere") : "ok";
 
-    if (!adminAnywhere) {
+    if (!skipOfficeGeofence) {
       if (!hasGps) {
         res.status(400).json({
           error: "Lokatsiya yoqilishi shart — ofis yashil zonasida bo‘ling",
@@ -5153,8 +5184,21 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         return;
       }
       gpsResult = "ok";
-    } else if (hasGps) {
-      distanceMeters = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+    } else {
+      // Ko‘chma / admin: GPS bo‘lsa masofani yozamiz, radius tekshirmaymiz
+      if (!hasGps && mobileAnywhere && !adminAnywhere) {
+        res.status(400).json({
+          error: "Lokatsiya yoqilishi shart — ko‘chma davomat uchun GPS kerak",
+          code: "gps_required",
+        });
+        return;
+      }
+      if (hasGps) {
+        distanceMeters = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+        if (mobileAnywhere) {
+          allowedMeters = Math.max(allowedMeters, Math.ceil(distanceMeters) || allowedMeters);
+        }
+      }
     }
 
     const punched = await applyFacePunch({
@@ -5163,7 +5207,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       latitude,
       longitude,
       distanceMeters,
-      allowedMeters: adminAnywhere ? Math.max(allowedMeters, 999_999) : allowedMeters,
+      allowedMeters: skipOfficeGeofence ? Math.max(allowedMeters, 999_999) : allowedMeters,
       faceProfileId: null,
       action,
       verificationMethod: "QR",
@@ -5204,6 +5248,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         qrKind: "office_shared",
         departmentId: deptQr.row.departmentId,
         ...(adminAnywhere ? { adminQrAnywhere: true } : {}),
+        ...(mobileAnywhere ? { mobileAnywhere: true } : {}),
       },
     });
 
@@ -5215,6 +5260,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       departmentLabel: OFFICE_SHARED_QR_LABEL,
       sharedOffice: true,
       adminQrAnywhere: adminAnywhere || undefined,
+      mobileAnywhere: mobileAnywhere || undefined,
     });
   } catch (err) {
     console.error("POST /davomat/qr-punch error:", err);
@@ -5267,12 +5313,14 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
     const editBranch = canEditBranchQr(user.role);
     const viewDept = canViewDeptQrRole(user.role);
     const editDept = canEditDeptQrRole(user.role);
-    const methods: Array<"FACE_ID" | "QR"> = ["FACE_ID", "QR"];
+    const methods: Array<"FACE_ID" | "QR"> =
+      user.role === "koordinator" ? ["FACE_ID"] : ["FACE_ID", "QR"];
     res.json({
       pharmacyStaff: pharmacy,
       officeStaff,
       adminQrAnywhere,
       methods,
+      faceOnly: user.role === "koordinator",
       canManageQr: editBranch || editDept,
       canManageBranchQr: editBranch,
       canViewBranchQr: viewBranch,
@@ -5289,8 +5337,8 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
 
 /** Davomat xatoliklari — kimda nima xato + yechim + lokatsiya */
 router.get("/davomat/xatoliklar", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canViewDavomat(req.userRole) && !hasFullPlatformAccess(req.userRole) && !isDirectorRole(req.userRole)) {
-    res.status(403).json({ error: "Ruxsat yo‘q" });
+  if (!canViewDavomatXatoliklar(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q — faqat admin" });
     return;
   }
   try {
@@ -5758,17 +5806,8 @@ const RESOLUTION_STATUSES = new Set(["open", "bajarilgan", "bartaraf", "yechim"]
 
 /** Xatolik holati: bajarilgan | open (bajarilmagan) */
 router.post("/davomat/xatoliklar/:id/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const role = req.userRole;
-  const allowed =
-    hasFullPlatformAccess(role) ||
-    isDirectorRole(role) ||
-    role === "koordinator" ||
-    role === "mudir" ||
-    role === "hr_direktor" ||
-    role === "hr_auditor" ||
-    role === "admin";
-  if (!allowed) {
-    res.status(403).json({ error: "Ruxsat yo‘q" });
+  if (!canViewDavomatXatoliklar(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q — faqat admin" });
     return;
   }
   const id = Number(req.params.id);
@@ -5830,17 +5869,8 @@ router.post("/davomat/xatoliklar/:id/status", requireAuth, async (req: AuthReque
  *  - mark_yechim — faqat «Bajarilgan» belgilash
  */
 router.post("/davomat/xatoliklar/fix-branch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  const role = req.userRole;
-  const allowed =
-    hasFullPlatformAccess(role) ||
-    isDirectorRole(role) ||
-    role === "koordinator" ||
-    role === "mudir" ||
-    role === "hr_direktor" ||
-    role === "hr_auditor" ||
-    role === "admin";
-  if (!allowed) {
-    res.status(403).json({ error: "Ruxsat yo‘q" });
+  if (!canViewDavomatXatoliklar(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q — faqat admin" });
     return;
   }
   const employeeId = Number(req.body?.employeeId);

@@ -59,6 +59,8 @@ export type WorkSchedule = {
   warnHm: string;
   warnText: string;
   overnight?: boolean;
+  /** Omborxona smenasi — Ketdim = tugash + 2 soat */
+  warehouse?: boolean;
 };
 
 export type StaffHours = {
@@ -70,6 +72,7 @@ export type StaffHours = {
   shiftKey?: ShiftKey;
   /** Barcha smenalar — 1+2 bo‘lsa ["one","two"] */
   shiftKeys?: ShiftKey[];
+  warehouse?: boolean;
 };
 
 function toWorkSchedule(def: ShiftDefinition): WorkSchedule {
@@ -88,6 +91,87 @@ function toWorkSchedule(def: ShiftDefinition): WorkSchedule {
     warnHm,
     warnText: `Smena / ish vaqti ${range}. ${def.graceMinutes} daqiqadan so‘ng kechikish hisoblanadi.`,
   };
+}
+
+/** Omborxona: tugashdan keyin 2 soat ichida Ketdim */
+export const WAREHOUSE_CHECKOUT_GRACE_MS = 2 * 60 * 60 * 1000;
+
+export function encodeWarehouseShiftType(
+  startHm: string,
+  endHm: string,
+  overnight?: boolean,
+): string {
+  const norm = (hm: string) => {
+    const m = /^(\d{1,2}):(\d{2})$/.exec(String(hm || "").trim());
+    if (!m) return null;
+    return `${String(Number(m[1])).padStart(2, "0")}:${m[2]}`;
+  };
+  const s = norm(startHm) || "09:00";
+  const e = norm(endHm) || "18:00";
+  const over =
+    overnight === true ||
+    (overnight !== false && hmToMinutes(e) <= hmToMinutes(s));
+  return over ? `wh:${s}-${e}:o` : `wh:${s}-${e}`;
+}
+
+export function isWarehouseShiftType(shiftType?: string | null): boolean {
+  return /^wh:/i.test(String(shiftType || "").trim());
+}
+
+export function parseWarehouseShiftType(
+  shiftType?: string | null,
+  shiftLabel?: string | null,
+  graceMinutes = 15,
+): WorkSchedule | null {
+  const raw = String(shiftType || "").trim();
+  const m = /^wh:(\d{1,2}:\d{2})-(\d{1,2}:\d{2})(:o)?$/i.exec(raw);
+  if (!m) return null;
+  const pad = (hm: string) => {
+    const [h, mi] = hm.split(":");
+    return `${String(Number(h)).padStart(2, "0")}:${mi}`;
+  };
+  const start = pad(m[1]!);
+  const end = pad(m[2]!);
+  const overnight = Boolean(m[3]) || hmToMinutes(end) <= hmToMinutes(start);
+  const label = String(shiftLabel || "").trim() || "Ombor smena";
+  const grace = graceMinutes > 0 ? graceMinutes : 15;
+  const warnAt = warnHmBefore(start, grace);
+  const range = overnight ? `${start}–${end} (keyingi kun)` : `${start}–${end}`;
+  return {
+    key: "office",
+    keys: ["office"],
+    label,
+    start,
+    end,
+    graceMinutes: grace,
+    overnight,
+    warehouse: true,
+    warnHm: warnAt,
+    warnText: `Ombor smena «${label}»: ${range}. ${grace} daqiqadan so‘ng kechikish. Ketdim: tugashdan +2 soat.`,
+  };
+}
+
+export function warehouseCheckoutDeadlineAt(
+  workDateYmd: string,
+  endHm: string,
+  overnight?: boolean,
+): Date {
+  const endAt = shiftEndAt(workDateYmd, endHm, overnight);
+  return new Date(endAt.getTime() + WAREHOUSE_CHECKOUT_GRACE_MS);
+}
+
+export function warehouseCheckoutDeadlineHm(
+  workDateYmd: string,
+  endHm: string,
+  overnight?: boolean,
+): string {
+  const at = warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(at);
 }
 
 function pharmacyKeys(
@@ -146,6 +230,9 @@ export function workScheduleForStaff(
   shiftLabel?: string | null,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): WorkSchedule {
+  const wh = parseWarehouseShiftType(shiftType, shiftLabel, defs.office?.graceMinutes ?? 15);
+  if (wh) return wh;
+
   if (isPharmacyShiftStaff(userRole, orgRole)) {
     return shiftWindow(shiftType, shiftLabel, defs);
   }
@@ -239,7 +326,17 @@ export function checkoutDeadlineHmFor(opts?: {
   shiftKey?: string | null;
   shiftKeys?: Array<string | null | undefined> | null;
   overnight?: boolean;
+  warehouse?: boolean;
+  shiftType?: string | null;
+  workDateYmd?: string;
+  endHm?: string;
 }): string {
+  if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType)) {
+    if (opts?.workDateYmd && opts?.endHm) {
+      return warehouseCheckoutDeadlineHm(opts.workDateYmd, opts.endHm, opts.overnight);
+    }
+    return "tugash+2soat";
+  }
   if (usesShiftThreeCheckoutDeadline(opts)) return CHECKOUT_DEADLINE_SHIFT_THREE_HM;
   if (usesShiftTwoCheckoutDeadline(opts)) return CHECKOUT_DEADLINE_SHIFT_TWO_HM;
   return CHECKOUT_DEADLINE_HM;
@@ -247,6 +344,7 @@ export function checkoutDeadlineHmFor(opts?: {
 
 /**
  * Ketdim oxirgi muddati (Toshkent):
+ * - Omborxona (warehouse): smena tugashi + 2 soat
  * - 2-smena: smena tugagan kundan KEYINGI kun 02:00 (23:55 YO‘Q)
  * - 3-smena: smena tugagan ertalab 10:00
  * - 1-smena / ofis: smena tugagan kun 23:55
@@ -258,8 +356,13 @@ export function checkoutDeadlineAt(
   opts?: {
     shiftKey?: string | null;
     shiftKeys?: Array<string | null | undefined> | null;
+    warehouse?: boolean;
+    shiftType?: string | null;
   },
 ): Date {
+  if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType)) {
+    return warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
+  }
   const endAt = shiftEndAt(workDateYmd, endHm, overnight);
   const endDayYmd = ymdInTashkent(endAt);
   const merged = { ...opts, overnight };
@@ -280,7 +383,12 @@ export function checkoutDeadlineHint(opts?: {
   shiftKey?: string | null;
   shiftKeys?: Array<string | null | undefined> | null;
   overnight?: boolean;
+  warehouse?: boolean;
+  shiftType?: string | null;
 }): string {
+  if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType)) {
+    return "Ombor smena: «Ketdim» tugash vaqtidan keyin 2 soat ichida";
+  }
   if (usesShiftThreeCheckoutDeadline(opts)) {
     return `3-smena: «Ketdim» ertalab soat ${CHECKOUT_DEADLINE_SHIFT_THREE_HM} gacha`;
   }
@@ -302,6 +410,17 @@ export function hoursForStaff(
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): StaffHours {
   const w = workScheduleForStaff(userRole, orgRole, shiftType, shiftLabel, defs);
+  if (w.warehouse) {
+    return {
+      start: w.start,
+      end: w.end,
+      graceMinutes: w.graceMinutes,
+      overnight: w.overnight,
+      shiftKey: "office",
+      shiftKeys: ["office"],
+      warehouse: true,
+    };
+  }
   const shiftKeys = isPharmacyShiftStaff(userRole, orgRole)
     ? pharmacyKeys(shiftType, shiftLabel)
     : (["office"] as ShiftKey[]);

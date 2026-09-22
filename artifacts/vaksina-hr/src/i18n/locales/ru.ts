@@ -95,6 +95,8 @@ export const ru: Messages = {
   "nav.reyting": "Рейтинг",
   "nav.reviziya": "Ревизия",
   "nav.distribyutsiya": "Дистрибуция",
+  "nav.omborxonaIsh": "Omborxona_ish",
+  "nav.section.warehouse": "Склад",
   "nav.it": "AyTi",
   "nav.texnik": "Технический",
   "nav.users": "Пользователи",

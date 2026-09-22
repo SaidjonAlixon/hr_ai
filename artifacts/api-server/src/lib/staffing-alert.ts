@@ -129,6 +129,27 @@ export async function syncStaffingAlertForEmployee(opts: {
     type: "stage_change",
     linkUrl: "/pharmacy-network",
   });
+
+  if (newStatus === "need_hire" || newStatus === "dismissed" || newStatus === "new") {
+    try {
+      const { notifyFilialRecruitersStaffNeed } = await import("./filial-recruiter-notify");
+      await notifyFilialRecruitersStaffNeed({
+        employee: {
+          fullName: employee.fullName,
+          location: employee.location,
+          latitude: employee.latitude,
+          longitude: employee.longitude,
+          orgRole: employee.orgRole,
+          shiftType: employee.shiftType,
+          shiftLabel: employee.shiftLabel,
+        },
+        branchLocation: branch,
+        status: newStatus,
+      });
+    } catch (err) {
+      console.error("[staffing-alert] filial recruiter notify", err);
+    }
+  }
 }
 
 /** Rekruter eʼlonni qabul qilgach — Xodim kerak → Qidirilmoqda */

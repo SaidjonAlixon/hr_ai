@@ -106,7 +106,7 @@ import {
   type TaskAttachment,
 } from "@/lib/vazifalar-api";
 
-import { HR_ROLES, userRoleLabel, isDeptHeadRole, DEPT_HEAD_ROLES } from "@/lib/roles";
+import { userRoleLabel } from "@/lib/roles";
 import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
@@ -122,22 +122,12 @@ import {
 type BoardCol = "past" | "today" | "progress" | "review" | "completed";
 type BoardView = "kanban" | "list" | "calendar";
 
-const ASSIGNER_ROLES = new Set([
-  "admin",
-  ...HR_ROLES,
-  "director", "asoschi",
-  "direktor_yordamchisi",
-  ...DEPT_HEAD_ROLES,
-  "recruiter",
-  "trainer",
-  "mudir",
-  "koordinator",
-  "sb",
-  "sb_boshliq",
-]);
+/** Apteka smena — vazifa qo‘yolmaydi; yurist va barcha ofis xodimlari qo‘ya oladi */
+const TASK_ASSIGN_BLOCKED = new Set(["farmasevt", "stajyor"]);
 
 function canAssignTasks(role?: string | null) {
-  return !!role && (ASSIGNER_ROLES.has(role) || isDeptHeadRole(role));
+  if (!role) return false;
+  return !TASK_ASSIGN_BLOCKED.has(role);
 }
 
 const COLUMNS: {

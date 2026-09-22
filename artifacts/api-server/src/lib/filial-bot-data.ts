@@ -2,10 +2,12 @@ import { eq, inArray } from "drizzle-orm";
 import { db, employeesTable, usersTable, pool } from "@workspace/db";
 import { dedupeActiveBranches } from "./branch-dedupe";
 import { displayBranchName, gpsFromLocationField, stripGpsSuffix } from "./geo-location";
+import { districtFromGps } from "./filial-districts";
 
 export type FilialBranchCard = {
   id: number;
   name: string;
+  district: string;
   mudirName: string;
   mudirPhone: string | null;
   coordinatorName: string | null;
@@ -180,6 +182,7 @@ export async function loadFilialBranches(force = false): Promise<FilialBranchCar
       return {
         id: m.id,
         name: branchName(m.location, m.fullName),
+        district: districtFromGps(gps?.lat, gps?.lng),
         mudirName: m.fullName,
         mudirPhone: m.userId != null ? phoneByUser.get(m.userId) ?? null : null,
         coordinatorName: coord?.fullName ?? null,

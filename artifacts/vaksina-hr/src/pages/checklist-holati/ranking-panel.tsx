@@ -24,7 +24,7 @@ function formatDate(ymd: string | null) {
 
 function medalClass(rank: number) {
   if (rank === 1) return "bg-amber-100 text-amber-800 ring-amber-200";
-  if (rank === 2) return "bg-slate-100 text-foreground ring-slate-200";
+  if (rank === 2) return "bg-muted text-foreground ring-border";
   if (rank === 3) return "bg-orange-100 text-orange-800 ring-orange-200";
   return "bg-card text-muted-foreground ring-slate-200";
 }
@@ -102,7 +102,7 @@ function RankRow({
               />
             </div>
           ) : (
-            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-slate-100">
+            <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted">
               <div
                 className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-emerald-500"
                 style={{ width: `${Math.max(4, Math.min(100, row.rating))}%` }}
@@ -167,7 +167,7 @@ export function CoordinatorRankingBoard({
             {data ? ` ${formatDate(data.from)} — ${formatDate(data.to)}` : ""}
           </p>
         </div>
-        <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+        <div className="grid grid-cols-3 gap-1 rounded-xl border border-border bg-muted p-1">
           {(Object.keys(PERIOD_LABEL) as RankingPeriod[]).map((key) => (
             <button
               key={key}
@@ -177,7 +177,7 @@ export function CoordinatorRankingBoard({
                 "h-9 rounded-lg px-2 text-xs font-semibold transition-colors",
                 period === key
                   ? "bg-primary text-primary-foreground shadow-sm"
-                  : "text-muted-foreground hover:bg-white/80 hover:text-foreground",
+                  : "text-foreground/65 hover:bg-background/60 hover:text-foreground",
               )}
             >
               {PERIOD_LABEL[key]}

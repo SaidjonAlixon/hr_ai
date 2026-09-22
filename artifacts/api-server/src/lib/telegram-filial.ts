@@ -121,6 +121,47 @@ export async function filialSendDocument(
   return data;
 }
 
+export async function filialSendPhoto(
+  chatId: number | string,
+  file: Buffer,
+  opts?: {
+    caption?: string;
+    parse_mode?: "HTML" | "Markdown";
+    filename?: string;
+    reply_markup?: { inline_keyboard: FilialInlineButton[][] };
+  },
+) {
+  const token = filialToken();
+  if (!token) throw new Error("TELEGRAM_FILIAL_BOT_TOKEN sozlanmagan");
+  if (!file?.length) throw new Error("Rasm bo‘sh");
+
+  const safeName = String(opts?.filename || "monitor.png")
+    .replace(/[/\\]/g, "_")
+    .slice(0, 120);
+  const form = new FormData();
+  form.append("chat_id", String(chatId));
+  form.append(
+    "photo",
+    new Blob([new Uint8Array(file)], { type: "image/png" }),
+    safeName,
+  );
+  if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+  if (opts?.parse_mode) form.append("parse_mode", opts.parse_mode);
+  if (opts?.reply_markup) {
+    form.append("reply_markup", JSON.stringify(opts.reply_markup));
+  }
+
+  const res = await fetch(`${TG_API}/bot${token}/sendPhoto`, {
+    method: "POST",
+    body: form,
+  });
+  const data = (await res.json()) as { ok: boolean; description?: string };
+  if (!data.ok) {
+    throw new Error(data.description || "Filial bot sendPhoto xato");
+  }
+  return data;
+}
+
 export async function filialEditMessageText(
   chatId: number | string,
   messageId: number,

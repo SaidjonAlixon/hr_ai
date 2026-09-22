@@ -8,6 +8,7 @@ import {
   ensurePersistentSchema,
   ensureEmployeesOrgColumns,
   ensureCandidatePipelineColumns,
+  ensureLokatsiyaBotSchema,
 } from "./lib/ensure-schema";
 
 const app: Express = express();
@@ -20,12 +21,26 @@ if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
   void ensureEmployeesOrgColumns().catch((err) => {
     logger.error({ err }, "Critical columns ensure failed (non-blocking)");
   });
+  void ensureLokatsiyaBotSchema().catch((err) => {
+    logger.warn({ err }, "Lokatsiya bot schema ensure failed (non-blocking)");
+  });
+  // Filial bot webhook — lokal polling o‘chirib yubormasin; Vercelda qayta o‘rnatiladi
+  void import("./lib/telegram-filial")
+    .then(({ ensureFilialWebhookOnServerless }) => ensureFilialWebhookOnServerless())
+    .then((r) => {
+      if (r?.ok) logger.info({ url: r.url, note: r.note }, "Filial bot webhook ensure");
+      else if (r?.note) logger.warn({ note: r.note }, "Filial bot webhook ensure skip");
+    })
+    .catch((err) => logger.warn({ err }, "Filial bot webhook ensure failed"));
 } else {
   void ensurePersistentSchema().catch((err) => {
     logger.error({ err }, "Schema ensure failed (non-blocking)");
   });
   void ensureCandidatePipelineColumns().catch((err) => {
     logger.error({ err }, "Candidate pipeline columns ensure failed (non-blocking)");
+  });
+  void ensureLokatsiyaBotSchema().catch((err) => {
+    logger.warn({ err }, "Lokatsiya bot schema ensure failed (non-blocking)");
   });
 }
 

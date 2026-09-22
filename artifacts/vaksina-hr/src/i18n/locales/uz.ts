@@ -95,6 +95,8 @@ export const uz: Messages = {
   "nav.reyting": "Reyting",
   "nav.reviziya": "Reviziya",
   "nav.distribyutsiya": "Distribyutsiya",
+  "nav.omborxonaIsh": "Omborxona_ish",
+  "nav.section.warehouse": "Omborxona",
   "nav.it": "AyTi",
   "nav.texnik": "Texnik",
   "nav.users": "Foydalanuvchilar",

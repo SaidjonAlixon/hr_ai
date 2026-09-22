@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ClipboardCheck,
   Download,
@@ -16,7 +16,9 @@ import {
   Trash2,
   Loader2,
   Clock3,
+  Unlock,
 } from "lucide-react";
+import { useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,7 +41,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
-import { canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRanking, hasFullPlatformAccess } from "@/lib/roles";
+import { canExportChecklistStatus, canViewChecklistStatus, canViewCoordinatorRanking, hasFullPlatformAccess, isDirectorRole } from "@/lib/roles";
 import {
   downloadBranchAuditsExcel,
   useBranchAuditsList,
@@ -50,6 +52,7 @@ import { CoveragePanel } from "./coverage-panel";
 import { ChecklistDashboard, type ChecklistDashNav } from "./dashboard-panel";
 import { CoordinatorRankingBoard } from "./ranking-panel";
 import { VisitMonitorPanel } from "./visit-monitor-panel";
+import { PresenceUnlockPanel } from "./presence-unlock-panel";
 import { useI18n } from "@/i18n/I18nProvider";
 
 function scoreTone(pct: number) {
@@ -124,9 +127,14 @@ export default function ChecklistHolatiPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
+  const search = useSearch();
   const allowedFull = canViewChecklistStatus(user?.role);
   const allowedRanking = canViewCoordinatorRanking(user?.role);
   const isCoordOnly = user?.role === "koordinator";
+  const canApproveUnlock =
+    hasFullPlatformAccess(user?.role) ||
+    user?.role === "admin" ||
+    isDirectorRole(user?.role);
 
   const [q, setQ] = useState("");
   const [coordinatorId, setCoordinatorId] = useState<string>("all");
@@ -139,6 +147,18 @@ export default function ChecklistHolatiPage() {
   const [viewing, setViewing] = useState<BranchAudit | null>(null);
   const [exporting, setExporting] = useState(false);
   const [tab, setTab] = useState("dashboard");
+
+  useEffect(() => {
+    const sp = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
+    const qTab = sp.get("tab");
+    if (qTab === "ruxsat" || qTab === "unlock" || sp.get("unlock") === "1") {
+      if (canApproveUnlock) setTab("ruxsat");
+    } else if (qTab === "vaqt" || qTab === "visits") {
+      setTab(qTab === "visits" ? "tashriflar" : "vaqt");
+    } else if (qTab === "dashboard" || qTab === "reyting" || qTab === "tashriflar" || qTab === "qamrov") {
+      setTab(qTab);
+    }
+  }, [search, canApproveUnlock]);
 
   const { data: audits = [], isLoading } = useBranchAuditsList(
     {
@@ -401,11 +421,27 @@ export default function ChecklistHolatiPage() {
       </div>
 
       <Tabs value={tab} onValueChange={setTab} className="space-y-4">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 sm:grid-cols-5 sm:max-w-4xl">
+        <TabsList
+          className={cn(
+            "grid h-auto w-full gap-1",
+            canApproveUnlock
+              ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 sm:max-w-5xl"
+              : "grid-cols-2 sm:grid-cols-5 sm:max-w-4xl",
+          )}
+        >
           <TabsTrigger value="dashboard" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <LayoutDashboard className="h-3.5 w-3.5 shrink-0" />
             {t("checklist.tab.dashboard")}
           </TabsTrigger>
+          {canApproveUnlock ? (
+            <TabsTrigger
+              value="ruxsat"
+              className="h-11 gap-1 px-2 text-xs font-semibold text-rose-700 data-[state=active]:bg-rose-600 data-[state=active]:text-white sm:h-10 sm:text-sm dark:text-rose-300"
+            >
+              <Unlock className="h-3.5 w-3.5 shrink-0" />
+              Ruxsat berish
+            </TabsTrigger>
+          ) : null}
           <TabsTrigger value="vaqt" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
             <Clock3 className="h-3.5 w-3.5 shrink-0" />
             Vaqt
@@ -432,6 +468,11 @@ export default function ChecklistHolatiPage() {
             onOpenVisit={(a) => setViewing(a)}
           />
         </TabsContent>
+        {canApproveUnlock ? (
+          <TabsContent value="ruxsat" className="mt-0">
+            <PresenceUnlockPanel enabled={allowedFull && canApproveUnlock} />
+          </TabsContent>
+        ) : null}
         <TabsContent value="vaqt" className="mt-0">
           <VisitMonitorPanel enabled={allowedFull} />
         </TabsContent>
@@ -616,7 +657,7 @@ export default function ChecklistHolatiPage() {
                         </span>
                       ))}
                       {b.stamps.length > 8 ? (
-                        <span className="inline-flex rounded-md bg-slate-100 px-1.5 py-0.5 text-[11px] text-muted-foreground">
+                        <span className="inline-flex rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-foreground/70">
                           +{b.stamps.length - 8}
                         </span>
                       ) : null}

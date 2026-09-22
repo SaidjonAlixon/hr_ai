@@ -2081,31 +2081,39 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <Panel title={t("davomat.deptTable")} bodyClassName="p-0" className="scroll-mt-24" id="davomat-breakdown-table">
-          <div className="overflow-x-auto">
-            <table className="analytics-table w-full text-sm">
+          <div className="overflow-x-auto p-3">
+            <table className="analytics-table analytics-table--sheet w-full min-w-[520px] table-fixed text-sm">
+              <colgroup>
+                <col className="w-[28%]" />
+                <col className="w-[12%]" />
+                <col className="w-[14%]" />
+                <col className="w-[12%]" />
+                <col className="w-[16%]" />
+                <col className="w-[18%]" />
+              </colgroup>
               <thead>
                 <tr>
-                  <th>{isPharmacySegment ? t("davomat.colBranch") : t("ui.department")}</th>
-                  <th className="text-right">{t("ui.employee")}</th>
-                  <th className="text-right">{t("davomat.arrived")}</th>
-                  <th className="text-right">{t("davomat.lateShort")}</th>
-                  <th className="text-right">{t("davomat.absent")}</th>
-                  <th className="text-right">{t("davomat.chartAtt")}</th>
+                  <th className="!text-left">{isPharmacySegment ? t("davomat.colBranch") : t("ui.department")}</th>
+                  <th className="!text-center">{t("ui.employee")}</th>
+                  <th className="!text-center">{t("davomat.arrived")}</th>
+                  <th className="!text-center">{t("davomat.lateShort")}</th>
+                  <th className="!text-center">{t("davomat.absent")}</th>
+                  <th className="!text-center">{t("davomat.chartAtt")}</th>
                 </tr>
               </thead>
               <tbody>
                 {breakdownRows.map((d) => (
                   <tr
                     key={d.name}
-                    className="cursor-pointer transition hover:bg-muted/60"
+                    className="cursor-pointer transition"
                     onClick={() => setDeptRow(d as DeptRow)}
                   >
-                    <td className="font-medium text-primary underline-offset-2 hover:underline">{d.name}</td>
-                    <td className="text-right tabular-nums">{d.headcount}</td>
-                    <td className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">{d.present}</td>
-                    <td className="text-right tabular-nums text-amber-600 dark:text-amber-400">{d.late}</td>
-                    <td className="text-right tabular-nums text-rose-600 dark:text-rose-400">{d.absent}</td>
-                    <td className="text-right font-medium tabular-nums text-primary">{d.attendanceRate}%</td>
+                    <td className="text-left font-medium text-primary underline-offset-2 hover:underline">{d.name}</td>
+                    <td className="text-center tabular-nums">{d.headcount}</td>
+                    <td className="text-center tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{d.present}</td>
+                    <td className="text-center tabular-nums font-medium text-amber-600 dark:text-amber-400">{d.late}</td>
+                    <td className="text-center tabular-nums font-medium text-rose-600 dark:text-rose-400">{d.absent}</td>
+                    <td className="text-center font-semibold tabular-nums text-primary">{d.attendanceRate}%</td>
                   </tr>
                 ))}
               </tbody>

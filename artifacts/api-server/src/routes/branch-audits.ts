@@ -18,16 +18,23 @@ import {
   canViewChecklistStatus,
   canViewCoordinatorRanking,
   canViewPharmacyReyting,
+  hasFullPlatformAccess,
+  isDirectorRole,
   isPharmacyBranchRole,
 } from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 import { dedupeActiveBranches } from "../lib/branch-dedupe";
 import {
   assertChecklistAllowedForCoordinator,
+  assertInBranchGeofence,
   attachChecklistToOpenVisit,
+  approvePresenceUnlock,
+  confirmCoordinatorPresence,
+  COORD_VISIT_GEOFENCE_METERS,
   finishCoordinatorVisitWithNote,
   getOpenCoordinatorVisit,
   listCoordinatorVisits,
+  requestPresenceUnlock,
   serializeVisit,
   startCoordinatorVisit,
 } from "../lib/coordinator-visits";
@@ -1210,7 +1217,7 @@ router.get("/branch-audits/my-visit", requireAuth, async (req: AuthRequest, res)
 });
 
 /**
- * Filial tashrifini ochish (cheklist Keldim) — Face ID bo‘lmasa ham GPS bilan.
+ * Filial tashrifini ochish — FAQAT yashil zona (70 m). Face ID checklist sahifasidan.
  */
 router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!req.userId) {
@@ -1236,6 +1243,21 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
         ? Number(req.body.longitude)
         : null;
 
+    const zone = await assertInBranchGeofence({
+      branchId,
+      latitude,
+      longitude,
+      maxMeters: COORD_VISIT_GEOFENCE_METERS,
+    });
+    if (!zone.ok) {
+      res.status(zone.status).json({
+        error: zone.error,
+        code: zone.code,
+        distanceMeters: zone.distanceMeters,
+      });
+      return;
+    }
+
     const [emp] = await db
       .select({
         id: employeesTable.id,
@@ -1249,54 +1271,7 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
       return;
     }
 
-    const [branch] = await db
-      .select({
-        id: employeesTable.id,
-        fullName: employeesTable.fullName,
-        location: employeesTable.location,
-        latitude: employeesTable.latitude,
-        longitude: employeesTable.longitude,
-      })
-      .from(employeesTable)
-      .where(eq(employeesTable.id, branchId))
-      .limit(1);
-    if (!branch) {
-      res.status(404).json({ error: "Filial topilmadi" });
-      return;
-    }
-
-    const branchLabel =
-      displayBranchName(branch.location) || branch.location || branch.fullName || `Filial #${branchId}`;
-
-    // GPS tekshiruvi (filial koordinatasi bo‘lsa)
-    if (
-      branch.latitude != null &&
-      branch.longitude != null &&
-      Number.isFinite(branch.latitude) &&
-      Number.isFinite(branch.longitude)
-    ) {
-      if (latitude == null || longitude == null) {
-        res.status(400).json({ error: "GPS majburiy", code: "gps_required" });
-        return;
-      }
-      const R = 6371000;
-      const toRad = (d: number) => (d * Math.PI) / 180;
-      const dLat = toRad(branch.latitude - latitude);
-      const dLng = toRad(branch.longitude - longitude);
-      const a =
-        Math.sin(dLat / 2) ** 2 +
-        Math.cos(toRad(latitude)) * Math.cos(toRad(branch.latitude)) * Math.sin(dLng / 2) ** 2;
-      const dist = Math.round(2 * R * Math.asin(Math.min(1, Math.sqrt(a))));
-      if (dist > 120) {
-        res.status(403).json({
-          error: `Filial hududidan tashqaridasiz (${dist} m). Yashil zonaga kiring.`,
-          code: "outside_geofence",
-          distanceMeters: dist,
-        });
-        return;
-      }
-    }
-
+    const branchLabel = zone.branchLabel;
     const workDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
     const [user] = await db
       .select({ fullName: usersTable.fullName })
@@ -1321,7 +1296,8 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
     res.json({
       ok: true,
       visit: serializeVisit(result.visit),
-      message: `«${branchLabel}» tashrifi ochildi. Endi cheklistni to‘ldiring.`,
+      distanceMeters: zone.distanceMeters,
+      message: `«${branchLabel}» tashrifi ochildi. Endi cheklistni to‘ldiring. Har 20 daqiqada hududni tasdiqlang.`,
     });
   } catch (err) {
     console.error("POST /branch-audits/my-visit/start error:", err);
@@ -1330,7 +1306,128 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
 });
 
 /**
- * Ketdim: izoh yozilgach filial tashrifini yopish — keyingi filialga o‘tish mumkin.
+ * Har 20 daqiqalik hudud tasdiqlash — faqat yashil zonada.
+ */
+router.post("/branch-audits/my-visit/confirm-presence", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya kerak" });
+    return;
+  }
+  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat koordinator" });
+    return;
+  }
+  try {
+    const latitude =
+      req.body?.latitude != null && Number.isFinite(Number(req.body.latitude))
+        ? Number(req.body.latitude)
+        : null;
+    const longitude =
+      req.body?.longitude != null && Number.isFinite(Number(req.body.longitude))
+        ? Number(req.body.longitude)
+        : null;
+
+    const result = await confirmCoordinatorPresence({
+      userId: req.userId,
+      latitude,
+      longitude,
+    });
+    if (!result.ok) {
+      res.status(result.status).json({
+        error: result.error,
+        code: result.code,
+        distanceMeters: result.distanceMeters,
+      });
+      return;
+    }
+    res.json({
+      ok: true,
+      visit: serializeVisit(result.visit),
+      distanceMeters: result.distanceMeters,
+      message: "Hudud tasdiqlandi — ishingizni davom ettiring.",
+    });
+  } catch (err) {
+    console.error("POST /branch-audits/my-visit/confirm-presence error:", err);
+    res.status(503).json({ error: "Hudud tasdiqlanmadi" });
+  }
+});
+
+/**
+ * Bloklangan koordinator — adminga ruxsat so‘rovi.
+ */
+router.post("/branch-audits/my-visit/request-unlock", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya kerak" });
+    return;
+  }
+  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat koordinator" });
+    return;
+  }
+  try {
+    const result = await requestPresenceUnlock({ userId: req.userId });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error, code: result.code });
+      return;
+    }
+    res.json({
+      ok: true,
+      visit: serializeVisit(result.visit),
+      message: "So‘rov adminga yuborildi. Javobni kuting.",
+    });
+  } catch (err) {
+    console.error("POST /branch-audits/my-visit/request-unlock error:", err);
+    res.status(503).json({ error: "So‘rov yuborilmadi" });
+  }
+});
+
+/**
+ * Admin: hudud bloki ruxsatini berish.
+ */
+router.post(
+  "/branch-audits/visits/:id/approve-unlock",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    if (!req.userId) {
+      res.status(401).json({ error: "Avtorizatsiya kerak" });
+      return;
+    }
+    if (
+      req.userRole !== "admin" &&
+      !hasFullPlatformAccess(req.userRole) &&
+      !isDirectorRole(req.userRole)
+    ) {
+      res.status(403).json({ error: "Faqat admin / rahbariyat" });
+      return;
+    }
+    const visitId = Number(req.params.id);
+    if (!Number.isFinite(visitId) || visitId <= 0) {
+      res.status(400).json({ error: "Noto‘g‘ri tashrif id" });
+      return;
+    }
+    try {
+      const result = await approvePresenceUnlock({
+        visitId,
+        adminUserId: req.userId,
+      });
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error, code: result.code });
+        return;
+      }
+      res.json({
+        ok: true,
+        visit: serializeVisit(result.visit),
+        message: "Ruxsat berildi — koordinator cheklistni davom ettirishi mumkin.",
+      });
+    } catch (err) {
+      console.error("POST /branch-audits/visits/:id/approve-unlock error:", err);
+      res.status(503).json({ error: "Ruxsat berilmadi" });
+    }
+  },
+);
+
+/**
+ * Ketdim: izoh + yashil zona — keyingi filialga o‘tish mumkin.
  */
 router.post("/branch-audits/my-visit/finish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!req.userId) {
@@ -1359,7 +1456,11 @@ router.post("/branch-audits/my-visit/finish", requireAuth, async (req: AuthReque
       longitude,
     });
     if (!result.ok) {
-      res.status(result.status).json({ error: result.error, code: result.code });
+      res.status(result.status).json({
+        error: result.error,
+        code: result.code,
+        distanceMeters: result.distanceMeters,
+      });
       return;
     }
 

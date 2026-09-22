@@ -258,15 +258,17 @@ export function ChecklistDashboard({
               Tashriflar, ball, qamrov, GPS va cheklist jarayonlari — bir joyda.
             </p>
           </div>
-          <div className="inline-flex w-full rounded-xl bg-slate-100 p-1 lg:w-auto">
+          <div className="inline-flex w-full rounded-xl border border-border bg-muted p-1 lg:w-auto">
             {(Object.keys(RANGE_LABEL) as RangeKey[]).map((key) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => setRange(key)}
                 className={cn(
-                  "flex-1 rounded-lg px-2.5 py-1.5 text-xs font-medium sm:px-3 lg:flex-none",
-                  range === key ? "bg-card text-[#0b1a2e] shadow-sm" : "text-muted-foreground hover:text-foreground",
+                  "flex-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-colors sm:px-3 lg:flex-none",
+                  range === key
+                    ? "bg-card text-foreground shadow-sm ring-1 ring-border"
+                    : "text-foreground/65 hover:bg-background/60 hover:text-foreground",
                 )}
               >
                 {RANGE_LABEL[key]}
@@ -323,28 +325,28 @@ export function ChecklistDashboard({
           icon={ClipboardCheck}
           label="Tashriflar"
           value={String(dash.visits)}
-          tone="bg-sky-50 text-sky-700"
+          tone="bg-sky-50 text-sky-700 dark:bg-sky-500/20 dark:text-sky-300"
           onClick={() => goVisits()}
         />
         <Kpi
           icon={Store}
           label={t("checklist.branchVisit")}
           value={String(dash.visitedBranches)}
-          tone="bg-indigo-50 text-indigo-700"
+          tone="bg-indigo-50 text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-300"
           onClick={() => goVisits()}
         />
         <Kpi
           icon={Users}
           label={t("checklist.coord")}
           value={String(dash.coordinators)}
-          tone="bg-violet-50 text-violet-700"
+          tone="bg-violet-50 text-violet-700 dark:bg-violet-500/20 dark:text-violet-300"
           onClick={() => goVisits()}
         />
         <Kpi
           icon={TrendingUp}
           label="O‘rtacha ball"
           value={`${dash.avg}%`}
-          tone="bg-emerald-50"
+          tone="bg-emerald-50 dark:bg-emerald-500/20"
           valueClass={scoreTone(dash.avg)}
           onClick={() => goVisits()}
         />
@@ -352,7 +354,7 @@ export function ChecklistDashboard({
           icon={CheckCircle2}
           label={t("checklist.coverage")}
           value={`${dash.coveragePct}%`}
-          tone="bg-cyan-50 text-cyan-800"
+          tone="bg-cyan-50 text-cyan-800 dark:bg-cyan-500/20 dark:text-cyan-300"
           hint={coverage ? `${coverage.totals.filled}/${coverage.totals.branches}` : undefined}
           onClick={() => onOpenCoverage(coordinatorId !== "all" ? coordinatorId : undefined)}
         />
@@ -360,7 +362,7 @@ export function ChecklistDashboard({
           icon={MapPin}
           label="GPS"
           value={`${dash.gpsPct}%`}
-          tone="bg-amber-50 text-amber-800"
+          tone="bg-amber-50 text-amber-800 dark:bg-amber-500/20 dark:text-amber-300"
           hint={`${dash.withGps} ta tashrif`}
           onClick={() => goVisits({ gps: "yes" })}
         />
@@ -832,7 +834,7 @@ function StatusCard({
   return (
     <div className="rounded-2xl border bg-card p-4 shadow-sm">
       <h3 className="mb-3 text-sm font-semibold">{title}</h3>
-      <div className="mb-3 flex h-2 overflow-hidden rounded-full bg-slate-100">
+      <div className="mb-3 flex h-2 overflow-hidden rounded-full bg-muted">
         {items.map((it) =>
           it.value <= 0 || total <= 0 ? null : (
             <button

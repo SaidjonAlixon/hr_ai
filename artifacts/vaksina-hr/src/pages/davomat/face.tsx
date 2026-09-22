@@ -871,6 +871,7 @@ export default function DavomatFacePage() {
   const [officeStaff, setOfficeStaff] = useState(false);
   const [adminQrAnywhere, setAdminQrAnywhere] = useState(false);
   const [methodsReady, setMethodsReady] = useState(false);
+  const [qrMethodAllowed, setQrMethodAllowed] = useState(true);
   const [canManageQr, setCanManageQr] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [methodsHidden, setMethodsHidden] = useState(false);
@@ -1012,12 +1013,15 @@ export default function DavomatFacePage() {
         setOfficeStaff(Boolean(m.officeStaff) || (m.methods.includes("QR") && !m.pharmacyStaff && !m.adminQrAnywhere));
         setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
         setCanManageQr(m.canManageQr);
+        setQrMethodAllowed(m.methods.includes("QR"));
+        if (!m.methods.includes("QR")) setSelectedMethod("FACE_ID");
       })
       .catch(() => {
         setPharmacyStaff(false);
         setOfficeStaff(false);
         setAdminQrAnywhere(false);
         setCanManageQr(false);
+        setQrMethodAllowed(true);
       })
       .finally(() => {
         setMethodsReady(true);
@@ -1441,15 +1445,16 @@ export default function DavomatFacePage() {
     geoOk &&
     !done;
 
-  /** QR: barcha xodimlar — GPS + zona; admin — lokatsiya shartsiz */
+  /** QR: koordinator uchun o‘chirilgan; boshqalar — GPS + zona */
   const canOpenQr =
+    qrMethodAllowed &&
     methodsReady &&
     cameraGranted &&
     !done &&
     (adminQrAnywhere || mobileAnywhere || (Boolean(gps) && !gpsError && inside));
 
-  /** Face ID | QR — ofis, farmasevt va barcha rollar */
-  const showDualMethods = methodsReady;
+  /** Face ID | QR — QR yo‘q bo‘lsa faqat Face */
+  const showDualMethods = methodsReady && qrMethodAllowed;
 
   const faceVerifiedReady = Boolean(verified?.descriptor && verified.descriptor.length > 0);
   const qrVerifiedReady = Boolean(verified?.qrPayload);

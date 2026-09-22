@@ -23,6 +23,8 @@ type Props = {
   checkInAt?: string | null;
   checklistAt?: string | null;
   submitting?: boolean;
+  withinGeofence?: boolean;
+  geofenceMeters?: number;
   onFinish: (note: string) => void | Promise<void>;
 };
 
@@ -52,6 +54,8 @@ export function FinishVisitDialog({
   checkInAt,
   checklistAt,
   submitting,
+  withinGeofence = true,
+  geofenceMeters = 70,
   onFinish,
 }: Props) {
   const [step, setStep] = useState<"confirm" | "note">("confirm");
@@ -161,6 +165,21 @@ export function FinishVisitDialog({
             <p className="text-xs leading-relaxed text-muted-foreground">
               «Ha» bosilgach izoh yozasiz, keyin «Tugatish» — tashrif yopiladi.
             </p>
+            <div
+              className={cn(
+                "flex items-start gap-2 rounded-xl border px-3 py-2.5 text-[11px] leading-relaxed",
+                withinGeofence
+                  ? "border-emerald-200/80 bg-emerald-50/80 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-950/40 dark:text-emerald-200"
+                  : "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-600 dark:bg-amber-950/50 dark:text-amber-100",
+              )}
+            >
+              <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                {withinGeofence
+                  ? `Yashil zonadasiz (${geofenceMeters} m) — Ketdim qabul qilinadi.`
+                  : `Yashil zonadan tashqaridasiz. Ketdim faqat filial ${geofenceMeters} m ichida ishlaydi.`}
+              </span>
+            </div>
           </div>
         ) : (
           <div className="space-y-3 bg-card px-5 py-5 sm:px-6">
@@ -225,7 +244,7 @@ export function FinishVisitDialog({
               </Button>
               <Button
                 type="button"
-                disabled={submitting}
+                disabled={submitting || !withinGeofence}
                 onClick={() => setStep("note")}
                 className="rounded-xl bg-rose-600 text-white hover:bg-rose-700"
               >
@@ -245,7 +264,7 @@ export function FinishVisitDialog({
               </Button>
               <Button
                 type="button"
-                disabled={!canSubmit}
+                disabled={!canSubmit || !withinGeofence}
                 onClick={() => void onFinish(trimmed)}
                 className="rounded-xl bg-rose-700 hover:bg-rose-800"
               >

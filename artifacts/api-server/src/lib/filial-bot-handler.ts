@@ -8,6 +8,15 @@ import {
   loadFilialBranches,
   type FilialBranchCard,
 } from "./filial-bot-data";
+import { sortDistrictNames } from "./filial-districts";
+import {
+  deactivateLokatsiyaRecruiter,
+  isFilialBotRecruiter,
+  listLokatsiyaRecruiters,
+  recruiterDisplayName,
+  touchLokatsiyaRecruiterChat,
+  upsertLokatsiyaRecruiter,
+} from "./filial-bot-recruiters";
 import {
   isFilialBotAdmin,
   listLokatsiyaBroadcastTargets,
@@ -15,11 +24,21 @@ import {
   upsertLokatsiyaBotUser,
 } from "./filial-bot-users";
 import {
+  buildStaffingMonitorCaption,
+  formatBranchNeedDetail,
+  formatNeedBranchesSummary,
+  groupNeedsByBranch,
+  loadStaffingMonitorReport,
+  type BranchNeedGroup,
+} from "./filial-staffing-monitor";
+import { renderStaffingMonitorPng } from "./filial-staffing-monitor-image";
+import {
   filialAnswerCallback,
   filialEditMessageText,
   filialSendDocument,
   filialSendLocation,
   filialSendMessage,
+  filialSendPhoto,
   type FilialInlineButton,
   type FilialTelegramUpdate,
   type FilialTelegramUser,
@@ -30,17 +49,30 @@ const PAGE_SIZE = 10;
 const BTN_USERS = "👥 Foydalanuvchilar";
 const BTN_BROADCAST = "📢 Xabar yuborish";
 const BTN_BRANCHES = "🏢 Filiallar";
+const BTN_DISTRICTS = "🗺 Filiallar kesimi";
 const BTN_NEAREST = "📍 Eng yaqin filial";
 const BTN_SEND_LOCATION = "📍 Joyimni yuborish";
 const BTN_CANCEL_BROADCAST = "❌ Bekor qilish";
 const BTN_CANCEL_NEAREST = "❌ Bekor";
+const BTN_INFO = "📊 Ma’lumot";
+const BTN_NEED_BRANCHES = "🔴 Xodim kerak filiallar";
+const BTN_NO_GPS = "📍 GPS kiritilmagan";
+const BTN_RECRUITERS = "👑 Admin rekruterlar";
+const BTN_CANCEL_RECRUITER = "❌ Bekor (rekruter)";
+
+const DISTRICTS_PAGE = 8;
+const NEED_PAGE = 8;
 
 /** Admin kutayotgan broadcast matni */
 const pendingBroadcast = new Map<number, { text: string; at: number }>();
 const awaitingBroadcastText = new Set<number>();
+/** Admin rekruter qo‘shish — Telegram ID kutilmoqda */
+const awaitingRecruiterId = new Set<number>();
 /** Foydalanuvchi oxirgi yuborgan joyi — masofa hisoblash uchun */
 const userLastGeo = new Map<number, { lat: number; lng: number; at: number }>();
 const awaitingUserLocation = new Set<number>();
+
+type BotAccess = { admin: boolean; recruiter: boolean };
 
 function haversineMeters(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const toRad = (d: number) => (d * Math.PI) / 180;
@@ -111,6 +143,8 @@ export function formatBranchCard(
   }
 
   lines.push(
+    `🗺 <b>Tuman / hudud:</b> ${esc(b.district)}`,
+    "",
     `👤 <b>Koordinator:</b> ${b.coordinatorName ? esc(b.coordinatorName) : "⚠️ <i>biriktirilmagan</i>"}`,
     `📞 <b>Koordinator raqami:</b> ${formatPhone(b.coordinatorPhone)}`,
     "",
@@ -182,27 +216,59 @@ function listText(branches: FilialBranchCard[], page: number, firstName: string)
 }
 
 function backKeyboard(): FilialInlineButton[][] {
-  return [[{ text: "⬅️ Filiallar ro‘yxati", callback_data: "fp:0" }]];
+  return [
+    [{ text: "⬅️ Filiallar ro‘yxati", callback_data: "fp:0" }],
+    [{ text: "🗺 Tumanlar", callback_data: "fd:list:0" }],
+  ];
 }
 
-function userMainKeyboard(admin: boolean) {
-  if (admin) {
-    return {
-      keyboard: [
-        [{ text: BTN_NEAREST }, { text: BTN_BRANCHES }],
-        [{ text: BTN_USERS }, { text: BTN_BROADCAST }],
-      ],
-      resize_keyboard: true,
-    };
+/** Need-branch list cache (callback index → group) */
+let needGroupsCache: { at: number; groups: BranchNeedGroup[] } | null = null;
+const NEED_CACHE_MS = 60_000;
+
+async function getNeedBranchGroups(force = false): Promise<BranchNeedGroup[]> {
+  if (!force && needGroupsCache && Date.now() - needGroupsCache.at < NEED_CACHE_MS) {
+    return needGroupsCache.groups;
   }
+  const report = await loadStaffingMonitorReport();
+  const groups = groupNeedsByBranch(report.items);
+  needGroupsCache = { at: Date.now(), groups };
+  return groups;
+}
+
+function userMainKeyboard(access: BotAccess | boolean) {
+  const admin = typeof access === "boolean" ? access : access.admin;
+  const recruiter = typeof access === "boolean" ? access : access.recruiter;
+
+  const rows: Array<Array<{ text: string }>> = [
+    [{ text: BTN_NEAREST }, { text: BTN_BRANCHES }],
+    [{ text: BTN_DISTRICTS }],
+  ];
+
+  if (recruiter || admin) {
+    rows.push([{ text: BTN_INFO }]);
+    rows.push([{ text: BTN_NEED_BRANCHES }]);
+    rows.push([{ text: BTN_NO_GPS }]);
+  }
+  if (admin) {
+    rows.push([{ text: BTN_USERS }, { text: BTN_BROADCAST }]);
+    rows.push([{ text: BTN_RECRUITERS }]);
+  }
+
   return {
-    keyboard: [[{ text: BTN_NEAREST }, { text: BTN_BRANCHES }]],
+    keyboard: rows,
     resize_keyboard: true,
   };
 }
 
 function adminReplyKeyboard() {
-  return userMainKeyboard(true);
+  return userMainKeyboard({ admin: true, recruiter: true });
+}
+
+async function resolveAccess(telegramUserId?: number | null): Promise<BotAccess> {
+  const admin = isFilialBotAdmin(telegramUserId);
+  const recruiter = admin || (await isFilialBotRecruiter(telegramUserId));
+  return { admin, recruiter };
 }
 
 function locationRequestKeyboard() {
@@ -223,6 +289,13 @@ function adminBroadcastCancelKeyboard() {
   };
 }
 
+function recruiterAddCancelKeyboard() {
+  return {
+    keyboard: [[{ text: BTN_CANCEL_RECRUITER }], [{ text: BTN_RECRUITERS }]],
+    resize_keyboard: true,
+  };
+}
+
 async function trackUser(
   user: FilialTelegramUser | undefined,
   chatId: number,
@@ -231,33 +304,409 @@ async function trackUser(
   if (!user?.id) return;
   try {
     await upsertLokatsiyaBotUser(user, chatId, opts);
+    await touchLokatsiyaRecruiterChat(user.id, chatId, {
+      username: user.username,
+      firstName: user.first_name,
+      lastName: user.last_name,
+    });
   } catch (err) {
     console.error("[lokatsiya-bot] upsert user", err);
   }
 }
 
+async function sendLiveStaffingMonitor(chatId: number) {
+  await filialSendMessage(chatId, "⏳ Jonli ma’lumot yuklanmoqda…");
+  try {
+    const report = await loadStaffingMonitorReport();
+    const caption = buildStaffingMonitorCaption(report, { maxItems: 12 });
+    const shortCap = [
+      `📊 <b>Xodim ehtiyoji</b> · ${report.totalNeeds} ta`,
+      `${esc(report.generatedAtLabel)}`,
+      esc(report.analysisLine),
+    ].join("\n");
+    try {
+      const png = await renderStaffingMonitorPng(report);
+      await filialSendPhoto(chatId, png, {
+        caption: shortCap.slice(0, 1024),
+        parse_mode: "HTML",
+        filename: "vaksina-xodim-ehtiyoji.png",
+      });
+    } catch (imgErr) {
+      console.error("[filial-bot] monitor png", imgErr);
+    }
+    await filialSendMessage(chatId, caption, { parse_mode: "HTML" });
+
+    if (report.okBranchNames.length && report.okBranchNames.length <= 25) {
+      await filialSendMessage(
+        chatId,
+        [
+          "✅ <b>Xodim to‘liq (ehtiyoj yo‘q) filiallar:</b>",
+          ...report.okBranchNames.map((n, i) => `${i + 1}. ${esc(n)}`),
+        ].join("\n"),
+        { parse_mode: "HTML" },
+      );
+    } else if (report.okBranchNames.length > 25) {
+      await filialSendMessage(
+        chatId,
+        `✅ <b>Xodim to‘liq filiallar:</b> ${report.okBranches} ta (ro‘yxat uzun — monitoringda jamlangan).`,
+        { parse_mode: "HTML" },
+      );
+    }
+  } catch (err) {
+    console.error("[filial-bot] live monitor", err);
+    await filialSendMessage(chatId, "⚠️ Monitoring yuklanmadi. Keyinroq urinib ko‘ring.");
+  }
+}
+
+function needBranchesKeyboard(groups: BranchNeedGroup[], page: number): FilialInlineButton[][] {
+  const totalPages = Math.max(1, Math.ceil(groups.length / NEED_PAGE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = groups.slice(p * NEED_PAGE, p * NEED_PAGE + NEED_PAGE);
+
+  const rows: FilialInlineButton[][] = slice.map((g, i) => {
+    const idx = p * NEED_PAGE + i;
+    const roles = g.byRole.map((r) => `${r.label[0]}${r.count}`).join("·");
+    const label = `${g.branch} · ${g.total}`.slice(0, 48);
+    return [
+      {
+        text: `🏢 ${label}${roles ? ` (${roles})` : ""}`.slice(0, 64),
+        callback_data: `rn:d:${idx}`,
+      },
+    ];
+  });
+
+  const nav: FilialInlineButton[] = [];
+  if (p > 0) nav.push({ text: "◀️", callback_data: `rn:list:${p - 1}` });
+  nav.push({ text: `${p + 1}/${totalPages}`, callback_data: `rn:list:${p}` });
+  if (p < totalPages - 1) nav.push({ text: "▶️", callback_data: `rn:list:${p + 1}` });
+  if (nav.length) rows.push(nav);
+  rows.push([{ text: "🔄 Yangilash", callback_data: "rn:list:0:force" }]);
+  return rows;
+}
+
+async function sendNeedBranchesList(
+  chatId: number,
+  page = 0,
+  opts?: { editMessageId?: number; force?: boolean },
+) {
+  const groups = await getNeedBranchGroups(!!opts?.force);
+  if (!groups.length) {
+    const text =
+      "✅ <b>Xodim kerak filiallar</b>\n\nHozir ochiq ehtiyoj yo‘q — barcha joylar to‘ldirilgan.";
+    if (opts?.editMessageId) {
+      try {
+        await filialEditMessageText(chatId, opts.editMessageId, text);
+        return;
+      } catch {
+        /* fallthrough */
+      }
+    }
+    await filialSendMessage(chatId, text);
+    return;
+  }
+
+  const text = [
+    formatNeedBranchesSummary(groups),
+    "",
+    `<i>Sahifa ${Math.min(page, Math.ceil(groups.length / NEED_PAGE) - 1) + 1}/${Math.max(1, Math.ceil(groups.length / NEED_PAGE))}</i>`,
+  ].join("\n");
+  const markup = { inline_keyboard: needBranchesKeyboard(groups, page) };
+  if (opts?.editMessageId) {
+    try {
+      await filialEditMessageText(chatId, opts.editMessageId, text, { reply_markup: markup });
+      return;
+    } catch {
+      /* fallthrough */
+    }
+  }
+  await filialSendMessage(chatId, text, { reply_markup: markup });
+}
+
+async function sendNeedBranchDetail(chatId: number, idx: number) {
+  const groups = await getNeedBranchGroups();
+  const g = groups[idx];
+  if (!g) {
+    await filialSendMessage(chatId, "Filial topilmadi. Qaytadan «Xodim kerak filiallar» bosing.");
+    return;
+  }
+  await filialSendMessage(chatId, formatBranchNeedDetail(g), {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "⬅️ Filiallar ro‘yxati", callback_data: "rn:list:0" }],
+        [{ text: "🔄 Yangilash", callback_data: `rn:d:${idx}` }],
+      ],
+    },
+  });
+}
+
+function noGpsKeyboard(branches: FilialBranchCard[], page: number): FilialInlineButton[][] {
+  const totalPages = Math.max(1, Math.ceil(branches.length / NEED_PAGE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = branches.slice(p * NEED_PAGE, p * NEED_PAGE + NEED_PAGE);
+
+  const rows: FilialInlineButton[][] = slice.map((b) => [
+    {
+      text: `📍 ${b.name} · ${b.district}`.slice(0, 64),
+      callback_data: `fb:${b.id}`,
+    },
+  ]);
+
+  const nav: FilialInlineButton[] = [];
+  if (p > 0) nav.push({ text: "◀️", callback_data: `rg:list:${p - 1}` });
+  nav.push({ text: `${p + 1}/${totalPages}`, callback_data: `rg:list:${p}` });
+  if (p < totalPages - 1) nav.push({ text: "▶️", callback_data: `rg:list:${p + 1}` });
+  if (nav.length) rows.push(nav);
+  rows.push([{ text: "🔄 Yangilash", callback_data: "rg:list:0" }]);
+  return rows;
+}
+
+async function sendNoGpsBranchesList(
+  chatId: number,
+  page = 0,
+  opts?: { editMessageId?: number },
+) {
+  const all = await loadFilialBranches(true);
+  const branches = all
+    .filter((b) => !b.hasGps)
+    .sort((a, b) => a.name.localeCompare(b.name, "uz") || a.district.localeCompare(b.district, "uz"));
+
+  if (!branches.length) {
+    const text = "✅ <b>GPS kiritilmagan filiallar</b>\n\nBarcha filiallarda GPS bor.";
+    if (opts?.editMessageId) {
+      try {
+        await filialEditMessageText(chatId, opts.editMessageId, text);
+        return;
+      } catch {
+        /* fallthrough */
+      }
+    }
+    await filialSendMessage(chatId, text);
+    return;
+  }
+
+  const totalPages = Math.max(1, Math.ceil(branches.length / NEED_PAGE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  const text = [
+    "📍 <b>GPS kiritilmagan filiallar</b>",
+    "",
+    "Nomini bosing — mudir, telefon va ma’lumot chiqadi.",
+    "GPS qo‘shish: Aptekalar tarmog‘i → filial lokatsiyasi.",
+    "",
+    `<i>Sahifa ${p + 1}/${totalPages} · ${branches.length} ta (jami ${all.length})</i>`,
+  ].join("\n");
+  const markup = { inline_keyboard: noGpsKeyboard(branches, page) };
+  if (opts?.editMessageId) {
+    try {
+      await filialEditMessageText(chatId, opts.editMessageId, text, { reply_markup: markup });
+      return;
+    } catch {
+      /* fallthrough */
+    }
+  }
+  await filialSendMessage(chatId, text, { reply_markup: markup });
+}
+
+async function sendRecruitersAdminPanel(chatId: number) {
+  const list = await listLokatsiyaRecruiters(true);
+  const lines = [
+    "👑 <b>Admin rekruterlar</b>",
+    "",
+    "Rekruterlar <b>📊 Ma’lumot</b> orqali jonli monitoring oladi.",
+    "Har 3 soatda avtomatik hisobot + kim bo‘shasa — darhol xabar.",
+    "",
+    `<b>Faol rekruterlar:</b> ${list.length}`,
+  ];
+  if (!list.length) {
+    lines.push("<i>Hali qo‘shilmagan</i>");
+  } else {
+    list.slice(0, 30).forEach((r, i) => {
+      const un = r.username ? `@${r.username}` : "—";
+      lines.push(
+        `${i + 1}. <b>${esc(recruiterDisplayName(r))}</b> · ${esc(un)}`,
+        `   ID: <code>${esc(r.telegram_user_id)}</code>`,
+      );
+    });
+  }
+  lines.push(
+    "",
+    "Qo‘shish: rekruter <b>Telegram ID</b> sini yuboring",
+    "Yoki: <code>/rekruter_add 123456789</code>",
+    "O‘chirish: <code>/rekruter_del 123456789</code>",
+  );
+
+  const rows: FilialInlineButton[][] = [
+    [{ text: "➕ Rekruter qo‘shish", callback_data: "rc:add" }],
+    [{ text: "📊 Monitoring yuborish", callback_data: "rc:send" }],
+  ];
+  for (const r of list.slice(0, 12)) {
+    rows.push([
+      {
+        text: `🗑 ${recruiterDisplayName(r)}`.slice(0, 60),
+        callback_data: `rc:del:${r.telegram_user_id}`,
+      },
+    ]);
+  }
+
+  await filialSendMessage(chatId, lines.join("\n"), {
+    reply_markup: { inline_keyboard: rows },
+  });
+  await filialSendMessage(chatId, "Admin menyu:", { reply_markup: adminReplyKeyboard() });
+}
+
 async function sendBranchList(chatId: number, user: FilialTelegramUser | undefined, page = 0) {
   const name = displayName(user);
   const branches = await loadFilialBranches(true);
-  const admin = isFilialBotAdmin(user?.id);
+  const access = await resolveAccess(user?.id);
   if (!branches.length) {
     await filialSendMessage(
       chatId,
       `👋 <b>Xush kelibsiz, ${esc(name)}!</b>\n\nHozircha tizimda faol filial topilmadi.`,
-      { reply_markup: userMainKeyboard(admin) },
+      { reply_markup: userMainKeyboard(access) },
     );
     return;
   }
   await filialSendMessage(chatId, listText(branches, page, name), {
     reply_markup: { inline_keyboard: listKeyboard(branches, page) },
   });
-  await filialSendMessage(
-    chatId,
-    admin
-      ? "Pastdagi tugmalar: eng yaqin filial · ro‘yxat · admin"
-      : "Pastdagi tugmalar: <b>Eng yaqin filial</b> yoki <b>Filiallar</b>",
-    { reply_markup: userMainKeyboard(admin) },
-  );
+  const hint = access.admin
+    ? "Pastdagi tugmalar: eng yaqin · filiallar · kesim · ma’lumot · kerak · GPS · admin"
+    : access.recruiter
+      ? "Pastdagi: <b>Ma’lumot</b> · <b>Xodim kerak</b> · <b>GPS yo‘q</b>"
+      : "Pastdagi tugmalar: <b>Eng yaqin</b> · <b>Filiallar</b> · <b>Filiallar kesimi</b>";
+  await filialSendMessage(chatId, hint, { reply_markup: userMainKeyboard(access) });
+}
+
+function districtIndexList(branches: FilialBranchCard[]): string[] {
+  const set = new Set(branches.map((b) => b.district));
+  return sortDistrictNames([...set]);
+}
+
+function districtKeyboard(districts: string[], page: number): FilialInlineButton[][] {
+  const totalPages = Math.max(1, Math.ceil(districts.length / DISTRICTS_PAGE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = districts.slice(p * DISTRICTS_PAGE, p * DISTRICTS_PAGE + DISTRICTS_PAGE);
+
+  const rows: FilialInlineButton[][] = slice.map((name, i) => {
+    const idx = p * DISTRICTS_PAGE + i;
+    return [{ text: `📍 ${name}`.slice(0, 64), callback_data: `fd:d:${idx}:0` }];
+  });
+
+  const nav: FilialInlineButton[] = [];
+  if (p > 0) nav.push({ text: "◀️", callback_data: `fd:list:${p - 1}` });
+  nav.push({ text: `${p + 1}/${totalPages}`, callback_data: `fd:list:${p}` });
+  if (p < totalPages - 1) nav.push({ text: "▶️", callback_data: `fd:list:${p + 1}` });
+  if (nav.length) rows.push(nav);
+  return rows;
+}
+
+function districtListText(districts: string[], branches: FilialBranchCard[], page: number): string {
+  const totalPages = Math.max(1, Math.ceil(districts.length / DISTRICTS_PAGE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  const withGps = branches.filter((b) => b.hasGps).length;
+  return [
+    "🗺 <b>Filiallar kesimi — tumanlar</b>",
+    "",
+    "GPS lokatsiya bo‘yicha tumanlarga ajratilgan.",
+    "Tartib: <b>Toshkent shahar</b> → <b>Toshkent viloyati</b> → boshqa viloyatlar.",
+    "Tumanni tanlang — shu hududdagi dorixonalar chiqadi.",
+    "",
+    `<i>Sahifa ${p + 1}/${totalPages} · ${districts.length} ta tuman · ${branches.length} filial (${withGps} GPS)</i>`,
+  ].join("\n");
+}
+
+function branchesInDistrictKeyboard(
+  districtIdx: number,
+  items: FilialBranchCard[],
+  page: number,
+): FilialInlineButton[][] {
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  const slice = items.slice(p * PAGE_SIZE, p * PAGE_SIZE + PAGE_SIZE);
+
+  const rows: FilialInlineButton[][] = slice.map((b) => [
+    { text: `💊 ${b.name}`.slice(0, 64), callback_data: `fb:${b.id}` },
+  ]);
+
+  const nav: FilialInlineButton[] = [];
+  if (p > 0) nav.push({ text: "◀️", callback_data: `fd:d:${districtIdx}:${p - 1}` });
+  nav.push({ text: `${p + 1}/${totalPages}`, callback_data: `fd:d:${districtIdx}:${p}` });
+  if (p < totalPages - 1) nav.push({ text: "▶️", callback_data: `fd:d:${districtIdx}:${p + 1}` });
+  if (nav.length) rows.push(nav);
+
+  rows.push([{ text: "⬅️ Tumanlar", callback_data: "fd:list:0" }]);
+  return rows;
+}
+
+function districtBranchesText(districtName: string, items: FilialBranchCard[], page: number): string {
+  const totalPages = Math.max(1, Math.ceil(items.length / PAGE_SIZE));
+  const p = Math.min(Math.max(0, page), totalPages - 1);
+  return [
+    `🗺 <b>${esc(districtName)}</b>`,
+    "",
+    "Dorixona nomini bosing — to‘liq ma’lumot ochiladi.",
+    `<i>Sahifa ${p + 1}/${totalPages} · ${items.length} ta dorixona</i>`,
+  ].join("\n");
+}
+
+async function sendDistrictList(
+  chatId: number,
+  page = 0,
+  opts?: { editMessageId?: number },
+) {
+  const branches = await loadFilialBranches(true);
+  const districts = districtIndexList(branches);
+  if (!districts.length) {
+    await filialSendMessage(chatId, "Hozircha filial yo‘q.");
+    return;
+  }
+  const text = districtListText(districts, branches, page);
+  const markup = { inline_keyboard: districtKeyboard(districts, page) };
+  if (opts?.editMessageId) {
+    try {
+      await filialEditMessageText(chatId, opts.editMessageId, text, { reply_markup: markup });
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  await filialSendMessage(chatId, text, { reply_markup: markup });
+}
+
+async function sendDistrictBranches(
+  chatId: number,
+  districtIdx: number,
+  page = 0,
+  opts?: { editMessageId?: number },
+) {
+  const branches = await loadFilialBranches(true);
+  const districts = districtIndexList(branches);
+  const districtName = districts[districtIdx];
+  if (!districtName) {
+    await filialSendMessage(chatId, "Tuman topilmadi. /start bosing.");
+    return;
+  }
+  const items = branches
+    .filter((b) => b.district === districtName)
+    .sort((a, b) => a.name.localeCompare(b.name, "uz"));
+  if (!items.length) {
+    await filialSendMessage(chatId, `<b>${esc(districtName)}</b>\n\nBu tumanda filial yo‘q.`, {
+      reply_markup: { inline_keyboard: [[{ text: "⬅️ Tumanlar", callback_data: "fd:list:0" }]] },
+    });
+    return;
+  }
+  const text = districtBranchesText(districtName, items, page);
+  const markup = {
+    inline_keyboard: branchesInDistrictKeyboard(districtIdx, items, page),
+  };
+  if (opts?.editMessageId) {
+    try {
+      await filialEditMessageText(chatId, opts.editMessageId, text, { reply_markup: markup });
+      return;
+    } catch {
+      /* fall through */
+    }
+  }
+  await filialSendMessage(chatId, text, { reply_markup: markup });
 }
 
 async function askForUserLocation(chatId: number, userId: number) {
@@ -291,10 +740,11 @@ async function handleUserLocation(
   const branches = await loadFilialBranches(true);
   const withGps = branches.filter((b) => b.hasGps && b.lat != null && b.lng != null);
   if (!withGps.length) {
+    const access = await resolveAccess(user?.id);
     await filialSendMessage(
       chatId,
       "⚠️ Tizimda GPS qo‘yilgan filial topilmadi. Keyinroq urinib ko‘ring.",
-      { reply_markup: userMainKeyboard(isFilialBotAdmin(user?.id)) },
+      { reply_markup: userMainKeyboard(access) },
     );
     return;
   }
@@ -333,7 +783,7 @@ async function handleUserLocation(
     },
   });
   await filialSendMessage(chatId, "Asosiy menyu:", {
-    reply_markup: userMainKeyboard(isFilialBotAdmin(user?.id)),
+    reply_markup: userMainKeyboard(await resolveAccess(user?.id)),
   });
 }
 
@@ -504,6 +954,26 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
         return;
       }
 
+      // Filiallar kesimi: tumanlar ro‘yxati / tuman ichidagi dorixonalar
+      if (data.startsWith("fd:list:")) {
+        const page = Number(data.slice("fd:list:".length));
+        await sendDistrictList(chatId, Number.isFinite(page) ? page : 0, {
+          editMessageId: messageId,
+        });
+        return;
+      }
+      if (data.startsWith("fd:d:")) {
+        const parts = data.split(":");
+        const districtIdx = Number(parts[2]);
+        const page = Number(parts[3] || 0);
+        if (Number.isFinite(districtIdx)) {
+          await sendDistrictBranches(chatId, districtIdx, Number.isFinite(page) ? page : 0, {
+            editMessageId: messageId,
+          });
+        }
+        return;
+      }
+
       if (data.startsWith("fb:")) {
         const id = Number(data.slice(3));
         if (Number.isFinite(id)) await sendBranchDetails(chatId, id, cq.from);
@@ -513,6 +983,44 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
       if (data.startsWith("fn:")) {
         const id = Number(data.slice(3));
         if (Number.isFinite(id)) await sendBranchDetails(chatId, id, cq.from);
+        return;
+      }
+
+      // Rekruter: xodim kerak filiallar
+      if (data.startsWith("rn:")) {
+        const access = await resolveAccess(cq.from.id);
+        if (!access.recruiter && !access.admin) {
+          await filialSendMessage(chatId, "⛔ Faqat rekruter / admin uchun.");
+          return;
+        }
+        if (data.startsWith("rn:list:")) {
+          const parts = data.split(":");
+          const page = Number(parts[2] || 0);
+          const force = parts[3] === "force";
+          await sendNeedBranchesList(chatId, Number.isFinite(page) ? page : 0, {
+            editMessageId: messageId,
+            force,
+          });
+          return;
+        }
+        if (data.startsWith("rn:d:")) {
+          const idx = Number(data.slice("rn:d:".length));
+          if (Number.isFinite(idx)) await sendNeedBranchDetail(chatId, idx);
+          return;
+        }
+      }
+
+      // Rekruter: GPS yo‘q filiallar
+      if (data.startsWith("rg:list:")) {
+        const access = await resolveAccess(cq.from.id);
+        if (!access.recruiter && !access.admin) {
+          await filialSendMessage(chatId, "⛔ Faqat rekruter / admin uchun.");
+          return;
+        }
+        const page = Number(data.slice("rg:list:".length));
+        await sendNoGpsBranchesList(chatId, Number.isFinite(page) ? page : 0, {
+          editMessageId: messageId,
+        });
         return;
       }
 
@@ -539,6 +1047,47 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
           return;
         }
       }
+
+      if (data.startsWith("rc:")) {
+        if (!isFilialBotAdmin(cq.from.id)) {
+          await filialSendMessage(chatId, "⛔ Faqat admin uchun.");
+          return;
+        }
+        if (data === "rc:add") {
+          awaitingRecruiterId.add(cq.from.id);
+          await filialSendMessage(
+            chatId,
+            [
+              "➕ <b>Rekruter qo‘shish</b>",
+              "",
+              "Rekruter Telegram ID sini yuboring (raqam).",
+              "ID ni bilish: rekruter botga /id yuborsin.",
+            ].join("\n"),
+            { reply_markup: recruiterAddCancelKeyboard() },
+          );
+          return;
+        }
+        if (data === "rc:send") {
+          const { sendRecruiterStaffingMonitor } = await import("../jobs/filial-recruiter-monitor");
+          await filialSendMessage(chatId, "⏳ Monitoring rekruterlarga yuborilmoqda…");
+          const r = await sendRecruiterStaffingMonitor({ reason: "admin_manual" });
+          await filialSendMessage(
+            chatId,
+            `✅ Yuborildi: <b>${r.sent}</b> · xato: ${r.failed}`,
+            { reply_markup: adminReplyKeyboard() },
+          );
+          return;
+        }
+        if (data.startsWith("rc:del:")) {
+          const tid = Number(data.slice("rc:del:".length));
+          if (Number.isFinite(tid)) {
+            await deactivateLokatsiyaRecruiter(tid);
+            await filialSendMessage(chatId, `🗑 Rekruter o‘chirildi: <code>${tid}</code>`);
+            await sendRecruitersAdminPanel(chatId);
+          }
+          return;
+        }
+      }
       return;
     }
 
@@ -547,8 +1096,8 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
     const chatId = msg.chat.id;
     const text = (msg.text || "").trim();
     const user = msg.from;
-    const name = displayName(user);
-    const admin = isFilialBotAdmin(user?.id);
+    const access = await resolveAccess(user?.id);
+    const { admin, recruiter } = access;
     const cmd = text.split(/\s+/)[0]?.split("@")[0]?.toLowerCase() || "";
 
     // Lokatsiya yuborilganda — eng yaqin 3 ta
@@ -567,13 +1116,58 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
     if (text === BTN_CANCEL_NEAREST) {
       if (user?.id) awaitingUserLocation.delete(user.id);
       await filialSendMessage(chatId, "Bekor qilindi.", {
-        reply_markup: userMainKeyboard(admin),
+        reply_markup: userMainKeyboard(access),
       });
       return;
     }
     if (text === BTN_BRANCHES) {
       await trackUser(user, chatId, { isStart: true, action: "branches_btn" });
       await sendBranchList(chatId, user, 0);
+      return;
+    }
+    if (text === BTN_DISTRICTS || cmd === "/kesim" || cmd === "/tumanlar") {
+      await trackUser(user, chatId, { action: "districts_btn" });
+      await sendDistrictList(chatId, 0);
+      await filialSendMessage(chatId, "Asosiy menyu:", {
+        reply_markup: userMainKeyboard(access),
+      });
+      return;
+    }
+
+    // Rekruter / admin — jonli monitoring
+    if (
+      (recruiter || admin) &&
+      (text === BTN_INFO || cmd === "/malumot" || cmd === "/info" || cmd === "/monitor")
+    ) {
+      await trackUser(user, chatId, { action: "live_monitor" });
+      await sendLiveStaffingMonitor(chatId);
+      await filialSendMessage(chatId, "Asosiy menyu:", {
+        reply_markup: userMainKeyboard(access),
+      });
+      return;
+    }
+
+    if (
+      (recruiter || admin) &&
+      (text === BTN_NEED_BRANCHES || cmd === "/kerak" || cmd === "/ehtiyoj")
+    ) {
+      await trackUser(user, chatId, { action: "need_branches" });
+      await sendNeedBranchesList(chatId, 0, { force: true });
+      await filialSendMessage(chatId, "Asosiy menyu:", {
+        reply_markup: userMainKeyboard(access),
+      });
+      return;
+    }
+
+    if (
+      (recruiter || admin) &&
+      (text === BTN_NO_GPS || cmd === "/gpsyoq" || cmd === "/nogps")
+    ) {
+      await trackUser(user, chatId, { action: "no_gps_branches" });
+      await sendNoGpsBranchesList(chatId, 0);
+      await filialSendMessage(chatId, "Asosiy menyu:", {
+        reply_markup: userMainKeyboard(access),
+      });
       return;
     }
 
@@ -592,6 +1186,80 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
       awaitingBroadcastText.delete(user!.id);
       pendingBroadcast.delete(user!.id);
       await filialSendMessage(chatId, "Bekor qilindi.", {
+        reply_markup: adminReplyKeyboard(),
+      });
+      return;
+    }
+    if (admin && (text === BTN_RECRUITERS || cmd === "/rekruterlar")) {
+      awaitingRecruiterId.delete(user!.id);
+      await trackUser(user, chatId, { action: "admin_recruiters" });
+      await sendRecruitersAdminPanel(chatId);
+      return;
+    }
+    if (admin && text === BTN_CANCEL_RECRUITER) {
+      awaitingRecruiterId.delete(user!.id);
+      await filialSendMessage(chatId, "Bekor qilindi.", {
+        reply_markup: adminReplyKeyboard(),
+      });
+      return;
+    }
+
+    // Admin rekruter ID kutilmoqda
+    if (admin && user?.id && awaitingRecruiterId.has(user.id) && text && !text.startsWith("/")) {
+      const tid = Number(text.replace(/\D/g, ""));
+      if (!Number.isFinite(tid) || tid <= 0) {
+        await filialSendMessage(chatId, "⚠️ Faqat Telegram ID (raqam) yuboring.");
+        return;
+      }
+      awaitingRecruiterId.delete(user.id);
+      // chat_id keyinroq /start da yangilanadi; hozircha 0
+      await upsertLokatsiyaRecruiter({
+        telegramUserId: tid,
+        chatId: tid,
+        addedByTelegramId: user.id,
+        note: "admin_add",
+      });
+      await filialSendMessage(
+        chatId,
+        [
+          "✅ <b>Rekruter qo‘shildi</b>",
+          `ID: <code>${tid}</code>`,
+          "",
+          "Rekruter botga <b>/start</b> bossin — monitoring va «Ma’lumot» tugmasi ochiladi.",
+        ].join("\n"),
+        { reply_markup: adminReplyKeyboard() },
+      );
+      return;
+    }
+
+    if (admin && cmd === "/rekruter_add") {
+      const tid = Number((text.split(/\s+/)[1] || "").replace(/\D/g, ""));
+      if (!Number.isFinite(tid) || tid <= 0) {
+        await filialSendMessage(chatId, "Namuna: <code>/rekruter_add 123456789</code>");
+        return;
+      }
+      await upsertLokatsiyaRecruiter({
+        telegramUserId: tid,
+        chatId: tid,
+        addedByTelegramId: user?.id,
+        note: "admin_cmd",
+      });
+      await filialSendMessage(
+        chatId,
+        `✅ Rekruter qo‘shildi: <code>${tid}</code>\nU /start bossin.`,
+        { reply_markup: adminReplyKeyboard() },
+      );
+      return;
+    }
+
+    if (admin && cmd === "/rekruter_del") {
+      const tid = Number((text.split(/\s+/)[1] || "").replace(/\D/g, ""));
+      if (!Number.isFinite(tid) || tid <= 0) {
+        await filialSendMessage(chatId, "Namuna: <code>/rekruter_del 123456789</code>");
+        return;
+      }
+      await deactivateLokatsiyaRecruiter(tid);
+      await filialSendMessage(chatId, `🗑 O‘chirildi: <code>${tid}</code>`, {
         reply_markup: adminReplyKeyboard(),
       });
       return;
@@ -646,6 +1314,8 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
           "Pastdagi tugmalar:",
           `• ${BTN_USERS} — jonli matn + Excel`,
           `• ${BTN_BROADCAST} — hammaga xabar`,
+          `• ${BTN_RECRUITERS} — rekruterlar roli`,
+          `• ${BTN_INFO} — xodim ehtiyoji monitoring`,
           `• ${BTN_BRANCHES} — filiallar`,
           "",
           `Sizning Telegram ID: <code>${user?.id}</code>`,
@@ -662,23 +1332,33 @@ export async function handleFilialBotUpdate(update: FilialTelegramUpdate): Promi
         "",
         "• /start — filiallar ro‘yxati",
         "• 📍 Eng yaqin filial — joyingizni yuboring, eng yaqin 3 ta chiqadi",
+        "• 🗺 Filiallar kesimi — tuman → dorixona",
         "• Filialni tanlang — mudir, koordinator, telefon, ish vaqti",
-        "• Lokatsiya bo‘lsa — xarita nuqtasi yuboriladi",
         `• Telegram ID: <code>${user?.id ?? "—"}</code>`,
-        "",
-        "Bu bot faqat filial lokatsiyasi va bog‘lanish uchun. HR / davomat — alohida Vaksina HR botda.",
       ];
-      if (admin) {
-        lines.push("", "Admin: /admin");
+      if (recruiter || admin) {
+        lines.push(
+          "",
+          "👤 <b>Rekruter:</b>",
+          `• ${BTN_INFO} — jonli monitoring rasm`,
+          `• ${BTN_NEED_BRANCHES} — filial → kim / smena / lavozim`,
+          `• ${BTN_NO_GPS} — GPS yo‘q filiallar`,
+          "• Har 3 soatda avtomatik + kim bo‘shasa xabar",
+        );
       }
-      await filialSendMessage(chatId, lines.join("\n"));
+      if (admin) {
+        lines.push("", "Admin: /admin · /rekruterlar");
+      }
+      await filialSendMessage(chatId, lines.join("\n"), {
+        reply_markup: userMainKeyboard(access),
+      });
       return;
     }
 
     if (cmd === "/id" || cmd === "/meningid") {
       await filialSendMessage(
         chatId,
-        `🆔 Sizning Telegram ID: <code>${user?.id ?? "—"}</code>\nAdmin uchun .env dagi <code>TELEGRAM_FILIAL_ADMIN_IDS</code> ga yoziladi.`,
+        `🆔 Sizning Telegram ID: <code>${user?.id ?? "—"}</code>\nAdmin uchun .env dagi <code>TELEGRAM_FILIAL_ADMIN_IDS</code> yoki botda «Admin rekruterlar».`,
       );
       return;
     }

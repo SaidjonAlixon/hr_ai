@@ -19,6 +19,8 @@ import {
   UserRound,
   Briefcase,
   ChevronRight,
+  MapPin,
+  Unlock,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -46,6 +48,48 @@ const TYPE_ICONS: Record<string, { icon: typeof Bell; color: string; soft: strin
     color: 'text-amber-800',
     soft: 'bg-amber-100',
     key: 'notif.type.expired_task',
+  },
+  task_due_reminder: {
+    icon: Calendar,
+    color: 'text-sky-700',
+    soft: 'bg-sky-100',
+    key: 'notif.type.task_due_reminder',
+  },
+  task_assigned: {
+    icon: FileText,
+    color: 'text-blue-700',
+    soft: 'bg-blue-100',
+    key: 'notif.type.task_assigned',
+  },
+  coordinator_presence_ping: {
+    icon: MapPin,
+    color: 'text-amber-800',
+    soft: 'bg-amber-100',
+    key: 'notif.type.coordinator_presence_ping',
+  },
+  coordinator_need_checkout: {
+    icon: AlertTriangle,
+    color: 'text-rose-800',
+    soft: 'bg-rose-100',
+    key: 'notif.type.coordinator_need_checkout',
+  },
+  coordinator_presence_unlock: {
+    icon: Unlock,
+    color: 'text-amber-800',
+    soft: 'bg-amber-100',
+    key: 'notif.type.coordinator_presence_unlock',
+  },
+  coordinator_presence_blocked: {
+    icon: AlertTriangle,
+    color: 'text-rose-800',
+    soft: 'bg-rose-100',
+    key: 'notif.type.coordinator_presence_blocked',
+  },
+  coordinator_presence_unlocked: {
+    icon: CheckCheck,
+    color: 'text-emerald-800',
+    soft: 'bg-emerald-100',
+    key: 'notif.type.coordinator_presence_unlocked',
   },
   stage_change: {
     icon: UserRound,

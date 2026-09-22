@@ -104,6 +104,11 @@ export function canResetDavomatManual(role?: string | null): boolean {
   return canManageUsers(role);
 }
 
+/** Davomat xatoliklar — faqat admin */
+export function canViewDavomatXatoliklar(role?: string | null): boolean {
+  return canManageUsers(role);
+}
+
 export const DEPT_HEAD_ROLES = [
   "it_rahbar",
   "reviziya_rahbar",

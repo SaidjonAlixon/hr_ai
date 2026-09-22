@@ -1,8 +1,10 @@
 import React, { useMemo, useState } from "react";
-import { Clock3, MapPin, User, Filter, Radio } from "lucide-react";
+import { Clock3, MapPin, User, Filter, Radio, Unlock } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import {
   Select,
   SelectContent,
@@ -11,7 +13,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast";
 import {
+  approvePresenceUnlock,
   useVisitMonitor,
   type CoordinatorVisitSession,
 } from "@/lib/branch-audits-api";
@@ -57,11 +61,14 @@ function Stat({
 }
 
 export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [coordinatorId, setCoordinatorId] = useState("all");
   const [branchId, setBranchId] = useState("all");
   const [q, setQ] = useState("");
+  const [approvingId, setApprovingId] = useState<number | null>(null);
 
   const { data, isLoading } = useVisitMonitor(
     { from: from || undefined, to: to || undefined, coordinatorId, branchId },
@@ -70,6 +77,31 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
 
   const items = data?.items ?? [];
   const summary = data?.summary;
+
+  const unlockRequests = useMemo(
+    () => items.filter((v) => v.stillOpen && v.presenceBlocked && v.unlockPending),
+    [items],
+  );
+
+  const approveUnlock = async (visitId: number) => {
+    setApprovingId(visitId);
+    try {
+      const res = await approvePresenceUnlock(visitId);
+      await qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
+      toast({
+        title: "Ruxsat berildi",
+        description: res.message || "Koordinator cheklistni ochishi mumkin",
+      });
+    } catch (err) {
+      toast({
+        title: "Xato",
+        description: (err as Error)?.message || "Ruxsat berilmadi",
+        variant: "destructive",
+      });
+    } finally {
+      setApprovingId(null);
+    }
+  };
 
   const coordinators = useMemo(() => {
     const map = new Map<number, string>();
@@ -192,6 +224,41 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
         </div>
       </div>
 
+      {unlockRequests.length > 0 ? (
+        <div className="rounded-2xl border border-amber-300 bg-amber-50/90 p-3 shadow-sm dark:border-amber-700 dark:bg-amber-950/40">
+          <p className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-amber-950 dark:text-amber-100">
+            <Unlock className="h-4 w-4" />
+            Hudud bloki — ruxsat so‘rovlari ({unlockRequests.length})
+          </p>
+          <ul className="space-y-2">
+            {unlockRequests.map((v) => (
+              <li
+                key={v.id}
+                className="flex flex-col gap-2 rounded-xl border border-amber-200 bg-white/80 px-3 py-2 sm:flex-row sm:items-center sm:justify-between dark:border-amber-800 dark:bg-slate-950/50"
+              >
+                <div className="min-w-0 text-sm">
+                  <p className="font-semibold">
+                    {v.coordinatorName || "Koordinator"} · {v.branchLabel || `Filial #${v.branchId}`}
+                  </p>
+                  <p className="text-[11px] text-muted-foreground">
+                    10 daqiqa ichida hududni tasdiqlamagan — cheklist bloklangan
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="shrink-0"
+                  disabled={approvingId === v.id}
+                  onClick={() => void approveUnlock(v.id)}
+                >
+                  {approvingId === v.id ? "…" : "Ruxsat berish"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[860px] text-left text-sm">
@@ -221,7 +288,14 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
                   </td>
                 </tr>
               ) : (
-                filtered.map((v) => <VisitRow key={v.id} v={v} />)
+                filtered.map((v) => (
+                  <VisitRow
+                    key={v.id}
+                    v={v}
+                    approving={approvingId === v.id}
+                    onApprove={() => void approveUnlock(v.id)}
+                  />
+                ))
               )}
             </tbody>
           </table>
@@ -231,7 +305,15 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
   );
 }
 
-function VisitRow({ v }: { v: CoordinatorVisitSession }) {
+function VisitRow({
+  v,
+  approving,
+  onApprove,
+}: {
+  v: CoordinatorVisitSession;
+  approving?: boolean;
+  onApprove?: () => void;
+}) {
   return (
     <tr className="border-b border-border/60 last:border-0 hover:bg-muted/30">
       <td className="px-3 py-2.5">
@@ -289,11 +371,20 @@ function VisitRow({ v }: { v: CoordinatorVisitSession }) {
         )}
       </td>
       <td className="px-3 py-2.5">
-        {v.stillOpen ? (
-          <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Ochiq</Badge>
-        ) : (
-          <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">Yopiq</Badge>
-        )}
+        <div className="flex flex-col items-start gap-1.5">
+          {v.presenceBlocked ? (
+            <Badge className="bg-rose-100 text-rose-900 hover:bg-rose-100">Hudud bloki</Badge>
+          ) : v.stillOpen ? (
+            <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Ochiq</Badge>
+          ) : (
+            <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">Yopiq</Badge>
+          )}
+          {v.presenceBlocked && v.unlockPending && onApprove ? (
+            <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={approving} onClick={onApprove}>
+              {approving ? "…" : "Ruxsat berish"}
+            </Button>
+          ) : null}
+        </div>
       </td>
     </tr>
   );

@@ -137,7 +137,7 @@ export function permissionCoversToday(
 
 export async function findActivePermissionForEmployee(
   employeeId: number,
-  opts?: { shiftKey?: string | null; todayYmd?: string },
+  opts?: { shiftKey?: string | null; todayYmd?: string; userId?: number | null },
 ): Promise<MobilePermission | null> {
   const today = opts?.todayYmd || mobileTodayYmd();
   const rows = await db
@@ -153,7 +153,36 @@ export async function findActivePermissionForEmployee(
   for (const p of rows) {
     if (permissionCoversToday(p, today, opts?.shiftKey)) return p;
   }
+  // Fallback: ruxsat user_id bo‘yicha (employee kartasi almashtirilgan bo‘lsa)
+  const uid = opts?.userId != null ? Number(opts.userId) : NaN;
+  if (Number.isFinite(uid) && uid > 0) {
+    const byUser = await db
+      .select()
+      .from(mobileAttendancePermissionsTable)
+      .where(
+        and(
+          eq(mobileAttendancePermissionsTable.userId, uid),
+          eq(mobileAttendancePermissionsTable.status, "active"),
+        ),
+      )
+      .orderBy(desc(mobileAttendancePermissionsTable.id));
+    for (const p of byUser) {
+      if (permissionCoversToday(p, today, opts?.shiftKey)) return p;
+    }
+  }
   return null;
+}
+
+/**
+ * Admin bergan ko‘chma ruxsat — Face ID / Ofis QR / filial geofence dan mustaqil,
+ * istalgan joydan davomat.
+ */
+export async function employeeHasMobileAnywhere(
+  employeeId: number,
+  userId?: number | null,
+): Promise<boolean> {
+  const perm = await findActivePermissionForEmployee(employeeId, { userId: userId ?? null });
+  return Boolean(perm);
 }
 
 export async function findEmployeeForUser(userId: number) {

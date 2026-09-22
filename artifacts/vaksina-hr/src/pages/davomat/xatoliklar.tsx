@@ -33,7 +33,7 @@ import {
   type DoneFilter,
 } from "@/lib/davomat-xatoliklar-api";
 import { useAuth } from "@/contexts/AuthContext";
-import { canViewDavomat, hasFullPlatformAccess, isDirectorRole } from "@/lib/roles";
+import { canViewDavomatXatoliklar } from "@/lib/roles";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 
@@ -222,10 +222,7 @@ export default function DavomatXatoliklarPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const qc = useQueryClient();
-  const allowed =
-    canViewDavomat(user?.role) ||
-    hasFullPlatformAccess(user?.role) ||
-    isDirectorRole(user?.role);
+  const allowed = canViewDavomatXatoliklar(user?.role);
   const [days, setDays] = useState(7);
   const [codeFilter, setCodeFilter] = useState<string>("all");
   /** Tizim o‘zi ajratadi — default: bajarilmagan */

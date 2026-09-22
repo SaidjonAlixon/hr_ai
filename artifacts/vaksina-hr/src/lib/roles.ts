@@ -221,6 +221,11 @@ export function canResetDavomatManual(role?: string | null): boolean {
   return normalizeUserRole(role) === "admin";
 }
 
+/** Davomat xatoliklar bo‘limi — faqat admin */
+export function canViewDavomatXatoliklar(role?: string | null): boolean {
+  return normalizeUserRole(role) === "admin";
+}
+
 /** Xodimlar — to‘liq (barcha ofis bo‘limlari): admin, direktor, HR, SB, rekruter */
 export function canViewEmployeesFull(role?: string | null): boolean {
   return (
@@ -341,6 +346,21 @@ export function canViewLogistika(role?: string | null): boolean {
 
 export function canManageDistribyutsiya(role?: string | null): boolean {
   return canManageSettings(role) || role === "distrib_rahbar" || role === "distrib_hr";
+}
+
+/** Omborxona bo‘limi — xodim yoki boshliq */
+export function isOmborxonaRole(role?: string | null): boolean {
+  return role === "ombor" || role === "ombor_rahbar";
+}
+
+/** Omborxona_ish sahifasi — ombor xodim/boshliq + admin */
+export function canViewOmborxona(role?: string | null): boolean {
+  return isOmborxonaRole(role) || hasFullPlatformAccess(role) || canManageSettings(role);
+}
+
+/** Smena yaratish / xodim ajratish — boshliq + admin */
+export function canManageOmborxona(role?: string | null): boolean {
+  return role === "ombor_rahbar" || hasFullPlatformAccess(role) || canManageSettings(role);
 }
 
 export function isDeptHeadRole(role?: string | null): boolean {

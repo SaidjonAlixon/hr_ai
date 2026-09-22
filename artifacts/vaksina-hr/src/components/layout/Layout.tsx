@@ -72,7 +72,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewLogistika, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -192,6 +192,12 @@ const NAV_SECTIONS: {
     label: 'Distribyutsiya',
     icon: Truck,
     paths: ['/distribyutsiya'],
+  },
+  {
+    id: 'warehouse',
+    label: 'Omborxona',
+    icon: Package,
+    paths: ['/omborxona-ish'],
   },
   {
     id: 'admin',
@@ -508,7 +514,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     } as any,
   );
 
-  /** Davomat Ketdim eslatmalari — telefon OS bildirishnomasi (SMS kabi) */
+  /** Davomat eslatmalari (faqat start−15m / end−1h) — OS bildirishnomasi */
   const shownOsDavomatRef = useRef<Set<number>>(new Set());
   useEffect(() => {
     if (!user || !unreadNotifications?.length) return;
@@ -517,8 +523,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     const urgent = unreadNotifications.filter((n) => {
       const t = String(n.type || "");
       return (
-        t.startsWith("davomat_checkout_nag") ||
-        t === "davomat_auto_absent" ||
+        t === "davomat_shift_start_15m" ||
+        t.startsWith("davomat_checkout_1h_") ||
         t === "notif_test"
       );
     });
@@ -699,14 +705,22 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       setLocation('/login');
       return;
     }
-    if (
-      isStajyor(user.role) &&
-      !location.startsWith('/kirish') &&
-      !location.startsWith('/tashkiliy-tuzilma') &&
-      !location.startsWith('/davomat-face') &&
-      location !== '/notifications'
-    ) {
-      setLocation('/kirish');
+    if (isStajyor(user.role)) {
+      const stajyorAllowed =
+        location.startsWith('/kirish') ||
+        location.startsWith('/javob-olish') ||
+        location.startsWith('/reyting') ||
+        location.startsWith('/davomat-face') ||
+        location.startsWith('/davomat-kochma') ||
+        location.startsWith('/smena-filial') ||
+        location.startsWith('/tashkiliy-tuzilma') ||
+        location.startsWith('/vazifalar') ||
+        location === '/notifications' ||
+        location === '/profile' ||
+        location.startsWith('/account');
+      if (!stajyorAllowed) {
+        setLocation('/kirish');
+      }
     }
     if (isHrRecruitmentPath(location) && !canSeeHrRecruitment(user.role)) {
       setLocation('/dashboard');
@@ -756,6 +770,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/eslatmalar') ||
         location.startsWith('/davomat-face') ||
         location.startsWith('/davomat-kochma') ||
+        location.startsWith('/omborxona-ish') ||
+        location.startsWith('/it') ||
         location === '/notifications';
       if (!allowed) {
         setLocation('/vazifalar');
@@ -798,6 +814,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'AyTi', path: '/it', icon: Cpu };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
+  const omborIshNav = { name: 'Omborxona_ish', path: '/omborxona-ish', icon: Package };
   const logistikaNavItems: NavItem[] = [
     { name: 'Dashboard / VHK', path: '/logistika/dashboard', icon: LayoutDashboard },
     { name: 'Boshqaruv', path: '/logistika/boshqaruv', icon: Fuel },
@@ -826,8 +843,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       next = [...next, itNav];
     }
     if (isLimitedOfficeStaffRole(role)) {
-      return next;
+    if (canViewOmborxona(role) && !next.some((i) => i.path === '/omborxona-ish')) {
+      next = [...next, omborIshNav];
     }
+    return next;
+  }
     // HR — Javob olish holatini kuzatish (Asosiy)
     if (hasHrOversightNav(role) && !next.some((i) => i.path === '/javob-olish/holat')) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
@@ -876,7 +896,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const at = davIdx >= 0 ? davIdx : next.length;
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
       }
-      if (canViewDavomat(role) && !next.some((i) => i.path === '/davomat/xatoliklar')) {
+      if (canViewDavomatXatoliklar(role) && !next.some((i) => i.path === '/davomat/xatoliklar')) {
         const baseIdx = next.findIndex(
           (i) => i.path === '/davomat/analytics' || i.path === '/davomat',
         );
@@ -885,6 +905,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       }
       if (canViewDistribyutsiya(role) && !next.some((i) => i.path === '/distribyutsiya')) {
         next = [...next, distribNav];
+      }
+      if (canViewOmborxona(role) && !next.some((i) => i.path === '/omborxona-ish')) {
+        next = [...next, omborIshNav];
       }
     }
     if (isDeptHeadRole(role) && !next.some((i) => i.path === '/davomat-qr') && !next.some((i) => i.path === '/admin/davomat-qr')) {
@@ -1049,6 +1072,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      omborIshNav,
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Users },
       { name: 'Qurilmalar', path: '/admin/qurilmalar', icon: MonitorSmartphone },
       { name: "Ko‘chma davomat", path: '/admin/kochma-davomat', icon: MapPin },
@@ -1087,6 +1111,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      omborIshNav,
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
@@ -1227,6 +1252,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ombor: [
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      omborIshNav,
       davomatFaceNav,
     ],
     moliya_xodim: [
@@ -1286,6 +1312,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     ombor_rahbar: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      omborIshNav,
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1486,6 +1513,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   )
     .filter((item) => item.path !== '/admin/users' || canManageUsers(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
+    .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
+    .filter((item) => item.path !== '/davomat/xatoliklar' || canViewDavomatXatoliklar(userRole))
     .filter((item) => item.path !== '/davomat-kochma')
     .concat(canViewLogistika(userRole) ? logistikaNavItems : []);
 

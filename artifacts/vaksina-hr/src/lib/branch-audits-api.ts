@@ -330,6 +330,21 @@ export type CoordinatorVisitSession = {
   checklistAuditId: number | null;
   checklistAt: string | null;
   checkoutNote?: string | null;
+  lastPresenceAt?: string | null;
+  lastPresenceReminderAt?: string | null;
+  presenceConfirmCount?: number;
+  presenceBlockedAt?: string | null;
+  presenceUnlockRequestAt?: string | null;
+  presenceUnlockedAt?: string | null;
+  presenceUnlockedById?: number | null;
+  presenceDueAt?: string | null;
+  presenceGraceEndsAt?: string | null;
+  presenceOverdue?: boolean;
+  presenceBlocked?: boolean;
+  unlockPending?: boolean;
+  presenceIntervalMinutes?: number;
+  presenceGraceMinutes?: number;
+  geofenceMeters?: number;
   status: string;
   durationMinutes: number | null;
   durationLabel: string;
@@ -380,6 +395,43 @@ export async function finishCoordinatorVisit(payload: {
   }>(`/branch-audits/my-visit/finish`, {
     method: "POST",
     body: JSON.stringify(payload),
+  });
+}
+
+export async function confirmCoordinatorPresence(payload: {
+  latitude?: number | null;
+  longitude?: number | null;
+}) {
+  return apiFetch<{
+    ok: boolean;
+    visit: CoordinatorVisitSession;
+    message: string;
+    distanceMeters?: number;
+  }>(`/branch-audits/my-visit/confirm-presence`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function requestPresenceUnlock() {
+  return apiFetch<{
+    ok: boolean;
+    visit: CoordinatorVisitSession;
+    message: string;
+  }>(`/branch-audits/my-visit/request-unlock`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function approvePresenceUnlock(visitId: number) {
+  return apiFetch<{
+    ok: boolean;
+    visit: CoordinatorVisitSession;
+    message: string;
+  }>(`/branch-audits/visits/${visitId}/approve-unlock`, {
+    method: "POST",
+    body: JSON.stringify({}),
   });
 }
 

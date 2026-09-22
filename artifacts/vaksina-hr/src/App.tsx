@@ -53,6 +53,7 @@ import AdminKochmaLivePage from './pages/admin/kochma-live';
 import DavomatKochmaPage from './pages/davomat/kochma';
 import LogistikaPage, { LogistikaIndexRedirect } from './pages/logistika/index';
 import DistribyutsiyaPage from './pages/distribyutsiya/index';
+import OmborxonaIshPage from './pages/omborxona-ish/index';
 import EmployeesPage from './pages/employees/index';
 import EmployeesOtherPage from './pages/employees/other';
 import EmployeeDuplicatesPage from './pages/employees/duplicates';
@@ -207,6 +208,7 @@ function Router() {
       <ProtectedRoute path="/logistika/:section" component={LogistikaPage} />
       <ProtectedRoute path="/logistika" component={LogistikaIndexRedirect} />
       <ProtectedRoute path="/distribyutsiya" component={DistribyutsiyaPage} />
+      <ProtectedRoute path="/omborxona-ish" component={OmborxonaIshPage} />
       <ProtectedRoute path="/tashkiliy-tuzilma" component={TashkiliyTuzilmaPage} />
       <ProtectedRoute path="/internships" component={InternshipsPage} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />

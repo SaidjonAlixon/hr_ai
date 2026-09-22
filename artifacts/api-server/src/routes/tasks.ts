@@ -11,11 +11,14 @@ import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { notifyUser } from "../lib/notify";
 import { syncBranchNeedFromTask } from "../lib/sync-branch-need";
 import { cancelAllOpenPipelineTasks } from "../lib/pipeline-tasks";
+import {
+  advanceDueAt,
+  normalizeRecurrence,
+} from "../lib/task-schedule";
 
 const router: IRouter = Router();
 
-import { HR_ROLES, isDirectorRole, hasFullPlatformAccess, canSetPrivateTaskVisibility } from "../lib/roles";
-import { DEPT_HEAD_ROLES } from "../lib/dept-staff";
+import { isDirectorRole, hasFullPlatformAccess, canSetPrivateTaskVisibility } from "../lib/roles";
 
 let pipelineTasksCleaned = false;
 
@@ -36,20 +39,8 @@ function isPipelineRecruitmentTask(row: {
   return row.candidateId != null || Boolean(row.pipelineStage);
 }
 
-/** Rahbar / boshqaruv rollari — vazifa belgilash huquqi */
-const MANAGER_ROLES = new Set<string>([
-  "admin",
-  ...HR_ROLES,
-  "director", "asoschi",
-  "direktor_yordamchisi",
-  ...DEPT_HEAD_ROLES,
-  "recruiter",
-  "trainer",
-  "mudir",
-  "koordinator",
-  "sb",
-  "sb_boshliq",
-]);
+/** Apteka smena — vazifa qo‘yolmaydi; ofis/rahbar hammasi qo‘ya oladi */
+const TASK_ASSIGN_BLOCKED = new Set(["farmasevt", "stajyor"]);
 
 /** «Barcha topshiriqlar» to‘liq kuzatuv — faqat sof admin */
 function isStrictAdminRole(role?: string | null) {
@@ -57,7 +48,8 @@ function isStrictAdminRole(role?: string | null) {
 }
 
 function canAssignTasks(role?: string): boolean {
-  return !!role && MANAGER_ROLES.has(role);
+  if (!role) return false;
+  return !TASK_ASSIGN_BLOCKED.has(role);
 }
 
 function parseId(raw: string | string[]): number {
@@ -103,10 +95,10 @@ function startOfDay(d: Date) {
 }
 
 const ACCEPT_DEADLINE_MS: Record<string, number> = {
-  low: 6 * 60 * 60 * 1000,
-  normal: 3 * 60 * 60 * 1000,
-  high: 1 * 60 * 60 * 1000,
-  urgent: 10 * 60 * 1000,
+  low: 24 * 60 * 60 * 1000,
+  normal: 16 * 60 * 60 * 1000,
+  high: 8 * 60 * 60 * 1000,
+  urgent: 4 * 60 * 60 * 1000,
 };
 
 function acceptDeadlineMs(priority?: string | null) {
@@ -246,6 +238,17 @@ function sanitizeMeta(raw: unknown): Record<string, unknown> {
   if (src.reminderEnabled != null) out.reminderEnabled = !!src.reminderEnabled;
   if (src.reminderOffset != null) out.reminderOffset = String(src.reminderOffset).slice(0, 40);
   if (src.recurrence != null) out.recurrence = String(src.recurrence).slice(0, 40);
+  if (src.lastDueReminderAt != null) {
+    out.lastDueReminderAt = String(src.lastDueReminderAt).slice(0, 40);
+  }
+  if (src.recurrenceParentId != null) {
+    const pid = Number(src.recurrenceParentId);
+    if (Number.isFinite(pid) && pid > 0) out.recurrenceParentId = Math.floor(pid);
+  }
+  if (src.recurrenceSeriesId != null) {
+    const sid = Number(src.recurrenceSeriesId);
+    if (Number.isFinite(sid) && sid > 0) out.recurrenceSeriesId = Math.floor(sid);
+  }
   if (src.visibility === "all" || src.visibility === "private") {
     out.visibility = src.visibility;
   }
@@ -418,16 +421,153 @@ async function notifyTaskAssignee(opts: {
   text: string;
   linkUrl?: string;
   type?: string;
+  title?: string;
 }) {
   const uid = await resolveNotifyUserId(opts.kind, opts.assigneeId);
   if (!uid || uid === opts.actorUserId) return;
   await notifyUser({
     userId: uid,
     text: opts.text,
-    type: opts.type || "expired_task",
+    type: opts.type || "task_assigned",
     linkUrl: opts.linkUrl || "/vazifalar",
-    title: "Yangi vazifa",
+    title: opts.title || "Yangi vazifa",
+    telegram: true,
   });
+}
+
+/**
+ * Tasdiqlangandan keyin takrorlanuvchi vazifaning keyingi nusxasini yaratadi.
+ */
+async function spawnRecurringTask(
+  existing: typeof tasksTable.$inferSelect,
+  actorUserId?: number | null,
+): Promise<typeof tasksTable.$inferSelect | null> {
+  const prevMeta =
+    existing.meta && typeof existing.meta === "object" && !Array.isArray(existing.meta)
+      ? (existing.meta as Record<string, unknown>)
+      : {};
+  const recurrence = normalizeRecurrence(prevMeta.recurrence);
+  if (recurrence === "none") return null;
+
+  const nextDue = advanceDueAt(existing.dueAt, recurrence);
+  const seriesId =
+    Number(prevMeta.recurrenceSeriesId) > 0
+      ? Math.floor(Number(prevMeta.recurrenceSeriesId))
+      : existing.id;
+
+  const checklist = Array.isArray(prevMeta.checklist)
+    ? (prevMeta.checklist as Array<{ id?: string; text?: string; done?: boolean }>).map(
+        (c, i) => ({
+          id: String(c?.id || `c-${i}`).slice(0, 64),
+          text: String(c?.text || "").slice(0, 300),
+          done: false,
+        }),
+      )
+    : undefined;
+
+  const nextMeta = sanitizeMeta({
+    checklist,
+    tags: prevMeta.tags,
+    taskType: prevMeta.taskType,
+    branchOrDept: prevMeta.branchOrDept,
+    reminderEnabled: prevMeta.reminderEnabled !== false,
+    reminderOffset: prevMeta.reminderOffset || "1d",
+    recurrence,
+    visibility: prevMeta.visibility === "private" ? "private" : "all",
+    notes: prevMeta.notes,
+    recurrenceParentId: existing.id,
+    recurrenceSeriesId: seriesId,
+    history: [
+      {
+        id: `h-recur-${Date.now()}`,
+        text: `Takrorlanuvchi topshiriq (${recurrence}) — avvalgi #${existing.id}`,
+        createdAt: new Date().toISOString(),
+      },
+    ],
+    messages: [],
+  });
+
+  const [created] = await db
+    .insert(tasksTable)
+    .values({
+      title: existing.title,
+      description: existing.description,
+      status: "todo",
+      priority: existing.priority || "normal",
+      dueAt: nextDue,
+      assigneeKind: existing.assigneeKind,
+      assigneeId: existing.assigneeId,
+      createdById: existing.createdById,
+      attachments: Array.isArray(existing.attachments) ? existing.attachments : [],
+      meta: nextMeta,
+      acceptedAt: null,
+      completedAt: null,
+      completionNote: null,
+      completionAttachments: [],
+    })
+    .returning();
+
+  if (created?.assigneeId) {
+    const creatorName = await resolveUserDisplayName(existing.createdById);
+    await notifyTaskAssignee({
+      kind: created.assigneeKind || "user",
+      assigneeId: created.assigneeId,
+      actorUserId: actorUserId ?? undefined,
+      text: buildTaskAssignedText({
+        title: created.title,
+        fromName: creatorName,
+        dueAt: created.dueAt,
+        description: created.description,
+        extraLine: `🔁 Takrorlanuvchi: ${recurrence}`,
+      }),
+      linkUrl: `/vazifalar?task=${created.id}`,
+      type: "task_assigned",
+      title: "Takrorlanuvchi vazifa",
+    });
+  }
+
+  return created ?? null;
+}
+
+function formatTaskDueUz(due: Date | null | undefined): string {
+  if (!due || Number.isNaN(due.getTime())) return "belgilanmagan";
+  return due.toLocaleString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+async function resolveUserDisplayName(userId: number | null | undefined): Promise<string> {
+  if (!userId) return "Rahbar";
+  const [row] = await db
+    .select({ fullName: usersTable.fullName })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  return (row?.fullName || "").trim() || "Rahbar";
+}
+
+function buildTaskAssignedText(opts: {
+  title: string;
+  fromName: string;
+  dueAt?: Date | null;
+  description?: string | null;
+  extraLine?: string | null;
+}): string {
+  const lines = [
+    `📋 Yangi vazifa: «${opts.title}»`,
+    `👤 Kimdan: ${opts.fromName}`,
+    `⏰ Muddat: ${formatTaskDueUz(opts.dueAt ?? null)}`,
+  ];
+  const desc = String(opts.description || "").trim();
+  if (desc) lines.push(`📝 ${desc.slice(0, 160)}${desc.length > 160 ? "…" : ""}`);
+  if (opts.extraLine) lines.push(opts.extraLine);
+  lines.push("👉 Avval qabul qiling — Vazifalar");
+  return lines.join("\n");
 }
 
 async function assigneeIsOfisStaff(
@@ -554,7 +694,7 @@ router.get("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> =
 
 router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canAssignTasks(req.userRole)) {
-    res.status(403).json({ error: "Vazifa belgilash faqat rahbarlar uchun" });
+    res.status(403).json({ error: "Vazifa belgilash uchun ruxsat yo'q" });
     return;
   }
 
@@ -637,6 +777,7 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
     list.length > 1 ? `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : null;
   const baseMeta = applyTaskVisibilityPolicy(sanitizeMeta(meta), req.userRole);
   const fileAtt = sanitizeAttachments(attachments);
+  const creatorName = await resolveUserDisplayName(req.userId);
   const createdRows = [];
 
   for (const a of list) {
@@ -677,8 +818,15 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
         kind: a.kind,
         assigneeId: a.id,
         actorUserId: req.userId,
-        text: `Sizga yangi vazifa: «${created.title}» — avval qabul qiling`,
+        text: buildTaskAssignedText({
+          title: created.title,
+          fromName: creatorName,
+          dueAt: created.dueAt,
+          description: created.description,
+        }),
         linkUrl: `/vazifalar?task=${created.id}`,
+        type: "task_assigned",
+        title: "Yangi vazifa",
       });
     }
     createdRows.push(created);
@@ -949,12 +1097,21 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
       }
 
       if (kind && aid) {
+        const byName = me?.fullName || (await resolveUserDisplayName(req.userId));
         await notifyTaskAssignee({
           kind,
           assigneeId: aid,
           actorUserId: req.userId,
-          text: `Sizga vazifa biriktirildi: «${existing.title}» (avval: ${oldName})`,
+          text: buildTaskAssignedText({
+            title: existing.title,
+            fromName: byName,
+            dueAt: existing.dueAt,
+            description: existing.description,
+            extraLine: `↩️ Avvalgi mas'ul: ${oldName}`,
+          }),
           linkUrl: `/vazifalar?task=${existing.id}`,
+          type: "task_assigned",
+          title: "Vazifa biriktirildi",
         });
       }
       if (
@@ -1168,16 +1325,31 @@ router.post("/tasks/:id/verify", requireAuth, async (req: AuthRequest, res): Pro
       verifiedById: req.userId ?? null,
     });
 
-    if (existing.assigneeKind === "user") {
-      await notifyUser({
-        userId: existing.assigneeId,
+    if (existing.assigneeId) {
+      await notifyTaskAssignee({
+        kind: existing.assigneeKind || "user",
+        assigneeId: existing.assigneeId,
+        actorUserId: req.userId,
         text: `✔ «${existing.title}» tasdiqlandi — vazifa yakunlandi`,
         type: "stage_change",
-        linkUrl: "/vazifalar",
+        title: "Vazifa tasdiqlandi",
+        linkUrl: `/vazifalar?task=${existing.id}`,
       });
     }
 
-    res.json(await enrichTask(updated));
+    let nextTask: typeof tasksTable.$inferSelect | null = null;
+    try {
+      nextTask = await spawnRecurringTask(existing, req.userId);
+    } catch (err) {
+      req.log?.error({ err, taskId: id }, "Recurring task spawn failed");
+    }
+
+    const enriched = await enrichTask(updated);
+    res.json(
+      nextTask
+        ? { ...enriched, nextRecurringTaskId: nextTask.id }
+        : enriched,
+    );
     return;
   }
 

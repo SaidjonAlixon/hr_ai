@@ -19,6 +19,8 @@ import {
   Search,
   ChevronDown,
   Clock3,
+  ScanFace,
+  ShieldCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -51,7 +53,8 @@ import {
   useDeleteBranchAudit,
   useMyCoordinatorVisit,
   finishCoordinatorVisit,
-  startCoordinatorVisit,
+  confirmCoordinatorPresence,
+  requestPresenceUnlock,
   AUDIT_GEOFENCE_METERS,
   haversineMeters,
   type AuditAnswer,
@@ -59,7 +62,9 @@ import {
   type BranchAudit,
   type AuditBranchOption,
 } from "@/lib/branch-audits-api";
-import { useLocation } from "wouter";
+import { facePunchDavomat } from "@/lib/davomat-api";
+import { FaceScanDialog } from "@/components/FaceScanDialog";
+import { isFaceIdSupported, preloadFaceModels } from "@/lib/face-id";
 import { useQueryClient } from "@tanstack/react-query";
 import { FinishVisitDialog } from "./finish-visit-dialog";
 import {
@@ -318,8 +323,10 @@ export default function ChecklistPage() {
   const { data: myVisitData, refetch: refetchMyVisit } = useMyCoordinatorVisit(isCoord);
   const openVisit = myVisitData?.visit ?? null;
   const qc = useQueryClient();
-  const [, setLocation] = useLocation();
   const [keldimBusy, setKeldimBusy] = useState(false);
+  const [faceOpen, setFaceOpen] = useState(false);
+  const [presenceBusy, setPresenceBusy] = useState(false);
+  const [unlockBusy, setUnlockBusy] = useState(false);
 
   const [managerId, setManagerId] = useState<string>("");
   const [finishOpen, setFinishOpen] = useState(false);
@@ -432,6 +439,7 @@ export default function ChecklistPage() {
   const canFillChecklist =
     !monthFull &&
     !visitedToday &&
+    !(isCoord && openVisit?.presenceBlocked) &&
     (user?.role === "admin" ||
       (Boolean(selectedBranch) &&
         withinGeofence &&
@@ -439,29 +447,133 @@ export default function ChecklistPage() {
 
   const goKeldim = async () => {
     if (!managerId) return;
-    // GPS ichida — tashrifni ochib cheklistga o‘tamiz (Face ID shart emas agar zona ichida)
-    if (withinGeofence && gps) {
-      setKeldimBusy(true);
-      try {
-        const res = await startCoordinatorVisit({
-          branchId: Number(managerId),
-          latitude: gps.lat,
-          longitude: gps.lng,
-        });
-        await refetchMyVisit();
-        void qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+    if (!withinGeofence || !gps) {
+      toast({
+        title: "Yashil zona kerak",
+        description: `Filialga ${AUDIT_GEOFENCE_METERS} m ichida kiring, keyin Face ID bilan Keldim qiling.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!isFaceIdSupported()) {
+      toast({
+        title: "Face ID qo‘llab-quvvatlanmaydi",
+        description: "Kamerasi bor brauzer/telefonda oching",
+        variant: "destructive",
+      });
+      return;
+    }
+    preloadFaceModels();
+    setFaceOpen(true);
+  };
+
+  const onKeldimFaceCaptured = async (
+    descriptor: number[] | number[][],
+    snapshot?: string,
+    liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number },
+  ) => {
+    if (!managerId || !gps) {
+      throw new Error("GPS va filial kerak");
+    }
+    if (!withinGeofence) {
+      throw new Error(`Yashil zonadan tashqaridasiz — ${AUDIT_GEOFENCE_METERS} m ichiga kiring`);
+    }
+    setKeldimBusy(true);
+    try {
+      const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
+      const vec = list[0]!;
+      const result = await facePunchDavomat({
+        descriptor: vec,
+        latitude: gps.lat,
+        longitude: gps.lng,
+        accuracy: gps.accuracy ?? undefined,
+        action: "in",
+        branchId: Number(managerId),
+        snapshot,
+        liveness,
+      });
+      setFaceOpen(false);
+      await refetchMyVisit();
+      void qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+      toast({
+        title: result.attendanceAlreadyMarked ? "Tashrif ochiq" : "Keldim — Face ID tasdiqlandi",
+        description:
+          result.checklistHint ||
+          result.message ||
+          "Endi cheklistni to‘ldiring. Har 20 daqiqada hududni tasdiqlang.",
+      });
+    } catch (err) {
+      // Face ID muvaffaqiyatsiz — faqat GPS bilan ochishga urinma (talab: Face majburiy)
+      throw err;
+    } finally {
+      setKeldimBusy(false);
+    }
+  };
+
+  const confirmPresence = async () => {
+    if (!openVisit) return;
+    if (openVisit.presenceBlocked) {
+      toast({
+        title: "Bloklangansiz",
+        description: "Avval «Ruxsat olish» orqali adminga so‘rov yuboring.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setPresenceBusy(true);
+    try {
+      const pos = await readFreshGps();
+      const dist =
+        selectedBranch?.latitude != null && selectedBranch?.longitude != null
+          ? haversineMeters(pos.lat, pos.lng, selectedBranch.latitude, selectedBranch.longitude)
+          : null;
+      if (dist != null && dist > AUDIT_GEOFENCE_METERS) {
         toast({
-          title: "Keldim qabul qilindi",
-          description: res.message || "Endi cheklistni to‘ldiring",
+          title: "Yashil zonadan tashqarida",
+          description: `Hozir ${dist} m uzoqdasiz. ${AUDIT_GEOFENCE_METERS} m ichida tasdiqlang.`,
+          variant: "destructive",
         });
         return;
-      } catch {
-        // Face ID orqali
-      } finally {
-        setKeldimBusy(false);
       }
+      const res = await confirmCoordinatorPresence({
+        latitude: pos.lat,
+        longitude: pos.lng,
+      });
+      await refetchMyVisit();
+      toast({
+        title: "Hudud tasdiqlandi",
+        description: res.message || "Ishingizni davom ettiring",
+      });
+    } catch (err) {
+      toast({
+        title: "Tasdiqlanmadi",
+        description: (err as Error)?.message || "Yashil zonaga kiring va qayta urinib ko‘ring",
+        variant: "destructive",
+      });
+    } finally {
+      setPresenceBusy(false);
     }
-    setLocation(`/davomat-face?branchId=${managerId}&action=in`);
+  };
+
+  const requestUnlock = async () => {
+    if (!openVisit?.presenceBlocked) return;
+    setUnlockBusy(true);
+    try {
+      const res = await requestPresenceUnlock();
+      await refetchMyVisit();
+      toast({
+        title: "So‘rov yuborildi",
+        description: res.message || "Admin javobini kuting",
+      });
+    } catch (err) {
+      toast({
+        title: "Yuborilmadi",
+        description: (err as Error)?.message || "Qayta urinib ko‘ring",
+        variant: "destructive",
+      });
+    } finally {
+      setUnlockBusy(false);
+    }
   };
 
   const remainMeters =
@@ -617,13 +729,21 @@ export default function ChecklistPage() {
 
   async function handleFinishVisit(note: string) {
     if (!openVisit) return;
+    if (!withinGeofence || !gps) {
+      toast({
+        title: "Yashil zona kerak",
+        description: `«Ketdim» faqat filial hududida (${AUDIT_GEOFENCE_METERS} m). GPS yoqing va yashil zonaga kiring.`,
+        variant: "destructive",
+      });
+      return;
+    }
     setFinishing(true);
     try {
       const started = openVisit.checkInAt ? new Date(openVisit.checkInAt).getTime() : NaN;
       const result = await finishCoordinatorVisit({
         note,
-        latitude: gps?.lat ?? null,
-        longitude: gps?.lng ?? null,
+        latitude: gps.lat,
+        longitude: gps.lng,
       });
       setFinishOpen(false);
       setManagerId("");
@@ -645,12 +765,12 @@ export default function ChecklistPage() {
         description:
           (elapsedLabel ? `Tashrif: ${elapsedLabel}. ` : "") +
           (result.message ||
-            "Tashrif yakunlandi. Keyingi filialni tanlab «Keldim» qilishingiz mumkin."),
+            "Tashrif yakunlandi. Keyingi filialni tanlab Face ID bilan «Keldim» qilishingiz mumkin."),
       });
     } catch (err) {
       toast({
         title: "Yopilmadi",
-        description: (err as Error)?.message || "Qayta urinib ko‘ring",
+        description: (err as Error)?.message || "Yashil zonada qayta urinib ko‘ring",
         variant: "destructive",
       });
     } finally {
@@ -801,7 +921,8 @@ export default function ChecklistPage() {
         void qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
         toast({
           title: "Cheklist saqlandi",
-          description: "Endi qizil «Ketdim» tugmasi ochildi — vaqtni ko‘rib yakunlang.",
+          description:
+            "Endi yashil zonada «Ketdim» qiling — aks holda boshqa filialga tashrif qila olmaysiz. Telegram/platformadan eslatma keladi.",
         });
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
@@ -1004,16 +1125,16 @@ export default function ChecklistPage() {
                       <Clock3 className="h-4 w-4 shrink-0" />
                       {openVisit && String(openVisit.branchId) === managerId
                         ? openVisit.checklistAt
-                          ? "Cheklist saqlandi — endi Ketdim"
-                          : "Ochiq tashrif — avval cheklistni saqlang"
-                        : "Filial tanlandi — endi «Keldim» qiling"}
+                          ? "Cheklist saqlandi — endi Ketdim (yashil zona)"
+                          : "Ochiq tashrif — cheklistni saqlang"
+                        : "Filial tanlandi — Face ID bilan Keldim"}
                     </p>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {openVisit && String(openVisit.branchId) === managerId
                         ? openVisit.checklistAt
-                          ? `Filial: «${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Qizil «Ketdim» → vaqt → Ha → izoh → Tugatish.`
-                          : `Filial: «${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni to‘liq to‘ldirib «Saqlash» qiling — keyin «Ketdim» ochiladi.`
-                        : `Tanlangan: «${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Face ID (Davomat) da GPS ichida «Keldim» bosing — keyin cheklist ochiladi.`}
+                          ? `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Ketdim qilmasangiz boshqa filialga o‘ta olmaysiz. Faqat yashil zonada (${AUDIT_GEOFENCE_METERS} m).`
+                          : `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni saqlang. Har 20 daqiqada hududni tasdiqlang. QR ishlamaydi — faqat Face ID.`
+                        : `«${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Yashil zonada Face ID skanerlang — davomat sahifasiga o‘tmasdan shu yerda ochiladi.`}
                     </p>
                     {openVisit && String(openVisit.branchId) === managerId ? (
                       <p className="mt-1 text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
@@ -1030,6 +1151,13 @@ export default function ChecklistPage() {
                               minute: "2-digit",
                             })}`
                           : " · Cheklist hali saqlanmagan"}
+                        {openVisit.lastPresenceAt
+                          ? ` · Hudud: ${new Date(openVisit.lastPresenceAt).toLocaleTimeString("uz-UZ", {
+                              timeZone: "Asia/Tashkent",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}`
+                          : null}
                       </p>
                     ) : null}
                   </div>
@@ -1039,6 +1167,12 @@ export default function ChecklistPage() {
                         type="button"
                         size="sm"
                         className="shrink-0 bg-rose-600 text-white hover:bg-rose-700"
+                        disabled={!withinGeofence}
+                        title={
+                          withinGeofence
+                            ? "Ketdim"
+                            : `Faqat yashil zonada (${AUDIT_GEOFENCE_METERS} m)`
+                        }
                         onClick={() => setFinishOpen(true)}
                       >
                         Ketdim
@@ -1059,14 +1193,75 @@ export default function ChecklistPage() {
                     <Button
                       type="button"
                       size="sm"
-                      className="shrink-0"
-                      disabled={keldimBusy}
+                      className="shrink-0 gap-1.5"
+                      disabled={keldimBusy || !withinGeofence}
                       onClick={() => void goKeldim()}
                     >
-                      {keldimBusy ? "Ochilmoqda…" : "Keldim qilish"}
+                      <ScanFace className="h-4 w-4" />
+                      {keldimBusy ? "Tekshirilmoqda…" : "Face ID · Keldim"}
                     </Button>
                   )}
                 </div>
+
+                {openVisit && String(openVisit.branchId) === managerId ? (
+                  openVisit.presenceBlocked ? (
+                    <div className="mt-3 space-y-2 rounded-xl border border-rose-400 bg-rose-50 px-3 py-3 dark:border-rose-600 dark:bg-rose-950/50">
+                      <p className="flex items-center gap-1.5 text-sm font-semibold text-rose-900 dark:text-rose-100">
+                        <ShieldCheck className="h-4 w-4 shrink-0" />
+                        Siz bugun hududda emas — cheklist bloklangan
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-rose-900/80 dark:text-rose-200/80">
+                        Sabab: 20 daqiqalik eslatmadan keyin 10 daqiqa ichida hududingizni
+                        tasdiqlamadingiz. Cheklistni ochish uchun adminga ruxsat so‘rovi yuboring.
+                      </p>
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="w-full gap-1.5 bg-rose-700 text-white hover:bg-rose-800 sm:w-auto"
+                        disabled={unlockBusy || openVisit.unlockPending}
+                        onClick={() => void requestUnlock()}
+                      >
+                        {unlockBusy
+                          ? "Yuborilmoqda…"
+                          : openVisit.unlockPending
+                            ? "So‘rov kutilmoqda…"
+                            : "Ruxsat olish"}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div
+                      className={cn(
+                        "mt-3 flex flex-col gap-2 rounded-xl border px-3 py-2.5 sm:flex-row sm:items-center sm:justify-between",
+                        openVisit.presenceOverdue
+                          ? "border-amber-400 bg-amber-100/80 dark:border-amber-600 dark:bg-amber-950/50"
+                          : "border-sky-200 bg-sky-50/90 dark:border-sky-800 dark:bg-sky-950/40",
+                      )}
+                    >
+                      <div className="min-w-0">
+                        <p className="flex items-center gap-1.5 text-xs font-semibold text-foreground">
+                          <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
+                          {openVisit.presenceOverdue
+                            ? "10 daqiqa ichida tasdiqlang — aks holda blok"
+                            : "Har 20 daqiqada hududni tasdiqlang"}
+                        </p>
+                        <p className="mt-0.5 text-[11px] text-muted-foreground">
+                          Faqat yashil zonada. Tasdiqlamasangiz cheklist yopiladi.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={openVisit.presenceOverdue ? "default" : "outline"}
+                        className="shrink-0 gap-1.5"
+                        disabled={presenceBusy || !withinGeofence}
+                        onClick={() => void confirmPresence()}
+                      >
+                        <MapPin className="h-3.5 w-3.5" />
+                        {presenceBusy ? "…" : "Hududni tasdiqlash"}
+                      </Button>
+                    </div>
+                  )
+                ) : null}
               </div>
             ) : null}
 
@@ -1623,7 +1818,20 @@ export default function ChecklistPage() {
         checkInAt={openVisit?.checkInAt}
         checklistAt={openVisit?.checklistAt}
         submitting={finishing}
+        withinGeofence={withinGeofence}
+        geofenceMeters={AUDIT_GEOFENCE_METERS}
         onFinish={handleFinishVisit}
+      />
+
+      <FaceScanDialog
+        open={faceOpen}
+        onOpenChange={(o) => {
+          if (!keldimBusy) setFaceOpen(o);
+        }}
+        mode="login"
+        title="Keldim — Face ID"
+        description="Yuzingizni tasdiqlang. QR ishlamaydi. Tasdiqlangach cheklist ochiladi."
+        onCaptured={onKeldimFaceCaptured}
       />
     </div>
   );

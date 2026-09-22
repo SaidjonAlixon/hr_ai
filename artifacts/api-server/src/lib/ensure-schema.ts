@@ -289,6 +289,13 @@ CREATE INDEX IF NOT EXISTS coord_visits_branch_idx ON coordinator_branch_visits 
 CREATE INDEX IF NOT EXISTS coord_visits_work_date_idx ON coordinator_branch_visits (work_date);
 CREATE INDEX IF NOT EXISTS coord_visits_checklist_idx ON coordinator_branch_visits (checklist_audit_id);
 ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS checkout_note TEXT;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS last_presence_at TIMESTAMPTZ;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS last_presence_reminder_at TIMESTAMPTZ;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_confirm_count INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_blocked_at TIMESTAMPTZ;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlock_request_at TIMESTAMPTZ;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlocked_at TIMESTAMPTZ;
+ALTER TABLE coordinator_branch_visits ADD COLUMN IF NOT EXISTS presence_unlocked_by_id INTEGER;
 
 -- Employees GPS (checklist geofence) + employment + org
 DO $$
@@ -1139,6 +1146,20 @@ CREATE TABLE IF NOT EXISTS lokatsiya_bot_users (
 CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_last_seen_idx ON lokatsiya_bot_users (last_seen_at DESC);
 CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_blocked_idx ON lokatsiya_bot_users (is_blocked);
 
+CREATE TABLE IF NOT EXISTS lokatsiya_bot_recruiters (
+  telegram_user_id BIGINT PRIMARY KEY,
+  chat_id BIGINT NOT NULL DEFAULT 0,
+  username TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  added_by_telegram_id BIGINT,
+  note TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS lokatsiya_bot_recruiters_active_idx ON lokatsiya_bot_recruiters (is_active);
+
 -- ========== Device Security (opt-in) ==========
 ALTER TABLE users ADD COLUMN IF NOT EXISTS device_security_enforced BOOLEAN NOT NULL DEFAULT FALSE;
 
@@ -1365,6 +1386,7 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_created_idx ON mobile_attendance_aud
 CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audit_logs (action);
 `);
     await ensureRevisionVisitsSchema();
+    await ensureWarehouseShiftsSchema();
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");
     throw err;
@@ -1384,6 +1406,13 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
     await ensureDistribyutsiyaSetup();
   } catch (err) {
     logger.warn({ err }, "Distribyutsiya setup skipped");
+  }
+
+  try {
+    const { ensureOmborxonaDepartmentId } = await import("./omborxona-department");
+    await ensureOmborxonaDepartmentId();
+  } catch (err) {
+    logger.warn({ err }, "Omborxona department setup skipped");
   }
 }
 
@@ -1439,6 +1468,102 @@ CREATE INDEX IF NOT EXISTS revision_visits_assigned_idx ON revision_visits (assi
 CREATE INDEX IF NOT EXISTS revision_visits_revision_date_idx ON revision_visits (revision_date);
 CREATE INDEX IF NOT EXISTS revision_visits_created_idx ON revision_visits (created_at);
 `;
+
+const WAREHOUSE_SHIFTS_SQL = `
+CREATE TABLE IF NOT EXISTS warehouse_shifts (
+  id SERIAL PRIMARY KEY,
+  department_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  start_hm TEXT NOT NULL,
+  end_hm TEXT NOT NULL,
+  overnight BOOLEAN NOT NULL DEFAULT FALSE,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS wh_shifts_dept_idx ON warehouse_shifts (department_id);
+CREATE INDEX IF NOT EXISTS wh_shifts_active_idx ON warehouse_shifts (active);
+
+CREATE TABLE IF NOT EXISTS warehouse_shift_members (
+  id SERIAL PRIMARY KEY,
+  shift_id INTEGER NOT NULL,
+  employee_id INTEGER NOT NULL,
+  department_id INTEGER NOT NULL,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  assigned_by_id INTEGER,
+  note TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS wh_shift_members_shift_idx ON warehouse_shift_members (shift_id);
+CREATE INDEX IF NOT EXISTS wh_shift_members_emp_idx ON warehouse_shift_members (employee_id);
+CREATE UNIQUE INDEX IF NOT EXISTS wh_shift_members_emp_active_uidx
+  ON warehouse_shift_members (employee_id) WHERE active = true;
+`;
+
+export async function ensureWarehouseShiftsSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(WAREHOUSE_SHIFTS_SQL);
+    logger.info("Warehouse shifts schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Warehouse shifts schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const LOKATSIYA_BOT_SQL = `
+CREATE TABLE IF NOT EXISTS lokatsiya_bot_users (
+  telegram_user_id BIGINT PRIMARY KEY,
+  chat_id BIGINT NOT NULL,
+  username TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  language_code TEXT,
+  starts_count INTEGER NOT NULL DEFAULT 1,
+  branch_views INTEGER NOT NULL DEFAULT 0,
+  last_action TEXT,
+  is_blocked BOOLEAN NOT NULL DEFAULT FALSE,
+  blocked_at TIMESTAMPTZ,
+  first_start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_start_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_last_seen_idx ON lokatsiya_bot_users (last_seen_at DESC);
+CREATE INDEX IF NOT EXISTS lokatsiya_bot_users_blocked_idx ON lokatsiya_bot_users (is_blocked);
+
+CREATE TABLE IF NOT EXISTS lokatsiya_bot_recruiters (
+  telegram_user_id BIGINT PRIMARY KEY,
+  chat_id BIGINT NOT NULL DEFAULT 0,
+  username TEXT,
+  first_name TEXT,
+  last_name TEXT,
+  added_by_telegram_id BIGINT,
+  note TEXT,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS lokatsiya_bot_recruiters_active_idx ON lokatsiya_bot_recruiters (is_active);
+`;
+
+export async function ensureLokatsiyaBotSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(LOKATSIYA_BOT_SQL);
+    logger.info("Lokatsiya bot schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Lokatsiya bot schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 export async function ensureRevisionVisitsSchema(): Promise<void> {
   const client = await pool.connect();

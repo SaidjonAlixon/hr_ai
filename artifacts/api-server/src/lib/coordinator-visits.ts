@@ -7,11 +7,155 @@ import {
   employeesTable,
   usersTable,
 } from "@workspace/db";
+import { notifyUser, notifyByRoles } from "./notify";
 
 export type CoordVisitRow = typeof coordinatorBranchVisitsTable.$inferSelect;
 
+/** Cheklist / Keldim / Ketdim / hudud tasdiqlash — yashil zona */
+export const COORD_VISIT_GEOFENCE_METERS = 70;
+/** Har shuncha daqiqada hududni qayta tasdiqlash */
+export const COORD_PRESENCE_INTERVAL_MS = 20 * 60 * 1000;
+/** Eslatmadan keyin shuncha ichida tasdiqlanmasa — blok */
+export const COORD_PRESENCE_GRACE_MS = 10 * 60 * 1000;
+
 let lastBackfillMs = 0;
 const BACKFILL_COOLDOWN_MS = 60_000;
+
+export function haversineMeters(
+  lat1: number,
+  lon1: number,
+  lat2: number,
+  lon2: number,
+): number {
+  const toRad = (d: number) => (d * Math.PI) / 180;
+  const R = 6371000;
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+export async function getBranchCoords(branchId: number): Promise<{
+  latitude: number;
+  longitude: number;
+  label: string;
+} | null> {
+  const [branch] = await db
+    .select({
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+    })
+    .from(employeesTable)
+    .where(eq(employeesTable.id, branchId))
+    .limit(1);
+  if (
+    !branch ||
+    branch.latitude == null ||
+    branch.longitude == null ||
+    !Number.isFinite(branch.latitude) ||
+    !Number.isFinite(branch.longitude)
+  ) {
+    return null;
+  }
+  return {
+    latitude: branch.latitude,
+    longitude: branch.longitude,
+    label: branch.location || branch.fullName || `Filial #${branchId}`,
+  };
+}
+
+export async function assertInBranchGeofence(opts: {
+  branchId: number;
+  latitude: number | null | undefined;
+  longitude: number | null | undefined;
+  maxMeters?: number;
+}): Promise<
+  | { ok: true; distanceMeters: number; branchLabel: string }
+  | { ok: false; status: number; error: string; code: string; distanceMeters?: number }
+> {
+  const max = opts.maxMeters ?? COORD_VISIT_GEOFENCE_METERS;
+  if (
+    opts.latitude == null ||
+    opts.longitude == null ||
+    !Number.isFinite(opts.latitude) ||
+    !Number.isFinite(opts.longitude)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      code: "gps_required",
+      error: "GPS majburiy — lokatsiyaga ruxsat bering.",
+    };
+  }
+  const coords = await getBranchCoords(opts.branchId);
+  if (!coords) {
+    return {
+      ok: false,
+      status: 400,
+      code: "branch_gps_missing",
+      error: "Filial GPS kordinatasi yo‘q — koordinator filial lokatsiyasini kiriting.",
+    };
+  }
+  const distanceMeters = haversineMeters(
+    opts.latitude,
+    opts.longitude,
+    coords.latitude,
+    coords.longitude,
+  );
+  if (distanceMeters > max) {
+    return {
+      ok: false,
+      status: 403,
+      code: "outside_geofence",
+      distanceMeters,
+      error: `Yashil zonadan tashqaridasiz (${distanceMeters} m). Filialga ${max} m ichida kiring.`,
+    };
+  }
+  return { ok: true, distanceMeters, branchLabel: coords.label };
+}
+
+export function visitPresenceBaseMs(v: {
+  lastPresenceAt?: Date | string | null;
+  checkInAt?: Date | string | null;
+}): number | null {
+  const raw = v.lastPresenceAt || v.checkInAt;
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  return Number.isFinite(ms) ? ms : null;
+}
+
+/** 20 daq muddat o‘tdi (eslatma oynasi) */
+export function isVisitPresenceOverdue(v: CoordVisitRow, now = Date.now()): boolean {
+  if (v.status !== "open" || v.checkOutAt) return false;
+  const base = visitPresenceBaseMs(v);
+  if (base == null) return false;
+  return now - base >= COORD_PRESENCE_INTERVAL_MS;
+}
+
+/**
+ * Blok: 20 daq + 10 daq grace ichida tasdiqlanmagan,
+ * yoki presenceBlockedAt belgilangan va admin ochmagan.
+ */
+export function isVisitPresenceBlocked(v: CoordVisitRow, now = Date.now()): boolean {
+  if (v.status !== "open" || v.checkOutAt) return false;
+  if (v.presenceBlockedAt) {
+    // Admin ochgan bo‘lsa — unblock
+    if (
+      v.presenceUnlockedAt &&
+      new Date(v.presenceUnlockedAt).getTime() >= new Date(v.presenceBlockedAt).getTime()
+    ) {
+      return false;
+    }
+    return true;
+  }
+  const base = visitPresenceBaseMs(v);
+  if (base == null) return false;
+  return now - base >= COORD_PRESENCE_INTERVAL_MS + COORD_PRESENCE_GRACE_MS;
+}
 
 export function formatDurationMinutes(mins: number | null): string {
   if (mins == null || !Number.isFinite(mins) || mins < 0) return "—";
@@ -155,6 +299,8 @@ export async function syncCoordinatorVisitOnPunch(opts: {
         checkInAt: now,
         checkInLatitude: opts.latitude ?? null,
         checkInLongitude: opts.longitude ?? null,
+        lastPresenceAt: now,
+        presenceConfirmCount: 1,
         status: "open",
       })
       .returning();
@@ -225,7 +371,7 @@ export async function startCoordinatorVisit(opts: {
   return { ok: true, visit };
 }
 
-/** Ketdim: izoh bilan filial tashrifini yopish (Face ID dan oldin/keyin) */
+/** Ketdim: izoh + yashil zonada filial tashrifini yopish */
 export async function finishCoordinatorVisitWithNote(opts: {
   userId: number;
   note: string;
@@ -233,7 +379,7 @@ export async function finishCoordinatorVisitWithNote(opts: {
   longitude?: number | null;
 }): Promise<
   | { ok: true; visit: CoordVisitRow }
-  | { ok: false; status: number; error: string; code: string }
+  | { ok: false; status: number; error: string; code: string; distanceMeters?: number }
 > {
   const note = String(opts.note || "").trim();
   if (note.length < 10) {
@@ -272,6 +418,21 @@ export async function finishCoordinatorVisitWithNote(opts: {
     };
   }
 
+  const zone = await assertInBranchGeofence({
+    branchId: open.branchId,
+    latitude: opts.latitude,
+    longitude: opts.longitude,
+  });
+  if (!zone.ok) {
+    return {
+      ok: false,
+      status: zone.status,
+      code: zone.code,
+      error: zone.error,
+      distanceMeters: zone.distanceMeters,
+    };
+  }
+
   const now = new Date();
   const [updated] = await db
     .update(coordinatorBranchVisitsTable)
@@ -280,6 +441,7 @@ export async function finishCoordinatorVisitWithNote(opts: {
       checkOutLatitude: opts.latitude ?? null,
       checkOutLongitude: opts.longitude ?? null,
       checkoutNote: note,
+      lastPresenceAt: now,
       status: "closed",
       updatedAt: now,
     })
@@ -290,6 +452,226 @@ export async function finishCoordinatorVisitWithNote(opts: {
     return { ok: false, status: 503, code: "finish_failed", error: "Tashrif yopilmadi" };
   }
   return { ok: true, visit: updated };
+}
+
+/** Har 20 daqiqada — yashil zonada ekanligini tasdiqlash */
+export async function confirmCoordinatorPresence(opts: {
+  userId: number;
+  latitude?: number | null;
+  longitude?: number | null;
+}): Promise<
+  | { ok: true; visit: CoordVisitRow; distanceMeters: number }
+  | { ok: false; status: number; error: string; code: string; distanceMeters?: number }
+> {
+  const open = await getOpenCoordinatorVisit(opts.userId);
+  if (!open) {
+    return {
+      ok: false,
+      status: 400,
+      code: "no_open_visit",
+      error: "Ochiq tashrif yo‘q. Avval Face ID bilan «Keldim» qiling.",
+    };
+  }
+  if (isVisitPresenceBlocked(open)) {
+    return {
+      ok: false,
+      status: 403,
+      code: "presence_blocked",
+      error:
+        "Siz bugun hududda emas deb bloklandingiz — 10 daqiqa ichida tasdiqlamadingiz. Cheklist uchun adminga «Ruxsat olish» yuboring.",
+    };
+  }
+  const zone = await assertInBranchGeofence({
+    branchId: open.branchId,
+    latitude: opts.latitude,
+    longitude: opts.longitude,
+  });
+  if (!zone.ok) {
+    return {
+      ok: false,
+      status: zone.status,
+      code: zone.code,
+      error: zone.error,
+      distanceMeters: zone.distanceMeters,
+    };
+  }
+
+  const now = new Date();
+  const [updated] = await db
+    .update(coordinatorBranchVisitsTable)
+    .set({
+      lastPresenceAt: now,
+      presenceConfirmCount: (open.presenceConfirmCount || 0) + 1,
+      presenceBlockedAt: null,
+      presenceUnlockRequestAt: null,
+      updatedAt: now,
+    })
+    .where(eq(coordinatorBranchVisitsTable.id, open.id))
+    .returning();
+
+  if (!updated) {
+    return { ok: false, status: 503, code: "confirm_failed", error: "Tasdiqlash saqlanmadi" };
+  }
+  return { ok: true, visit: updated, distanceMeters: zone.distanceMeters };
+}
+
+/** Koordinator: blokdan chiqish uchun adminga so‘rov */
+export async function requestPresenceUnlock(opts: {
+  userId: number;
+}): Promise<
+  | { ok: true; visit: CoordVisitRow }
+  | { ok: false; status: number; error: string; code: string }
+> {
+  const open = await getOpenCoordinatorVisit(opts.userId);
+  if (!open) {
+    return {
+      ok: false,
+      status: 400,
+      code: "no_open_visit",
+      error: "Ochiq tashrif yo‘q.",
+    };
+  }
+  if (!isVisitPresenceBlocked(open)) {
+    return {
+      ok: false,
+      status: 400,
+      code: "not_blocked",
+      error: "Hozir blok yo‘q — avval hududni tasdiqlang yoki kutib turing.",
+    };
+  }
+  if (open.presenceUnlockRequestAt && !open.presenceUnlockedAt) {
+    const reqMs = new Date(open.presenceUnlockRequestAt).getTime();
+    if (Date.now() - reqMs < 5 * 60 * 1000) {
+      return {
+        ok: false,
+        status: 429,
+        code: "request_pending",
+        error: "So‘rov allaqachon yuborilgan. Admin javobini kuting.",
+      };
+    }
+  }
+
+  const now = new Date();
+  // Blok belgisini saqlash (agar job hali yozmagan bo‘lsa)
+  const [updated] = await db
+    .update(coordinatorBranchVisitsTable)
+    .set({
+      presenceBlockedAt: open.presenceBlockedAt || now,
+      presenceUnlockRequestAt: now,
+      presenceUnlockedAt: null,
+      presenceUnlockedById: null,
+      updatedAt: now,
+    })
+    .where(eq(coordinatorBranchVisitsTable.id, open.id))
+    .returning();
+
+  if (!updated) {
+    return { ok: false, status: 503, code: "request_failed", error: "So‘rov saqlanmadi" };
+  }
+
+  const branch = updated.branchLabel || "Filial";
+  const name = updated.coordinatorName || "Koordinator";
+  try {
+    await notifyByRoles({
+      roles: ["admin"],
+      text: `🔓 Ruxsat so‘rovi: ${name} — «${branch}». Hududni 10 daqiqa ichida tasdiqlamagan, cheklist bloklangan. Cheklist holati → oching.`,
+      type: "coordinator_presence_unlock",
+      linkUrl: "/checklist-holati?tab=ruxsat",
+    });
+  } catch {
+    /* ignore */
+  }
+
+  return { ok: true, visit: updated };
+}
+
+/** Admin: blokdan chiqarish */
+export async function approvePresenceUnlock(opts: {
+  visitId: number;
+  adminUserId: number;
+}): Promise<
+  | { ok: true; visit: CoordVisitRow }
+  | { ok: false; status: number; error: string; code: string }
+> {
+  const [visit] = await db
+    .select()
+    .from(coordinatorBranchVisitsTable)
+    .where(eq(coordinatorBranchVisitsTable.id, opts.visitId))
+    .limit(1);
+  if (!visit) {
+    return { ok: false, status: 404, code: "not_found", error: "Tashrif topilmadi" };
+  }
+  if (visit.status !== "open" || visit.checkOutAt) {
+    return { ok: false, status: 400, code: "visit_closed", error: "Tashrif allaqachon yopilgan" };
+  }
+  if (!isVisitPresenceBlocked(visit)) {
+    return { ok: false, status: 400, code: "not_blocked", error: "Bu tashrif bloklanmagan" };
+  }
+
+  const now = new Date();
+  const [updated] = await db
+    .update(coordinatorBranchVisitsTable)
+    .set({
+      presenceBlockedAt: null,
+      presenceUnlockRequestAt: null,
+      presenceUnlockedAt: now,
+      presenceUnlockedById: opts.adminUserId,
+      lastPresenceAt: now,
+      updatedAt: now,
+    })
+    .where(eq(coordinatorBranchVisitsTable.id, visit.id))
+    .returning();
+
+  if (!updated) {
+    return { ok: false, status: 503, code: "approve_failed", error: "Ruxsat berilmadi" };
+  }
+
+  try {
+    await notifyUser({
+      userId: visit.coordinatorUserId,
+      text: `✅ Admin ruxsat berdi («${visit.branchLabel || "Filial"}»). Endi cheklistni davom ettirishingiz mumkin. Har 20 daqiqada hududni tasdiqlang.`,
+      type: "coordinator_presence_unlocked",
+      linkUrl: "/checklist",
+      title: "Ruxsat berildi",
+      telegram: true,
+    });
+  } catch {
+    /* ignore */
+  }
+
+  return { ok: true, visit: updated };
+}
+
+/** Job: grace o‘tgach blok belgilash */
+export async function markPresenceBlockedIfNeeded(
+  visit: CoordVisitRow,
+  now = new Date(),
+): Promise<CoordVisitRow | null> {
+  if (!isVisitPresenceBlocked(visit, now.getTime())) return null;
+  if (visit.presenceBlockedAt) return visit;
+  const [updated] = await db
+    .update(coordinatorBranchVisitsTable)
+    .set({
+      presenceBlockedAt: now,
+      updatedAt: now,
+    })
+    .where(eq(coordinatorBranchVisitsTable.id, visit.id))
+    .returning();
+  if (updated) {
+    try {
+      await notifyUser({
+        userId: visit.coordinatorUserId,
+        text: `⛔ Siz bugun hududda emas deb belgilandi («${visit.branchLabel || "Filial"}»). Sabab: 10 daqiqa ichida hududni tasdiqlamadingiz. Cheklist bloklandi — «Ruxsat olish» orqali adminga so‘rov yuboring.`,
+        type: "coordinator_presence_blocked",
+        linkUrl: "/checklist",
+        title: "Hudud bloki",
+        telegram: true,
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+  return updated ?? null;
 }
 
 export async function attachChecklistToOpenVisit(opts: {
@@ -309,6 +691,22 @@ export async function attachChecklistToOpenVisit(opts: {
     })
     .where(eq(coordinatorBranchVisitsTable.id, open.id))
     .returning();
+
+  if (updated) {
+    const branch = updated.branchLabel || "Filial";
+    try {
+      await notifyUser({
+        userId: opts.coordinatorUserId,
+        text: `✅ Cheklist saqlandi («${branch}»). Endi yashil zonada «Ketdim» qiling — aks holda boshqa filialga tashrif qila olmaysiz.`,
+        type: "coordinator_need_checkout",
+        linkUrl: "/checklist",
+        title: "Ketdim qiling",
+        telegram: true,
+      });
+    } catch {
+      /* ignore notify errors */
+    }
+  }
   return updated ?? null;
 }
 
@@ -337,6 +735,15 @@ export async function assertChecklistAllowedForCoordinator(opts: {
       status: 403,
       code: "wrong_branch_visit",
       error: `Hozir ochiq tashrif: «${prev}». Faqat shu filialda cheklist qila olasiz. Boshqasiga o‘tishdan oldin «Ketdim» qiling.`,
+    };
+  }
+  if (isVisitPresenceBlocked(open)) {
+    return {
+      ok: false,
+      status: 403,
+      code: "presence_blocked",
+      error:
+        "Siz bugun hududda emas — 10 daqiqa ichida tasdiqlamadingiz. Cheklist bloklangan. «Ruxsat olish» tugmasi orqali adminga so‘rov yuboring.",
     };
   }
   return { ok: true, visit: open };
@@ -394,6 +801,21 @@ export function serializeVisit(v: CoordVisitRow) {
     v.checklistAt && v.checkInAt
       ? Math.round((new Date(v.checklistAt).getTime() - new Date(v.checkInAt).getTime()) / 60_000)
       : null;
+  const lastPresenceMs = visitPresenceBaseMs(v);
+  const presenceDueAt =
+    lastPresenceMs != null && Number.isFinite(lastPresenceMs)
+      ? new Date(lastPresenceMs + COORD_PRESENCE_INTERVAL_MS).toISOString()
+      : null;
+  const presenceGraceEndsAt =
+    lastPresenceMs != null && Number.isFinite(lastPresenceMs)
+      ? new Date(
+          lastPresenceMs + COORD_PRESENCE_INTERVAL_MS + COORD_PRESENCE_GRACE_MS,
+        ).toISOString()
+      : null;
+  const presenceOverdue = isVisitPresenceOverdue(v);
+  const presenceBlocked = isVisitPresenceBlocked(v);
+  const unlockPending = Boolean(presenceBlocked && v.presenceUnlockRequestAt);
+
   return {
     id: v.id,
     coordinatorUserId: v.coordinatorUserId,
@@ -407,6 +829,21 @@ export function serializeVisit(v: CoordVisitRow) {
     checklistAuditId: v.checklistAuditId,
     checklistAt: v.checklistAt,
     checkoutNote: v.checkoutNote ?? null,
+    lastPresenceAt: v.lastPresenceAt ?? null,
+    lastPresenceReminderAt: v.lastPresenceReminderAt ?? null,
+    presenceConfirmCount: v.presenceConfirmCount ?? 0,
+    presenceBlockedAt: v.presenceBlockedAt ?? null,
+    presenceUnlockRequestAt: v.presenceUnlockRequestAt ?? null,
+    presenceUnlockedAt: v.presenceUnlockedAt ?? null,
+    presenceUnlockedById: v.presenceUnlockedById ?? null,
+    presenceDueAt,
+    presenceGraceEndsAt,
+    presenceOverdue,
+    presenceBlocked,
+    unlockPending,
+    presenceIntervalMinutes: Math.round(COORD_PRESENCE_INTERVAL_MS / 60_000),
+    presenceGraceMinutes: Math.round(COORD_PRESENCE_GRACE_MS / 60_000),
+    geofenceMeters: COORD_VISIT_GEOFENCE_METERS,
     status: v.status,
     durationMinutes: durationMin,
     durationLabel: formatDurationMinutes(durationMin),

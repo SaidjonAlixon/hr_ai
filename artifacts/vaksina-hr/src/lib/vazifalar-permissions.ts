@@ -9,10 +9,17 @@ export const TASK_AUDIT_BROWSE_ROLES = new Set(["hr_auditor"]);
 
 /** Qabul qilish muddati — yaratilgan (yoki qayta biriktirilgan) vaqtdan */
 export const ACCEPT_DEADLINE_MS: Record<string, number> = {
-  low: 6 * 60 * 60 * 1000,
-  normal: 3 * 60 * 60 * 1000,
-  high: 1 * 60 * 60 * 1000,
-  urgent: 10 * 60 * 1000,
+  low: 24 * 60 * 60 * 1000,
+  normal: 16 * 60 * 60 * 1000,
+  high: 8 * 60 * 60 * 1000,
+  urgent: 4 * 60 * 60 * 1000,
+};
+
+export const ACCEPT_DEADLINE_HOURS: Record<string, number> = {
+  low: 24,
+  normal: 16,
+  high: 8,
+  urgent: 4,
 };
 
 function startOfDay(d: Date) {
@@ -21,6 +28,10 @@ function startOfDay(d: Date) {
 
 export function acceptDeadlineMs(priority?: string | null) {
   return ACCEPT_DEADLINE_MS[priority || "normal"] ?? ACCEPT_DEADLINE_MS.normal;
+}
+
+export function acceptDeadlineHours(priority?: string | null) {
+  return ACCEPT_DEADLINE_HOURS[priority || "normal"] ?? ACCEPT_DEADLINE_HOURS.normal;
 }
 
 /** Qabul oynasi boshlanishi: meta.acceptDeadlineBase yoki createdAt */
@@ -44,7 +55,7 @@ export function acceptDeadlineAt(
 
 /**
  * Muhimlik bo‘yicha qabul muddati o‘tgan va hali qabul qilinmagan (todo).
- * Past 6s · O‘rta 3s · Yuqori 1s · Shoshilinch 10d.
+ * Past 24s · O‘rta 16s · Yuqori 8s · Shoshilinch 4s.
  */
 export function isAcceptOverdue(
   task: Pick<Vazifa, "status" | "createdAt" | "priority" | "acceptedAt" | "meta">,

@@ -7,7 +7,7 @@
   "functions": {
     "api/index.mjs": {
       "maxDuration": 60,
-      "includeFiles": "{artifacts/api-server/dist/**,node_modules/pg/**}"
+      "includeFiles": "{artifacts/api-server/dist/**,node_modules/pg/**,node_modules/sharp/**,node_modules/@img/**}"
     }
   },
   "rewrites": [
@@ -22,6 +22,18 @@
     {
       "path": "/api/jobs/davomat-reminders",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/jobs/task-reminders",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/jobs/coordinator-presence",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/jobs/filial-recruiter-monitor",
+      "schedule": "0 */3 * * *"
     }
   ]
 }

@@ -512,20 +512,24 @@
   @apply p-4;
 }
 
+.analytics-table {
+  @apply w-full border-collapse text-sm;
+}
+
 .analytics-table thead tr {
-  @apply border-b border-border bg-muted/30;
+  @apply border-b border-border bg-muted/40;
 }
 
 .dark .analytics-table thead tr {
-  @apply border-slate-700/50 bg-slate-800/40;
+  @apply border-slate-700/50 bg-slate-800/50;
 }
 
 .analytics-table th {
-  @apply px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground;
+  @apply px-3 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground;
 }
 
 .analytics-table td {
-  @apply px-3 py-2;
+  @apply px-3 py-2 align-middle;
 }
 
 .analytics-table tbody tr {
@@ -534,6 +538,49 @@
 
 .dark .analytics-table tbody tr {
   @apply border-slate-700/40 hover:bg-slate-800/35;
+}
+
+/* Excel uslubi — aniq kataklar, sarlavha ↔ qiymat bir ustunda */
+.analytics-table--sheet {
+  @apply border border-border;
+}
+
+.analytics-table--sheet th,
+.analytics-table--sheet td {
+  @apply border border-border px-2.5 py-2;
+}
+
+.dark .analytics-table--sheet th,
+.dark .analytics-table--sheet td {
+  @apply border-slate-700/70;
+}
+
+.analytics-table--sheet thead tr {
+  @apply bg-muted/60;
+}
+
+.dark .analytics-table--sheet thead tr {
+  @apply bg-slate-800/70;
+}
+
+.analytics-table--sheet th {
+  @apply whitespace-nowrap text-center font-bold normal-case tracking-normal text-foreground;
+}
+
+.analytics-table--sheet td {
+  @apply whitespace-nowrap;
+}
+
+.analytics-table--sheet tbody tr:nth-child(even) {
+  @apply bg-muted/20;
+}
+
+.dark .analytics-table--sheet tbody tr:nth-child(even) {
+  @apply bg-slate-900/40;
+}
+
+.analytics-table--sheet tbody tr:hover {
+  @apply bg-primary/5;
 }
 
 .analytics-kpi {

@@ -27,6 +27,16 @@ export const coordinatorBranchVisitsTable = pgTable(
     checklistAt: timestamp("checklist_at", { withTimezone: true }),
     /** Ketdim — «bugun bu yerda nima qildingiz?» */
     checkoutNote: text("checkout_note"),
+    /** Oxirgi marta yashil zonada o‘zini tasdiqlagan vaqt */
+    lastPresenceAt: timestamp("last_presence_at", { withTimezone: true }),
+    /** Oxirgi 20 daqiqa eslatma yuborilgan vaqt */
+    lastPresenceReminderAt: timestamp("last_presence_reminder_at", { withTimezone: true }),
+    presenceConfirmCount: integer("presence_confirm_count").notNull().default(0),
+    /** 20 daq eslatmadan keyin 10 daq ichida tasdiqlanmasa */
+    presenceBlockedAt: timestamp("presence_blocked_at", { withTimezone: true }),
+    presenceUnlockRequestAt: timestamp("presence_unlock_request_at", { withTimezone: true }),
+    presenceUnlockedAt: timestamp("presence_unlocked_at", { withTimezone: true }),
+    presenceUnlockedById: integer("presence_unlocked_by_id"),
     /** open | closed */
     status: text("status").notNull().default("open"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

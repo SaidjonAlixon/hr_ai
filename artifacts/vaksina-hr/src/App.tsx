@@ -30,6 +30,7 @@ import VazifalarTahlilPage from './pages/vazifalar/tahlil';
 import EslatmalarPage from './pages/eslatmalar/index';
 import KirishPage from './pages/kirish/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
+import XodimKerakPage from './pages/xodim-kerak/index';
 import ChecklistPage from './pages/checklist/index';
 import ChecklistHolatiPage from './pages/checklist-holati/index';
 import OylikPage from './pages/oylik/index';
@@ -183,6 +184,7 @@ function Router() {
       </Route>
       <ProtectedRoute path="/kirish" component={KirishPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
+      <ProtectedRoute path="/xodim-kerak" component={XodimKerakPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
       <ProtectedRoute path="/checklist-holati" component={ChecklistHolatiPage} />
       <ProtectedRoute path="/oylik" component={OylikPage} />

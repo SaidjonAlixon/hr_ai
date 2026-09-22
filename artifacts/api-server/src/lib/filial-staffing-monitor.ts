@@ -1,18 +1,17 @@
 import { inArray, sql } from "drizzle-orm";
-import { db, employeesTable, staffingAlertsTable } from "@workspace/db";
+import { db, employeesTable, staffNeedRequestsTable } from "@workspace/db";
 import { displayBranchName, gpsFromLocationField, stripGpsSuffix } from "./geo-location";
 import { districtFromGps, sortDistrictNames } from "./filial-districts";
 import { loadFilialBranches } from "./filial-bot-data";
 import { formatTashkent } from "./filial-bot-users";
 
 const STATUS_LABEL: Record<string, string> = {
+  open: "Ochiq ariza",
+  pending_hr: "Ochiq ariza",
+  approved: "Ochiq ariza",
+  searching: "Ochiq ariza",
+  need_hire: "Ochiq ariza",
   new: "Yangi",
-  dismissed: "Bo‘shatilgan",
-  need_hire: "Xodim kerak",
-  searching: "Qidirilmoqda",
-  working: "Ishlamoqda",
-  no_manager: "Mudir yo‘q",
-  closed: "Yopilgan",
 };
 
 export type StaffNeedItem = {
@@ -38,6 +37,8 @@ export type StaffNeedItem = {
   coordinatorPhone: string | null;
   branchPhone: string | null;
   managerEmployeeId: number | null;
+  headcount?: number;
+  neededBy?: string | null;
 };
 
 export type MonitorBucket = {
@@ -70,11 +71,17 @@ export type StaffingMonitorReport = {
 };
 
 function roleLabel(orgRole: string | null | undefined): string {
-  if (orgRole === "manager") return "Mudir";
-  if (orgRole === "intern") return "Stajyor";
+  if (orgRole === "manager" || orgRole === "mudir") return "Mudir";
+  if (orgRole === "intern" || orgRole === "stajyor") return "Stajyor";
   if (orgRole === "supervisor") return "Nazoratchi";
-  if (orgRole === "pharmacist") return "Farmasevt";
+  if (orgRole === "pharmacist" || orgRole === "farmasevt") return "Farmasevt";
   return orgRole || "Xodim";
+}
+
+function orgRoleFromNeeded(roleNeeded: string): string {
+  if (roleNeeded === "mudir") return "manager";
+  if (roleNeeded === "stajyor") return "intern";
+  return "pharmacist";
 }
 
 export function formatShiftLabel(
@@ -119,23 +126,16 @@ function pct(part: number, total: number): number {
   return Math.round((part / total) * 1000) / 10;
 }
 
-function bucketsFromMap(map: Map<string, number>, total: number, limit = 12): MonitorBucket[] {
+function bucketsFromMap(map: Map<string, number>, total: number, limit: number): MonitorBucket[] {
   return [...map.entries()]
-    .map(([key, count]) => ({
-      key,
-      label: key,
+    .map(([label, count]) => ({
+      key: label.toLowerCase(),
+      label,
       count,
       pct: pct(count, total),
     }))
-    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label, "uz"))
+    .sort((a, b) => b.count - a.count)
     .slice(0, limit);
-}
-
-function esc(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
 }
 
 function daysBetween(from: Date, to: Date): number {
@@ -151,38 +151,39 @@ function urgencyLabel(days: number): string {
   return "YANGI";
 }
 
-/** Faqat haqiqiy yollash ehtiyoji — «bo‘shatilgan» hisobga olinmaydi */
-const OPEN_NEED_STATUSES = new Set(["need_hire", "searching", "new"]);
+/** Bot: yaratilgan ochiq arizalar (HR yopmaguncha) */
+const OPEN_BOT_STATUSES = ["open", "pending_hr", "approved", "searching"] as const;
 
 export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport> {
-  const [alerts, branches] = await Promise.all([
+  const [needs, branches] = await Promise.all([
     db
       .select()
-      .from(staffingAlertsTable)
-      .where(inArray(staffingAlertsTable.workflowStatus, ["pending", "confirmed"]))
-      .orderBy(sql`${staffingAlertsTable.createdAt} DESC`),
+      .from(staffNeedRequestsTable)
+      .where(inArray(staffNeedRequestsTable.status, [...OPEN_BOT_STATUSES]))
+      .orderBy(sql`${staffNeedRequestsTable.hrApprovedAt} DESC NULLS LAST`),
     loadFilialBranches(true),
   ]);
 
-  const empIds = [...new Set(alerts.map((a) => a.employeeId))];
-  const employees = empIds.length
+  const mgrIds = [
+    ...new Set(
+      needs
+        .map((n) => n.managerEmployeeId)
+        .filter((id): id is number => id != null && Number.isFinite(id)),
+    ),
+  ];
+  const managers = mgrIds.length
     ? await db
         .select({
           id: employeesTable.id,
           fullName: employeesTable.fullName,
-          position: employeesTable.position,
-          orgRole: employeesTable.orgRole,
           location: employeesTable.location,
           latitude: employeesTable.latitude,
           longitude: employeesTable.longitude,
-          shiftType: employeesTable.shiftType,
-          shiftLabel: employeesTable.shiftLabel,
-          employmentStatus: employeesTable.employmentStatus,
         })
         .from(employeesTable)
-        .where(inArray(employeesTable.id, empIds))
+        .where(inArray(employeesTable.id, mgrIds))
     : [];
-  const empById = new Map(employees.map((e) => [e.id, e]));
+  const mgrById = new Map(managers.map((m) => [m.id, m]));
 
   const branchById = new Map(branches.map((b) => [b.id, b]));
   const branchByName = new Map(branches.map((b) => [b.name.toLowerCase(), b]));
@@ -190,62 +191,65 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
 
   const now = new Date();
   const items: StaffNeedItem[] = [];
-  for (const a of alerts) {
-    const emp = empById.get(a.employeeId);
-    // To‘ldirilgan / yopilgan — hisobga olmaslik
-    const liveStatus = emp?.employmentStatus || a.employmentStatus;
-    if (liveStatus === "working" || liveStatus === "closed" || liveStatus === "no_manager") {
-      continue;
-    }
-    const status = a.employmentStatus || liveStatus || "need_hire";
-    if (!OPEN_NEED_STATUSES.has(status)) continue;
 
-    const branch = branchLabel(a.branchLocation || emp?.location, emp?.fullName || "Filial");
-    const card =
-      (a.managerEmployeeId != null ? branchById.get(a.managerEmployeeId) : undefined) ||
-      branchByName.get(branch.toLowerCase()) ||
-      null;
+  for (const n of needs) {
+    const mgr = n.managerEmployeeId != null ? mgrById.get(n.managerEmployeeId) : undefined;
+    const isOffice = (n as { sourceType?: string }).sourceType === "office";
+    const branch = isOffice
+      ? "Ofis / bo‘lim"
+      : branchLabel(n.branchLocation || mgr?.location, mgr?.fullName || "Filial");
+    const card = isOffice
+      ? null
+      : branchById.get(n.managerEmployeeId!) || branchByName.get(branch.toLowerCase()) || null;
+    const district = isOffice
+      ? "Ofis"
+      : resolveDistrict(
+          mgr?.latitude,
+          mgr?.longitude,
+          n.branchLocation || mgr?.location,
+          branchDistrictByName,
+          branch,
+        );
 
-    const district =
-      card?.district ||
-      resolveDistrict(
-        emp?.latitude,
-        emp?.longitude,
-        a.branchLocation || emp?.location,
-        branchDistrictByName,
-        branch,
-      );
-
-    const createdAt = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
-    const daysOpen = daysBetween(createdAt, now);
+    const opened = n.hrApprovedAt instanceof Date ? n.hrApprovedAt : n.hrApprovedAt ? new Date(n.hrApprovedAt) : n.createdAt instanceof Date ? n.createdAt : new Date(n.createdAt);
+    const daysOpen = daysBetween(opened, now);
+    const orgRole = orgRoleFromNeeded(n.roleNeeded);
+    const rLabel =
+      n.roleNeeded === "custom" && (n as { positionText?: string | null }).positionText
+        ? String((n as { positionText?: string | null }).positionText)
+        : roleLabel(n.roleNeeded);
+    const headcount = Math.max(1, n.count || 1);
+    const status = "need_hire";
 
     items.push({
-      alertId: a.id,
-      employeeId: a.employeeId,
-      employeeName: emp?.fullName || "Noma’lum",
-      position: emp?.position ?? null,
-      orgRole: emp?.orgRole || "pharmacist",
-      roleLabel: roleLabel(emp?.orgRole),
+      alertId: n.id,
+      employeeId: n.managerEmployeeId,
+      employeeName: `${rLabel} ×${headcount}`,
+      position: n.note,
+      orgRole,
+      roleLabel: rLabel,
       branch: card?.name || branch,
       district,
-      shift: formatShiftLabel(a.shiftLabel || emp?.shiftLabel, a.shiftType || emp?.shiftType),
+      shift: isOffice ? "—" : formatShiftLabel(n.shiftLabel, n.shiftType),
       status,
       statusLabel: STATUS_LABEL[status] ?? status,
-      workflowStatus: a.workflowStatus,
-      createdAt,
-      openedAtLabel: formatTashkent(createdAt),
+      workflowStatus: n.status,
+      createdAt: opened,
+      openedAtLabel: formatTashkent(opened),
       daysOpen,
       urgencyLabel: urgencyLabel(daysOpen),
-      mudirName: card?.mudirName ?? null,
+      mudirName: card?.mudirName ?? mgr?.fullName ?? null,
       mudirPhone: card?.mudirPhone ?? null,
       coordinatorName: card?.coordinatorName ?? null,
       coordinatorPhone: card?.coordinatorPhone ?? null,
       branchPhone: card?.primaryPhone ?? null,
-      managerEmployeeId: a.managerEmployeeId ?? card?.id ?? null,
+      managerEmployeeId: n.managerEmployeeId ?? null,
+      headcount,
+      neededBy: (n as { neededBy?: string | null }).neededBy ?? null,
     });
   }
 
-  const totalNeeds = items.length;
+  const totalNeeds = items.reduce((s, it) => s + (it.headcount || 1), 0);
   const byDistrictMap = new Map<string, number>();
   const byShiftMap = new Map<string, number>();
   const byStatusMap = new Map<string, number>();
@@ -253,10 +257,11 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
   const needBranchKeys = new Set<string>();
 
   for (const it of items) {
-    byDistrictMap.set(it.district, (byDistrictMap.get(it.district) || 0) + 1);
-    byShiftMap.set(it.shift, (byShiftMap.get(it.shift) || 0) + 1);
-    byStatusMap.set(it.statusLabel, (byStatusMap.get(it.statusLabel) || 0) + 1);
-    byRoleMap.set(it.roleLabel, (byRoleMap.get(it.roleLabel) || 0) + 1);
+    const w = it.headcount || 1;
+    byDistrictMap.set(it.district, (byDistrictMap.get(it.district) || 0) + w);
+    byShiftMap.set(it.shift, (byShiftMap.get(it.shift) || 0) + w);
+    byStatusMap.set(it.statusLabel, (byStatusMap.get(it.statusLabel) || 0) + w);
+    byRoleMap.set(it.roleLabel, (byRoleMap.get(it.roleLabel) || 0) + w);
     needBranchKeys.add(it.branch.toLowerCase());
   }
 
@@ -293,8 +298,12 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
     generatedAt,
     generatedAtLabel: formatTashkent(generatedAt),
     totalNeeds,
-    searchingCount: items.filter((i) => i.status === "searching").length,
-    needHireCount: items.filter((i) => i.status === "need_hire" || i.status === "new").length,
+    searchingCount: items
+      .filter((i) => i.status === "searching")
+      .reduce((s, i) => s + (i.headcount || 1), 0),
+    needHireCount: items
+      .filter((i) => i.status === "need_hire" || i.status === "new")
+      .reduce((s, i) => s + (i.headcount || 1), 0),
     dismissedCount: 0,
     okBranches: okBranchNames.length,
     totalBranches: branches.length,
@@ -310,6 +319,14 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
     okBranchNames,
     analysisLine,
   };
+}
+
+
+function esc(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 export function buildStaffingMonitorCaption(
@@ -361,7 +378,7 @@ export function buildStaffingMonitorCaption(
   }
 
   lines.push(`💡 <i>${esc(report.analysisLine)}</i>`);
-  lines.push("", "<i>Ma’lumotlar Aptekalar tarmog‘i / staffing alerts dan.</i>");
+  lines.push("", "<i>Ma’lumotlar koordinator «Xodim kerak» + HR tasdiǧidan.</i>");
   return lines.join("\n");
 }
 

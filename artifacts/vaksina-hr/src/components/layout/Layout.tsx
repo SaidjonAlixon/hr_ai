@@ -17,6 +17,7 @@ import {
   ListTodo,
   ClipboardList,
   ClipboardCheck,
+  UserPlus,
   AlarmClock,
   Network,
   ScanFace,
@@ -58,7 +59,7 @@ import {
   getGetDashboardStatsQueryKey,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { useStaffingAlerts } from '@/lib/staffing-api';
+import { useStaffNeeds } from '@/lib/staff-needs-api';
 import { cn } from '@/lib/utils';
 import { fetchMyMobileAttendance } from '@/lib/mobile-attendance-api';
 import { MobileGpsBackgroundTracker } from '@/components/davomat/MobileGpsBackgroundTracker';
@@ -173,7 +174,7 @@ const NAV_SECTIONS: {
     id: 'pharmacy',
     label: "Apteka tarmog'i",
     icon: Store,
-    paths: ['/pharmacy-network', '/boglanish', '/checklist', '/ehtiyoj'],
+    paths: ['/pharmacy-network', '/boglanish', '/checklist', '/ehtiyoj', '/xodim-kerak'],
   },
   {
     id: 'logistika',
@@ -269,6 +270,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/checklist-holati')) return '/checklist-holati';
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
+  if (path.startsWith('/xodim-kerak')) return '/xodim-kerak';
   if (path.startsWith('/logistika')) return path;
   if (path.startsWith('/boglanish')) return '/boglanish';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
@@ -565,12 +567,21 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     },
   } as any);
 
-  const { data: staffingAlerts } = useStaffingAlerts('open', {
-    enabled: !!user && isPharmacyStaff,
-    staleTime: 60_000,
-    refetchInterval: 90_000,
-    refetchOnWindowFocus: false,
-  });
+  const staffNeedsEnabled =
+    !!user &&
+    (user.role === 'koordinator' ||
+      isHrManager(user.role) ||
+      isDeptHeadRole(user.role) ||
+      hasFullPlatformAccess(user.role));
+  const { data: staffNeedOpenList } = useStaffNeeds('open', { enabled: staffNeedsEnabled });
+  const staffingOpenCount = staffNeedsEnabled
+    ? (staffNeedOpenList?.filter((n) =>
+        n.status === 'open' ||
+        n.status === 'pending_hr' ||
+        n.status === 'searching' ||
+        n.status === 'approved',
+      ).length ?? 0)
+    : 0;
 
   const { data: requests } = useGetRequests(undefined, {
     query: {
@@ -675,8 +686,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
     // Koordinator/mudir: ochiq ogohlantirishlar + ariza jarayonidagilar yig‘ilib turadi
     if (isPharmacyStaff) {
-      const openCount = staffingAlerts?.length ?? 0;
-      if (openCount > 0) counts['/pharmacy-network'] = openCount;
+      const openCount = staffingOpenCount;
+      if (openCount > 0) counts['/xodim-kerak'] = openCount;
     }
 
     // Arizalar (eski Nazorat ham shu yerda): Yangi + Ko'rib chiqilmoqda
@@ -692,7 +703,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (draftCount > 0) counts['/vacancies'] = draftCount;
 
     return counts;
-  }, [unreadNotifications, requests, isHrLike, draftVacancies, isPharmacyStaff, staffingAlerts]);
+  }, [unreadNotifications, requests, isHrLike, draftVacancies, isPharmacyStaff, staffingOpenCount]);
 
   const totalUnread =
     dashboardStats?.unreadNotifications ??
@@ -915,6 +926,20 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const at = faceIdx >= 0 ? faceIdx + 1 : next.length;
       next = [...next.slice(0, at), davomatQrNav, ...next.slice(at)];
     }
+    if (
+      (role === 'koordinator' || isDeptHeadRole(role) || isHrManager(role) || hasFullPlatformAccess(role)) &&
+      !next.some((i) => i.path === '/xodim-kerak')
+    ) {
+      const after = next.findIndex(
+        (i) => i.path === '/pharmacy-network' || i.path === '/ehtiyoj' || i.path === '/requests',
+      );
+      const at = after >= 0 ? after + 1 : next.length;
+      next = [
+        ...next.slice(0, at),
+        { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
+        ...next.slice(at),
+      ];
+    }
     // Oddiy xodim / mudir / farmasevt — Xodimlar menyusi yo‘q
     if (!canViewEmployees(role)) {
       next = next.filter((i) => i.path !== '/employees');
@@ -1014,6 +1039,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
+      { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
     ];
@@ -1039,6 +1065,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     smenaNav,
     { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
     { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
+    { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
     { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
     { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
@@ -1070,6 +1097,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
+      { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       omborIshNav,
@@ -1206,6 +1234,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
+      { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Cheklist', path: '/checklist', icon: ClipboardCheck },
       { name: 'Reyting', path: '/checklist-holati', icon: Trophy },
@@ -1572,7 +1601,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   ) => {
     const count = badgeByPath[item.path] ?? 0;
     const active = pathIsActive(location, item.path);
-    const pulse = item.path === '/pharmacy-network' && count > 0;
+    const pulse = item.path === '/xodim-kerak' && count > 0;
     const dropKey = `item:${opts.sectionId}:${opts.itemIndex}`;
     const isDropTarget = navEditMode && dragOverKey === dropKey;
 

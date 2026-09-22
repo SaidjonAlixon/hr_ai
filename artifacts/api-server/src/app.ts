@@ -9,6 +9,7 @@ import {
   ensureEmployeesOrgColumns,
   ensureCandidatePipelineColumns,
   ensureLokatsiyaBotSchema,
+  ensureStaffNeedRequestsSchema,
 } from "./lib/ensure-schema";
 
 const app: Express = express();
@@ -23,6 +24,9 @@ if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
   });
   void ensureLokatsiyaBotSchema().catch((err) => {
     logger.warn({ err }, "Lokatsiya bot schema ensure failed (non-blocking)");
+  });
+  void ensureStaffNeedRequestsSchema().catch((err) => {
+    logger.warn({ err }, "Staff need requests schema ensure failed (non-blocking)");
   });
   // Filial bot webhook — lokal polling o‘chirib yubormasin; Vercelda qayta o‘rnatiladi
   void import("./lib/telegram-filial")
@@ -41,6 +45,9 @@ if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
   });
   void ensureLokatsiyaBotSchema().catch((err) => {
     logger.warn({ err }, "Lokatsiya bot schema ensure failed (non-blocking)");
+  });
+  void ensureStaffNeedRequestsSchema().catch((err) => {
+    logger.warn({ err }, "Staff need requests schema ensure failed (non-blocking)");
   });
 }
 

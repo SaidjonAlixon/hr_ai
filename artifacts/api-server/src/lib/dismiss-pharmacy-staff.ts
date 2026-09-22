@@ -80,7 +80,6 @@ async function terminateUser(userId: number | null) {
 async function dismissEmployeeRecord(
   employee: typeof employeesTable.$inferSelect,
   actorUserId: number,
-  alertStatus: "dismissed" | "need_hire" = "dismissed",
 ) {
   const [updated] = await db
     .update(employeesTable)
@@ -89,10 +88,11 @@ async function dismissEmployeeRecord(
     .returning();
   if (!updated) throw new Error("Xodim yangilanmadi");
 
+  // Bazada dismissed saqlanadi; hech kimga bildirishnoma / bot / alert yo‘q
   await syncStaffingAlertForEmployee({
     employee: { ...updated, shiftType: employee.shiftType, shiftLabel: employee.shiftLabel },
     previousStatus: employee.employmentStatus,
-    newStatus: alertStatus,
+    newStatus: "dismissed",
     userId: actorUserId,
   });
   await terminateUser(employee.userId);
@@ -195,13 +195,13 @@ export async function dismissPharmacyEmployee(
     };
   }
 
-  await dismissEmployeeRecord(target, actorUserId, "need_hire");
+  await dismissEmployeeRecord(target, actorUserId);
 
   return {
     ok: true,
     kind: "staff",
     fullName: target.fullName,
-    message: `«${target.fullName}» bo‘shatildi. Shu smena uchun ogohlantirish ochildi — xodim kerak.`,
+    message: `«${target.fullName}» bo‘shatildi. Kerak bo‘lsa «Xodim kerak» bo‘limidan so‘rov yuboring.`,
   };
 }
 

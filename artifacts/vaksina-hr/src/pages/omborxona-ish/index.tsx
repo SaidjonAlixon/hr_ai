@@ -4,6 +4,7 @@ import {
   Clock,
   Loader2,
   Package,
+  Pencil,
   Plus,
   UserPlus,
   Users,
@@ -39,12 +40,12 @@ import {
   useOmborHolat,
   useOmborHistory,
   useOmborMe,
-  useOmborMeta,
   useOmborMutations,
   useOmborShifts,
   useOmborStaff,
   type OmborHistoryFilter,
   type OmborHistoryPeriod,
+  type WarehouseShift,
 } from "@/lib/omborxona-api";
 
 type Tab = "ish" | "smenalar" | "xodimlar" | "holat";
@@ -98,7 +99,6 @@ export default function OmborxonaIshPage() {
   const [holatDate, setHolatDate] = useState(todayYmd());
   const [assignOpen, setAssignOpen] = useState(false);
 
-  const meta = useOmborMeta(canView);
   const meQ = useOmborMe(canView);
   const shiftsQ = useOmborShifts(
     canView && canManage && (tab === "smenalar" || tab === "xodimlar" || tab === "holat" || assignOpen),
@@ -108,6 +108,7 @@ export default function OmborxonaIshPage() {
   const mut = useOmborMutations();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [editingShift, setEditingShift] = useState<WarehouseShift | null>(null);
   const [shiftName, setShiftName] = useState("");
   const [startHm, setStartHm] = useState("09:00");
   const [endHm, setEndHm] = useState("18:00");
@@ -139,11 +140,11 @@ export default function OmborxonaIshPage() {
     setAssignEmpIds(checked ? staffList.map((s) => s.employeeId) : []);
   };
 
-  const tabs: { id: Tab; label: string; show: boolean }[] = [
-    { id: "ish", label: "Ish vaqtlari", show: true },
-    { id: "smenalar", label: "Smenalar", show: canManage },
-    { id: "xodimlar", label: "Xodimlar", show: canManage },
-    { id: "holat", label: "Holat / nazorat", show: canManage },
+  const tabs: { id: Tab; label: string; short: string; show: boolean }[] = [
+    { id: "ish", label: "Ish vaqtlari", short: "Ish", show: true },
+    { id: "smenalar", label: "Smenalar", short: "Smena", show: canManage },
+    { id: "xodimlar", label: "Xodimlar", short: "Xodim", show: canManage },
+    { id: "holat", label: "Holat / nazorat", short: "Holat", show: canManage },
   ];
 
   if (!canView) {
@@ -157,9 +158,49 @@ export default function OmborxonaIshPage() {
     );
   }
 
+  const resetShiftForm = () => {
+    setEditingShift(null);
+    setShiftName("");
+    setStartHm("09:00");
+    setEndHm("18:00");
+  };
+
+  const openCreateShift = () => {
+    resetShiftForm();
+    setCreateOpen(true);
+  };
+
+  const openEditShift = (s: WarehouseShift) => {
+    setEditingShift(s);
+    setShiftName(s.name);
+    setStartHm(s.startHm);
+    setEndHm(s.endHm);
+    setCreateOpen(true);
+  };
+
   const submitCreate = () => {
     if (!shiftName.trim()) {
       toast({ title: "Smena nomini kiriting", variant: "destructive" });
+      return;
+    }
+    if (editingShift) {
+      mut.updateShift.mutate(
+        {
+          id: editingShift.id,
+          name: shiftName.trim(),
+          startHm,
+          endHm,
+        },
+        {
+          onSuccess: () => {
+            toast({ title: "Smena yangilandi" });
+            setCreateOpen(false);
+            resetShiftForm();
+          },
+          onError: (e) =>
+            toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" }),
+        },
+      );
       return;
     }
     mut.createShift.mutate(
@@ -168,9 +209,7 @@ export default function OmborxonaIshPage() {
         onSuccess: () => {
           toast({ title: "Smena yaratildi" });
           setCreateOpen(false);
-          setShiftName("");
-          setStartHm("09:00");
-          setEndHm("18:00");
+          resetShiftForm();
         },
         onError: (e) =>
           toast({ title: "Xatolik", description: (e as Error).message, variant: "destructive" }),
@@ -214,31 +253,31 @@ export default function OmborxonaIshPage() {
           : null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-5 px-4 py-5 pb-28 sm:px-6">
+    <div className="mx-auto max-w-5xl space-y-4 px-3 py-4 pb-28 sm:space-y-5 sm:px-6 sm:py-5">
       <header className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-1 items-start gap-3">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Package className="h-5 w-5" />
             </span>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-                Omborxona_ish
+                Omborxona
               </h1>
-              <p className="mt-0.5 text-sm text-muted-foreground">
+              <p className="mt-0.5 text-sm leading-snug text-muted-foreground">
                 {canManage
-                  ? `${meta.data?.departmentName || "Omborxona"} — smena, xodimlar va nazorat`
+                  ? "Smena, xodimlar va nazorat"
                   : "Sizning smenangiz va bugungi keldi / ketdi"}
               </p>
             </div>
           </div>
           {canManage && (
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:shrink-0">
               <Button
                 type="button"
                 size="sm"
-                className="gap-1.5 rounded-xl"
-                onClick={() => setCreateOpen(true)}
+                className="w-full gap-1.5 rounded-xl sm:w-auto"
+                onClick={openCreateShift}
               >
                 <Plus className="h-4 w-4" />
                 Smena
@@ -247,7 +286,7 @@ export default function OmborxonaIshPage() {
                 type="button"
                 size="sm"
                 variant="secondary"
-                className="gap-1.5 rounded-xl"
+                className="w-full gap-1.5 rounded-xl sm:w-auto"
                 onClick={() => setAssignOpen(true)}
               >
                 <UserPlus className="h-4 w-4" />
@@ -259,24 +298,27 @@ export default function OmborxonaIshPage() {
       </header>
 
       {canManage && (
-        <div className="flex gap-1 overflow-x-auto rounded-2xl border border-border bg-muted/30 p-1">
-          {tabs
-            .filter((t) => t.show)
-            .map((t) => (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => setTab(t.id)}
-                className={cn(
-                  "min-w-[7.5rem] flex-1 whitespace-nowrap rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-                  tab === t.id
-                    ? "bg-primary text-primary-foreground shadow-sm"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                {t.label}
-              </button>
-            ))}
+        <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:overflow-visible sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="flex min-w-max gap-1 rounded-2xl border border-border bg-muted/30 p-1 sm:min-w-0 sm:w-full">
+            {tabs
+              .filter((t) => t.show)
+              .map((t) => (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => setTab(t.id)}
+                  className={cn(
+                    "shrink-0 rounded-xl px-3 py-2.5 text-sm font-semibold transition sm:min-w-0 sm:flex-1",
+                    tab === t.id
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  <span className="sm:hidden">{t.short}</span>
+                  <span className="hidden sm:inline">{t.label}</span>
+                </button>
+              ))}
+          </div>
         </div>
       )}
 
@@ -492,39 +534,56 @@ export default function OmborxonaIshPage() {
             activeShifts.map((s) => (
               <div
                 key={s.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 shadow-sm"
+                className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="min-w-0">
-                  <p className="font-semibold text-foreground">{s.name}</p>
-                  <p className="mt-0.5 text-sm tabular-nums text-muted-foreground">
-                    {s.startHm}–{s.endHm}
-                    {s.overnight ? " (keyingi kun)" : ""}
-                    <span className="mx-1.5 text-border">·</span>
-                    {s.memberCount ?? 0} xodim
-                  </p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-semibold text-foreground">{s.name}</p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                    <span className="tabular-nums font-medium text-foreground/80">
+                      {s.startHm}–{s.endHm}
+                    </span>
+                    {s.overnight ? (
+                      <span className="rounded-md bg-muted px-1.5 py-0.5 text-[11px] font-medium">
+                        keyingi kun
+                      </span>
+                    ) : null}
+                    <span className="text-border">·</span>
+                    <span>{s.memberCount ?? 0} xodim</span>
+                  </div>
                 </div>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="rounded-xl border-destructive/30 text-destructive hover:bg-destructive/10"
-                  disabled={mut.updateShift.isPending}
-                  onClick={() =>
-                    mut.updateShift.mutate(
-                      { id: s.id, active: false },
-                      {
-                        onSuccess: () => toast({ title: "Smena yopildi" }),
-                        onError: (e) =>
-                          toast({
-                            title: "Xatolik",
-                            description: (e as Error).message,
-                            variant: "destructive",
-                          }),
-                      },
-                    )
-                  }
-                >
-                  Yopish
-                </Button>
+                <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:flex-nowrap">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full gap-1 rounded-xl sm:w-auto"
+                    onClick={() => openEditShift(s)}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                    Tahrirlash
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full rounded-xl border-destructive/30 text-destructive hover:bg-destructive/10 sm:w-auto"
+                    disabled={mut.updateShift.isPending}
+                    onClick={() =>
+                      mut.updateShift.mutate(
+                        { id: s.id, active: false },
+                        {
+                          onSuccess: () => toast({ title: "Smena yopildi" }),
+                          onError: (e) =>
+                            toast({
+                              title: "Xatolik",
+                              description: (e as Error).message,
+                              variant: "destructive",
+                            }),
+                        },
+                      )
+                    }
+                  >
+                    Yopish
+                  </Button>
+                </div>
               </div>
             ))
           )}
@@ -545,19 +604,21 @@ export default function OmborxonaIshPage() {
             staffList.map((row) => (
               <div
                 key={row.employeeId}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-border bg-card px-4 py-3.5 shadow-sm"
+                className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 shadow-sm sm:flex-row sm:items-center sm:justify-between"
               >
-                <div className="flex min-w-0 items-start gap-3">
+                <div className="flex min-w-0 flex-1 items-start gap-3">
                   <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-muted text-muted-foreground">
                     <Users className="h-4 w-4" />
                   </span>
                   <div className="min-w-0">
-                    <p className="font-semibold text-foreground">{row.fullName}</p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="truncate font-semibold text-foreground">{row.fullName}</p>
+                    <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                       {row.position || "—"}
+                    </p>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
                       {row.assignedShift
-                        ? ` · ${row.assignedShift.name} ${row.assignedShift.startHm}–${row.assignedShift.endHm}`
-                        : " · smena yo‘q"}
+                        ? `${row.assignedShift.name} · ${row.assignedShift.startHm}–${row.assignedShift.endHm}`
+                        : "Smena yo‘q"}
                     </p>
                   </div>
                 </div>
@@ -565,7 +626,7 @@ export default function OmborxonaIshPage() {
                   <Button
                     size="sm"
                     variant="outline"
-                    className="rounded-xl"
+                    className="w-full rounded-xl sm:w-auto sm:shrink-0"
                     disabled={mut.unassign.isPending}
                     onClick={() =>
                       mut.unassign.mutate(
@@ -585,7 +646,7 @@ export default function OmborxonaIshPage() {
                     Ajratish
                   </Button>
                 ) : (
-                  <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                  <span className="inline-flex w-fit rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
                     Biriktirilmagan
                   </span>
                 )}
@@ -597,15 +658,15 @@ export default function OmborxonaIshPage() {
 
       {tab === "holat" && canManage && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-card px-4 py-3 shadow-sm">
-            <CalendarDays className="h-4 w-4 text-primary" />
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card px-3 py-3 shadow-sm sm:gap-3 sm:px-4">
+            <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
             <Label htmlFor="holat-date" className="text-sm font-medium">
               Sana
             </Label>
             <Input
               id="holat-date"
               type="date"
-              className="h-9 w-auto rounded-xl"
+              className="h-9 min-w-0 flex-1 rounded-xl sm:w-auto sm:flex-none"
               value={holatDate}
               onChange={(e) => setHolatDate(e.target.value)}
             />
@@ -626,14 +687,14 @@ export default function OmborxonaIshPage() {
                   key={g.shift.id}
                   className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
                 >
-                  <div className="flex flex-wrap items-start justify-between gap-2 border-b border-border bg-muted/30 px-4 py-3">
-                    <div className="flex items-start gap-2.5">
-                      <span className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <div className="flex flex-col gap-2 border-b border-border bg-muted/30 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex min-w-0 items-start gap-2.5">
+                      <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
                         <Eye className="h-4 w-4" />
                       </span>
-                      <div>
+                      <div className="min-w-0">
                         <h3 className="font-semibold text-foreground">
-                          {g.shift.name}{" "}
+                          <span className="block truncate sm:inline">{g.shift.name}</span>{" "}
                           <span className="font-normal tabular-nums text-muted-foreground">
                             {g.shift.startHm}–{g.shift.endHm}
                           </span>
@@ -647,7 +708,7 @@ export default function OmborxonaIshPage() {
                         </p>
                       </div>
                     </div>
-                    <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                    <span className="w-fit rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
                       {g.members.length} xodim
                     </span>
                   </div>
@@ -661,9 +722,11 @@ export default function OmborxonaIshPage() {
                       {g.members.map((m) => (
                         <li
                           key={m.employeeId}
-                          className="flex flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm"
+                          className="flex flex-col gap-2 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between"
                         >
-                          <span className="font-medium text-foreground">{m.fullName}</span>
+                          <span className="min-w-0 truncate font-medium text-foreground">
+                            {m.fullName}
+                          </span>
                           <div className="flex flex-wrap items-center gap-2">
                             <span className="tabular-nums text-muted-foreground">
                               {formatIsoHm(m.checkInAt)} → {formatIsoHm(m.checkOutAt)}
@@ -688,10 +751,16 @@ export default function OmborxonaIshPage() {
         </div>
       )}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+      <Dialog
+        open={createOpen}
+        onOpenChange={(open) => {
+          setCreateOpen(open);
+          if (!open) resetShiftForm();
+        }}
+      >
         <DialogContent className="rounded-2xl sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Yangi ombor smenasi</DialogTitle>
+            <DialogTitle>{editingShift ? "Smenani tahrirlash" : "Yangi ombor smenasi"}</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div>
@@ -725,14 +794,32 @@ export default function OmborxonaIshPage() {
             </div>
             <p className="text-xs text-muted-foreground">
               Xodimlar shu soatlar bo‘yicha ishlaydi. Ketdim — tugashdan keyin 2 soatgacha.
+              {startHm && endHm && startHm >= endHm ? " Tugash keyingi kunga o‘tadi." : ""}
             </p>
           </div>
-          <DialogFooter>
-            <Button variant="outline" className="rounded-xl" onClick={() => setCreateOpen(false)}>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:flex">
+            <Button
+              variant="outline"
+              className="w-full rounded-xl"
+              onClick={() => {
+                setCreateOpen(false);
+                resetShiftForm();
+              }}
+            >
               Bekor
             </Button>
-            <Button className="rounded-xl" onClick={submitCreate} disabled={mut.createShift.isPending}>
-              {mut.createShift.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Saqlash"}
+            <Button
+              className="w-full rounded-xl"
+              onClick={submitCreate}
+              disabled={mut.createShift.isPending || mut.updateShift.isPending}
+            >
+              {mut.createShift.isPending || mut.updateShift.isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : editingShift ? (
+                "Saqlash"
+              ) : (
+                "Yaratish"
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -819,12 +906,16 @@ export default function OmborxonaIshPage() {
               </p>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" className="rounded-xl" onClick={() => setAssignOpen(false)}>
+          <DialogFooter className="grid grid-cols-2 gap-2 sm:flex">
+            <Button
+              variant="outline"
+              className="w-full rounded-xl"
+              onClick={() => setAssignOpen(false)}
+            >
               Bekor
             </Button>
             <Button
-              className="rounded-xl"
+              className="w-full rounded-xl"
               onClick={submitAssign}
               disabled={mut.assign.isPending || assignEmpIds.length === 0 || !assignShiftId}
             >

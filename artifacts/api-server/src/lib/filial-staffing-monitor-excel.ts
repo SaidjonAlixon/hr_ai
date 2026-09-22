@@ -58,13 +58,10 @@ export async function buildStaffingMonitorExcel(report: StaffingMonitorReport): 
   cover.getRow(2).height = 22;
 
   const stats: Array<[string, string | number, string]> = [
-    ["Jami ochiq ehtiyoj", report.totalNeeds, "FFDC2626"],
-    ["Yollash kerak (need_hire)", report.needHireCount, "FFEA580C"],
-    ["Qidirilmoqda", report.searchingCount, "FFCA8A04"],
+    ["Jami ochiq ariza (xodim)", report.totalNeeds, "FFDC2626"],
     ["Ehtiyojli filial", `${report.gapBranches} / ${report.totalBranches}`, "FF0B5FFF"],
     ["To‘liq filial (OK)", `${report.okBranches} / ${report.totalBranches}`, "FF16A34A"],
-    ["Kritik (≥30 kun)", report.items.filter((i) => i.daysOpen >= 30).length, "FF991B1B"],
-    ["Uzoq (≥14 kun)", report.items.filter((i) => i.daysOpen >= 14 && i.daysOpen < 30).length, "FFC2410C"],
+    ["Tumanlar", report.byDistrict.length, "FF64748B"],
   ];
 
   cover.getCell("A4").value = "KO‘RSATKICH";
@@ -110,28 +107,24 @@ export async function buildStaffingMonitorExcel(report: StaffingMonitorReport): 
 
   const headers = [
     "№",
-    "Urgency",
+    "Tuman",
+    "Filial",
+    "Smena",
+    "Kim kerak",
+    "Son",
+    "Qachon kerak",
+    "Mudir",
+    "Yuboruvchi / koordinator",
+    "Izoh",
+    "Ochilgan (Toshkent)",
     "Kun ochiq",
     "Holat",
-    "Filial",
-    "Tuman",
-    "Lavozim",
-    "Smena",
-    "Bo‘shagan / kartochka",
-    "Lavozim (batafsil)",
-    "Mudir (ism)",
-    "Mudir telefon",
-    "Koordinator",
-    "Koordinator telefon",
-    "Filial telefon",
-    "Ochilgan sana",
-    "Workflow",
-    "Alert ID",
+    "ID",
   ];
 
   sheet.mergeCells(1, 1, 1, headers.length);
   const title = sheet.getCell(1, 1);
-  title.value = `Ochiq xodim ehtiyoji · ${report.totalNeeds} ta · ${report.generatedAtLabel} · to‘ldirilgan joylar chiqarilmagan`;
+  title.value = `Xodim kerak — ochiq arizalar · ${report.totalNeeds} ta · ${report.generatedAtLabel}`;
   title.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
   title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF0A2540" } };
   title.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
@@ -147,80 +140,65 @@ export async function buildStaffingMonitorExcel(report: StaffingMonitorReport): 
 
   sheet.columns = [
     { width: 5 },
-    { width: 14 },
-    { width: 11 },
-    { width: 14 },
-    { width: 28 },
     { width: 18 },
+    { width: 28 },
     { width: 12 },
+    { width: 18 },
+    { width: 8 },
     { width: 16 },
+    { width: 22 },
+    { width: 24 },
     { width: 24 },
     { width: 18 },
-    { width: 22 },
-    { width: 16 },
-    { width: 22 },
-    { width: 16 },
-    { width: 16 },
-    { width: 18 },
-    { width: 12 },
     { width: 10 },
+    { width: 14 },
+    { width: 8 },
   ];
 
   const sorted = [...report.items].sort((a, b) => {
-    const ua = urgencyRank(a.daysOpen);
-    const ub = urgencyRank(b.daysOpen);
-    if (ua !== ub) return ua - ub;
-    if (b.daysOpen !== a.daysOpen) return b.daysOpen - a.daysOpen;
-    return a.branch.localeCompare(b.branch, "uz");
+    const d = a.district.localeCompare(b.district, "uz");
+    if (d !== 0) return d;
+    const br = a.branch.localeCompare(b.branch, "uz");
+    if (br !== 0) return br;
+    return a.shift.localeCompare(b.shift, "uz");
   });
 
   sorted.forEach((it: StaffNeedItem, idx: number) => {
     const row = sheet.addRow([
       idx + 1,
-      it.urgencyLabel,
+      it.district,
+      it.branch,
+      it.shift,
+      it.roleLabel,
+      it.headcount || 1,
+      it.neededBy || "—",
+      it.mudirName || "—",
+      it.coordinatorName || "—",
+      it.position || "—",
+      it.openedAtLabel,
       it.daysOpen,
       it.statusLabel,
-      it.branch,
-      it.district,
-      it.roleLabel,
-      it.shift,
-      it.employeeName,
-      it.position || "—",
-      it.mudirName || "—",
-      it.mudirPhone || "—",
-      it.coordinatorName || "—",
-      it.coordinatorPhone || "—",
-      it.branchPhone || "—",
-      it.openedAtLabel,
-      it.workflowStatus,
       it.alertId,
     ]);
 
     const zebra = idx % 2 === 0 ? "FFF8FAFC" : "FFFFFFFF";
     row.eachCell((cell, col) => {
-      cell.font = { name: "Calibri", size: 10, bold: col === 5 || col === 2 };
+      cell.font = { name: "Calibri", size: 10, bold: col === 3 || col === 5 };
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: zebra } };
       cell.alignment = {
         vertical: "middle",
-        horizontal: col === 1 || col === 3 || col === 18 ? "center" : "left",
+        horizontal: col === 1 || col === 6 || col === 12 || col === 14 ? "center" : "left",
         wrapText: true,
       };
     });
 
-    // Urgency cell color
-    const urg = row.getCell(2);
-    urg.fill = { type: "pattern", pattern: "solid", fgColor: { argb: urgencyFill(it.daysOpen) } };
-    urg.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
-
-    // Status cell
-    const st = row.getCell(4);
+    const st = row.getCell(13);
     st.fill = { type: "pattern", pattern: "solid", fgColor: { argb: statusFill(it.status) } };
     st.font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFFFFFFF" } };
 
     row.height = 22;
   });
 
-  // AutoFilter
   sheet.autoFilter = {
     from: { row: 2, column: 1 },
     to: { row: 2 + sorted.length, column: headers.length },

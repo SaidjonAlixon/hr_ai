@@ -1552,6 +1552,99 @@ CREATE TABLE IF NOT EXISTS lokatsiya_bot_recruiters (
 CREATE INDEX IF NOT EXISTS lokatsiya_bot_recruiters_active_idx ON lokatsiya_bot_recruiters (is_active);
 `;
 
+const STAFF_NEED_REQUESTS_SQL = `
+CREATE TABLE IF NOT EXISTS staff_need_requests (
+  id SERIAL PRIMARY KEY,
+  coordinator_user_id INTEGER NOT NULL,
+  manager_employee_id INTEGER,
+  branch_location TEXT,
+  shift_type TEXT NOT NULL DEFAULT 'one',
+  shift_label TEXT,
+  role_needed TEXT NOT NULL DEFAULT 'farmasevt',
+  position_text TEXT,
+  source_type TEXT NOT NULL DEFAULT 'pharmacy',
+  needed_by TEXT,
+  count INTEGER NOT NULL DEFAULT 1,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending_hr',
+  hr_approved_by_id INTEGER,
+  hr_approved_at TIMESTAMPTZ,
+  deadline_at TIMESTAMPTZ,
+  found_by_id INTEGER,
+  found_at TIMESTAMPTZ,
+  rejected_by_id INTEGER,
+  rejected_at TIMESTAMPTZ,
+  reject_reason TEXT,
+  request_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ALTER TABLE staff_need_requests ALTER COLUMN manager_employee_id DROP NOT NULL;
+ALTER TABLE staff_need_requests ADD COLUMN IF NOT EXISTS position_text TEXT;
+ALTER TABLE staff_need_requests ADD COLUMN IF NOT EXISTS source_type TEXT NOT NULL DEFAULT 'pharmacy';
+ALTER TABLE staff_need_requests ADD COLUMN IF NOT EXISTS needed_by TEXT;
+CREATE INDEX IF NOT EXISTS staff_need_requests_status_idx ON staff_need_requests (status);
+CREATE INDEX IF NOT EXISTS staff_need_requests_coord_idx ON staff_need_requests (coordinator_user_id);
+CREATE INDEX IF NOT EXISTS staff_need_requests_mgr_idx ON staff_need_requests (manager_employee_id);
+
+CREATE TABLE IF NOT EXISTS app_one_time_jobs (
+  job_key TEXT PRIMARY KEY,
+  ran_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  note TEXT
+);
+`;
+
+/** Majburiy tozalash v2: ogohlantirish, ariza, ehtiyoj, javob olish, vacancy → 0 */
+const PURGE_LEGACY_STAFF_NEEDS_SQL = `
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM app_one_time_jobs WHERE job_key = 'purge_legacy_staff_needs_v2') THEN
+    RETURN;
+  END IF;
+
+  UPDATE staffing_alerts
+  SET workflow_status = 'closed', updated_at = NOW()
+  WHERE workflow_status IN ('pending', 'confirmed');
+
+  UPDATE requests
+  SET status = 'closed', updated_at = NOW()
+  WHERE status IN ('submitted', 'reviewing', 'accepted', 'announced');
+
+  UPDATE branch_needs
+  SET status = 'closed', closed_at = COALESCE(closed_at, NOW()), updated_at = NOW()
+  WHERE status IN ('pending', 'assigned', 'in_progress', 'done');
+
+  UPDATE employees
+  SET employment_status = 'closed', updated_at = NOW()
+  WHERE employment_status IN ('need_hire', 'searching', 'new')
+    AND org_role IN ('pharmacist', 'intern', 'supervisor', 'manager');
+
+  UPDATE javob_olish_requests
+  SET status = 'cancelled', updated_at = NOW()
+  WHERE status IN ('pending', 'pending_coord', 'pending_hr');
+
+  UPDATE vacancies
+  SET status = 'closed', updated_at = NOW()
+  WHERE status IN ('draft', 'published');
+
+  UPDATE request_claims
+  SET status = 'rejected', updated_at = NOW()
+  WHERE status IN ('pending', 'accepted');
+
+  -- Eski ochiq Xodim kerak so‘rovlari ham nol
+  UPDATE staff_need_requests
+  SET status = 'cancelled', updated_at = NOW()
+  WHERE status IN ('pending_hr', 'approved', 'searching');
+
+  INSERT INTO app_one_time_jobs (job_key, note)
+  VALUES (
+    'purge_legacy_staff_needs_v2',
+    'To‘liq nol: alert/ariza/ehtiyoj/javob/vacancy — faqat yangi Xodim kerak oqimi'
+  )
+  ON CONFLICT (job_key) DO NOTHING;
+END $$;
+`;
+
 export async function ensureLokatsiyaBotSchema(): Promise<void> {
   const client = await pool.connect();
   try {
@@ -1559,6 +1652,20 @@ export async function ensureLokatsiyaBotSchema(): Promise<void> {
     logger.info("Lokatsiya bot schema ensured");
   } catch (err) {
     logger.warn({ err }, "Lokatsiya bot schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+export async function ensureStaffNeedRequestsSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(STAFF_NEED_REQUESTS_SQL);
+    await client.query(PURGE_LEGACY_STAFF_NEEDS_SQL);
+    logger.info("Staff need requests schema + legacy purge ensured");
+  } catch (err) {
+    logger.warn({ err }, "Staff need requests schema ensure failed");
     throw err;
   } finally {
     client.release();

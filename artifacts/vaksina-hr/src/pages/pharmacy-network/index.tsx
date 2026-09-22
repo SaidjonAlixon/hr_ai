@@ -9,14 +9,8 @@ import { isHrManager, isHrRole, isSbRole, canChangeStaffStatus, isDirectorRole }
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import {
   EMPLOYMENT_STATUS_LABELS,
-  PIPELINE_STEPS,
-  useCancelStaffingAlert,
-  useConfirmStaffingAlert,
-  useStaffingAlerts,
   type EmploymentStatus,
-  type StaffingAlert,
 } from '../../lib/staffing-api';
-import { DeadlineCountdown } from '../../components/DeadlineCountdown';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
@@ -44,7 +38,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { AlertTriangle, Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2 } from 'lucide-react';
+import { Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2, UserPlus } from 'lucide-react';
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
@@ -104,62 +98,29 @@ function googleMapsUrl(lat: number, lng: number) {
   return `https://www.google.com/maps?q=${lat},${lng}`;
 }
 
-function isAlertStatus(status?: string | null) {
-  return !!status && status !== 'working' && status !== 'no_manager';
-}
-
 function isNoManagerStatus(status?: string | null) {
   return status === 'no_manager';
 }
 
-function resolvePipelineStep(ph: Employee, linked?: StaffingAlert) {
-  const status = empStatus(ph);
-  if (
-    status === 'searching' ||
-    linked?.employmentStatus === 'searching' ||
-    linked?.vacancyStatus === 'published' ||
-    linked?.pipelineKey === 'searching'
-  ) {
-    return 5;
-  }
-  if (linked?.pipelineStep != null && linked.pipelineStep > 0) return linked.pipelineStep;
-  if (linked?.vacancyId || linked?.vacancyStatus === 'draft') return 3;
-  if (linked?.workflowStatus === 'confirmed' || linked?.requestId) return 2;
-  if (
-    linked?.workflowStatus === 'pending' ||
-    status === 'need_hire' ||
-    status === 'dismissed' ||
-    status === 'new'
-  ) {
-    return 1;
-  }
-  return 0;
-}
-
-function deadlineLabel(kind?: StaffingAlert['deadlineKind']) {
-  if (kind === 'vacancy') return 'Eʼlon muddati';
-  if (kind === 'request') return 'Ariza muddati';
-  if (kind === 'confirm') return 'Tasdiq muddati';
-  return 'Muddat';
+/** Apteka tarmog‘ida yollash statusi ko‘rsatilmaydi — faqat ish holati */
+function displayEmpStatus(status?: string | null): EmploymentStatus {
+  const s = (status as EmploymentStatus) || 'working';
+  if (s === 'need_hire' || s === 'searching' || s === 'new') return 'working';
+  return s;
 }
 
 function EmploymentBadge({ status }: { status?: string | null }) {
-  const s = (status as EmploymentStatus) || 'working';
+  const s = displayEmpStatus(status);
+  if (s === 'working') return null;
   const label = EMPLOYMENT_STATUS_LABELS[s] || s;
   const tone =
-    s === 'working'
-      ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-500/30'
-      : s === 'new'
-        ? 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30'
-        : s === 'closed'
-          ? 'bg-slate-200 text-foreground ring-slate-400 dark:bg-slate-700/60 dark:text-slate-200 dark:ring-slate-500/40'
-        : s === 'dismissed'
-          ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
-          : s === 'no_manager'
-            ? 'bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
-          : s === 'searching'
-            ? 'bg-violet-100 text-violet-800 ring-violet-300 animate-pulse dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-500/30'
-            : 'bg-orange-100 text-orange-800 ring-orange-300 dark:bg-orange-950/50 dark:text-orange-300 dark:ring-orange-500/30';
+    s === 'closed'
+      ? 'bg-slate-200 text-foreground ring-slate-400 dark:bg-slate-700/60 dark:text-slate-200 dark:ring-slate-500/40'
+      : s === 'dismissed'
+        ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
+        : s === 'no_manager'
+          ? 'bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
+          : 'bg-muted text-muted-foreground ring-border';
 
   return (
     <span className={cn('inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ring-1 ring-inset', tone)}>
@@ -171,16 +132,14 @@ function EmploymentBadge({ status }: { status?: string | null }) {
 function ShiftBadge({
   shiftType,
   shiftLabel,
-  alert,
 }: {
   shiftType?: string | null;
   shiftLabel?: string | null;
   alert?: boolean;
 }) {
   const label = shiftText(shiftType, shiftLabel);
-  const tone = alert
-    ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
-    : shiftType === 'two'
+  const tone =
+    shiftType === 'two'
       ? 'bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-500/30'
       : shiftType === 'custom'
         ? 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
@@ -191,37 +150,6 @@ function ShiftBadge({
       <Clock className="h-2.5 w-2.5 opacity-70" />
       {label}
     </span>
-  );
-}
-
-function PipelineStrip({ step }: { step: number }) {
-  return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-0.5">
-      {PIPELINE_STEPS.map((s, i) => {
-        const active = step >= s.step;
-        const current = step === s.step;
-        return (
-          <React.Fragment key={s.key}>
-            {i > 0 && (
-              <span className={cn('h-px w-2 shrink-0', active ? 'bg-red-400 dark:bg-red-500' : 'bg-slate-200 dark:bg-slate-600')} />
-            )}
-            <span
-              className={cn(
-                'rounded px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide',
-                current
-                  ? 'bg-red-600 text-white animate-pulse dark:bg-red-500'
-                  : active
-                    ? 'bg-slate-700 text-white dark:bg-slate-600'
-                    : 'bg-muted text-muted-foreground dark:bg-slate-800/70 dark:text-slate-400',
-              )}
-              title={s.label}
-            >
-              {s.label}
-            </span>
-          </React.Fragment>
-        );
-      })}
-    </div>
   );
 }
 
@@ -334,11 +262,6 @@ export default function PharmacyNetworkPage() {
     staleTime: 30_000,
   });
   const patchProfile = usePatchEmployeeProfile();
-  const { data: alerts, refetch: refetchAlerts } = useStaffingAlerts('open', {
-    enabled: !!user,
-  });
-  const { mutate: confirmAlert, isPending: confirming } = useConfirmStaffingAlert();
-  const { mutate: cancelAlert, isPending: cancelling } = useCancelStaffingAlert();
   const createStaff = useCreatePharmacyStaff();
   const dismissStaff = useDismissPharmacyEmployee();
   const hardDeleteStaff = useHardDeletePharmacyEmployee();
@@ -412,14 +335,13 @@ export default function PharmacyNetworkPage() {
 
   const canEditStatus = canChangeStaffStatus(user?.role);
 
-  const canSeeAlerts =
+  const canSeeXodimKerakLink =
     user?.role === 'koordinator' ||
-    user?.role === 'mudir' ||
     user?.role === 'admin' ||
     isHrRole(user?.role) ||
-    isDirectorRole(user?.role);
+    isDirectorRole(user?.role) ||
+    user?.role === 'department_head';
 
-  const canConfirmAlerts = user?.role === 'koordinator' || isHrManager(user?.role);
   const canSetBranchGps = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
   const canSetNoManager = canChangeStaffStatus(user?.role);
 
@@ -428,7 +350,6 @@ export default function PharmacyNetworkPage() {
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const teamPanelRef = useRef<HTMLDivElement>(null);
-  const [alertsOpen, setAlertsOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Employee | null>(null);
   const [shiftType, setShiftType] = useState<ShiftType>('one');
   const [shiftLabel, setShiftLabel] = useState('');
@@ -552,24 +473,7 @@ export default function PharmacyNetworkPage() {
     return map;
   }, [orgPeople]);
 
-  const alertByEmployee = useMemo(() => {
-    const map = new Map<number, StaffingAlert>();
-    for (const a of alerts ?? []) {
-      const prev = map.get(a.employeeId);
-      if (!prev || new Date(a.createdAt) > new Date(prev.createdAt)) {
-        map.set(a.employeeId, a);
-      }
-    }
-    return map;
-  }, [alerts]);
-
-  const branchHasAlert = (managerId: number) => {
-    const mgr = allManagers.find((m) => m.id === managerId);
-    if (mgr && (isAlertStatus(empStatus(mgr)) || alertByEmployee.has(mgr.id))) return true;
-    return (pharmacistsByManager.get(managerId) ?? []).some(
-      (p) => isAlertStatus(empStatus(p)) || alertByEmployee.has(p.id),
-    );
-  };
+  const branchHasAlert = (_managerId: number) => false;
 
   const nameMatch = (person: Employee, q: string) =>
     person.fullName.toLowerCase().includes(q);
@@ -719,27 +623,7 @@ export default function PharmacyNetworkPage() {
     return team;
   };
 
-  const pendingAlerts = useMemo(
-    () => (alerts ?? []).filter((a) => a.workflowStatus === 'pending'),
-    [alerts],
-  );
-
-  const confirmedAlerts = useMemo(
-    () => (alerts ?? []).filter((a) => a.workflowStatus === 'confirmed'),
-    [alerts],
-  );
-
-  /** Koordinator: avval tasdiq kutilayotganlar, keyin ariza jarayonidagilar — yig‘ilib turadi */
-  const openAlerts = useMemo(() => {
-    const list = alerts ?? [];
-    return [...list].sort((a, b) => {
-      if (a.workflowStatus === 'pending' && b.workflowStatus !== 'pending') return -1;
-      if (a.workflowStatus !== 'pending' && b.workflowStatus === 'pending') return 1;
-      return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-    });
-  }, [alerts]);
-
-  const openEditor = (person: Employee, e?: React.MouseEvent) => {
+const openEditor = (person: Employee, e?: React.MouseEvent) => {
     e?.stopPropagation();
     setEditTarget(person);
     const parts = String(person.fullName || '').trim().split(/\s+/).filter(Boolean);
@@ -807,7 +691,7 @@ export default function PharmacyNetworkPage() {
     }
     for (const ph of team) {
       if (empStatus(ph) === 'dismissed') continue;
-      if (empStatus(ph) === 'need_hire' && !ph.userId) continue;
+      if (!ph.userId) continue;
       const roleKey =
         ph.orgRole === 'intern' ? 'stajyor' : ('farmasevt' as const);
       options.push({
@@ -885,8 +769,7 @@ export default function PharmacyNetworkPage() {
         setEditTarget(null);
         setExpandedId(null);
         void refetch();
-        void refetchAlerts();
-        toast({
+                toast({
           title: 'O‘chirildi',
           description: data.message,
         });
@@ -912,8 +795,7 @@ export default function PharmacyNetworkPage() {
           setEditTarget(null);
           setExpandedId(null);
           void refetch();
-          void refetchAlerts();
-          toast({
+                    toast({
             title: 'Bo‘shatildi',
             description: data.message,
           });
@@ -1075,13 +957,10 @@ export default function PharmacyNetworkPage() {
           extra ||
           (canEditStatus && employmentStatus === 'no_manager'
             ? t('pharmacy.markedNoMudir')
-            : canEditStatus && employmentStatus !== 'working'
-              ? 'Holat yangilandi — ogohlantirish yuborildi'
-              : 'Ism va maʼlumot yangilandi'),
+            : 'Ism va maʼlumot yangilandi'),
       });
       setEditTarget(null);
       refetch();
-      refetchAlerts();
     };
 
     const runProfile = () => {
@@ -1222,31 +1101,12 @@ export default function PharmacyNetworkPage() {
     );
   };
 
-  const handleConfirm = (alertId: number) => {
-    confirmAlert(alertId, {
-      onSuccess: (result) => {
-        toast({
-          title: 'Tasdiqlandi',
-          description: `Ariza #${result.requestId} yaratildi — HR, direktor va rekruterlarga koʻrinadi`,
-        });
-        refetchAlerts();
-      },
-      onError: (err: Error) => {
-        toast({ title: 'Xatolik', description: err.message, variant: 'destructive' });
-      },
-    });
+  const handleConfirm = (_alertId: number) => {
+    /* Eski ogohlantirish oqimi o‘chirilgan — /xodim-kerak */
   };
 
-  const handleCancelAlert = (alertId: number) => {
-    cancelAlert(alertId, {
-      onSuccess: () => {
-        toast({ title: 'Bekor qilindi' });
-        refetchAlerts();
-      },
-      onError: (err: Error) => {
-        toast({ title: 'Xatolik', description: err.message, variant: 'destructive' });
-      },
-    });
+  const handleCancelAlert = (_alertId: number) => {
+    /* Eski ogohlantirish oqimi o‘chirilgan */
   };
 
   const toggleBranch = (id: number) => {
@@ -1348,195 +1208,22 @@ export default function PharmacyNetworkPage() {
         </div>
       ) : null}
 
-        {canSeeAlerts && (
-          <div
-            className={cn(
-              'pn-alerts p-3 sm:p-4 transition-colors',
-              openAlerts.length > 0 && 'pn-alerts-open',
-            )}
-          >
-            <button
-              type="button"
-              onClick={() => setAlertsOpen((o) => !o)}
-              className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
-            >
-              <div className="flex min-w-0 items-center gap-2">
-                {alertsOpen ? (
-                  <ChevronUp className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-muted-foreground')} />
-                ) : (
-                  <ChevronDown className={cn('h-4 w-4 shrink-0', openAlerts.length ? 'text-red-600' : 'text-muted-foreground')} />
-                )}
-                <span className="relative inline-flex">
-                  <AlertTriangle
-                    className={cn(
-                      'h-4 w-4 shrink-0',
-                      openAlerts.length > 0 ? 'text-red-600' : 'text-muted-foreground',
-                      openAlerts.length > 0 && 'animate-pulse',
-                    )}
-                  />
-                  {openAlerts.length > 0 && (
-                    <span className="absolute -right-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-600 px-1 text-[9px] font-bold text-foreground dark:text-white animate-pulse ring-2 ring-red-100">
-                      {openAlerts.length > 99 ? '99+' : openAlerts.length}
-                    </span>
-                  )}
-                </span>
-                <h2
-                  className={cn(
-                    'text-sm font-semibold',
-                    openAlerts.length > 0 ? 'text-red-900 dark:text-red-300' : 'text-foreground',
-                  )}
-                >
-                  {user?.role === 'koordinator'
-                    ? 'Ogohlantirishlar va arizalar'
-                    : 'Ogohlantirishlar'}
-                  {openAlerts.length ? ` (${openAlerts.length})` : ''}
-                </h2>
-                {openAlerts.length > 0 && !alertsOpen && (
-                  <span className="rounded-full bg-red-600/15 px-2 py-0.5 text-[10px] font-semibold text-red-700 animate-pulse dark:text-red-300">
-                    Yangi xabar bor — oching
-                  </span>
-                )}
+        {canSeeXodimKerakLink && (
+          <div className="pn-alerts rounded-xl border border-sky-200 bg-sky-50/80 p-4 dark:border-sky-500/30 dark:bg-sky-950/30">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-sky-900 dark:text-sky-200">Xodim kerak</h2>
+                <p className="mt-0.5 text-xs text-sky-800/80 dark:text-sky-300/80">
+                  Yollash so‘rovlari faqat «Xodim kerak» bo‘limida. Bu yerda status yo‘q — filial va jamoa.
+                </p>
               </div>
-              <div className="flex items-center gap-2">
-                {user?.role === 'koordinator' && openAlerts.length > 0 && (
-                  <p className="text-[11px] text-red-700/80">
-                    {pendingAlerts.length > 0 && (
-                      <span className="font-medium">Tasdiq: {pendingAlerts.length}</span>
-                    )}
-                    {pendingAlerts.length > 0 && confirmedAlerts.length > 0 && ' · '}
-                    {confirmedAlerts.length > 0 && (
-                      <span>Ariza jarayonida: {confirmedAlerts.length}</span>
-                    )}
-                  </p>
-                )}
-                <span
-                  className={cn(
-                    'text-[11px] font-medium',
-                    openAlerts.length > 0 ? 'text-red-700/70' : 'text-muted-foreground',
-                  )}
-                >
-                  {alertsOpen ? 'Yig‘ish' : 'Ochish'}
-                </span>
-              </div>
-            </button>
-
-            {alertsOpen && (
-              <div className="mt-3">
-                {!openAlerts.length ? (
-                  <p className="text-sm text-muted-foreground">Hozircha ochiq ogohlantirish yoʻq.</p>
-                ) : (
-                  <div className="max-h-[min(50vh,380px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
-                    {user?.role === 'koordinator' && pendingAlerts.length > 0 && (
-                      <p className="text-[10px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-300">
-                        Tasdiq kutilmoqda
-                      </p>
-                    )}
-                    {openAlerts.map((a, idx) => {
-                      const showArizaDivider =
-                        user?.role === 'koordinator' &&
-                        a.workflowStatus === 'confirmed' &&
-                        (idx === 0 || openAlerts[idx - 1]?.workflowStatus === 'pending');
-
-                      return (
-                        <React.Fragment key={a.id}>
-                          {showArizaDivider && (
-                            <p className="pt-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                              Ariza jarayonida
-                            </p>
-                          )}
-                          <div className="rounded-lg border border-red-200 bg-card px-3 py-2">
-                            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="min-w-0 flex-1">
-                                <p className="truncate text-sm font-semibold text-foreground">
-                                  {a.branchLocation || 'Filial'} — {a.employeeName}
-                                </p>
-                                <p className="truncate text-xs text-muted-foreground">
-                                  {a.employmentStatusLabel}
-                                  {' · '}
-                                  {shiftText(a.shiftType, a.shiftLabel)}
-                                  {a.managerName ? ` · ${t('pharmacy.mudirLabel')}: ${a.managerName}` : ''}
-                                  {' · '}
-                                  {a.pipelineLabel}
-                                </p>
-                                <PipelineStrip
-                                  step={
-                                    typeof a.pipelineStep === 'number' && a.pipelineStep > 0
-                                      ? a.pipelineStep
-                                      : 1
-                                  }
-                                />
-                              </div>
-                              <div className="flex shrink-0 flex-col items-stretch gap-1.5 sm:w-52 sm:items-end">
-                                {a.displayDeadline && (
-                                  <DeadlineCountdown
-                                    deadline={a.displayDeadline}
-                                    compact
-                                    showDate
-                                    dateLabel={deadlineLabel(a.deadlineKind)}
-                                    className="w-full"
-                                  />
-                                )}
-                                {a.workflowStatus === 'pending' && canConfirmAlerts && (
-                                  <div className="flex gap-2">
-                                    <Button
-                                      size="sm"
-                                      className="h-8 gap-1"
-                                      disabled={confirming}
-                                      onClick={() => handleConfirm(a.id)}
-                                    >
-                                      <Check className="h-3.5 w-3.5" />
-                                      Tasdiqlash
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="outline"
-                                      className="h-8 gap-1"
-                                      disabled={cancelling}
-                                      onClick={() => handleCancelAlert(a.id)}
-                                    >
-                                      <X className="h-3.5 w-3.5" />
-                                      Bekor
-                                    </Button>
-                                  </div>
-                                )}
-                                {a.workflowStatus === 'pending' && !canConfirmAlerts && (
-                                  <span className="text-[11px] font-medium text-amber-700">
-                                    Koordinator tasdiǧi kutilmoqda
-                                  </span>
-                                )}
-                                {a.workflowStatus === 'confirmed' && a.requestId && (
-                                  <Link
-                                    href={`/requests/${a.requestId}`}
-                                    className="inline-flex h-8 items-center justify-center rounded-md border border-primary/30 bg-primary/5 px-2.5 text-[11px] font-semibold text-primary hover:bg-primary/10"
-                                  >
-                                    Ariza #{a.requestId}
-                                  </Link>
-                                )}
-                                {a.workflowStatus === 'confirmed' && !a.requestId && (
-                                  <span className="text-[11px] font-medium text-muted-foreground">
-                                    Ariza yaratilgan
-                                  </span>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                        </React.Fragment>
-                      );
-                    })}
-                  </div>
-                )}
-                {user?.role === 'mudir' && pendingAlerts.length > 0 && (
-                  <p className="mt-2 text-[11px] text-red-700/80">
-                    Tasdiqlash faqat koordinator tomonidan bajariladi.
-                  </p>
-                )}
-                {user?.role === 'koordinator' && openAlerts.length > 0 && (
-                  <p className="mt-2 text-[11px] text-red-700/80">
-                    «Tasdiqlash» → ariza ochiladi; yopilmaguncha shu yerda qoladi.
-                  </p>
-                )}
-              </div>
-            )}
+              <Link href="/xodim-kerak">
+                <Button size="sm" className="gap-1">
+                  <UserPlus className="h-4 w-4" />
+                  Ochish
+                </Button>
+              </Link>
+            </div>
           </div>
         )}
 
@@ -1619,7 +1306,6 @@ export default function PharmacyNetworkPage() {
           ) : (
             <div className={cn('flex flex-wrap justify-center gap-2.5', isMudirOnly && 'flex-col items-stretch sm:items-center')}>
               {(isMudirOnly ? coordinators : filteredCoordinators).map((coordinator) => {
-                const alert = isAlertStatus(empStatus(coordinator));
                 return (
                   <div
                     key={coordinator.id}
@@ -1630,16 +1316,12 @@ export default function PharmacyNetworkPage() {
                     )}
                   >
                     <div
-                      className={cn(
-                        'pn-card flex min-w-0 flex-col overflow-hidden',
-                        alert ? 'border-red-300 ring-1 ring-red-200 dark:border-red-500/50 dark:ring-red-500/20' : 'border-primary/25 dark:border-sky-500/30',
-                      )}
+                      className="pn-card flex min-w-0 flex-col overflow-hidden border-primary/25 dark:border-sky-500/30"
                     >
                       <div
                         className={cn(
-                          'flex flex-1 flex-col border-t-[3px]',
+                          'flex flex-1 flex-col border-t-[3px] border-t-primary dark:border-t-sky-500',
                           isMudirOnly ? 'p-3.5 sm:p-4' : 'p-2.5',
-                          alert ? 'border-t-red-500' : 'border-t-primary dark:border-t-sky-500',
                         )}
                       >
                         <span className="mb-2 w-fit truncate rounded bg-muted px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-muted-foreground dark:bg-slate-800/80 dark:text-slate-400">
@@ -1717,7 +1399,7 @@ export default function PharmacyNetworkPage() {
                 <div className="mb-0 flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3 dark:border-slate-700/60">
                   <div>
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Farmatsevtlar — eʼlon holati
+                      Farmasevtlar va stajyorlar
                     </p>
                     <p className="mt-0.5 text-sm font-semibold text-foreground">
                       {displayBranchName(manager.location) || t('pharmacy.branchFallback')} — {manager.fullName}
@@ -1756,19 +1438,10 @@ export default function PharmacyNetworkPage() {
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                       {team.map((ph) => {
-                        const linked = alertByEmployee.get(ph.id);
-                        const phAlert = isAlertStatus(empStatus(ph)) || !!linked;
-                        const pipelineStep = resolvePipelineStep(ph, linked);
-
                         return (
                           <div
                             key={ph.id}
-                            className={cn(
-                              'rounded-lg border px-3 py-2.5',
-                              phAlert
-                                ? 'border-red-300 bg-red-50/80 dark:border-red-500/40 dark:bg-red-950/30'
-                                : 'border-border bg-muted/70 dark:bg-slate-800/50',
-                            )}
+                            className="rounded-lg border border-border bg-muted/70 px-3 py-2.5 dark:bg-slate-800/50"
                           >
                             <div className="flex items-start gap-3">
                               <Avatar name={ph.fullName} size="sm" />
@@ -1822,7 +1495,6 @@ export default function PharmacyNetworkPage() {
                                   <ShiftBadge
                                     shiftType={ph.shiftType}
                                     shiftLabel={ph.shiftLabel}
-                                    alert={phAlert}
                                   />
                                   <EmploymentBadge status={empStatus(ph)} />
                                 </div>
@@ -1840,26 +1512,6 @@ export default function PharmacyNetworkPage() {
                                     onEdit={() => openCredEditor(ph.id, ph.fullName)}
                                   />
                                 ) : null}
-                                <PipelineStrip step={pipelineStep} />
-                                {linked?.displayDeadline && (
-                                  <div className="mt-2">
-                                    <DeadlineCountdown
-                                      deadline={linked.displayDeadline}
-                                      compact
-                                      showDate
-                                      dateLabel={deadlineLabel(linked.deadlineKind)}
-                                    />
-                                  </div>
-                                )}
-                                {linked?.requestId && (
-                                  <Link
-                                    href={`/requests/${linked.requestId}`}
-                                    className="mt-1 inline-block text-[11px] font-medium text-primary hover:underline"
-                                  >
-                                    Ariza #{linked.requestId}
-                                    {linked.vacancyId ? ` · ${t('pharmacy.vacancy')} #${linked.vacancyId}` : ''}
-                                  </Link>
-                                )}
                               </div>
                             </div>
                           </div>
@@ -2150,10 +1802,7 @@ export default function PharmacyNetworkPage() {
 
                       <div className="flex min-w-0 items-start gap-3">
                         <div
-                          className={cn(
-                            'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-sm font-semibold text-white',
-                            alert ? 'bg-red-600' : 'bg-slate-700 dark:bg-slate-600',
-                          )}
+                          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-slate-700 text-sm font-semibold text-white dark:bg-slate-600"
                         >
                           {initials(manager.fullName)}
                         </div>
@@ -2204,37 +1853,16 @@ export default function PharmacyNetworkPage() {
                             <span
                               className={cn(
                                 'inline-flex rounded-md px-2 py-0.5 text-[11px] font-medium ring-1 ring-inset',
-                                alert
-                                  ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
-                                  : manager.shiftType === 'two'
-                                    ? 'bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-500/30'
-                                    : manager.shiftType === 'custom'
-                                      ? 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
-                                      : 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30',
+                                manager.shiftType === 'two'
+                                  ? 'bg-teal-50 text-teal-700 ring-teal-200 dark:bg-teal-950/50 dark:text-teal-300 dark:ring-teal-500/30'
+                                  : manager.shiftType === 'custom'
+                                    ? 'bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
+                                    : 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30',
                               )}
                             >
                               {shiftText(manager.shiftType, manager.shiftLabel)}
                             </span>
-                            <span
-                              className={cn(
-                                'inline-flex rounded-md px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset',
-                                empStatus(manager) === 'working'
-                                  ? 'bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-950/50 dark:text-emerald-300 dark:ring-emerald-500/30'
-                                  : empStatus(manager) === 'searching'
-                                    ? 'bg-violet-100 text-violet-800 ring-violet-300 dark:bg-violet-950/50 dark:text-violet-300 dark:ring-violet-500/30'
-                                    : empStatus(manager) === 'closed'
-                                      ? 'bg-slate-200 text-foreground ring-slate-400 dark:bg-slate-700/60 dark:text-slate-200 dark:ring-slate-500/40'
-                                    : empStatus(manager) === 'dismissed'
-                                      ? 'bg-red-100 text-red-800 ring-red-300 dark:bg-red-950/50 dark:text-red-300 dark:ring-red-500/30'
-                                      : empStatus(manager) === 'new'
-                                        ? 'bg-sky-50 text-sky-700 ring-sky-200 dark:bg-sky-950/50 dark:text-sky-300 dark:ring-sky-500/30'
-                                        : empStatus(manager) === 'no_manager'
-                                          ? 'bg-amber-100 text-amber-900 ring-amber-300 dark:bg-amber-950/50 dark:text-amber-300 dark:ring-amber-500/30'
-                                        : 'bg-orange-100 text-orange-800 ring-orange-300 dark:bg-orange-950/50 dark:text-orange-300 dark:ring-orange-500/30',
-                              )}
-                            >
-                              {EMPLOYMENT_STATUS_LABELS[empStatus(manager)]}
-                            </span>
+                            <EmploymentBadge status={empStatus(manager)} />
                           </div>
                         </div>
                       </div>
@@ -2246,9 +1874,7 @@ export default function PharmacyNetworkPage() {
                           'mt-auto flex h-9 w-full items-center justify-center gap-1.5 rounded-lg text-xs font-medium transition-colors',
                           open
                             ? 'bg-primary text-primary-foreground'
-                            : alert
-                              ? 'bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-950/50 dark:text-red-300 dark:hover:bg-red-950/70'
-                              : 'bg-muted text-foreground hover:bg-muted/80 dark:bg-slate-800/70 dark:hover:bg-slate-800',
+                            : 'bg-muted text-foreground hover:bg-muted/80 dark:bg-slate-800/70 dark:hover:bg-slate-800',
                         )}
                       >
                         {open ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
@@ -2309,15 +1935,10 @@ export default function PharmacyNetworkPage() {
                             </div>
                           ) : (
                             fullTeam.map((ph) => {
-                              const linked = alertByEmployee.get(ph.id);
-                              const phAlert = isAlertStatus(empStatus(ph)) || !!linked;
                               return (
                                 <div
                                   key={ph.id}
-                                  className={cn(
-                                    'rounded-lg border px-3 py-2.5',
-                                    phAlert ? 'border-red-300 bg-red-50/80 dark:border-red-500/40 dark:bg-red-950/30' : 'border-border bg-muted/70 dark:bg-slate-800/50',
-                                  )}
+                                  className="rounded-lg border border-border bg-muted/70 px-3 py-2.5 dark:bg-slate-800/50"
                                 >
                                   <div className="flex items-start gap-3">
                                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground">
@@ -2336,7 +1957,6 @@ export default function PharmacyNetworkPage() {
                                         <ShiftBadge
                                           shiftType={ph.shiftType}
                                           shiftLabel={ph.shiftLabel}
-                                          alert={phAlert}
                                         />
                                         <EmploymentBadge status={empStatus(ph)} />
                                         {(canEditShift || canEditStatus) && (
@@ -2444,7 +2064,6 @@ export default function PharmacyNetworkPage() {
                                 <ShiftBadge
                                   shiftType={ph.shiftType}
                                   shiftLabel={ph.shiftLabel}
-                                  alert={isAlertStatus(empStatus(ph))}
                                 />
                                 <EmploymentBadge status={empStatus(ph)} />
                                 {(canEditShift || canEditStatus) && (
@@ -2596,10 +2215,7 @@ export default function PharmacyNetworkPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="working">{t("pharmacy.working")}</SelectItem>
-                    <SelectItem value="new">Yangi</SelectItem>
                     <SelectItem value="dismissed">{t("pharmacy.dismissed")}</SelectItem>
-                    <SelectItem value="need_hire">Xodim kerak</SelectItem>
-                    <SelectItem value="searching">Qidirilmoqda</SelectItem>
                     {canSetNoManager && editTarget?.orgRole === 'manager' && (
                       <SelectItem value="no_manager">Mudir yo‘q</SelectItem>
                     )}
@@ -2617,11 +2233,11 @@ export default function PharmacyNetworkPage() {
                   </p>
                 ) : employmentStatus === 'no_manager' ? (
                   <p className="text-xs text-amber-700">
-                    Faqat mudir yo‘q deb belgilanadi. Filialdagi xodimlar ishlashda davom etadi, yollash ochilmaydi.
+                    Faqat mudir yo‘q deb belgilanadi. Yollash uchun «Xodim kerak» bo‘limidan so‘rov yuboring.
                   </p>
-                ) : employmentStatus !== 'working' ? (
-                  <p className="text-xs text-red-600">
-                    Bu holat filialni qizil qiladi va ogohlantirish yuboradi.
+                ) : employmentStatus === 'dismissed' ? (
+                  <p className="text-xs text-muted-foreground">
+                    Bo‘shatilgan — bazada saqlanadi, hech kimga bildirishnoma yuborilmaydi.
                   </p>
                 ) : null}
               </div>

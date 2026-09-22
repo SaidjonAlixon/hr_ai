@@ -66,6 +66,20 @@ export async function syncStaffingAlertForEmployee(opts: {
     return;
   }
 
+  /**
+   * Yollash faqat «Xodim kerak» bo‘limidan.
+   * Bo‘shatish / need_hire / new — faqat eski alertlarni yopadi, hech kimga xabar yubormaydi.
+   */
+  if (newStatus === "need_hire" || newStatus === "dismissed" || newStatus === "new") {
+    await db
+      .update(staffingAlertsTable)
+      .set({ workflowStatus: "cancelled" })
+      .where(
+        and(eq(staffingAlertsTable.employeeId, employee.id), eq(staffingAlertsTable.workflowStatus, "pending")),
+      );
+    return;
+  }
+
   const [pending] = await db
     .select()
     .from(staffingAlertsTable)
@@ -101,55 +115,14 @@ export async function syncStaffingAlertForEmployee(opts: {
   }
 
   const statusLabel = EMP_STATUS_LABEL[newStatus] ?? newStatus;
-  const shiftBit = [employee.shiftLabel, employee.shiftType]
-    .filter(Boolean)
-    .map(String)[0];
-  const shiftTxt = shiftBit
-    ? String(shiftBit).includes("smena") || String(shiftBit).includes("+")
-      ? String(shiftBit)
-      : `${String(shiftBit) === "two" || String(shiftBit) === "2" ? "2" : String(shiftBit) === "three" || String(shiftBit) === "3" ? "3" : "1"}-smena`
-    : "";
-
-  const roleBit =
-    employee.orgRole === "manager"
-      ? "mudir"
-      : employee.orgRole === "intern"
-        ? "stajyor"
-        : "farmasevt";
-
-  const text =
-    newStatus === "need_hire" || newStatus === "dismissed"
-      ? `Ogohlantirish: ${branch || "Filial"}${shiftTxt ? ` · ${shiftTxt}` : ""} — ${roleBit} uchun xodim kerak` +
-        (employee.fullName ? ` (${employee.fullName})` : "")
-      : `Ogohlantirish: ${branch || "Filial"} — ${employee.fullName} (${statusLabel})`;
+  const text = `Ogohlantirish: ${branch || "Filial"} — ${employee.fullName} (${statusLabel})`;
 
   await notifyByRoles({
     roles: ["koordinator", "admin"],
     text,
     type: "stage_change",
-    linkUrl: "/pharmacy-network",
+    linkUrl: "/xodim-kerak",
   });
-
-  if (newStatus === "need_hire" || newStatus === "dismissed" || newStatus === "new") {
-    try {
-      const { notifyFilialRecruitersStaffNeed } = await import("./filial-recruiter-notify");
-      await notifyFilialRecruitersStaffNeed({
-        employee: {
-          fullName: employee.fullName,
-          location: employee.location,
-          latitude: employee.latitude,
-          longitude: employee.longitude,
-          orgRole: employee.orgRole,
-          shiftType: employee.shiftType,
-          shiftLabel: employee.shiftLabel,
-        },
-        branchLocation: branch,
-        status: newStatus,
-      });
-    } catch (err) {
-      console.error("[staffing-alert] filial recruiter notify", err);
-    }
-  }
 }
 
 /** Rekruter eʼlonni qabul qilgach — Xodim kerak → Qidirilmoqda */

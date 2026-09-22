@@ -167,6 +167,11 @@ async function enrichAlert(row: typeof staffingAlertsTable.$inferSelect) {
 
 router.get("/staffing-alerts", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const { status } = req.query as Record<string, string>;
+  // Eski ogohlantirish oqimi o‘chirilgan — ochiq ro‘yxat doim bo‘sh
+  if (status === "open") {
+    res.json([]);
+    return;
+  }
   let rows;
   if (status === "open") {
     rows = await db

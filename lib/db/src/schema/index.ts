@@ -8,6 +8,7 @@ export * from "./pipeline";
 export * from "./notifications";
 export * from "./tasks";
 export * from "./staffing";
+export * from "./staff-need-requests";
 export * from "./branch-needs";
 export * from "./branch-audits";
 export * from "./coordinator-visits";

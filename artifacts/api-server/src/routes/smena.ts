@@ -410,10 +410,10 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
   if (hasBranch) {
     branchId = Number(body.assignedBranchId);
     const branch = await empById(branchId!);
-    if (!branch || branch.orgRole !== MANAGER_ORG || !hasGps(branch)) {
-      res.status(400).json({ error: "Filial GPS kiritilmagan" });
-      return;
-    }
+  if (!branch || branch.orgRole !== MANAGER_ORG || !hasGps(branch)) {
+    res.status(400).json({ error: "Filial GPS kiritilmagan" });
+    return;
+  }
     loc = (branch.location || "").split("|")[0].trim() || branch.fullName;
     patch.assignedBranchId = branchId;
     patch.location = loc;
@@ -454,7 +454,7 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
 
   res.json({
     ok: true,
-    assignedBranchId: branchId,
+      assignedBranchId: branchId,
     assignedBranchName: loc,
     shiftType: patch.shiftType || target.shiftType,
     shiftOnly: !hasBranch,
@@ -595,8 +595,8 @@ router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promi
           .set({
             shiftKeys,
             note: note || existing.note,
-            updatedAt: new Date(),
-          })
+      updatedAt: new Date(),
+    })
           .where(eq(employeeDayShiftPlansTable.id, existing.id))
           .returning();
         dayPlans.push(dayPlan);

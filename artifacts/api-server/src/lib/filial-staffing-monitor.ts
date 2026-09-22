@@ -29,6 +29,15 @@ export type StaffNeedItem = {
   statusLabel: string;
   workflowStatus: string;
   createdAt: Date;
+  openedAtLabel: string;
+  daysOpen: number;
+  urgencyLabel: string;
+  mudirName: string | null;
+  mudirPhone: string | null;
+  coordinatorName: string | null;
+  coordinatorPhone: string | null;
+  branchPhone: string | null;
+  managerEmployeeId: number | null;
 };
 
 export type MonitorBucket = {
@@ -129,6 +138,22 @@ function esc(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+function daysBetween(from: Date, to: Date): number {
+  const ms = to.getTime() - from.getTime();
+  if (!Number.isFinite(ms) || ms < 0) return 0;
+  return Math.floor(ms / (24 * 60 * 60 * 1000));
+}
+
+function urgencyLabel(days: number): string {
+  if (days >= 30) return "KRITIK ≥30 kun";
+  if (days >= 14) return "YUQORI ≥14 kun";
+  if (days >= 7) return "O‘RTACHA ≥7 kun";
+  return "YANGI";
+}
+
+/** Faqat haqiqiy ochiq ehtiyoj — to‘ldirilgan (working/closed) hisobga olinmaydi */
+const OPEN_NEED_STATUSES = new Set(["need_hire", "dismissed", "searching", "new"]);
+
 export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport> {
   const [alerts, branches] = await Promise.all([
     db
@@ -159,23 +184,41 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
     : [];
   const empById = new Map(employees.map((e) => [e.id, e]));
 
-  const branchDistrictByName = new Map<string, string>();
-  for (const b of branches) {
-    branchDistrictByName.set(b.name.toLowerCase(), b.district);
-  }
+  const branchById = new Map(branches.map((b) => [b.id, b]));
+  const branchByName = new Map(branches.map((b) => [b.name.toLowerCase(), b]));
+  const branchDistrictByName = new Map(branches.map((b) => [b.name.toLowerCase(), b.district]));
 
+  const now = new Date();
   const items: StaffNeedItem[] = [];
   for (const a of alerts) {
     const emp = empById.get(a.employeeId);
+    // To‘ldirilgan / yopilgan — hisobga olmaslik
+    const liveStatus = emp?.employmentStatus || a.employmentStatus;
+    if (liveStatus === "working" || liveStatus === "closed" || liveStatus === "no_manager") {
+      continue;
+    }
+    const status = a.employmentStatus || liveStatus || "need_hire";
+    if (!OPEN_NEED_STATUSES.has(status)) continue;
+
     const branch = branchLabel(a.branchLocation || emp?.location, emp?.fullName || "Filial");
-    const district = resolveDistrict(
-      emp?.latitude,
-      emp?.longitude,
-      a.branchLocation || emp?.location,
-      branchDistrictByName,
-      branch,
-    );
-    const status = a.employmentStatus || emp?.employmentStatus || "need_hire";
+    const card =
+      (a.managerEmployeeId != null ? branchById.get(a.managerEmployeeId) : undefined) ||
+      branchByName.get(branch.toLowerCase()) ||
+      null;
+
+    const district =
+      card?.district ||
+      resolveDistrict(
+        emp?.latitude,
+        emp?.longitude,
+        a.branchLocation || emp?.location,
+        branchDistrictByName,
+        branch,
+      );
+
+    const createdAt = a.createdAt instanceof Date ? a.createdAt : new Date(a.createdAt);
+    const daysOpen = daysBetween(createdAt, now);
+
     items.push({
       alertId: a.id,
       employeeId: a.employeeId,
@@ -183,13 +226,22 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
       position: emp?.position ?? null,
       orgRole: emp?.orgRole || "pharmacist",
       roleLabel: roleLabel(emp?.orgRole),
-      branch,
+      branch: card?.name || branch,
       district,
       shift: formatShiftLabel(a.shiftLabel || emp?.shiftLabel, a.shiftType || emp?.shiftType),
       status,
       statusLabel: STATUS_LABEL[status] ?? status,
       workflowStatus: a.workflowStatus,
-      createdAt: a.createdAt,
+      createdAt,
+      openedAtLabel: formatTashkent(createdAt),
+      daysOpen,
+      urgencyLabel: urgencyLabel(daysOpen),
+      mudirName: card?.mudirName ?? null,
+      mudirPhone: card?.mudirPhone ?? null,
+      coordinatorName: card?.coordinatorName ?? null,
+      coordinatorPhone: card?.coordinatorPhone ?? null,
+      branchPhone: card?.primaryPhone ?? null,
+      managerEmployeeId: a.managerEmployeeId ?? card?.id ?? null,
     });
   }
 
@@ -235,6 +287,8 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
     : "Hozir ochiq xodim ehtiyoji yo‘q — barcha filiallar to‘ldirilgan";
 
   const generatedAt = new Date();
+  const criticalSorted = [...items].sort((a, b) => b.daysOpen - a.daysOpen).slice(0, 12);
+
   return {
     generatedAt,
     generatedAtLabel: formatTashkent(generatedAt),
@@ -252,7 +306,7 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
     topDistrict,
     topShift,
     items,
-    critical: items.slice(0, 12),
+    critical: criticalSorted,
     okBranchNames,
     analysisLine,
   };

@@ -2,12 +2,15 @@ import { logger } from "../lib/logger";
 import { isBlockedSendError } from "../lib/filial-bot-admin";
 import { listRecruiterBroadcastTargets } from "../lib/filial-bot-recruiters";
 import { markLokatsiyaUserBlocked } from "../lib/filial-bot-users";
-import {
-  buildStaffingMonitorCaption,
-  loadStaffingMonitorReport,
-} from "../lib/filial-staffing-monitor";
+import { loadStaffingMonitorReport } from "../lib/filial-staffing-monitor";
+import { buildStaffingMonitorExcel } from "../lib/filial-staffing-monitor-excel";
 import { renderStaffingMonitorPng } from "../lib/filial-staffing-monitor-image";
-import { filialSendMessage, filialSendPhoto, isFilialBotConfigured } from "../lib/telegram-filial";
+import {
+  filialSendDocument,
+  filialSendMessage,
+  filialSendPhoto,
+  isFilialBotConfigured,
+} from "../lib/telegram-filial";
 
 const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
 
@@ -23,16 +26,25 @@ export async function sendRecruiterStaffingMonitor(opts?: {
   sending = true;
   try {
     const report = await loadStaffingMonitorReport();
-    const caption = buildStaffingMonitorCaption(report, { maxItems: 10 });
-    const shortCap = `📊 Xodim ehtiyoji · ${report.totalNeeds} ta\n${report.generatedAtLabel}\n${report.analysisLine}`.slice(
-      0,
-      1024,
-    );
+    const shortCap = [
+      `📊 <b>Xodim ehtiyoji</b> · ${report.totalNeeds} ochiq`,
+      report.generatedAtLabel,
+      report.analysisLine,
+      "",
+      "<i>To‘liq — Excel faylda</i>",
+    ].join("\n").slice(0, 1024);
+
     let png: Buffer | null = null;
+    let excel: { buffer: Buffer; filename: string; count: number } | null = null;
     try {
       png = await renderStaffingMonitorPng(report);
     } catch (err) {
-      logger.warn({ err }, "Recruiter monitor PNG render xato — matn yuboriladi");
+      logger.warn({ err }, "Recruiter monitor PNG render xato");
+    }
+    try {
+      excel = await buildStaffingMonitorExcel(report);
+    } catch (err) {
+      logger.warn({ err }, "Recruiter monitor Excel xato");
     }
 
     const targets = opts?.chatIds?.length
@@ -49,8 +61,15 @@ export async function sendRecruiterStaffingMonitor(opts?: {
             parse_mode: "HTML",
             filename: "vaksina-xodim-ehtiyoji.png",
           });
+        } else {
+          await filialSendMessage(t.chat_id, shortCap, { parse_mode: "HTML" });
         }
-        await filialSendMessage(t.chat_id, caption, { parse_mode: "HTML" });
+        if (excel?.buffer?.length) {
+          await filialSendDocument(t.chat_id, excel.buffer, excel.filename, {
+            mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            caption: `📎 Excel · ${excel.count} ochiq ehtiyoj`,
+          });
+        }
         sent += 1;
       } catch (err) {
         failed += 1;
@@ -64,7 +83,7 @@ export async function sendRecruiterStaffingMonitor(opts?: {
         }
         logger.warn({ err, chatId: t.chat_id }, "Recruiter monitor yuborilmadi");
       }
-      await new Promise((r) => setTimeout(r, 80));
+      await new Promise((r) => setTimeout(r, 100));
     }
 
     logger.info(

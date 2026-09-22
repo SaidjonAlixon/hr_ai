@@ -24,13 +24,13 @@ import {
   upsertLokatsiyaBotUser,
 } from "./filial-bot-users";
 import {
-  buildStaffingMonitorCaption,
   formatBranchNeedDetail,
   formatNeedBranchesSummary,
   groupNeedsByBranch,
   loadStaffingMonitorReport,
   type BranchNeedGroup,
 } from "./filial-staffing-monitor";
+import { buildStaffingMonitorExcel } from "./filial-staffing-monitor-excel";
 import { renderStaffingMonitorPng } from "./filial-staffing-monitor-image";
 import {
   filialAnswerCallback,
@@ -315,24 +315,22 @@ async function trackUser(
 }
 
 async function sendLiveStaffingMonitor(chatId: number) {
-  await filialSendMessage(chatId, "⏳ Jonli ma’lumot yuklanmoqda…");
+  await filialSendMessage(chatId, "⏳ Jonli monitoring (rasm + Excel) tayyorlanmoqda…");
   try {
     const report = await loadStaffingMonitorReport();
-    const caption = buildStaffingMonitorCaption(report, { maxItems: 12 });
     const shortCap = [
       "📊 <b>Xodim ehtiyoji — jonli</b>",
       `${esc(report.generatedAtLabel)} (Toshkent)`,
       "",
-      `🔴 Jami: <b>${report.totalNeeds}</b> · 🟡 Qidiruv: <b>${report.searchingCount}</b>`,
-      `🟠 Yollash: <b>${report.needHireCount}</b> · ⚫ Bo‘shatilgan: <b>${report.dismissedCount}</b>`,
-      `⚠️ Ehtiyojli filial: <b>${report.gapBranches}</b>/${report.totalBranches}`,
+      `🔴 Ochiq: <b>${report.totalNeeds}</b> · ⚠️ Filial: <b>${report.gapBranches}</b>/${report.totalBranches}`,
+      `🟠 Yollash: <b>${report.needHireCount}</b> · ⚫ Bo‘shatilgan: <b>${report.dismissedCount}</b> · 🟡 Qidiruv: <b>${report.searchingCount}</b>`,
+      `⏱ Kritik ≥30 kun: <b>${report.items.filter((i) => i.daysOpen >= 30).length}</b>`,
       "",
       esc(report.analysisLine),
       "",
-      "<i>Pastda to‘liq tuman / smena / filiallar</i>",
+      "<i>To‘liq ma’lumot — Excel faylda (mudir, koordinator, kunlar…)</i>",
     ].join("\n");
 
-    let photoOk = false;
     try {
       const png = await renderStaffingMonitorPng(report);
       if (png?.length) {
@@ -341,33 +339,23 @@ async function sendLiveStaffingMonitor(chatId: number) {
           parse_mode: "HTML",
           filename: "vaksina-xodim-ehtiyoji.png",
         });
-        photoOk = true;
       }
     } catch (imgErr) {
       console.error("[filial-bot] monitor png", imgErr);
+      await filialSendMessage(chatId, shortCap, { parse_mode: "HTML" });
     }
-    if (!photoOk) {
-      await filialSendMessage(
-        chatId,
-        "⚠️ Monitoring rasm yuklanmadi — matn versiyasi:",
-        { parse_mode: "HTML" },
-      );
-    }
-    await filialSendMessage(chatId, caption, { parse_mode: "HTML" });
 
-    if (report.okBranchNames.length && report.okBranchNames.length <= 25) {
+    try {
+      const excel = await buildStaffingMonitorExcel(report);
+      await filialSendDocument(chatId, excel.buffer, excel.filename, {
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        caption: `📎 Excel · ${excel.count} ochiq ehtiyoj · mudir/koordinator/smena/kunlar`,
+      });
+    } catch (xlsErr) {
+      console.error("[filial-bot] monitor excel", xlsErr);
       await filialSendMessage(
         chatId,
-        [
-          "✅ <b>Xodim to‘liq (ehtiyoj yo‘q) filiallar:</b>",
-          ...report.okBranchNames.map((n, i) => `${i + 1}. ${esc(n)}`),
-        ].join("\n"),
-        { parse_mode: "HTML" },
-      );
-    } else if (report.okBranchNames.length > 25) {
-      await filialSendMessage(
-        chatId,
-        `✅ <b>Xodim to‘liq filiallar:</b> ${report.okBranches} ta (ro‘yxat uzun — monitoringda jamlangan).`,
+        "⚠️ Excel yuklanmadi. Qayta «📊 Ma’lumot» bosing.",
         { parse_mode: "HTML" },
       );
     }

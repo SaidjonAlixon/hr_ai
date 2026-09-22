@@ -21,7 +21,7 @@ function truncate(s: string, max: number): string {
   return `${t.slice(0, Math.max(0, max - 1))}…`;
 }
 
-function wrapAnalysis(text: string, maxLen = 42): string[] {
+function wrapLines(text: string, maxLen = 36): string[] {
   const words = String(text || "").split(/\s+/).filter(Boolean);
   const lines: string[] = [];
   let cur = "";
@@ -30,106 +30,165 @@ function wrapAnalysis(text: string, maxLen = 42): string[] {
     if (next.length > maxLen && cur) {
       lines.push(cur);
       cur = w;
-    } else {
-      cur = next;
-    }
+    } else cur = next;
   }
   if (cur) lines.push(cur);
-  return lines.slice(0, 4);
+  return lines.slice(0, 3);
 }
 
 const DOT = ["#0B5FFF", "#3D7EFF", "#5BA0FF", "#8BBCFF", "#A8C8FF", "#C7D7FF"];
 
-/** Bank-style monitoring SVG (sharp bo‘lsa) */
+function kritCount(report: StaffingMonitorReport): number {
+  return report.items.filter((i) => i.daysOpen >= 30).length;
+}
+function highCount(report: StaffingMonitorReport): number {
+  return report.items.filter((i) => i.daysOpen >= 14 && i.daysOpen < 30).length;
+}
+
+/** Aniq shriftli SVG — sharp orqali PNG */
 export function buildStaffingMonitorSvg(report: StaffingMonitorReport): string {
   const d1 = report.byDistrict[0];
   const d2 = report.byDistrict[1];
+  const d3 = report.byDistrict[2];
   const s1 = report.topShift;
-  const legend = report.byDistrict.slice(0, 6);
-  const shifts = report.byShift.slice(0, 4);
-  const analysis = wrapAnalysis(report.analysisLine);
+  const roleFarm = report.byRole.find((r) => /farmasevt/i.test(r.label));
+  const roleMudir = report.byRole.find((r) => /mudir/i.test(r.label));
+  const roleStaj = report.byRole.find((r) => /stajyor/i.test(r.label));
+  const analysis = wrapLines(report.analysisLine, 40);
+  const krit = kritCount(report);
+  const high = highCount(report);
 
-  const pieA = d1 ? Math.max(10, Math.min(340, (d1.pct / 100) * 340)) : 0;
-  const pieDash = `${pieA.toFixed(1)} 360`;
+  const legend = report.byDistrict.slice(0, 8);
+  const shifts = report.byShift.slice(0, 4);
 
   const analysisSvg = analysis
     .map(
       (line, i) =>
-        `<text x="48" y="${568 + i * 26}" font-family="Arial,sans-serif" font-size="17" fill="#334155">${xmlEsc(line)}</text>`,
+        `<text x="48" y="${548 + i * 24}" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="15" fill="#334155">${xmlEsc(line)}</text>`,
     )
     .join("\n");
 
-  const legendSvg = legend.length
-    ? legend
-        .map((d, i) => {
-          const y = 568 + i * 34;
-          return `
-      <circle cx="476" cy="${y - 5}" r="6" fill="${DOT[i] || "#A8C8FF"}"/>
-      <text x="494" y="${y}" font-family="Arial,sans-serif" font-size="17" fill="#0A2540">${xmlEsc(truncate(d.label, 18))}</text>
-      <text x="820" y="${y}" font-family="Arial,sans-serif" font-size="17" font-weight="700" fill="#0A2540" text-anchor="end">${fmtPct(d.pct)}</text>`;
-        })
-        .join("")
-    : `<text x="476" y="600" font-family="Arial,sans-serif" font-size="16" fill="#64748B">Ehtiyoj yo'q</text>`;
+  const legendSvg = legend
+    .map((d, i) => {
+      const y = 548 + i * 28;
+      return `
+      <rect x="476" y="${y - 10}" width="12" height="12" rx="3" fill="${DOT[i % DOT.length]}"/>
+      <text x="498" y="${y}" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="15" fill="#0A2540">${xmlEsc(truncate(d.label, 18))}</text>
+      <text x="820" y="${y}" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="15" font-weight="700" fill="#0A2540" text-anchor="end">${d.count} · ${fmtPct(d.pct)}</text>`;
+    })
+    .join("");
 
-  const shiftSvg = shifts.length
-    ? shifts
-        .map((s, i) => {
-          const barW = Math.max(24, Math.round((s.pct / 100) * 500));
-          const y = 870 + i * 42;
-          return `
-    <rect x="52" y="${y}" width="${barW}" height="26" rx="8" fill="${i === 0 ? "#0B5FFF" : "#8BBCFF"}"/>
-    <text x="570" y="${y + 19}" font-family="Arial,sans-serif" font-size="16" fill="#0A2540">${xmlEsc(truncate(s.label, 18))} — ${s.count} (${fmtPct(s.pct)})</text>`;
-        })
-        .join("")
-    : `<text x="52" y="910" font-family="Arial,sans-serif" font-size="16" fill="#64748B">Smena ehtiyoji yo'q</text>`;
+  const shiftSvg = shifts
+    .map((s, i) => {
+      const barW = Math.max(20, Math.round((s.pct / 100) * 420));
+      const y = 820 + i * 36;
+      return `
+    <rect x="48" y="${y}" width="${barW}" height="22" rx="6" fill="${i === 0 ? "#0B5FFF" : "#8BBCFF"}"/>
+    <text x="490" y="${y + 16}" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#0A2540">${xmlEsc(truncate(s.label, 20))} — ${s.count} (${fmtPct(s.pct)})</text>`;
+    })
+    .join("");
 
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="880" height="1100" viewBox="0 0 880 1100">
-  <rect width="880" height="1100" fill="#E8EEF7"/>
-  <rect x="28" y="28" width="824" height="200" rx="28" fill="#0B5FFF"/>
-  <text x="56" y="78" font-family="Arial,sans-serif" font-size="28" font-weight="700" fill="#FFFFFF">Xodim ehtiyoji</text>
-  <text x="56" y="112" font-family="Arial,sans-serif" font-size="16" fill="#D6E4FF">${xmlEsc(report.generatedAtLabel)} · Toshkent</text>
-  <text x="56" y="178" font-family="Arial,sans-serif" font-size="56" font-weight="800" fill="#FFFFFF">${report.totalNeeds}</text>
-  <text x="56" y="208" font-family="Arial,sans-serif" font-size="15" fill="#C7D7FF">ochiq ehtiyoj</text>
-  <rect x="560" y="58" width="260" height="88" rx="18" fill="#FFFFFF" fill-opacity="0.16"/>
-  <text x="580" y="92" font-family="Arial,sans-serif" font-size="14" fill="#E8F0FF">Ehtiyojli filial</text>
-  <text x="580" y="128" font-family="Arial,sans-serif" font-size="36" font-weight="800" fill="#FFFFFF">${report.gapBranches}</text>
-  <text x="680" y="128" font-family="Arial,sans-serif" font-size="18" fill="#D6E4FF">/ ${report.totalBranches}</text>
-  <rect x="560" y="158" width="124" height="48" rx="12" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="572" y="178" font-family="Arial,sans-serif" font-size="12" fill="#D6E4FF">Qidiruv</text>
-  <text x="572" y="198" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">${report.searchingCount}</text>
-  <rect x="696" y="158" width="124" height="48" rx="12" fill="#FFFFFF" fill-opacity="0.14"/>
-  <text x="708" y="178" font-family="Arial,sans-serif" font-size="12" fill="#D6E4FF">To'liq OK</text>
-  <text x="708" y="198" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">${report.okBranches}</text>
-  <rect x="28" y="252" width="400" height="220" rx="24" fill="#1A73E8"/>
-  <text x="52" y="292" font-family="Arial,sans-serif" font-size="18" fill="#E8F0FF">Eng yuklangan tuman</text>
-  <text x="52" y="328" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">${xmlEsc(truncate(d1?.label || "—", 22))}</text>
-  <text x="52" y="368" font-family="Arial,sans-serif" font-size="20" fill="#D6E4FF">${d1 ? `${d1.count} ehtiyoj` : "0"}</text>
-  <text x="52" y="430" font-family="Arial,sans-serif" font-size="64" font-weight="800" fill="#FFFFFF">${d1 ? fmtPct(d1.pct) : "0%"}</text>
-  <rect x="452" y="252" width="400" height="220" rx="24" fill="#5BA0FF"/>
-  <text x="476" y="292" font-family="Arial,sans-serif" font-size="18" fill="#E8F0FF">${d2 ? "2-o'rin tuman" : "Eng kerakli smena"}</text>
-  <text x="476" y="328" font-family="Arial,sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">${xmlEsc(truncate(d2?.label || s1?.label || "—", 22))}</text>
-  <text x="476" y="368" font-family="Arial,sans-serif" font-size="20" fill="#EAF2FF">${d2 ? `${d2.count} ehtiyoj` : s1 ? `${s1.count} ehtiyoj` : "0"}</text>
-  <text x="476" y="430" font-family="Arial,sans-serif" font-size="64" font-weight="800" fill="#FFFFFF">${d2 ? fmtPct(d2.pct) : s1 ? fmtPct(s1.pct) : "0%"}</text>
-  <rect x="28" y="496" width="400" height="280" rx="24" fill="#FFFFFF"/>
-  <circle cx="52" cy="528" r="6" fill="#0B5FFF"/>
-  <text x="68" y="534" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#0A2540">Tahlillar</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="1200" viewBox="0 0 900 1200">
+  <rect width="900" height="1200" fill="#E8EEF7"/>
+
+  <!-- HEADER -->
+  <rect x="24" y="24" width="852" height="168" rx="20" fill="#0B5FFF"/>
+  <text x="48" y="64" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="26" font-weight="700" fill="#FFFFFF">Xodim ehtiyoji</text>
+  <text x="48" y="92" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#D6E4FF">${xmlEsc(report.generatedAtLabel)} · Toshkent · faqat ochiq yollash</text>
+  <text x="48" y="148" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="52" font-weight="800" fill="#FFFFFF">${report.totalNeeds}</text>
+  <text x="48" y="172" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#C7D7FF">ochiq ehtiyoj (bo'shatilgan hisobga olinmagan)</text>
+
+  <rect x="520" y="44" width="332" height="56" rx="12" fill="#FFFFFF" fill-opacity="0.18"/>
+  <text x="536" y="68" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#E8F0FF">Ehtiyojli filial</text>
+  <text x="536" y="90" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">${report.gapBranches} / ${report.totalBranches}</text>
+
+  <rect x="520" y="112" width="100" height="60" rx="10" fill="#FFFFFF" fill-opacity="0.16"/>
+  <text x="532" y="134" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="11" fill="#D6E4FF">Yollash</text>
+  <text x="532" y="158" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="22" font-weight="800" fill="#FFFFFF">${report.needHireCount}</text>
+
+  <rect x="632" y="112" width="100" height="60" rx="10" fill="#FFFFFF" fill-opacity="0.16"/>
+  <text x="644" y="134" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="11" fill="#D6E4FF">Qidiruv</text>
+  <text x="644" y="158" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="22" font-weight="800" fill="#FFFFFF">${report.searchingCount}</text>
+
+  <rect x="744" y="112" width="108" height="60" rx="10" fill="#FFFFFF" fill-opacity="0.16"/>
+  <text x="756" y="134" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="11" fill="#D6E4FF">To'liq OK</text>
+  <text x="756" y="158" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="22" font-weight="800" fill="#FFFFFF">${report.okBranches}</text>
+
+  <!-- KPI row -->
+  <rect x="24" y="208" width="204" height="100" rx="16" fill="#1A73E8"/>
+  <text x="40" y="236" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#E8F0FF">Kritik (≥30 kun)</text>
+  <text x="40" y="280" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="36" font-weight="800" fill="#FFFFFF">${krit}</text>
+
+  <rect x="240" y="208" width="204" height="100" rx="16" fill="#F97316"/>
+  <text x="256" y="236" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#FFF7ED">Yuqori (≥14 kun)</text>
+  <text x="256" y="280" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="36" font-weight="800" fill="#FFFFFF">${high}</text>
+
+  <rect x="456" y="208" width="204" height="100" rx="16" fill="#0EA5E9"/>
+  <text x="472" y="236" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#E0F2FE">Eng kerakli smena</text>
+  <text x="472" y="268" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">${xmlEsc(truncate(s1?.label || "—", 16))}</text>
+  <text x="472" y="294" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="16" fill="#E0F2FE">${s1 ? `${s1.count} · ${fmtPct(s1.pct)}` : "0"}</text>
+
+  <rect x="672" y="208" width="204" height="100" rx="16" fill="#6366F1"/>
+  <text x="688" y="236" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#E0E7FF">Top tuman</text>
+  <text x="688" y="268" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="18" font-weight="700" fill="#FFFFFF">${xmlEsc(truncate(d1?.label || "—", 14))}</text>
+  <text x="688" y="294" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="16" fill="#E0E7FF">${d1 ? `${d1.count} · ${fmtPct(d1.pct)}` : "0"}</text>
+
+  <!-- Roles + top districts -->
+  <rect x="24" y="324" width="280" height="150" rx="16" fill="#FFFFFF"/>
+  <text x="40" y="352" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="16" font-weight="700" fill="#0A2540">Lavozimlar</text>
+  <text x="40" y="388" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="15" fill="#334155">Farmasevt: ${roleFarm?.count ?? 0} (${fmtPct(roleFarm?.pct ?? 0)})</text>
+  <text x="40" y="416" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="15" fill="#334155">Mudir: ${roleMudir?.count ?? 0} (${fmtPct(roleMudir?.pct ?? 0)})</text>
+  <text x="40" y="444" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="15" fill="#334155">Stajyor: ${roleStaj?.count ?? 0} (${fmtPct(roleStaj?.pct ?? 0)})</text>
+
+  <rect x="316" y="324" width="280" height="150" rx="16" fill="#1A73E8"/>
+  <text x="332" y="352" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#E8F0FF">1-o'rin tuman</text>
+  <text x="332" y="388" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="22" font-weight="700" fill="#FFFFFF">${xmlEsc(truncate(d1?.label || "—", 16))}</text>
+  <text x="332" y="430" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="40" font-weight="800" fill="#FFFFFF">${d1 ? fmtPct(d1.pct) : "0%"}</text>
+  <text x="332" y="456" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#D6E4FF">${d1 ? `${d1.count} ehtiyoj` : "0"}</text>
+
+  <rect x="608" y="324" width="268" height="150" rx="16" fill="#5BA0FF"/>
+  <text x="624" y="352" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#E8F0FF">2 / 3-o'rin</text>
+  <text x="624" y="388" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">${xmlEsc(truncate(d2?.label || "—", 16))} · ${d2 ? fmtPct(d2.pct) : "0%"}</text>
+  <text x="624" y="418" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#EAF2FF">${d2 ? `${d2.count} ehtiyoj` : ""}</text>
+  <text x="624" y="450" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="16" font-weight="700" fill="#FFFFFF">${xmlEsc(truncate(d3?.label || "—", 16))} · ${d3 ? fmtPct(d3.pct) : "0%"}</text>
+
+  <!-- Analysis + districts -->
+  <rect x="24" y="490" width="420" height="280" rx="16" fill="#FFFFFF"/>
+  <circle cx="44" cy="518" r="5" fill="#0B5FFF"/>
+  <text x="58" y="524" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="17" font-weight="700" fill="#0A2540">Tahlillar</text>
   ${analysisSvg}
-  <circle cx="200" cy="720" r="52" fill="none" stroke="#E2E8F0" stroke-width="16"/>
-  <circle cx="200" cy="720" r="52" fill="none" stroke="#0B5FFF" stroke-width="16"
-    stroke-dasharray="${pieDash}" stroke-linecap="round" transform="rotate(-90 200 720)"/>
-  <text x="200" y="726" font-family="Arial,sans-serif" font-size="18" font-weight="800" fill="#0A2540" text-anchor="middle">${d1 ? fmtPct(d1.pct) : "0%"}</text>
-  <rect x="452" y="496" width="400" height="280" rx="24" fill="#FFFFFF"/>
-  <text x="476" y="534" font-family="Arial,sans-serif" font-size="18" font-weight="700" fill="#0A2540">Tumanlar ulushi</text>
-  ${legendSvg}
-  <rect x="28" y="800" width="824" height="260" rx="24" fill="#FFFFFF"/>
-  <text x="52" y="844" font-family="Arial,sans-serif" font-size="20" font-weight="700" fill="#0A2540">Smena bo'yicha</text>
-  ${shiftSvg}
-  <text x="52" y="1035" font-family="Arial,sans-serif" font-size="13" fill="#64748B">Vaksina HR · Real-time staffing</text>
+  <text x="48" y="660" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#64748B">Yollash ${report.needHireCount} · Qidiruv ${report.searchingCount} · Kritik ${krit}</text>
+  <text x="48" y="700" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="28" font-weight="800" fill="#0B5FFF">${d1 ? fmtPct(d1.pct) : "0%"}</text>
+  <text x="48" y="726" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#64748B">top tuman ulushi</text>
+
+  <rect x="460" y="490" width="416" height="280" rx="16" fill="#FFFFFF"/>
+  <text x="480" y="524" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="17" font-weight="700" fill="#0A2540">Tumanlar ulushi</text>
+  ${legendSvg || `<text x="480" y="560" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#64748B">Ehtiyoj yo'q</text>`}
+
+  <!-- Shifts -->
+  <rect x="24" y="786" width="852" height="180" rx="16" fill="#FFFFFF"/>
+  <text x="48" y="816" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="17" font-weight="700" fill="#0A2540">Smena bo'yicha</text>
+  ${shiftSvg || `<text x="48" y="860" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#64748B">Smena ehtiyoji yo'q</text>`}
+
+  <!-- Critical list preview -->
+  <rect x="24" y="982" width="852" height="180" rx="16" fill="#FFFFFF"/>
+  <text x="48" y="1012" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="17" font-weight="700" fill="#0A2540">Eng uzoq ochiq (top 5)</text>
+  ${
+    report.critical.slice(0, 5)
+      .map((it, i) => {
+        const y = 1040 + i * 22;
+        return `<text x="48" y="${y}" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="13" fill="#0A2540">${i + 1}. ${xmlEsc(truncate(it.branch, 22))} · ${xmlEsc(it.roleLabel)} · ${xmlEsc(it.shift)} · ${it.daysOpen} kun · ${xmlEsc(it.statusLabel)}</text>`;
+      })
+      .join("\n") ||
+    `<text x="48" y="1048" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="14" fill="#64748B">Ochiq ehtiyoj yo'q</text>`
+  }
+
+  <text x="48" y="1185" font-family="DejaVu Sans,Arial,Helvetica,sans-serif" font-size="12" fill="#64748B">Vaksina HR · Real-time · Excelda to'liq · Bo'shatilgan yo'q</text>
 </svg>`;
 }
 
-/* ── Pure PNG (sharp yo‘q / Vercel) ───────────────────────── */
+/* ── Pure PNG fallback (katta shrift) ─────────────────────── */
 
 type RGB = [number, number, number];
 
@@ -203,9 +262,6 @@ const FONT_5X7: Record<string, number[]> = {
   y: [0, 0, 17, 17, 15, 1, 14],
   z: [0, 0, 31, 2, 4, 8, 31],
   "'": [4, 4, 0, 0, 0, 0, 0],
-  "‘": [4, 4, 0, 0, 0, 0, 0],
-  "’": [4, 4, 0, 0, 0, 0, 0],
-  "·": [0, 0, 4, 0, 0, 0, 0],
   ",": [0, 0, 0, 0, 4, 4, 8],
   "(": [2, 4, 8, 8, 8, 4, 2],
   ")": [8, 4, 2, 2, 2, 4, 8],
@@ -213,33 +269,8 @@ const FONT_5X7: Record<string, number[]> = {
 
 function normalizeChar(ch: string): string {
   const map: Record<string, string> = {
-    "ʻ": "'",
-    "ʼ": "'",
-    "‘": "'",
-    "’": "'",
-    "“": '"',
-    "”": '"',
-    "—": "-",
-    "–": "-",
-    "…": ".",
-    "ö": "o",
-    "Ö": "O",
-    "ü": "u",
-    "Ü": "U",
-    "ğ": "g",
-    "Ğ": "G",
-    "ş": "s",
-    "Ş": "S",
-    "ç": "c",
-    "Ç": "C",
-    "ñ": "n",
-    о: "o",
-    а: "a",
-    е: "e",
-    с: "c",
-    р: "p",
-    у: "y",
-    х: "x",
+    "ʻ": "'", "ʼ": "'", "‘": "'", "’": "'", "—": "-", "–": "-", "…": ".",
+    "ö": "o", "Ö": "O", "ü": "u", "Ü": "U", "ğ": "g", "Ğ": "G", "ş": "s", "Ş": "S",
   };
   return map[ch] || ch;
 }
@@ -275,9 +306,6 @@ function encodePng(width: number, height: number, rgba: Buffer): Buffer {
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  ihdr[10] = 0;
-  ihdr[11] = 0;
-  ihdr[12] = 0;
   return Buffer.concat([
     Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
     pngChunk("IHDR", ihdr),
@@ -290,14 +318,12 @@ class Canvas {
   w: number;
   h: number;
   buf: Buffer;
-
-  constructor(w: number, h: number, bg: RGB = [232, 238, 247]) {
+  constructor(w: number, h: number, bg: RGB) {
     this.w = w;
     this.h = h;
     this.buf = Buffer.alloc(w * h * 4);
     this.fill(0, 0, w, h, bg);
   }
-
   private set(x: number, y: number, c: RGB) {
     if (x < 0 || y < 0 || x >= this.w || y >= this.h) return;
     const i = (y * this.w + x) * 4;
@@ -306,29 +332,23 @@ class Canvas {
     this.buf[i + 2] = c[2];
     this.buf[i + 3] = 255;
   }
-
   fill(x: number, y: number, w: number, h: number, c: RGB) {
     const x0 = Math.max(0, Math.floor(x));
     const y0 = Math.max(0, Math.floor(y));
     const x1 = Math.min(this.w, Math.ceil(x + w));
     const y1 = Math.min(this.h, Math.ceil(y + h));
-    for (let yy = y0; yy < y1; yy++) {
-      for (let xx = x0; xx < x1; xx++) this.set(xx, yy, c);
-    }
+    for (let yy = y0; yy < y1; yy++) for (let xx = x0; xx < x1; xx++) this.set(xx, yy, c);
   }
-
   roundRect(x: number, y: number, w: number, h: number, r: number, c: RGB) {
     const rr = Math.min(r, w / 2, h / 2);
     this.fill(x + rr, y, w - 2 * rr, h, c);
     this.fill(x, y + rr, w, h - 2 * rr, c);
-    // corners (approx boxes)
     this.fill(x, y, rr, rr, c);
     this.fill(x + w - rr, y, rr, rr, c);
     this.fill(x, y + h - rr, rr, rr, c);
     this.fill(x + w - rr, y + h - rr, rr, rr, c);
   }
-
-  text(x: number, y: number, str: string, c: RGB, scale = 2) {
+  text(x: number, y: number, str: string, c: RGB, scale = 3) {
     let cx = Math.floor(x);
     const cy = Math.floor(y);
     for (const raw of str) {
@@ -342,18 +362,15 @@ class Canvas {
         const bits = glyph[row]!;
         for (let col = 0; col < 5; col++) {
           if (bits & (16 >> col)) {
-            for (let sy = 0; sy < scale; sy++) {
-              for (let sx = 0; sx < scale; sx++) {
+            for (let sy = 0; sy < scale; sy++)
+              for (let sx = 0; sx < scale; sx++)
                 this.set(cx + col * scale + sx, cy + row * scale + sy, c);
-              }
-            }
           }
         }
       }
       cx += 6 * scale;
     }
   }
-
   toPng(): Buffer {
     return encodePng(this.w, this.h, this.buf);
   }
@@ -364,10 +381,10 @@ function hex(c: string): RGB {
   return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
 }
 
-/** Sharp kerak emas — Vercelda ishonchli PNG */
+/** Fallback — kattaroq shrift, zich kartalar, bo'shatilgan yo'q */
 export function renderStaffingMonitorPngPure(report: StaffingMonitorReport): Buffer {
-  const W = 880;
-  const H = 1100;
+  const W = 900;
+  const H = 1200;
   const cv = new Canvas(W, H, hex("#E8EEF7"));
   const white: RGB = [255, 255, 255];
   const dark: RGB = [10, 37, 64];
@@ -375,88 +392,123 @@ export function renderStaffingMonitorPngPure(report: StaffingMonitorReport): Buf
   const d1 = report.byDistrict[0];
   const d2 = report.byDistrict[1];
   const s1 = report.topShift;
+  const krit = kritCount(report);
+  const high = highCount(report);
+  const roleFarm = report.byRole.find((r) => /farmasevt/i.test(r.label));
+  const roleMudir = report.byRole.find((r) => /mudir/i.test(r.label));
+  const roleStaj = report.byRole.find((r) => /stajyor/i.test(r.label));
 
-  // Header
-  cv.roundRect(28, 28, 824, 200, 24, hex("#0B5FFF"));
-  cv.text(56, 58, "Xodim ehtiyoji", white, 3);
-  cv.text(56, 100, `${report.generatedAtLabel} · Toshkent`, hex("#D6E4FF"), 2);
-  cv.text(56, 145, String(report.totalNeeds), white, 6);
-  cv.text(56, 195, "ochiq ehtiyoj", hex("#C7D7FF"), 2);
+  cv.roundRect(24, 24, 852, 160, 20, hex("#0B5FFF"));
+  cv.text(48, 48, "Xodim ehtiyoji", white, 4);
+  cv.text(48, 90, `${report.generatedAtLabel}`, hex("#D6E4FF"), 2);
+  cv.text(48, 125, String(report.totalNeeds), white, 6);
+  cv.text(200, 145, "ochiq (boshatsiz)", hex("#C7D7FF"), 2);
 
-  cv.roundRect(560, 58, 260, 88, 16, hex("#3D7EFF"));
-  cv.text(580, 72, "Ehtiyojli filial", white, 2);
-  cv.text(580, 105, `${report.gapBranches} / ${report.totalBranches}`, white, 3);
+  cv.roundRect(520, 44, 160, 56, 12, hex("#3D7EFF"));
+  cv.text(532, 54, "Filial", white, 2);
+  cv.text(532, 78, `${report.gapBranches}/${report.totalBranches}`, white, 3);
 
-  cv.roundRect(560, 158, 124, 48, 12, hex("#3D7EFF"));
-  cv.text(572, 168, "Qidiruv", white, 1);
-  cv.text(572, 186, String(report.searchingCount), white, 2);
+  cv.roundRect(696, 44, 160, 56, 12, hex("#3D7EFF"));
+  cv.text(708, 54, "Toliq OK", white, 2);
+  cv.text(708, 78, String(report.okBranches), white, 3);
 
-  cv.roundRect(696, 158, 124, 48, 12, hex("#3D7EFF"));
-  cv.text(708, 168, "Toliq OK", white, 1);
-  cv.text(708, 186, String(report.okBranches), white, 2);
+  cv.roundRect(520, 112, 100, 56, 10, hex("#3D7EFF"));
+  cv.text(532, 122, "Yollash", white, 2);
+  cv.text(532, 146, String(report.needHireCount), white, 3);
 
-  // Mid cards
-  cv.roundRect(28, 252, 400, 220, 20, hex("#1A73E8"));
-  cv.text(52, 272, "Eng yuklangan tuman", hex("#E8F0FF"), 2);
-  cv.text(52, 310, truncate(d1?.label || "-", 20), white, 3);
-  cv.text(52, 355, d1 ? `${d1.count} ehtiyoj` : "0", hex("#D6E4FF"), 2);
-  cv.text(52, 400, d1 ? fmtPct(d1.pct) : "0%", white, 5);
+  cv.roundRect(636, 112, 100, 56, 10, hex("#3D7EFF"));
+  cv.text(648, 122, "Qidiruv", white, 2);
+  cv.text(648, 146, String(report.searchingCount), white, 3);
 
-  cv.roundRect(452, 252, 400, 220, 20, hex("#5BA0FF"));
-  cv.text(476, 272, d2 ? "2-orin tuman" : "Eng kerakli smena", hex("#E8F0FF"), 2);
-  cv.text(476, 310, truncate(d2?.label || s1?.label || "-", 20), white, 3);
-  cv.text(476, 355, d2 ? `${d2.count} ehtiyoj` : s1 ? `${s1.count} ehtiyoj` : "0", hex("#EAF2FF"), 2);
-  cv.text(476, 400, d2 ? fmtPct(d2.pct) : s1 ? fmtPct(s1.pct) : "0%", white, 5);
+  cv.roundRect(752, 112, 104, 56, 10, hex("#DC2626"));
+  cv.text(764, 122, "Kritik", white, 2);
+  cv.text(764, 146, String(krit), white, 3);
 
-  // Analysis
-  cv.roundRect(28, 496, 400, 280, 20, white);
-  cv.text(52, 520, "Tahlillar", dark, 2);
-  wrapAnalysis(report.analysisLine, 28).forEach((line, i) => {
-    cv.text(48, 560 + i * 28, line, hex("#334155"), 2);
+  // KPI
+  cv.roundRect(24, 204, 210, 90, 14, hex("#1A73E8"));
+  cv.text(40, 220, "Kritik 30+kun", white, 2);
+  cv.text(40, 252, String(krit), white, 4);
+
+  cv.roundRect(246, 204, 210, 90, 14, hex("#F97316"));
+  cv.text(262, 220, "Yuqori 14+kun", white, 2);
+  cv.text(262, 252, String(high), white, 4);
+
+  cv.roundRect(468, 204, 210, 90, 14, hex("#0EA5E9"));
+  cv.text(484, 220, "Top smena", white, 2);
+  cv.text(484, 252, truncate(s1?.label || "-", 12), white, 3);
+
+  cv.roundRect(690, 204, 186, 90, 14, hex("#6366F1"));
+  cv.text(704, 220, "Top tuman", white, 2);
+  cv.text(704, 252, truncate(d1?.label || "-", 10), white, 3);
+
+  // Roles + districts
+  cv.roundRect(24, 312, 280, 160, 14, white);
+  cv.text(40, 332, "Lavozimlar", dark, 3);
+  cv.text(40, 372, `Farmasevt ${roleFarm?.count ?? 0}`, dark, 2);
+  cv.text(40, 404, `Mudir ${roleMudir?.count ?? 0}`, dark, 2);
+  cv.text(40, 436, `Stajyor ${roleStaj?.count ?? 0}`, dark, 2);
+
+  cv.roundRect(316, 312, 280, 160, 14, hex("#1A73E8"));
+  cv.text(332, 332, "1-orin tuman", hex("#E8F0FF"), 2);
+  cv.text(332, 368, truncate(d1?.label || "-", 14), white, 3);
+  cv.text(332, 416, d1 ? fmtPct(d1.pct) : "0%", white, 5);
+
+  cv.roundRect(608, 312, 268, 160, 14, hex("#5BA0FF"));
+  cv.text(624, 332, "2-orin tuman", hex("#E8F0FF"), 2);
+  cv.text(624, 368, truncate(d2?.label || "-", 14), white, 3);
+  cv.text(624, 416, d2 ? fmtPct(d2.pct) : "0%", white, 5);
+
+  cv.roundRect(24, 492, 420, 260, 14, white);
+  cv.text(40, 512, "Tahlillar", dark, 3);
+  wrapLines(report.analysisLine, 26).forEach((line, i) => {
+    cv.text(40, 552 + i * 28, line, hex("#334155"), 2);
   });
-  cv.text(48, 700, d1 ? `Top: ${fmtPct(d1.pct)}` : "0%", hex("#0B5FFF"), 3);
+  cv.text(40, 680, `Yollash ${report.needHireCount}  Qidiruv ${report.searchingCount}`, muted, 2);
+  cv.text(40, 712, d1 ? `TOP ${fmtPct(d1.pct)}` : "0%", hex("#0B5FFF"), 3);
 
-  // Legend
-  cv.roundRect(452, 496, 400, 280, 20, white);
-  cv.text(476, 520, "Tumanlar ulushi", dark, 2);
-  report.byDistrict.slice(0, 6).forEach((d, i) => {
-    const y = 560 + i * 32;
-    cv.roundRect(476, y, 12, 12, 3, hex(DOT[i] || "#A8C8FF"));
-    cv.text(500, y, truncate(d.label, 16), dark, 2);
-    cv.text(760, y, fmtPct(d.pct), dark, 2);
+  cv.roundRect(460, 492, 416, 260, 14, white);
+  cv.text(480, 512, "Tumanlar", dark, 3);
+  report.byDistrict.slice(0, 7).forEach((d, i) => {
+    const y = 552 + i * 28;
+    cv.roundRect(480, y, 12, 12, 2, hex(DOT[i % DOT.length]!));
+    cv.text(500, y, `${truncate(d.label, 14)} ${d.count} ${fmtPct(d.pct)}`, dark, 2);
   });
 
-  // Shifts
-  cv.roundRect(28, 800, 824, 260, 20, white);
-  cv.text(52, 824, "Smena boyicha", dark, 2);
+  cv.roundRect(24, 772, 852, 180, 14, white);
+  cv.text(40, 792, "Smena boyicha", dark, 3);
   report.byShift.slice(0, 4).forEach((s, i) => {
-    const y = 870 + i * 42;
-    const barW = Math.max(24, Math.round((s.pct / 100) * 480));
-    cv.roundRect(52, y, barW, 24, 8, hex(i === 0 ? "#0B5FFF" : "#8BBCFF"));
-    cv.text(550, y + 4, `${truncate(s.label, 14)} ${s.count} (${fmtPct(s.pct)})`, dark, 2);
+    const y = 832 + i * 30;
+    const barW = Math.max(20, Math.round((s.pct / 100) * 400));
+    cv.roundRect(40, y, barW, 18, 6, hex(i === 0 ? "#0B5FFF" : "#8BBCFF"));
+    cv.text(460, y, `${truncate(s.label, 14)} ${s.count}`, dark, 2);
   });
 
-  cv.text(52, 1040, "Vaksina HR · Real-time · Ma'lumot", muted, 2);
-  cv.text(52, 1065, `Yollash ${report.needHireCount} · Qidiruv ${report.searchingCount}`, muted, 2);
+  cv.roundRect(24, 972, 852, 180, 14, white);
+  cv.text(40, 992, "Eng uzoq ochiq", dark, 3);
+  report.critical.slice(0, 5).forEach((it, i) => {
+    cv.text(
+      40,
+      1032 + i * 24,
+      `${i + 1}. ${truncate(it.branch, 18)} ${it.roleLabel} ${it.daysOpen}k`,
+      dark,
+      2,
+    );
+  });
 
+  cv.text(40, 1175, "Vaksina HR · Excel to'liq · Boshatsiz", muted, 2);
   return cv.toPng();
 }
 
 export async function renderStaffingMonitorPng(report: StaffingMonitorReport): Promise<Buffer> {
-  // Avvalo pure PNG — Vercel serverlessda sharp ko‘pincha yo‘q / xato
-  try {
-    const pure = renderStaffingMonitorPngPure(report);
-    if (pure?.length > 500) return pure;
-  } catch (err) {
-    console.error("[monitor-png] pure failed", err);
-  }
+  // Avvalo sharp+SVG — o‘qiladigan shrift
   try {
     const svg = buildStaffingMonitorSvg(report);
     const mod = await import("sharp");
     const sharpFn = (mod as { default: (i: Buffer, o?: { density?: number }) => { png: (o?: object) => { toBuffer: () => Promise<Buffer> } } }).default;
-    return await sharpFn(Buffer.from(svg), { density: 140 }).png().toBuffer();
+    const buf = await sharpFn(Buffer.from(svg), { density: 160 }).png().toBuffer();
+    if (buf?.length > 1000) return buf;
   } catch (err) {
-    console.error("[monitor-png] sharp failed", err);
-    return renderStaffingMonitorPngPure(report);
+    console.error("[monitor-png] sharp failed, pure fallback", err);
   }
+  return renderStaffingMonitorPngPure(report);
 }

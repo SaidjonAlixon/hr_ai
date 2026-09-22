@@ -323,7 +323,7 @@ async function sendLiveStaffingMonitor(chatId: number) {
       `${esc(report.generatedAtLabel)} (Toshkent)`,
       "",
       `🔴 Ochiq: <b>${report.totalNeeds}</b> · ⚠️ Filial: <b>${report.gapBranches}</b>/${report.totalBranches}`,
-      `🟠 Yollash: <b>${report.needHireCount}</b> · ⚫ Bo‘shatilgan: <b>${report.dismissedCount}</b> · 🟡 Qidiruv: <b>${report.searchingCount}</b>`,
+      `🟠 Yollash: <b>${report.needHireCount}</b> · 🟡 Qidiruv: <b>${report.searchingCount}</b>`,
       `⏱ Kritik ≥30 kun: <b>${report.items.filter((i) => i.daysOpen >= 30).length}</b>`,
       "",
       esc(report.analysisLine),

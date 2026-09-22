@@ -151,8 +151,8 @@ function urgencyLabel(days: number): string {
   return "YANGI";
 }
 
-/** Faqat haqiqiy ochiq ehtiyoj — to‘ldirilgan (working/closed) hisobga olinmaydi */
-const OPEN_NEED_STATUSES = new Set(["need_hire", "dismissed", "searching", "new"]);
+/** Faqat haqiqiy yollash ehtiyoji — «bo‘shatilgan» hisobga olinmaydi */
+const OPEN_NEED_STATUSES = new Set(["need_hire", "searching", "new"]);
 
 export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport> {
   const [alerts, branches] = await Promise.all([
@@ -295,7 +295,7 @@ export async function loadStaffingMonitorReport(): Promise<StaffingMonitorReport
     totalNeeds,
     searchingCount: items.filter((i) => i.status === "searching").length,
     needHireCount: items.filter((i) => i.status === "need_hire" || i.status === "new").length,
-    dismissedCount: items.filter((i) => i.status === "dismissed").length,
+    dismissedCount: 0,
     okBranches: okBranchNames.length,
     totalBranches: branches.length,
     gapBranches,
@@ -324,7 +324,6 @@ export function buildStaffingMonitorCaption(
     `🔴 <b>Jami kerak:</b> ${report.totalNeeds}`,
     `🟡 <b>Qidirilmoqda:</b> ${report.searchingCount}`,
     `🟠 <b>Yollash kerak:</b> ${report.needHireCount}`,
-    `⚫ <b>Bo‘shatilgan:</b> ${report.dismissedCount}`,
     `🟢 <b>To‘liq filial:</b> ${report.okBranches}/${report.totalBranches}`,
     `⚠️ <b>Ehtiyojli filial:</b> ${report.gapBranches}`,
     "",

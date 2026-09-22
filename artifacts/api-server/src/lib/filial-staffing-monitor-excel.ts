@@ -60,7 +60,6 @@ export async function buildStaffingMonitorExcel(report: StaffingMonitorReport): 
   const stats: Array<[string, string | number, string]> = [
     ["Jami ochiq ehtiyoj", report.totalNeeds, "FFDC2626"],
     ["Yollash kerak (need_hire)", report.needHireCount, "FFEA580C"],
-    ["Bo‘shatilgan (ochiq)", report.dismissedCount, "FF1F2937"],
     ["Qidirilmoqda", report.searchingCount, "FFCA8A04"],
     ["Ehtiyojli filial", `${report.gapBranches} / ${report.totalBranches}`, "FF0B5FFF"],
     ["To‘liq filial (OK)", `${report.okBranches} / ${report.totalBranches}`, "FF16A34A"],

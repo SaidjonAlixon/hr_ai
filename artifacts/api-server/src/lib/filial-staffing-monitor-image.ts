@@ -437,7 +437,7 @@ export function renderStaffingMonitorPngPure(report: StaffingMonitorReport): Buf
   });
 
   cv.text(52, 1040, "Vaksina HR · Real-time · Ma'lumot", muted, 2);
-  cv.text(52, 1065, `Yollash ${report.needHireCount} · Bosh ${report.dismissedCount} · Qidiruv ${report.searchingCount}`, muted, 2);
+  cv.text(52, 1065, `Yollash ${report.needHireCount} · Qidiruv ${report.searchingCount}`, muted, 2);
 
   return cv.toPng();
 }

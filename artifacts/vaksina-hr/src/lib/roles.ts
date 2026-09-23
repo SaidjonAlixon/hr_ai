@@ -189,6 +189,7 @@ export function canViewFullDavomatDashboard(role?: string | null): boolean {
   return (
     hasFullPlatformAccess(r) ||
     isDirectorRole(r) ||
+    r === "direktor_yordamchisi" ||
     r === "moliya" ||
     r === "moliya_rahbar" ||
     r === "hr_direktor" ||
@@ -208,6 +209,14 @@ export function canViewDavomat(role?: string | null): boolean {
     isSbRole(role) ||
     isDeptHeadRole(role)
   );
+}
+
+/**
+ * Davomat erta-ketish / qo‘lda izoh — rahbariyat va HR (auditor ham).
+ * Bo‘lim boshliqlari / SB ga chiqmaydi.
+ */
+export function canViewDavomatNotes(role?: string | null): boolean {
+  return canViewLeadershipModules(role);
 }
 
 /** Davomat qo‘lda tahrirlash (vaqt) — admin va HR direktor */
@@ -337,11 +346,34 @@ export function canViewDistribyutsiya(role?: string | null): boolean {
 }
 
 /**
- * VaksinaMed Logistika (GPS) — alohida top-level menyu.
- * Hozircha faqat admin (asoschi / direktor / HR ochilmaydi).
+ * Direktor, asoschi, rahbariyat (direktor yordamchisi), HR oilasi, admin.
+ * Logistika / Omborxona ko‘rish / Ko‘chma / Qurilmalar / Hisobot.
+ */
+export function canViewLeadershipModules(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return (
+    hasFullPlatformAccess(r) ||
+    isDirectorRole(r) ||
+    r === "direktor_yordamchisi" ||
+    isHrRole(r)
+  );
+}
+
+/**
+ * VaksinaMed Logistika (GPS) — admin + rahbariyat + HR.
  */
 export function canViewLogistika(role?: string | null): boolean {
-  return normalizeUserRole(role) === "admin";
+  return canViewLeadershipModules(role);
+}
+
+/** Qurilmalar + Ko‘chma — ko‘rish (admin + rahbariyat + HR) */
+export function canViewKochmaAdmin(role?: string | null): boolean {
+  return canViewLeadershipModules(role);
+}
+
+/** Qurilmalar + Ko‘chma — o‘zgartirish faqat admin */
+export function canManageKochmaAdmin(role?: string | null): boolean {
+  return canManageUsers(role);
 }
 
 export function canManageDistribyutsiya(role?: string | null): boolean {
@@ -353,14 +385,14 @@ export function isOmborxonaRole(role?: string | null): boolean {
   return role === "ombor" || role === "ombor_rahbar";
 }
 
-/** Omborxona_ish sahifasi — ombor xodim/boshliq + admin */
+/** Omborxona_ish — ombor xodim/boshliq + rahbariyat/HR */
 export function canViewOmborxona(role?: string | null): boolean {
-  return isOmborxonaRole(role) || hasFullPlatformAccess(role) || canManageSettings(role);
+  return isOmborxonaRole(role) || canViewLeadershipModules(role) || canManageSettings(role);
 }
 
-/** Smena yaratish / xodim ajratish — boshliq + admin */
+/** Smena yaratish / xodim ajratish — ombor boshliq + faqat admin (rahbariyat faqat ko‘radi) */
 export function canManageOmborxona(role?: string | null): boolean {
-  return role === "ombor_rahbar" || hasFullPlatformAccess(role) || canManageSettings(role);
+  return role === "ombor_rahbar" || canManageUsers(role);
 }
 
 export function isDeptHeadRole(role?: string | null): boolean {
@@ -432,17 +464,16 @@ export function isStajyor(role?: string | null): boolean {
 
 /** Tarmoq Holat (koordinator→stajyor + bo‘limlar) */
 export function canViewHolat(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
   return (
-    role === "admin" ||
-    isDirectorRole(role) ||
-    isHrRole(role) ||
-    role === "koordinator" ||
-    role === "mudir"
+    canViewLeadershipModules(r) ||
+    r === "koordinator" ||
+    r === "mudir"
   );
 }
 
 export function canViewHolatFull(role?: string | null): boolean {
-  return role === "admin" || isDirectorRole(role) || isHrRole(role);
+  return canViewLeadershipModules(role);
 }
 
 /** Apteka filiali — mudir, farmasevt, stajyor */

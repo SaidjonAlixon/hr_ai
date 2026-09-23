@@ -364,6 +364,17 @@ export async function warehouseHolatForDate(workDate: string, departmentId?: num
           checkInAt: rec?.checkInAt?.toISOString() ?? null,
           checkOutAt: rec?.checkOutAt?.toISOString() ?? null,
           status: rec?.status ?? "kutilmoqda",
+          statusLabel: (() => {
+            const st = String(rec?.status || "").toLowerCase();
+            if (rec?.checkInAt && !rec?.checkOutAt) return "Ishda";
+            if (st === "late") return "Kechikkan";
+            if (rec?.checkInAt && rec?.checkOutAt && st === "present") return "Kelgan";
+            if (rec?.checkInAt && rec?.checkOutAt) return "Ketdi";
+            if (st === "present") return "Kelgan";
+            if (st === "absent") return "Kelmagan";
+            if (st === "incomplete") return "Ketish yo‘q";
+            return "Kutilmoqda";
+          })(),
         };
       }),
     };

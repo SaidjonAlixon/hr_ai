@@ -34,7 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import { canManageOmborxona, canViewOmborxona } from "@/lib/roles";
+import { canManageOmborxona, canViewLeadershipModules, canViewOmborxona } from "@/lib/roles";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   useOmborHolat,
@@ -75,7 +75,7 @@ function formatIsoHm(iso: string | null) {
 
 function statusTone(status: string) {
   const s = status.toLowerCase();
-  if (s.includes("present") || s.includes("kelgan") || s === "ok") {
+  if (s.includes("present") || s.includes("kelgan") || s.includes("ketdi") || s === "ok" || s.includes("ishda")) {
     return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
   }
   if (s.includes("late") || s.includes("kech")) {
@@ -84,10 +84,43 @@ function statusTone(status: string) {
   if (s.includes("absent") || s.includes("kelmagan")) {
     return "bg-rose-500/15 text-rose-700 dark:text-rose-300";
   }
+  if (s.includes("incomplete") || s.includes("yopilmagan")) {
+    return "bg-sky-500/15 text-sky-800 dark:text-sky-300";
+  }
   if (s.includes("kutil")) {
     return "bg-muted text-muted-foreground";
   }
   return "bg-primary/10 text-primary";
+}
+
+/** Holat badge — DB statusini o‘zbekcha */
+function statusLabelUz(
+  status: string | null | undefined,
+  checkInAt?: string | null,
+  checkOutAt?: string | null,
+): string {
+  const s = String(status || "").toLowerCase().trim();
+  const hasIn = Boolean(checkInAt);
+  const hasOut = Boolean(checkOutAt);
+  if (hasIn && !hasOut) return "Ishda";
+  if (s === "late" || s.includes("kechik")) return "Kechikkan";
+  if (hasIn && hasOut && (s === "present" || s === "ok")) return "Kelgan";
+  if (hasIn && hasOut) return "Ketdi";
+  if (s === "present" || s === "kelgan") return "Kelgan";
+  if (s === "absent" || s.includes("kelmagan")) return "Kelmagan";
+  if (s === "incomplete" || s.includes("yopil") || s === "ketish yo‘q" || s === "ketish yo'q") {
+    return "Ketish yo‘q";
+  }
+  if (s === "leave" || s.includes("ta’til") || s.includes("tatil")) return "Ta’til";
+  if (s === "rest" || s.includes("dam")) return "Dam olish";
+  if (s === "ishda" || s === "open") return "Ishda";
+  if (s === "ketdi" || s === "closed") return "Ketdi";
+  if (!s || s === "kutilmoqda" || s.includes("kutil") || s === "pending") return "Kutilmoqda";
+  // Allaqachon o‘zbekcha matn
+  if (s === "kechikkan" || s === "kelgan" || s === "kelmagan") {
+    return s.charAt(0).toUpperCase() + s.slice(1);
+  }
+  return String(status || "Kutilmoqda");
 }
 
 export default function OmborxonaIshPage() {
@@ -95,16 +128,18 @@ export default function OmborxonaIshPage() {
   const { toast } = useToast();
   const canView = canViewOmborxona(user?.role);
   const canManage = canManageOmborxona(user?.role);
-  const [tab, setTab] = useState<Tab>(canManage ? "smenalar" : "ish");
+  /** Rahbariyat/HR — xodimlar va holatni ko‘radi, o‘zgartirmaydi */
+  const canOversee = canManage || canViewLeadershipModules(user?.role);
+  const [tab, setTab] = useState<Tab>(canManage ? "smenalar" : canOversee ? "xodimlar" : "ish");
   const [holatDate, setHolatDate] = useState(todayYmd());
   const [assignOpen, setAssignOpen] = useState(false);
 
   const meQ = useOmborMe(canView);
   const shiftsQ = useOmborShifts(
-    canView && canManage && (tab === "smenalar" || tab === "xodimlar" || tab === "holat" || assignOpen),
+    canView && canOversee && (tab === "smenalar" || tab === "xodimlar" || tab === "holat" || assignOpen),
   );
-  const staffQ = useOmborStaff(canView && canManage && (tab === "xodimlar" || tab === "smenalar" || assignOpen));
-  const holatQ = useOmborHolat(holatDate, canManage && tab === "holat");
+  const staffQ = useOmborStaff(canView && canOversee && (tab === "xodimlar" || tab === "smenalar" || assignOpen));
+  const holatQ = useOmborHolat(holatDate, canOversee && tab === "holat");
   const mut = useOmborMutations();
 
   const [createOpen, setCreateOpen] = useState(false);
@@ -118,7 +153,7 @@ export default function OmborxonaIshPage() {
   const [histPeriod, setHistPeriod] = useState<OmborHistoryPeriod>("week");
   const [histFilter, setHistFilter] = useState<OmborHistoryFilter>("all");
 
-  const showPersonal = !canManage || tab === "ish";
+  const showPersonal = canOversee ? tab === "ish" : true;
   const historyQ = useOmborHistory(histPeriod, histFilter, canView && showPersonal);
 
   const activeShifts = useMemo(
@@ -141,10 +176,10 @@ export default function OmborxonaIshPage() {
   };
 
   const tabs: { id: Tab; label: string; short: string; show: boolean }[] = [
-    { id: "ish", label: "Ish vaqtlari", short: "Ish", show: true },
-    { id: "smenalar", label: "Smenalar", short: "Smena", show: canManage },
-    { id: "xodimlar", label: "Xodimlar", short: "Xodim", show: canManage },
-    { id: "holat", label: "Holat / nazorat", short: "Holat", show: canManage },
+    { id: "ish", label: "Ish vaqtlari", short: "Ish", show: canOversee },
+    { id: "smenalar", label: "Smenalar", short: "Smena", show: canOversee },
+    { id: "xodimlar", label: "Xodimlar", short: "Xodim", show: canOversee },
+    { id: "holat", label: "Holat / nazorat", short: "Holat", show: canOversee },
   ];
 
   if (!canView) {
@@ -267,7 +302,9 @@ export default function OmborxonaIshPage() {
               <p className="mt-0.5 text-sm leading-snug text-muted-foreground">
                 {canManage
                   ? "Smena, xodimlar va nazorat"
-                  : "Sizning smenangiz va bugungi keldi / ketdi"}
+                  : canOversee
+                    ? "Xodimlar ro‘yxati va holat (faqat ko‘rish)"
+                    : "Sizning smenangiz va bugungi keldi / ketdi"}
               </p>
             </div>
           </div>
@@ -297,7 +334,7 @@ export default function OmborxonaIshPage() {
         </div>
       </header>
 
-      {canManage && (
+      {canOversee && (
         <div className="-mx-3 overflow-x-auto px-3 sm:mx-0 sm:overflow-visible sm:px-0 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <div className="flex min-w-max gap-1 rounded-2xl border border-border bg-muted/30 p-1 sm:min-w-0 sm:w-full">
             {tabs
@@ -323,7 +360,7 @@ export default function OmborxonaIshPage() {
       )}
 
       {/* Xodim yoki boshliqning «Ish vaqtlari» — shaxsiy smena + keldi/ketdi */}
-      {(!canManage || tab === "ish") && (
+      {showPersonal && (
         <div className="space-y-4">
           {meQ.isLoading ? (
             <div className="flex items-center gap-2 rounded-2xl border bg-card p-6 text-sm text-muted-foreground shadow-sm">
@@ -520,7 +557,7 @@ export default function OmborxonaIshPage() {
         </div>
       )}
 
-      {tab === "smenalar" && canManage && (
+      {tab === "smenalar" && canOversee && (
         <div className="space-y-3">
           {shiftsQ.isLoading ? (
             <div className="flex justify-center py-10">
@@ -528,7 +565,9 @@ export default function OmborxonaIshPage() {
             </div>
           ) : activeShifts.length === 0 ? (
             <div className="rounded-2xl border border-dashed bg-muted/20 p-8 text-center text-sm text-muted-foreground">
-              Hali smena yo‘q — «Smena» tugmasi bilan yarating.
+              {canManage
+                ? "Hali smena yo‘q — «Smena» tugmasi bilan yarating."
+                : "Hali smena yo‘q."}
             </div>
           ) : (
             activeShifts.map((s) => (
@@ -551,6 +590,7 @@ export default function OmborxonaIshPage() {
                     <span>{s.memberCount ?? 0} xodim</span>
                   </div>
                 </div>
+                {canManage ? (
                 <div className="grid grid-cols-2 gap-2 sm:flex sm:shrink-0 sm:flex-nowrap">
                   <Button
                     size="sm"
@@ -584,13 +624,14 @@ export default function OmborxonaIshPage() {
                     Yopish
                   </Button>
                 </div>
+                ) : null}
               </div>
             ))
           )}
         </div>
       )}
 
-      {tab === "xodimlar" && canManage && (
+      {tab === "xodimlar" && canOversee && (
         <div className="space-y-2.5">
           {staffQ.isLoading ? (
             <div className="flex justify-center py-10">
@@ -614,7 +655,13 @@ export default function OmborxonaIshPage() {
                     <p className="truncate font-semibold text-foreground">{row.fullName}</p>
                     <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
                       {row.position || "—"}
+                      {row.userRole ? ` · ${row.userRole}` : ""}
                     </p>
+                    {row.login ? (
+                      <p className="mt-0.5 text-xs tabular-nums text-muted-foreground">
+                        Login: {row.login}
+                      </p>
+                    ) : null}
                     <p className="mt-0.5 text-xs text-muted-foreground">
                       {row.assignedShift
                         ? `${row.assignedShift.name} · ${row.assignedShift.startHm}–${row.assignedShift.endHm}`
@@ -623,6 +670,7 @@ export default function OmborxonaIshPage() {
                   </div>
                 </div>
                 {row.assignedShift ? (
+                  canManage ? (
                   <Button
                     size="sm"
                     variant="outline"
@@ -645,6 +693,11 @@ export default function OmborxonaIshPage() {
                   >
                     Ajratish
                   </Button>
+                  ) : (
+                    <span className="inline-flex w-fit rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-medium text-emerald-700 dark:text-emerald-300">
+                      Biriktirilgan
+                    </span>
+                  )
                 ) : (
                   <span className="inline-flex w-fit rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
                     Biriktirilmagan
@@ -656,7 +709,7 @@ export default function OmborxonaIshPage() {
         </div>
       )}
 
-      {tab === "holat" && canManage && (
+      {tab === "holat" && canOversee && (
         <div className="space-y-4">
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-border bg-card px-3 py-3 shadow-sm sm:gap-3 sm:px-4">
             <CalendarDays className="h-4 w-4 shrink-0 text-primary" />
@@ -715,7 +768,9 @@ export default function OmborxonaIshPage() {
 
                   {g.members.length === 0 ? (
                     <p className="px-4 py-5 text-sm text-muted-foreground">
-                      Xodim biriktirilmagan — «Biriktirish» orqali qo‘shing.
+                      {canManage
+                        ? "Xodim biriktirilmagan — «Biriktirish» orqali qo‘shing."
+                        : "Xodim biriktirilmagan."}
                     </p>
                   ) : (
                     <ul className="divide-y divide-border">
@@ -733,11 +788,11 @@ export default function OmborxonaIshPage() {
                             </span>
                             <span
                               className={cn(
-                                "rounded-full px-2 py-0.5 text-[11px] font-semibold capitalize",
+                                "rounded-full px-2 py-0.5 text-[11px] font-semibold",
                                 statusTone(m.status),
                               )}
                             >
-                              {m.status}
+                              {statusLabelUz(m.status, m.checkInAt, m.checkOutAt)}
                             </span>
                           </div>
                         </li>

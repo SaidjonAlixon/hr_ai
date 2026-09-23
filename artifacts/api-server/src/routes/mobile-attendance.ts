@@ -15,7 +15,7 @@ import {
   mobileAttendanceAuditLogsTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { canManageUsers } from "../lib/roles";
+import { canManageKochmaAdmin, canViewKochmaAdmin } from "../lib/roles";
 import { clientIp, findDeviceByCred, readDeviceCookie } from "../lib/device-security";
 import {
   dashboardKpis,
@@ -33,9 +33,17 @@ import { normalizePersonName } from "../lib/dedupe-employees";
 
 const router: IRouter = Router();
 
-function requireAdmin(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
-  if (!canManageUsers(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin", code: "ADMIN_ONLY" });
+function requireView(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
+  if (!canViewKochmaAdmin(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo‘q", code: "FORBIDDEN" });
+    return false;
+  }
+  return true;
+}
+
+function requireManage(req: AuthRequest, res: { status: (n: number) => { json: (b: unknown) => void } }): boolean {
+  if (!canManageKochmaAdmin(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin o‘zgartira oladi", code: "ADMIN_ONLY" });
     return false;
   }
   return true;
@@ -76,7 +84,7 @@ async function resolveDevice(req: AuthRequest) {
 
 /** GET /mobile-attendance/settings */
 router.get("/mobile-attendance/settings", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireView(req, res)) return;
   try {
     res.json({ settings: await getMobileSettings() });
   } catch (err) {
@@ -87,7 +95,7 @@ router.get("/mobile-attendance/settings", requireAuth, async (req: AuthRequest, 
 
 /** PUT /mobile-attendance/settings */
 router.put("/mobile-attendance/settings", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireManage(req, res)) return;
   try {
     const b = req.body || {};
     const patch: Record<string, unknown> = { updatedById: req.userId, updatedAt: new Date() };
@@ -135,7 +143,7 @@ router.put("/mobile-attendance/settings", requireAuth, async (req: AuthRequest, 
 
 /** GET /mobile-attendance/dashboard */
 router.get("/mobile-attendance/dashboard", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireView(req, res)) return;
   try {
     res.json(await dashboardKpis());
   } catch (err) {
@@ -146,7 +154,7 @@ router.get("/mobile-attendance/dashboard", requireAuth, async (req: AuthRequest,
 
 /** GET /mobile-attendance/permissions */
 router.get("/mobile-attendance/permissions", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireView(req, res)) return;
   try {
     const status = String((req.query as { status?: string }).status || "active");
     const baseQuery = db
@@ -233,7 +241,7 @@ router.get("/mobile-attendance/permissions", requireAuth, async (req: AuthReques
 
 /** POST /mobile-attendance/permissions — grant (single or mass) */
 router.post("/mobile-attendance/permissions", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireManage(req, res)) return;
   try {
     const b = req.body || {};
     const employeeIds: number[] = Array.isArray(b.employeeIds)
@@ -330,7 +338,7 @@ router.post(
   "/mobile-attendance/permissions/:id/revoke",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     try {
       const id = Number(req.params.id);
       const [row] = await db
@@ -371,7 +379,7 @@ router.patch(
   "/mobile-attendance/permissions/:id",
   requireAuth,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     try {
       const id = Number(req.params.id);
       const b = req.body || {};
@@ -399,7 +407,7 @@ router.patch(
 
 /** GET /mobile-attendance/live — barcha xodimlar (ko‘chma ruxsatdan mustaqil), online/offline */
 router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireView(req, res)) return;
   try {
     const today = mobileTodayYmd();
     const qEmp = Number((req.query as { employeeId?: string }).employeeId);
@@ -686,7 +694,7 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
 
 /** GET /mobile-attendance/sessions — admin history */
 router.get("/mobile-attendance/sessions", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireView(req, res)) return;
   try {
     const q = req.query as Record<string, string>;
     const from = q.from || mobileTodayYmd();
@@ -767,7 +775,7 @@ router.get(
         res.status(404).json({ error: "Topilmadi" });
         return;
       }
-      const isAdmin = canManageUsers(req.userRole);
+      const isAdmin = canViewKochmaAdmin(req.userRole);
       if (!isAdmin) {
         const emp = await findEmployeeForUser(req.userId!);
         if (!emp || emp.id !== s.employeeId) {
@@ -1477,7 +1485,7 @@ router.post("/mobile-attendance/track", requireAuth, async (req: AuthRequest, re
 
 /** GET /mobile-attendance/employees — tanlash uchun (group=pharmacy|office) */
 router.get("/mobile-attendance/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!requireAdmin(req, res)) return;
+  if (!requireView(req, res)) return;
   try {
     const q = String((req.query as { q?: string }).q || "")
       .trim()

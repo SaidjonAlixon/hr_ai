@@ -76,7 +76,7 @@ import {
 import { downloadDavomatPdf } from "../../lib/davomat-pdf-export";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
-import { canEditDavomatManual, canResetDavomatManual, canViewDavomat } from "../../lib/roles";
+import { canEditDavomatManual, canResetDavomatManual, canViewDavomat, canViewDavomatNotes } from "../../lib/roles";
 import {
   type DavomatStaffFilter,
   matchesStaffFilter,
@@ -325,6 +325,7 @@ export default function DavomatPage() {
   const allowed = canViewDavomat(user?.role);
   const canEdit = canEditDavomatManual(user?.role);
   const canReset = canResetDavomatManual(user?.role);
+  const canSeeNotes = canViewDavomatNotes(user?.role);
 
   const [section, setSection] = useState<Section>("schedule");
   const [calMode, setCalMode] = useState<CalMode>("day");
@@ -1531,7 +1532,9 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">Ketish</th>
                         <th className="px-3 py-2">Ishlagan</th>
                         <TimingHeaderCells workStart={activeWorkHours.start} workEnd={activeWorkHours.end} />
-                        <th className="w-14 px-2 py-2 text-center">Izoh</th>
+                        {canSeeNotes ? (
+                          <th className="w-14 px-2 py-2 text-center">Izoh</th>
+                        ) : null}
                         {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                       </tr>
                     </thead>
@@ -1540,13 +1543,9 @@ export default function DavomatPage() {
                         <tr>
                           <td
                             colSpan={
-                              staffFilter === "all"
-                                ? showRowActions
-                                  ? 13
-                                  : 12
-                                : showRowActions
-                                  ? 12
-                                  : 11
+                              (staffFilter === "all" ? 11 : 10) +
+                              (canSeeNotes ? 1 : 0) +
+                              (showRowActions ? 1 : 0)
                             }
                             className="px-3 py-10 text-center text-sm text-muted-foreground"
                           >
@@ -1598,28 +1597,30 @@ export default function DavomatPage() {
                           <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                             <TimeMetric value={day!.overtimeLabel} />
                           </td>
-                          <td className="px-1 py-2 text-center">
-                            {day!.notes?.trim() ? (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="ghost"
-                                className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
-                                title="Izohni o‘qish"
-                                onClick={() =>
-                                  setNoteView({
-                                    fullName: emp.fullName,
-                                    workDate: selectedDay,
-                                    notes: day!.notes!.trim(),
-                                  })
-                                }
-                              >
-                                <MessageSquareText className="h-3.5 w-3.5" />
-                              </Button>
-                            ) : (
-                              <span className="text-[11px] text-muted-foreground/50">—</span>
-                            )}
-                          </td>
+                          {canSeeNotes ? (
+                            <td className="px-1 py-2 text-center">
+                              {day!.notes?.trim() ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                                  title="Izohni o‘qish"
+                                  onClick={() =>
+                                    setNoteView({
+                                      fullName: emp.fullName,
+                                      workDate: selectedDay,
+                                      notes: day!.notes!.trim(),
+                                    })
+                                  }
+                                >
+                                  <MessageSquareText className="h-3.5 w-3.5" />
+                                </Button>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground/50">—</span>
+                              )}
+                            </td>
+                          ) : null}
                           {showRowActions ? (
                             <td className="px-2 py-2">
                               <div className="flex items-center gap-0.5">
@@ -1666,6 +1667,10 @@ export default function DavomatPage() {
                 employeeCount={filteredEmployees.length}
                 staffFilter={staffFilter}
                 canEdit={canEdit}
+                canSeeNotes={canSeeNotes}
+                onViewNote={(fullName, workDate, notes) =>
+                  setNoteView({ fullName, workDate, notes })
+                }
                 onEdit={openEdit}
               />
             )
@@ -1781,7 +1786,9 @@ export default function DavomatPage() {
                           Ishlagan
                         </th>
                           <TimingHeaderCells workStart={detailWorkHours.start} workEnd={detailWorkHours.end} />
-                          <th className="w-14 px-2 py-2 text-center">Izoh</th>
+                          {canSeeNotes ? (
+                            <th className="w-14 px-2 py-2 text-center">Izoh</th>
+                          ) : null}
                           {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                         </tr>
                       </thead>
@@ -1807,28 +1814,30 @@ export default function DavomatPage() {
                             <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                               <TimeMetric value={d.overtimeLabel} />
                             </td>
-                            <td className="px-1 py-2 text-center">
-                              {d.notes?.trim() ? (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
-                                  title="Izohni o‘qish"
-                                  onClick={() =>
-                                    setNoteView({
-                                      fullName: detailEmployee.fullName,
-                                      workDate: d.date,
-                                      notes: d.notes!.trim(),
-                                    })
-                                  }
-                                >
-                                  <MessageSquareText className="h-3.5 w-3.5" />
-                                </Button>
-                              ) : (
-                                <span className="text-[11px] text-muted-foreground/50">—</span>
-                              )}
-                            </td>
+                            {canSeeNotes ? (
+                              <td className="px-1 py-2 text-center">
+                                {d.notes?.trim() ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                                    title="Izohni o‘qish"
+                                    onClick={() =>
+                                      setNoteView({
+                                        fullName: detailEmployee.fullName,
+                                        workDate: d.date,
+                                        notes: d.notes!.trim(),
+                                      })
+                                    }
+                                  >
+                                    <MessageSquareText className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : (
+                                  <span className="text-[11px] text-muted-foreground/50">—</span>
+                                )}
+                              </td>
+                            ) : null}
                             {showRowActions ? (
                               <td className="px-2 py-2">
                                 <div className="flex items-center gap-0.5">
@@ -2039,6 +2048,8 @@ function PeriodAttendanceGrid({
   employeeCount,
   staffFilter,
   canEdit,
+  canSeeNotes = false,
+  onViewNote,
   onEdit,
 }: {
   title: string;
@@ -2048,6 +2059,8 @@ function PeriodAttendanceGrid({
   employeeCount: number;
   staffFilter: DavomatStaffFilter;
   canEdit: boolean;
+  canSeeNotes?: boolean;
+  onViewNote?: (fullName: string, workDate: string, notes: string) => void;
   onEdit: (emp: DavomatEmployee, date: string) => void;
 }) {
   const { t } = useI18n();
@@ -2265,6 +2278,7 @@ function PeriodAttendanceGrid({
                       </td>
                       {dates.map((date) => {
                         const day = daysByDate.get(date);
+                        const noteText = canSeeNotes ? day?.notes?.trim() : "";
                         return (
                           <td key={date} className="px-1 py-1 align-middle">
                             <WeekCell
@@ -2272,6 +2286,12 @@ function PeriodAttendanceGrid({
                               hours={
                                 emp.workStart && emp.workEnd
                                   ? { start: emp.workStart, end: emp.workEnd }
+                                  : undefined
+                              }
+                              canSeeNotes={canSeeNotes}
+                              onNoteClick={
+                                noteText && onViewNote
+                                  ? () => onViewNote(emp.fullName, date, noteText)
                                   : undefined
                               }
                               onClick={canEdit ? () => onEdit(emp, date) : undefined}
@@ -2295,7 +2315,12 @@ function PeriodAttendanceGrid({
   );
 }
 
-function dayCellTooltip(day: DavomatDayMetrics, hours: { start: string; end: string } | undefined, t: (k: string) => string) {
+function dayCellTooltip(
+  day: DavomatDayMetrics,
+  hours: { start: string; end: string } | undefined,
+  t: (k: string) => string,
+  canSeeNotes = false,
+) {
   const h = hours ?? { start: "09:00", end: "18:00" };
   if (day.status === "rest") {
     return `${t("davomat.rest")}\n${t("davomat.restExtra")}`;
@@ -2319,7 +2344,7 @@ function dayCellTooltip(day: DavomatDayMetrics, hours: { start: string; end: str
   if (!day.restDayWork && day.earlyLeaveLabel && day.earlyLeaveLabel !== "—") {
     lines.push(`${t("davomat.earlyOut")}: ${day.earlyLeaveLabel}`);
   }
-  if (day.notes?.trim()) {
+  if (canSeeNotes && day.notes?.trim()) {
     lines.push(`Izoh: ${day.notes.trim()}`);
   }
   if (day.overtimeLabel && day.overtimeLabel !== "—") {
@@ -2332,10 +2357,14 @@ function WeekCell({
   day,
   onClick,
   hours,
+  canSeeNotes = false,
+  onNoteClick,
 }: {
   day?: DavomatDayMetrics;
   onClick?: () => void;
   hours?: { start: string; end: string };
+  canSeeNotes?: boolean;
+  onNoteClick?: () => void;
 }) {
   const { t } = useI18n();
   const status = day?.status || "absent";
@@ -2350,6 +2379,7 @@ function WeekCell({
     (hasIn || hasOut || status === "incomplete");
   const subline = day ? weekCellSublineParts(day) : null;
   const interactive = Boolean(onClick);
+  const hasNote = Boolean(canSeeNotes && day?.notes?.trim());
 
   return (
     <button
@@ -2357,14 +2387,35 @@ function WeekCell({
       onClick={onClick}
       disabled={!interactive}
       className={cn(
-        "mx-auto flex h-[62px] w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium",
+        "relative mx-auto flex h-[62px] w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium",
         interactive
           ? "transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20"
           : "cursor-default",
         STATUS_STYLE[status] || "bg-muted",
       )}
-      title={day ? dayCellTooltip(day, hours, t) : interactive ? t("ui.edit") : undefined}
+      title={day ? dayCellTooltip(day, hours, t, canSeeNotes) : interactive ? t("ui.edit") : undefined}
     >
+      {hasNote ? (
+        <span
+          role="button"
+          tabIndex={0}
+          className="absolute right-0.5 top-0.5 rounded p-0.5 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-950/40"
+          title="Izohni o‘qish"
+          onClick={(e) => {
+            e.stopPropagation();
+            onNoteClick?.();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onNoteClick?.();
+            }
+          }}
+        >
+          <MessageSquareText className="h-3 w-3" />
+        </span>
+      ) : null}
       <span className="w-full whitespace-nowrap text-center text-[10px] font-bold leading-none">
         {statusLabel}
       </span>

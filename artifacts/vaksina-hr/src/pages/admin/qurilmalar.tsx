@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageUsers } from "@/lib/roles";
+import { canManageUsers, canViewKochmaAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -127,7 +127,8 @@ function ActionBtn({
 export default function AdminQurilmalarPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const allowed = canManageUsers(user?.role);
+  const allowed = canViewKochmaAdmin(user?.role);
+  const canEdit = canManageUsers(user?.role);
 
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");
@@ -240,6 +241,10 @@ export default function AdminQurilmalarPage() {
   };
 
   const run = async (fn: () => Promise<unknown>, okMsg: string) => {
+    if (!canEdit) {
+      toast({ title: "Faqat admin o‘zgartira oladi", variant: "destructive" });
+      return;
+    }
     setBusy(true);
     try {
       await fn();
@@ -255,7 +260,7 @@ export default function AdminQurilmalarPage() {
 
   if (!allowed) {
     return (
-      <div className="py-16 text-center text-muted-foreground">Faqat admin uchun</div>
+      <div className="py-16 text-center text-muted-foreground">Ruxsat yo‘q</div>
     );
   }
 
@@ -269,6 +274,7 @@ export default function AdminQurilmalarPage() {
           </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Device Security — faqat tanlangan / ofis / dorixona scope dagi xodimlar uchun majburiy
+            {!canEdit ? " · Faqat ko‘rish (o‘zgartirish admin)" : ""}
           </p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={() => void load()} disabled={loading}>
@@ -534,7 +540,7 @@ export default function AdminQurilmalarPage() {
                       </span>
                       <Switch
                         checked={u.enforced}
-                        disabled={busy}
+                        disabled={busy || !canEdit}
                         onCheckedChange={(v) =>
                           void run(
                             () => setUserEnforce(u.id, v),
@@ -642,7 +648,7 @@ export default function AdminQurilmalarPage() {
                 />
                 <Button
                   type="button"
-                  disabled={busy}
+                  disabled={busy || !canEdit}
                   onClick={() =>
                     void run(() => saveDeviceSettings(settings), "Sozlamalar saqlandi")
                   }
@@ -811,6 +817,8 @@ export default function AdminQurilmalarPage() {
             <Loader2 className="h-5 w-5 animate-spin" />
           )}
           <DialogFooter className="flex-col items-stretch gap-3 sm:flex-col sm:space-x-0">
+            {canEdit ? (
+              <>
             <p className="text-[11px] font-medium text-muted-foreground">Amallar</p>
             <div className="flex flex-wrap gap-3">
               {detail && !detail.device.isVerified ? (
@@ -903,6 +911,10 @@ export default function AdminQurilmalarPage() {
                 </>
               ) : null}
             </div>
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Faqat ko‘rish — o‘zgartirish admin uchun</p>
+            )}
           </DialogFooter>
         </DialogContent>
       </Dialog>

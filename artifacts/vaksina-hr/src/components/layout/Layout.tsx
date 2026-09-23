@@ -73,7 +73,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -758,16 +758,22 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/users') && !canManageUsers(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/admin/qurilmalar') && !canManageUsers(user.role)) {
+    if (location.startsWith('/admin/qurilmalar') && !canViewKochmaAdmin(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/admin/kochma-davomat') && !canManageUsers(user.role)) {
+    if (location.startsWith('/admin/kochma-davomat') && !canViewKochmaAdmin(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/admin/kochma-xarita') && !canManageUsers(user.role)) {
+    if (location.startsWith('/admin/kochma-xarita') && !canViewKochmaAdmin(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/admin/kochma-live') && !canManageUsers(user.role)) {
+    if (location.startsWith('/admin/kochma-live') && !canViewKochmaAdmin(user.role)) {
+      setLocation('/dashboard');
+    }
+    if (location.startsWith('/omborxona-ish') && !canViewOmborxona(user.role)) {
+      setLocation('/dashboard');
+    }
+    if (location.startsWith('/admin/holat') && !canViewHolat(user.role)) {
       setLocation('/dashboard');
     }
     if (location.startsWith('/logistika') && !canViewLogistika(user.role)) {
@@ -933,6 +939,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const at = faceIdx >= 0 ? faceIdx + 1 : next.length;
       next = [...next.slice(0, at), davomatQrNav, ...next.slice(at)];
     }
+    // Omborxona — rahbariyat/HR ham (HR oversight navda yo‘q)
+    if (canViewOmborxona(role) && !next.some((i) => i.path === '/omborxona-ish')) {
+      next = [...next, omborIshNav];
+    }
     if (
       (role === 'koordinator' ||
         role === 'recruiter' ||
@@ -980,9 +990,15 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           ...next.slice(at),
         ];
       }
+    } else {
+      next = next.filter((i) => i.path !== '/admin/users');
+    }
+    // Qurilmalar + Ko‘chma — rahbariyat / HR
+    if (canViewKochmaAdmin(role)) {
       if (!next.some((i) => i.path === '/admin/qurilmalar')) {
         const usersIdx = next.findIndex((i) => i.path === '/admin/users');
-        const at = usersIdx >= 0 ? usersIdx + 1 : next.length;
+        const holatIdx = next.findIndex((i) => i.path === '/admin/holat');
+        const at = usersIdx >= 0 ? usersIdx + 1 : holatIdx >= 0 ? holatIdx + 1 : next.length;
         next = [
           ...next.slice(0, at),
           { name: 'Qurilmalar', path: '/admin/qurilmalar', icon: MonitorSmartphone },
@@ -1022,12 +1038,19 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     } else {
       next = next.filter(
         (i) =>
-          i.path !== '/admin/users' &&
           i.path !== '/admin/qurilmalar' &&
           i.path !== '/admin/kochma-davomat' &&
           i.path !== '/admin/kochma-xarita' &&
           i.path !== '/admin/kochma-live',
       );
+    }
+    // Hisobot — rahbariyat / HR (+ koordinator/mudir canViewHolat)
+    if (canViewHolat(role)) {
+      if (!next.some((i) => i.path === '/admin/holat')) {
+        next = [...next, { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 }];
+      }
+    } else {
+      next = next.filter((i) => i.path !== '/admin/holat');
     }
     // Alohida /davomat-kochma menyu yo‘q — ruxsat asosiy Davomatda yashirin
     next = next.filter((i) => i.path !== '/davomat-kochma');
@@ -1553,6 +1576,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     : withFace.filter((item) => !isHrRecruitmentPath(item.path))
   )
     .filter((item) => item.path !== '/admin/users' || canManageUsers(userRole))
+    .filter((item) => item.path !== '/admin/qurilmalar' || canViewKochmaAdmin(userRole))
+    .filter((item) => item.path !== '/admin/kochma-davomat' || canViewKochmaAdmin(userRole))
+    .filter((item) => item.path !== '/admin/kochma-xarita' || canViewKochmaAdmin(userRole))
+    .filter((item) => item.path !== '/admin/kochma-live' || canViewKochmaAdmin(userRole))
+    .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/xatoliklar' || canViewDavomatXatoliklar(userRole))

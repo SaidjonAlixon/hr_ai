@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageUsers } from "@/lib/roles";
+import { canViewKochmaAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -14,14 +14,17 @@ import {
 } from "@/components/davomat/MobileRouteMap";
 import { ExternalMapsLinks } from "@/components/davomat/ExternalMapsLinks";
 import {
+  fetchMobilePermissions,
   fetchMobileSessionDetail,
   fetchMobileSessions,
+  type MobilePermissionRow,
 } from "@/lib/mobile-attendance-api";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
   Loader2,
+  MapPin,
   Navigation,
   Radio,
   RefreshCw,
@@ -44,6 +47,16 @@ type SessionRow = {
   position?: string | null;
   durationMin?: number | null;
   routeTrackingEnabled?: boolean;
+};
+
+type PermEmp = {
+  id: number;
+  name: string;
+  position: string | null;
+  location: string | null;
+  tracking: boolean;
+  hasSession: boolean;
+  sessionStatus: string | null;
 };
 
 function todayYmdLocal(): string {
@@ -130,10 +143,11 @@ function pointsFromSessionRow(s: SessionRow): RoutePoint[] {
 export default function AdminKochmaXaritaPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const allowed = canManageUsers(user?.role);
+  const allowed = canViewKochmaAdmin(user?.role);
 
   const [date, setDate] = useState(todayYmdLocal);
   const [empId, setEmpId] = useState<number | "">("");
+  const [perms, setPerms] = useState<MobilePermissionRow[]>([]);
   const [daySessions, setDaySessions] = useState<SessionRow[]>([]);
   const [empSessions, setEmpSessions] = useState<SessionRow[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
@@ -142,30 +156,53 @@ export default function AdminKochmaXaritaPage() {
   const [loadingMap, setLoadingMap] = useState(false);
   const [empQ, setEmpQ] = useState("");
 
-  const employees = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; position: string | null }>();
+  const employees = useMemo((): PermEmp[] => {
+    const sessByEmp = new Map<number, SessionRow>();
     for (const s of daySessions) {
-      if (!map.has(s.employeeId)) {
-        map.set(s.employeeId, {
-          id: s.employeeId,
-          name: s.fullName || `Xodim #${s.employeeId}`,
-          position: s.position ?? null,
-        });
+      const prev = sessByEmp.get(s.employeeId);
+      if (!prev || (s.status === "open" && prev.status !== "open")) {
+        sessByEmp.set(s.employeeId, s);
       }
     }
     const q = empQ.trim().toLowerCase();
-    return [...map.values()]
-      .filter((e) => !q || e.name.toLowerCase().includes(q) || String(e.position || "").toLowerCase().includes(q))
-      .sort((a, b) => a.name.localeCompare(b.name, "uz"));
-  }, [daySessions, empQ]);
+    return perms
+      .map((p) => {
+        const sess = sessByEmp.get(p.employeeId);
+        return {
+          id: p.employeeId,
+          name: p.fullName || `Xodim #${p.employeeId}`,
+          position: p.position ?? null,
+          location: p.location ?? null,
+          tracking: Boolean(p.routeTrackingEnabled),
+          hasSession: Boolean(sess),
+          sessionStatus: sess?.status ?? null,
+        };
+      })
+      .filter(
+        (e) =>
+          !q ||
+          e.name.toLowerCase().includes(q) ||
+          String(e.position || "").toLowerCase().includes(q) ||
+          String(e.location || "").toLowerCase().includes(q),
+      )
+      .sort((a, b) => {
+        if (a.hasSession !== b.hasSession) return a.hasSession ? -1 : 1;
+        return a.name.localeCompare(b.name, "uz");
+      });
+  }, [perms, daySessions, empQ]);
 
   const selectedEmp = employees.find((e) => e.id === empId);
-  const selectedSession = empSessions.find((s) => s.id === sessionId) || daySessions.find((s) => s.id === sessionId);
+  const selectedSession =
+    empSessions.find((s) => s.id === sessionId) || daySessions.find((s) => s.id === sessionId);
 
   const loadBase = useCallback(async () => {
     setLoadingList(true);
     try {
-      const s = await fetchMobileSessions({ from: date, to: date });
+      const [p, s] = await Promise.all([
+        fetchMobilePermissions("active"),
+        fetchMobileSessions({ from: date, to: date }),
+      ]);
+      setPerms(p.permissions);
       setDaySessions(s.sessions as SessionRow[]);
     } catch (e) {
       toast({
@@ -189,6 +226,11 @@ export default function AdminKochmaXaritaPage() {
       setPoints([]);
       return;
     }
+    // Ruxsat yo‘q xodim tanlanmasin
+    if (!perms.some((p) => p.employeeId === empId)) {
+      setEmpId("");
+      return;
+    }
     void (async () => {
       setLoadingList(true);
       try {
@@ -207,7 +249,7 @@ export default function AdminKochmaXaritaPage() {
         setLoadingList(false);
       }
     })();
-  }, [empId, date, toast]);
+  }, [empId, date, perms, toast]);
 
   useEffect(() => {
     if (!sessionId) {
@@ -244,7 +286,7 @@ export default function AdminKochmaXaritaPage() {
   const distanceLabel = formatRouteDistance(distanceM);
 
   if (!allowed) {
-    return <div className="p-6 text-sm text-muted-foreground">Faqat admin uchun.</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Ruxsat yo‘q.</div>;
   }
 
   return (
@@ -265,10 +307,11 @@ export default function AdminKochmaXaritaPage() {
             </div>
             <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl">
               <Navigation className="h-6 w-6 text-sky-600" />
-              Yo‘nalish xaritasi
+              Ko‘chma xarita
             </h1>
             <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Tanlangan kun va xodimning GPS yo‘li — boshlanish (A) dan tugash (B) gacha.
+              Faqat Ko‘chma davomatga ruxsat berilgan xodimlar — tanlang, qayerdan kelgani / ketgani
+              to‘liq GPS yo‘li (A → B).
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -318,12 +361,23 @@ export default function AdminKochmaXaritaPage() {
             />
           </div>
           <div>
-            <div className="mb-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Xodim
+            <div className="mb-1.5 flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Ruxsat berilganlar
+              </span>
+              <Badge variant="secondary" className="rounded-full text-[10px] font-normal">
+                {employees.length}
+              </Badge>
             </div>
-            <div className="max-h-48 space-y-1 overflow-y-auto rounded-xl border border-border p-1">
-              {employees.length === 0 ? (
-                <p className="px-2 py-6 text-center text-xs text-muted-foreground">Ruxsat berilgan xodim yo‘q</p>
+            <div className="max-h-[min(52vh,420px)] space-y-1 overflow-y-auto rounded-xl border border-border p-1">
+              {loadingList && employees.length === 0 ? (
+                <div className="flex justify-center py-8">
+                  <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+                </div>
+              ) : employees.length === 0 ? (
+                <p className="px-2 py-6 text-center text-xs text-muted-foreground">
+                  Ko‘chma davomatga ruxsat berilgan xodim yo‘q. Avval «Ko‘chma davomat»da ruxsat bering.
+                </p>
               ) : (
                 employees.map((e) => (
                   <button
@@ -337,8 +391,32 @@ export default function AdminKochmaXaritaPage() {
                         : "hover:bg-muted",
                     )}
                   >
-                    <span className="truncate">{e.name}</span>
-                    <span className="truncate text-[11px] text-muted-foreground">{e.position || "—"}</span>
+                    <span className="flex items-center justify-between gap-2">
+                      <span className="truncate">{e.name}</span>
+                      {e.hasSession ? (
+                        <Badge
+                          className={cn(
+                            "shrink-0 rounded-md border-0 px-1.5 py-0 text-[9px] font-semibold",
+                            e.sessionStatus === "open"
+                              ? "bg-emerald-600 text-white"
+                              : "bg-sky-100 text-sky-800 dark:bg-sky-950/50 dark:text-sky-200",
+                          )}
+                        >
+                          {e.sessionStatus === "open" ? "Ishda" : "GPS"}
+                        </Badge>
+                      ) : (
+                        <span className="shrink-0 text-[10px] text-muted-foreground/70">—</span>
+                      )}
+                    </span>
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {e.position || "—"}
+                      {e.location ? ` · ${e.location}` : ""}
+                    </span>
+                    <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <MapPin className="h-3 w-3" />
+                      Tracking {e.tracking ? "ON" : "OFF"}
+                      {e.hasSession ? " · bugun yo‘l bor" : " · bugun sessiyasi yo‘q"}
+                    </span>
                   </button>
                 ))
               )}
@@ -397,17 +475,33 @@ export default function AdminKochmaXaritaPage() {
             <div className="rounded-xl border border-sky-200/80 bg-gradient-to-br from-sky-50/90 to-indigo-50/40 p-3 text-xs dark:border-sky-900 dark:from-sky-950/40 dark:to-indigo-950/30">
               <div className="font-semibold text-foreground">{selectedEmp?.name}</div>
               <div className="mt-2 space-y-1 text-muted-foreground">
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-bold text-white">
+                <div className="flex items-start gap-1.5">
+                  <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-[9px] font-bold text-white">
                     A
                   </span>
-                  Boshlanish: {fmtTime(selectedSession.startTime)}
+                  <div>
+                    <div>Boshlanish: {fmtTime(selectedSession.startTime)}</div>
+                    <div className="font-mono text-[10px] tabular-nums opacity-80">
+                      {Number(selectedSession.startLatitude).toFixed(5)},{" "}
+                      {Number(selectedSession.startLongitude).toFixed(5)}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white">
+                <div className="flex items-start gap-1.5">
+                  <span className="mt-0.5 inline-flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-rose-600 text-[9px] font-bold text-white">
                     B
                   </span>
-                  Yakun: {fmtTime(selectedSession.endTime)}
+                  <div>
+                    <div>Yakun: {fmtTime(selectedSession.endTime)}</div>
+                    {selectedSession.endLatitude != null && selectedSession.endLongitude != null ? (
+                      <div className="font-mono text-[10px] tabular-nums opacity-80">
+                        {Number(selectedSession.endLatitude).toFixed(5)},{" "}
+                        {Number(selectedSession.endLongitude).toFixed(5)}
+                      </div>
+                    ) : (
+                      <div className="text-[10px] opacity-70">Hali yopilmagan</div>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-1.5 pt-1 font-semibold text-sky-800 dark:text-sky-200">
                   <Route className="h-3.5 w-3.5" />
@@ -420,7 +514,7 @@ export default function AdminKochmaXaritaPage() {
               </div>
               <div className="mt-3 border-t border-sky-200/60 pt-3 dark:border-sky-900">
                 <p className="mb-1.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Aniq joylar
+                  Aniq joylar (xarita / Google)
                 </p>
                 <ExternalMapsLinks points={points} compact />
               </div>
@@ -439,10 +533,10 @@ export default function AdminKochmaXaritaPage() {
             className="min-h-[min(74vh,720px)] w-full"
             emptyHint={
               !empId
-                ? "Chapdan xodimni tanlang — A→B yo‘nalish chiqadi"
+                ? "Chapdan ruxsat berilgan xodimni tanlang — A→B yo‘nalish chiqadi"
                 : !sessionId
-                  ? "Sessiya tanlang yoki shu kuni GPS yo‘q"
-                  : "Bu sessiyada GPS hali yo‘q"
+                  ? "Shu kuni GPS sessiyasi yo‘q — xodim Davomatda Keldim bosganida chiqadi"
+                  : "Bu sessiyada GPS nuqtalari hali yo‘q"
             }
           />
         </section>

@@ -138,6 +138,7 @@ export function canViewFullDavomatDashboard(role?: string | null): boolean {
   return (
     hasFullPlatformAccess(r) ||
     isDirectorRole(r) ||
+    r === "direktor_yordamchisi" ||
     r === "moliya" ||
     r === "moliya_rahbar" ||
     r === "hr_direktor" ||
@@ -147,6 +148,25 @@ export function canViewFullDavomatDashboard(role?: string | null): boolean {
     r === "hr_auditor" ||
     r === "recruiter"
   );
+}
+
+/**
+ * Direktor, asoschi, rahbariyat (direktor yordamchisi), HR oilasi, admin.
+ * Logistika / Omborxona ko‘rish / Ko‘chma / Qurilmalar / Hisobot.
+ */
+export function canViewLeadershipModules(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return (
+    hasFullPlatformAccess(r) ||
+    isDirectorRole(r) ||
+    r === "direktor_yordamchisi" ||
+    isHrRole(r)
+  );
+}
+
+/** Davomat erta-ketish / qo‘lda izoh — rahbariyat va HR (auditor ham) */
+export function canViewDavomatNotes(role?: string | null): boolean {
+  return canViewLeadershipModules(role);
 }
 
 /** Davomat: to‘liq dashboard rollari + SB + bo‘lim boshliqlari */
@@ -279,17 +299,16 @@ export function canExtendVacancy(role?: string | null): boolean {
 
 /** Tarmoq Holat (koordinator→stajyor + bo‘limlar) */
 export function canViewHolat(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
   return (
-    role === "admin" ||
-    isDirectorRole(role) ||
-    isHrRole(role) ||
-    role === "koordinator" ||
-    role === "mudir"
+    canViewLeadershipModules(r) ||
+    r === "koordinator" ||
+    r === "mudir"
   );
 }
 
 export function canViewHolatFull(role?: string | null): boolean {
-  return role === "admin" || isDirectorRole(role) || isHrRole(role);
+  return canViewLeadershipModules(role);
 }
 
 /** Apteka filiali — mudir, farmasevt, stajyor */
@@ -307,11 +326,19 @@ export function canAccessBoglanish(role?: string | null): boolean {
   return role === "mudir" || role === "koordinator" || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
-/**
- * VaksinaMed Logistika SSO — hozircha faqat admin (boshqa rollar yo‘q).
- */
+/** VaksinaMed Logistika SSO — admin + rahbariyat + HR */
 export function canViewLogistika(role?: string | null): boolean {
-  return String(role || "").trim().toLowerCase() === "admin";
+  return canViewLeadershipModules(role);
+}
+
+/** Qurilmalar + Ko‘chma — ko‘rish (admin + rahbariyat + HR) */
+export function canViewKochmaAdmin(role?: string | null): boolean {
+  return canViewLeadershipModules(role);
+}
+
+/** Qurilmalar + Ko‘chma — o‘zgartirish faqat admin */
+export function canManageKochmaAdmin(role?: string | null): boolean {
+  return canManageUsers(role);
 }
 
 export function canAccessKirish(role?: string | null): boolean {

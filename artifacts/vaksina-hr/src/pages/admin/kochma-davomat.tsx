@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageUsers } from "@/lib/roles";
+import { canManageUsers, canViewKochmaAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,7 +109,8 @@ function Kpi({
 export default function AdminKochmaDavomatPage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const allowed = canManageUsers(user?.role);
+  const allowed = canViewKochmaAdmin(user?.role);
+  const canEdit = canManageUsers(user?.role);
 
   const [loading, setLoading] = useState(true);
   const [dash, setDash] = useState<Awaited<ReturnType<typeof fetchMobileDashboard>> | null>(null);
@@ -250,7 +251,7 @@ export default function AdminKochmaDavomatPage() {
   };
 
   const toggleModule = async (enabled: boolean) => {
-    if (!settings) return;
+    if (!canEdit || !settings) return;
     try {
       const r = await saveMobileSettings({ ...settings, enabled });
       setSettings(r.settings);
@@ -262,7 +263,7 @@ export default function AdminKochmaDavomatPage() {
   };
 
   if (!allowed) {
-    return <div className="p-6 text-sm text-muted-foreground">Faqat admin uchun.</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Ruxsat yo‘q.</div>;
   }
 
   return (
@@ -273,7 +274,7 @@ export default function AdminKochmaDavomatPage() {
           <div className="min-w-0">
             <div className="mb-1.5 inline-flex items-center gap-1.5 rounded-full border border-sky-200/70 bg-sky-100/60 px-2.5 py-0.5 text-[11px] font-semibold text-sky-800 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-200">
               <span className="h-1.5 w-1.5 rounded-full bg-sky-500" aria-hidden />
-              Admin · GPS
+              {canEdit ? "Admin · GPS" : "Ko‘rish · GPS"}
             </div>
             <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight text-foreground sm:text-2xl">
               <MapPinned className="h-6 w-6 text-sky-600 dark:text-sky-400" />
@@ -329,10 +330,13 @@ export default function AdminKochmaDavomatPage() {
                   setSettingsOpen(true);
                 })();
               }}
+              disabled={!canEdit}
+              title={canEdit ? undefined : "Faqat admin o‘zgartira oladi"}
             >
               <Settings2 className="mr-1.5 h-4 w-4" />
               Sozlamalar
             </Button>
+            {canEdit ? (
             <Button
               size="sm"
               className="h-9 rounded-xl"
@@ -347,6 +351,7 @@ export default function AdminKochmaDavomatPage() {
               <Plus className="mr-1.5 h-4 w-4" />
               Ruxsat berish
             </Button>
+            ) : null}
           </div>
         </div>
 
@@ -372,6 +377,7 @@ export default function AdminKochmaDavomatPage() {
           <Switch
             checked={Boolean(dash?.settingsEnabled)}
             onCheckedChange={(v) => void toggleModule(v)}
+            disabled={!canEdit}
           />
         </div>
       </section>
@@ -404,10 +410,14 @@ export default function AdminKochmaDavomatPage() {
               </Badge>
             ) : null}
           </CardTitle>
+          {canEdit ? (
           <Button size="sm" variant="ghost" className="h-8 rounded-lg text-xs" onClick={() => setGrantOpen(true)}>
             <UserPlus className="mr-1 h-3.5 w-3.5" />
             Qo‘shish
           </Button>
+          ) : (
+            <span className="text-xs text-muted-foreground">Faqat ko‘rish</span>
+          )}
         </CardHeader>
         <CardContent className="p-0">
           {loading ? (
@@ -423,7 +433,7 @@ export default function AdminKochmaDavomatPage() {
               <p className="mt-1 max-w-sm text-sm text-muted-foreground">
                 Xodimni tanlab «Ruxsat berish» orqali ko‘chma davomatni yoqing.
               </p>
-              <Button className="mt-5 rounded-xl" onClick={() => setGrantOpen(true)}>
+              <Button className="mt-5 rounded-xl" onClick={() => setGrantOpen(true)} disabled={!canEdit}>
                 <Plus className="mr-1.5 h-4 w-4" />
                 Birinchi ruxsat
               </Button>
@@ -475,7 +485,9 @@ export default function AdminKochmaDavomatPage() {
                         <div className="flex items-center gap-2">
                           <Switch
                             checked={p.routeTrackingEnabled}
+                            disabled={!canEdit}
                             onCheckedChange={(v) => {
+                              if (!canEdit) return;
                               void patchMobilePermission(p.id, { routeTrackingEnabled: v }).then(
                                 reload,
                               );
@@ -522,6 +534,7 @@ export default function AdminKochmaDavomatPage() {
                               Xarita
                             </Button>
                           ) : null}
+                          {canEdit ? (
                           <Button
                             size="sm"
                             variant="ghost"
@@ -533,6 +546,7 @@ export default function AdminKochmaDavomatPage() {
                           >
                             Bekor
                           </Button>
+                          ) : null}
                         </div>
                       </td>
                     </tr>

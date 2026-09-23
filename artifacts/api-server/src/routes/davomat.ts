@@ -22,6 +22,7 @@ import {
   canEditDavomatManual,
   canResetDavomatManual,
   canViewDavomatXatoliklar,
+  canViewDavomatNotes,
   isDirectorRole,
   hasFullPlatformAccess,
   canViewFullDavomatDashboard,
@@ -166,6 +167,20 @@ function requireDavomat(req: AuthRequest, res: { status: (n: number) => { json: 
     return false;
   }
   return true;
+}
+
+/** Erta-ketish izohlari — faqat rahbariyat / HR / auditor */
+function redactReportNotes<T extends { employees: Array<{ days: Array<{ notes?: string | null }> }> }>(
+  report: T,
+  role?: string | null,
+): T {
+  if (canViewDavomatNotes(role)) return report;
+  for (const e of report.employees) {
+    for (const d of e.days) {
+      d.notes = null;
+    }
+  }
+  return report;
 }
 
 function todayTashkent(): string {
@@ -1023,7 +1038,8 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
       employees.map((e) => e.id),
     );
     const defs = await getEffectiveShiftDefs();
-    res.json(await buildReportWithJavob(employees, records, from, to, defs));
+    const report = await buildReportWithJavob(employees, records, from, to, defs);
+    res.json(redactReportNotes(report, req.userRole));
   } catch (err) {
     console.error("GET /davomat error:", err);
     res.status(503).json({ error: "Davomat yuklanmadi" });
@@ -3687,7 +3703,10 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       to,
       employees.map((e) => e.id),
     );
-    const report = await buildReportWithJavob(employees, records, from, to, await getEffectiveShiftDefs());
+    const report = redactReportNotes(
+      await buildReportWithJavob(employees, records, from, to, await getEffectiveShiftDefs()),
+      req.userRole,
+    );
 
     // Kelmaganlar Excel: koordinator (filtrlangan smenada ham to‘liq zanjir)
     const staffLinks = await loadStaffFromUsers("active");

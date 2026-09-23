@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageUsers } from "@/lib/roles";
+import { canViewKochmaAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -83,7 +83,7 @@ function workplaceOf(l: LiveRow): "pharmacy" | "office" {
 export default function AdminKochmaLivePage() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const allowed = canManageUsers(user?.role);
+  const allowed = canViewKochmaAdmin(user?.role);
 
   const [liveList, setLiveList] = useState<LiveRow[]>([]);
   const [onlineCount, setOnlineCount] = useState(0);
@@ -210,7 +210,7 @@ export default function AdminKochmaLivePage() {
   }, [points, selected]);
 
   if (!allowed) {
-    return <div className="p-6 text-sm text-muted-foreground">Faqat admin uchun.</div>;
+    return <div className="p-6 text-sm text-muted-foreground">Ruxsat yo‘q.</div>;
   }
 
   return (

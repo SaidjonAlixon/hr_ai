@@ -3,7 +3,7 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { db, employeesTable, attendanceRecordsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { canManageSettings, hasFullPlatformAccess } from "../lib/roles";
+import { canManageUsers, canViewLeadershipModules } from "../lib/roles";
 import {
   OMBORXONA_DEPARTMENT_NAME,
   ensureOmborxonaDepartmentId,
@@ -76,15 +76,15 @@ function dayKind(status?: string | null): "late" | "absent" | "ok" | "other" {
 const router: IRouter = Router();
 
 function canManageOmbor(role?: string | null): boolean {
-  return (
-    isOmborHeadRole(role) ||
-    hasFullPlatformAccess(role) ||
-    canManageSettings(role)
-  );
+  return isOmborHeadRole(role) || canManageUsers(role);
 }
 
 function canViewOmbor(role?: string | null): boolean {
-  return isOmborStaffRole(role) || canManageOmbor(role);
+  return isOmborStaffRole(role) || canManageOmbor(role) || canViewLeadershipModules(role);
+}
+
+function canViewOmborHolat(role?: string | null): boolean {
+  return canManageOmbor(role) || canViewLeadershipModules(role);
 }
 
 router.get("/omborxona/meta", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -98,7 +98,7 @@ router.get("/omborxona/meta", requireAuth, async (req: AuthRequest, res): Promis
       departmentId,
       departmentName: OMBORXONA_DEPARTMENT_NAME,
       canManage: canManageOmbor(req.userRole),
-      canViewHolat: canManageOmbor(req.userRole),
+      canViewHolat: canViewOmborHolat(req.userRole),
       checkoutGraceHours: 2,
     });
   } catch (err) {
@@ -494,7 +494,7 @@ router.get("/omborxona/me/history", requireAuth, async (req: AuthRequest, res): 
 });
 
 router.get("/omborxona/holat", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageOmbor(req.userRole)) {
+  if (!canViewOmborHolat(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }

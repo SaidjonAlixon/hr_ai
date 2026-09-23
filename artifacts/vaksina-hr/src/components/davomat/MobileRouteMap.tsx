@@ -1,6 +1,12 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import {
+  haversineMeters,
+  sampleArrowPositions,
+  snapRouteToRoads,
+  type LatLng,
+} from "@/lib/osrm-route";
 
 export type RoutePoint = {
   lat: number;
@@ -28,6 +34,7 @@ type Props = {
 
 const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
 const TASHKENT: [number, number] = [41.3111, 69.2797];
+const ARROW_EVERY_M = 15;
 
 function popupHtml(p: RoutePoint): string {
   const kind =
@@ -46,21 +53,10 @@ function popupHtml(p: RoutePoint): string {
   }</div>`;
 }
 
-function haversineM(a: RoutePoint, b: RoutePoint): number {
-  const R = 6371000;
-  const toRad = (d: number) => (d * Math.PI) / 180;
-  const dLat = toRad(b.lat - a.lat);
-  const dLon = toRad(b.lng - a.lng);
-  const x =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(x));
-}
-
 export function routeDistanceMeters(points: RoutePoint[]): number {
   let total = 0;
   for (let i = 1; i < points.length; i++) {
-    total += haversineM(points[i - 1]!, points[i]!);
+    total += haversineMeters(points[i - 1]!, points[i]!);
   }
   return total;
 }
@@ -116,6 +112,24 @@ function liveIcon() {
   });
 }
 
+/** Yo‘nalish strelkasi — yo‘l markazida, har ~15 m */
+function arrowIcon(bearing: number, liveMode: boolean) {
+  const fill = liveMode ? "#0369a1" : "#0369a1";
+  return L.divIcon({
+    className: "",
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    html: `<div style="
+      width:18px;height:18px;display:flex;align-items:center;justify-content:center;
+      transform:rotate(${bearing}deg);filter:drop-shadow(0 1px 2px rgba(0,0,0,.45));
+    ">
+      <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden>
+        <path d="M12 3 L20 19 L12 15 L4 19 Z" fill="${fill}" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/>
+      </svg>
+    </div>`,
+  });
+}
+
 function validCoord(lat: unknown, lng: unknown): lat is number {
   const a = Number(lat);
   const b = Number(lng);
@@ -137,6 +151,9 @@ export function MobileRouteMap({
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
   const userPanned = useRef(false);
+  const [roadPath, setRoadPath] = useState<LatLng[]>([]);
+  const [snapped, setSnapped] = useState(false);
+  const [routing, setRouting] = useState(false);
 
   const cleanPoints = useMemo(
     () =>
@@ -165,8 +182,33 @@ export function MobileRouteMap({
   };
 
   const distanceLabel = useMemo(() => {
-    if (cleanPoints.length < 2) return null;
-    return formatRouteDistance(routeDistanceMeters(cleanPoints));
+    const path = roadPath.length >= 2 ? roadPath : cleanPoints;
+    if (path.length < 2) return null;
+    return formatRouteDistance(routeDistanceMeters(path as RoutePoint[]));
+  }, [roadPath, cleanPoints]);
+
+  // Yo‘l bo‘ylab snap (OSRM)
+  useEffect(() => {
+    if (cleanPoints.length < 2) {
+      setRoadPath(cleanPoints.map((p) => ({ lat: p.lat, lng: p.lng })));
+      setSnapped(false);
+      setRouting(false);
+      return;
+    }
+
+    const ac = new AbortController();
+    setRouting(true);
+    void snapRouteToRoads(
+      cleanPoints.map((p) => ({ lat: p.lat, lng: p.lng })),
+      ac.signal,
+    ).then((r) => {
+      if (ac.signal.aborted) return;
+      setRoadPath(r.path);
+      setSnapped(r.snapped);
+      setRouting(false);
+    });
+
+    return () => ac.abort();
   }, [cleanPoints]);
 
   useEffect(() => {
@@ -222,36 +264,44 @@ export function MobileRouteMap({
       return;
     }
 
-    const latLngs: L.LatLngExpression[] = cleanPoints.map((p) => [p.lat, p.lng]);
+    const drawPath = roadPath.length >= 2 ? roadPath : cleanPoints;
+    const latLngs: L.LatLngExpression[] = drawPath.map((p) => [p.lat, p.lng]);
 
     if (latLngs.length >= 2) {
+      // Yo‘l uslubi: keng ochiq + ichki yo‘l + oq markaz chiziq
       L.polyline(latLngs, {
-        color: liveMode ? "#38bdf8" : "#38bdf8",
-        weight: 8,
-        opacity: 0.3,
+        color: "#0ea5e9",
+        weight: 14,
+        opacity: 0.28,
         lineCap: "round",
         lineJoin: "round",
       }).addTo(group);
       L.polyline(latLngs, {
-        color: liveMode ? "#0369a1" : "#0284c7",
-        weight: 4,
+        color: liveMode ? "#0284c7" : "#0369a1",
+        weight: 7,
         opacity: 0.95,
         lineCap: "round",
         lineJoin: "round",
       }).addTo(group);
-    }
+      L.polyline(latLngs, {
+        color: "#ffffff",
+        weight: 1.8,
+        opacity: 0.85,
+        dashArray: "10 10",
+        lineCap: "butt",
+        lineJoin: "round",
+      }).addTo(group);
 
-    for (const p of cleanPoints) {
-      if (p.kind === "start" || p.kind === "end" || p.kind === "live") continue;
-      L.circleMarker([p.lat, p.lng], {
-        radius: liveMode ? 3.5 : 5,
-        color: "#fff",
-        fillColor: "#0ea5e9",
-        fillOpacity: 0.9,
-        weight: 1.5,
-      })
-        .bindPopup(popupHtml(p))
-        .addTo(group);
+      // Har ~15 m strelka
+      const arrows = sampleArrowPositions(drawPath, ARROW_EVERY_M);
+      for (const a of arrows) {
+        L.marker([a.lat, a.lng], {
+          icon: arrowIcon(a.bearing, liveMode),
+          interactive: false,
+          keyboard: false,
+          zIndexOffset: 200,
+        }).addTo(group);
+      }
     }
 
     const start = cleanPoints.find((p) => p.kind === "start") || cleanPoints[0]!;
@@ -286,7 +336,7 @@ export function MobileRouteMap({
 
       if (endCand && (endCand.lat !== start.lat || endCand.lng !== start.lng || cleanPoints.length > 1)) {
         L.marker([endCand.lat, endCand.lng], {
-          icon: pinIcon("B", "#dc2626", "Tugash"),
+          icon: pinIcon("B", "#dc2626", liveMode ? "Hozir" : "Tugash"),
           zIndexOffset: 650,
         })
           .bindPopup(popupHtml({ ...endCand, kind: "end" }))
@@ -298,7 +348,7 @@ export function MobileRouteMap({
     }
 
     window.setTimeout(() => map.invalidateSize(), 40);
-  }, [cleanPoints, emptyCenter, emptyZoom, liveMode, followLive]);
+  }, [cleanPoints, roadPath, emptyCenter, emptyZoom, liveMode, followLive]);
 
   return (
     <div className={className} style={{ height, position: "relative", minHeight: 360 }}>
@@ -308,7 +358,12 @@ export function MobileRouteMap({
       />
       {distanceLabel ? (
         <div className="pointer-events-none absolute left-3 top-3 z-[1000] rounded-xl border border-border/80 bg-background/95 px-3 py-1.5 text-xs font-semibold shadow-md backdrop-blur">
-          A → B: {distanceLabel}
+          A → {liveMode ? "●" : "B"}: {distanceLabel}
+          {snapped ? (
+            <span className="ml-1.5 font-normal text-emerald-700 dark:text-emerald-400">· yo‘l bo‘ylab</span>
+          ) : routing ? (
+            <span className="ml-1.5 font-normal text-muted-foreground">· hisoblanmoqda…</span>
+          ) : null}
         </div>
       ) : null}
       {cleanPoints.length > 0 ? (
@@ -319,6 +374,7 @@ export function MobileRouteMap({
           ) : (
             <span className="font-semibold text-rose-700 dark:text-rose-400">B · Tugash</span>
           )}
+          <span className="text-[10px] text-muted-foreground">▲ har {ARROW_EVERY_M} m</span>
         </div>
       ) : emptyHint ? (
         <div className="pointer-events-none absolute bottom-4 left-1/2 z-[1000] max-w-[90%] -translate-x-1/2 rounded-xl border border-border bg-background/95 px-4 py-2 text-center text-xs text-muted-foreground shadow-md backdrop-blur">

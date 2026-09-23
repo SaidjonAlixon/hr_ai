@@ -1,4 +1,4 @@
-﻿import { Router, type IRouter } from "express";
+import { Router, type IRouter } from "express";
 import { and, desc, eq, sql, isNull, gte } from "drizzle-orm";
 import {
   db,
@@ -13,7 +13,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { requireRegisteredDevice } from "../middlewares/device-security";
-import { canManageUsers } from "../lib/roles";
+import { canManageKochmaAdmin, canManageUsers, canViewKochmaAdmin } from "../lib/roles";
 import {
   approveDevice,
   getDeviceSecuritySettings,
@@ -27,9 +27,17 @@ import { notifyUser } from "../lib/notify";
 
 const router: IRouter = Router();
 
-function requireAdmin(req: AuthRequest, res: import("express").Response): boolean {
-  if (!canManageUsers(req.userRole)) {
-    res.status(403).json({ error: "Faqat admin" });
+function requireView(req: AuthRequest, res: import("express").Response): boolean {
+  if (!canViewKochmaAdmin(req.userRole)) {
+    res.status(403).json({ error: "Ruxsat yo�q" });
+    return false;
+  }
+  return true;
+}
+
+function requireManage(req: AuthRequest, res: import("express").Response): boolean {
+  if (!canManageKochmaAdmin(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin o�zgartira oladi" });
     return false;
   }
   return true;
@@ -40,7 +48,7 @@ router.get(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireView(req, res)) return;
     try {
       const [totals] = await db
         .select({
@@ -79,7 +87,7 @@ router.get(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireView(req, res)) return;
     try {
       const q = String(req.query.q || "").trim();
       const status = String(req.query.status || "all");
@@ -204,7 +212,7 @@ router.get(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireView(req, res)) return;
     const id = Number(req.params.id);
     const [device] = await db.select().from(userDevicesTable).where(eq(userDevicesTable.id, id)).limit(1);
     if (!device) {
@@ -244,7 +252,7 @@ router.get(
           ? "active"
           : "inactive";
 
-    // Bo‘sh OS/Browser bo‘lsa — userAgent dan taxminiy qiymat
+    // Bo�sh OS/Browser bo�lsa � userAgent dan taxminiy qiymat
     let os = device.os || "";
     let browser = device.browser || "";
     const ua = device.userAgent || "";
@@ -289,7 +297,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const id = Number(req.params.id);
     const device = await approveDevice(id, req.userId!);
     if (!device) {
@@ -312,7 +320,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const id = Number(req.params.id);
     const [device] = await db
       .update(userDevicesTable)
@@ -348,7 +356,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const id = Number(req.params.id);
     const [device] = await db
       .update(userDevicesTable)
@@ -374,7 +382,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const id = Number(req.params.id);
     await db
       .update(userDevicesTable)
@@ -389,7 +397,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const id = Number(req.params.id);
     const [device] = await db.select().from(userDevicesTable).where(eq(userDevicesTable.id, id)).limit(1);
     if (!device) {
@@ -413,7 +421,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const id = Number(req.params.id);
     const [device] = await db.select().from(userDevicesTable).where(eq(userDevicesTable.id, id)).limit(1);
     if (!device) {
@@ -430,7 +438,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const userId = Number(req.params.userId);
     await revokeSessionsForUser(userId);
     res.json({ ok: true });
@@ -442,7 +450,7 @@ router.post(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const userId = Number(req.params.userId);
     const enforced = Boolean(req.body?.enforced);
     await db
@@ -450,7 +458,7 @@ router.post(
       .set({ deviceSecurityEnforced: enforced })
       .where(eq(usersTable.id, userId));
     if (enforced) {
-      // Majburiy qilinganda eski legacy sessiyalar yetarli emas вЂ” keyingi login device talab qiladi
+      // Majburiy qilinganda eski legacy sessiyalar yetarli emas — keyingi login device talab qiladi
       await revokeSessionsForUser(userId);
     }
     res.json({ ok: true, enforced });
@@ -462,7 +470,7 @@ router.get(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireView(req, res)) return;
     res.json(await getDeviceSecuritySettings());
   },
 );
@@ -472,7 +480,7 @@ router.put(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireManage(req, res)) return;
     const b = req.body || {};
     await db
       .update(deviceSecuritySettingsTable)
@@ -507,7 +515,7 @@ router.get(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireView(req, res)) return;
     const rows = await db
       .select({
         id: loginAuditLogsTable.id,
@@ -534,7 +542,7 @@ router.get(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireView(req, res)) return;
     const rows = await db
       .select({
         id: securityEventsTable.id,
@@ -559,7 +567,7 @@ router.get(
   requireAuth,
   requireRegisteredDevice,
   async (req: AuthRequest, res): Promise<void> => {
-    if (!requireAdmin(req, res)) return;
+    if (!requireView(req, res)) return;
     const users = await db
       .select({
         id: usersTable.id,
@@ -584,7 +592,7 @@ router.get(
   },
 );
 
-/** Xodim: qurilma almashtirish soвЂrovi */
+/** Xodim: qurilma almashtirish so‘rovi */
 router.post(
   "/devices/me/request-change",
   requireAuth,
@@ -592,7 +600,7 @@ router.post(
     const userId = req.userId!;
     const cred = readDeviceCookie(req);
     if (!cred) {
-      res.status(400).json({ error: "Qurilma cookie topilmadi вЂ” qayta login urinib koвЂring" });
+      res.status(400).json({ error: "Qurilma cookie topilmadi — qayta login urinib ko‘ring" });
       return;
     }
     const [device] = await db
@@ -645,14 +653,14 @@ router.post(
       if (!canManageUsers(a.role)) continue;
       await notifyUser({
         userId: a.id,
-        text: `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat soвЂramoqda.`,
+        text: `${user?.fullName || "Xodim"} yangi qurilmadan foydalanishga ruxsat so‘ramoqda.`,
         type: "security",
         linkUrl: "/admin/qurilmalar",
         title: "Qurilma almashtirish",
       });
     }
 
-    res.json({ ok: true, message: "SoвЂrov yuborildi вЂ” admin tasdigвЂini kuting" });
+    res.json({ ok: true, message: "So‘rov yuborildi — admin tasdig‘ini kuting" });
   },
 );
 

@@ -348,22 +348,25 @@ function SectionCard({
   tint = "blue",
   children,
   className,
+  titleClassName,
 }: {
   title: string;
   tint?: keyof typeof TINT_STYLES;
   children: React.ReactNode;
   className?: string;
+  titleClassName?: string;
 }) {
   const style = TINT_STYLES[tint] || TINT_STYLES.blue;
   return (
     <section className={cn(CARD, "relative overflow-hidden border-slate-300 dark:border-slate-600", className)}>
       <CardAccent tint={tint} />
-      <div className="relative mb-3.5 flex items-center gap-2 pt-1">
-        <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
+      <div className="relative mb-3.5 flex items-start gap-2 pt-1">
+        <span className={cn("mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
         <p
           className={cn(
             "text-[11px] font-bold uppercase tracking-[0.13em]",
             style.title,
+            titleClassName,
           )}
         >
           {title}
@@ -2477,12 +2480,13 @@ export function TaskFormDialog({
 
                 {canWorkComplete ? (
                   <SectionCard
-                    title={t("tasks.result")}
+                    title={t("tasks.work.resultPanelTitle")}
                     tint="fuchsia"
                     className="ring-1 ring-fuchsia-200/70 dark:ring-fuchsia-800/40"
+                    titleClassName="normal-case tracking-normal text-[13px] font-bold leading-snug"
                   >
                     <div className="space-y-3">
-                      <p className="task-result-guide-blink rounded-xl border border-rose-300 bg-rose-50 px-3 py-2.5 text-center text-[13px] font-bold leading-snug text-rose-700 dark:border-rose-700/70 dark:bg-rose-950/50 dark:text-rose-200">
+                      <p className="task-result-guide-blink px-0.5 text-[11px] font-medium italic leading-relaxed text-rose-600/75 dark:text-rose-300/70">
                         {t("tasks.work.resultGuide")}
                       </p>
                       <div className="space-y-1.5">

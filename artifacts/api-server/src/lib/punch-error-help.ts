@@ -112,6 +112,12 @@ const HELP: Record<string, Omit<PunchErrorHelp, "code">> = {
     fix: "Smena qoidasiga qarang yoki admin tuzatsin.",
     severity: "medium",
   },
+  early_leave_note_required: {
+    title: "Erta ketish izohi",
+    meaning: "Smena tugashidan oldin ketishda sabab yozilmagan.",
+    fix: "«Nega bugungi vaqtdan oldin ketayapsiz?» savoliga qisqa izoh yozing, keyin Ketdim.",
+    severity: "medium",
+  },
   face_ai_mismatch: {
     title: "Yuz mos kelmadi",
     meaning: "Face ID ro‘yxatdagi yuz bilan mos kelmadi.",

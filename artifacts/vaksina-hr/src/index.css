@@ -2342,7 +2342,7 @@
 }
 
 .task-result-guide-blink {
-  animation: task-result-guide-blink 1.15s ease-in-out infinite;
+  animation: task-result-guide-blink 2.6s ease-in-out infinite;
 }
 
 @keyframes dv-gps-ring {

@@ -20,6 +20,8 @@ import {
   SwitchCamera,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -866,6 +868,7 @@ export default function DavomatFacePage() {
   const [verified, setVerified] = useState<Verified | null>(null);
   const [busy, setBusy] = useState(false);
   const [confirmOut, setConfirmOut] = useState(false);
+  const [earlyLeaveNote, setEarlyLeaveNote] = useState("");
   const [nowTick, setNowTick] = useState(() => Date.now());
   const [pharmacyStaff, setPharmacyStaff] = useState(false);
   const [officeStaff, setOfficeStaff] = useState(false);
@@ -1746,7 +1749,7 @@ export default function DavomatFacePage() {
     }
   };
 
-  const punch = async (action: "in" | "out") => {
+  const punch = async (action: "in" | "out", opts?: { notes?: string }) => {
     if (!verified) return;
     const usingQr = Boolean(verified.qrPayload) || methodHint === "QR";
     if (!usingQr && !gps) return;
@@ -1760,12 +1763,23 @@ export default function DavomatFacePage() {
       });
       return;
     }
+    const earlyNotes =
+      action === "out" && !afterShiftEnd ? String(opts?.notes || earlyLeaveNote || "").trim() : "";
+    if (action === "out" && !afterShiftEnd && earlyNotes.length < 3) {
+      toast({
+        title: t("common.error"),
+        description: "Nega bugungi vaqtdan oldin ketayapsiz? Qisqa izoh yozing.",
+        variant: "destructive",
+      });
+      return;
+    }
     punchLockRef.current = true;
     setBusy(true);
     const unlock = () => {
       punchLockRef.current = false;
       setBusy(false);
       setConfirmOut(false);
+      setEarlyLeaveNote("");
     };
     const refreshQuiet = () => {
       void Promise.all([loadWorkplace(), loadHistory()]);
@@ -1778,6 +1792,7 @@ export default function DavomatFacePage() {
             ? { latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracy }
             : {}),
           action,
+          ...(earlyNotes ? { notes: earlyNotes } : {}),
         });
         setMethodHint("QR");
         setScanOpen(false);
@@ -1827,6 +1842,7 @@ export default function DavomatFacePage() {
         snapshot: snap,
         liveness: verified.liveness,
         ...(checklistBranchId ? { branchId: checklistBranchId } : {}),
+        ...(earlyNotes ? { notes: earlyNotes } : {}),
       });
       setVerified({
         ...verified,
@@ -1858,6 +1874,19 @@ export default function DavomatFacePage() {
         window.setTimeout(() => setLocation("/checklist"), 450);
       }
     } catch (err) {
+      if (
+        err instanceof DavomatApiError &&
+        err.code === "early_leave_note_required"
+      ) {
+        unlock();
+        setConfirmOut(true);
+        toast({
+          title: t("common.error"),
+          description: err.message || "Erta ketish uchun izoh yozing",
+          variant: "destructive",
+        });
+        return;
+      }
       if (
         err instanceof DavomatApiError &&
         (err.code === "already_in" || err.code === "already_complete")
@@ -2411,7 +2440,13 @@ export default function DavomatFacePage() {
         onEnableGps={() => void requestLocationPermission()}
       />
 
-      <AlertDialog open={confirmOut} onOpenChange={setConfirmOut}>
+      <AlertDialog
+        open={confirmOut}
+        onOpenChange={(open) => {
+          setConfirmOut(open);
+          if (!open) setEarlyLeaveNote("");
+        }}
+      >
         <AlertDialogContent className="max-w-sm rounded-2xl">
           <AlertDialogHeader>
             <AlertDialogTitle>Ketdim?</AlertDialogTitle>
@@ -2422,10 +2457,28 @@ export default function DavomatFacePage() {
                   <span className="font-mono text-base font-bold text-foreground">{elapsedLabel}</span>
                 </p>
                 {!afterShiftEnd ? (
-                  <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-amber-800 dark:text-amber-200">
-                    Ogohlantirish: smena tugashidan ({shiftEndHm}) oldin ketmoqdasiz. Baribir
-                    ketasizmi?
-                  </p>
+                  <div className="space-y-2 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-amber-900 dark:text-amber-100">
+                    <p className="font-semibold text-foreground">
+                      Nega bugungi vaqtdan oldin ketayapsiz?
+                    </p>
+                    <p className="text-xs leading-snug opacity-90">
+                      Smena tugashi: {shiftEndHm}. Sababni yozing — keyin «Ketdim» ochiladi.
+                    </p>
+                    <div className="space-y-1.5 pt-1">
+                      <Label htmlFor="early-leave-note" className="text-xs font-semibold text-foreground">
+                        Izoh
+                      </Label>
+                      <Textarea
+                        id="early-leave-note"
+                        value={earlyLeaveNote}
+                        onChange={(e) => setEarlyLeaveNote(e.target.value)}
+                        rows={3}
+                        maxLength={500}
+                        placeholder="Masalan: shifokorga bordim, oilaviy sabab…"
+                        className="min-h-[72px] resize-none rounded-xl border-amber-300/60 bg-white text-sm text-foreground dark:bg-slate-950"
+                      />
+                    </div>
+                  </div>
                 ) : (
                   <p>Smena yakunlandi. Ketdimni tasdiqlaysizmi?</p>
                 )}
@@ -2435,8 +2488,17 @@ export default function DavomatFacePage() {
           <AlertDialogFooter className="gap-2 sm:gap-2">
             <AlertDialogCancel className="rounded-xl">Yo‘q</AlertDialogCancel>
             <AlertDialogAction
-              className="rounded-xl bg-rose-600 text-white hover:bg-rose-700"
-              onClick={() => void punch("out")}
+              className="rounded-xl bg-rose-600 text-white hover:bg-rose-700 disabled:opacity-50"
+              disabled={!afterShiftEnd && earlyLeaveNote.trim().length < 3}
+              onClick={(e) => {
+                if (!afterShiftEnd && earlyLeaveNote.trim().length < 3) {
+                  e.preventDefault();
+                  return;
+                }
+                void punch("out", {
+                  notes: !afterShiftEnd ? earlyLeaveNote.trim() : undefined,
+                });
+              }}
             >
               Ha — Ketdim
             </AlertDialogAction>

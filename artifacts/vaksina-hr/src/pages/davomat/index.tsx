@@ -25,6 +25,7 @@ import {
   RotateCcw,
   UserX,
   Timer,
+  MessageSquareText,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -353,6 +354,11 @@ export default function DavomatPage() {
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
   const [edit, setEdit] = useState<EditState | null>(null);
+  const [noteView, setNoteView] = useState<{
+    fullName: string;
+    workDate: string;
+    notes: string;
+  } | null>(null);
   const [resetTarget, setResetTarget] = useState<ResetTarget | null>(null);
   const [saving, setSaving] = useState(false);
   const [resetting, setResetting] = useState(false);
@@ -1525,6 +1531,7 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">Ketish</th>
                         <th className="px-3 py-2">Ishlagan</th>
                         <TimingHeaderCells workStart={activeWorkHours.start} workEnd={activeWorkHours.end} />
+                        <th className="w-14 px-2 py-2 text-center">Izoh</th>
                         {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                       </tr>
                     </thead>
@@ -1535,11 +1542,11 @@ export default function DavomatPage() {
                             colSpan={
                               staffFilter === "all"
                                 ? showRowActions
+                                  ? 13
+                                  : 12
+                                : showRowActions
                                   ? 12
                                   : 11
-                                : showRowActions
-                                  ? 11
-                                  : 10
                             }
                             className="px-3 py-10 text-center text-sm text-muted-foreground"
                           >
@@ -1590,6 +1597,28 @@ export default function DavomatPage() {
                           </td>
                           <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                             <TimeMetric value={day!.overtimeLabel} />
+                          </td>
+                          <td className="px-1 py-2 text-center">
+                            {day!.notes?.trim() ? (
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                                title="Izohni o‘qish"
+                                onClick={() =>
+                                  setNoteView({
+                                    fullName: emp.fullName,
+                                    workDate: selectedDay,
+                                    notes: day!.notes!.trim(),
+                                  })
+                                }
+                              >
+                                <MessageSquareText className="h-3.5 w-3.5" />
+                              </Button>
+                            ) : (
+                              <span className="text-[11px] text-muted-foreground/50">—</span>
+                            )}
                           </td>
                           {showRowActions ? (
                             <td className="px-2 py-2">
@@ -1752,6 +1781,7 @@ export default function DavomatPage() {
                           Ishlagan
                         </th>
                           <TimingHeaderCells workStart={detailWorkHours.start} workEnd={detailWorkHours.end} />
+                          <th className="w-14 px-2 py-2 text-center">Izoh</th>
                           {showRowActions ? <th className="px-3 py-2 w-20" /> : null}
                         </tr>
                       </thead>
@@ -1776,6 +1806,28 @@ export default function DavomatPage() {
                             </td>
                             <td className="px-3 py-2 text-sky-700 dark:text-sky-400">
                               <TimeMetric value={d.overtimeLabel} />
+                            </td>
+                            <td className="px-1 py-2 text-center">
+                              {d.notes?.trim() ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
+                                  title="Izohni o‘qish"
+                                  onClick={() =>
+                                    setNoteView({
+                                      fullName: detailEmployee.fullName,
+                                      workDate: d.date,
+                                      notes: d.notes!.trim(),
+                                    })
+                                  }
+                                >
+                                  <MessageSquareText className="h-3.5 w-3.5" />
+                                </Button>
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground/50">—</span>
+                              )}
                             </td>
                             {showRowActions ? (
                               <td className="px-2 py-2">
@@ -1880,6 +1932,31 @@ export default function DavomatPage() {
             <Button type="button" onClick={() => void saveEdit()} disabled={saving}>
               {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
               Saqlash
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(noteView)} onOpenChange={(o) => !o && setNoteView(null)}>
+        <DialogContent className="max-w-sm rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-base">Izoh</DialogTitle>
+          </DialogHeader>
+          {noteView ? (
+            <div className="space-y-2 text-sm">
+              <p className="text-xs text-muted-foreground">
+                <span className="font-semibold text-foreground">{noteView.fullName}</span>
+                {" · "}
+                {noteView.workDate}
+              </p>
+              <p className="whitespace-pre-wrap rounded-xl border border-violet-200/80 bg-violet-50/60 px-3 py-2.5 leading-relaxed text-foreground dark:border-violet-800/50 dark:bg-violet-950/30">
+                {noteView.notes}
+              </p>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" className="rounded-xl" onClick={() => setNoteView(null)}>
+              Yopish
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -2241,6 +2318,9 @@ function dayCellTooltip(day: DavomatDayMetrics, hours: { start: string; end: str
   }
   if (!day.restDayWork && day.earlyLeaveLabel && day.earlyLeaveLabel !== "—") {
     lines.push(`${t("davomat.earlyOut")}: ${day.earlyLeaveLabel}`);
+  }
+  if (day.notes?.trim()) {
+    lines.push(`Izoh: ${day.notes.trim()}`);
   }
   if (day.overtimeLabel && day.overtimeLabel !== "—") {
     lines.push(`+${day.overtimeLabel}`);

@@ -535,6 +535,13 @@ function applyDavomatDayCell(
       font: { ...baseFont, color: { argb: "FFB45309" } },
     });
   }
+  const noteText = String(d.notes || "").trim();
+  if (noteText) {
+    rich.push({
+      text: `\nIzoh: ${noteText}`,
+      font: { ...baseFont, italic: true, color: { argb: "FF7C3AED" } },
+    });
+  }
   if (restWork || (d.overtimeLabel && d.overtimeLabel !== "—")) {
     const ot =
       restWork && d.workedHours && d.workedHours !== "0:00"
@@ -2138,6 +2145,8 @@ async function applyFacePunch(opts: {
   resolvedBranchLabel?: string | null;
   activeShiftKey?: string | null;
   daySlots?: ResolvedDaySlot[];
+  /** Erta ketish sababi (majburiy, smena tugashidan oldin) */
+  notes?: string | null;
 }): Promise<
   | { ok: true; payload: Record<string, unknown> }
   | PunchFail
@@ -2156,6 +2165,7 @@ async function applyFacePunch(opts: {
     resolvedBranchLabel = null,
     activeShiftKey = null,
     daySlots = [],
+    notes: notesRaw = null,
   } = opts;
   const defs = await getEffectiveShiftDefs();
   const today = todayTashkent();
@@ -2474,9 +2484,47 @@ async function applyFacePunch(opts: {
         checkOutAt = now;
         checkInAt = existing!.checkInAt;
         const status = computeMetrics(workDate, existing!.checkInAt, checkOutAt, null, punchHours).status;
+
+        // Smena tugashidan oldin — sabab izohi majburiy
+        let endAt = atTashkent(
+          punchHours.overnight ? addDaysYmd(workDate, 1) : workDate,
+          punchHours.end,
+        );
+        const startAt = atTashkent(workDate, punchHours.start);
+        if (endAt.getTime() <= startAt.getTime()) {
+          endAt = atTashkent(addDaysYmd(workDate, 1), punchHours.end);
+        }
+        const isEarlyLeave = now.getTime() < endAt.getTime();
+        const earlyNote = String(notesRaw || "").trim().slice(0, 500);
+        if (isEarlyLeave && earlyNote.length < 3) {
+          return {
+            ok: false,
+            status: 400,
+            body: {
+              error:
+                "Nega bugungi vaqtdan oldin ketayapsiz? Qisqa izoh yozing, keyin «Ketdim» qilinadi.",
+              code: "early_leave_note_required",
+              fullName: emp.fullName,
+            },
+          };
+        }
+
+        const prevNotes = String(existing!.notes || "").trim();
+        const nextNotes = isEarlyLeave
+          ? prevNotes && !/^auto_/i.test(prevNotes) && !/^Erta ketish:/i.test(prevNotes)
+            ? `${prevNotes}\nErta ketish: ${earlyNote}`
+            : `Erta ketish: ${earlyNote}`
+          : prevNotes || null;
+
         await tx
           .update(attendanceRecordsTable)
-          .set({ ...geoFields, checkOutAt, status, checkOutMethod: verificationMethod })
+          .set({
+            ...geoFields,
+            checkOutAt,
+            status,
+            checkOutMethod: verificationMethod,
+            ...(isEarlyLeave ? { notes: nextNotes } : {}),
+          })
           .where(eq(attendanceRecordsTable.id, existing!.id));
       }
 
@@ -3428,6 +3476,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       resolvedBranchLabel: resolved.gate.resolvedBranchLabel,
       activeShiftKey: resolved.gate.activeShiftKey,
       daySlots: resolved.gate.daySlots,
+      notes: typeof req.body?.notes === "string" ? req.body.notes : null,
     });
     if (!punched.ok) {
       // Kunlik davomat allaqachon bor — lekkin filial tashrifini ochish mumkin
@@ -5015,6 +5064,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         resolvedBranchLabel: branchQr.row.branchLabel || matchingSlot?.branchLabel || null,
         activeShiftKey: gateShiftKey,
         daySlots: gateDaySlots,
+        notes: typeof req.body?.notes === "string" ? req.body.notes : null,
       });
       if (!punched.ok) {
         await writePunchAudit({
@@ -5221,6 +5271,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       verificationMethod: "QR",
       resolvedBranchId: null,
       resolvedBranchLabel: OFFICE_SHARED_QR_LABEL,
+      notes: typeof req.body?.notes === "string" ? req.body.notes : null,
     });
     if (!punched.ok) {
       await writePunchAudit({

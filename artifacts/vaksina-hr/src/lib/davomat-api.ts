@@ -282,6 +282,8 @@ export async function facePunchDavomat(payload: {
   /** Cheklist dan tanlangan filial (mudir employee id) */
   branchId?: number;
   snapshot?: string;
+  /** Erta ketish sababi */
+  notes?: string;
   liveness?: {
     blinked?: boolean;
     poses?: string[];
@@ -589,6 +591,8 @@ export async function qrPunchDavomat(payload: {
   accuracy?: number;
   action: "in" | "out";
   deviceId?: string;
+  /** Erta ketish sababi */
+  notes?: string;
 }): Promise<{
   ok: boolean;
   action: "in" | "out";

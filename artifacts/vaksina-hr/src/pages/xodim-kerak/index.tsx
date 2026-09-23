@@ -401,16 +401,18 @@ export default function XodimKerakPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const isCoord = user?.role === "koordinator";
+  const isMudir = user?.role === "mudir";
   const isRecruiter = user?.role === "recruiter";
   const isOfficeHead =
     !!user &&
     (isDeptHeadRole(user.role) || hasFullPlatformAccess(user.role)) &&
-    !isCoord;
+    !isCoord &&
+    !isMudir;
   const isHr =
     isHrRole(user?.role) ||
     hasFullPlatformAccess(user?.role) ||
     isDirectorRole(user?.role);
-  const canCreate = isCoord || isOfficeHead;
+  const canCreate = isCoord || isMudir || isOfficeHead;
   const isAdmin = canManageUsers(user?.role);
   const canView =
     canCreate ||
@@ -524,6 +526,30 @@ export default function XodimKerakPage() {
       return;
     }
 
+    if (isMudir) {
+      createMut.mutate(
+        {
+          shiftType,
+          roleNeeded,
+          count: cnt,
+          neededBy: neededBy.trim() || undefined,
+          note: note.trim() || undefined,
+        },
+        {
+          onSuccess: () => {
+            toast({ title: "Ariza ochildi — HR va botga yuborildi" });
+            setDialogOpen(false);
+            setNote("");
+            setNeededBy("");
+            setCount("1");
+            setTab("searching");
+          },
+          onError: (e: Error) => toast({ title: e.message, variant: "destructive" }),
+        },
+      );
+      return;
+    }
+
     if (positionText.trim().length < 3) {
       toast({ title: "Qanday xodim kerakligini yozing", variant: "destructive" });
       return;
@@ -586,9 +612,11 @@ export default function XodimKerakPage() {
                 ? "Ochiq, topilgan va rad etilgan arizalar — botdagi bilan bir xil ma’lumot."
                 : isHr
                   ? "Topildi / Rad etish — ikkalasi arizani yopadi. Har bir yangi ariza botga ham boradi."
-                  : canCreate
-                    ? "Filial, kim, smena, son — yuboring. Ariza darhol ochiladi."
-                    : "Xodim ehtiyojlari."}
+                  : isMudir
+                    ? "O‘z filialisiz uchun xodim so‘rovi — smena, lavozim va son."
+                    : canCreate
+                      ? "Filial, kim, smena, son — yuboring. Ariza darhol ochiladi."
+                      : "Xodim ehtiyojlari."}
             </p>
           </div>
         </div>
@@ -708,12 +736,17 @@ export default function XodimKerakPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <UserPlus className="h-5 w-5 text-primary" />
-              {isCoord ? "Yangi so‘rov" : "Yangi so‘rov — ASOSIY OFIS"}
+              {isCoord
+                ? "Yangi so‘rov"
+                : isMudir
+                  ? "Yangi so‘rov — mening filialim"
+                  : "Yangi so‘rov — ASOSIY OFIS"}
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3.5 py-1">
-            {isCoord ? (
+            {isCoord || isMudir ? (
               <>
+                {isCoord ? (
                 <div>
                   <label className="text-xs font-semibold text-muted-foreground">1. Filial</label>
                   {loadingBranches ? (
@@ -733,9 +766,16 @@ export default function XodimKerakPage() {
                     </Select>
                   )}
                 </div>
+                ) : (
+                  <p className="rounded-xl border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                    So‘rov avtomatik o‘z filialisizga yoziladi.
+                  </p>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground">2. Kim</label>
+                    <label className="text-xs font-semibold text-muted-foreground">
+                      {isCoord ? "2. Kim" : "1. Kim"}
+                    </label>
                     <Select value={roleNeeded} onValueChange={setRoleNeeded}>
                       <SelectTrigger className="mt-1.5 rounded-xl">
                         <SelectValue />
@@ -748,7 +788,9 @@ export default function XodimKerakPage() {
                     </Select>
                   </div>
                   <div>
-                    <label className="text-xs font-semibold text-muted-foreground">3. Smena</label>
+                    <label className="text-xs font-semibold text-muted-foreground">
+                      {isCoord ? "3. Smena" : "2. Smena"}
+                    </label>
                     <Select value={shiftType} onValueChange={setShiftType}>
                       <SelectTrigger className="mt-1.5 rounded-xl">
                         <SelectValue />
@@ -777,7 +819,7 @@ export default function XodimKerakPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">
-                  {isCoord ? "4. Nechta" : "2. Nechta"}
+                  {isCoord ? "4. Nechta" : isMudir ? "3. Nechta" : "2. Nechta"}
                 </label>
                 <Input
                   className="mt-1.5 rounded-xl"
@@ -790,7 +832,7 @@ export default function XodimKerakPage() {
               </div>
               <div>
                 <label className="text-xs font-semibold text-muted-foreground">
-                  {isCoord ? "5. Qachon" : "3. Qachon"}
+                  {isCoord ? "5. Qachon" : isMudir ? "4. Qachon" : "3. Qachon"}
                 </label>
                 <Input
                   className="mt-1.5 rounded-xl"
@@ -821,7 +863,14 @@ export default function XodimKerakPage() {
             </Button>
             <Button
               className="w-full rounded-xl"
-              disabled={busy || (isCoord ? !branchId : positionText.trim().length < 3)}
+              disabled={
+                busy ||
+                (isCoord
+                  ? !branchId
+                  : isMudir
+                    ? false
+                    : positionText.trim().length < 3)
+              }
               onClick={submit}
             >
               Yuborish

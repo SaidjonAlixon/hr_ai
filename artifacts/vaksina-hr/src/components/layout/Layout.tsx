@@ -945,6 +945,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     }
     if (
       (role === 'koordinator' ||
+        role === 'mudir' ||
         role === 'recruiter' ||
         isDeptHeadRole(role) ||
         isHrManager(role) ||
@@ -1254,6 +1255,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
+      { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
     ],
     koordinator: [

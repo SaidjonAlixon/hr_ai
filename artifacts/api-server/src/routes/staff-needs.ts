@@ -59,7 +59,12 @@ function branchNameOf(location: string | null | undefined, fallback: string): st
 }
 
 function canCreateStaffNeed(role?: string | null): boolean {
-  return role === "koordinator" || isDeptHeadRole(role) || hasFullPlatformAccess(role);
+  return (
+    role === "koordinator" ||
+    role === "mudir" ||
+    isDeptHeadRole(role) ||
+    hasFullPlatformAccess(role)
+  );
 }
 
 function canViewStaffNeed(role?: string | null): boolean {
@@ -69,6 +74,14 @@ function canViewStaffNeed(role?: string | null): boolean {
     isDirectorRole(role) ||
     role === "recruiter"
   );
+}
+
+async function actorMudir(userId: number) {
+  const rows = await db
+    .select()
+    .from(employeesTable)
+    .where(and(eq(employeesTable.userId, userId), eq(employeesTable.orgRole, "manager")));
+  return rows[0] ?? null;
 }
 
 async function actorCoordinator(userId: number) {
@@ -334,6 +347,13 @@ router.get("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<v
 
   if (role === "koordinator" && req.userId) {
     rows = rows.filter((r) => r.coordinatorUserId === req.userId);
+  } else if (role === "mudir" && req.userId) {
+    const mudir = await actorMudir(req.userId);
+    rows = rows.filter(
+      (r) =>
+        r.coordinatorUserId === req.userId ||
+        (mudir != null && r.managerEmployeeId === mudir.id),
+    );
   } else if (isDeptHeadRole(role) && !isHrManager(role) && req.userId) {
     rows = rows.filter((r) => r.coordinatorUserId === req.userId);
   }
@@ -482,6 +502,123 @@ router.post("/staff-needs", requireAuth, async (req: AuthRequest, res): Promise<
       });
     } catch (err) {
       console.error("[staff-needs] notify", err);
+    }
+
+    res.status(201).json(enriched);
+    return;
+  }
+
+  if (role === "mudir") {
+    const mudir = await actorMudir(req.userId);
+    if (!mudir) {
+      res.status(400).json({ error: "Mudir kartasi yoʻq" });
+      return;
+    }
+    let shiftType = String(req.body?.shiftType ?? "one").trim().toLowerCase();
+    if (!SHIFT_OPTS.has(shiftType)) shiftType = "one";
+    let roleNeeded = String(req.body?.roleNeeded ?? "farmasevt").trim().toLowerCase();
+    if (!ROLE_OPTS.has(roleNeeded)) roleNeeded = "farmasevt";
+
+    const existing = await db
+      .select({ id: staffNeedRequestsTable.id })
+      .from(staffNeedRequestsTable)
+      .where(
+        and(
+          eq(staffNeedRequestsTable.managerEmployeeId, mudir.id),
+          eq(staffNeedRequestsTable.shiftType, shiftType),
+          eq(staffNeedRequestsTable.roleNeeded, roleNeeded),
+          inArray(staffNeedRequestsTable.status, [...OPEN_STATUSES]),
+        ),
+      )
+      .limit(1);
+    if (existing.length) {
+      res.status(400).json({
+        error: "Bu smena / lavozim uchun ochiq so‘rov bor — HR javobini kuting",
+      });
+      return;
+    }
+
+    const branch = branchNameOf(mudir.location, mudir.fullName);
+    const shift = shiftLabelOf(shiftType);
+    const roleL = roleLabelOf(roleNeeded);
+    const deptId = await ensureFarmasevtDepartmentId();
+
+    const [createdReq] = await db
+      .insert(requestsTable)
+      .values({
+        departmentId: deptId,
+        position: roleL,
+        count,
+        description: `${branch} · ${shift} — Xodim kerak (mudir).`,
+        requirements: null,
+        salaryRange: null,
+        deadline: null,
+        reason: `Filial: ${branch}. Smena: ${shift}. Lavozim: ${roleL}. Son: ${count}.${neededBy ? ` Kerak: ${neededBy}.` : ""}${note ? ` Izoh: ${note}` : ""}`,
+        city: branch,
+        district: "—",
+        priority: "urgent",
+        status: "submitted",
+        createdById: req.userId,
+      })
+      .returning();
+
+    const [created] = await db
+      .insert(staffNeedRequestsTable)
+      .values({
+        coordinatorUserId: req.userId,
+        managerEmployeeId: mudir.id,
+        branchLocation: branch,
+        shiftType,
+        shiftLabel: shift,
+        roleNeeded,
+        sourceType: "pharmacy",
+        neededBy,
+        count,
+        note,
+        status: "open",
+        requestId: createdReq.id,
+      })
+      .returning();
+
+    const enriched = await enrich(created);
+    const notifyText = formatStaffNeedCardLines({
+      branch: enriched.branchName,
+      district: enriched.district,
+      shift: enriched.shiftDisplay,
+      roleLabel: enriched.roleDisplay,
+      count,
+      statusLabel: "Ochiq ariza",
+      neededBy,
+      note,
+      mudirName: enriched.managerName,
+      coordinatorName: enriched.coordinatorName,
+      mapsUrl: enriched.googleMapsUrl || enriched.yandexMapsUrl,
+    });
+
+    await notifyByRoles({
+      roles: [...HR_ROLES, "admin", "recruiter"],
+      text: notifyText,
+      type: "new_request",
+      linkUrl: "/xodim-kerak",
+    });
+
+    try {
+      const { notifyFilialRecruitersNewStaffNeed } = await import("../lib/filial-recruiter-notify");
+      await notifyFilialRecruitersNewStaffNeed({
+        html: formatStaffNeedTelegramHtml({
+          branch: enriched.branchName,
+          district: enriched.district,
+          shift: enriched.shiftDisplay,
+          roleLabel: enriched.roleDisplay,
+          count,
+          statusLabel: "Ochiq ariza",
+          neededBy,
+          note,
+          mapsUrl: enriched.googleMapsUrl || enriched.yandexMapsUrl,
+        }),
+      });
+    } catch (err) {
+      console.error("[staff-needs] mudir notify", err);
     }
 
     res.status(201).json(enriched);

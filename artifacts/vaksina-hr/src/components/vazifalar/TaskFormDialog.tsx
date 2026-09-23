@@ -89,7 +89,10 @@ import { DeadlineCountdown } from "@/components/DeadlineCountdown";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
 import {
   TaskAttachmentViewer,
+  AuthImage,
   isImageAtt as isImageAttShared,
+  attachmentDownloadUrl,
+  attachmentViewUrl,
 } from "@/components/vazifalar/TaskAttachmentViewer";
 import { isTaskOverdue, isAcceptOverdue, acceptDeadlineAt, acceptDeadlineHours } from "@/lib/vazifalar-permissions";
 import { isOfisWorkplace, isWeekendYmd } from "@/lib/ofis-weekend";
@@ -267,7 +270,7 @@ const LABEL =
   "text-[12px] font-semibold tracking-wide text-[#0a2540]/80 dark:text-slate-200";
 
 const CARD =
-  "rounded-2xl border border-slate-200/60 bg-white/95 p-4 shadow-[0_1px_2px_rgba(10,37,64,0.04),0_10px_28px_rgba(10,37,64,0.06)] ring-1 ring-slate-900/[0.025] dark:border-slate-700/80 dark:bg-slate-900 dark:shadow-none dark:ring-white/[0.04]";
+  "rounded-2xl border border-slate-300/90 bg-white p-4 shadow-[0_1px_2px_rgba(10,37,64,0.06),0_8px_24px_rgba(10,37,64,0.07)] ring-1 ring-slate-900/[0.04] dark:border-slate-600 dark:bg-slate-900 dark:shadow-none dark:ring-white/[0.06]";
 
 const TINT_STYLES = {
   blue: {
@@ -305,6 +308,13 @@ const TINT_STYLES = {
     title: "text-emerald-800 dark:text-emerald-300",
     dot: "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]",
   },
+  fuchsia: {
+    bar: "from-[#86198f] via-[#d946ef] to-[#f0abfc]",
+    glow: "bg-fuchsia-400/40",
+    wash: "from-fuchsia-500/[0.12] via-fuchsia-500/[0.04] to-transparent",
+    title: "text-fuchsia-800 dark:text-fuchsia-300",
+    dot: "bg-fuchsia-500 shadow-[0_0_8px_rgba(217,70,239,0.5)]",
+  },
 } as const;
 
 function CardAccent({ tint = "blue" }: { tint?: keyof typeof TINT_STYLES }) {
@@ -313,13 +323,13 @@ function CardAccent({ tint = "blue" }: { tint?: keyof typeof TINT_STYLES }) {
     <>
       <div
         className={cn(
-          "pointer-events-none absolute inset-x-0 top-0 z-[1] h-[4px] bg-gradient-to-r",
+          "pointer-events-none absolute left-0 right-0 top-0 z-[1] h-[4px] bg-gradient-to-r",
           style.bar,
         )}
       />
       <div
         className={cn(
-          "pointer-events-none absolute inset-x-3 top-0 z-[1] h-3 rounded-full blur-md",
+          "pointer-events-none absolute left-0 right-0 top-0 z-[1] h-2.5 blur-md",
           style.glow,
         )}
       />
@@ -346,7 +356,7 @@ function SectionCard({
 }) {
   const style = TINT_STYLES[tint] || TINT_STYLES.blue;
   return (
-    <section className={cn(CARD, "relative overflow-hidden", className)}>
+    <section className={cn(CARD, "relative overflow-hidden border-slate-300 dark:border-slate-600", className)}>
       <CardAccent tint={tint} />
       <div className="relative mb-3.5 flex items-center gap-2 pt-1">
         <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", style.dot)} />
@@ -456,10 +466,11 @@ function SubmittedResultView({
                     onClick={() => onOpenFile?.(a)}
                     className="group relative overflow-hidden rounded-xl border border-emerald-100 bg-white shadow-sm transition hover:ring-2 hover:ring-emerald-400 dark:border-emerald-900 dark:bg-slate-950"
                   >
-                    <img
-                      src={a.url}
+                    <AuthImage
+                      url={a.url}
                       alt={a.name}
                       className="aspect-[4/3] w-full object-cover"
+                      loading="lazy"
                     />
                     <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-0.5 text-[9px] text-white opacity-0 transition group-hover:opacity-100">
                       {a.name}
@@ -864,6 +875,104 @@ function attachmentIcon(a: TaskAttachment) {
     return { Icon: FileText, className: "bg-rose-50 text-rose-700 dark:bg-rose-950 dark:text-rose-300" };
   }
   return { Icon: FileText, className: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" };
+}
+
+/** Bajaruvchi (shu jumladan mobil) uchun beruvchi fayllari — asosiy paneldа */
+function AssignerFilesPanel({
+  files,
+  notes,
+  onOpenFile,
+  t,
+}: {
+  files: TaskAttachment[];
+  notes?: string | null;
+  onOpenFile: (file: TaskAttachment) => void;
+  t: (k: string) => string;
+}) {
+  if ((!files || files.length === 0) && !notes?.trim()) return null;
+  const images = files.filter((a) => isImageAtt(a));
+  const docs = files.filter((a) => !isImageAtt(a));
+
+  return (
+    <SectionCard title={t("tasks.form.assignerFiles")} tint="violet">
+      <div className="space-y-3">
+        {files.length > 0 ? (
+          <>
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              {t("tasks.form.assignerFilesHint")}
+              <span className="ml-1 font-semibold tabular-nums text-[#0b5fff]">
+                ({files.length})
+              </span>
+            </p>
+            {images.length > 0 ? (
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {images.map((a) => (
+                  <button
+                    key={a.id}
+                    type="button"
+                    onClick={() => onOpenFile(a)}
+                    className="group relative overflow-hidden rounded-xl border border-violet-200/80 bg-white text-left shadow-sm transition hover:ring-2 hover:ring-[#0b5fff]/40 dark:border-violet-900 dark:bg-slate-950"
+                  >
+                    <AuthImage
+                      url={a.url}
+                      alt={a.name}
+                      className="aspect-square w-full object-cover"
+                      loading="lazy"
+                    />
+                    <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1.5 py-1 text-[10px] font-medium text-white">
+                      {a.name}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+            {docs.length > 0 ? (
+              <ul className="space-y-1.5">
+                {docs.map((a) => {
+                  const { Icon, className: iconCls } = attachmentIcon(a);
+                  return (
+                    <li key={a.id}>
+                      <button
+                        type="button"
+                        onClick={() => onOpenFile(a)}
+                        className="flex w-full items-center gap-2.5 rounded-xl border border-violet-200/70 bg-violet-50/50 px-2.5 py-2 text-left transition hover:border-[#0b5fff]/50 hover:bg-[#eef4ff] dark:border-violet-900/50 dark:bg-violet-950/30"
+                      >
+                        <span
+                          className={cn(
+                            "flex h-10 w-10 shrink-0 items-center justify-center rounded-lg",
+                            iconCls,
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-xs font-semibold text-foreground">
+                            {a.name}
+                          </span>
+                          <span className="block text-[10px] text-muted-foreground">
+                            {formatSize(a.size) || a.mimeType || t("tasks.form.openFile")}
+                          </span>
+                        </span>
+                        <Paperclip className="h-3.5 w-3.5 shrink-0 text-[#0b5fff]" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            ) : null}
+          </>
+        ) : null}
+        {notes?.trim() ? (
+          <div>
+            <p className={cn(LABEL, "mb-1")}>{t("tasks.form.extraNotes")}</p>
+            <p className="whitespace-pre-wrap rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
+              {notes.trim()}
+            </p>
+          </div>
+        ) : null}
+      </div>
+    </SectionCard>
+  );
 }
 
 export function TaskFormDialog({
@@ -1750,6 +1859,39 @@ export function TaskFormDialog({
       editing?.status === "verified" ||
       (!!editing?.completionNote && editing?.status !== "in_progress"));
 
+  /** Rasm — tizimda ko‘rish; boshqa fayl — telefonga yuklab ochish */
+  function openAttachment(file: TaskAttachment) {
+    if (isImageAtt(file)) {
+      setViewerFile(file);
+      return;
+    }
+    void (async () => {
+      try {
+        const { deliverFileFromUrl } = await import("@/lib/tg-download");
+        await deliverFileFromUrl(file.url, file.name || "fayl");
+        toast({
+          title: t("tasks.form.fileDownloaded"),
+          description: file.name,
+        });
+        const view = attachmentViewUrl(file.url);
+        window.setTimeout(() => {
+          window.open(view, "_blank", "noopener,noreferrer");
+        }, 250);
+      } catch (e: any) {
+        toast({
+          title: "Fayl ochilmadi",
+          description: e?.message || "Qayta urinib ko‘ring",
+          variant: "destructive",
+        });
+        window.open(
+          attachmentDownloadUrl(file.url),
+          "_blank",
+          "noopener,noreferrer",
+        );
+      }
+    })();
+  }
+
   async function pickWorkFiles(files: FileList | null) {
     if (!files?.length) return;
     setWorkUploading(true);
@@ -1824,18 +1966,18 @@ export function TaskFormDialog({
       <DialogContent
         hideClose
         className={cn(
-          "flex flex-col gap-0 overflow-hidden border-0 bg-transparent p-0 shadow-none",
-          // Mobile: fullscreen sheet; desktop: centered modal
-          "inset-0 left-0 top-0 h-[100dvh] max-h-[100dvh] w-full max-w-full translate-x-0 translate-y-0 rounded-none",
-          "sm:inset-auto sm:left-[50%] sm:top-[50%] sm:h-auto sm:translate-x-[-50%] sm:translate-y-[-50%] sm:rounded-3xl",
+          "!flex !flex-col gap-0 !overflow-hidden border-0 bg-transparent !p-0 shadow-none",
+          // Telefon: butun ekran. Katta oynada: markazdagi modal.
+          "!inset-0 !left-0 !top-0 !h-[100dvh] !max-h-[100dvh] !w-full !max-w-none !translate-x-0 !translate-y-0 !rounded-none",
+          "xl:!inset-auto xl:!left-[50%] xl:!top-[50%] xl:!h-auto xl:!translate-x-[-50%] xl:!translate-y-[-50%] xl:!rounded-3xl",
           expanded
-            ? "sm:h-[96vh] sm:max-h-[96vh] sm:w-[98vw] sm:max-w-[98vw]"
-            : "sm:max-h-[94vh] sm:w-[96vw] sm:max-w-7xl",
+            ? "xl:!h-[96vh] xl:!max-h-[96vh] xl:!w-[98vw] xl:!max-w-[98vw]"
+            : "xl:!max-h-[94vh] xl:!w-[96vw] xl:!max-w-7xl",
         )}
       >
         <div
           className={cn(
-            "relative flex h-full min-h-0 flex-col overflow-hidden border shadow-[0_28px_90px_rgba(10,37,64,0.22)] sm:rounded-3xl",
+            "relative flex h-full min-h-0 max-h-full flex-col overflow-hidden border-0 pt-[env(safe-area-inset-top)] shadow-none xl:rounded-3xl xl:border xl:pt-0 xl:shadow-[0_28px_90px_rgba(10,37,64,0.22)]",
             isWork
               ? "border-teal-200/60 bg-gradient-to-br from-[#f2fbf8] via-[#f7fafb] to-[#eef6ff] dark:border-teal-900 dark:from-slate-950 dark:via-emerald-950/20 dark:to-slate-950"
               : "border-slate-200/50 bg-gradient-to-br from-[#f5f8ff] via-[#f8fafc] to-[#f0f7ff] dark:border-slate-800 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950",
@@ -1851,7 +1993,7 @@ export function TaskFormDialog({
           >
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-transparent via-white/25 to-transparent" />
           </div>
-          <DialogHeader className="space-y-1 border-b border-slate-200/60 bg-white/85 px-4 py-3.5 text-left backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/85 sm:px-5 sm:py-4">
+          <DialogHeader className="space-y-0 border-b border-slate-200/70 bg-white/95 px-3.5 py-2.5 text-left backdrop-blur-md dark:border-slate-800 dark:bg-slate-900/95 sm:px-5 sm:py-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0 flex-1 space-y-1">
               <div className="mb-1 flex flex-wrap items-center gap-2">
@@ -1890,7 +2032,7 @@ export function TaskFormDialog({
                       ? t("tasks.edit")
                       : t("tasks.form.createTitle")}
               </DialogTitle>
-              <DialogDescription className="hidden text-sm text-slate-500 dark:text-slate-400 sm:block">
+              <DialogDescription className="hidden text-sm text-slate-500 dark:text-slate-400 xl:block">
                 {isView
                   ? "Faqat ko‘rish — o‘zgartirish va yozish mumkin emas"
                   : isWork
@@ -1991,13 +2133,20 @@ export function TaskFormDialog({
           </div>
         </DialogHeader>
 
-        <div className="shrink-0 border-b border-slate-200/70 bg-white/90 px-2 py-2 dark:border-slate-800 dark:bg-slate-900/90 xl:hidden">
-          <div className="grid grid-cols-3 gap-1 rounded-xl bg-muted/70 p-1">
+            <div className="shrink-0 border-b border-slate-200/70 bg-white px-3 py-2 dark:border-slate-800 dark:bg-slate-900 xl:hidden">
+          <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
             {(
               [
                 { id: "main" as const, label: t("tasks.form.panel.main"), icon: FileText },
                 { id: "settings" as const, label: t("tasks.form.panel.settings"), icon: Settings2 },
-                { id: "side" as const, label: t("tasks.form.panel.side"), icon: MessageCircle },
+                {
+                  id: "side" as const,
+                  label:
+                    messages.length > 0
+                      ? `${t("tasks.form.panel.side")} · ${messages.length}`
+                      : t("tasks.form.panel.side"),
+                  icon: MessageCircle,
+                },
               ] as const
             ).map((tab) => {
               const Icon = tab.icon;
@@ -2006,16 +2155,21 @@ export function TaskFormDialog({
                 <button
                   key={tab.id}
                   type="button"
-                  onClick={() => setMobilePanel(tab.id)}
+                  onClick={() => {
+                    setMobilePanel(tab.id);
+                    if (tab.id === "side") {
+                      setSideTab("chat");
+                    }
+                  }}
                   className={cn(
-                    "inline-flex items-center justify-center gap-1.5 rounded-lg px-2 py-2 text-[11px] font-bold transition",
+                    "inline-flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl px-1.5 text-[12px] font-bold leading-none transition",
                     active
-                      ? "bg-card text-foreground shadow-sm ring-1 ring-border/70"
-                      : "text-muted-foreground",
+                      ? "bg-[#0b5fff] text-white shadow-sm shadow-blue-500/30"
+                      : "text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100",
                   )}
                 >
-                  <Icon className="h-3.5 w-3.5" />
-                  {tab.label}
+                  <Icon className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{tab.label}</span>
                 </button>
               );
             })}
@@ -2024,15 +2178,18 @@ export function TaskFormDialog({
 
         <div
           className={cn(
-            "grid min-h-0 flex-1 gap-3 overflow-hidden p-3 sm:gap-3.5 sm:p-3.5",
-            "grid-cols-1 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.78fr)_minmax(300px,0.85fr)]",
+            "flex min-h-0 flex-1 flex-col gap-0 overflow-hidden px-3 py-2.5",
+            "xl:grid xl:gap-3.5 xl:p-3.5 xl:grid-cols-[minmax(0,1.3fr)_minmax(280px,0.78fr)_minmax(300px,0.85fr)]",
           )}
         >
           {/* LEFT */}
           <div
             className={cn(
-              "min-h-0 space-y-3 overflow-y-auto rounded-2xl border border-slate-200/40 bg-gradient-to-b from-white/70 to-white/40 p-3 shadow-inner backdrop-blur-[2px] dark:border-slate-800/60 dark:from-slate-950/50 dark:to-slate-950/30 sm:p-3.5",
-              mobilePanel === "main" ? "block" : "hidden xl:block",
+              "min-h-0 space-y-2.5 overflow-y-auto overscroll-y-contain pb-3 [&>*]:shrink-0",
+              "xl:space-y-3 xl:rounded-2xl xl:border xl:border-slate-200/40 xl:bg-gradient-to-b xl:from-white/70 xl:to-white/40 xl:p-3.5 xl:pb-3.5 xl:shadow-inner xl:backdrop-blur-[2px] dark:xl:border-slate-800/60 dark:xl:from-slate-950/50 dark:xl:to-slate-950/30",
+              mobilePanel === "main"
+                ? "flex flex-1 flex-col"
+                : "hidden xl:flex xl:min-h-0 xl:overflow-y-auto",
             )}
           >
             {editing && (
@@ -2226,6 +2383,15 @@ export function TaskFormDialog({
             )}
             </SectionCard>
 
+            {(isWork || isView) && (attachments.length > 0 || !!notes.trim()) ? (
+              <AssignerFilesPanel
+                files={attachments}
+                notes={notes}
+                onOpenFile={openAttachment}
+                t={t}
+              />
+            ) : null}
+
             {(isWork || isView) ? (
               <>
                 <SectionCard title={t("tasks.form.assigner")} tint="teal">
@@ -2304,7 +2470,7 @@ export function TaskFormDialog({
                 {submissionHistory.length > 0 ? (
                   <SubmissionHistoryPanel
                     items={submissionHistory}
-                    onOpenFile={setViewerFile}
+                    onOpenFile={openAttachment}
                     t={t}
                   />
                 ) : null}
@@ -2312,12 +2478,12 @@ export function TaskFormDialog({
                 {canWorkComplete ? (
                   <SectionCard
                     title={t("tasks.result")}
-                    tint="emerald"
-                    className="ring-1 ring-emerald-200/80 dark:ring-emerald-800/50"
+                    tint="fuchsia"
+                    className="ring-1 ring-fuchsia-200/70 dark:ring-fuchsia-800/40"
                   >
                     <div className="space-y-3">
-                      <p className="text-xs leading-snug text-slate-600 dark:text-slate-300">
-                        {t("tasks.work.resultHint")}
+                      <p className="task-result-guide-blink rounded-xl border border-rose-300 bg-rose-50 px-3 py-2.5 text-center text-[13px] font-bold leading-snug text-rose-700 dark:border-rose-700/70 dark:bg-rose-950/50 dark:text-rose-200">
+                        {t("tasks.work.resultGuide")}
                       </p>
                       <div className="space-y-1.5">
                         <Label className={LABEL}>{t("tasks.resultText")}</Label>
@@ -2326,7 +2492,7 @@ export function TaskFormDialog({
                           onChange={(e) => setWorkNote(e.target.value)}
                           rows={4}
                           placeholder={t("tasks.ph.result")}
-                          className="min-h-[110px] resize-y rounded-xl border-slate-300 bg-white text-sm shadow-none focus-visible:border-emerald-500 focus-visible:ring-2 focus-visible:ring-emerald-500/25 dark:border-slate-600 dark:bg-slate-950"
+                          className="min-h-[110px] resize-y rounded-xl border-fuchsia-200/80 bg-white text-sm shadow-none focus-visible:border-fuchsia-500 focus-visible:ring-2 focus-visible:ring-fuchsia-500/25 dark:border-fuchsia-800/50 dark:bg-slate-950"
                         />
                       </div>
                       <input
@@ -2344,13 +2510,13 @@ export function TaskFormDialog({
                         type="button"
                         disabled={workUploading}
                         onClick={() => workFileRef.current?.click()}
-                        className="flex w-full flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-teal-400/80 bg-white px-3 py-5 text-sm text-teal-800 transition hover:border-teal-500 hover:bg-teal-50/50 dark:border-teal-500/50 dark:bg-slate-950 dark:text-teal-200"
+                        className="flex w-full flex-col items-center gap-1.5 rounded-xl border-2 border-dashed border-fuchsia-300 bg-fuchsia-50/40 px-3 py-5 text-sm text-fuchsia-900 transition hover:border-fuchsia-500 hover:bg-fuchsia-50 dark:border-fuchsia-700/60 dark:bg-fuchsia-950/30 dark:text-fuchsia-100"
                       >
-                        <Paperclip className="h-5 w-5 text-teal-600" />
+                        <Paperclip className="h-5 w-5 text-fuchsia-600 dark:text-fuchsia-300" />
                         <span className="font-bold">
                           {workUploading ? t("ui.loading") : t("tasks.work.attachFile")}
                         </span>
-                        <span className="text-[11px] font-medium text-slate-500">
+                        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400">
                           {t("tasks.work.attachHint")}
                         </span>
                       </button>
@@ -2359,21 +2525,21 @@ export function TaskFormDialog({
                           {workFiles.map((a) => (
                             <li
                               key={a.id}
-                              className="flex items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/50 px-2.5 py-1.5 text-xs dark:border-emerald-900 dark:bg-emerald-950/30"
+                              className="flex items-center gap-2 rounded-lg border border-fuchsia-100 bg-fuchsia-50/60 px-2.5 py-1.5 text-xs dark:border-fuchsia-900 dark:bg-fuchsia-950/30"
                             >
                               <button
                                 type="button"
                                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                                onClick={() => setViewerFile(a)}
+                                onClick={() => openAttachment(a)}
                               >
                                 {isImageAtt(a) ? (
-                                  <img
-                                    src={a.url}
+                                  <AuthImage
+                                    url={a.url}
                                     alt=""
                                     className="h-8 w-8 rounded object-cover"
                                   />
                                 ) : (
-                                  <FileText className="h-3.5 w-3.5 shrink-0 text-emerald-700" />
+                                  <FileText className="h-3.5 w-3.5 shrink-0 text-fuchsia-700" />
                                 )}
                                 <span className="min-w-0 flex-1 truncate font-medium">{a.name}</span>
                               </button>
@@ -2402,7 +2568,7 @@ export function TaskFormDialog({
                     assigneeName={editing?.assigneeName || currentUserName}
                     completedAt={editing?.completedAt}
                     awaitingReview={editing?.status === "done"}
-                    onOpenFile={setViewerFile}
+                    onOpenFile={openAttachment}
                     t={t}
                   />
                 ) : null}
@@ -2898,7 +3064,7 @@ export function TaskFormDialog({
                 assigneeName={editing?.assigneeName || selectedAssignee?.name}
                 completedAt={editing?.completedAt}
                 awaitingReview={editing?.status === "done"}
-                onOpenFile={setViewerFile}
+                onOpenFile={openAttachment}
                 onVerify={
                   editing?.status === "done" && onVerify
                     ? (action) => void onVerify(action)
@@ -2911,7 +3077,7 @@ export function TaskFormDialog({
             {submissionHistory.length > 0 ? (
               <SubmissionHistoryPanel
                 items={submissionHistory}
-                onOpenFile={setViewerFile}
+                onOpenFile={openAttachment}
                 t={t}
               />
             ) : null}
@@ -3009,7 +3175,7 @@ export function TaskFormDialog({
                               <button
                                 type="button"
                                 className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                                onClick={() => setViewerFile(a)}
+                                onClick={() => openAttachment(a)}
                                 title="Ko‘rish"
                               >
                                 <span
@@ -3086,8 +3252,11 @@ export function TaskFormDialog({
           {/* MIDDLE (settings) */}
           <div
             className={cn(
-              "min-h-0 flex-col overflow-y-auto rounded-2xl border border-slate-200/40 bg-gradient-to-b from-white/70 to-white/40 p-3 shadow-inner backdrop-blur-[2px] dark:border-slate-800/60 dark:from-slate-950/50 dark:to-slate-950/30 sm:p-3.5",
-              mobilePanel === "settings" ? "flex" : "hidden xl:flex",
+              "min-h-0 flex-col gap-0 space-y-0 overflow-y-auto overscroll-y-contain pb-3 [&>*]:shrink-0",
+              "xl:rounded-2xl xl:border xl:border-slate-200/40 xl:bg-gradient-to-b xl:from-white/70 xl:to-white/40 xl:p-3.5 xl:pb-3.5 xl:shadow-inner xl:backdrop-blur-[2px] dark:xl:border-slate-800/60 dark:xl:from-slate-950/50 dark:xl:to-slate-950/30",
+              mobilePanel === "settings"
+                ? "flex flex-1"
+                : "hidden xl:flex xl:min-h-0",
             )}
           >
             {!isWork && hasSubmittedResult && (
@@ -3159,13 +3328,20 @@ export function TaskFormDialog({
                     <li key={s.key} className="relative flex gap-2.5 pb-3 last:pb-0">
                       {!isLast && (
                         <span
+                          aria-hidden
                           className={cn(
-                            "absolute left-[9px] top-6 bottom-0 w-0.5",
-                            s.done || (s.danger && s.current)
+                            "absolute left-[9px] top-5 z-0 w-[2px]",
+                            // next itemgacha yetib borsin
+                            "bottom-0",
+                            s.done
                               ? danger
                                 ? "bg-rose-400"
-                                : "bg-emerald-400"
-                              : "bg-slate-200 dark:bg-slate-700",
+                                : "bg-emerald-500"
+                              : s.current
+                                ? danger
+                                  ? "bg-rose-300"
+                                  : "bg-sky-400"
+                                : "bg-slate-300 dark:bg-slate-500",
                           )}
                         />
                       )}
@@ -3188,7 +3364,7 @@ export function TaskFormDialog({
                             "border-rose-500 bg-white text-rose-600 ring-2 ring-rose-500/25 dark:bg-slate-900",
                           !s.done &&
                             !s.current &&
-                            "border-slate-300 bg-white text-transparent dark:border-slate-600 dark:bg-slate-900",
+                            "border-slate-400 bg-white text-transparent dark:border-slate-500 dark:bg-slate-900",
                         )}
                       >
                         {s.done ? <Check className="h-3 w-3 stroke-[3]" /> : null}
@@ -3205,14 +3381,14 @@ export function TaskFormDialog({
                         className={cn(
                           "min-w-0 flex-1 rounded-lg px-2.5 py-1.5 transition-colors",
                           s.current && !s.done && !danger
-                            ? "border border-blue-200 bg-[#eef4ff] dark:border-blue-900 dark:bg-blue-950/30"
+                            ? "border border-blue-300 bg-[#eef4ff] dark:border-blue-800 dark:bg-blue-950/30"
                             : s.current && !s.done && danger
                               ? "border border-rose-300 bg-rose-50 dark:border-rose-800 dark:bg-rose-950/40"
                               : s.done && danger
                                 ? "border border-rose-200/90 bg-rose-50/70 dark:border-rose-900/50 dark:bg-rose-950/25"
                                 : s.done
-                                  ? "border border-emerald-100/80 bg-emerald-50/50 dark:border-emerald-900/40 dark:bg-emerald-950/15"
-                                  : "border border-slate-100 bg-slate-50/60 dark:border-slate-800 dark:bg-slate-900/40",
+                                  ? "border border-emerald-200 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/15"
+                                  : "border border-slate-300/90 bg-slate-50/80 dark:border-slate-600 dark:bg-slate-900/40",
                         )}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -3522,8 +3698,9 @@ export function TaskFormDialog({
           {/* RIGHT: Chat / Files / History */}
           <div
             className={cn(
-              "relative min-h-0 flex-col overflow-hidden rounded-2xl border border-white/70 bg-white/95 shadow-[0_1px_2px_rgba(10,37,64,0.04),0_10px_28px_rgba(11,95,255,0.07)] ring-1 ring-slate-900/[0.04] backdrop-blur-sm dark:border-slate-800 dark:bg-slate-900/95 dark:ring-white/5",
-              mobilePanel === "side" ? "flex min-h-[calc(100dvh-11rem)]" : "hidden xl:flex",
+              "relative min-h-0 flex-col overflow-hidden bg-white dark:bg-slate-900",
+              "xl:rounded-2xl xl:border xl:border-white/70 xl:bg-white/95 xl:shadow-[0_1px_2px_rgba(10,37,64,0.04),0_10px_28px_rgba(11,95,255,0.07)] xl:ring-1 xl:ring-slate-900/[0.04] xl:backdrop-blur-sm dark:xl:border-slate-800 dark:xl:bg-slate-900/95 dark:xl:ring-white/5",
+              mobilePanel === "side" ? "flex flex-1" : "hidden xl:flex xl:min-h-0",
             )}
           >
             <div className="pointer-events-none absolute inset-x-0 top-0 z-[2] h-[4px] bg-gradient-to-r from-[#07203a] via-[#0b5fff] to-[#5eb8ff]" />
@@ -3729,10 +3906,10 @@ export function TaskFormDialog({
                                 <button
                                   type="button"
                                   className="mt-1.5 block overflow-hidden rounded-lg"
-                                  onClick={() => setViewerFile(m.attachment!)}
+                                  onClick={() => openAttachment(m.attachment!)}
                                 >
-                                  <img
-                                    src={m.attachment.url}
+                                  <AuthImage
+                                    url={m.attachment.url}
                                     alt={m.attachment.name}
                                     loading="lazy"
                                     className="max-h-48 max-w-full object-cover"
@@ -3746,7 +3923,7 @@ export function TaskFormDialog({
                                     "mt-1.5 flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs font-medium",
                                     mine ? "bg-white/20 hover:bg-white/30" : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800",
                                   )}
-                                  onClick={() => setViewerFile(m.attachment!)}
+                                  onClick={() => openAttachment(m.attachment!)}
                                 >
                                   <FileText className="h-3.5 w-3.5 shrink-0" />
                                   <span className="min-w-0 truncate">{m.attachment.name}</span>
@@ -3782,7 +3959,7 @@ export function TaskFormDialog({
                   </div>
                 </div>
 
-                <div className="relative z-[2] border-t border-border bg-background p-2.5">
+                <div className="relative z-[2] border-t border-border bg-background p-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] xl:pb-2.5">
                   {isView ? (
                     <p className="rounded-xl bg-slate-50 px-3 py-2 text-center text-[11px] font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
                       Ko‘rish rejimi — chatga yozish mumkin emas
@@ -4016,13 +4193,13 @@ export function TaskFormDialog({
                       <button
                         key={a.id}
                         type="button"
-                        onClick={() => setViewerFile(a)}
+                        onClick={() => openAttachment(a)}
                         className="flex w-full items-center gap-2 rounded-xl border border-border bg-muted/30 px-3 py-2.5 text-left text-sm transition hover:border-[#0b5fff]/40 hover:bg-[#0b5fff]/5"
                       >
                         {isImageAtt(a) ? (
                           <span className="h-12 w-12 shrink-0 overflow-hidden rounded-lg">
-                            <img
-                              src={a.url}
+                            <AuthImage
+                              url={a.url}
                               alt={a.name}
                               className="h-full w-full object-cover"
                               loading="lazy"
@@ -4071,13 +4248,13 @@ export function TaskFormDialog({
         </div>
 
           {mobilePanel !== "side" ? (
-            <div className="shrink-0 border-t border-slate-200/80 bg-white/95 px-3 py-3 backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/95 xl:hidden">
-              <div className="flex flex-col gap-2 sm:flex-row">
+            <div className="shrink-0 border-t border-slate-200/80 bg-white/95 px-3 pt-2.5 pb-[max(0.7rem,env(safe-area-inset-bottom))] shadow-[0_-10px_28px_rgba(10,37,64,0.06)] backdrop-blur-md dark:border-slate-800 dark:bg-slate-950/95 xl:hidden">
+              <div className="flex gap-2">
                 {isView ? (
                   <Button
                     type="button"
                     variant="outline"
-                    className="flex-1 rounded-xl"
+                    className="h-12 flex-1 rounded-2xl text-[15px] font-semibold"
                     onClick={() => onOpenChange(false)}
                   >
                     Yopish
@@ -4087,7 +4264,7 @@ export function TaskFormDialog({
                     {needsWorkAccept && (
                       <Button
                         type="button"
-                        className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff]"
+                        className="h-12 flex-1 gap-1.5 rounded-2xl bg-[#0b5fff] text-[15px] font-semibold shadow-md shadow-blue-500/25"
                         disabled={workBusy}
                         onClick={() => {
                           void (async () => {
@@ -4108,17 +4285,17 @@ export function TaskFormDialog({
                       <>
                         <Button
                           type="button"
-                          className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff]"
+                          className="h-12 min-w-0 flex-1 gap-1.5 rounded-2xl bg-[#0b5fff] text-[15px] font-semibold shadow-md shadow-blue-500/25"
                           disabled={workBusy || saving}
                           onClick={() => void submitWorkComplete()}
                         >
-                          <Send className="h-4 w-4" />
+                          <Send className="h-4 w-4 shrink-0" />
                           {t("tasks.markDone")}
                         </Button>
                         <Button
                           type="button"
                           variant="outline"
-                          className="rounded-xl"
+                          className="h-12 shrink-0 rounded-2xl px-4 text-[15px] font-semibold"
                           onClick={() => onWorkExtend?.()}
                         >
                           <Clock className="h-4 w-4" />
@@ -4130,7 +4307,7 @@ export function TaskFormDialog({
                       <Button
                         type="button"
                         variant="outline"
-                        className="flex-1 rounded-xl"
+                        className="h-12 flex-1 rounded-2xl text-[15px] font-semibold"
                         onClick={() => onOpenChange(false)}
                       >
                         {t("ui.close") !== "ui.close" ? t("ui.close") : "Yopish"}
@@ -4142,14 +4319,14 @@ export function TaskFormDialog({
                     <Button
                       type="button"
                       variant="outline"
-                      className="flex-1 rounded-xl"
+                      className="h-12 flex-1 rounded-2xl text-[15px] font-semibold"
                       onClick={() => onOpenChange(false)}
                     >
                       {t("ui.cancel")}
                     </Button>
                     <Button
                       type="button"
-                      className="flex-1 gap-1.5 rounded-xl bg-[#0b5fff]"
+                      className="h-12 flex-1 gap-1.5 rounded-2xl bg-[#0b5fff] text-[15px] font-semibold shadow-md shadow-blue-500/25"
                       disabled={saving}
                       onClick={() => void handleSubmit()}
                     >

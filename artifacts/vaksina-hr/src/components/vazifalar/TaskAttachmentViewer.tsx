@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Download, ExternalLink, FileSpreadsheet, FileText, FileImage, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -5,7 +6,8 @@ import type { TaskAttachment } from "@/lib/vazifalar-api";
 
 function isImageAtt(a?: TaskAttachment | null) {
   if (!a) return false;
-  return a.kind === "image" || (a.mimeType || "").startsWith("image/");
+  if (a.kind === "image" || (a.mimeType || "").startsWith("image/")) return true;
+  return /\.(jpe?g|png|gif|webp|bmp|svg)$/i.test(a.name || "");
 }
 
 function isPdfAtt(a: TaskAttachment) {
@@ -35,14 +37,32 @@ function isSpreadsheetAtt(a: TaskAttachment) {
   return mime.includes("sheet") || mime.includes("excel") || /\.(xlsx?|csv)$/.test(name);
 }
 
-/** Ko‘rish URL — download=1 bo‘lmasin */
+/** Cookie-auth upload URL — bir xil origin + bitta marta encode */
 export function attachmentViewUrl(url: string) {
   try {
+    if (!url) return url;
     if (url.startsWith("blob:") || url.startsWith("data:")) return url;
-    const u = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://local");
+    const base =
+      typeof window !== "undefined" ? window.location.origin : "http://localhost";
+    const u = new URL(url, base);
     u.searchParams.delete("download");
-    const path = u.pathname + u.search + u.hash;
-    return url.startsWith("http") ? u.toString() : path;
+
+    // Boshqa domen / api/uploads → joriy sayt orqali (session cookie ishlasin)
+    if (u.pathname.startsWith("/api/uploads/")) {
+      const after = u.pathname.slice("/api/uploads/".length);
+      if (!after || after === "remote" || after.startsWith("remote")) {
+        return `/api/uploads/remote${u.search}${u.hash}`;
+      }
+      let key = after;
+      try {
+        key = decodeURIComponent(after);
+      } catch {
+        /* keep */
+      }
+      return `/api/uploads/${encodeURIComponent(key)}${u.search}${u.hash}`;
+    }
+
+    return url.startsWith("http") ? u.toString() : `${u.pathname}${u.search}${u.hash}`;
   } catch {
     return url.replace(/([?&])download=1&?/g, "$1").replace(/[?&]$/, "");
   }
@@ -50,8 +70,119 @@ export function attachmentViewUrl(url: string) {
 
 export function attachmentDownloadUrl(url: string) {
   if (url.startsWith("blob:") || url.startsWith("data:")) return url;
-  if (!url.startsWith("/api/uploads/") && !url.includes("/api/uploads/")) return url;
-  return `${url}${url.includes("?") ? "&" : "?"}download=1`;
+  const view = attachmentViewUrl(url);
+  if (!view.startsWith("/api/uploads/") && !view.includes("/api/uploads/")) return view;
+  return `${view}${view.includes("?") ? "&" : "?"}download=1`;
+}
+
+/**
+ * /api/uploads rasmni credentials bilan olib blob URL qiladi —
+ * oddiy <img src> ba’zan 401/noto‘g‘ri encode tufayli ochilmaydi.
+ */
+export function AuthImage({
+  url,
+  alt,
+  className,
+  loading,
+}: {
+  url: string;
+  alt?: string;
+  className?: string;
+  loading?: "lazy" | "eager";
+}) {
+  const [src, setSrc] = useState<string | null>(() => {
+    if (!url) return null;
+    if (url.startsWith("blob:") || url.startsWith("data:")) return url;
+    return null;
+  });
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!url) {
+      setSrc(null);
+      return;
+    }
+    if (url.startsWith("blob:") || url.startsWith("data:")) {
+      setSrc(url);
+      setFailed(false);
+      return;
+    }
+
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    const view = attachmentViewUrl(url);
+
+    // Tashqi public URL — to‘g‘ridan
+    if (/^https?:\/\//i.test(view) && !view.includes("/api/uploads/")) {
+      setSrc(view);
+      setFailed(false);
+      return;
+    }
+
+    setSrc(null);
+    setFailed(false);
+
+    void (async () => {
+      try {
+        const res = await fetch(view, { credentials: "include", cache: "force-cache" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const blob = await res.blob();
+        objectUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objectUrl);
+          objectUrl = null;
+          return;
+        }
+        setSrc(objectUrl);
+      } catch {
+        if (!cancelled) {
+          setFailed(true);
+          // Fallback: cookie bilan oddiy src
+          setSrc(view);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [url]);
+
+  if (!src && !failed) {
+    return (
+      <span
+        className={cn(
+          "block animate-pulse bg-slate-200 dark:bg-slate-800",
+          className,
+        )}
+        aria-hidden
+      />
+    );
+  }
+
+  if (!src) {
+    return (
+      <span
+        className={cn(
+          "flex items-center justify-center bg-slate-100 text-[10px] text-slate-500 dark:bg-slate-900",
+          className,
+        )}
+      >
+        {alt || "Rasm"}
+      </span>
+    );
+  }
+
+  return (
+    <img
+      src={src}
+      alt={alt || ""}
+      className={className}
+      loading={loading}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function formatSize(bytes?: number) {
@@ -170,8 +301,8 @@ export function TaskAttachmentViewer({ file, onClose, className }: Props) {
         <div className="flex h-full min-h-[min(70vh,640px)] flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-lg dark:border-slate-800 dark:bg-slate-950 sm:min-h-0">
           {image ? (
             <div className="flex h-full items-center justify-center overflow-auto bg-[radial-gradient(circle_at_center,_#f1f5f9_0%,_#e2e8f0_100%)] p-3 dark:bg-[radial-gradient(circle_at_center,_#0f172a_0%,_#020617_100%)]">
-              <img
-                src={viewUrl}
+              <AuthImage
+                url={file.url}
                 alt={file.name}
                 className="max-h-full max-w-full object-contain shadow-2xl"
               />

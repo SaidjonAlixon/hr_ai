@@ -2331,6 +2331,20 @@
   }
 }
 
+@keyframes task-result-guide-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.28;
+  }
+}
+
+.task-result-guide-blink {
+  animation: task-result-guide-blink 1.15s ease-in-out infinite;
+}
+
 @keyframes dv-gps-ring {
   0% { transform: scale(0.92); opacity: 0.9; }
   100% { transform: scale(1.35); opacity: 0; }

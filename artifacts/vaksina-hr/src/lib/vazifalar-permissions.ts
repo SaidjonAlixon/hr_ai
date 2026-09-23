@@ -148,6 +148,17 @@ export function canApproveTaskUi(
   return task.createdById === userId || isTaskAdmin(role) || isTaskDirector(role);
 }
 
-export function canDeleteTaskUi(role?: string | null) {
-  return isTaskAdmin(role);
+/**
+ * O‘chirish:
+ * - sof admin — ko‘rinadigan hammasi
+ * - boshqalar — faqat o‘zi yaratgan (qo‘ygan) vazifa
+ */
+export function canDeleteTaskUi(
+  task: Pick<Vazifa, "createdById">,
+  userId?: number | null,
+  role?: string | null,
+) {
+  if (!userId) return false;
+  if (canSeePrivateTasks(role)) return true;
+  return task.createdById === userId;
 }

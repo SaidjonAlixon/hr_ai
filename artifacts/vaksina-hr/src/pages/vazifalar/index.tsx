@@ -43,6 +43,8 @@ import {
   Users,
   CalendarClock,
   SendHorizontal,
+  CheckSquare,
+  Square,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -67,6 +69,13 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -89,6 +98,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { htmlDescToPlain } from "@/lib/task-desc-html";
 import { Calendar as DayPickerCalendar } from "@/components/ui/calendar";
 import {
   useGetTasks,
@@ -208,10 +218,10 @@ const PRIORITY_CLASS: Record<string, string> = {
 const surface =
   "rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-black/[0.03] dark:shadow-black/20";
 const control =
-  "h-9 border-border bg-muted/40 text-xs text-foreground dark:bg-muted/30";
+  "h-9 border-border/80 bg-background text-xs text-foreground shadow-sm";
 /** Faol filtr — rangli belgi */
 const controlActive =
-  "border-primary/70 bg-primary/10 text-primary font-semibold shadow-sm ring-1 ring-primary/25 dark:bg-primary/15 dark:text-primary";
+  "border-primary/70 bg-primary/10 text-primary font-semibold shadow-sm ring-1 ring-primary/20 dark:bg-primary/15";
 
 function normFilterText(s: string) {
   return String(s || "")
@@ -423,8 +433,6 @@ function cleanPlaceLabel(raw: string | null | undefined) {
   return name;
 }
 
-const STANDARD_TASK_TYPES = ["hisobot", "tekshiruv", "suhbat", "hujjat", "boshqa"] as const;
-
 function toDatetimeLocalValue(iso: string | null) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -465,7 +473,6 @@ export default function VazifalarPage() {
   const isAuditViewer = isTaskAuditViewer(user?.role);
 
   const [search, setSearch] = useState(deepQ || "");
-  const [searchOpen, setSearchOpen] = useState(false);
   const [viewMode, setViewMode] = useState<BoardView>(() => {
     const v = deepLinkParams.get("view");
     if (v === "list" || v === "calendar" || v === "kanban") return v;
@@ -473,10 +480,11 @@ export default function VazifalarPage() {
     return "kanban";
   });
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState<string>("all");
   /** all | ofis | dorixona — ijrochi turi */
   const [workplaceFilter, setWorkplaceFilter] = useState<"all" | "ofis" | "dorixona">("all");
+  /** Holat: kechikkan / bugun / jarayon / tekshiruv / bajarilgan */
+  const [statusColFilter, setStatusColFilter] = useState<"all" | BoardCol>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [dateFromOpen, setDateFromOpen] = useState(false);
@@ -687,6 +695,8 @@ export default function VazifalarPage() {
 
   const [deptPickerOpen, setDeptPickerOpen] = useState(false);
   const [deptPickerQ, setDeptPickerQ] = useState("");
+  const [staffPickerOpen, setStaffPickerOpen] = useState(false);
+  const [staffPickerQ, setStaffPickerQ] = useState("");
 
   const filteredBranchOptions = useMemo(() => {
     const q = deptPickerQ.trim().toLowerCase();
@@ -718,28 +728,6 @@ export default function VazifalarPage() {
     return m;
   }, [assigneeOptions, employees, users, deptNameById]);
 
-  const searchStaffList = useMemo(() => {
-    let list = assigneeOptions;
-    if (workplaceFilter !== "all") {
-      list = list.filter((o) => o.workplace === workplaceFilter);
-    }
-    if (branchFilter !== "all") {
-      list = list.filter((o) =>
-        staffMatchesBranchFilter(o, branchFilter, assigneeDeptKey),
-      );
-    }
-    const q = search.trim().toLowerCase();
-    if (!q) return list.slice(0, 100);
-    return list
-      .filter(
-        (o) =>
-          o.name.toLowerCase().includes(q) ||
-          o.label.toLowerCase().includes(q) ||
-          o.meta.toLowerCase().includes(q),
-      )
-      .slice(0, 100);
-  }, [assigneeOptions, search, workplaceFilter, branchFilter, assigneeDeptKey]);
-
   const assigneeWorkplaceKey = useMemo(() => {
     const m = new Map<string, "ofis" | "dorixona">();
     for (const o of assigneeOptions) {
@@ -760,6 +748,23 @@ export default function VazifalarPage() {
     }
     return list.slice(0, 100);
   }, [assigneeOptions, workplaceFilter, branchFilter, assigneeDeptKey]);
+
+  const filteredStaffPickerOptions = useMemo(() => {
+    const q = staffPickerQ.trim().toLowerCase();
+    if (!q) return assigneeSelectOptions;
+    return assigneeSelectOptions.filter(
+      (o) =>
+        o.name.toLowerCase().includes(q) ||
+        o.label.toLowerCase().includes(q) ||
+        o.meta.toLowerCase().includes(q),
+    );
+  }, [assigneeSelectOptions, staffPickerQ]);
+
+  const staffFilterLabel = useMemo(() => {
+    if (assigneeFilter === null) return t("tasks.filter.me");
+    if (assigneeFilter === "all") return t("tasks.filter.allStaff");
+    return assigneeFilter.name;
+  }, [assigneeFilter, t]);
 
   /** Bo‘lim/ofis o‘zgaganda tanlangan xodim mos kelmasa — qaytarish */
   useEffect(() => {
@@ -806,7 +811,7 @@ export default function VazifalarPage() {
     };
   };
 
-  const filtered = useMemo(() => {
+  const filteredBundle = useMemo(() => {
     let list = tasks.filter(
       (t) =>
         t.status !== "cancelled" &&
@@ -874,25 +879,6 @@ export default function VazifalarPage() {
     if (priorityFilter !== "all") {
       list = list.filter((t) => t.priority === priorityFilter);
     }
-    if (typeFilter !== "all") {
-      list = list.filter((t) => {
-        const tp = String(t.meta?.taskType || "boshqa");
-        const aliases: Record<string, string[]> = {
-          hisobot: ["hisobot", "report"],
-          tekshiruv: ["tekshiruv", "audit"],
-          suhbat: ["suhbat", "call"],
-          hujjat: ["hujjat", "doc"],
-          boshqa: ["boshqa", "other"],
-          report: ["hisobot", "report"],
-          audit: ["tekshiruv", "audit"],
-          call: ["suhbat", "call"],
-          doc: ["hujjat", "doc"],
-          other: ["boshqa", "other"],
-        };
-        const group = aliases[typeFilter] || [typeFilter];
-        return group.includes(tp) || tp === typeFilter;
-      });
-    }
     if (branchFilter !== "all") {
       const target = normFilterText(branchFilter);
       list = list.filter((t) => {
@@ -937,17 +923,33 @@ export default function VazifalarPage() {
         return due ? new Date(due).getTime() < to : true;
       });
     }
-    return list;
+
+    const statusCounts: Record<BoardCol, number> = {
+      past: 0,
+      today: 0,
+      progress: 0,
+      review: 0,
+      completed: 0,
+    };
+    for (const t of list) {
+      statusCounts[boardColumnFor(t)] += 1;
+    }
+
+    if (statusColFilter !== "all") {
+      list = list.filter((t) => boardColumnFor(t) === statusColFilter);
+    }
+
+    return { list, statusCounts };
   }, [
     tasks,
     search,
     assigneeFilter,
     priorityFilter,
-    typeFilter,
     branchFilter,
     workplaceFilter,
     dateFrom,
     dateTo,
+    statusColFilter,
     assigneeDeptKey,
     assigneeWorkplaceKey,
     assigneeOptions,
@@ -955,6 +957,9 @@ export default function VazifalarPage() {
     user?.fullName,
     canSeePrivate,
   ]);
+
+  const filtered = filteredBundle.list;
+  const statusCounts = filteredBundle.statusCounts;
 
   function clearSearchFilter() {
     setSearch("");
@@ -965,7 +970,7 @@ export default function VazifalarPage() {
     setBranchFilter("all");
     setWorkplaceFilter("all");
     setPriorityFilter("all");
-    setTypeFilter("all");
+    setStatusColFilter("all");
     setDateFrom("");
     setDateTo("");
     clearSearchFilter();
@@ -1002,27 +1007,28 @@ export default function VazifalarPage() {
     return map;
   }, [filtered]);
 
-  const kpi = useMemo(
-    () => ({
-      total: filtered.length,
-      overdue: byColumn.past.length,
-      today: byColumn.today.length,
-      progress: byColumn.progress.length,
-      done: byColumn.completed.length,
-    }),
-    [filtered.length, byColumn],
-  );
-
-  const taskTypes = useMemo(() => {
-    const set = new Set<string>(STANDARD_TASK_TYPES);
-    for (const t of tasks) {
-      if (t.meta?.taskType) set.add(String(t.meta.taskType));
-    }
-    return Array.from(set);
-  }, [tasks]);
+  const kpi = useMemo(() => {
+    const total =
+      statusCounts.past +
+      statusCounts.today +
+      statusCounts.progress +
+      statusCounts.review +
+      statusCounts.completed;
+    return {
+      total,
+      overdue: statusCounts.past,
+      today: statusCounts.today,
+      progress: statusCounts.progress,
+      done: statusCounts.completed,
+    };
+  }, [statusCounts]);
 
   const [mobileCol, setMobileCol] = useState<BoardCol>("today");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [selectCol, setSelectCol] = useState<BoardCol | null>(null);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(
+    () => new Set(),
+  );
   const mobileColTouched = useRef(false);
 
   useEffect(() => {
@@ -1036,14 +1042,21 @@ export default function VazifalarPage() {
     let n = 0;
     if (branchFilter !== "all") n += 1;
     if (workplaceFilter !== "all") n += 1;
-    if (assigneeFilter !== null) n += 1; // "all" yoki tanlangan shaxs (O‘zim — default)
+    if (assigneeFilter !== null) n += 1;
     if (priorityFilter !== "all") n += 1;
-    if (typeFilter !== "all") n += 1;
     if (dateFrom) n += 1;
     if (dateTo) n += 1;
     if (search.trim() && assigneeFilter === null) n += 1;
     return n;
-  }, [branchFilter, workplaceFilter, assigneeFilter, priorityFilter, typeFilter, dateFrom, dateTo, search]);
+  }, [
+    branchFilter,
+    workplaceFilter,
+    assigneeFilter,
+    priorityFilter,
+    dateFrom,
+    dateTo,
+    search,
+  ]);
 
   const staffFilterActive =
     assigneeFilter !== null && assigneeFilter !== "all";
@@ -1051,7 +1064,6 @@ export default function VazifalarPage() {
   const workplaceActive = workplaceFilter !== "all";
   const branchActive = branchFilter !== "all";
   const priorityActive = priorityFilter !== "all";
-  const typeActive = typeFilter !== "all";
 
   const topAssignees = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
@@ -1144,7 +1156,7 @@ export default function VazifalarPage() {
       return {
         id: task.id,
         title: task.title || "—",
-        description: (task.description || "").trim(),
+        description: htmlDescToPlain(task.description || ""),
         column: colLabels[col],
         columnId: col as TaskExportColumnId,
         status: statusLabelUz(task.status),
@@ -1477,10 +1489,10 @@ export default function VazifalarPage() {
   }
 
   async function removeTask(task: Vazifa) {
-    if (!canDeleteTaskUi(user?.role)) {
+    if (!canDeleteTaskUi(task, user?.id, user?.role)) {
       toast({
         title: "Ruxsat yo‘q",
-        description: "O‘chirish faqat admin uchun",
+        description: t("tasks.delete.forbidden"),
         variant: "destructive",
       });
       return;
@@ -1488,7 +1500,7 @@ export default function VazifalarPage() {
     if (!confirm(`«${task.title}» o'chirilsinmi?`)) return;
     try {
       await deleteTask.mutateAsync(task.id);
-      toast({ title: "Vazifa o'chirildi" });
+      toast({ title: t("tasks.delete.done") });
     } catch (e: any) {
       toast({
         title: "O'chirilmadi",
@@ -1498,8 +1510,98 @@ export default function VazifalarPage() {
     }
   }
 
+  function deletableInColumn(colId: BoardCol): Vazifa[] {
+    return byColumn[colId].filter((task) =>
+      canDeleteTaskUi(task, user?.id, user?.role),
+    );
+  }
+
+  function exitSelectMode() {
+    setSelectCol(null);
+    setSelectedTaskIds(new Set());
+  }
+
+  function enterSelectMode(colId: BoardCol) {
+    setSelectCol(colId);
+    setSelectedTaskIds(new Set());
+    mobileColTouched.current = true;
+    setMobileCol(colId);
+  }
+
+  function toggleTaskSelected(taskId: number) {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  function selectAllDeletableInColumn(colId: BoardCol) {
+    const ids = deletableInColumn(colId).map((t) => t.id);
+    setSelectedTaskIds(new Set(ids));
+  }
+
+  async function removeTasksBatch(targets: Vazifa[], confirmMsg: string) {
+    if (targets.length === 0) {
+      toast({
+        title: t("tasks.col.deleteEmpty"),
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!confirm(confirmMsg)) return;
+    let ok = 0;
+    let fail = 0;
+    for (const task of targets) {
+      try {
+        await deleteTask.mutateAsync(task.id);
+        ok += 1;
+      } catch {
+        fail += 1;
+      }
+    }
+    if (ok > 0) {
+      toast({
+        title: t("tasks.delete.batchDone").replace("{n}", String(ok)),
+      });
+    }
+    if (fail > 0) {
+      toast({
+        title: t("tasks.delete.batchFail"),
+        description: `${fail}`,
+        variant: "destructive",
+      });
+    }
+    exitSelectMode();
+  }
+
+  async function removeColumnTasks(colId: BoardCol) {
+    const targets = deletableInColumn(colId);
+    const colLabel = t(COLUMNS.find((c) => c.id === colId)?.labelKey || "");
+    const msg = t("tasks.col.deleteConfirm")
+      .replace("{col}", colLabel)
+      .replace("{n}", String(targets.length));
+    await removeTasksBatch(targets, msg);
+  }
+
+  async function removeSelectedTasks(colId: BoardCol) {
+    const targets = byColumn[colId].filter(
+      (task) =>
+        selectedTaskIds.has(task.id) &&
+        canDeleteTaskUi(task, user?.id, user?.role),
+    );
+    const msg = t("tasks.col.deleteSelectedConfirm").replace(
+      "{n}",
+      String(targets.length),
+    );
+    await removeTasksBatch(targets, msg);
+  }
+
   function renderTaskCard(task: Vazifa, colId: BoardCol) {
     const overdue = colId === "past" || isTaskOverdue(task);
+    const canDelete = canDeleteTaskUi(task, user?.id, user?.role);
+    const selecting = selectCol === colId;
   return (
       <TaskCard
         key={task.id}
@@ -1509,8 +1611,18 @@ export default function VazifalarPage() {
         isCreator={isCreatorOf(task)}
         isAssignee={isAssigneeOf(task)}
         canApprove={canApproveTaskUi(task, user?.id, user?.role)}
-        canDelete={canDeleteTaskUi(user?.role)}
-        onOpen={() => openEdit(task)}
+        canDelete={canDelete}
+        selectMode={selecting}
+        selected={selectedTaskIds.has(task.id)}
+        canSelect={canDelete}
+        onToggleSelect={() => toggleTaskSelected(task.id)}
+        onOpen={() => {
+          if (selecting) {
+            if (canDelete) toggleTaskSelected(task.id);
+            return;
+          }
+          openEdit(task);
+        }}
         onComplete={() => openComplete(task)}
         onExtend={() => openExtend(task)}
         onDelete={() => removeTask(task)}
@@ -1677,39 +1789,45 @@ export default function VazifalarPage() {
                 <Plus className="h-4 w-4" />
                 {t("tasks.new")}
               </Button>
-                      )}
-                    </div>
-                  </div>
+            )}
+          </div>
+        </div>
+      </div>
 
-        {/* Mobil: ixcham gorizontal KPI; desktop: to‘liq kartalar */}
+        {/* KPI — bosilganda faqat shu holatdagi vazifalar */}
         <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mt-4 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-5">
           {kpiCards.map((card) => {
             const Icon = card.icon;
-            const colMap: Record<string, BoardCol | null> = {
+            const colMap: Record<string, "all" | BoardCol> = {
+              total: "all",
               overdue: "past",
               today: "today",
               progress: "progress",
               done: "completed",
-              total: null,
             };
-            const targetCol = colMap[card.key];
+            const targetCol = colMap[card.key] ?? "all";
+            const active = statusColFilter === targetCol;
             return (
               <button
                 key={card.key}
                 type="button"
+                aria-pressed={active}
                 onClick={() => {
-                  if (targetCol) {
+                  const next =
+                    targetCol !== "all" && statusColFilter === targetCol
+                      ? "all"
+                      : targetCol;
+                  setStatusColFilter(next);
+                  if (next !== "all") {
                     mobileColTouched.current = true;
-                    setMobileCol(targetCol);
+                    setMobileCol(next);
                     if (isMobile) switchView("kanban");
-                  } else if (isMobile) {
-                    switchView("list");
                   }
                 }}
                 className={cn(
                   surface,
                   "flex min-w-[132px] shrink-0 items-center gap-2 px-2.5 py-2 text-left transition hover:border-primary/30 md:min-w-0 md:gap-3 md:px-3.5 md:py-3",
-                  targetCol && mobileCol === targetCol && viewMode === "kanban" && "border-primary/40 ring-1 ring-primary/20",
+                  active && "border-primary/40 ring-1 ring-primary/20",
                 )}
               >
                 <span
@@ -1731,13 +1849,13 @@ export default function VazifalarPage() {
           })}
       </div>
 
-        <div className={cn(surface, "mt-3 p-2 md:mt-4 md:p-2.5")}>
-          <div className="mb-0 flex items-center justify-between gap-2 lg:mb-2 lg:hidden">
+        <div className={cn(surface, "mt-3 overflow-hidden md:mt-4")}>
+          <div className="mb-0 flex items-center justify-between gap-2 border-b border-border/60 px-3 py-2.5 lg:hidden">
             <button
               type="button"
               onClick={() => setFiltersOpen((v) => !v)}
-                    className={cn(
-                "inline-flex items-center gap-2 rounded-lg border border-border/80 bg-muted/40 px-3 py-2 text-xs font-semibold text-foreground",
+              className={cn(
+                "inline-flex items-center gap-2 rounded-lg border border-border/80 bg-muted/30 px-3 py-2 text-xs font-semibold text-foreground",
                 filtersOpen && "border-primary/40 bg-primary/5 text-primary",
               )}
             >
@@ -1746,7 +1864,7 @@ export default function VazifalarPage() {
               {activeFilterCount > 0 ? (
                 <span className="rounded-full bg-primary px-1.5 py-0.5 text-[10px] font-bold text-primary-foreground">
                   {activeFilterCount}
-                  </span>
+                </span>
               ) : null}
             </button>
             {activeFilterCount > 0 ? (
@@ -1759,566 +1877,447 @@ export default function VazifalarPage() {
                 {t("tasks.filter.dateClear")}
               </button>
             ) : null}
-                </div>
-          <div
-            className={cn(
-              "flex-col gap-2 lg:flex lg:flex-row lg:flex-wrap lg:items-center",
-              filtersOpen ? "mt-2 flex" : "hidden",
-            )}
-          >
-          <div className="relative w-full lg:min-w-[200px] lg:flex-1 lg:max-w-xs">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={
-                assigneeFilter !== null && assigneeFilter !== "all" ? assigneeFilter.name : search
-              }
-              onChange={(e) => {
-                const v = e.target.value;
-                setSearch(v);
-                if (assigneeFilter !== null && assigneeFilter !== "all") {
-                  setAssigneeFilter(canBrowseAll ? "all" : null);
-                } else if (assigneeFilter === null && v.trim()) {
-                  // Qidiruvda O‘zimdan chiqib barcha (ruxsat bo‘lsa) yoki matn bo‘yicha
-                  if (canBrowseAll) setAssigneeFilter("all");
-                }
-              }}
-              placeholder={t("tasks.search")}
-              className={cn(
-                control,
-                "w-full pl-8",
-                (search.trim() || staffFilterActive) && controlActive,
-              )}
-            />
           </div>
 
-          <Select
-            value={workplaceFilter}
-            onValueChange={(v) => setWorkplaceFilter(v as "all" | "ofis" | "dorixona")}
+          <div
+            className={cn(
+              "flex-col gap-3 p-3 sm:p-3.5",
+              filtersOpen ? "flex" : "hidden lg:flex",
+            )}
           >
-            <SelectTrigger
-              className={cn(control, "w-full lg:w-[140px]", workplaceActive && controlActive)}
-            >
-              <SelectValue placeholder={t("tasks.filter.allWorkplace")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("tasks.filter.allWorkplace")}</SelectItem>
-              <SelectItem value="ofis">{t("emp.ofis")}</SelectItem>
-              <SelectItem value="dorixona">{t("emp.dorixona")}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Popover
-            open={deptPickerOpen}
-            onOpenChange={(o) => {
-              setDeptPickerOpen(o);
-              if (!o) setDeptPickerQ("");
-            }}
-          >
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={cn(
-                  control,
-                  "flex w-full items-center justify-between gap-2 rounded-md border px-3 text-left lg:w-[180px]",
-                  branchActive && controlActive,
-                )}
+            <div className="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
+              {/* 1. Odam qidirish — eng muhim */}
+              <Popover
+                open={staffPickerOpen}
+                onOpenChange={(o) => {
+                  setStaffPickerOpen(o);
+                  if (!o) setStaffPickerQ("");
+                }}
               >
-                <span className="min-w-0 flex-1 truncate">
-                  {branchFilter === "all" ? t("tasks.filter.allBranches") : branchFilter}
-                </span>
-                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
-              </button>
-            </PopoverTrigger>
-            <PopoverContent
-              className="z-[80] w-[min(100vw-2rem,280px)] p-0"
-              align="start"
-              sideOffset={6}
-            >
-              <Command shouldFilter={false}>
-                <CommandInput
-                  value={deptPickerQ}
-                  onValueChange={setDeptPickerQ}
-                  placeholder={t("tasks.filter.deptSearch")}
-                />
-                <CommandList className="max-h-[min(70dvh,22rem)]">
-                  <CommandEmpty>{t("tasks.filter.deptEmpty")}</CommandEmpty>
-                  <CommandGroup
-                    heading={`${t("tasks.filter.allBranches")} · ${branchOptions.length}`}
-                  >
-                    <CommandItem
-                      value="__all_depts__"
-                      onSelect={() => {
-                        setBranchFilter("all");
-                        setDeptPickerOpen(false);
-                        setDeptPickerQ("");
-                      }}
-                      className="gap-2"
-                    >
-                      <span className="min-w-0 flex-1 font-medium">
-                        {t("tasks.filter.allBranches")}
-                      </span>
-                      <Check
-                        className={cn(
-                          "h-4 w-4 shrink-0 text-primary",
-                          branchFilter === "all" ? "opacity-100" : "opacity-0",
-                        )}
-                      />
-                    </CommandItem>
-                    {filteredBranchOptions.map((b) => (
-                      <CommandItem
-                        key={b}
-                        value={b}
-                        onSelect={() => {
-                          setBranchFilter(b);
-                          // Bo‘lim tanlanganda — shu bo‘limdagi barcha xodimlar vazifalari
-                          if (canBrowseAll) {
-                            setAssigneeFilter("all");
-                            setSearch("");
-                          }
-                          setDeptPickerOpen(false);
-                          setDeptPickerQ("");
-                        }}
-                        className="gap-2"
-                      >
-                        <span className="min-w-0 flex-1 truncate">{b}</span>
-                        <Check
-                          className={cn(
-                            "h-4 w-4 shrink-0 text-primary",
-                            branchFilter === b ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-
-                  <Select
-            value={
-              assigneeFilter === null
-                ? "me"
-                : assigneeFilter === "all"
-                  ? "all"
-                  : `${assigneeFilter.kind}:${assigneeFilter.id}`
-            }
-                    onValueChange={(v) => {
-              if (v === "me") {
-                resetStaffFilterToMe();
-                return;
-              }
-              if (v === "all") {
-                if (!canBrowseAll) {
-                  resetStaffFilterToMe();
-                  return;
-                }
-                setAssigneeFilter("all");
-                setSearch("");
-                return;
-              }
-              if (!canBrowseAll) {
-                resetStaffFilterToMe();
-                return;
-              }
-              const [kind, idStr] = v.split(":");
-              const opt = assigneeOptions.find(
-                (o) => o.kind === kind && String(o.id) === idStr,
-              );
-              if (opt) {
-                setAssigneeFilter({ kind: opt.kind, id: opt.id, name: opt.name });
-                setSearch(opt.name);
-              }
-            }}
-          >
-            <SelectTrigger
-              className={cn(
-                control,
-                "w-full lg:w-[160px]",
-                (staffFilterActive || staffFilterIsAll) && controlActive,
-              )}
-            >
-              <SelectValue placeholder={t("tasks.filter.me")} />
-                    </SelectTrigger>
-                    <SelectContent>
-              <SelectItem value="me">{t("tasks.filter.me")}</SelectItem>
-              {canBrowseAll ? (
-                <SelectItem value="all">{t("tasks.filter.allStaff")}</SelectItem>
-              ) : null}
-              {canBrowseAll
-                ? assigneeSelectOptions.map((o) => (
-                    <SelectItem key={o.key} value={`${o.kind}:${o.id}`}>
-                      {o.name}
-                      {o.workplace === "dorixona" ? " · Dorixona" : " · Ofis"}
-                    </SelectItem>
-                  ))
-                : null}
-            </SelectContent>
-          </Select>
-
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger
-              className={cn(control, "w-full lg:w-[145px]", priorityActive && controlActive)}
-            >
-              <SelectValue placeholder={t("tasks.filter.allPriority")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("tasks.filter.allPriority")}</SelectItem>
-              <SelectItem value="urgent">{t("tasks.priority.urgent")}</SelectItem>
-              <SelectItem value="high">{t("tasks.priority.high")}</SelectItem>
-              <SelectItem value="normal">{t("tasks.priority.normal")}</SelectItem>
-              <SelectItem value="low">{t("tasks.priority.low")}</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger
-              className={cn(control, "w-full lg:w-[140px]", typeActive && controlActive)}
-            >
-              <SelectValue placeholder={t("tasks.filter.allTypes")} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">{t("tasks.filter.allTypes")}</SelectItem>
-              {(taskTypes.length
-                ? taskTypes
-                : ["report", "audit", "call", "doc", "other"]
-              ).map((tp) => (
-                <SelectItem key={tp} value={tp}>
-                  {taskTypeLabel(tp, t)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-
-          <div className="flex w-full items-center gap-1.5 lg:w-auto">
-            <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    control,
-                    "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-left transition lg:w-[148px] lg:flex-none",
-                    "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    dateFrom && controlActive,
-                  )}
-                >
-                  <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                  <span
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
                     className={cn(
-                      "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
-                      !dateFrom && "font-normal text-muted-foreground",
+                      control,
+                      "flex w-full min-w-0 items-center gap-2 rounded-lg border px-3 text-left lg:min-w-[240px] lg:flex-1 lg:max-w-sm",
+                      (staffFilterActive || staffFilterIsAll || staffPickerOpen) && controlActive,
                     )}
                   >
-                    {dateFrom ? formatFilterDate(dateFrom) : t("tasks.filter.dateFrom")}
-                  </span>
-                  {dateFrom ? (
+                    <Search className="h-3.5 w-3.5 shrink-0 opacity-60" />
                     <span
-                      role="button"
-                      tabIndex={0}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDateFrom("");
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDateFrom("");
-                        }
-                      }}
-                      aria-label={t("tasks.filter.dateClear")}
-                    >
-                      <X className="h-3 w-3" />
-                    </span>
-                  ) : null}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
-                <DayPickerCalendar
-                  mode="single"
-                  className="rounded-xl"
-                  selected={parseYmdLocal(dateFrom)}
-                  onSelect={(day) => {
-                    const next = day ? toYmdLocal(day) : "";
-                    setDateFrom(next);
-                    if (next && dateTo && next > dateTo) setDateTo(next);
-                    setDateFromOpen(false);
-                  }}
-                  defaultMonth={parseYmdLocal(dateFrom) || new Date()}
-                  disabled={dateTo ? { after: parseYmdLocal(dateTo)! } : undefined}
-                />
-              </PopoverContent>
-            </Popover>
-
-            <span className="shrink-0 text-[11px] text-muted-foreground/70">–</span>
-
-            <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className={cn(
-                    control,
-                    "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-left transition lg:w-[148px] lg:flex-none",
-                    "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    dateTo && controlActive,
-                  )}
-                >
-                  <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                  <span
-                    className={cn(
-                      "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
-                      !dateTo && "font-normal text-muted-foreground",
-                    )}
-                  >
-                    {dateTo ? formatFilterDate(dateTo) : t("tasks.filter.dateTo")}
-                  </span>
-                  {dateTo ? (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        setDateTo("");
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          setDateTo("");
-                        }
-                      }}
-                      aria-label={t("tasks.filter.dateClear")}
-                    >
-                      <X className="h-3 w-3" />
-                    </span>
-                  ) : null}
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
-                <DayPickerCalendar
-                  mode="single"
-                  className="rounded-xl"
-                  selected={parseYmdLocal(dateTo)}
-                  onSelect={(day) => {
-                    const next = day ? toYmdLocal(day) : "";
-                    setDateTo(next);
-                    if (next && dateFrom && next < dateFrom) setDateFrom(next);
-                    setDateToOpen(false);
-                  }}
-                  defaultMonth={parseYmdLocal(dateTo) || parseYmdLocal(dateFrom) || new Date()}
-                  disabled={dateFrom ? { before: parseYmdLocal(dateFrom)! } : undefined}
-                />
-              </PopoverContent>
-            </Popover>
-            </div>
-
-          {activeFilterCount > 0 ? (
-            <button
-              type="button"
-              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-primary/50 bg-primary px-3 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
-              onClick={clearAllFilters}
-            >
-              <X className="h-3.5 w-3.5" />
-              {t("tasks.filter.dateClear")}
-              <span className="rounded-full bg-white/25 px-1.5 py-px text-[10px] tabular-nums">
-                {activeFilterCount}
-              </span>
-            </button>
-          ) : null}
-
-          <Popover open={searchOpen} onOpenChange={setSearchOpen}>
-                  <PopoverTrigger asChild>
-              <button
-                      type="button"
-                className={cn(
-                  control,
-                  "flex min-w-0 flex-1 items-center gap-2 rounded-md border px-3 text-left transition",
-                  "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                  (searchOpen ||
-                    search.trim() ||
-                    staffFilterActive ||
-                    staffFilterIsAll ||
-                    workplaceActive ||
-                    branchActive) &&
-                    controlActive,
-                )}
-              >
-                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                      <span
-                        className={cn(
-                    "min-w-0 flex-1 truncate",
-                    search.trim() ||
-                      (assigneeFilter !== null && assigneeFilter !== "all")
-                      ? "text-foreground"
-                      : "text-muted-foreground",
-                  )}
-                >
-                  {(assigneeFilter !== null && assigneeFilter !== "all"
-                    ? assigneeFilter.name
-                    : "") ||
-                    search ||
-                    t("tasks.searchShort")}
-                      </span>
-                {search.trim() ||
-                (assigneeFilter !== null && assigneeFilter !== "all") ? (
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      clearSearchFilter();
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        clearSearchFilter();
-                      }
-                    }}
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </span>
-                ) : (
-                  <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-                )}
-              </button>
-                  </PopoverTrigger>
-                  <PopoverContent
-              className="z-[80] w-[var(--radix-popover-trigger-width)] p-0"
-                    align="start"
-              sideOffset={6}
-            >
-              <Command shouldFilter={false}>
-                <div className="flex gap-1 border-b px-2 py-2">
-                  {(
-                    [
-                      ["all", t("tasks.filter.allWorkplace")],
-                      ["ofis", t("emp.ofis")],
-                      ["dorixona", t("emp.dorixona")],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setWorkplaceFilter(key)}
                       className={cn(
-                        "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
-                        workplaceFilter === key
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted text-muted-foreground hover:text-foreground",
+                        "min-w-0 flex-1 truncate",
+                        !staffFilterActive && !staffFilterIsAll && "font-normal text-muted-foreground",
                       )}
                     >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-                <CommandInput
-                  value={search}
-                  onValueChange={(v) => {
-                    setSearch(v);
-                    if (assigneeFilter !== null && assigneeFilter !== "all") {
-                      setAssigneeFilter(canBrowseAll ? "all" : null);
-                    }
-                  }}
-                  placeholder={t("tasks.searchEmployee")}
-                />
-                <CommandList className="max-h-72">
-                        <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
-                  <CommandGroup heading={t("tasks.filterByAssignee")}>
-                    <CommandItem
-                      value="__me__"
-                      onSelect={() => {
-                        resetStaffFilterToMe();
-                        setSearchOpen(false);
-                      }}
-                      className="gap-2.5 py-2"
-                    >
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
-                        {initialsFromName(user?.fullName) || "?"}
-                      </span>
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                        {t("tasks.filter.me")}
-                        {user?.fullName ? ` · ${user.fullName}` : ""}
-                      </span>
-                      <Check
-                        className={cn(
-                          "h-4 w-4 shrink-0 text-primary",
-                          assigneeFilter === null ? "opacity-100" : "opacity-0",
-                        )}
-                      />
-                    </CommandItem>
-                    {canBrowseAll ? (
-                      <CommandItem
-                        value="__all__"
-                        onSelect={() => {
-                          setAssigneeFilter("all");
-                          setSearch("");
-                          setSearchOpen(false);
+                      {staffFilterActive || staffFilterIsAll
+                        ? staffFilterLabel
+                        : t("tasks.searchEmployee")}
+                    </span>
+                    {staffFilterActive ? (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        className="rounded-full p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          resetStaffFilterToMe();
                         }}
-                        className="gap-2.5 py-2"
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            resetStaffFilterToMe();
+                          }
+                        }}
                       >
-                        <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                          {t("tasks.filter.allStaff")}
-                        </span>
-                        <Check
-                          className={cn(
-                            "h-4 w-4 shrink-0 text-primary",
-                            assigneeFilter === "all" ? "opacity-100" : "opacity-0",
-                          )}
-                        />
-                      </CommandItem>
-                    ) : null}
-                    {(canBrowseAll ? searchStaffList : []).map((o) => {
-                      const initials = initialsFromName(o.name);
-                      const active =
-                        assigneeFilter !== null &&
-                        assigneeFilter !== "all" &&
-                        assigneeFilter.kind === o.kind &&
-                        assigneeFilter.id === o.id;
-                      return (
-                            <CommandItem
-                              key={o.key}
-                              value={o.label}
-                              onSelect={() => {
-                            setAssigneeFilter({ kind: o.kind, id: o.id, name: o.name });
-                            setSearch(o.name);
-                            setSearchOpen(false);
+                        <X className="h-3.5 w-3.5" />
+                      </span>
+                    ) : (
+                      <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-50" />
+                    )}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="z-[80] w-[min(100vw-2rem,360px)] overflow-hidden rounded-xl border border-border p-0 shadow-xl"
+                  align="start"
+                  sideOffset={6}
+                >
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      value={staffPickerQ}
+                      onValueChange={setStaffPickerQ}
+                      placeholder={t("tasks.searchEmployee")}
+                    />
+                    <CommandList className="max-h-[min(70dvh,24rem)]">
+                      <CommandEmpty>{t("tasks.noEmployee")}</CommandEmpty>
+                      <CommandGroup heading={t("tasks.filterByAssignee")}>
+                        <CommandItem
+                          value="__me__"
+                          onSelect={() => {
+                            resetStaffFilterToMe();
+                            setStaffPickerOpen(false);
+                            setStaffPickerQ("");
                           }}
                           className="gap-2.5 py-2"
                         >
-                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                            {initials || "?"}
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-sky-600 text-[10px] font-bold text-white">
+                            {initialsFromName(user?.fullName) || "?"}
                           </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium">{o.name}</span>
-                            <span className="block truncate text-[11px] text-muted-foreground">
-                              {o.meta}
-                              {o.workplace === "dorixona" ? " · Dorixona" : " · Ofis"}
-                            </span>
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                            {t("tasks.filter.me")}
+                            {user?.fullName ? ` · ${user.fullName}` : ""}
                           </span>
-                              <Check
-                                className={cn(
+                          <Check
+                            className={cn(
                               "h-4 w-4 shrink-0 text-primary",
-                              active ? "opacity-100" : "opacity-0",
+                              assigneeFilter === null ? "opacity-100" : "opacity-0",
                             )}
                           />
-                            </CommandItem>
-                      );
-                    })}
+                        </CommandItem>
+                      </CommandGroup>
+                      {canBrowseAll ? (
+                        <CommandGroup
+                          heading={`${t("tasks.filter.allStaff")} · ${filteredStaffPickerOptions.length}`}
+                        >
+                          <CommandItem
+                            value="__all_staff__"
+                            onSelect={() => {
+                              setAssigneeFilter("all");
+                              setSearch("");
+                              setStaffPickerOpen(false);
+                              setStaffPickerQ("");
+                            }}
+                            className="gap-2.5 py-2"
+                          >
+                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-bold text-muted-foreground">
+                              ∞
+                            </span>
+                            <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                              {t("tasks.filter.allStaff")}
+                            </span>
+                            <Check
+                              className={cn(
+                                "h-4 w-4 shrink-0 text-primary",
+                                assigneeFilter === "all" ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                          </CommandItem>
+                          {filteredStaffPickerOptions.map((o) => {
+                            const active =
+                              assigneeFilter !== null &&
+                              assigneeFilter !== "all" &&
+                              assigneeFilter.kind === o.kind &&
+                              assigneeFilter.id === o.id;
+                            return (
+                              <CommandItem
+                                key={o.key}
+                                value={`${o.name} ${o.meta} ${o.key}`}
+                                onSelect={() => {
+                                  setAssigneeFilter({
+                                    kind: o.kind,
+                                    id: o.id,
+                                    name: o.name,
+                                  });
+                                  setSearch(o.name);
+                                  setStaffPickerOpen(false);
+                                  setStaffPickerQ("");
+                                }}
+                                className="gap-2.5 py-2"
+                              >
+                                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                                  {initialsFromName(o.name) || "?"}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block truncate text-sm font-medium leading-tight">
+                                    {o.name}
+                                  </span>
+                                  <span className="block truncate text-[11px] text-muted-foreground">
+                                    {o.meta}
+                                    {o.workplace === "dorixona" ? " · Dorixona" : " · Ofis"}
+                                  </span>
+                                </span>
+                                <Check
+                                  className={cn(
+                                    "h-4 w-4 shrink-0 text-primary",
+                                    active ? "opacity-100" : "opacity-0",
+                                  )}
+                                />
+                              </CommandItem>
+                            );
+                          })}
                         </CommandGroup>
-                      </CommandList>
-                    </Command>
+                      ) : null}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+
+              {/* 2. Bo‘lim */}
+              <Popover
+                open={deptPickerOpen}
+                onOpenChange={(o) => {
+                  setDeptPickerOpen(o);
+                  if (!o) setDeptPickerQ("");
+                }}
+              >
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className={cn(
+                      control,
+                      "flex w-full items-center justify-between gap-2 rounded-lg border px-3 text-left lg:w-[168px]",
+                      branchActive && controlActive,
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {branchFilter === "all" ? t("tasks.filter.allBranches") : branchFilter}
+                    </span>
+                    <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent
+                  className="z-[80] w-[min(100vw-2rem,280px)] overflow-hidden rounded-xl p-0 shadow-xl"
+                  align="start"
+                  sideOffset={6}
+                >
+                  <Command shouldFilter={false}>
+                    <CommandInput
+                      value={deptPickerQ}
+                      onValueChange={setDeptPickerQ}
+                      placeholder={t("tasks.filter.deptSearch")}
+                    />
+                    <CommandList className="max-h-[min(70dvh,22rem)]">
+                      <CommandEmpty>{t("tasks.filter.deptEmpty")}</CommandEmpty>
+                      <CommandGroup
+                        heading={`${t("tasks.filter.allBranches")} · ${branchOptions.length}`}
+                      >
+                        <CommandItem
+                          value="__all_depts__"
+                          onSelect={() => {
+                            setBranchFilter("all");
+                            setDeptPickerOpen(false);
+                            setDeptPickerQ("");
+                          }}
+                          className="gap-2"
+                        >
+                          <span className="min-w-0 flex-1 font-medium">
+                            {t("tasks.filter.allBranches")}
+                          </span>
+                          <Check
+                            className={cn(
+                              "h-4 w-4 shrink-0 text-primary",
+                              branchFilter === "all" ? "opacity-100" : "opacity-0",
+                            )}
+                          />
+                        </CommandItem>
+                        {filteredBranchOptions.map((b) => (
+                          <CommandItem
+                            key={b}
+                            value={b}
+                            onSelect={() => {
+                              setBranchFilter(b);
+                              if (canBrowseAll) {
+                                setAssigneeFilter("all");
+                                setSearch("");
+                              }
+                              setDeptPickerOpen(false);
+                              setDeptPickerQ("");
+                            }}
+                            className="gap-2"
+                          >
+                            <span className="min-w-0 flex-1 truncate">{b}</span>
+                            <Check
+                              className={cn(
+                                "h-4 w-4 shrink-0 text-primary",
+                                branchFilter === b ? "opacity-100" : "opacity-0",
+                              )}
+                            />
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+
+              {/* 3. Ofis / Dorixona */}
+              <Select
+                value={workplaceFilter}
+                onValueChange={(v) => setWorkplaceFilter(v as "all" | "ofis" | "dorixona")}
+              >
+                <SelectTrigger
+                  className={cn(control, "w-full rounded-lg lg:w-[138px]", workplaceActive && controlActive)}
+                >
+                  <SelectValue placeholder={t("tasks.filter.allWorkplace")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("tasks.filter.allWorkplace")}</SelectItem>
+                  <SelectItem value="ofis">{t("emp.ofis")}</SelectItem>
+                  <SelectItem value="dorixona">{t("emp.dorixona")}</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* 4. Ustuvorlik */}
+              <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+                <SelectTrigger
+                  className={cn(control, "w-full rounded-lg lg:w-[150px]", priorityActive && controlActive)}
+                >
+                  <SelectValue placeholder={t("tasks.filter.allPriority")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">{t("tasks.filter.allPriority")}</SelectItem>
+                  <SelectItem value="urgent">{t("tasks.priority.urgent")}</SelectItem>
+                  <SelectItem value="high">{t("tasks.priority.high")}</SelectItem>
+                  <SelectItem value="normal">{t("tasks.priority.normal")}</SelectItem>
+                  <SelectItem value="low">{t("tasks.priority.low")}</SelectItem>
+                </SelectContent>
+              </Select>
+
+              {/* 5. Sana */}
+              <div className="flex w-full items-center gap-1.5 lg:w-auto">
+                <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        control,
+                        "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border px-2.5 text-left transition lg:w-[136px] lg:flex-none",
+                        "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        dateFrom && controlActive,
+                      )}
+                    >
+                      <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
+                          !dateFrom && "font-normal text-muted-foreground",
+                        )}
+                      >
+                        {dateFrom ? formatFilterDate(dateFrom) : t("tasks.filter.dateFrom")}
+                      </span>
+                      {dateFrom ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDateFrom("");
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDateFrom("");
+                            }
+                          }}
+                          aria-label={t("tasks.filter.dateClear")}
+                        >
+                          <X className="h-3 w-3" />
+                        </span>
+                      ) : null}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
+                    <DayPickerCalendar
+                      mode="single"
+                      className="rounded-xl"
+                      selected={parseYmdLocal(dateFrom)}
+                      onSelect={(day) => {
+                        const next = day ? toYmdLocal(day) : "";
+                        setDateFrom(next);
+                        if (next && dateTo && next > dateTo) setDateTo(next);
+                        setDateFromOpen(false);
+                      }}
+                      defaultMonth={parseYmdLocal(dateFrom) || new Date()}
+                      disabled={dateTo ? { after: parseYmdLocal(dateTo)! } : undefined}
+                    />
+                  </PopoverContent>
+                </Popover>
+
+                <span className="shrink-0 text-[11px] text-muted-foreground/70">–</span>
+
+                <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className={cn(
+                        control,
+                        "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border px-2.5 text-left transition lg:w-[136px] lg:flex-none",
+                        "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        dateTo && controlActive,
+                      )}
+                    >
+                      <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                      <span
+                        className={cn(
+                          "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
+                          !dateTo && "font-normal text-muted-foreground",
+                        )}
+                      >
+                        {dateTo ? formatFilterDate(dateTo) : t("tasks.filter.dateTo")}
+                      </span>
+                      {dateTo ? (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            setDateTo("");
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              setDateTo("");
+                            }
+                          }}
+                          aria-label={t("tasks.filter.dateClear")}
+                        >
+                          <X className="h-3 w-3" />
+                        </span>
+                      ) : null}
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
+                    <DayPickerCalendar
+                      mode="single"
+                      className="rounded-xl"
+                      selected={parseYmdLocal(dateTo)}
+                      onSelect={(day) => {
+                        const next = day ? toYmdLocal(day) : "";
+                        setDateTo(next);
+                        if (next && dateFrom && next < dateFrom) setDateFrom(next);
+                        setDateToOpen(false);
+                      }}
+                      defaultMonth={parseYmdLocal(dateTo) || parseYmdLocal(dateFrom) || new Date()}
+                      disabled={dateFrom ? { before: parseYmdLocal(dateFrom)! } : undefined}
+                    />
                   </PopoverContent>
                 </Popover>
               </div>
-              </div>
-              </div>
+
+              {activeFilterCount > 0 ? (
+                <button
+                  type="button"
+                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-primary/50 bg-primary px-3 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
+                  onClick={clearAllFilters}
+                >
+                  <X className="h-3.5 w-3.5" />
+                  {t("tasks.filter.dateClear")}
+                  <span className="rounded-full bg-white/25 px-1.5 py-px text-[10px] tabular-nums">
+                    {activeFilterCount}
+                  </span>
+                </button>
+              ) : null}
+            </div>
+          </div>
+        </div>
 
       <div className="min-h-0 flex-1 overflow-auto p-3 sm:p-4 md:p-5">
         <div key={viewMode} className="min-h-0 min-w-0 animate-in fade-in-0 duration-200">
@@ -2378,9 +2377,9 @@ export default function VazifalarPage() {
                               <div className="font-medium text-foreground">{task.title}</div>
                               {task.description ? (
                                 <div className="mt-0.5 line-clamp-1 text-[11px] text-muted-foreground">
-                                  {task.description}
-              </div>
-            ) : null}
+                                  {htmlDescToPlain(task.description)}
+                                </div>
+                              ) : null}
                             </td>
                             <td className="px-4 py-3">
                               <div className="flex items-center gap-2">
@@ -2799,15 +2798,139 @@ export default function VazifalarPage() {
                         >
                           {byColumn[col.id].length}
                         </span>
-                        <button
-                          type="button"
-                          className="hidden rounded-md p-1 text-muted-foreground hover:bg-card/80 hover:text-foreground md:inline-flex"
-                          aria-label="more"
-                        >
-                          <MoreHorizontal className="h-4 w-4" />
-                        </button>
+                        {(() => {
+                          const deletable = deletableInColumn(col.id);
+                          const isAdminDelete = canSeePrivateTasks(user?.role);
+                          const selecting = selectCol === col.id;
+                          const selectedInCol = deletable.filter((t) =>
+                            selectedTaskIds.has(t.id),
+                          ).length;
+                          if (deletable.length === 0 && !isAdminDelete) return null;
+                          return (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <button
+                                  type="button"
+                                  className={cn(
+                                    "inline-flex rounded-md p-1 text-muted-foreground hover:bg-card/80 hover:text-foreground",
+                                    selecting && "bg-primary/10 text-primary",
+                                  )}
+                                  aria-label={t("tasks.col.menu")}
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <MoreHorizontal className="h-4 w-4" />
+                                </button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end" className="min-w-[230px]">
+                                <DropdownMenuItem
+                                  disabled={deletable.length === 0}
+                                  className="gap-2"
+                                  onClick={() => {
+                                    if (selecting) exitSelectMode();
+                                    else enterSelectMode(col.id);
+                                  }}
+                                >
+                                  <CheckSquare className="h-3.5 w-3.5" />
+                                  <span className="flex-1 truncate">
+                                    {selecting
+                                      ? t("tasks.col.cancelSelect")
+                                      : t("tasks.col.selectDelete")}
+                                  </span>
+                                </DropdownMenuItem>
+                                {selecting ? (
+                                  <>
+                                    <DropdownMenuItem
+                                      disabled={deletable.length === 0}
+                                      className="gap-2"
+                                      onClick={() => selectAllDeletableInColumn(col.id)}
+                                    >
+                                      <Square className="h-3.5 w-3.5" />
+                                      <span className="flex-1 truncate">
+                                        {t("tasks.col.selectAll")}
+                                      </span>
+                                      <span className="tabular-nums opacity-70">
+                                        {deletable.length}
+                                      </span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem
+                                      disabled={
+                                        selectedInCol === 0 || deleteTask.isPending
+                                      }
+                                      className="gap-2 text-rose-600 focus:bg-rose-50 focus:text-rose-700 dark:text-rose-400 dark:focus:bg-rose-950/50"
+                                      onClick={() => void removeSelectedTasks(col.id)}
+                                    >
+                                      <Trash2 className="h-3.5 w-3.5" />
+                                      <span className="flex-1 truncate">
+                                        {t("tasks.col.deleteSelected")}
+                                      </span>
+                                      <span className="tabular-nums opacity-70">
+                                        {selectedInCol}
+                                      </span>
+                                    </DropdownMenuItem>
+                                    <DropdownMenuSeparator />
+                                  </>
+                                ) : null}
+                                <DropdownMenuItem
+                                  disabled={deletable.length === 0 || deleteTask.isPending}
+                                  className="gap-2 text-rose-600 focus:bg-rose-50 focus:text-rose-700 dark:text-rose-400 dark:focus:bg-rose-950/50"
+                                  onClick={() => void removeColumnTasks(col.id)}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                  <span className="flex-1 truncate">
+                                    {isAdminDelete
+                                      ? t("tasks.col.deleteAll")
+                                      : t("tasks.col.deleteMine")}
+                                  </span>
+                                  <span className="tabular-nums opacity-70">
+                                    {deletable.length}
+                                  </span>
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          );
+                        })()}
                       </div>
                     </div>
+                    {selectCol === col.id ? (
+                      <div className="flex flex-wrap items-center gap-1.5 border-t border-border/50 bg-rose-50/70 px-2.5 py-2 dark:bg-rose-950/30">
+                        <p className="min-w-0 flex-1 text-[10px] font-medium text-rose-800 dark:text-rose-200">
+                          {t("tasks.col.selectHint")}
+                          {(() => {
+                            const n = byColumn[col.id].filter((task) =>
+                              selectedTaskIds.has(task.id),
+                            ).length;
+                            return n > 0 ? ` · ${n}` : "";
+                          })()}
+                        </p>
+                        <button
+                          type="button"
+                          className="rounded-md px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-card"
+                          onClick={() => selectAllDeletableInColumn(col.id)}
+                        >
+                          {t("tasks.col.selectAll")}
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            !byColumn[col.id].some((task) =>
+                              selectedTaskIds.has(task.id),
+                            ) || deleteTask.isPending
+                          }
+                          className="inline-flex items-center gap-1 rounded-md bg-rose-600 px-2 py-1 text-[10px] font-bold text-white disabled:opacity-40"
+                          onClick={() => void removeSelectedTasks(col.id)}
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          {t("tasks.col.deleteSelected")}
+                        </button>
+                        <button
+                          type="button"
+                          className="rounded-md px-2 py-1 text-[10px] font-semibold text-muted-foreground hover:bg-card"
+                          onClick={exitSelectMode}
+                        >
+                          {t("tasks.col.cancelSelect")}
+                        </button>
+                      </div>
+                    ) : null}
                   </header>
 
                   <div className="flex-1 space-y-2.5 overflow-y-auto bg-muted/20 px-2.5 py-2.5 dark:bg-muted/10">
@@ -3042,9 +3165,9 @@ export default function VazifalarPage() {
                     tone: "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10",
                     onClick: () => {
                       setPriorityFilter("all");
-                      setTypeFilter("all");
                       setBranchFilter("all");
                       setWorkplaceFilter("all");
+                      setStatusColFilter("all");
                       setDateFrom("");
                       setDateTo("");
                       clearSearchFilter();
@@ -3603,6 +3726,10 @@ function TaskCard({
   isAssignee,
   canApprove,
   canDelete,
+  selectMode,
+  selected,
+  canSelect,
+  onToggleSelect,
   onOpen,
   onComplete,
   onExtend,
@@ -3620,6 +3747,10 @@ function TaskCard({
   isAssignee: boolean;
   canApprove: boolean;
   canDelete: boolean;
+  selectMode?: boolean;
+  selected?: boolean;
+  canSelect?: boolean;
+  onToggleSelect?: () => void;
   onOpen: () => void;
   onComplete: () => void;
   onExtend: () => void;
@@ -3661,16 +3792,42 @@ function TaskCard({
         awaitingReview && "border-violet-300/80 dark:border-violet-500/40",
         isVerified && "border-emerald-300/80 dark:border-emerald-500/40",
         pendingExt && "border-amber-400/80 dark:border-amber-500/40",
+        selectMode && selected && "border-rose-400 ring-1 ring-rose-400/40 dark:border-rose-500",
+        selectMode && !canSelect && "opacity-50",
       )}
       onClick={onOpen}
     >
-      {isVerified && (
+      {selectMode ? (
+        <button
+          type="button"
+          className={cn(
+            "absolute left-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-md border bg-card shadow-sm",
+            selected
+              ? "border-rose-500 bg-rose-500 text-white"
+              : "border-border text-muted-foreground",
+            !canSelect && "pointer-events-none opacity-40",
+          )}
+          disabled={!canSelect}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect?.();
+          }}
+          aria-label={t("ui.delete")}
+        >
+          {selected ? (
+            <Check className="h-3 w-3" strokeWidth={3} />
+          ) : (
+            <span className="h-2 w-2 rounded-sm" />
+          )}
+        </button>
+      ) : null}
+      {isVerified && !selectMode && (
         <span className="absolute right-2.5 top-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-emerald-500 text-white shadow-sm">
           <Check className="h-3 w-3" strokeWidth={3} />
         </span>
       )}
 
-      <div className="mb-2 flex flex-wrap items-center gap-1.5 pr-6">
+      <div className={cn("mb-2 flex flex-wrap items-center gap-1.5", selectMode ? "pl-6 pr-1" : "pr-6")}>
         <span
           className={cn(
             "inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-bold",
@@ -3698,7 +3855,7 @@ function TaskCard({
 
       {task.description ? (
         <p className="mb-2 line-clamp-2 text-[11px] leading-relaxed text-muted-foreground">
-          {task.description}
+          {htmlDescToPlain(task.description)}
         </p>
       ) : null}
 
@@ -3921,11 +4078,14 @@ function TaskCard({
             Muddatni cho‘zish
           </button>
         )}
-        {canDelete && (
+        {canDelete && !selectMode && (
           <button
             type="button"
             className="ml-auto rounded-md p-1.5 text-rose-600 hover:bg-rose-500/10 dark:text-rose-400"
-            onClick={onDelete}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
             title={t("ui.delete")}
           >
             <Trash2 className="h-3.5 w-3.5" />

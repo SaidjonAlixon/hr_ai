@@ -6,7 +6,6 @@ import {
   List,
   ListOrdered,
   Link2,
-  Image as ImageIcon,
   Code2,
   Sparkles,
   Calendar,
@@ -95,6 +94,13 @@ import {
 import { isTaskOverdue, isAcceptOverdue, acceptDeadlineAt, acceptDeadlineHours } from "@/lib/vazifalar-permissions";
 import { isOfisWorkplace, isWeekendYmd } from "@/lib/ofis-weekend";
 import { canSetPrivateTaskVisibility } from "@/lib/roles";
+import {
+  clampDescHtml,
+  descToEditorHtml,
+  htmlDescToPlain,
+  plainDescToHtml,
+  sanitizeDescHtml,
+} from "@/lib/task-desc-html";
 
 const CHAT_PALETTE = [
   "#0b5fff",
@@ -860,18 +866,6 @@ function attachmentIcon(a: TaskAttachment) {
   return { Icon: FileText, className: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300" };
 }
 
-function wrapSelection(
-  value: string,
-  start: number,
-  end: number,
-  before: string,
-  after: string,
-) {
-  const selected = value.slice(start, end) || "matn";
-  const next = value.slice(0, start) + before + selected + after + value.slice(end);
-  return { next, cursor: start + before.length + selected.length + after.length };
-}
-
 export function TaskFormDialog({
   open,
   onOpenChange,
@@ -903,7 +897,7 @@ export function TaskFormDialog({
   const isView = mode === "view";
   const isReadOnly = isWork || isView;
   const canPrivateVisibility = canSetPrivateTaskVisibility(currentUserRole);
-  const descRef = useRef<HTMLTextAreaElement>(null);
+  const descEditorRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const workFileRef = useRef<HTMLInputElement>(null);
 
@@ -1084,6 +1078,27 @@ export function TaskFormDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: hydrate by id only
   }, [open, editing?.id, defaultDueAt]);
 
+  // Rich-text editor HTML — ochilganda / vazifa almashtirilganda (mount dan keyin)
+  useEffect(() => {
+    if (!open || isReadOnly) return;
+    let cancelled = false;
+    let tries = 0;
+    const fill = () => {
+      if (cancelled) return;
+      const el = descEditorRef.current;
+      if (!el) {
+        if (tries++ < 40) window.setTimeout(fill, 16);
+        return;
+      }
+      el.innerHTML = descToEditorHtml(editing?.description || "");
+    };
+    const t = window.setTimeout(fill, 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [open, editing?.id, isReadOnly]);
+
   // Status / natija / chat serverdan yangilanganda (id o‘zgarmasa ham)
   useEffect(() => {
     if (!open || !editing) return;
@@ -1180,29 +1195,109 @@ export function TaskFormDialog({
 
   const statusTimeline = useMemo(() => buildStatusTimeline(editing), [editing]);
 
-  function applyDescFormat(before: string, after: string) {
-    const el = descRef.current;
-    if (!el) {
-      setDescription((v) => `${before}${v}${after}`);
-      return;
+  const descPlainLen = useMemo(() => htmlDescToPlain(description).length, [description]);
+
+  function syncDescFromEditor() {
+    const el = descEditorRef.current;
+    if (!el) return;
+    // Brauzer bo‘sh qolganda <br> qoldiradi — placeholder ishlashi uchun tozalaymiz
+    if (
+      el.innerHTML === "<br>" ||
+      el.innerHTML === "<div><br></div>" ||
+      el.innerHTML === "<p><br></p>"
+    ) {
+      el.innerHTML = "";
     }
-    const start = el.selectionStart ?? description.length;
-    const end = el.selectionEnd ?? description.length;
-    const { next, cursor } = wrapSelection(description, start, end, before, after);
-    setDescription(next);
-    requestAnimationFrame(() => {
-      el.focus();
-      el.setSelectionRange(cursor, cursor);
-    });
+    const cleaned = clampDescHtml(el.innerHTML, DESC_MAX);
+    if (cleaned !== el.innerHTML) {
+      el.innerHTML = cleaned || "";
+    }
+    setDescription(cleaned);
   }
 
+  function setDescEditorContent(nextHtmlOrPlain: string) {
+    const html = clampDescHtml(descToEditorHtml(nextHtmlOrPlain), DESC_MAX);
+    setDescription(html);
+    const el = descEditorRef.current;
+    if (el) el.innerHTML = html || "";
+  }
+
+  function runDescCommand(command: string, value?: string) {
+    const el = descEditorRef.current;
+    if (!el) return;
+    el.focus();
+    try {
+      document.execCommand(command, false, value);
+    } catch {
+      /* ignore */
+    }
+    syncDescFromEditor();
+  }
+
+  function applyDescBold() {
+    runDescCommand("bold");
+  }
+  function applyDescItalic() {
+    runDescCommand("italic");
+  }
+  function applyDescUnderline() {
+    runDescCommand("underline");
+  }
   function insertBullet() {
-    const el = descRef.current;
-    const start = el?.selectionStart ?? description.length;
-    const lineStart = description.lastIndexOf("\n", start - 1) + 1;
-    const next =
-      description.slice(0, lineStart) + "• " + description.slice(lineStart);
-    setDescription(next);
+    runDescCommand("insertUnorderedList");
+  }
+  function insertOrdered() {
+    runDescCommand("insertOrderedList");
+  }
+  function insertLink() {
+    const el = descEditorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    const hasSelection = !!(sel && !sel.isCollapsed && el.contains(sel.anchorNode));
+    const url = window.prompt("Havola (https://...)", "https://");
+    if (!url || !/^https?:\/\//i.test(url.trim())) return;
+    const href = url.trim();
+    if (!hasSelection) {
+      const a = document.createElement("a");
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.textContent = href;
+      const range = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
+      if (range && el.contains(range.commonAncestorContainer)) {
+        range.insertNode(a);
+        range.setStartAfter(a);
+        range.collapse(true);
+        sel?.removeAllRanges();
+        sel?.addRange(range);
+      } else {
+        el.appendChild(a);
+      }
+    } else {
+      document.execCommand("createLink", false, href);
+    }
+    syncDescFromEditor();
+  }
+  function applyDescCode() {
+    const el = descEditorRef.current;
+    if (!el) return;
+    el.focus();
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return;
+    const range = sel.getRangeAt(0);
+    if (!el.contains(range.commonAncestorContainer)) return;
+    const text = range.toString() || "kod";
+    const code = document.createElement("code");
+    code.textContent = text;
+    range.deleteContents();
+    range.insertNode(code);
+    sel.removeAllRanges();
+    const after = document.createRange();
+    after.setStartAfter(code);
+    after.collapse(true);
+    sel.addRange(after);
+    syncDescFromEditor();
   }
 
   async function onPickFiles(files: FileList | null) {
@@ -1241,7 +1336,7 @@ export function TaskFormDialog({
     const tpl = SB_TASK_TEMPLATES[idx];
     if (!tpl) return;
     setTitle(tpl.title.slice(0, TITLE_MAX));
-    setDescription(tpl.description.slice(0, DESC_MAX));
+    setDescEditorContent(tpl.description);
     setTemplateOpen(false);
   }
 
@@ -1251,16 +1346,15 @@ export function TaskFormDialog({
       return;
     }
     const bullets = [
-      `• ${title.trim()} bo‘yicha ma’lumotlarni yig‘ish`,
-      "• Tekshiruv va tahlil qilish",
-      "• Natijani hisobot ko‘rinishida tayyorlash",
-      "• Mas’ul rahbarga yuborish",
-    ].join("\n");
-    setDescription((prev) => {
-      const base = prev.trim();
-      const next = base ? `${base}\n\n${bullets}` : bullets;
-      return next.slice(0, DESC_MAX);
-    });
+      `${title.trim()} bo‘yicha ma’lumotlarni yig‘ish`,
+      "Tekshiruv va tahlil qilish",
+      "Natijani hisobot ko‘rinishida tayyorlash",
+      "Mas’ul rahbarga yuborish",
+    ];
+    const listHtml = `<ul>${bullets.map((b) => `<li>${b}</li>`).join("")}</ul>`;
+    const base = description.trim();
+    const next = base ? `${base}<br><br>${listHtml}` : listHtml;
+    setDescEditorContent(next);
     if (!checklist.length) {
       setChecklist([
         { id: newChecklistId(), text: "Ma’lumotlarni yig‘ish", done: false },
@@ -1363,7 +1457,11 @@ export function TaskFormDialog({
     };
     await onSave({
       title: title.trim().slice(0, TITLE_MAX),
-      description: description.trim().slice(0, DESC_MAX) || null,
+      description: (() => {
+        const cleaned = sanitizeDescHtml(description);
+        if (!cleaned || !htmlDescToPlain(cleaned)) return null;
+        return clampDescHtml(cleaned, DESC_MAX);
+      })(),
       priority,
       status: editing?.status || "todo",
       dueAt: dueLocal ? new Date(dueLocal).toISOString() : null,
@@ -1850,7 +1948,7 @@ export function TaskFormDialog({
                               if (isSbRole(currentUserRole)) applyTemplate(i);
                               else {
                                 setTitle(tpl.title.slice(0, TITLE_MAX));
-                                setDescription(tpl.description.slice(0, DESC_MAX));
+                                setDescEditorContent(tpl.description);
                                 setTemplateOpen(false);
                               }
                             }}
@@ -2003,8 +2101,16 @@ export function TaskFormDialog({
                 </div>
                 <div>
                   <p className={cn(LABEL, "mb-1")}>{t("tasks.field.desc")}</p>
-                  <div className="min-h-[100px] whitespace-pre-wrap rounded-xl border border-slate-200/80 bg-slate-50/80 px-3.5 py-3 text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200">
-                    {description || "Tavsif yo‘q"}
+                  <div className="min-h-[100px] rounded-xl border border-slate-200/80 bg-slate-50/80 px-3.5 py-3 text-sm leading-relaxed text-slate-700 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-200 [&_a]:text-[#0b5fff] [&_a]:underline [&_b]:font-bold [&_code]:rounded [&_code]:bg-slate-200/80 [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12px] [&_i]:italic [&_ol]:list-decimal [&_ol]:pl-5 [&_u]:underline [&_ul]:list-disc [&_ul]:pl-5 dark:[&_code]:bg-slate-800">
+                    {description ? (
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: sanitizeDescHtml(description) || plainDescToHtml(description),
+                        }}
+                      />
+                    ) : (
+                      "Tavsif yo‘q"
+                    )}
                   </div>
                 </div>
                 <div className="rounded-xl border border-teal-200/70 bg-teal-50/50 px-3 py-2 dark:border-teal-800/50 dark:bg-teal-950/30">
@@ -2058,20 +2164,19 @@ export function TaskFormDialog({
               <div className="flex items-center justify-between gap-2">
                 <Label className={LABEL}>{t("tasks.field.desc")}</Label>
                 <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold tabular-nums text-slate-500 dark:bg-slate-800">
-                  {description.length}/{DESC_MAX}
+                  {descPlainLen}/{DESC_MAX}
                 </span>
               </div>
               <div className="overflow-hidden rounded-xl border border-slate-200/80 bg-[#f4f7fb] shadow-inner dark:border-slate-700 dark:bg-slate-950">
                 <div className="flex flex-wrap items-center gap-0.5 border-b border-slate-200/80 bg-gradient-to-r from-[#eef4ff] to-white px-1.5 py-1 dark:from-slate-900 dark:to-slate-950 dark:border-slate-700">
                   {[
-                    { icon: Bold, action: () => applyDescFormat("**", "**"), tip: "Bold" },
-                    { icon: Italic, action: () => applyDescFormat("_", "_"), tip: "Italic" },
-                    { icon: Underline, action: () => applyDescFormat("__", "__"), tip: "Underline" },
-                    { icon: List, action: insertBullet, tip: "List" },
-                    { icon: ListOrdered, action: () => applyDescFormat("1. ", ""), tip: "Ordered" },
-                    { icon: Link2, action: () => applyDescFormat("[", "](url)"), tip: "Link" },
-                    { icon: ImageIcon, action: () => applyDescFormat("![", "](url)"), tip: "Image" },
-                    { icon: Code2, action: () => applyDescFormat("`", "`"), tip: "Code" },
+                    { icon: Bold, action: applyDescBold, tip: "Qalin" },
+                    { icon: Italic, action: applyDescItalic, tip: "Kursiv" },
+                    { icon: Underline, action: applyDescUnderline, tip: "Tag chiziq" },
+                    { icon: List, action: insertBullet, tip: "Ro‘yxat" },
+                    { icon: ListOrdered, action: insertOrdered, tip: "Raqamli" },
+                    { icon: Link2, action: insertLink, tip: "Havola" },
+                    { icon: Code2, action: applyDescCode, tip: "Kod" },
                   ].map(({ icon: Icon, action, tip }) => (
                     <Button
                       key={tip}
@@ -2079,6 +2184,7 @@ export function TaskFormDialog({
                       variant="ghost"
                       size="icon"
                       className="h-7 w-7 text-slate-500 hover:bg-white hover:text-[#0b5fff]"
+                      onMouseDown={(e) => e.preventDefault()}
                       onClick={action}
                       title={tip}
                     >
@@ -2091,20 +2197,28 @@ export function TaskFormDialog({
                     variant="ghost"
                     size="sm"
                     className="h-7 gap-1 rounded-full bg-violet-50 px-2.5 text-xs font-semibold text-violet-700 hover:bg-violet-100 dark:bg-violet-950 dark:text-violet-300"
+                    onMouseDown={(e) => e.preventDefault()}
                     onClick={applyAiAssist}
                   >
                     <Sparkles className="h-3.5 w-3.5" />
                     AI
                   </Button>
                 </div>
-                <Textarea
-                  ref={descRef}
-                  value={description}
-                  maxLength={DESC_MAX}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={5}
-                  placeholder={t("tasks.form.phDesc")}
-                  className="min-h-[120px] resize-y rounded-none border-0 bg-transparent focus-visible:ring-0"
+                <div
+                  ref={descEditorRef}
+                  role="textbox"
+                  aria-multiline
+                  aria-label={t("tasks.field.desc")}
+                  contentEditable={!isReadOnly}
+                  suppressContentEditableWarning
+                  data-placeholder={t("tasks.form.phDesc")}
+                  onInput={syncDescFromEditor}
+                  onBlur={syncDescFromEditor}
+                  className={cn(
+                    "min-h-[120px] max-h-[280px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed text-foreground outline-none",
+                    "empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]",
+                    "[&_a]:text-[#0b5fff] [&_a]:underline [&_b]:font-bold [&_code]:rounded [&_code]:bg-slate-200/80 [&_code]:px-1 [&_code]:font-mono [&_code]:text-[12px] [&_i]:italic [&_ol]:my-1 [&_ol]:list-decimal [&_ol]:pl-5 [&_u]:underline [&_ul]:my-1 [&_ul]:list-disc [&_ul]:pl-5 dark:[&_code]:bg-slate-800",
+                  )}
                 />
               </div>
             </div>

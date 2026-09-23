@@ -1622,8 +1622,13 @@ router.delete("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<
     res.status(404).json({ error: "Vazifa topilmadi" });
     return;
   }
-  if (!canAdminTaskOps(req.userRole)) {
-    res.status(403).json({ error: "Vazifani o‘chirish faqat admin uchun" });
+  // Admin — ko‘rinadigan har qanday; qolganlar — faqat o‘zi qo‘ygani
+  const allowed =
+    canAdminTaskOps(req.userRole) || isCreator(existing, req.userId);
+  if (!allowed) {
+    res.status(403).json({
+      error: "Faqat o‘zingiz qo‘ygan vazifani o‘chira olasiz",
+    });
     return;
   }
 

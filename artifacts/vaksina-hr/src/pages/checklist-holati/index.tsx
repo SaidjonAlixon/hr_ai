@@ -392,7 +392,7 @@ export default function ChecklistHolatiPage() {
   }
 
   return (
-    <div className="mx-auto max-w-7xl space-y-4 pb-10 sm:space-y-6">
+    <div className="mx-auto w-full max-w-none space-y-4 pb-10 sm:space-y-6">
       <div className="hero-dark relative overflow-hidden rounded-2xl bg-gradient-to-br from-[#0b3a5c] via-[#0b1a2e] to-[#06101c] px-4 py-5 shadow-lg sm:px-6 sm:py-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
         <div className="relative flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -425,8 +425,8 @@ export default function ChecklistHolatiPage() {
           className={cn(
             "grid h-auto w-full gap-1",
             canApproveUnlock
-              ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 sm:max-w-5xl"
-              : "grid-cols-2 sm:grid-cols-5 sm:max-w-4xl",
+              ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-6"
+              : "grid-cols-2 sm:grid-cols-5",
           )}
         >
           <TabsTrigger value="dashboard" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">

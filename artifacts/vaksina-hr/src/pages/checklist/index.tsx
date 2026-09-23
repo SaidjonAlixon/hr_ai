@@ -327,6 +327,7 @@ export default function ChecklistPage() {
   const [faceOpen, setFaceOpen] = useState(false);
   const [presenceBusy, setPresenceBusy] = useState(false);
   const [unlockBusy, setUnlockBusy] = useState(false);
+  const checklistFormRef = useRef<HTMLDivElement>(null);
 
   const [managerId, setManagerId] = useState<string>("");
   const [finishOpen, setFinishOpen] = useState(false);
@@ -500,8 +501,12 @@ export default function ChecklistPage() {
         description:
           result.checklistHint ||
           result.message ||
-          "Endi cheklistni to‘ldiring. Har 20 daqiqada hududni tasdiqlang.",
+          "Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling.",
       });
+      // Cheklist formasiga o‘tish
+      window.setTimeout(() => {
+        checklistFormRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 200);
     } catch (err) {
       // Face ID muvaffaqiyatsiz — faqat GPS bilan ochishga urinma (talab: Face majburiy)
       throw err;
@@ -1126,15 +1131,15 @@ export default function ChecklistPage() {
                       {openVisit && String(openVisit.branchId) === managerId
                         ? openVisit.checklistAt
                           ? "Cheklist saqlandi — endi Ketdim (yashil zona)"
-                          : "Ochiq tashrif — cheklistni saqlang"
+                          : "Ochiq tashrif — cheklist yoki Ketdim"
                         : "Filial tanlandi — Face ID bilan Keldim"}
                     </p>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {openVisit && String(openVisit.branchId) === managerId
                         ? openVisit.checklistAt
                           ? `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Ketdim qilmasangiz boshqa filialga o‘ta olmaysiz. Faqat yashil zonada (${AUDIT_GEOFENCE_METERS} m).`
-                          : `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni saqlang. Har 20 daqiqada hududni tasdiqlang. QR ishlamaydi — faqat Face ID.`
-                        : `«${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Yashil zonada Face ID skanerlang — davomat sahifasiga o‘tmasdan shu yerda ochiladi.`}
+                          : `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni saqlashingiz mumkin. Yoki izoh yozib «Ketdim» qiling — keyin boshqa filialga o‘tasiz. Har 30 daqiqada hududni tasdiqlang.`
+                        : `«${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Yashil zonada Face ID (old kamera) bilan Keldim qiling — keyin cheklist ochiladi.`}
                     </p>
                     {openVisit && String(openVisit.branchId) === managerId ? (
                       <p className="mt-1 text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
@@ -1162,33 +1167,22 @@ export default function ChecklistPage() {
                     ) : null}
                   </div>
                   {openVisit && String(openVisit.branchId) === managerId ? (
-                    openVisit.checklistAt ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        className="shrink-0 bg-rose-600 text-white hover:bg-rose-700"
-                        disabled={!withinGeofence}
-                        title={
-                          withinGeofence
+                    <Button
+                      type="button"
+                      size="sm"
+                      className="shrink-0 bg-rose-600 text-white hover:bg-rose-700"
+                      disabled={!withinGeofence}
+                      title={
+                        withinGeofence
+                          ? openVisit.checklistAt
                             ? "Ketdim"
-                            : `Faqat yashil zonada (${AUDIT_GEOFENCE_METERS} m)`
-                        }
-                        onClick={() => setFinishOpen(true)}
-                      >
-                        Ketdim
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0 opacity-60"
-                        disabled
-                        title="Avval cheklistni saqlang"
-                      >
-                        Ketdim (cheklist kerak)
-                      </Button>
-                    )
+                            : "Cheklist ixtiyoriy — izoh yozib Ketdim qilishingiz mumkin"
+                          : `Faqat yashil zonada (${AUDIT_GEOFENCE_METERS} m)`
+                      }
+                      onClick={() => setFinishOpen(true)}
+                    >
+                      Ketdim
+                    </Button>
                   ) : (
                     <Button
                       type="button"
@@ -1211,7 +1205,7 @@ export default function ChecklistPage() {
                         Siz bugun hududda emas — cheklist bloklangan
                       </p>
                       <p className="text-[11px] leading-relaxed text-rose-900/80 dark:text-rose-200/80">
-                        Sabab: 20 daqiqalik eslatmadan keyin 10 daqiqa ichida hududingizni
+                        Sabab: 30 daqiqalik eslatmadan keyin 10 daqiqa ichida hududingizni
                         tasdiqlamadingiz. Cheklistni ochish uchun adminga ruxsat so‘rovi yuboring.
                       </p>
                       <Button
@@ -1242,10 +1236,10 @@ export default function ChecklistPage() {
                           <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
                           {openVisit.presenceOverdue
                             ? "10 daqiqa ichida tasdiqlang — aks holda blok"
-                            : "Har 20 daqiqada hududni tasdiqlang"}
+                            : "Har 30 daqiqada hududni tasdiqlang"}
                         </p>
                         <p className="mt-0.5 text-[11px] text-muted-foreground">
-                          Faqat yashil zonada. Tasdiqlamasangiz cheklist yopiladi.
+                          Faqat yashil zonada. Tasdiqlab turing yoki ish tugasa «Ketdim» — vaqt yoziladi.
                         </p>
                       </div>
                       <Button
@@ -1500,6 +1494,7 @@ export default function ChecklistPage() {
           )}
 
           <div
+            ref={checklistFormRef}
             className={cn(
               !canFillChecklist && "pointer-events-none select-none opacity-45",
             )}

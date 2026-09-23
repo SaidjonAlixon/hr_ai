@@ -14,7 +14,7 @@ export type CoordVisitRow = typeof coordinatorBranchVisitsTable.$inferSelect;
 /** Cheklist / Keldim / Ketdim / hudud tasdiqlash — yashil zona */
 export const COORD_VISIT_GEOFENCE_METERS = 70;
 /** Har shuncha daqiqada hududni qayta tasdiqlash */
-export const COORD_PRESENCE_INTERVAL_MS = 20 * 60 * 1000;
+export const COORD_PRESENCE_INTERVAL_MS = 30 * 60 * 1000;
 /** Eslatmadan keyin shuncha ichida tasdiqlanmasa — blok */
 export const COORD_PRESENCE_GRACE_MS = 10 * 60 * 1000;
 
@@ -251,15 +251,7 @@ export async function assertCoordinatorPunchAllowed(opts: {
         error: `«Ketdim» faqat tashrif qilgan filialda: «${prev}». Boshqa joyda Ketdim qilib bo‘lmaydi.`,
       };
     }
-    if (!open.checklistAt) {
-      return {
-        ok: false,
-        status: 403,
-        code: "need_checklist",
-        error:
-          "Avval Cheklistni to‘ldirib «Saqlash» qiling. Keyin «Ketdim» ochiladi.",
-      };
-    }
+    // Cheklist ixtiyoriy — Ketdim izoh bilan ham yopiladi (koordinator harakatda qolsin)
   }
   return { ok: true };
 }
@@ -408,15 +400,6 @@ export async function finishCoordinatorVisitWithNote(opts: {
       error: "Yopiladigan ochiq tashrif yo‘q. Avval filialda «Keldim» qiling.",
     };
   }
-  if (!open.checklistAt || !open.checklistAuditId) {
-    return {
-      ok: false,
-      status: 403,
-      code: "need_checklist",
-      error:
-        "Avval cheklistni to‘ldirib «Saqlash» qiling. Keyin «Ketdim» ochiladi.",
-    };
-  }
 
   const zone = await assertInBranchGeofence({
     branchId: open.branchId,
@@ -442,6 +425,8 @@ export async function finishCoordinatorVisitWithNote(opts: {
       checkOutLongitude: opts.longitude ?? null,
       checkoutNote: note,
       lastPresenceAt: now,
+      presenceBlockedAt: null,
+      presenceUnlockRequestAt: null,
       status: "closed",
       updatedAt: now,
     })
@@ -451,10 +436,117 @@ export async function finishCoordinatorVisitWithNote(opts: {
   if (!updated) {
     return { ok: false, status: 503, code: "finish_failed", error: "Tashrif yopilmadi" };
   }
+  await closeOpenAttendanceForVisit(updated, now, "coordinator_ketdim");
   return { ok: true, visit: updated };
 }
 
-/** Har 20 daqiqada — yashil zonada ekanligini tasdiqlash */
+/** Davomat yozuvi ochiq qolmasin — keyingi filialda yangi Keldim ochilsin */
+async function closeOpenAttendanceForVisit(
+  visit: CoordVisitRow,
+  checkOutAt: Date,
+  source: string,
+): Promise<void> {
+  if (!visit.coordinatorEmployeeId) return;
+  const conds = [
+    eq(attendanceRecordsTable.employeeId, visit.coordinatorEmployeeId),
+    eq(attendanceRecordsTable.workDate, visit.workDate),
+    isNotNull(attendanceRecordsTable.checkInAt),
+  ];
+  const [rec] = await db
+    .select({
+      id: attendanceRecordsTable.id,
+      checkOutAt: attendanceRecordsTable.checkOutAt,
+      notes: attendanceRecordsTable.notes,
+      status: attendanceRecordsTable.status,
+    })
+    .from(attendanceRecordsTable)
+    .where(and(...conds))
+    .limit(1);
+  if (!rec || rec.checkOutAt) return;
+  const noteTag = `[${source}] Admin/Ketdim — filial #${visit.branchId}`;
+  const notes = rec.notes ? `${rec.notes} · ${noteTag}` : noteTag;
+  await db
+    .update(attendanceRecordsTable)
+    .set({
+      checkOutAt,
+      status: rec.status === "late" ? "late" : "present",
+      notes,
+      checkOutMethod: "ADMIN",
+      updatedAt: checkOutAt,
+    })
+    .where(eq(attendanceRecordsTable.id, rec.id));
+}
+
+/**
+ * Admin: ochiq (Keldim bor, Ketdim yo‘q) tashrifni majburiy yopish.
+ * Geofence/cheklist shart emas — koordinator keyin boshqa filialga o‘ta oladi.
+ */
+export async function adminForceCloseCoordinatorVisit(opts: {
+  visitId: number;
+  adminUserId: number;
+  note?: string | null;
+}): Promise<
+  | { ok: true; visit: CoordVisitRow }
+  | { ok: false; status: number; error: string; code: string }
+> {
+  const [visit] = await db
+    .select()
+    .from(coordinatorBranchVisitsTable)
+    .where(eq(coordinatorBranchVisitsTable.id, opts.visitId))
+    .limit(1);
+  if (!visit) {
+    return { ok: false, status: 404, code: "not_found", error: "Tashrif topilmadi" };
+  }
+  if (visit.status !== "open" || visit.checkOutAt) {
+    return { ok: false, status: 400, code: "visit_closed", error: "Tashrif allaqachon yopilgan" };
+  }
+
+  const now = new Date();
+  const adminNote = String(opts.note || "").trim();
+  const checkoutNote =
+    adminNote.length >= 10
+      ? adminNote
+      : `Admin tomonidan Ketdim yopildi (${visit.branchLabel || `Filial #${visit.branchId}`}). Keyingi filialga o‘tish mumkin.`;
+
+  const [updated] = await db
+    .update(coordinatorBranchVisitsTable)
+    .set({
+      checkOutAt: now,
+      checkoutNote,
+      lastPresenceAt: now,
+      presenceBlockedAt: null,
+      presenceUnlockRequestAt: null,
+      presenceUnlockedAt: now,
+      presenceUnlockedById: opts.adminUserId,
+      status: "closed",
+      updatedAt: now,
+    })
+    .where(eq(coordinatorBranchVisitsTable.id, visit.id))
+    .returning();
+
+  if (!updated) {
+    return { ok: false, status: 503, code: "force_close_failed", error: "Tashrif yopilmadi" };
+  }
+
+  await closeOpenAttendanceForVisit(updated, now, "admin_force_ketdim");
+
+  try {
+    await notifyUser({
+      userId: visit.coordinatorUserId,
+      text: `✅ Admin «Ketdim» qilib yopdi: «${visit.branchLabel || "Filial"}». Endi boshqa filialda Face ID bilan «Keldim» qilishingiz mumkin.`,
+      type: "coordinator_visit_force_closed",
+      linkUrl: "/checklist",
+      title: "Tashrif yopildi (admin)",
+      telegram: true,
+    });
+  } catch {
+    /* ignore */
+  }
+
+  return { ok: true, visit: updated };
+}
+
+/** Har 30 daqiqada — yashil zonada ekanligini tasdiqlash */
 export async function confirmCoordinatorPresence(opts: {
   userId: number;
   latitude?: number | null;
@@ -629,7 +721,7 @@ export async function approvePresenceUnlock(opts: {
   try {
     await notifyUser({
       userId: visit.coordinatorUserId,
-      text: `✅ Admin ruxsat berdi («${visit.branchLabel || "Filial"}»). Endi cheklistni davom ettirishingiz mumkin. Har 20 daqiqada hududni tasdiqlang.`,
+      text: `✅ Admin ruxsat berdi («${visit.branchLabel || "Filial"}»). Endi cheklistni davom ettirishingiz mumkin. Har 30 daqiqada hududni tasdiqlang.`,
       type: "coordinator_presence_unlocked",
       linkUrl: "/checklist",
       title: "Ruxsat berildi",

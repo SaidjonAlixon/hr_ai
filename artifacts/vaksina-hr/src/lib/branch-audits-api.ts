@@ -435,6 +435,18 @@ export async function approvePresenceUnlock(visitId: number) {
   });
 }
 
+/** Admin: ochiq tashrifni Ketdim bilan majburiy yopish */
+export async function forceCheckoutVisit(visitId: number, note?: string) {
+  return apiFetch<{
+    ok: boolean;
+    visit: CoordinatorVisitSession;
+    message: string;
+  }>(`/branch-audits/visits/${visitId}/force-checkout`, {
+    method: "POST",
+    body: JSON.stringify(note ? { note } : {}),
+  });
+}
+
 export function useVisitMonitor(
   params: { from?: string; to?: string; coordinatorId?: string; branchId?: string },
   enabled = true,

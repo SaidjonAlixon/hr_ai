@@ -7,11 +7,13 @@ import {
   isDeptHeadRole,
   hasFullPlatformAccess,
   isHrRole,
+  canManageUsers,
 } from "../../lib/roles";
 import {
   useApproveStaffNeed,
   useCancelStaffNeed,
   useCreateStaffNeed,
+  useDeleteStaffNeed,
   useRejectStaffNeed,
   useStaffNeedBranches,
   useStaffNeeds,
@@ -45,6 +47,7 @@ import {
   MapPin,
   Plus,
   Send,
+  Trash2,
   User,
   UserPlus,
   Users,
@@ -147,18 +150,22 @@ function NeedCard({
   index,
   isHr,
   canCancelOwn,
+  canHardDelete,
   onApprove,
   onReject,
   onCancel,
+  onDelete,
   busy,
 }: {
   n: StaffNeedRequest;
   index: number;
   isHr: boolean;
   canCancelOwn: boolean;
+  canHardDelete: boolean;
   onApprove: (id: number) => void;
   onReject: (id: number) => void;
   onCancel: (id: number) => void;
+  onDelete: (id: number) => void;
   busy: boolean;
 }) {
   const open = ["open", "pending_hr", "approved", "searching"].includes(n.status);
@@ -322,7 +329,7 @@ function NeedCard({
           ) : null}
         </div>
 
-        {(isHr && open) || (canCancelOwn && open && !isHr) ? (
+        {(isHr && open) || (canCancelOwn && open && !isHr) || canHardDelete ? (
           <div className="grid grid-cols-2 gap-2 border-t border-border pt-3 sm:flex sm:flex-wrap">
             {isHr && open ? (
               <>
@@ -359,6 +366,18 @@ function NeedCard({
                 Bekor qilish
               </Button>
             ) : null}
+            {canHardDelete ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className="col-span-2 w-full gap-1.5 rounded-xl border-rose-500 bg-rose-600 font-semibold text-white hover:bg-rose-700 sm:col-span-1 sm:w-auto"
+                disabled={busy}
+                onClick={() => onDelete(n.id)}
+              >
+                <Trash2 className="h-4 w-4" />
+                O‘chirish
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -392,6 +411,7 @@ export default function XodimKerakPage() {
     hasFullPlatformAccess(user?.role) ||
     isDirectorRole(user?.role);
   const canCreate = isCoord || isOfficeHead;
+  const isAdmin = canManageUsers(user?.role);
   const canView =
     canCreate ||
     isHr ||
@@ -420,6 +440,7 @@ export default function XodimKerakPage() {
   const approveMut = useApproveStaffNeed();
   const rejectMut = useRejectStaffNeed();
   const cancelMut = useCancelStaffNeed();
+  const deleteMut = useDeleteStaffNeed();
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [rejectId, setRejectId] = useState<number | null>(null);
@@ -447,7 +468,8 @@ export default function XodimKerakPage() {
     createMut.isPending ||
     approveMut.isPending ||
     rejectMut.isPending ||
-    cancelMut.isPending;
+    cancelMut.isPending ||
+    deleteMut.isPending;
 
   const tabs: { id: TabId; label: string; count: number }[] = [
     {
@@ -635,6 +657,7 @@ export default function XodimKerakPage() {
                 index={i + 1}
                 isHr={isHr}
                 canCancelOwn={canCreate && n.coordinatorUserId === user?.id}
+                canHardDelete={isAdmin}
                 busy={busy}
                 onApprove={(id) =>
                   approveMut.mutate(
@@ -660,6 +683,20 @@ export default function XodimKerakPage() {
                       toast({ title: e.message, variant: "destructive" }),
                   })
                 }
+                onDelete={(id) => {
+                  if (
+                    !window.confirm(
+                      "Ariza bazadan butunlay o‘chiriladi. Davom etasizmi?",
+                    )
+                  ) {
+                    return;
+                  }
+                  deleteMut.mutate(id, {
+                    onSuccess: () => toast({ title: "O‘chirildi" }),
+                    onError: (e: Error) =>
+                      toast({ title: e.message, variant: "destructive" }),
+                  });
+                }}
               />
             ))}
           </div>

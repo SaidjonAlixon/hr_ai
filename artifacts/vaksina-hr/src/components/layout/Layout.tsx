@@ -2313,7 +2313,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
                 location.startsWith('/reviziya') ||
                 location.startsWith('/logistika') ||
                 location.startsWith('/admin/kochma-live') ||
-                location.startsWith('/admin/kochma-xarita')
+                location.startsWith('/admin/kochma-xarita') ||
+                location.startsWith('/checklist-holati')
                 ? 'h-full max-w-none'
                 : location === '/pharmacy-network'
                   ? 'max-w-none'

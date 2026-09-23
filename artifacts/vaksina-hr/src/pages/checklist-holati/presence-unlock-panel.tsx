@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from "react";
-import { Unlock, MapPin, User, Clock3, ShieldAlert, RefreshCw } from "lucide-react";
+import { Unlock, MapPin, User, Clock3, ShieldAlert, RefreshCw, LogOut } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -7,6 +7,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   approvePresenceUnlock,
+  forceCheckoutVisit,
   useVisitMonitor,
   type CoordinatorVisitSession,
 } from "@/lib/branch-audits-api";
@@ -24,12 +25,13 @@ function fmtWhen(iso: string | null | undefined) {
 }
 
 /**
- * Admin — hudud bloki uchun ruxsat so‘rovlari (alohida aniq sahifa).
+ * Admin — hudud bloki ruxsatlari + ochiq (Keldim bor, Ketdim yo‘q) tashriflarni yopish.
  */
 export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [closingId, setClosingId] = useState<number | null>(null);
 
   const { data, isLoading, refetch, isFetching } = useVisitMonitor({}, enabled);
 
@@ -53,12 +55,22 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
     [pending],
   );
 
+  /** Keldim bor, Ketdim yo‘q — hozir ochiq qolib ketganlar */
+  const openStuck = useMemo(
+    () => items.filter((v) => v.stillOpen && !v.checkOutAt),
+    [items],
+  );
+
+  const invalidate = async () => {
+    await qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
+    await qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+  };
+
   const approve = async (v: CoordinatorVisitSession) => {
     setApprovingId(v.id);
     try {
       const res = await approvePresenceUnlock(v.id);
-      await qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
-      await qc.invalidateQueries({ queryKey: ["branch-audits", "my-visit"] });
+      await invalidate();
       toast({
         title: "Ruxsat berildi",
         description:
@@ -76,6 +88,35 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
     }
   };
 
+  const forceKetdim = async (v: CoordinatorVisitSession) => {
+    const name = v.coordinatorName || "Koordinator";
+    const branch = v.branchLabel || `Filial #${v.branchId}`;
+    if (
+      !window.confirm(
+        `${name} — «${branch}» ochiq tashrifini Ketdim bilan yopasizmi?\n\nKeyin koordinator boshqa filialda yangi Keldim qila oladi.`,
+      )
+    ) {
+      return;
+    }
+    setClosingId(v.id);
+    try {
+      const res = await forceCheckoutVisit(v.id);
+      await invalidate();
+      toast({
+        title: "Ketdim yopildi",
+        description: res.message || `${name} endi boshqa filialga o‘ta oladi`,
+      });
+    } catch (err) {
+      toast({
+        title: "Yopilmadi",
+        description: (err as Error)?.message || "Qayta urinib ko‘ring",
+        variant: "destructive",
+      });
+    } finally {
+      setClosingId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="overflow-hidden rounded-2xl border border-rose-200/80 bg-gradient-to-br from-rose-50 via-white to-amber-50 shadow-sm dark:border-rose-900/50 dark:from-rose-950/40 dark:via-slate-950 dark:to-amber-950/30">
@@ -89,9 +130,10 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
               Hudud bloki — ruxsat berish
             </h2>
             <p className="mt-1 max-w-2xl text-xs leading-relaxed text-muted-foreground sm:text-sm">
-              Koordinator 20 daqiqalik eslatmadan keyin 10 daqiqa ichida hududini
+              Koordinator 30 daqiqalik eslatmadan keyin 10 daqiqa ichida hududini
               tasdiqlamasa cheklist bloklanadi. Bu yerda so‘rovlarni ko‘rib «Ruxsat
-              berish» bosing.
+              berish» bosing. Keldim qilib Ketdim qilmagan ochiq tashriflarni ham
+              «Ketdim bilan yopish» orqali yopishingiz mumkin.
             </p>
           </div>
           <Button
@@ -107,7 +149,7 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
           </Button>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-2 p-4 sm:grid-cols-4">
           <div className="rounded-xl border bg-white/80 px-3 py-3 dark:bg-slate-950/50">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               So‘rov kutayotgan
@@ -124,7 +166,7 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
               {blockedOnly.length}
             </p>
           </div>
-          <div className="col-span-2 rounded-xl border bg-white/80 px-3 py-3 sm:col-span-1 dark:bg-slate-950/50">
+          <div className="rounded-xl border bg-white/80 px-3 py-3 dark:bg-slate-950/50">
             <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
               Jami bloklangan
             </p>
@@ -132,7 +174,79 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
               {pending.length}
             </p>
           </div>
+          <div className="rounded-xl border bg-white/80 px-3 py-3 dark:bg-slate-950/50">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Ochiq (Ketdim yo‘q)
+            </p>
+            <p className="mt-1 text-2xl font-bold tabular-nums text-sky-800 dark:text-sky-300">
+              {openStuck.length}
+            </p>
+          </div>
         </div>
+      </div>
+
+      {/* Ochiq tashriflar — Ketdim bilan yopish */}
+      <div className="overflow-hidden rounded-2xl border border-sky-200/80 bg-card shadow-sm dark:border-sky-900/40">
+        <div className="border-b border-sky-100 px-4 py-3 dark:border-sky-900/40">
+          <h3 className="flex items-center gap-2 text-sm font-bold text-foreground">
+            <LogOut className="h-4 w-4 text-sky-600" />
+            Ochiq tashriflar — Ketdim bilan yopish
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Koordinator Keldim qilib Ketdim qilmasa boshqa filialga o‘ta olmaydi. Bu yerda
+            ochiq sessionni yopsangiz — u yangi filialda Keldim/Ketdim qila oladi.
+          </p>
+        </div>
+        {isLoading ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">Yuklanmoqda…</div>
+        ) : openStuck.length === 0 ? (
+          <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+            Hozir ochiq qolib ketgan tashrif yo‘q.
+          </div>
+        ) : (
+          <ul className="divide-y divide-border/60">
+            {openStuck.map((v) => (
+              <li
+                key={`open-${v.id}`}
+                className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+              >
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Ochiq</Badge>
+                    {v.presenceBlocked ? (
+                      <Badge className="bg-rose-100 text-rose-900 hover:bg-rose-100">Hudud bloki</Badge>
+                    ) : null}
+                    <span className="text-[11px] text-muted-foreground">#{v.id}</span>
+                  </div>
+                  <p className="flex items-center gap-1.5 font-semibold text-foreground">
+                    <User className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    {v.coordinatorName || `Koordinator #${v.coordinatorUserId}`}
+                  </p>
+                  <p className="flex items-start gap-1.5 text-sm text-foreground">
+                    <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                    <span>{v.branchLabel || `Filial #${v.branchId}`}</span>
+                  </p>
+                  <p className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                    <Clock3 className="h-3 w-3" />
+                    Keldim: {fmtWhen(v.checkInAt)}
+                    {v.durationLabel ? ` · ${v.durationLabel}` : null}
+                    {!v.checklistAt ? " · Cheklist yo‘q" : " · Cheklist bor"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="w-full shrink-0 gap-1.5 bg-rose-600 text-white hover:bg-rose-700 sm:w-auto"
+                  disabled={closingId === v.id}
+                  onClick={() => void forceKetdim(v)}
+                >
+                  <LogOut className="h-3.5 w-3.5" />
+                  {closingId === v.id ? "Yopilmoqda…" : "Ketdim bilan yopish"}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       {isLoading ? (
@@ -205,16 +319,29 @@ export function PresenceUnlockPanel({ enabled }: { enabled: boolean }) {
                       yopilgan.
                     </p>
                   </div>
-                  <Button
-                    type="button"
-                    size="lg"
-                    className="w-full shrink-0 gap-2 bg-emerald-600 text-white hover:bg-emerald-700 sm:w-auto sm:min-w-[160px]"
-                    disabled={approvingId === v.id}
-                    onClick={() => void approve(v)}
-                  >
-                    <Unlock className="h-4 w-4" />
-                    {approvingId === v.id ? "Berilmoqda…" : "Ruxsat berish"}
-                  </Button>
+                  <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[160px]">
+                    <Button
+                      type="button"
+                      size="lg"
+                      className="w-full gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+                      disabled={approvingId === v.id}
+                      onClick={() => void approve(v)}
+                    >
+                      <Unlock className="h-4 w-4" />
+                      {approvingId === v.id ? "Berilmoqda…" : "Ruxsat berish"}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="w-full gap-1.5 border-rose-300 text-rose-800 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
+                      disabled={closingId === v.id}
+                      onClick={() => void forceKetdim(v)}
+                    >
+                      <LogOut className="h-3.5 w-3.5" />
+                      {closingId === v.id ? "Yopilmoqda…" : "Ketdim bilan yopish"}
+                    </Button>
+                  </div>
                 </div>
               </li>
             );

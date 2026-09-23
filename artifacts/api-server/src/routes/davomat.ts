@@ -305,23 +305,31 @@ function computeMetrics(
   let workedMinutes = engine.rawWorkedMinutes;
   let status = forcedStatus || engine.status;
 
-  // Combo: engine bitta segmentni birinchi smena oxiriga solishtiradi — oxirgi smena tugashiga qayta hisoblaymiz
+  // Tanlangan smena oynasi (hours.start/end) bo‘yicha — erta va kech bir-birini istisno qiladi
   if (checkInAt) {
     const inDiff = minutesBetween(start, checkInAt);
-    if (inDiff < 0) earlyArrivalMin = -inDiff;
-    else if (inDiff > 0) lateArrivalMin = inDiff;
-    else {
+    if (inDiff < 0) {
+      earlyArrivalMin = -inDiff;
+      lateArrivalMin = 0;
+    } else if (inDiff > 0) {
+      lateArrivalMin = inDiff;
+      earlyArrivalMin = 0;
+    } else {
       earlyArrivalMin = 0;
       lateArrivalMin = 0;
     }
   }
   if (checkInAt && checkOutAt && !engine.missingCheckout) {
     const outDiff = minutesBetween(end, checkOutAt);
-    if (outDiff < 0) earlyLeaveMin = -outDiff;
-    else if (outDiff > 0) overtimeMin = outDiff;
-    else {
+    if (outDiff < 0) {
+      earlyLeaveMin = -outDiff;
+      overtimeMin = 0;
+    } else if (outDiff > 0) {
+      overtimeMin = outDiff;
       earlyLeaveMin = 0;
-      overtimeMin = Math.max(0, overtimeMin);
+    } else {
+      earlyLeaveMin = 0;
+      overtimeMin = 0;
     }
   }
 
@@ -3539,9 +3547,9 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       ),
       checklistHint:
         action === "in" && resolved.user.role === "koordinator"
-          ? "Keldim qabul qilindi. Endi Cheklist bo‘limida shu filialni to‘ldiring — Ketdimdan oldin."
+          ? "Keldim qabul qilindi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling."
           : action === "out" && resolved.user.role === "koordinator"
-            ? "Ketdim qabul qilindi. Keyingi filialga o‘tishingiz mumkin."
+            ? "Ketdim qabul qilindi — vaqt yozildi. Keyingi filialga o‘tishingiz mumkin."
             : undefined,
     });
   } catch (err) {

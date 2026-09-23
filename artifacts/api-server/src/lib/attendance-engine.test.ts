@@ -70,6 +70,50 @@ describe("planned overlap 2+3", () => {
   });
 });
 
+describe("office shift", () => {
+  it("Ofis plannedInterval 09:00–18:00 (1-smenaga tushmasin)", () => {
+    const d = "2026-09-23";
+    const p = plannedInterval(d, "office");
+    assert.equal(p.startMs, atTashkent(d, "09:00").getTime());
+    assert.equal(p.endMs, atTashkent(d, "18:00").getTime());
+  });
+
+  it("Ofis: 08:55 kelish — erta 5 daq, kechikish 0", () => {
+    const d = "2026-09-23";
+    const r = computeDayAttendance({
+      workDate: d,
+      shiftKeys: ["office"],
+      segments: [
+        {
+          shiftKey: "office",
+          checkInAt: atTashkent(d, "08:55"),
+          checkOutAt: null,
+        },
+      ],
+    });
+    assert.equal(r.earlyArrivalMin, 5);
+    assert.equal(r.lateArrivalMin, 0);
+    assert.equal(r.missingCheckout, true);
+  });
+
+  it("Ofis: 09:10 kelish — kechikish 10, erta 0", () => {
+    const d = "2026-09-23";
+    const r = computeDayAttendance({
+      workDate: d,
+      shiftKeys: ["office"],
+      segments: [
+        {
+          shiftKey: "office",
+          checkInAt: atTashkent(d, "09:10"),
+          checkOutAt: atTashkent(d, "18:00"),
+        },
+      ],
+    });
+    assert.equal(r.lateArrivalMin, 10);
+    assert.equal(r.earlyArrivalMin, 0);
+  });
+});
+
 describe("real punches", () => {
   it("1) 1-smena late 10m + early leave 10m", () => {
     const d = "2026-09-06";

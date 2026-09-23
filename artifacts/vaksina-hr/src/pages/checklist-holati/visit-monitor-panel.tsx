@@ -16,6 +16,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import {
   approvePresenceUnlock,
+  forceCheckoutVisit,
   useVisitMonitor,
   type CoordinatorVisitSession,
 } from "@/lib/branch-audits-api";
@@ -69,6 +70,7 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
   const [branchId, setBranchId] = useState("all");
   const [q, setQ] = useState("");
   const [approvingId, setApprovingId] = useState<number | null>(null);
+  const [closingId, setClosingId] = useState<number | null>(null);
 
   const { data, isLoading } = useVisitMonitor(
     { from: from || undefined, to: to || undefined, coordinatorId, branchId },
@@ -100,6 +102,35 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
       });
     } finally {
       setApprovingId(null);
+    }
+  };
+
+  const forceKetdim = async (v: CoordinatorVisitSession) => {
+    const name = v.coordinatorName || "Koordinator";
+    const branch = v.branchLabel || `Filial #${v.branchId}`;
+    if (
+      !window.confirm(
+        `${name} — «${branch}» ochiq tashrifini Ketdim bilan yopasizmi?\n\nKeyin boshqa filialda Keldim qila oladi.`,
+      )
+    ) {
+      return;
+    }
+    setClosingId(v.id);
+    try {
+      const res = await forceCheckoutVisit(v.id);
+      await qc.invalidateQueries({ queryKey: ["branch-audits", "visit-monitor"] });
+      toast({
+        title: "Ketdim yopildi",
+        description: res.message || "Koordinator endi boshqa filialga o‘ta oladi",
+      });
+    } catch (err) {
+      toast({
+        title: "Yopilmadi",
+        description: (err as Error)?.message || "Qayta urinib ko‘ring",
+        variant: "destructive",
+      });
+    } finally {
+      setClosingId(null);
     }
   };
 
@@ -293,7 +324,9 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
                     key={v.id}
                     v={v}
                     approving={approvingId === v.id}
+                    closing={closingId === v.id}
                     onApprove={() => void approveUnlock(v.id)}
+                    onForceCheckout={() => void forceKetdim(v)}
                   />
                 ))
               )}
@@ -308,11 +341,15 @@ export function VisitMonitorPanel({ enabled }: { enabled: boolean }) {
 function VisitRow({
   v,
   approving,
+  closing,
   onApprove,
+  onForceCheckout,
 }: {
   v: CoordinatorVisitSession;
   approving?: boolean;
+  closing?: boolean;
   onApprove?: () => void;
+  onForceCheckout?: () => void;
 }) {
   return (
     <tr className="border-b border-border/60 last:border-0 hover:bg-muted/30">
@@ -382,6 +419,18 @@ function VisitRow({
           {v.presenceBlocked && v.unlockPending && onApprove ? (
             <Button type="button" size="sm" variant="outline" className="h-7 text-xs" disabled={approving} onClick={onApprove}>
               {approving ? "…" : "Ruxsat berish"}
+            </Button>
+          ) : null}
+          {v.stillOpen && !v.checkOutAt && onForceCheckout ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="h-7 border-rose-300 text-xs text-rose-800 hover:bg-rose-50 dark:border-rose-800 dark:text-rose-300"
+              disabled={closing}
+              onClick={onForceCheckout}
+            >
+              {closing ? "…" : "Ketdim yopish"}
             </Button>
           ) : null}
         </div>

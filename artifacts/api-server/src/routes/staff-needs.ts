@@ -795,4 +795,37 @@ router.post("/staff-needs/:id/cancel", requireAuth, async (req: AuthRequest, res
   res.json(await enrich(updated));
 });
 
+/** Admin: arizani bazadan butunlay o‘chirish */
+router.delete("/staff-needs/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole ?? "";
+  if (role !== "admin") {
+    res.status(403).json({ error: "Faqat admin o‘chirishi mumkin" });
+    return;
+  }
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+  const [row] = await db
+    .select()
+    .from(staffNeedRequestsTable)
+    .where(eq(staffNeedRequestsTable.id, id))
+    .limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
+  if (row.requestId) {
+    await db
+      .update(requestsTable)
+      .set({ status: "closed" })
+      .where(eq(requestsTable.id, row.requestId));
+  }
+  await db.delete(staffNeedRequestsTable).where(eq(staffNeedRequestsTable.id, id));
+
+  res.json({ ok: true, id });
+});
+
 export default router;

@@ -1,7 +1,6 @@
 /**
  * Kamera ochish — mobil brauzerlarda ruxsat dialogini bir marta so‘raydi.
- * Ketma-ket getUserMedia (exact facingMode fail’lari) qayta-promptni keltirib chiqarmasligi uchun
- * avval Permissions API / localStorage, keyin bitta oddiy so‘rov.
+ * Face ID: old (user) kamera; QR: orqa (environment).
  */
 
 export type CameraFacing = "user" | "environment";
@@ -70,6 +69,17 @@ function saveDeviceId(facing: CameraFacing, deviceId: string) {
   }
 }
 
+function clearDeviceId(facing: CameraFacing) {
+  try {
+    const cur = loadDeviceCache();
+    delete cur[facing];
+    localStorage.setItem(DEVICE_KEY, JSON.stringify(cur));
+    delete cache[facing];
+  } catch {
+    /* ignore */
+  }
+}
+
 export async function queryCameraPermission(): Promise<"granted" | "denied" | "prompt" | "unknown"> {
   try {
     const status = await navigator.permissions?.query({
@@ -94,19 +104,18 @@ function remember(facing: CameraFacing, stream: MediaStream, constraints: MediaS
   markGranted();
 }
 
-async function tryGet(constraints: MediaStreamConstraints, timeoutMs = 8000): Promise<MediaStream> {
+async function tryGet(constraints: MediaStreamConstraints, timeoutMs = 10000): Promise<MediaStream> {
   return withTimeout(navigator.mediaDevices.getUserMedia(constraints), timeoutMs);
 }
 
-/** Birinchi marta — eng oddiy so‘rov (dialog 1 marta). Keyin facing/deviceId. */
+/** Birinchi marta — eng oddiy so‘rov (dialog 1 marta). Denied bo‘lsa ham keyinroq qayta urinish mumkin. */
 async function ensurePermissionOnce(): Promise<void> {
   const state = await queryCameraPermission();
   if (state === "granted") return;
-  if (state === "denied") throw new Error("camera_denied");
+  // "denied" — brauzer yolg‘on aytishi mumkin; baribir getUserMedia urinib ko‘ramiz
 
   if (permissionInflight) {
-    const ok = await permissionInflight;
-    if (!ok) throw new Error("camera_denied");
+    await permissionInflight;
     return;
   }
 
@@ -123,8 +132,7 @@ async function ensurePermissionOnce(): Promise<void> {
     }
   })();
 
-  const ok = await permissionInflight;
-  if (!ok) throw new Error("camera_denied");
+  await permissionInflight;
 }
 
 function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStreamConstraints[] {
@@ -133,27 +141,12 @@ function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStr
     list.push({
       audio: false,
       video: {
-        deviceId: { exact: deviceId },
-        width: { ideal: facing === "user" ? 640 : 1280 },
-      },
-    });
-    list.push({
-      audio: false,
-      video: {
         deviceId: { ideal: deviceId },
         width: { ideal: facing === "user" ? 640 : 1280 },
       },
     });
   }
-  // Avvalo exact facingMode — QR/Face ID noto‘g‘ri kameraga tushmasin
-  list.push({
-    audio: false,
-    video: {
-      facingMode: { exact: facing },
-      width: { ideal: facing === "user" ? 640 : 1280 },
-      height: { ideal: facing === "user" ? 480 : 720 },
-    },
-  });
+  // ideal facingMode — exact ko‘p telefonda NotFoundError beradi
   list.push({
     audio: false,
     video: {
@@ -163,7 +156,14 @@ function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStr
     },
   });
   list.push({ audio: false, video: { facingMode: facing } });
-  // Umumiy video:true YO‘Q — old/orqa aralashib ketmasin
+  // Oxirgi zaxira — ba’zi desktop/WebView facingMode bilmaydi
+  if (facing === "user") {
+    list.push({
+      audio: false,
+      video: { width: { ideal: 640 }, height: { ideal: 480 } },
+    });
+    list.push({ audio: false, video: true });
+  }
   return list;
 }
 
@@ -175,6 +175,14 @@ function reportedFacing(stream: MediaStream): CameraFacing | null {
     /* ignore */
   }
   return null;
+}
+
+function isPermissionDenied(e: unknown): boolean {
+  if (e instanceof DOMException) {
+    return e.name === "NotAllowedError" || e.name === "PermissionDeniedError";
+  }
+  if (e instanceof Error && e.message === "camera_denied") return true;
+  return false;
 }
 
 /** Face ID — standart old (selfie) kamera */
@@ -195,11 +203,13 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
 
   const stored = loadDeviceCache()[facing] || cache[facing]?.deviceId;
   let lastErr: unknown;
+  let denied = false;
 
   for (const constraints of preferredConstraints(facing, stored)) {
     try {
-      const stream = await tryGet(constraints, 8000);
+      const stream = await tryGet(constraints, 10000);
       const got = reportedFacing(stream);
+      // Faqat aniq noto‘g‘ri kamerani rad etamiz; facing noma’lum bo‘lsa qabul
       if (got && got !== facing) {
         stream.getTracks().forEach((t) => t.stop());
         continue;
@@ -208,37 +218,53 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
       return stream;
     } catch (e) {
       lastErr = e;
-      const name = e instanceof DOMException ? e.name : "";
-      if (name === "NotAllowedError" || name === "PermissionDeniedError") {
-        throw e;
+      if (isPermissionDenied(e)) {
+        denied = true;
+        break;
+      }
+      // Eski deviceId ishlamasa — cache tozalab davom etamiz
+      const usedExactDevice =
+        stored &&
+        JSON.stringify(constraints).includes(stored) &&
+        (constraints.video as MediaTrackConstraints | undefined)?.deviceId;
+      if (usedExactDevice) {
+        clearDeviceId(facing);
       }
     }
   }
 
-  // enumerateDevices — faqat ruxsat berilgandan keyin label’lar chiqadi
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    const videos = devices.filter((d) => d.kind === "videoinput" && d.deviceId);
-    const pick =
-      facing === "environment"
-        ? videos.find((d) => /back|rear|environment|orqa|задн|world/i.test(d.label)) ||
-          (videos.length > 1 ? videos[videos.length - 1] : undefined) ||
-          videos[0]
-        : videos.find((d) => /front|user|face|old|перед|selfie/i.test(d.label)) || videos[0];
-    if (pick?.deviceId) {
-      const constraints: MediaStreamConstraints = {
-        audio: false,
-        video: { deviceId: { ideal: pick.deviceId } },
-      };
-      const stream = await tryGet(constraints, 8000);
-      remember(facing, stream, constraints);
-      return stream;
+  if (!denied) {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videos = devices.filter((d) => d.kind === "videoinput" && d.deviceId);
+      const pick =
+        facing === "environment"
+          ? videos.find((d) => /back|rear|environment|orqa|задн|world/i.test(d.label)) ||
+            (videos.length > 1 ? videos[videos.length - 1] : undefined) ||
+            videos[0]
+          : videos.find((d) => /front|user|face|old|перед|selfie/i.test(d.label)) || videos[0];
+      if (pick?.deviceId) {
+        const constraints: MediaStreamConstraints = {
+          audio: false,
+          video: { deviceId: { ideal: pick.deviceId } },
+        };
+        const stream = await tryGet(constraints, 10000);
+        remember(facing, stream, constraints);
+        return stream;
+      }
+    } catch (e) {
+      lastErr = e;
+      if (isPermissionDenied(e)) denied = true;
     }
-  } catch (e) {
-    lastErr = e;
   }
 
-  throw lastErr || new Error("camera_denied");
+  if (denied || isPermissionDenied(lastErr)) {
+    throw new Error("camera_denied");
+  }
+  if (lastErr instanceof Error && lastErr.message === "camera_timeout") {
+    throw lastErr;
+  }
+  throw lastErr instanceof Error ? lastErr : new Error("camera_denied");
 }
 
 /**
@@ -254,10 +280,32 @@ export async function warmCamera(_facing: CameraFacing = "user"): Promise<boolea
       return true;
     }
     if (state === "denied") return false;
-    // Faqat birinchi marta — bitta oddiy so‘rov
     await ensurePermissionOnce();
     return true;
   } catch {
     return false;
   }
+}
+
+/** UI uchun xato kodini o‘qiladigan qilish */
+export function cameraErrorCode(err: unknown): string {
+  if (err instanceof DOMException) {
+    if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") return "camera_denied";
+    if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") return "camera_not_found";
+    if (err.name === "NotReadableError" || err.name === "TrackStartError") return "camera_busy";
+  }
+  if (err instanceof Error) {
+    const m = err.message;
+    if (
+      m === "camera_denied" ||
+      m === "secure_context" ||
+      m === "camera_unsupported" ||
+      m === "camera_timeout" ||
+      m === "camera_not_found" ||
+      m === "camera_busy"
+    ) {
+      return m;
+    }
+  }
+  return "camera_failed";
 }

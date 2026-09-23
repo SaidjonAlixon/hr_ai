@@ -32,6 +32,7 @@ import {
   confirmCoordinatorPresence,
   COORD_VISIT_GEOFENCE_METERS,
   finishCoordinatorVisitWithNote,
+  adminForceCloseCoordinatorVisit,
   getOpenCoordinatorVisit,
   listCoordinatorVisits,
   requestPresenceUnlock,
@@ -1297,7 +1298,7 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
       ok: true,
       visit: serializeVisit(result.visit),
       distanceMeters: zone.distanceMeters,
-      message: `«${branchLabel}» tashrifi ochildi. Endi cheklistni to‘ldiring. Har 20 daqiqada hududni tasdiqlang.`,
+      message: `«${branchLabel}» tashrifi ochildi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling.`,
     });
   } catch (err) {
     console.error("POST /branch-audits/my-visit/start error:", err);
@@ -1306,7 +1307,7 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
 });
 
 /**
- * Har 20 daqiqalik hudud tasdiqlash — faqat yashil zonada.
+ * Har 30 daqiqalik hudud tasdiqlash — faqat yashil zonada.
  */
 router.post("/branch-audits/my-visit/confirm-presence", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!req.userId) {
@@ -1380,6 +1381,55 @@ router.post("/branch-audits/my-visit/request-unlock", requireAuth, async (req: A
     res.status(503).json({ error: "So‘rov yuborilmadi" });
   }
 });
+
+/**
+ * Admin: ochiq tashrifni Ketdim bilan majburiy yopish (geofence/cheklist shartsiz).
+ * Koordinator keyin boshqa filialda yangi Keldim qila oladi.
+ */
+router.post(
+  "/branch-audits/visits/:id/force-checkout",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    if (!req.userId) {
+      res.status(401).json({ error: "Avtorizatsiya kerak" });
+      return;
+    }
+    if (
+      req.userRole !== "admin" &&
+      !hasFullPlatformAccess(req.userRole) &&
+      !isDirectorRole(req.userRole)
+    ) {
+      res.status(403).json({ error: "Faqat admin / rahbariyat" });
+      return;
+    }
+    const visitId = Number(req.params.id);
+    if (!Number.isFinite(visitId) || visitId <= 0) {
+      res.status(400).json({ error: "Noto‘g‘ri tashrif id" });
+      return;
+    }
+    try {
+      const note = req.body?.note != null ? String(req.body.note) : null;
+      const result = await adminForceCloseCoordinatorVisit({
+        visitId,
+        adminUserId: req.userId,
+        note,
+      });
+      if (!result.ok) {
+        res.status(result.status).json({ error: result.error, code: result.code });
+        return;
+      }
+      const visit = serializeVisit(result.visit);
+      res.json({
+        ok: true,
+        visit,
+        message: `«${visit.branchLabel || "Filial"}» Ketdim bilan yopildi. Koordinator boshqa filialga o‘ta oladi.`,
+      });
+    } catch (err) {
+      console.error("POST /branch-audits/visits/:id/force-checkout error:", err);
+      res.status(503).json({ error: "Tashrif yopilmadi" });
+    }
+  },
+);
 
 /**
  * Admin: hudud bloki ruxsatini berish.

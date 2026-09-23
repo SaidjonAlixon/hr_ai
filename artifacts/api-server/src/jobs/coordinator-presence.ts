@@ -13,7 +13,7 @@ import {
 const FIVE_MIN_MS = 5 * 60 * 1000;
 
 /**
- * 1) 20 daqiqada eslatma
+ * 1) 30 daqiqada eslatma
  * 2) +10 daqiqa ichida tasdiqlanmasa — blok + ogohlantirish
  */
 export async function sendCoordinatorPresenceReminders(): Promise<{
@@ -56,7 +56,7 @@ export async function sendCoordinatorPresenceReminders(): Promise<{
     }
 
     const branch = visit.branchLabel || "Filial";
-    const text = `📍 «${branch}» — o‘zingizni yashil hududda ekanligingizni tasdiqlang (10 daqiqa ichida). Aks holda cheklist bloklanadi. Cheklist → «Hududni tasdiqlash».`;
+    const text = `📍 «${branch}» — hududingizni tasdiqlang (10 daqiqa ichida). Yoki ishingiz tugasa «Ketdim» qiling. Aks holda cheklist bloklanadi. Cheklist → «Hududni tasdiqlash».`;
 
     await notifyUser({
       userId: visit.coordinatorUserId,

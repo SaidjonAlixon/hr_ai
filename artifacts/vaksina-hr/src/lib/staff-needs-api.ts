@@ -167,6 +167,19 @@ export function useCancelStaffNeed() {
   });
 }
 
+export function useDeleteStaffNeed() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: number) =>
+      apiFetch<{ ok: boolean; id: number }>(`/staff-needs/${id}`, {
+        method: "DELETE",
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff-needs"] });
+    },
+  });
+}
+
 export function statusLabel(status: string): string {
   if (status === "open" || status === "pending_hr") return "Ochiq ariza";
   if (status === "approved" || status === "searching") return "Ochiq ariza";

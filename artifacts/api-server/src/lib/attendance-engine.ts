@@ -268,9 +268,17 @@ export function plannedInterval(
   key: ShiftKey | string,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
 ): TimeInterval {
-  const keys = parseShiftKeys(String(key)).filter((k) => k !== "office");
-  const firstKey = keys[0] || "one";
-  const lastKey = keys[keys.length - 1] || firstKey;
+  const parsed = parseShiftKeys(String(key));
+  // Apteka combo ichida "office" bo‘lsa e’tiborsiz; lekin sof Ofis smenasini 1-smenaga (08:00) tushirmaymiz.
+  const pharmacy = parsed.filter((k) => k !== "office");
+  const keys: ShiftKey[] =
+    pharmacy.length > 0
+      ? pharmacy
+      : parsed.includes("office")
+        ? ["office"]
+        : ["one"];
+  const firstKey = keys[0]!;
+  const lastKey = keys[keys.length - 1]!;
   const first = defs[firstKey] || DEFAULT_SHIFT_DEFS[firstKey];
   const last = defs[lastKey] || DEFAULT_SHIFT_DEFS[lastKey];
   const start = atTashkent(workDate, first.startHm);

@@ -24,11 +24,30 @@ import {
   type FaceOvalFrame,
   type FacePose,
 } from "@/lib/face-id";
-import { openCameraFast, type CameraFacing } from "@/lib/camera-fast";
+import { openCameraFast, cameraErrorCode, type CameraFacing } from "@/lib/camera-fast";
 import { cn } from "@/lib/utils";
 
 type CaptureResult = { fullName?: string } | void;
 type Translate = (key: string, fallback?: string) => string;
+
+function mapCameraError(err: unknown, t: Translate): string {
+  const code = cameraErrorCode(err);
+  switch (code) {
+    case "camera_denied":
+      return t("davomat.scanCamDenied");
+    case "secure_context":
+      return t("davomat.scanCamHttps");
+    case "camera_busy":
+      return t("davomat.scanCamBusy");
+    case "camera_not_found":
+      return t("davomat.scanCamNotFound");
+    case "camera_timeout":
+    case "camera_unsupported":
+    case "camera_failed":
+    default:
+      return t("davomat.scanCamFailed");
+  }
+}
 
 type Props = {
   open: boolean;
@@ -137,6 +156,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   /** Default: old (selfie) kamera — almashtirish mumkin */
   const [facing, setFacing] = useState<CameraFacing>("user");
   const [switching, setSwitching] = useState(false);
+  const [camRetryKey, setCamRetryKey] = useState(0);
   const facingRef = useRef<CameraFacing>("user");
   facingRef.current = facing;
 
@@ -155,6 +175,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       setFacing("user");
       facingRef.current = "user";
       setSwitching(false);
+      setCamRetryKey(0);
       return;
     }
 
@@ -475,12 +496,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       } catch (err) {
         if (cancelled) return;
         setSwitching(false);
-        const name = err instanceof DOMException ? err.name : "";
-        if (name === "NotAllowedError") {
-          setError(tRef.current("davomat.scanCamDenied"));
-        } else {
-          setError((err as Error)?.message || tRef.current("davomat.scanCamFailed"));
-        }
+        setError(mapCameraError(err, tRef.current));
       }
     };
 
@@ -489,13 +505,23 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       cancelled = true;
       stopCamera();
     };
-  }, [open, mode, onOpenChange, facing]);
+  }, [open, mode, onOpenChange, facing, camRetryKey]);
 
   const switchCamera = () => {
     if (busy || switching) return;
     setSwitching(true);
+    setError(null);
     setHint(t("davomat.scanCamOpening"));
     setFacing((f) => (f === "environment" ? "user" : "environment"));
+  };
+
+  const retryCamera = () => {
+    if (busy || switching) return;
+    setError(null);
+    setHint(t("davomat.scanCamOpening"));
+    setFacing("user");
+    facingRef.current = "user";
+    setCamRetryKey((k) => k + 1);
   };
 
   return (
@@ -593,8 +619,20 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             {busy ? <Loader2 className="mr-1 inline h-4 w-4 animate-spin" /> : null}
             {error || hint}
           </p>
+          {error ? (
+            <Button
+              type="button"
+              variant="secondary"
+              className="w-full rounded-full"
+              disabled={busy || switching}
+              onClick={retryCamera}
+            >
+              <SwitchCamera className="mr-1.5 h-4 w-4" />
+              {t("davomat.scanCamRetry")}
+            </Button>
+          ) : null}
           <p className="text-center text-[11px] text-white/45">
-            {facing === "environment" ? "Orqa kamera" : "Old kamera"} · almashtirish tugmasi yuqorida
+            {facing === "environment" ? "Orqa kamera" : "Old kamera"} · Face ID uchun old kamera tavsiya etiladi
           </p>
           <Button
             type="button"

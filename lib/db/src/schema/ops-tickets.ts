@@ -30,6 +30,10 @@ export const opsTicketsTable = pgTable("ops_tickets", {
   /** done | partial | not_done — ariza egasi bahosi */
   verifyResult: text("verify_result"),
   closedAt: timestamp("closed_at", { withTimezone: true }),
+  /** Qabuldan keyin yaratilgan topshiriq */
+  taskId: integer("task_id"),
+  /** 24 soat qabul qilinmasa HR/admin ga eskalatsiya */
+  escalatedAt: timestamp("escalated_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
 });

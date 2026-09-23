@@ -179,9 +179,11 @@ type Props = {
   branchOptions: string[];
   currentUserName?: string | null;
   currentUserRole?: string | null;
+  /** Hozirgi foydalanuvchi id — beruvchi «Siz» yoki haqiqiy ism */
+  currentUserId?: number | null;
   /** manage = yaratish/tahrirlash; work = ijrochi; view = faqat ko‘rish (auditor) */
   mode?: "manage" | "work" | "view";
-  /** Ijrochi rejimida beruvchi ismi / lavozimi */
+  /** Beruvchi ismi / lavozimi (ijrochi/view va admin tahririda) */
   assignerName?: string | null;
   assignerRole?: string | null;
   saving?: boolean;
@@ -878,6 +880,7 @@ export function TaskFormDialog({
   branchOptions: _branchOptions,
   currentUserName,
   currentUserRole,
+  currentUserId,
   mode = "manage",
   assignerName,
   assignerRole,
@@ -1540,10 +1543,35 @@ export function TaskFormDialog({
     await sendChat(chatDraft);
   }
 
-  const roleLabel = userRoleLabel(currentUserRole) || (currentUserRole || "").replace(/_/g, " ");
-  const assignerDisplayName = assignerName || editing?.createdByName || t("tasks.form.you");
+  const assignerIsMe =
+    !editing ||
+    (currentUserId != null &&
+      editing.createdById != null &&
+      Number(currentUserId) === Number(editing.createdById));
+  /** Haqiqiy beruvchi — admin tahririda ham currentUser emas, yaratuvchi */
+  const assignerDisplayName =
+    (assignerName && String(assignerName).trim()) ||
+    (editing?.createdByName && String(editing.createdByName).trim()) ||
+    (editing
+      ? editing.createdById != null
+        ? `#${editing.createdById}`
+        : "Noma'lum"
+      : (currentUserName && String(currentUserName).trim()) || null) ||
+    t("tasks.form.you");
   const assignerDisplayRole =
-    userRoleLabel(assignerRole) || (assignerRole || "").replace(/_/g, " ");
+    userRoleLabel(assignerRole) ||
+    (assignerRole || "").replace(/_/g, " ") ||
+    null;
+  const assignerLabel = assignerIsMe
+    ? currentUserName
+      ? `${t("tasks.form.you")} · ${currentUserName}`
+      : assignerDisplayName
+    : assignerDisplayName;
+  const assignerRoleLabel = assignerIsMe
+    ? userRoleLabel(currentUserRole) ||
+      (currentUserRole || "").replace(/_/g, " ") ||
+      assignerDisplayRole
+    : assignerDisplayRole;
   const assigneeLabel = selectedAssignee?.name || t("tasks.form.assignee");
   const chatParticipants = useMemo(() => {
     if (isWork) {
@@ -2971,40 +2999,25 @@ export function TaskFormDialog({
                   className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white shadow-md shadow-blue-500/25 ring-2 ring-white dark:ring-slate-800"
                   aria-hidden
                 >
-                  {(isWork ? assignerDisplayName : currentUserName || t("tasks.form.you"))
-                    .trim()
-                    .charAt(0)
-                    .toUpperCase() || "S"}
+                  {assignerLabel.trim().charAt(0).toUpperCase() || "S"}
                 </span>
                 <div className="min-w-0 flex-1">
                   <div className="mb-0.5 flex flex-wrap items-center gap-1.5">
                     <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#0b5fff]">
                       {t("tasks.form.assigner")}
                     </p>
-                    {!isWork && (
+                    {assignerIsMe ? (
                       <span className="rounded-full bg-emerald-50 px-1.5 py-px text-[9px] font-bold text-emerald-700 ring-1 ring-emerald-200 dark:bg-emerald-950 dark:text-emerald-300 dark:ring-emerald-800">
                         {t("tasks.form.auto")}
                       </span>
-                    )}
+                    ) : null}
                   </div>
                   <p className="truncate text-sm font-bold leading-tight text-[#0a2540] dark:text-slate-50">
-                    {(isWork || isView) ? (
-                      assignerDisplayName
-                    ) : (
-                      <>
-                        {t("tasks.form.you")}
-                        {currentUserName ? (
-                          <span className="font-semibold text-slate-700 dark:text-slate-200">
-                            {" · "}
-                            {currentUserName}
-                          </span>
-                        ) : null}
-                      </>
-                    )}
+                    {assignerLabel}
                   </p>
-                  {(isWork ? assignerDisplayRole : roleLabel) ? (
+                  {assignerRoleLabel ? (
                     <p className="truncate text-[11px] font-medium capitalize text-slate-500 dark:text-slate-400">
-                      {(isWork || isView) ? assignerDisplayRole : roleLabel}
+                      {assignerRoleLabel}
                     </p>
                   ) : null}
                 </div>

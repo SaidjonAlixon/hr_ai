@@ -209,6 +209,39 @@ const surface =
   "rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-black/[0.03] dark:shadow-black/20";
 const control =
   "h-9 border-border bg-muted/40 text-xs text-foreground dark:bg-muted/30";
+/** Faol filtr — rangli belgi */
+const controlActive =
+  "border-primary/70 bg-primary/10 text-primary font-semibold shadow-sm ring-1 ring-primary/25 dark:bg-primary/15 dark:text-primary";
+
+function normFilterText(s: string) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[’‘ʻ`']/g, "'")
+    .replace(/\s+/g, " ");
+}
+
+/** Bo‘lim filtri: department nomi yoki lavozim yorlig‘i (masalan Koordinator) */
+function staffMatchesBranchFilter(
+  o: {
+    kind: string;
+    id: number;
+    departmentName?: string | null;
+    meta?: string | null;
+  },
+  branchFilter: string,
+  assigneeDeptKey: Map<string, string>,
+) {
+  if (!branchFilter || branchFilter === "all") return true;
+  const target = normFilterText(branchFilter);
+  if (!target) return true;
+  const fromMap = normFilterText(assigneeDeptKey.get(`${o.kind}:${o.id}`) || "");
+  const fromOpt = normFilterText(o.departmentName || "");
+  if (fromMap === target || fromOpt === target) return true;
+  const roleMeta = normFilterText(o.meta || "");
+  if (roleMeta && roleMeta === target) return true;
+  return false;
+}
 
 const PRIORITY_KEYS: Record<string, string> = {
   low: "tasks.priority.low",
@@ -442,6 +475,8 @@ export default function VazifalarPage() {
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [branchFilter, setBranchFilter] = useState<string>("all");
+  /** all | ofis | dorixona — ijrochi turi */
+  const [workplaceFilter, setWorkplaceFilter] = useState<"all" | "ofis" | "dorixona">("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [dateFromOpen, setDateFromOpen] = useState(false);
@@ -627,11 +662,37 @@ export default function VazifalarPage() {
     return m;
   }, [departmentOptions]);
 
-  /** Filter uchun: eski branchOptions o‘rniga aniq bo‘lim nomlari */
-  const branchOptions = useMemo(
-    () => departmentOptions.map((d) => d.name),
-    [departmentOptions],
-  );
+  /** Filtr: API bo‘limlari + xodim/userlardagi barcha noyob bo‘lim nomlari */
+  const branchOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of departmentOptions) {
+      if (d.name) set.add(d.name);
+    }
+    for (const o of assigneeOptions) {
+      const n = String(o.departmentName || "").trim();
+      if (n) set.add(n);
+    }
+    for (const u of users as any[]) {
+      const n = String(u.departmentName || "").trim();
+      if (n) set.add(n);
+    }
+    for (const e of employees as any[]) {
+      const n =
+        String(e.departmentName || "").trim() ||
+        (e.departmentId != null ? deptNameById.get(Number(e.departmentId)) || "" : "");
+      if (n) set.add(n);
+    }
+    return Array.from(set).sort((a, b) => a.localeCompare(b, "uz"));
+  }, [departmentOptions, assigneeOptions, users, employees, deptNameById]);
+
+  const [deptPickerOpen, setDeptPickerOpen] = useState(false);
+  const [deptPickerQ, setDeptPickerQ] = useState("");
+
+  const filteredBranchOptions = useMemo(() => {
+    const q = deptPickerQ.trim().toLowerCase();
+    if (!q) return branchOptions;
+    return branchOptions.filter((b) => b.toLowerCase().includes(q));
+  }, [branchOptions, deptPickerQ]);
 
   const assigneeDeptKey = useMemo(() => {
     const m = new Map<string, string>();
@@ -658,17 +719,79 @@ export default function VazifalarPage() {
   }, [assigneeOptions, employees, users, deptNameById]);
 
   const searchStaffList = useMemo(() => {
+    let list = assigneeOptions;
+    if (workplaceFilter !== "all") {
+      list = list.filter((o) => o.workplace === workplaceFilter);
+    }
+    if (branchFilter !== "all") {
+      list = list.filter((o) =>
+        staffMatchesBranchFilter(o, branchFilter, assigneeDeptKey),
+      );
+    }
     const q = search.trim().toLowerCase();
-    if (!q) return assigneeOptions.slice(0, 80);
-    return assigneeOptions
+    if (!q) return list.slice(0, 100);
+    return list
       .filter(
         (o) =>
           o.name.toLowerCase().includes(q) ||
           o.label.toLowerCase().includes(q) ||
           o.meta.toLowerCase().includes(q),
       )
-      .slice(0, 80);
-  }, [assigneeOptions, search]);
+      .slice(0, 100);
+  }, [assigneeOptions, search, workplaceFilter, branchFilter, assigneeDeptKey]);
+
+  const assigneeWorkplaceKey = useMemo(() => {
+    const m = new Map<string, "ofis" | "dorixona">();
+    for (const o of assigneeOptions) {
+      m.set(`${o.kind}:${o.id}`, o.workplace);
+    }
+    return m;
+  }, [assigneeOptions]);
+
+  const assigneeSelectOptions = useMemo(() => {
+    let list = assigneeOptions;
+    if (workplaceFilter !== "all") {
+      list = list.filter((o) => o.workplace === workplaceFilter);
+    }
+    if (branchFilter !== "all") {
+      list = list.filter((o) =>
+        staffMatchesBranchFilter(o, branchFilter, assigneeDeptKey),
+      );
+    }
+    return list.slice(0, 100);
+  }, [assigneeOptions, workplaceFilter, branchFilter, assigneeDeptKey]);
+
+  /** Bo‘lim/ofis o‘zgaganda tanlangan xodim mos kelmasa — qaytarish */
+  useEffect(() => {
+    if (assigneeFilter === null || assigneeFilter === "all") return;
+    const opt = assigneeOptions.find(
+      (o) => o.kind === assigneeFilter.kind && o.id === assigneeFilter.id,
+    );
+    if (!opt) {
+      setAssigneeFilter(canBrowseAll ? "all" : null);
+      setSearch("");
+      return;
+    }
+    if (workplaceFilter !== "all" && opt.workplace !== workplaceFilter) {
+      setAssigneeFilter(canBrowseAll ? "all" : null);
+      setSearch("");
+      return;
+    }
+    if (
+      branchFilter !== "all" &&
+      !staffMatchesBranchFilter(opt, branchFilter, assigneeDeptKey)
+    ) {
+      setAssigneeFilter(canBrowseAll ? "all" : null);
+      setSearch("");
+    }
+  }, [
+    branchFilter,
+    workplaceFilter,
+    assigneeFilter,
+    assigneeOptions,
+    assigneeDeptKey,
+    canBrowseAll,
+  ]);
 
   const isCreatorOf = (t: Vazifa) => !!user && t.createdById === user.id;
   const isAssigneeOf = (t: Vazifa) =>
@@ -771,13 +894,33 @@ export default function VazifalarPage() {
       });
     }
     if (branchFilter !== "all") {
-      const target = branchFilter.trim().toLowerCase();
+      const target = normFilterText(branchFilter);
       list = list.filter((t) => {
-        const metaDept = cleanPlaceLabel(t.meta?.branchOrDept).toLowerCase();
+        const metaDept = normFilterText(cleanPlaceLabel(t.meta?.branchOrDept));
         if (metaDept && metaDept === target) return true;
         const key = `${t.assigneeKind}:${t.assigneeId}`;
-        const fromAssignee = (assigneeDeptKey.get(key) || "").toLowerCase();
-        return fromAssignee === target;
+        const fromAssignee = normFilterText(assigneeDeptKey.get(key) || "");
+        if (fromAssignee === target) return true;
+        const opt = assigneeOptions.find(
+          (o) => o.kind === t.assigneeKind && o.id === t.assigneeId,
+        );
+        if (opt && staffMatchesBranchFilter(opt, branchFilter, assigneeDeptKey)) {
+          return true;
+        }
+        return false;
+      });
+    }
+    if (workplaceFilter !== "all") {
+      list = list.filter((t) => {
+        const key = `${t.assigneeKind}:${t.assigneeId}`;
+        const place = assigneeWorkplaceKey.get(key);
+        if (place) return place === workplaceFilter;
+        // Meta / joylashuvdan taxmin
+        const meta = cleanPlaceLabel(t.meta?.branchOrDept).toLowerCase();
+        if (workplaceFilter === "dorixona") {
+          return /(dorixona|apteka|filial|farmasevt|mudir)/i.test(meta);
+        }
+        return !meta || !/(dorixona|apteka)/i.test(meta);
       });
     }
     if (dateFrom) {
@@ -802,9 +945,12 @@ export default function VazifalarPage() {
     priorityFilter,
     typeFilter,
     branchFilter,
+    workplaceFilter,
     dateFrom,
     dateTo,
     assigneeDeptKey,
+    assigneeWorkplaceKey,
+    assigneeOptions,
     user?.id,
     user?.fullName,
     canSeePrivate,
@@ -813,6 +959,16 @@ export default function VazifalarPage() {
   function clearSearchFilter() {
     setSearch("");
     setAssigneeFilter(null);
+  }
+
+  function clearAllFilters() {
+    setBranchFilter("all");
+    setWorkplaceFilter("all");
+    setPriorityFilter("all");
+    setTypeFilter("all");
+    setDateFrom("");
+    setDateTo("");
+    clearSearchFilter();
   }
 
   function resetStaffFilterToMe() {
@@ -879,6 +1035,7 @@ export default function VazifalarPage() {
   const activeFilterCount = useMemo(() => {
     let n = 0;
     if (branchFilter !== "all") n += 1;
+    if (workplaceFilter !== "all") n += 1;
     if (assigneeFilter !== null) n += 1; // "all" yoki tanlangan shaxs (O‘zim — default)
     if (priorityFilter !== "all") n += 1;
     if (typeFilter !== "all") n += 1;
@@ -886,7 +1043,15 @@ export default function VazifalarPage() {
     if (dateTo) n += 1;
     if (search.trim() && assigneeFilter === null) n += 1;
     return n;
-  }, [branchFilter, assigneeFilter, priorityFilter, typeFilter, dateFrom, dateTo, search]);
+  }, [branchFilter, workplaceFilter, assigneeFilter, priorityFilter, typeFilter, dateFrom, dateTo, search]);
+
+  const staffFilterActive =
+    assigneeFilter !== null && assigneeFilter !== "all";
+  const staffFilterIsAll = assigneeFilter === "all";
+  const workplaceActive = workplaceFilter !== "all";
+  const branchActive = branchFilter !== "all";
+  const priorityActive = priorityFilter !== "all";
+  const typeActive = typeFilter !== "all";
 
   const topAssignees = useMemo(() => {
     const map = new Map<string, { name: string; count: number }>();
@@ -1587,39 +1752,148 @@ export default function VazifalarPage() {
             {activeFilterCount > 0 ? (
               <button
                 type="button"
-                className="text-[11px] font-semibold text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-                onClick={() => {
-                  setBranchFilter("all");
-                  setPriorityFilter("all");
-                  setTypeFilter("all");
-                  setDateFrom("");
-                  setDateTo("");
-                  clearSearchFilter();
-                }}
+                className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-primary/10 px-2.5 py-1.5 text-[11px] font-bold text-primary hover:bg-primary/15"
+                onClick={clearAllFilters}
               >
+                <X className="h-3 w-3" />
                 {t("tasks.filter.dateClear")}
               </button>
             ) : null}
                 </div>
           <div
             className={cn(
-              "flex-col gap-2 lg:flex lg:flex-row lg:items-center",
+              "flex-col gap-2 lg:flex lg:flex-row lg:flex-wrap lg:items-center",
               filtersOpen ? "mt-2 flex" : "hidden",
             )}
           >
-          <Select value={branchFilter} onValueChange={setBranchFilter}>
-            <SelectTrigger className={cn(control, "w-full lg:w-[150px]")}>
-              <SelectValue placeholder={t("tasks.filter.allBranches")} />
+          <div className="relative w-full lg:min-w-[200px] lg:flex-1 lg:max-w-xs">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={
+                assigneeFilter !== null && assigneeFilter !== "all" ? assigneeFilter.name : search
+              }
+              onChange={(e) => {
+                const v = e.target.value;
+                setSearch(v);
+                if (assigneeFilter !== null && assigneeFilter !== "all") {
+                  setAssigneeFilter(canBrowseAll ? "all" : null);
+                } else if (assigneeFilter === null && v.trim()) {
+                  // Qidiruvda O‘zimdan chiqib barcha (ruxsat bo‘lsa) yoki matn bo‘yicha
+                  if (canBrowseAll) setAssigneeFilter("all");
+                }
+              }}
+              placeholder={t("tasks.search")}
+              className={cn(
+                control,
+                "w-full pl-8",
+                (search.trim() || staffFilterActive) && controlActive,
+              )}
+            />
+          </div>
+
+          <Select
+            value={workplaceFilter}
+            onValueChange={(v) => setWorkplaceFilter(v as "all" | "ofis" | "dorixona")}
+          >
+            <SelectTrigger
+              className={cn(control, "w-full lg:w-[140px]", workplaceActive && controlActive)}
+            >
+              <SelectValue placeholder={t("tasks.filter.allWorkplace")} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">{t("tasks.filter.allBranches")}</SelectItem>
-              {branchOptions.map((b) => (
-                <SelectItem key={b} value={b}>
-                  {b}
-                </SelectItem>
-              ))}
+              <SelectItem value="all">{t("tasks.filter.allWorkplace")}</SelectItem>
+              <SelectItem value="ofis">{t("emp.ofis")}</SelectItem>
+              <SelectItem value="dorixona">{t("emp.dorixona")}</SelectItem>
             </SelectContent>
           </Select>
+
+          <Popover
+            open={deptPickerOpen}
+            onOpenChange={(o) => {
+              setDeptPickerOpen(o);
+              if (!o) setDeptPickerQ("");
+            }}
+          >
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={cn(
+                  control,
+                  "flex w-full items-center justify-between gap-2 rounded-md border px-3 text-left lg:w-[180px]",
+                  branchActive && controlActive,
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {branchFilter === "all" ? t("tasks.filter.allBranches") : branchFilter}
+                </span>
+                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 opacity-60" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="z-[80] w-[min(100vw-2rem,280px)] p-0"
+              align="start"
+              sideOffset={6}
+            >
+              <Command shouldFilter={false}>
+                <CommandInput
+                  value={deptPickerQ}
+                  onValueChange={setDeptPickerQ}
+                  placeholder={t("tasks.filter.deptSearch")}
+                />
+                <CommandList className="max-h-[min(70dvh,22rem)]">
+                  <CommandEmpty>{t("tasks.filter.deptEmpty")}</CommandEmpty>
+                  <CommandGroup
+                    heading={`${t("tasks.filter.allBranches")} · ${branchOptions.length}`}
+                  >
+                    <CommandItem
+                      value="__all_depts__"
+                      onSelect={() => {
+                        setBranchFilter("all");
+                        setDeptPickerOpen(false);
+                        setDeptPickerQ("");
+                      }}
+                      className="gap-2"
+                    >
+                      <span className="min-w-0 flex-1 font-medium">
+                        {t("tasks.filter.allBranches")}
+                      </span>
+                      <Check
+                        className={cn(
+                          "h-4 w-4 shrink-0 text-primary",
+                          branchFilter === "all" ? "opacity-100" : "opacity-0",
+                        )}
+                      />
+                    </CommandItem>
+                    {filteredBranchOptions.map((b) => (
+                      <CommandItem
+                        key={b}
+                        value={b}
+                        onSelect={() => {
+                          setBranchFilter(b);
+                          // Bo‘lim tanlanganda — shu bo‘limdagi barcha xodimlar vazifalari
+                          if (canBrowseAll) {
+                            setAssigneeFilter("all");
+                            setSearch("");
+                          }
+                          setDeptPickerOpen(false);
+                          setDeptPickerQ("");
+                        }}
+                        className="gap-2"
+                      >
+                        <span className="min-w-0 flex-1 truncate">{b}</span>
+                        <Check
+                          className={cn(
+                            "h-4 w-4 shrink-0 text-primary",
+                            branchFilter === b ? "opacity-100" : "opacity-0",
+                          )}
+                        />
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
 
                   <Select
             value={
@@ -1657,7 +1931,13 @@ export default function VazifalarPage() {
               }
             }}
           >
-            <SelectTrigger className={cn(control, "w-full lg:w-[160px]")}>
+            <SelectTrigger
+              className={cn(
+                control,
+                "w-full lg:w-[160px]",
+                (staffFilterActive || staffFilterIsAll) && controlActive,
+              )}
+            >
               <SelectValue placeholder={t("tasks.filter.me")} />
                     </SelectTrigger>
                     <SelectContent>
@@ -1666,9 +1946,10 @@ export default function VazifalarPage() {
                 <SelectItem value="all">{t("tasks.filter.allStaff")}</SelectItem>
               ) : null}
               {canBrowseAll
-                ? assigneeOptions.slice(0, 60).map((o) => (
+                ? assigneeSelectOptions.map((o) => (
                     <SelectItem key={o.key} value={`${o.kind}:${o.id}`}>
                       {o.name}
+                      {o.workplace === "dorixona" ? " · Dorixona" : " · Ofis"}
                     </SelectItem>
                   ))
                 : null}
@@ -1676,7 +1957,9 @@ export default function VazifalarPage() {
           </Select>
 
           <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className={cn(control, "w-full lg:w-[145px]")}>
+            <SelectTrigger
+              className={cn(control, "w-full lg:w-[145px]", priorityActive && controlActive)}
+            >
               <SelectValue placeholder={t("tasks.filter.allPriority")} />
             </SelectTrigger>
             <SelectContent>
@@ -1689,7 +1972,9 @@ export default function VazifalarPage() {
           </Select>
 
           <Select value={typeFilter} onValueChange={setTypeFilter}>
-            <SelectTrigger className={cn(control, "w-full lg:w-[140px]")}>
+            <SelectTrigger
+              className={cn(control, "w-full lg:w-[140px]", typeActive && controlActive)}
+            >
               <SelectValue placeholder={t("tasks.filter.allTypes")} />
             </SelectTrigger>
             <SelectContent>
@@ -1714,10 +1999,10 @@ export default function VazifalarPage() {
                     control,
                     "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-left transition lg:w-[148px] lg:flex-none",
                     "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    dateFrom && "border-primary/40 bg-primary/5",
+                    dateFrom && controlActive,
                   )}
                 >
-                  <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" />
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
@@ -1777,10 +2062,10 @@ export default function VazifalarPage() {
                     control,
                     "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-md border px-2.5 text-left transition lg:w-[148px] lg:flex-none",
                     "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
-                    dateTo && "border-primary/40 bg-primary/5",
+                    dateTo && controlActive,
                   )}
                 >
-                  <Calendar className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <Calendar className="h-3.5 w-3.5 shrink-0 opacity-70" />
                   <span
                     className={cn(
                       "min-w-0 flex-1 truncate text-[11px] font-medium tabular-nums",
@@ -1831,6 +2116,20 @@ export default function VazifalarPage() {
             </Popover>
             </div>
 
+          {activeFilterCount > 0 ? (
+            <button
+              type="button"
+              className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border border-primary/50 bg-primary px-3 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
+              onClick={clearAllFilters}
+            >
+              <X className="h-3.5 w-3.5" />
+              {t("tasks.filter.dateClear")}
+              <span className="rounded-full bg-white/25 px-1.5 py-px text-[10px] tabular-nums">
+                {activeFilterCount}
+              </span>
+            </button>
+          ) : null}
+
           <Popover open={searchOpen} onOpenChange={setSearchOpen}>
                   <PopoverTrigger asChild>
               <button
@@ -1841,8 +2140,11 @@ export default function VazifalarPage() {
                   "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                   (searchOpen ||
                     search.trim() ||
-                    (assigneeFilter !== null && assigneeFilter !== "all")) &&
-                    "border-primary/50 ring-2 ring-ring/25",
+                    staffFilterActive ||
+                    staffFilterIsAll ||
+                    workplaceActive ||
+                    branchActive) &&
+                    controlActive,
                 )}
               >
                 <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
@@ -1893,6 +2195,29 @@ export default function VazifalarPage() {
               sideOffset={6}
             >
               <Command shouldFilter={false}>
+                <div className="flex gap-1 border-b px-2 py-2">
+                  {(
+                    [
+                      ["all", t("tasks.filter.allWorkplace")],
+                      ["ofis", t("emp.ofis")],
+                      ["dorixona", t("emp.dorixona")],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setWorkplaceFilter(key)}
+                      className={cn(
+                        "rounded-full px-2.5 py-1 text-[11px] font-semibold transition",
+                        workplaceFilter === key
+                          ? "bg-primary text-primary-foreground"
+                          : "bg-muted text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
                 <CommandInput
                   value={search}
                   onValueChange={(v) => {
@@ -1974,6 +2299,7 @@ export default function VazifalarPage() {
                             <span className="block truncate text-sm font-medium">{o.name}</span>
                             <span className="block truncate text-[11px] text-muted-foreground">
                               {o.meta}
+                              {o.workplace === "dorixona" ? " · Dorixona" : " · Ofis"}
                             </span>
                           </span>
                               <Check
@@ -2718,6 +3044,7 @@ export default function VazifalarPage() {
                       setPriorityFilter("all");
                       setTypeFilter("all");
                       setBranchFilter("all");
+                      setWorkplaceFilter("all");
                       setDateFrom("");
                       setDateTo("");
                       clearSearchFilter();
@@ -2756,6 +3083,9 @@ export default function VazifalarPage() {
         branchOptions={branchOptions}
         currentUserName={user?.fullName}
         currentUserRole={user?.role}
+        currentUserId={user?.id}
+        assignerName={assignerOf(editing).name}
+        assignerRole={assignerOf(editing).role}
         saving={createTask.isPending || updateTask.isPending}
         defaultDueAt={createDueAt}
         onSave={handleSave}
@@ -2814,6 +3144,7 @@ export default function VazifalarPage() {
         branchOptions={branchOptions}
         currentUserName={user?.fullName}
         currentUserRole={user?.role}
+        currentUserId={user?.id}
         assignerName={assignerOf(activeTask).name}
         assignerRole={assignerOf(activeTask).role}
         saving={completeTask.isPending || acceptTask.isPending}

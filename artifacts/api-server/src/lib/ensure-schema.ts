@@ -832,6 +832,10 @@ ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verified_at TIMESTAMPTZ;
 ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verified_by_id INTEGER;
 ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS assigned_by_id INTEGER;
 ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS verify_result TEXT;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS task_id INTEGER;
+ALTER TABLE ops_tickets ADD COLUMN IF NOT EXISTS escalated_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS ops_tickets_task_id_idx ON ops_tickets (task_id);
+CREATE INDEX IF NOT EXISTS ops_tickets_escalated_idx ON ops_tickets (status, escalated_at, created_at);
 
 CREATE TABLE IF NOT EXISTS department_job_titles (
   id SERIAL PRIMARY KEY,

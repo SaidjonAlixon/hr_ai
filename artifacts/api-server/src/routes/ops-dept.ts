@@ -20,6 +20,10 @@ import {
 } from "../lib/ops-dept";
 import { IT_ROLES } from "../lib/roles";
 import { notifyByRoles, notifyUser } from "../lib/notify";
+import {
+  completeOpsLinkedTask,
+  ensureTaskForOpsTicket,
+} from "../lib/ops-ticket-task";
 
 const router: IRouter = Router();
 
@@ -88,6 +92,8 @@ async function enrichTickets(rows: (typeof opsTicketsTable.$inferSelect)[]) {
     completedAt: iso(r.completedAt),
     verifiedAt: iso(r.verifiedAt),
     closedAt: iso(r.closedAt),
+    escalatedAt: iso(r.escalatedAt),
+    taskId: r.taskId ?? null,
     createdByName: r.createdById ? names.get(r.createdById) || null : null,
     assigneeName: r.assigneeId ? names.get(r.assigneeId) || null : null,
     assignedByName: r.assignedById ? names.get(r.assignedById) || null : null,
@@ -95,6 +101,11 @@ async function enrichTickets(rows: (typeof opsTicketsTable.$inferSelect)[]) {
     completedByName: r.completedById ? names.get(r.completedById) || null : null,
     verifiedByName: r.verifiedById ? names.get(r.verifiedById) || null : null,
   }));
+}
+
+async function reloadTicket(id: number) {
+  const [row] = await db.select().from(opsTicketsTable).where(eq(opsTicketsTable.id, id));
+  return row;
 }
 
 router.get("/ops-tickets/meta", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -307,11 +318,15 @@ router.patch("/ops-tickets/:id", requireAuth, async (req: AuthRequest, res): Pro
       })
       .where(eq(opsTicketsTable.id, id))
       .returning();
+    await completeOpsLinkedTask(
+      existing.taskId,
+      result === "partial" ? "Ariza egasi: qisman bajarildi" : "Ariza egasi tasdiqladi",
+    );
     res.json((await enrichTickets([updated]))[0]);
     return;
   }
 
-  /** Rahbar — xodimga yo‘naltirish */
+  /** Rahbar — xodimga yo‘naltirish (+ birinchi qabulda topshiriq) */
   if (action === "assign") {
     if (!canAssign) {
       res.status(403).json({ error: "Yo‘naltirish faqat bo‘lim boshlig‘i uchun" });
@@ -322,46 +337,130 @@ router.patch("/ops-tickets/:id", requireAuth, async (req: AuthRequest, res): Pro
       res.status(400).json({ error: "Xodimni tanlang" });
       return;
     }
+    const acceptedAt = existing.acceptedAt || now;
     const [updated] = await db
       .update(opsTicketsTable)
       .set({
         assigneeId,
         assignedById: req.userId ?? null,
         status: existing.status === "new" ? "accepted" : existing.status,
-        acceptedAt: existing.acceptedAt || now,
+        acceptedAt,
         acceptedById: existing.acceptedById || req.userId || null,
         updatedAt: now,
       })
       .where(eq(opsTicketsTable.id, id))
       .returning();
+
+    const fresh = (await reloadTicket(id)) || updated;
+    await ensureTaskForOpsTicket({
+      ticket: fresh,
+      assigneeUserId: assigneeId,
+      acceptedById: req.userId!,
+      acceptedAt,
+    });
+    const finalRow = (await reloadTicket(id)) || fresh;
     await notifyUser({
       userId: assigneeId,
       text: `Sizga AyTi ariza biriktirildi: ${existing.title}`,
       type: "ops_ticket",
       linkUrl: "/it",
     });
-    res.json((await enrichTickets([updated]))[0]);
+    res.json((await enrichTickets([finalRow]))[0]);
     return;
   }
 
+  /** Rahbar — arizani qabul qilish → Topshiriq (+2 kun) */
   if (action === "accept") {
-    if (!canManage) {
-      res.status(403).json({ error: "Ruxsat yo‘q" });
+    if (!canAssign) {
+      res.status(403).json({ error: "Qabul qilish faqat AyTi bo‘lim boshlig‘i uchun" });
+      return;
+    }
+    if (existing.status !== "new" && existing.acceptedAt) {
+      res.status(400).json({ error: "Ariza allaqachon qabul qilingan" });
+      return;
+    }
+    const assigneeId = existing.assigneeId || req.userId!;
+    const acceptedAt = existing.acceptedAt || now;
+    const [updated] = await db
+      .update(opsTicketsTable)
+      .set({
+        status: "accepted",
+        acceptedAt,
+        acceptedById: existing.acceptedById || req.userId || null,
+        assigneeId,
+        assignedById: existing.assignedById || req.userId || null,
+        updatedAt: now,
+      })
+      .where(eq(opsTicketsTable.id, id))
+      .returning();
+
+    const fresh = (await reloadTicket(id)) || updated;
+    await ensureTaskForOpsTicket({
+      ticket: fresh,
+      assigneeUserId: assigneeId,
+      acceptedById: req.userId!,
+      acceptedAt,
+    });
+    const finalRow = (await reloadTicket(id)) || fresh;
+    if (existing.createdById && existing.createdById !== req.userId) {
+      await notifyUser({
+        userId: existing.createdById,
+        text: `AyTi arizangiz qabul qilindi: ${existing.title} (${existing.ticketNo})`,
+        type: "ops_ticket",
+        linkUrl: "/it",
+      });
+    }
+    res.json((await enrichTickets([finalRow]))[0]);
+    return;
+  }
+
+  /** Rahbar — arizani yopish → topshiriq ham bajarildi */
+  if (action === "close") {
+    if (!canAssign) {
+      res.status(403).json({ error: "Yopish faqat AyTi bo‘lim boshlig‘i uchun" });
+      return;
+    }
+    if (existing.status === "closed" || existing.status === "verified") {
+      res.status(400).json({ error: "Ariza allaqachon yopilgan" });
       return;
     }
     const [updated] = await db
       .update(opsTicketsTable)
       .set({
-        status: "accepted",
+        status: "closed",
+        closedAt: now,
+        completedAt: existing.completedAt || now,
+        completedById: existing.completedById || req.userId || null,
         acceptedAt: existing.acceptedAt || now,
         acceptedById: existing.acceptedById || req.userId || null,
         assigneeId: existing.assigneeId || req.userId || null,
-        assignedById: existing.assignedById || (canAssign ? req.userId : existing.assignedById) || null,
         updatedAt: now,
       })
       .where(eq(opsTicketsTable.id, id))
       .returning();
-    res.json((await enrichTickets([updated]))[0]);
+
+    let taskId = existing.taskId;
+    if (!taskId && req.userId) {
+      const fresh = (await reloadTicket(id)) || updated;
+      taskId = await ensureTaskForOpsTicket({
+        ticket: fresh,
+        assigneeUserId: fresh.assigneeId || req.userId,
+        acceptedById: req.userId,
+        acceptedAt: fresh.acceptedAt || now,
+      });
+    }
+    await completeOpsLinkedTask(taskId, "AyTi rahbar arizani yopdi");
+
+    if (existing.createdById && existing.createdById !== req.userId) {
+      await notifyUser({
+        userId: existing.createdById,
+        text: `AyTi arizangiz yopildi: ${existing.title} (${existing.ticketNo})`,
+        type: "ops_ticket",
+        linkUrl: "/it",
+      });
+    }
+    const finalRow = (await reloadTicket(id)) || updated;
+    res.json((await enrichTickets([finalRow]))[0]);
     return;
   }
 

@@ -10,6 +10,7 @@ import { startNotifTestJob } from "./jobs/notif-test";
 import { startFilialBotPollingJob } from "./jobs/filial-bot-polling";
 import { startFilialRecruiterMonitorJob } from "./jobs/filial-recruiter-monitor";
 import { startJavobOlishEscalateJob } from "./jobs/javob-olish-escalate";
+import { startOpsTicketEscalateJob } from "./jobs/ops-ticket-escalate";
 
 /** Vercel sets VERCEL=1 — serverless uses exported app, no listen. */
 const isVercel = process.env.VERCEL === "1" || process.env.VERCEL === "true";
@@ -45,6 +46,7 @@ if (!isVercel) {
     startFilialBotPollingJob();
     startFilialRecruiterMonitorJob();
     startJavobOlishEscalateJob();
+    startOpsTicketEscalateJob();
   });
 }
 

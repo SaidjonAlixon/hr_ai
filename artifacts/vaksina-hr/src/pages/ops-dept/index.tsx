@@ -457,6 +457,12 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
                   isAssignee={ticket.assigneeId === user?.id}
                   busy={busyId === ticket.id}
                   t={t}
+                  onAccept={() =>
+                    runTicketAction(ticket.id, { action: "accept" }, t("ops.toast.accepted"))
+                  }
+                  onClose={() =>
+                    runTicketAction(ticket.id, { action: "close" }, t("ops.toast.closed"))
+                  }
                   onAssign={(assigneeId) =>
                     runTicketAction(
                       ticket.id,
@@ -521,6 +527,8 @@ function TicketCard({
   isAssignee,
   busy,
   t,
+  onAccept,
+  onClose,
   onAssign,
   onComplete,
   onRate,
@@ -533,6 +541,8 @@ function TicketCard({
   isAssignee: boolean;
   busy: boolean;
   t: (k: string) => string;
+  onAccept: () => void;
+  onClose: () => void;
   onAssign: (assigneeId: number) => void;
   onComplete: () => void;
   onRate: (verifyResult: "done" | "partial" | "not_done") => void;
@@ -544,6 +554,8 @@ function TicketCard({
     ticket.status !== "closed";
   const needsRate = isCreator && ticket.status === "done";
   const isDone = ticket.status === "verified" || ticket.status === "closed";
+  const canAcceptHead = canAssign && ticket.status === "new" && !ticket.acceptedAt;
+  const canCloseHead = canAssign && !isDone;
 
   return (
     <div className="dept-ticket flex-col items-stretch gap-3 sm:flex-row sm:items-start">
@@ -551,6 +563,12 @@ function TicketCard({
         <div className="flex flex-wrap items-center gap-2">
           <p className="text-xs font-mono text-muted-foreground">{ticket.ticketNo}</p>
           <span className="dept-status">{t(STATUS_KEYS[ticket.status] || ticket.status)}</span>
+          {ticket.escalatedAt ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-800 dark:bg-rose-950 dark:text-rose-200">
+              <AlertTriangle className="h-3 w-3" />
+              {t("ops.escalated")}
+            </span>
+          ) : null}
           {ticket.verifyResult ? (
             <span
               className={cn(
@@ -584,6 +602,15 @@ function TicketCard({
           ) : canAssign && ticket.status === "new" ? (
             <span className="text-amber-700">{t("ops.awaitAssign")}</span>
           ) : null}
+          {ticket.taskId ? (
+            <Link
+              href={`/vazifalar?task=${ticket.taskId}`}
+              className="inline-flex items-center gap-1 font-semibold text-primary hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" />
+              {t("ops.taskOpen")} #{ticket.taskId}
+            </Link>
+          ) : null}
         </div>
 
         <div className="grid gap-1.5 rounded-xl border border-border/70 bg-muted/30 p-2.5 text-[11px]">
@@ -614,6 +641,19 @@ function TicketCard({
       </div>
 
       <div className="flex w-full flex-col gap-2 sm:w-auto sm:min-w-[200px]">
+        {canAcceptHead ? (
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={onAccept}
+            className="gap-1 bg-sky-600 hover:bg-sky-700"
+            title={t("ops.acceptHint")}
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+            {t("ops.action.accept")}
+          </Button>
+        ) : null}
+
         {canAssign && !isDone && ticket.status !== "done" ? (
           <select
             className="dept-select h-10 text-xs"
@@ -637,6 +677,20 @@ function TicketCard({
           <Button size="sm" variant="secondary" disabled={busy} onClick={onComplete} className="gap-1">
             {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
             {t("ops.action.complete")}
+          </Button>
+        ) : null}
+
+        {canCloseHead ? (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={busy}
+            onClick={onClose}
+            className="gap-1 border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+            title={t("ops.closeHint")}
+          >
+            {busy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+            {t("ops.action.close")}
           </Button>
         ) : null}
 

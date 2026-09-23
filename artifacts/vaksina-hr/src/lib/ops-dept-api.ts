@@ -46,6 +46,8 @@ export type OpsTicket = {
   verifiedByName?: string | null;
   verifyResult?: string | null;
   closedAt?: string | null;
+  taskId?: number | null;
+  escalatedAt?: string | null;
   createdAt?: string | null;
   updatedAt?: string | null;
 };
@@ -91,7 +93,10 @@ export function useOpsTickets(dept: "it" | "texnik", opts?: { status?: string; m
 
 export function useOpsMutations(dept: "it" | "texnik") {
   const qc = useQueryClient();
-  const inv = () => qc.invalidateQueries({ queryKey: ["ops", dept] });
+  const inv = () => {
+    qc.invalidateQueries({ queryKey: ["ops", dept] });
+    qc.invalidateQueries({ queryKey: ["tasks"] });
+  };
   return {
     create: useMutation({
       mutationFn: (body: Record<string, unknown>) =>

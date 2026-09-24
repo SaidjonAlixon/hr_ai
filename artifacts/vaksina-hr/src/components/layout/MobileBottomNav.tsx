@@ -27,7 +27,7 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   recruiter: ['/dashboard', '/vazifalar', '/employees', '/davomat', '/davomat-face'],
   trainer: ['/dashboard', '/vazifalar', '/davomat-face', '/candidates', '/internships'],
   mudir: ['/dashboard', '/vazifalar', '/xodim-kerak', '/davomat-face', '/boglanish'],
-  koordinator: ['/dashboard', '/vazifalar', '/reviziya', '/davomat-face', '/checklist'],
+  koordinator: ['/dashboard', '/vazifalar', '/davomat/ofisda', '/davomat-face', '/checklist'],
   farmasevt: ['/dashboard', '/vazifalar', '/it', '/davomat-face', '/ehtiyoj'],
   stajyor: ['/kirish', '/javob-olish', '/davomat-face', '/smena-filial', '/reyting'],
   moliya: ['/dashboard', '/vazifalar', '/oylik', '/davomat'],
@@ -83,6 +83,7 @@ const MOBILE_SHORT_KEYS: Record<string, string> = {
   '/smena-filial': 'mobile.shift',
   '/employees': 'mobile.employees',
   '/davomat-face': 'mobile.face',
+  '/davomat/ofisda': 'mobile.ofisda',
   '/tashkiliy-tuzilma': 'mobile.org',
 };
 

@@ -1872,12 +1872,22 @@ export default function DavomatFacePage() {
       syncMobileRoute(action);
       unlock();
       refreshQuiet();
-      // Cheklist oqimi: Keldim → darhol cheklist sahifasiga
-      if (
-        action === "in" &&
-        (checklistBranchId || result.checklistRedirect || result.coordinatorVisit)
-      ) {
-        window.setTimeout(() => setLocation("/checklist"), 450);
+      // Cheklist / ofis oqimi: Keldim → tegishli bo‘lim
+      if (action === "in") {
+        const visit = result.coordinatorVisit as
+          | { isOffice?: boolean; visitKind?: string; branchId?: number }
+          | null
+          | undefined;
+        const toOffice =
+          result.ofisdaRedirect ||
+          visit?.isOffice ||
+          visit?.visitKind === "office" ||
+          Number(visit?.branchId) === 0;
+        if (toOffice) {
+          window.setTimeout(() => setLocation("/davomat/ofisda"), 450);
+        } else if (checklistBranchId || result.checklistRedirect || result.coordinatorVisit) {
+          window.setTimeout(() => setLocation("/checklist"), 450);
+        }
       }
     } catch (err) {
       if (

@@ -2256,6 +2256,7 @@ export const pagesRu: Messages = {
   "mobile.employees": "Сотр.",
   "mobile.chat": "Чат",
   "mobile.face": "Посещ.",
+  "mobile.ofisda": "В офисе",
   "mobile.org": "Оргстр.",
 
   "month.1": "Январь",

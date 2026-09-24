@@ -30,10 +30,13 @@ import {
   attachChecklistToOpenVisit,
   approvePresenceUnlock,
   confirmCoordinatorPresence,
+  COORD_OFFICE_BRANCH_ID,
+  COORD_OFFICE_LABEL,
   COORD_VISIT_GEOFENCE_METERS,
   finishCoordinatorVisitWithNote,
   adminForceCloseCoordinatorVisit,
   getOpenCoordinatorVisit,
+  isCoordinatorOfficeVisit,
   listCoordinatorVisits,
   requestPresenceUnlock,
   serializeVisit,
@@ -1205,15 +1208,72 @@ router.get("/branch-audits/my-visit", requireAuth, async (req: AuthRequest, res)
   }
   try {
     const open = await getOpenCoordinatorVisit(req.userId);
+    const isOffice = open ? isCoordinatorOfficeVisit(open) : false;
     res.json({
       visit: open ? serializeVisit(open) : null,
       message: open
-        ? `Ochiq tashrif: «${open.branchLabel || "Filial"}». Cheklistni shu yerda yakunlang, keyin «Ketdim» qiling.`
-        : "Hozir ochiq filial tashrifi yo‘q. Avval Face ID bilan filialda «Keldim» qiling.",
+        ? isOffice
+          ? `Asosiy ofisda ochiq «Keldim». Vaqtni kuzating — ketganda «Ketdim» qiling («Asosiy ofisda qolish»).`
+          : `Ochiq tashrif: «${open.branchLabel || "Filial"}». Cheklistni shu yerda yakunlang, keyin «Ketdim» qiling.`
+        : "Hozir ochiq tashrif yo‘q. Filialda yoki asosiy ofisda Face ID bilan «Keldim» qiling.",
     });
   } catch (err) {
     console.error("GET /branch-audits/my-visit error:", err);
     res.status(503).json({ error: "Tashrif holati yuklanmadi" });
+  }
+});
+
+/** Koordinator — asosiy ofisda qolish tarixi (Keldim/Ketdim) */
+router.get("/branch-audits/my-office-stays", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya kerak" });
+    return;
+  }
+  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+    res.status(403).json({ error: "Faqat koordinator" });
+    return;
+  }
+  try {
+    const from = String(req.query.from || "").trim() || undefined;
+    const to = String(req.query.to || "").trim() || undefined;
+    const items = await listCoordinatorVisits({
+      from,
+      to,
+      coordinatorUserId: req.userId,
+      branchId: COORD_OFFICE_BRANCH_ID,
+      limit: 200,
+    });
+    const open = items.find((i) => i.stillOpen) || null;
+    const closed = items.filter((i) => !i.stillOpen);
+    const avgStay =
+      closed.filter((i) => i.durationMinutes != null).length > 0
+        ? Math.round(
+            closed
+              .filter((i) => i.durationMinutes != null)
+              .reduce((s, i) => s + (i.durationMinutes || 0), 0) /
+              closed.filter((i) => i.durationMinutes != null).length,
+          )
+        : null;
+    res.json({
+      officeLabel: COORD_OFFICE_LABEL,
+      open,
+      items,
+      summary: {
+        total: items.length,
+        openCount: open ? 1 : 0,
+        closedCount: closed.length,
+        avgStayMinutes: avgStay,
+        avgStayLabel:
+          avgStay == null
+            ? null
+            : avgStay < 60
+              ? `${avgStay} daq`
+              : `${Math.floor(avgStay / 60)} soat ${avgStay % 60} daq`,
+      },
+    });
+  } catch (err) {
+    console.error("GET /branch-audits/my-office-stays error:", err);
+    res.status(503).json({ error: "Ofis qolishlari yuklanmadi" });
   }
 });
 
@@ -1515,10 +1575,13 @@ router.post("/branch-audits/my-visit/finish", requireAuth, async (req: AuthReque
     }
 
     const visit = serializeVisit(result.visit);
+    const isOffice = isCoordinatorOfficeVisit(result.visit);
     res.json({
       ok: true,
       visit,
-      message: `«${visit.branchLabel || "Filial"}» yopildi. Keyingi filialni tanlashingiz mumkin.`,
+      message: isOffice
+        ? `Asosiy ofisda qolish yopildi (${visit.durationLabel}). Keyin filialga yoki qayta ofisga o‘tishingiz mumkin.`
+        : `«${visit.branchLabel || "Filial"}» yopildi. Keyingi filialni tanlashingiz mumkin.`,
     });
   } catch (err) {
     console.error("POST /branch-audits/my-visit/finish error:", err);

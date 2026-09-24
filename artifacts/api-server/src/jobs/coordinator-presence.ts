@@ -4,6 +4,7 @@ import { notifyUser } from "../lib/notify";
 import { logger } from "../lib/logger";
 import {
   COORD_PRESENCE_INTERVAL_MS,
+  isCoordinatorOfficeVisit,
   isVisitPresenceBlocked,
   isVisitPresenceOverdue,
   markPresenceBlockedIfNeeded,
@@ -35,6 +36,9 @@ export async function sendCoordinatorPresenceReminders(): Promise<{
   let blocked = 0;
 
   for (const visit of openVisits) {
+    // Ofisda qolish — 30 daqiqa hudud tasdiqlash talab qilinmaydi
+    if (isCoordinatorOfficeVisit(visit)) continue;
+
     // Avval blok (grace tugagan)
     if (isVisitPresenceBlocked(visit, now)) {
       const marked = await markPresenceBlockedIfNeeded(visit, new Date(now));

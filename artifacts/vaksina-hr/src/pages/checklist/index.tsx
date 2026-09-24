@@ -21,6 +21,7 @@ import {
   Clock3,
   ScanFace,
   ShieldCheck,
+  Building2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -72,6 +73,7 @@ import {
   displayBranchName,
 } from "@/lib/pharmacy-staff-api";
 import { useI18n } from "@/i18n/I18nProvider";
+import { useLocation } from "wouter";
 
 const MONTHS_KEYS = [
   "month.1",
@@ -314,6 +316,7 @@ export default function ChecklistPage() {
   const { t } = useI18n();
   const { user } = useAuth();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const { data: rawBranches = [], isLoading: branchesLoading } = useAuditBranches();
   const branches = useMemo(() => normalizeAuditBranches(rawBranches), [rawBranches]);
   const { data: history = [], isLoading: historyLoading } = useBranchAudits();
@@ -322,6 +325,11 @@ export default function ChecklistPage() {
   const isCoord = user?.role === "koordinator";
   const { data: myVisitData, refetch: refetchMyVisit } = useMyCoordinatorVisit(isCoord);
   const openVisit = myVisitData?.visit ?? null;
+  const officeOpen =
+    Boolean(openVisit) &&
+    (openVisit?.isOffice === true ||
+      openVisit?.visitKind === "office" ||
+      Number(openVisit?.branchId) === 0);
   const qc = useQueryClient();
   const [keldimBusy, setKeldimBusy] = useState(false);
   const [faceOpen, setFaceOpen] = useState(false);
@@ -354,9 +362,10 @@ export default function ChecklistPage() {
 
   // Ochiq tashrif bo‘lsa — faqat shu filial
   useEffect(() => {
-    if (!openVisit?.branchId) return;
+    if (!openVisit?.branchId || Number(openVisit.branchId) <= 0) return;
+    if (openVisit.isOffice || openVisit.visitKind === "office") return;
     setManagerId(String(openVisit.branchId));
-  }, [openVisit?.branchId]);
+  }, [openVisit?.branchId, openVisit?.isOffice, openVisit?.visitKind]);
 
   // Sahifa fokusga kelganda tashrif holatini yangilash
   useEffect(() => {
@@ -448,6 +457,16 @@ export default function ChecklistPage() {
 
   const goKeldim = async () => {
     if (!managerId) return;
+    if (officeOpen) {
+      toast({
+        title: "Avval ofisdan Ketdim",
+        description:
+          "Asosiy ofisda ochiq «Keldim» bor. «Asosiy ofisda qolish» bo‘limida Ketdim qiling — keyin filialga o‘ting.",
+        variant: "destructive",
+      });
+      setLocation("/davomat/ofisda");
+      return;
+    }
     if (!withinGeofence || !gps) {
       toast({
         title: "Yashil zona kerak",
@@ -964,6 +983,28 @@ export default function ChecklistPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-4 pb-28 sm:space-y-6 sm:pb-10">
+      {officeOpen ? (
+        <div className="flex flex-col gap-3 rounded-2xl border border-amber-300/80 bg-amber-50 px-4 py-3 dark:border-amber-500/30 dark:bg-amber-950/40 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="flex items-center gap-1.5 text-sm font-semibold text-amber-950 dark:text-amber-100">
+              <Building2 className="h-4 w-4 shrink-0" />
+              Asosiy ofisda ochiq «Keldim» bor
+            </p>
+            <p className="mt-1 text-xs text-amber-900/80 dark:text-amber-200/80">
+              Filial cheklistiga o‘tish uchun avval ofisdan «Ketdim» qiling. Vaqt va tarix —
+              «Asosiy ofisda qolish» bo‘limida.
+            </p>
+          </div>
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0"
+            onClick={() => setLocation("/davomat/ofisda")}
+          >
+            Ofisda qolish
+          </Button>
+        </div>
+      ) : null}
       {/* Hero */}
       <div className="hero-dark relative overflow-hidden rounded-2xl bg-[#0b1a2e] px-4 py-5 shadow-lg sm:px-6 sm:py-7">
         <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-cyan-400/10 blur-2xl" />
@@ -1087,7 +1128,9 @@ export default function ChecklistPage() {
               ) : null}
               {isCoord && openVisit && managerId && String(openVisit.branchId) !== managerId ? (
                 <p className="rounded-xl border border-amber-300 bg-amber-50 px-2.5 py-2 text-[11px] font-medium text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
-                  Ochiq tashrif boshqa filialda: «{openVisit.branchLabel || "Filial"}». Avval u yerda «Ketdim» qiling.
+                  {officeOpen
+                    ? "Asosiy ofisda ochiq «Keldim» bor — avval «Asosiy ofisda qolish»da Ketdim qiling."
+                    : `Ochiq tashrif boshqa filialda: «${openVisit.branchLabel || "Filial"}». Avval u yerda «Ketdim» qiling.`}
                 </p>
               ) : null}
               {visitedToday ? (

@@ -63,6 +63,7 @@ import DavomatAnalyticsPage from './pages/davomat/analytics';
 import DavomatXatoliklarPage from './pages/davomat/xatoliklar';
 import DavomatFacePage from './pages/davomat/face';
 import DavomatQrPage from './pages/davomat/qr';
+import DavomatOfisdaPage from './pages/davomat/ofisda';
 import SmenaFilialPage from './pages/smena-filial/index';
 import BoglanishPage from './pages/boglanish/index';
 import NotificationsPage from './pages/notifications/index';
@@ -200,6 +201,7 @@ function Router() {
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat/analytics" component={DavomatAnalyticsPage} />
       <ProtectedRoute path="/davomat/xatoliklar" component={DavomatXatoliklarPage} />
+      <ProtectedRoute path="/davomat/ofisda" component={DavomatOfisdaPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/davomat-kochma" component={DavomatKochmaPage} />
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />

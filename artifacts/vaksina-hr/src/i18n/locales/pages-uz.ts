@@ -2257,6 +2257,7 @@ export const pagesUz: Messages = {
   "mobile.employees": "Xodim",
   "mobile.chat": "Chat",
   "mobile.face": "Davomat",
+  "mobile.ofisda": "Ofisda",
   "mobile.org": "Tuzilma",
 
   "month.1": "Yanvar",

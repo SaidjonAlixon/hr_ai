@@ -11,6 +11,14 @@ import { notifyUser, notifyByRoles } from "./notify";
 
 export type CoordVisitRow = typeof coordinatorBranchVisitsTable.$inferSelect;
 
+/** Ofisda qolish tashrifi — branch_id = 0 (filial emas) */
+export const COORD_OFFICE_BRANCH_ID = 0;
+export const COORD_OFFICE_LABEL = "Asosiy ofis";
+/** Asosiy ofis GPS — davomat bilan bir xil */
+export const COORD_OFFICE_LAT = 41 + 13 / 60 + 9.3 / 3600;
+export const COORD_OFFICE_LNG = 69 + 16 / 60 + 22.9 / 3600;
+export const COORD_OFFICE_GEOFENCE_METERS = 100;
+
 /** Cheklist / Keldim / Ketdim / hudud tasdiqlash — yashil zona */
 export const COORD_VISIT_GEOFENCE_METERS = 70;
 /** Har shuncha daqiqada hududni qayta tasdiqlash */
@@ -68,6 +76,21 @@ export async function getBranchCoords(branchId: number): Promise<{
   };
 }
 
+export function isCoordinatorOfficeVisit(
+  v: Pick<CoordVisitRow, "branchId"> | { branchId?: number | null },
+): boolean {
+  return Number(v.branchId) === COORD_OFFICE_BRANCH_ID;
+}
+
+export function normalizeCoordinatorPunchBranchId(
+  branchId: number | null | undefined,
+): number {
+  if (branchId != null && Number.isFinite(Number(branchId)) && Number(branchId) > 0) {
+    return Number(branchId);
+  }
+  return COORD_OFFICE_BRANCH_ID;
+}
+
 export async function assertInBranchGeofence(opts: {
   branchId: number;
   latitude: number | null | undefined;
@@ -77,7 +100,10 @@ export async function assertInBranchGeofence(opts: {
   | { ok: true; distanceMeters: number; branchLabel: string }
   | { ok: false; status: number; error: string; code: string; distanceMeters?: number }
 > {
-  const max = opts.maxMeters ?? COORD_VISIT_GEOFENCE_METERS;
+  const isOffice = Number(opts.branchId) === COORD_OFFICE_BRANCH_ID;
+  const max =
+    opts.maxMeters ??
+    (isOffice ? COORD_OFFICE_GEOFENCE_METERS : COORD_VISIT_GEOFENCE_METERS);
   if (
     opts.latitude == null ||
     opts.longitude == null ||
@@ -90,6 +116,24 @@ export async function assertInBranchGeofence(opts: {
       code: "gps_required",
       error: "GPS majburiy — lokatsiyaga ruxsat bering.",
     };
+  }
+  if (isOffice) {
+    const distanceMeters = haversineMeters(
+      opts.latitude,
+      opts.longitude,
+      COORD_OFFICE_LAT,
+      COORD_OFFICE_LNG,
+    );
+    if (distanceMeters > max) {
+      return {
+        ok: false,
+        status: 403,
+        code: "outside_geofence",
+        distanceMeters,
+        error: `Asosiy ofis zonasidan tashqaridasiz (${distanceMeters} m). Ofisga ${max} m ichida kiring.`,
+      };
+    }
+    return { ok: true, distanceMeters, branchLabel: COORD_OFFICE_LABEL };
   }
   const coords = await getBranchCoords(opts.branchId);
   if (!coords) {
@@ -128,20 +172,23 @@ export function visitPresenceBaseMs(v: {
   return Number.isFinite(ms) ? ms : null;
 }
 
-/** 20 daq muddat o‘tdi (eslatma oynasi) */
+/** 30 daq muddat o‘tdi (eslatma oynasi) — ofis tashrifida talab qilinmaydi */
 export function isVisitPresenceOverdue(v: CoordVisitRow, now = Date.now()): boolean {
   if (v.status !== "open" || v.checkOutAt) return false;
+  if (isCoordinatorOfficeVisit(v)) return false;
   const base = visitPresenceBaseMs(v);
   if (base == null) return false;
   return now - base >= COORD_PRESENCE_INTERVAL_MS;
 }
 
 /**
- * Blok: 20 daq + 10 daq grace ichida tasdiqlanmagan,
+ * Blok: 30 daq + 10 daq grace ichida tasdiqlanmagan,
  * yoki presenceBlockedAt belgilangan va admin ochmagan.
+ * Ofisda qolish — presence majburiy emas.
  */
 export function isVisitPresenceBlocked(v: CoordVisitRow, now = Date.now()): boolean {
   if (v.status !== "open" || v.checkOutAt) return false;
+  if (isCoordinatorOfficeVisit(v)) return false;
   if (v.presenceBlockedAt) {
     // Admin ochgan bo‘lsa — unblock
     if (
@@ -205,53 +252,51 @@ export async function assertCoordinatorPunchAllowed(opts: {
   branchLabel?: string | null;
 }): Promise<{ ok: true } | { ok: false; status: number; error: string; code: string }> {
   const open = await getOpenCoordinatorVisit(opts.userId);
-  const branchId = opts.branchId != null && Number.isFinite(opts.branchId) ? Number(opts.branchId) : null;
+  const punchBranchId = normalizeCoordinatorPunchBranchId(opts.branchId);
+  const punchIsOffice = punchBranchId === COORD_OFFICE_BRANCH_ID;
 
   if (opts.action === "in") {
-    if (open && branchId != null && open.branchId !== branchId) {
-      const prev = open.branchLabel || `Filial #${open.branchId}`;
+    if (open) {
+      const openIsOffice = isCoordinatorOfficeVisit(open);
+      const openLabel = openIsOffice
+        ? COORD_OFFICE_LABEL
+        : open.branchLabel || `Filial #${open.branchId}`;
+      if (open.branchId === punchBranchId) {
+        return {
+          ok: false,
+          status: 400,
+          code: "already_in_branch",
+          error: openIsOffice
+            ? `Asosiy ofisda allaqachon «Keldim» qilgansiz. Avval «Ketdim» qiling — keyin qayta Keldim mumkin.`
+            : `Bu filialda allaqachon «Keldim» qilgansiz. Cheklistni to‘ldiring, keyin «Ketdim» bosing.`,
+        };
+      }
       return {
         ok: false,
         status: 403,
         code: "open_visit_elsewhere",
-        error: `Avvalgi filialda «Ketdim» qilmagansiz: «${prev}». Avval shu yerdan Ketdim qiling — keyin boshqa filialga o‘ting.`,
+        error: openIsOffice
+          ? `Asosiy ofisda ochiq «Keldim» bor. Avval ofisdan «Ketdim» qiling — keyin ${punchIsOffice ? "qayta" : "filialga"} o‘ting.`
+          : `Avvalgi joyda «Ketdim» qilmagansiz: «${openLabel}». Avval Ketdim — keyin boshqa joyga o‘ting.`,
       };
-    }
-    if (open && branchId != null && open.branchId === branchId) {
-      return {
-        ok: false,
-        status: 400,
-        code: "already_in_branch",
-        error: `Bu filialda allaqachon «Keldim» qilgansiz. Cheklistni to‘ldiring, keyin «Ketdim» bosing.`,
-      };
-    }
-    if (!branchId) {
-      // Ofis / GPS yo‘q — ochiq filial tashrifini yopmasdan ofis punchiga ruxsat (agar ochiq bo‘lsa ogohlantirish)
-      if (open) {
-        const prev = open.branchLabel || `Filial #${open.branchId}`;
-        return {
-          ok: false,
-          status: 403,
-          code: "open_visit_elsewhere",
-          error: `Filialda ochiq tashrif bor: «${prev}». Avval «Ketdim» qiling.`,
-        };
-      }
     }
     return { ok: true };
   }
 
   // out
   if (open) {
-    if (branchId != null && open.branchId !== branchId) {
-      const prev = open.branchLabel || `Filial #${open.branchId}`;
+    if (open.branchId !== punchBranchId) {
+      const openIsOffice = isCoordinatorOfficeVisit(open);
+      const prev = openIsOffice
+        ? COORD_OFFICE_LABEL
+        : open.branchLabel || `Filial #${open.branchId}`;
       return {
         ok: false,
         status: 403,
         code: "checkout_wrong_branch",
-        error: `«Ketdim» faqat tashrif qilgan filialda: «${prev}». Boshqa joyda Ketdim qilib bo‘lmaydi.`,
+        error: `«Ketdim» faqat kelgan joyda: «${prev}».`,
       };
     }
-    // Cheklist ixtiyoriy — Ketdim izoh bilan ham yopiladi (koordinator harakatda qolsin)
   }
   return { ok: true };
 }
@@ -268,11 +313,11 @@ export async function syncCoordinatorVisitOnPunch(opts: {
   longitude?: number | null;
   checkoutNote?: string | null;
 }): Promise<CoordVisitRow | null> {
-  const branchId =
-    opts.branchId != null && Number.isFinite(Number(opts.branchId))
-      ? Number(opts.branchId)
-      : null;
-  if (!branchId) return null;
+  const branchId = normalizeCoordinatorPunchBranchId(opts.branchId);
+  const branchLabel =
+    branchId === COORD_OFFICE_BRANCH_ID
+      ? COORD_OFFICE_LABEL
+      : opts.branchLabel || null;
 
   const now = new Date();
   const open = await getOpenCoordinatorVisit(opts.userId);
@@ -286,7 +331,7 @@ export async function syncCoordinatorVisitOnPunch(opts: {
         coordinatorEmployeeId: opts.employeeId,
         coordinatorName: opts.fullName,
         branchId,
-        branchLabel: opts.branchLabel || null,
+        branchLabel,
         workDate: opts.workDate,
         checkInAt: now,
         checkInLatitude: opts.latitude ?? null,
@@ -397,7 +442,7 @@ export async function finishCoordinatorVisitWithNote(opts: {
       ok: false,
       status: 400,
       code: "no_open_visit",
-      error: "Yopiladigan ochiq tashrif yo‘q. Avval filialda «Keldim» qiling.",
+      error: "Yopiladigan ochiq tashrif yo‘q. Avval «Keldim» qiling (filial yoki asosiy ofis).",
     };
   }
 
@@ -463,7 +508,9 @@ async function closeOpenAttendanceForVisit(
     .where(and(...conds))
     .limit(1);
   if (!rec || rec.checkOutAt) return;
-  const noteTag = `[${source}] Admin/Ketdim — filial #${visit.branchId}`;
+  const noteTag = isCoordinatorOfficeVisit(visit)
+    ? `[${source}] Admin/Ketdim — Asosiy ofis`
+    : `[${source}] Admin/Ketdim — filial #${visit.branchId}`;
   const notes = rec.notes ? `${rec.notes} · ${noteTag}` : noteTag;
   await db
     .update(attendanceRecordsTable)
@@ -914,7 +961,9 @@ export function serializeVisit(v: CoordVisitRow) {
     coordinatorEmployeeId: v.coordinatorEmployeeId,
     coordinatorName: v.coordinatorName,
     branchId: v.branchId,
-    branchLabel: v.branchLabel,
+    branchLabel: isCoordinatorOfficeVisit(v) ? COORD_OFFICE_LABEL : v.branchLabel,
+    visitKind: isCoordinatorOfficeVisit(v) ? ("office" as const) : ("branch" as const),
+    isOffice: isCoordinatorOfficeVisit(v),
     workDate: v.workDate,
     checkInAt: v.checkInAt,
     checkOutAt: v.checkOutAt,
@@ -935,7 +984,9 @@ export function serializeVisit(v: CoordVisitRow) {
     unlockPending,
     presenceIntervalMinutes: Math.round(COORD_PRESENCE_INTERVAL_MS / 60_000),
     presenceGraceMinutes: Math.round(COORD_PRESENCE_GRACE_MS / 60_000),
-    geofenceMeters: COORD_VISIT_GEOFENCE_METERS,
+    geofenceMeters: isCoordinatorOfficeVisit(v)
+      ? COORD_OFFICE_GEOFENCE_METERS
+      : COORD_VISIT_GEOFENCE_METERS,
     status: v.status,
     durationMinutes: durationMin,
     durationLabel: formatDurationMinutes(durationMin),

@@ -324,6 +324,8 @@ export type CoordinatorVisitSession = {
   coordinatorName: string | null;
   branchId: number;
   branchLabel: string | null;
+  visitKind?: "office" | "branch";
+  isOffice?: boolean;
   workDate: string;
   checkInAt: string;
   checkOutAt: string | null;
@@ -362,6 +364,39 @@ export function useMyCoordinatorVisit(enabled = true) {
       ),
     enabled,
     refetchInterval: 15_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
+  });
+}
+
+export type MyOfficeStaysResponse = {
+  officeLabel: string;
+  open: CoordinatorVisitSession | null;
+  items: CoordinatorVisitSession[];
+  summary: {
+    total: number;
+    openCount: number;
+    closedCount: number;
+    avgStayMinutes: number | null;
+    avgStayLabel: string | null;
+  };
+};
+
+export function useMyOfficeStays(opts?: { from?: string; to?: string; enabled?: boolean }) {
+  const from = opts?.from;
+  const to = opts?.to;
+  return useQuery({
+    queryKey: ["branch-audits", "my-office-stays", from, to],
+    queryFn: () => {
+      const q = new URLSearchParams();
+      if (from) q.set("from", from);
+      if (to) q.set("to", to);
+      const suffix = q.toString() ? `?${q.toString()}` : "";
+      return apiFetch<MyOfficeStaysResponse>(`/branch-audits/my-office-stays${suffix}`);
+    },
+    enabled: opts?.enabled !== false,
+    refetchInterval: 20_000,
     refetchIntervalInBackground: false,
     refetchOnWindowFocus: true,
     staleTime: 0,

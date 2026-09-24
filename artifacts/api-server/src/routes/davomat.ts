@@ -46,6 +46,10 @@ import {
   getOpenCoordinatorVisit,
   syncCoordinatorVisitOnPunch,
   serializeVisit,
+  COORD_OFFICE_BRANCH_ID,
+  COORD_OFFICE_LABEL,
+  isCoordinatorOfficeVisit,
+  normalizeCoordinatorPunchBranchId,
 } from "../lib/coordinator-visits";
 import {
   isTestOfficeCoordinatorName,
@@ -1778,6 +1782,214 @@ async function loadAllBranchCoords(): Promise<
   return out;
 }
 
+/** Koordinator o‘z tarmog‘idagi mudir-filiallar GPS */
+async function loadCoordinatorOwnBranchCoords(
+  coordinatorEmployeeId: number,
+): Promise<Array<{ branchId: number; lat: number; lng: number; label: string }>> {
+  const rows = await db
+    .select({
+      id: employeesTable.id,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+      location: employeesTable.location,
+      fullName: employeesTable.fullName,
+    })
+    .from(employeesTable)
+    .where(
+      and(
+        eq(employeesTable.orgRole, "manager"),
+        eq(employeesTable.reportsToId, coordinatorEmployeeId),
+        eq(employeesTable.employmentStatus, "working"),
+      ),
+    );
+  const out: Array<{ branchId: number; lat: number; lng: number; label: string }> = [];
+  for (const r of rows) {
+    const c = coordsFromEmp(r);
+    if (!c) continue;
+    out.push({
+      branchId: r.id,
+      lat: c.lat,
+      lng: c.lng,
+      label: displayBranchName(r.location) || r.location || r.fullName || "Filial",
+    });
+  }
+  return out;
+}
+
+/**
+ * Koordinator: asosiy ofis YOKI faqat o‘z filiallari zonasidan davomat.
+ * preferredBranchId — cheklist oqimi (o‘z filialida bo‘lishi shart).
+ */
+async function resolveCoordinatorGeoGate(opts: {
+  emp: WorkplaceEmp;
+  latitude: number;
+  longitude: number;
+  mobileAnywhere: boolean;
+  preferredBranchId?: number | null;
+}): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
+  const { emp, latitude, longitude, mobileAnywhere, preferredBranchId } = opts;
+  const GEOFENCE_SLACK_M = 8;
+  const branchR = geofenceMetersForKind("branch");
+  const officeR = geofenceMetersForKind("office");
+
+  const own = await loadCoordinatorOwnBranchCoords(emp.id);
+  const ownIds = new Set(own.map((b) => b.branchId));
+
+  const tryBranch = (
+    branchId: number,
+    lat: number,
+    lng: number,
+    label: string,
+  ): GeoGateOk | null => {
+    const distanceMeters = haversineMeters(latitude, longitude, lat, lng);
+    if (!mobileAnywhere && distanceMeters > branchR + GEOFENCE_SLACK_M) return null;
+    return {
+      ok: true,
+      distanceMeters,
+      effectiveRadius: mobileAnywhere
+        ? Math.max(branchR, Math.ceil(distanceMeters) || branchR)
+        : branchR,
+      point: {
+        latitude: lat,
+        longitude: lng,
+        label,
+        kind: "branch",
+      },
+      resolvedBranchId: branchId,
+      resolvedBranchLabel: label,
+      activeShiftKey: null,
+      daySlots: [],
+    };
+  };
+
+  const tryOffice = (): GeoGateOk | null => {
+    const distanceMeters = haversineMeters(
+      latitude,
+      longitude,
+      DAVOMAT_SITE_LAT,
+      DAVOMAT_SITE_LNG,
+    );
+    if (!mobileAnywhere && distanceMeters > officeR + GEOFENCE_SLACK_M) return null;
+    return {
+      ok: true,
+      distanceMeters,
+      effectiveRadius: mobileAnywhere
+        ? Math.max(officeR, Math.ceil(distanceMeters) || officeR)
+        : officeR,
+      point: {
+        latitude: DAVOMAT_SITE_LAT,
+        longitude: DAVOMAT_SITE_LNG,
+        label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+        kind: "office",
+      },
+      resolvedBranchId: null,
+      resolvedBranchLabel: COORD_OFFICE_LABEL,
+      activeShiftKey: null,
+      daySlots: [],
+    };
+  };
+
+  if (
+    preferredBranchId != null &&
+    Number.isFinite(preferredBranchId) &&
+    preferredBranchId > 0
+  ) {
+    if (!ownIds.has(preferredBranchId) && !mobileAnywhere) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error:
+            "Bu filial sizning tarmog‘ingizga kirmaydi. Faqat o‘z filiallaringizda yoki asosiy ofisda davomat qila olasiz.",
+          code: "not_own_branch",
+          fullName: emp.fullName,
+        },
+      };
+    }
+    const coords = await branchCoordsById(preferredBranchId);
+    if (coords) {
+      const hit = tryBranch(preferredBranchId, coords.lat, coords.lng, coords.label);
+      if (hit) return hit;
+    }
+  }
+
+  let best: { branchId: number; lat: number; lng: number; label: string; d: number } | null =
+    null;
+  for (const b of own) {
+    const d = haversineMeters(latitude, longitude, b.lat, b.lng);
+    if (!best || d < best.d) best = { ...b, d };
+  }
+  if (best && best.d <= branchR + GEOFENCE_SLACK_M) {
+    const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+    if (hit) return hit;
+  }
+
+  const officeHit = tryOffice();
+  if (officeHit) {
+    if (mobileAnywhere && best && best.d <= Math.max(branchR * 3, 200)) {
+      const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+      if (hit) return hit;
+    }
+    return officeHit;
+  }
+
+  if (mobileAnywhere) {
+    if (best) {
+      const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+      if (hit) return hit;
+    }
+    return (
+      tryOffice() || {
+        ok: true,
+        distanceMeters: 0,
+        effectiveRadius: officeR,
+        point: {
+          latitude: DAVOMAT_SITE_LAT,
+          longitude: DAVOMAT_SITE_LNG,
+          label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+          kind: "office",
+        },
+        resolvedBranchId: null,
+        resolvedBranchLabel: COORD_OFFICE_LABEL,
+        activeShiftKey: null,
+        daySlots: [],
+      }
+    );
+  }
+
+  const officeDist = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+  const remainOffice = Math.max(0, officeDist - officeR);
+  const remainBranch = best ? Math.max(0, best.d - branchR) : null;
+  return {
+    ok: false,
+    status: 403,
+    body: {
+      error: best
+        ? `Koordinator davomati: asosiy ofis (${remainOffice} m) yoki o‘z filialingiz «${best.label}» (${remainBranch} m) zonasiga kiring.`
+        : `Hududdan tashqaridasiz (asosiy ofis): ${officeDist} m. Ruxsat ${officeR} m. O‘z filiallaringiz GPS kiritilmagan.`,
+      code: "outside_geofence",
+      distanceMeters: best && best.d < officeDist ? best.d : officeDist,
+      remainMeters: best && best.d < officeDist ? remainBranch : remainOffice,
+      allowedMeters: best && best.d < officeDist ? branchR : officeR,
+      workplace: best
+        ? {
+            location: best.label,
+            latitude: best.lat,
+            longitude: best.lng,
+            kind: "branch",
+          }
+        : {
+            location: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+            latitude: DAVOMAT_SITE_LAT,
+            longitude: DAVOMAT_SITE_LNG,
+            kind: "office",
+          },
+      fullName: emp.fullName,
+      coordinatorFieldPunch: true,
+    },
+  };
+}
+
 /**
  * Reviziya (rahbar + revizor): ofis yoki istalgan filial geofence ichida davomat.
  * preferredBranchId bo‘lsa — avvalo shu filial.
@@ -1994,36 +2206,15 @@ async function geoGate(
       }
     }
 
-    // Koordinator + cheklist filial: GPS filial zonasida bo‘lsa tashrif shu filialga ochiladi
-    if (
-      userRole === "koordinator" &&
-      preferredBranchId != null &&
-      Number.isFinite(preferredBranchId) &&
-      preferredBranchId > 0
-    ) {
-      const coords = await branchCoordsById(preferredBranchId);
-      if (coords) {
-        const GEOFENCE_SLACK_M = 8;
-        const branchDist = haversineMeters(latitude, longitude, coords.lat, coords.lng);
-        const branchR = geofenceMetersForKind("branch");
-        if (mobileAnywhere || branchDist <= branchR + GEOFENCE_SLACK_M) {
-          return {
-            ok: true,
-            distanceMeters: branchDist,
-            effectiveRadius: branchR,
-            point: {
-              latitude: coords.lat,
-              longitude: coords.lng,
-              label: coords.label,
-              kind: "branch",
-            },
-            resolvedBranchId: preferredBranchId,
-            resolvedBranchLabel: coords.label,
-            activeShiftKey: null,
-            daySlots: [],
-          };
-        }
-      }
+    // Koordinator: asosiy ofis + faqat o‘z filiallari
+    if (userRole === "koordinator") {
+      return resolveCoordinatorGeoGate({
+        emp,
+        latitude,
+        longitude,
+        mobileAnywhere,
+        preferredBranchId,
+      });
     }
 
     const resolved = await resolveDavomatPoint(emp, userRole);
@@ -2976,6 +3167,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     // UI GPS: hozirgi aktiv smena filiali; yo‘q bo‘lsa bugungi 1-slot; legacy resolve
     let resolved = await resolveDavomatPoint(emp, user.role);
     let fieldBranchPunch = false;
+    let coordinatorFieldPunch = false;
     const qLat = Number(req.query.lat);
     const qLng = Number(req.query.lng);
     if (
@@ -3021,8 +3213,56 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       }
     } else if (isReviziyaRole(user.role)) {
       fieldBranchPunch = true;
+    } else if (
+      user.role === "koordinator" &&
+      Number.isFinite(qLat) &&
+      Number.isFinite(qLng)
+    ) {
+      coordinatorFieldPunch = true;
+      let mobileAnywherePreview = false;
+      try {
+        mobileAnywherePreview = await employeeHasMobileAnywhere(emp.id, emp.userId ?? user.id);
+      } catch {
+        mobileAnywherePreview = false;
+      }
+      const coordGate = await resolveCoordinatorGeoGate({
+        emp,
+        latitude: qLat,
+        longitude: qLng,
+        mobileAnywhere: mobileAnywherePreview,
+        preferredBranchId: Number(req.query.branchId) || null,
+      });
+      if (coordGate.ok) {
+        resolved = { ok: true, point: coordGate.point };
+      } else {
+        const wp = coordGate.body.workplace as
+          | { location?: string; latitude?: number; longitude?: number; kind?: string }
+          | undefined;
+        if (
+          wp &&
+          typeof wp.latitude === "number" &&
+          typeof wp.longitude === "number"
+        ) {
+          resolved = {
+            ok: true,
+            point: {
+              latitude: wp.latitude,
+              longitude: wp.longitude,
+              label: wp.location || "Filial",
+              kind: wp.kind === "branch" ? "branch" : "office",
+            },
+          };
+        }
+      }
+    } else if (user.role === "koordinator") {
+      coordinatorFieldPunch = true;
     }
-    if (preferredSlot) {
+    // Filial smena sloti — faqat dorixona xodimlari (koordinator/reviziya GPS maydoni ustun)
+    if (
+      preferredSlot &&
+      user.role !== "koordinator" &&
+      !isReviziyaRole(user.role)
+    ) {
       const coords = await branchCoordsById(preferredSlot.branchId);
       if (coords) {
         resolved = {
@@ -3035,7 +3275,11 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           },
         };
       }
-    } else if (activeNow[0]) {
+    } else if (
+      activeNow[0] &&
+      user.role !== "koordinator" &&
+      !isReviziyaRole(user.role)
+    ) {
       const coords = await branchCoordsById(activeNow[0].branchId);
       if (coords) {
         resolved = {
@@ -3048,7 +3292,12 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           },
         };
       }
-    } else if (allSlots.length > 0 && daySlots[0]) {
+    } else if (
+      allSlots.length > 0 &&
+      daySlots[0] &&
+      user.role !== "koordinator" &&
+      !isReviziyaRole(user.role)
+    ) {
       const coords = await branchCoordsById(daySlots[0].branchId);
       if (coords) {
         resolved = {
@@ -3134,6 +3383,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       allowedMeters: geofenceMetersForKind(point.kind),
       mobileAnywhere,
       fieldBranchPunch: fieldBranchPunch || undefined,
+      coordinatorFieldPunch: coordinatorFieldPunch || undefined,
       site: {
         label: point.label,
         latitude: point.latitude,
@@ -3663,6 +3913,7 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
           const open = await getOpenCoordinatorVisit(resolved.user.id);
           const own = await ownEmployeeReport(resolved.emp.id);
           const day = own.employee?.days?.[0];
+          const isOffice = open ? isCoordinatorOfficeVisit(open) : false;
           res.json({
             ok: true,
             action: "in",
@@ -3676,9 +3927,12 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
             distanceMeters: resolved.gate.distanceMeters,
             employee: own.employee,
             coordinatorVisit: open ? serializeVisit(open) : null,
-            checklistRedirect: true,
+            checklistRedirect: !isOffice,
+            ofisdaRedirect: isOffice,
             attendanceAlreadyMarked: true,
-            checklistHint: "Tashrif ochiq — Cheklist bo‘limida to‘ldiring.",
+            checklistHint: isOffice
+              ? "Ofisda ochiq «Keldim» bor — «Asosiy ofisda qolish» bo‘limiga o‘ting."
+              : "Tashrif ochiq — Cheklist bo‘limida to‘ldiring.",
           });
           return;
         }
@@ -3725,11 +3979,13 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
         resolved.user.role === "koordinator" &&
         resolved.user.id &&
         action === "in" &&
-        (punchCode === "already_in" || punchCode === "already_complete") &&
-        resolved.gate.resolvedBranchId
+        (punchCode === "already_in" || punchCode === "already_complete")
       ) {
         try {
           const workDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+          const punchBranchId = normalizeCoordinatorPunchBranchId(
+            resolved.gate.resolvedBranchId,
+          );
           const synced = await syncCoordinatorVisitOnPunch({
             userId: resolved.user.id,
             employeeId: resolved.emp.id,
@@ -3742,15 +3998,17 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
             longitude,
           });
           const open = synced || (await getOpenCoordinatorVisit(resolved.user.id));
-          if (open && open.branchId === resolved.gate.resolvedBranchId) {
+          if (open && open.branchId === punchBranchId) {
             const own = await ownEmployeeReport(resolved.emp.id);
             const day = own.employee?.days?.[0];
+            const isOffice = isCoordinatorOfficeVisit(open);
             res.json({
               ok: true,
               action: "in",
               fullName: resolved.user.fullName || resolved.emp.fullName,
-              message:
-                "Davomat allaqachon belgilangan. Filial tashrifi ochildi — endi Cheklistni to‘ldiring.",
+              message: isOffice
+                ? "Davomat allaqachon belgilangan. Ofisda qolish ochildi — «Asosiy ofisda qolish» bo‘limida kuzating."
+                : "Davomat allaqachon belgilangan. Filial tashrifi ochildi — endi Cheklistni to‘ldiring.",
               checkIn: String(punched.body.checkIn || day?.checkIn || "—"),
               checkOut: String(punched.body.checkOut || day?.checkOut || "—"),
               checkInAt: (punched.body.checkInAt as string | null) || null,
@@ -3759,9 +4017,12 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
               distanceMeters: resolved.gate.distanceMeters,
               employee: own.employee,
               coordinatorVisit: serializeVisit(open),
-              checklistRedirect: true,
+              checklistRedirect: !isOffice,
+              ofisdaRedirect: isOffice,
               attendanceAlreadyMarked: true,
-              checklistHint: "Keldim qabul qilindi. Endi Cheklist bo‘limida to‘ldiring.",
+              checklistHint: isOffice
+                ? "Ofisda qolish ochiq. Ketdimni «Asosiy ofisda qolish» yoki Davomatdan qiling."
+                : "Keldim qabul qilindi. Endi Cheklist bo‘limida to‘ldiring.",
             });
             return;
           }
@@ -3824,6 +4085,11 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
     });
     const own = await ownEmployeeReport(resolved.emp.id);
     const sessionUser = await adoptFaceSession(res, resolved.user.id);
+    const visitIsOffice = Boolean(
+      coordinatorVisit &&
+        (coordinatorVisit.isOffice ||
+          Number(coordinatorVisit.branchId) === COORD_OFFICE_BRANCH_ID),
+    );
     res.json({
       ...punched.payload,
       employee: own.employee,
@@ -3832,13 +4098,26 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       ownerVerified: Boolean(expectedUserId),
       coordinatorVisit,
       checklistRedirect: Boolean(
-        action === "in" && resolved.user.role === "koordinator" && coordinatorVisit,
+        action === "in" &&
+          resolved.user.role === "koordinator" &&
+          coordinatorVisit &&
+          !visitIsOffice,
+      ),
+      ofisdaRedirect: Boolean(
+        action === "in" &&
+          resolved.user.role === "koordinator" &&
+          coordinatorVisit &&
+          visitIsOffice,
       ),
       checklistHint:
         action === "in" && resolved.user.role === "koordinator"
-          ? "Keldim qabul qilindi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling."
+          ? visitIsOffice
+            ? "Ofisda «Keldim» qabul qilindi. «Asosiy ofisda qolish» bo‘limida vaqtni kuzating; ketganda «Ketdim» qiling."
+            : "Keldim qabul qilindi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling."
           : action === "out" && resolved.user.role === "koordinator"
-            ? "Ketdim qabul qilindi — vaqt yozildi. Keyingi filialga o‘tishingiz mumkin."
+            ? visitIsOffice
+              ? "Ofisdan «Ketdim» qabul qilindi — qolgan vaqt yozildi. Keyin filialga yoki qayta ofisga o‘tishingiz mumkin."
+              : "Ketdim qabul qilindi — vaqt yozildi. Keyingi filialga o‘tishingiz mumkin."
             : undefined,
     });
   } catch (err) {

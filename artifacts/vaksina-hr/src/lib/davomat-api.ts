@@ -316,8 +316,14 @@ export async function facePunchDavomat(payload: {
   } | null;
   sessionSwitched?: boolean;
   checklistRedirect?: boolean;
+  ofisdaRedirect?: boolean;
   checklistHint?: string;
-  coordinatorVisit?: { id: number; branchId: number } | null;
+  coordinatorVisit?: {
+    id: number;
+    branchId: number;
+    isOffice?: boolean;
+    visitKind?: "office" | "branch";
+  } | null;
   attendanceAlreadyMarked?: boolean;
 }> {
   /** AI anti-spoof ~180k char limitti — siqilmasa «Yuz rasmi olinmadi» chiqadi */

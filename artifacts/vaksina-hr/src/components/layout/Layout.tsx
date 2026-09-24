@@ -21,6 +21,7 @@ import {
   AlarmClock,
   Network,
   ScanFace,
+  Building2,
   MonitorSmartphone,
   MapPin,
   Navigation,
@@ -174,7 +175,7 @@ const NAV_SECTIONS: {
     id: 'attendance',
     label: 'Davomat',
     icon: AlarmClock,
-    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
+    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
@@ -271,6 +272,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/smena-filial')) return '/smena-filial';
   if (path.startsWith('/davomat/analytics')) return '/davomat/analytics';
   if (path.startsWith('/davomat/xatoliklar')) return '/davomat/xatoliklar';
+  if (path.startsWith('/davomat/ofisda')) return '/davomat/ofisda';
   if (path.startsWith('/davomat-face')) return '/davomat-face';
   if (path.startsWith('/davomat')) return '/davomat';
   if (path.startsWith('/checklist-holati')) return '/checklist-holati';
@@ -827,6 +829,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const davomatAnalyticsNav = { name: 'Davomat tahlili', path: '/davomat/analytics', icon: BarChart3 };
   const davomatXatoliklarNav = { name: 'Xatoliklar', path: '/davomat/xatoliklar', icon: AlertTriangle };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
+  const davomatOfisdaNav = { name: 'Asosiy ofisda qolish', path: '/davomat/ofisda', icon: Building2 };
   const davomatKochmaNav = { name: "Ko‘chma davomat", path: '/davomat-kochma', icon: MapPin };
   const smenaNav = { name: 'Smena va filial', path: '/smena-filial', icon: AlarmClock };
   const javobNav = { name: 'Javob olish', path: '/javob-olish', icon: PhoneCall };
@@ -1266,6 +1269,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
+      davomatOfisdaNav,
       davomatQrNav,
       smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },

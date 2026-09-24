@@ -1518,6 +1518,8 @@ export const pagesRu: Messages = {
   "tasks.form.status.overdue": "Просрочено",
   "tasks.form.status.overdueHint": "Время истекло",
   "tasks.form.acceptWindow": "Срок принятия",
+  "tasks.form.acceptWindowToggle": "Срок принятия задачи",
+  "tasks.form.acceptWindowOffHint": "Выключено — «Просрочено» только после основного срока",
   "tasks.form.acceptLocked": "Не принято — только просмотр",
   "tasks.form.filterOfis": "Офис",
   "tasks.form.filterDorixona": "Аптека",

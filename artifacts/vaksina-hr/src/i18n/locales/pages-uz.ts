@@ -1519,6 +1519,8 @@ export const pagesUz: Messages = {
   "tasks.form.status.overdue": "Kechikkan",
   "tasks.form.status.overdueHint": "Vaqt tugagan",
   "tasks.form.acceptWindow": "Qabul muddati",
+  "tasks.form.acceptWindowToggle": "Qabul qilish muddati",
+  "tasks.form.acceptWindowOffHint": "O‘chirilgan — faqat asosiy Muddat tugagach Kechikkanga o‘tadi",
   "tasks.form.acceptLocked": "Qabul qilinmadi — faqat ko‘rish mumkin",
   "tasks.form.filterOfis": "Ofis",
   "tasks.form.filterDorixona": "Dorixona",

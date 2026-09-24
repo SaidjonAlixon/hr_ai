@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { Link } from "wouter";
 import {
   Building2,
   CalendarDays,
@@ -12,10 +13,13 @@ import {
   Play,
   Flag,
   UserPlus,
+  MapPin,
+  ScanFace,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   canAssignReviziya,
+  canApproveReviziyaRequest,
   canCreateReviziyaVisit,
   canViewAllReviziyaBranches,
   isReviziyaRole,
@@ -93,13 +97,23 @@ export function ReviziyaCyclePanel() {
   const viewAll = canViewAllReviziyaBranches(role);
   const canCreate = canCreateReviziyaVisit(role);
   const canAssign = canAssignReviziya(role);
+  const canApprove = canApproveReviziyaRequest(role);
   const isRevizorOnly = isReviziyaRole(role) && !viewAll;
+  const isCoordinator = role === "koordinator";
 
-  const [sub, setSub] = useState<SubTab>(isRevizorOnly ? "tasks" : "branches");
+  const [sub, setSub] = useState<SubTab>(isRevizorOnly ? "tasks" : isCoordinator ? "create" : "branches");
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("");
   const [selectedBranchId, setSelectedBranchId] = useState<number | null>(null);
   const [completeVisitId, setCompleteVisitId] = useState<number | null>(null);
+  const [approveVisitId, setApproveVisitId] = useState<number | null>(null);
+  const [approveForm, setApproveForm] = useState({
+    revisionDate: new Date().toISOString().slice(0, 10),
+    scheduledStartTime: "10:00",
+    scheduledEndTime: "14:00",
+    assignedEmployeeId: "",
+    notes: "",
+  });
 
   const meta = useReviziyaVisitsMeta();
   const dash = useReviziyaVisitsDashboard({ q, status: status || undefined, limit: 80 });
@@ -155,29 +169,14 @@ export function ReviziyaCyclePanel() {
       await mut.create.mutateAsync({
         branchId: Number(form.branchId),
         revisionDate: form.revisionDate,
-        scheduledStartTime: form.scheduledStartTime,
-        scheduledEndTime: form.scheduledEndTime,
-        assignedEmployeeId: form.assignedEmployeeId ? Number(form.assignedEmployeeId) : null,
-        shortageAmount: form.shortageAmount || 0,
-        excessAmount: form.excessAmount || 0,
-        collectedAmount: form.collectedAmount || 0,
         notes: form.notes || null,
-        actNumber: form.actNumber || null,
-        actUrl: form.actUrl || null,
-        receiptUrl: form.receiptUrl || null,
-        responsibleName: form.responsibleName || null,
-        completeImmediately: form.completeImmediately,
       });
-      toast({ title: "Reviziya saqlandi" });
-      setSub("branches");
+      toast({ title: "Ariza yuborildi — reviziya rahbari kun belgilaydi" });
+      setSub("tasks");
       setForm((f) => ({
         ...f,
-        shortageAmount: "",
-        collectedAmount: "",
         notes: "",
         actNumber: newActNumberPreview(),
-        actUrl: "",
-        receiptUrl: "",
       }));
     } catch (e: any) {
       toast({ title: e?.message || "Xatolik", variant: "destructive" });
@@ -195,6 +194,24 @@ export function ReviziyaCyclePanel() {
 
   return (
     <div className="space-y-4">
+      {isReviziyaRole(role) ? (
+        <div className="flex flex-col gap-2 rounded-xl border border-violet-200/80 bg-violet-50/80 p-3 sm:flex-row sm:items-center sm:justify-between dark:border-violet-800/50 dark:bg-violet-950/30">
+          <div className="min-w-0 space-y-0.5">
+            <p className="text-sm font-semibold text-violet-950 dark:text-violet-100">
+              Filialda davomat
+            </p>
+            <p className="text-xs leading-snug text-violet-800/90 dark:text-violet-200/80">
+              Reviziya bo‘limi — ofis yoki borgan filialingiz GPS zonasida «Keldim / Ketdim» qilishingiz mumkin.
+            </p>
+          </div>
+          <Button asChild size="sm" className="shrink-0 gap-1.5 bg-violet-700 hover:bg-violet-800">
+            <Link href="/davomat/face">
+              <ScanFace className="h-3.5 w-3.5" /> Davomatga o‘tish
+            </Link>
+          </Button>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap gap-2">
         {(
           [
@@ -202,7 +219,7 @@ export function ReviziyaCyclePanel() {
             { id: "tasks" as const, label: "Bugungi / vazifalar", icon: Flag },
             { id: "calendar" as const, label: "Kalendar", icon: CalendarDays },
             ...(canCreate || perms?.create
-              ? [{ id: "create" as const, label: "Reviziya qo‘shish", icon: Plus }]
+              ? [{ id: "create" as const, label: "Ariza qoldirish", icon: Plus }]
               : []),
           ] as const
         ).map((t) => (
@@ -253,6 +270,21 @@ export function ReviziyaCyclePanel() {
                 <StatCard label="Jami kamomad" value={moneySoum(stats?.totalShortage ?? 0)} />
                 <StatCard label="Jami undirilgan" value={moneySoum(stats?.totalCollected ?? 0)} />
                 <StatCard label="Jami qolgan" value={moneySoum(stats?.totalRemaining ?? 0)} />
+              </div>
+              <div className="flex flex-wrap gap-1.5 text-[10px] text-muted-foreground">
+                {(meta.data?.cycleStatuses || Object.entries(CYCLE_STATUS_LABEL).map(([value, label]) => ({ value, label }))).map(
+                  (s: { value: string; label: string }) => (
+                    <span
+                      key={s.value}
+                      className={cn(
+                        "rounded-full px-2 py-0.5 font-medium",
+                        CYCLE_STATUS_TONE[s.value] || "bg-muted",
+                      )}
+                    >
+                      {s.label}
+                    </span>
+                  ),
+                )}
               </div>
             </>
           )}
@@ -383,19 +415,19 @@ export function ReviziyaCyclePanel() {
             <Skeleton className="h-40 rounded-xl" />
           ) : (
             <>
-              <section>
-                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <Clock className="h-4 w-4" /> Bugun ({tasks.data?.todayYmd})
-                </h3>
-                {!tasks.data?.today?.length ? (
-                  <p className="text-sm text-muted-foreground">Bugungi reviziya yo‘q</p>
-                ) : (
+              {(canApprove || perms?.approveRequest || isCoordinator) &&
+              (tasks.data?.pending?.length || 0) > 0 ? (
+                <section>
+                  <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                    <Flag className="h-4 w-4 text-amber-600" /> Kutayotgan arizalar
+                  </h3>
                   <div className="grid gap-2">
-                    {tasks.data.today.map((v: any) => (
+                    {(tasks.data?.pending || []).map((v: any) => (
                       <TaskCard
                         key={v.id}
                         visit={v}
                         canAssign={!!canAssign || !!perms?.assign}
+                        canApprove={!!canApprove || !!perms?.approveRequest}
                         onAccept={() => runAction(() => mut.accept.mutateAsync(v.id), "Qabul qilindi")}
                         onStart={() => runAction(() => mut.start.mutateAsync(v.id), "Reviziya boshlandi")}
                         onComplete={() => {
@@ -410,25 +442,37 @@ export function ReviziyaCyclePanel() {
                             receiptUrl: v.receiptUrl || "",
                           });
                         }}
+                        onApprove={() => {
+                          setApproveVisitId(v.id);
+                          setApproveForm({
+                            revisionDate: v.revisionDate || new Date().toISOString().slice(0, 10),
+                            scheduledStartTime: v.scheduledStartTime || "10:00",
+                            scheduledEndTime: v.scheduledEndTime || "14:00",
+                            assignedEmployeeId: "",
+                            notes: v.notes || "",
+                          });
+                        }}
                         onOpenBranch={() => setSelectedBranchId(v.branchId)}
                       />
                     ))}
                   </div>
-                )}
-              </section>
+                </section>
+              ) : null}
+
               <section>
                 <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
-                  <CalendarDays className="h-4 w-4" /> Kelajakda
+                  <Clock className="h-4 w-4" /> Bugun ({tasks.data?.todayYmd}) · muddat tartibida
                 </h3>
-                {!tasks.data?.upcoming?.length ? (
-                  <p className="text-sm text-muted-foreground">Rejalashtirilgan reviziya yo‘q</p>
+                {!tasks.data?.today?.length ? (
+                  <p className="text-sm text-muted-foreground">Bugungi reviziya yo‘q</p>
                 ) : (
                   <div className="grid gap-2">
-                    {tasks.data.upcoming.map((v: any) => (
+                    {tasks.data.today.map((v: any) => (
                       <TaskCard
                         key={v.id}
                         visit={v}
                         canAssign={!!canAssign || !!perms?.assign}
+                        canApprove={!!canApprove || !!perms?.approveRequest}
                         onAccept={() => runAction(() => mut.accept.mutateAsync(v.id), "Qabul qilindi")}
                         onStart={() => runAction(() => mut.start.mutateAsync(v.id), "Reviziya boshlandi")}
                         onComplete={() => {
@@ -441,6 +485,60 @@ export function ReviziyaCyclePanel() {
                             actNumber: v.actNumber || newActNumberPreview(),
                             actUrl: v.actUrl || "",
                             receiptUrl: v.receiptUrl || "",
+                          });
+                        }}
+                        onApprove={() => {
+                          setApproveVisitId(v.id);
+                          setApproveForm({
+                            revisionDate: v.revisionDate || new Date().toISOString().slice(0, 10),
+                            scheduledStartTime: v.scheduledStartTime || "10:00",
+                            scheduledEndTime: v.scheduledEndTime || "14:00",
+                            assignedEmployeeId: "",
+                            notes: v.notes || "",
+                          });
+                        }}
+                        onOpenBranch={() => setSelectedBranchId(v.branchId)}
+                      />
+                    ))}
+                  </div>
+                )}
+              </section>
+              <section>
+                <h3 className="mb-2 flex items-center gap-2 text-sm font-semibold">
+                  <CalendarDays className="h-4 w-4" /> Kelajakda · muddat tartibida
+                </h3>
+                {!tasks.data?.upcoming?.length ? (
+                  <p className="text-sm text-muted-foreground">Rejalashtirilgan reviziya yo‘q</p>
+                ) : (
+                  <div className="grid gap-2">
+                    {tasks.data.upcoming.map((v: any) => (
+                      <TaskCard
+                        key={v.id}
+                        visit={v}
+                        canAssign={!!canAssign || !!perms?.assign}
+                        canApprove={!!canApprove || !!perms?.approveRequest}
+                        onAccept={() => runAction(() => mut.accept.mutateAsync(v.id), "Qabul qilindi")}
+                        onStart={() => runAction(() => mut.start.mutateAsync(v.id), "Reviziya boshlandi")}
+                        onComplete={() => {
+                          setCompleteVisitId(v.id);
+                          setCompleteForm({
+                            shortageAmount: String(v.shortageAmount || ""),
+                            excessAmount: String(v.excessAmount || ""),
+                            collectedAmount: String(v.collectedAmount || ""),
+                            notes: v.notes || "",
+                            actNumber: v.actNumber || newActNumberPreview(),
+                            actUrl: v.actUrl || "",
+                            receiptUrl: v.receiptUrl || "",
+                          });
+                        }}
+                        onApprove={() => {
+                          setApproveVisitId(v.id);
+                          setApproveForm({
+                            revisionDate: v.revisionDate || new Date().toISOString().slice(0, 10),
+                            scheduledStartTime: v.scheduledStartTime || "10:00",
+                            scheduledEndTime: v.scheduledEndTime || "14:00",
+                            assignedEmployeeId: "",
+                            notes: v.notes || "",
                           });
                         }}
                         onOpenBranch={() => setSelectedBranchId(v.branchId)}
@@ -497,10 +595,13 @@ export function ReviziyaCyclePanel() {
       )}
 
       {sub === "create" && (canCreate || perms?.create) && (
-        <div className="mx-auto max-w-2xl space-y-3 rounded-xl border p-4">
-          <h3 className="font-semibold">Reviziya qo‘shish</h3>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="sm:col-span-2">
+        <div className="mx-auto max-w-xl space-y-3 rounded-xl border p-4">
+          <h3 className="font-semibold">Reviziya arizasi</h3>
+          <p className="text-xs text-muted-foreground">
+            Filialni tanlang — ariza reviziya rahbariga yuboriladi. Kun va revizor keyin belgilanadi.
+          </p>
+          <div className="space-y-3">
+            <div>
               <Label>Filial</Label>
               <select
                 className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
@@ -516,7 +617,7 @@ export function ReviziyaCyclePanel() {
               </select>
             </div>
             <div>
-              <Label>Reviziya sanasi</Label>
+              <Label>Taklif etilgan sana (ixtiyoriy)</Label>
               <Input
                 type="date"
                 className="mt-1"
@@ -525,107 +626,17 @@ export function ReviziyaCyclePanel() {
               />
             </div>
             <div>
-              <Label>Revizor</Label>
-              <select
-                className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
-                value={form.assignedEmployeeId}
-                onChange={(e) => setForm({ ...form, assignedEmployeeId: e.target.value })}
-              >
-                <option value="">Tanlanmagan</option>
-                {(revizors.data || []).map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.fullName}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <Label>Boshlanish</Label>
-              <Input
-                type="time"
-                className="mt-1"
-                value={form.scheduledStartTime}
-                onChange={(e) => setForm({ ...form, scheduledStartTime: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Tugash</Label>
-              <Input
-                type="time"
-                className="mt-1"
-                value={form.scheduledEndTime}
-                onChange={(e) => setForm({ ...form, scheduledEndTime: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Kamomad</Label>
+              <Label>Izoh / sabab</Label>
               <Input
                 className="mt-1"
-                inputMode="numeric"
-                value={form.shortageAmount}
-                onChange={(e) => setForm({ ...form, shortageAmount: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Ortiqcha</Label>
-              <Input
-                className="mt-1"
-                inputMode="numeric"
-                value={form.excessAmount}
-                onChange={(e) => setForm({ ...form, excessAmount: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Undirilgan</Label>
-              <Input
-                className="mt-1"
-                inputMode="numeric"
-                value={form.collectedAmount}
-                onChange={(e) => setForm({ ...form, collectedAmount: e.target.value })}
-              />
-            </div>
-            <div>
-              <Label>Akt raqami</Label>
-              <div className="mt-1 flex gap-2">
-                <Input className="font-mono" readOnly value={form.actNumber} />
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  title="Yangi raqam"
-                  onClick={() => setForm({ ...form, actNumber: newActNumberPreview() })}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              </div>
-              <p className="mt-1 text-[11px] text-muted-foreground">Avto · random · takrorlanmas</p>
-            </div>
-            <div className="sm:col-span-2">
-              <Label>Mas’ul / Izoh</Label>
-              <Input
-                className="mt-1"
-                placeholder="Mas’ul shaxs"
-                value={form.responsibleName}
-                onChange={(e) => setForm({ ...form, responsibleName: e.target.value })}
-              />
-              <Input
-                className="mt-2"
-                placeholder="Izoh"
+                placeholder="Nima uchun reviziya kerak…"
                 value={form.notes}
                 onChange={(e) => setForm({ ...form, notes: e.target.value })}
               />
             </div>
-            <label className="flex items-center gap-2 text-sm sm:col-span-2">
-              <input
-                type="checkbox"
-                checked={form.completeImmediately}
-                onChange={(e) => setForm({ ...form, completeImmediately: e.target.checked })}
-              />
-              Darhol yakunlangan deb saqlash (natija + keyingi sana hisoblanadi)
-            </label>
           </div>
           <Button disabled={!form.branchId || mut.create.isPending} onClick={onCreate}>
-            Saqlash
+            Ariza yuborish
           </Button>
         </div>
       )}
@@ -723,54 +734,169 @@ export function ReviziyaCyclePanel() {
           </div>
         </SheetContent>
       </Sheet>
+
+      <Sheet open={!!approveVisitId} onOpenChange={(o) => !o && setApproveVisitId(null)}>
+        <SheetContent className="w-full overflow-y-auto sm:max-w-md">
+          <SheetHeader>
+            <SheetTitle>Arizani qabul qilish</SheetTitle>
+            <SheetDescription>Reviziya kunini belgilang va revizor biriktiring.</SheetDescription>
+          </SheetHeader>
+          <div className="mt-4 space-y-3">
+            <div>
+              <Label>Reviziya kuni</Label>
+              <Input
+                type="date"
+                className="mt-1"
+                value={approveForm.revisionDate}
+                onChange={(e) => setApproveForm({ ...approveForm, revisionDate: e.target.value })}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <Label>Boshlanish</Label>
+                <Input
+                  type="time"
+                  className="mt-1"
+                  value={approveForm.scheduledStartTime}
+                  onChange={(e) => setApproveForm({ ...approveForm, scheduledStartTime: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Tugash</Label>
+                <Input
+                  type="time"
+                  className="mt-1"
+                  value={approveForm.scheduledEndTime}
+                  onChange={(e) => setApproveForm({ ...approveForm, scheduledEndTime: e.target.value })}
+                />
+              </div>
+            </div>
+            <div>
+              <Label>Revizor</Label>
+              <select
+                className="mt-1 h-10 w-full rounded-md border bg-background px-3 text-sm"
+                value={approveForm.assignedEmployeeId}
+                onChange={(e) => setApproveForm({ ...approveForm, assignedEmployeeId: e.target.value })}
+              >
+                <option value="">Keyin biriktiriladi</option>
+                {(revizors.data || []).map((r) => (
+                  <option key={r.id} value={r.id}>
+                    {r.fullName}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <Label>Izoh</Label>
+              <Input
+                className="mt-1"
+                value={approveForm.notes}
+                onChange={(e) => setApproveForm({ ...approveForm, notes: e.target.value })}
+              />
+            </div>
+            <Button
+              disabled={!approveForm.revisionDate || mut.approveRequest.isPending}
+              onClick={() =>
+                runAction(async () => {
+                  await mut.approveRequest.mutateAsync({
+                    id: approveVisitId!,
+                    revisionDate: approveForm.revisionDate,
+                    scheduledStartTime: approveForm.scheduledStartTime,
+                    scheduledEndTime: approveForm.scheduledEndTime,
+                    assignedEmployeeId: approveForm.assignedEmployeeId
+                      ? Number(approveForm.assignedEmployeeId)
+                      : null,
+                    notes: approveForm.notes || null,
+                  });
+                  setApproveVisitId(null);
+                }, "Ariza qabul qilindi")
+              }
+            >
+              Qabul qilish
+            </Button>
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   );
 }
 
 function TaskCard({
   visit,
+  canApprove,
   onAccept,
   onStart,
   onComplete,
+  onApprove,
   onOpenBranch,
 }: {
   visit: any;
   canAssign: boolean;
+  canApprove?: boolean;
   onAccept: () => void;
   onStart: () => void;
   onComplete: () => void;
+  onApprove?: () => void;
   onOpenBranch: () => void;
 }) {
+  const wf = visit.workflowStatus as string;
+  const wfTone =
+    wf === "COMPLETED"
+      ? "bg-teal-100 text-teal-900"
+      : wf === "IN_PROGRESS"
+        ? "bg-indigo-100 text-indigo-900"
+        : wf === "ACCEPTED"
+          ? "bg-sky-100 text-sky-900"
+          : wf === "REQUESTED"
+            ? "bg-amber-100 text-amber-950"
+            : wf === "CANCELLED"
+              ? "bg-rose-100 text-rose-900"
+              : "bg-violet-100 text-violet-900";
+
   return (
-    <div className="rounded-xl border bg-card p-3">
+    <div className="rounded-xl border bg-card p-3 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <button type="button" className="font-medium hover:underline" onClick={onOpenBranch}>
+        <div className="min-w-0 flex-1">
+          <button type="button" className="text-left font-medium hover:underline" onClick={onOpenBranch}>
             {displayBranchName(visit.branchName) || visit.branchName}
           </button>
-          <div className="mt-0.5 text-xs text-muted-foreground">
-            {formatYmd(visit.revisionDate || visit.scheduledDate)} · {visit.scheduledStartTime || "—"} ·{" "}
-            {WORKFLOW_STATUS_LABEL[visit.workflowStatus] || visit.workflowStatus}
-            {visit.priority && visit.priority !== "normal" ? ` · ${visit.priority}` : ""}
+          <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+            <span className="tabular-nums">
+              {formatYmd(visit.revisionDate || visit.scheduledDate)} · {visit.scheduledStartTime || "—"}
+              {visit.scheduledEndTime ? `–${visit.scheduledEndTime}` : ""}
+            </span>
+            <Badge variant="secondary" className={cn("font-medium", wfTone)}>
+              {WORKFLOW_STATUS_LABEL[wf] || wf}
+            </Badge>
           </div>
-          {visit.notes ? <p className="mt-1 text-xs text-muted-foreground">{visit.notes}</p> : null}
+          {visit.notes ? <p className="mt-1 text-xs text-muted-foreground line-clamp-2">{visit.notes}</p> : null}
         </div>
         <div className="flex flex-wrap gap-1">
-          {visit.workflowStatus === "ASSIGNED" && (
+          {wf === "REQUESTED" && canApprove && onApprove ? (
+            <Button size="sm" onClick={onApprove}>
+              Qabul + kun
+            </Button>
+          ) : null}
+          {wf === "ASSIGNED" && (
             <Button size="sm" variant="outline" onClick={onAccept}>
               Qabul
             </Button>
           )}
-          {["ASSIGNED", "ACCEPTED"].includes(visit.workflowStatus) && (
+          {["ASSIGNED", "ACCEPTED"].includes(wf) && (
             <Button size="sm" onClick={onStart}>
               <Play className="mr-1 h-3.5 w-3.5" /> Boshlash
             </Button>
           )}
-          {visit.workflowStatus === "IN_PROGRESS" && (
+          {wf === "IN_PROGRESS" && (
             <Button size="sm" onClick={onComplete}>
               Yakunlash
             </Button>
           )}
+          <Button size="sm" variant="ghost" asChild>
+            <Link href="/davomat/face">
+              <MapPin className="mr-1 h-3.5 w-3.5" /> Filialda
+            </Link>
+          </Button>
         </div>
       </div>
     </div>

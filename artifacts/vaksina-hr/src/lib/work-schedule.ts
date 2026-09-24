@@ -103,6 +103,11 @@ export function workplaceDisplayTitle(
   employeeLocation?: string | null,
   labels?: { mainOffice?: string; branchUnset?: string },
 ): string {
+  // Reviziya / maydon: hozir turgan filial yoki ofis nomi
+  if (site?.kind === "branch" && site.label) {
+    const cleaned = site.label.split("·")[0].split("|")[0].trim();
+    if (cleaned) return cleaned;
+  }
   if (!isPharmacyShiftRole(userRole)) return labels?.mainOffice || "Asosiy Ofis";
   const raw =
     (site?.kind === "branch" ? site.label : null) || employeeLocation || site?.label || "";

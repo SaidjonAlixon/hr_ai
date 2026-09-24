@@ -1038,6 +1038,7 @@ export function TaskFormDialog({
   const [notes, setNotes] = useState("");
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [reminderOffset, setReminderOffset] = useState("1d");
+  const [acceptWindowEnabled, setAcceptWindowEnabled] = useState(true);
   const [recurrence, setRecurrence] = useState("none");
   const [recurrencePeriod, setRecurrencePeriod] = useState<"daily" | "weekly" | "monthly">(
     "weekly",
@@ -1109,6 +1110,7 @@ export function TaskFormDialog({
       setNotes(meta.notes || "");
       setReminderEnabled(meta.reminderEnabled ?? true);
       setReminderOffset(meta.reminderOffset || "1d");
+      setAcceptWindowEnabled(meta.acceptWindowEnabled !== false);
       {
         const r = meta.recurrence || "none";
         setRecurrence(r);
@@ -1156,6 +1158,7 @@ export function TaskFormDialog({
     setNotes("");
     setReminderEnabled(true);
     setReminderOffset("1d");
+    setAcceptWindowEnabled(true);
     setRecurrence("none");
     setRecurrencePeriod("weekly");
     setVisibility("all");
@@ -1547,6 +1550,7 @@ export function TaskFormDialog({
       branchOrDept: branchOrDept || undefined,
       reminderEnabled: !!reminderEnabled,
       reminderOffset: reminderEnabled ? reminderOffset : undefined,
+      acceptWindowEnabled: !!acceptWindowEnabled,
       recurrence: recurrence === "none" ? "none" : recurrence,
       visibility: canPrivateVisibility && visibility === "private" ? "private" : "all",
       notes: notes.trim() || undefined,
@@ -1596,6 +1600,7 @@ export function TaskFormDialog({
       branchOrDept: branchOrDept || undefined,
       reminderEnabled,
       reminderOffset,
+      acceptWindowEnabled: !!acceptWindowEnabled,
       recurrence,
       visibility: canPrivateVisibility && visibility === "private" ? "private" : "all",
       notes: notes.trim() || undefined,
@@ -3047,16 +3052,35 @@ export function TaskFormDialog({
                   </button>
                 ))}
               </div>
-              <p className="text-[10px] leading-snug text-muted-foreground">
-                {t("tasks.form.acceptWindow")}:{" "}
-                <span className="font-semibold text-foreground">
-                  {acceptDeadlineHours(priority)} soat
+              <label className="flex items-start gap-2.5 rounded-xl border border-slate-200/80 bg-slate-50/80 px-3 py-2.5 dark:border-slate-700 dark:bg-slate-900/40">
+                <Checkbox
+                  checked={acceptWindowEnabled}
+                  onCheckedChange={(v) => setAcceptWindowEnabled(!!v)}
+                  disabled={isReadOnly}
+                  className="mt-0.5"
+                />
+                <span className="min-w-0 space-y-0.5">
+                  <span className="block text-xs font-semibold text-[#0a2540] dark:text-slate-100">
+                    {t("tasks.form.acceptWindowToggle")}
+                  </span>
+                  {acceptWindowEnabled ? (
+                    <span className="block text-[10px] leading-snug text-muted-foreground">
+                      {t("tasks.form.acceptWindow")}:{" "}
+                      <span className="font-semibold text-foreground">
+                        {acceptDeadlineHours(priority)} soat
+                      </span>
+                      {" "}ichida qabul qilinmasa —{" "}
+                      <span className="font-bold text-rose-600 dark:text-rose-400">
+                        Kechikkanga o‘tadi
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="block text-[10px] leading-snug text-muted-foreground">
+                      {t("tasks.form.acceptWindowOffHint")}
+                    </span>
+                  )}
                 </span>
-                {" "}ichida qabul qilinmasa —{" "}
-                <span className="font-bold text-rose-600 dark:text-rose-400">
-                  Kechikkanga o‘tadi
-                </span>
-              </p>
+              </label>
             </div>
 
             </SectionCard>

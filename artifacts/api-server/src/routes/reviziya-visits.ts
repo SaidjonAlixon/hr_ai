@@ -16,6 +16,7 @@ import { isDirectorRole } from "../lib/roles";
 import { displayBranchName, parseGpsText } from "../lib/geo-location";
 import {
   canAssignReviziya,
+  canApproveReviziyaRequest,
   canCorrectReviziyaAmounts,
   canCreateReviziyaVisit,
   canOverrideRevisionSchedule,
@@ -235,6 +236,7 @@ router.get("/reviziya/visits/meta", requireAuth, async (req: AuthRequest, res): 
     permissions: {
       create: canCreateReviziyaVisit(req.userRole),
       assign: canAssignReviziya(req.userRole),
+      approveRequest: canApproveReviziyaRequest(req.userRole),
       overrideSchedule: canOverrideRevisionSchedule(req.userRole),
       correctAmounts: canCorrectReviziyaAmounts(req.userRole),
       viewAll: canViewAllReviziyaBranches(req.userRole),
@@ -501,38 +503,66 @@ router.get("/reviziya/visits/my-tasks", requireAuth, async (req: AuthRequest, re
   const userId = req.userId!;
   const role = req.userRole;
 
-  const conditions = [
-    inArray(revisionVisitsTable.workflowStatus, ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]),
-  ];
+  const whereParts: any[] = [];
 
-  if (role === "revizor" || (!canViewAllReviziyaBranches(role) && role !== "mudir" && role !== "koordinator")) {
-    conditions.push(eq(revisionVisitsTable.assignedEmployeeId, userId));
+  if (canViewAllReviziyaBranches(role) || canApproveReviziyaRequest(role)) {
+    whereParts.push(
+      inArray(revisionVisitsTable.workflowStatus, [
+        "REQUESTED",
+        "ASSIGNED",
+        "ACCEPTED",
+        "IN_PROGRESS",
+      ]),
+    );
+  } else if (role === "revizor") {
+    whereParts.push(
+      inArray(revisionVisitsTable.workflowStatus, ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]),
+      eq(revisionVisitsTable.assignedEmployeeId, userId),
+    );
   } else if (role === "mudir" || role === "koordinator") {
     const scope = await resolveScope(req);
     if (scope.mode === "branches") {
       if (!scope.branchIds.length) {
-        res.json({ today: [], upcoming: [], todayYmd: today });
+        res.json({ today: [], upcoming: [], pending: [], todayYmd: today });
         return;
       }
-      conditions.push(inArray(revisionVisitsTable.branchId, scope.branchIds));
+      whereParts.push(
+        inArray(revisionVisitsTable.workflowStatus, [
+          "REQUESTED",
+          "ASSIGNED",
+          "ACCEPTED",
+          "IN_PROGRESS",
+        ]),
+        inArray(revisionVisitsTable.branchId, scope.branchIds),
+      );
     }
+  } else {
+    whereParts.push(
+      inArray(revisionVisitsTable.workflowStatus, ["ASSIGNED", "ACCEPTED", "IN_PROGRESS"]),
+      eq(revisionVisitsTable.assignedEmployeeId, userId),
+    );
   }
 
   const rows = await db
     .select()
     .from(revisionVisitsTable)
-    .where(and(...conditions))
+    .where(and(...whereParts))
     .orderBy(asc(revisionVisitsTable.revisionDate), asc(revisionVisitsTable.scheduledStartTime))
     .limit(200);
 
-  const todayList = rows.filter((v) => (v.revisionDate || v.scheduledDate) === today);
-  const upcoming = rows.filter((v) => {
+  const pending = rows
+    .filter((v) => v.workflowStatus === "REQUESTED")
+    .map((v) => enrichVisit(v, today));
+  const active = rows.filter((v) => v.workflowStatus !== "REQUESTED");
+  const todayList = active.filter((v) => (v.revisionDate || v.scheduledDate) === today);
+  const upcoming = active.filter((v) => {
     const d = v.revisionDate || v.scheduledDate || "";
     return d > today;
   });
 
   res.json({
     todayYmd: today,
+    pending,
     today: todayList.map((v) => enrichVisit(v, today)),
     upcoming: upcoming.map((v) => enrichVisit(v, today)),
   });
@@ -574,7 +604,7 @@ router.get("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Promi
     .select()
     .from(revisionVisitsTable)
     .where(where)
-    .orderBy(desc(revisionVisitsTable.revisionDate), desc(revisionVisitsTable.id))
+    .orderBy(asc(revisionVisitsTable.revisionDate), asc(revisionVisitsTable.scheduledStartTime), asc(revisionVisitsTable.id))
     .limit(limit)
     .offset((page - 1) * limit);
 
@@ -707,7 +737,7 @@ router.get("/reviziya/visits/:id", requireAuth, async (req: AuthRequest, res): P
 router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (denyView(req, res)) return;
   if (!canCreateReviziyaVisit(req.userRole)) {
-    res.status(403).json({ error: "Reviziya yaratish uchun ruxsat yo‘q" });
+    res.status(403).json({ error: "Reviziya arizasini faqat koordinator qoldiradi" });
     return;
   }
 
@@ -737,60 +767,36 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
     return;
   }
 
-  const shortage = moneyInt(req.body?.shortageAmount);
-  const excess = moneyInt(req.body?.excessAmount);
-  let collected = moneyInt(req.body?.collectedAmount);
-  if (collected > shortage && !canCorrectReviziyaAmounts(req.userRole)) {
-    res.status(400).json({ error: "Undirilgan summa kamomaddan katta bo‘lishi mumkin emas" });
-    return;
-  }
-  if (collected > shortage && canCorrectReviziyaAmounts(req.userRole)) {
-    /* correction allowed */
-  } else if (collected > shortage) {
-    collected = shortage;
-  }
+  // Koordinator arizasi — kun/revizor keyin rahbar belgilaydi
+  const isCoordinatorRequest = req.userRole === "koordinator";
+  const preferredDate = String(req.body?.revisionDate || req.body?.preferredDate || "").slice(0, 10);
+  const revisionDate =
+    preferredDate && /^\d{4}-\d{2}-\d{2}$/.test(preferredDate)
+      ? preferredDate
+      : tashkentYmd();
 
-  const revisionDate = String(req.body?.revisionDate || tashkentYmd()).slice(0, 10);
-  const remaining = computeRemainingAmount(shortage, collected);
-  const { nextRevisionDate, cycleMonths } =
-    shortage > 0 || excess >= 0
-      ? computeNextRevisionDate(revisionDate, shortage)
-      : computeNextRevisionDate(revisionDate, 0);
-
-  let override: string | null = null;
-  if (req.body?.nextRevisionDateOverride) {
-    if (!canOverrideRevisionSchedule(req.userRole)) {
-      res.status(403).json({ error: "Keyingi sana override uchun ruxsat yo‘q" });
-      return;
-    }
-    override = String(req.body.nextRevisionDateOverride).slice(0, 10);
-  }
-
-  const assignedId = req.body?.assignedEmployeeId ? parseInt(String(req.body.assignedEmployeeId), 10) : null;
-  let assignedName: string | null = req.body?.assignedEmployeeName ? String(req.body.assignedEmployeeName) : null;
-  if (assignedId && Number.isFinite(assignedId)) {
-    const [u] = await db
-      .select({ fullName: usersTable.fullName, role: usersTable.role })
-      .from(usersTable)
-      .where(eq(usersTable.id, assignedId))
-      .limit(1);
-    if (!u || (u.role !== "revizor" && u.role !== "reviziya_rahbar" && !isDirectorRole(u.role))) {
-      res.status(400).json({ error: "Faqat revizor rolli xodim biriktiriladi" });
-      return;
-    }
-    assignedName = u.fullName;
-  }
-
-  const workflowStatus =
-    req.body?.completeImmediately === true || req.body?.workflowStatus === "COMPLETED"
-      ? "COMPLETED"
-      : assignedId
-        ? "ASSIGNED"
-        : "ASSIGNED";
-
-  const completedNow = workflowStatus === "COMPLETED";
-  const serverNow = new Date();
+  const notes = req.body?.notes ? String(req.body.notes).slice(0, 2000) : null;
   const actNumber = await resolveActNumber(req.body?.actNumber);
+  const workflowStatus = isCoordinatorRequest ? "REQUESTED" : "ASSIGNED";
+
+  let assignedId: number | null = null;
+  let assignedName: string | null = null;
+  if (!isCoordinatorRequest && req.body?.assignedEmployeeId) {
+    const aid = parseInt(String(req.body.assignedEmployeeId), 10);
+    if (Number.isFinite(aid)) {
+      const [u] = await db
+        .select({ fullName: usersTable.fullName, role: usersTable.role })
+        .from(usersTable)
+        .where(eq(usersTable.id, aid))
+        .limit(1);
+      if (!u || (u.role !== "revizor" && u.role !== "reviziya_rahbar")) {
+        res.status(400).json({ error: "Faqat revizor rolli xodim biriktiriladi" });
+        return;
+      }
+      assignedId = aid;
+      assignedName = u.fullName;
+    }
+  }
 
   const [created] = await db
     .insert(revisionVisitsTable)
@@ -798,30 +804,30 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
       branchId,
       branchName: branchLabel(manager.fullName, manager.location),
       revisionDate,
-      scheduledDate: String(req.body?.scheduledDate || revisionDate).slice(0, 10),
-      scheduledStartTime: req.body?.scheduledStartTime ? String(req.body.scheduledStartTime).slice(0, 8) : null,
-      scheduledEndTime: req.body?.scheduledEndTime ? String(req.body.scheduledEndTime).slice(0, 8) : null,
-      assignedEmployeeId: assignedId && Number.isFinite(assignedId) ? assignedId : null,
+      scheduledDate: revisionDate,
+      scheduledStartTime: null,
+      scheduledEndTime: null,
+      assignedEmployeeId: assignedId,
       assignedEmployeeName: assignedName,
       workflowStatus,
       priority: String(req.body?.priority || "normal"),
-      shortageAmount: shortage,
-      excessAmount: excess,
-      collectedAmount: Math.min(collected, canCorrectReviziyaAmounts(req.userRole) ? collected : shortage),
-      remainingAmount: remaining,
+      shortageAmount: 0,
+      excessAmount: 0,
+      collectedAmount: 0,
+      remainingAmount: 0,
       actNumber,
-      actUrl: req.body?.actUrl ? String(req.body.actUrl) : null,
-      receiptUrl: req.body?.receiptUrl ? String(req.body.receiptUrl) : null,
-      extraDocs: Array.isArray(req.body?.extraDocs) ? req.body.extraDocs : [],
-      notes: req.body?.notes ? String(req.body.notes) : null,
-      responsibleName: req.body?.responsibleName ? String(req.body.responsibleName) : manager.fullName,
-      nextRevisionDate: completedNow ? nextRevisionDate : null,
-      nextRevisionDateOverride: override,
-      cycleMonths: completedNow ? cycleMonths : null,
-      startedAt: completedNow ? serverNow : null,
-      completedAt: completedNow ? serverNow : null,
-      completedById: completedNow ? req.userId! : null,
-      durationMinutes: completedNow ? moneyInt(req.body?.durationMinutes, 0) || null : null,
+      actUrl: null,
+      receiptUrl: null,
+      extraDocs: [],
+      notes,
+      responsibleName: manager.fullName,
+      nextRevisionDate: null,
+      nextRevisionDateOverride: null,
+      cycleMonths: null,
+      startedAt: null,
+      completedAt: null,
+      completedById: null,
+      durationMinutes: null,
       createdById: req.userId!,
       updatedById: req.userId!,
     })
@@ -832,46 +838,123 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
     userId: req.userId,
     userName: null,
     role: req.userRole,
-    action: "revision_created",
+    action: isCoordinatorRequest ? "revision_requested" : "revision_created",
     detail: `${created.branchName} · ${revisionDate}`,
+    newValue: { workflowStatus, notes },
+  });
+
+  await notifyReviziyaStakeholders({
+    branchId: created.branchId,
+    branchName: created.branchName,
+    includeReviziyaRahbar: true,
+    text: isCoordinatorRequest
+      ? `${created.branchName}: yangi reviziya arizasi (koordinator). Qabul qilib kun belgilang.`
+      : `${created.branchName}: reviziya yaratildi (${revisionDate})`,
+    type: isCoordinatorRequest ? "reviziya_requested" : "reviziya_created",
+    linkUrl: "/reviziya",
+  });
+
+  res.status(201).json(enrichVisit(created));
+});
+
+/** Koordinator arizasini qabul qilish: kun + revizor */
+router.post("/reviziya/visits/:id/approve-request", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  if (!canApproveReviziyaRequest(req.userRole)) {
+    res.status(403).json({ error: "Arizani faqat reviziya rahbari / rahbariyat qabul qiladi" });
+    return;
+  }
+  const id = parseId(req.params.id);
+  const [row] = await db.select().from(revisionVisitsTable).where(eq(revisionVisitsTable.id, id)).limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Reviziya topilmadi" });
+    return;
+  }
+  if (row.workflowStatus !== "REQUESTED") {
+    res.status(400).json({ error: "Faqat kutayotgan ariza qabul qilinadi" });
+    return;
+  }
+
+  const revisionDate = String(req.body?.revisionDate || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(revisionDate)) {
+    res.status(400).json({ error: "Reviziya kuni majburiy (YYYY-MM-DD)" });
+    return;
+  }
+
+  const assignedId = req.body?.assignedEmployeeId
+    ? parseInt(String(req.body.assignedEmployeeId), 10)
+    : null;
+  let assignedName: string | null = null;
+  if (assignedId && Number.isFinite(assignedId)) {
+    const [u] = await db
+      .select({ fullName: usersTable.fullName, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.id, assignedId))
+      .limit(1);
+    if (!u || (u.role !== "revizor" && u.role !== "reviziya_rahbar")) {
+      res.status(400).json({ error: "Faqat revizor biriktiriladi" });
+      return;
+    }
+    assignedName = u.fullName;
+  }
+
+  const start = req.body?.scheduledStartTime
+    ? String(req.body.scheduledStartTime).slice(0, 8)
+    : null;
+  const end = req.body?.scheduledEndTime ? String(req.body.scheduledEndTime).slice(0, 8) : null;
+
+  const [updated] = await db
+    .update(revisionVisitsTable)
+    .set({
+      revisionDate,
+      scheduledDate: revisionDate,
+      scheduledStartTime: start,
+      scheduledEndTime: end,
+      assignedEmployeeId: assignedId && Number.isFinite(assignedId) ? assignedId : null,
+      assignedEmployeeName: assignedName,
+      workflowStatus: "ASSIGNED",
+      notes: req.body?.notes
+        ? String(req.body.notes).slice(0, 2000)
+        : row.notes,
+      updatedById: req.userId!,
+    })
+    .where(eq(revisionVisitsTable.id, id))
+    .returning();
+
+  await auditVisit({
+    visitId: id,
+    userId: req.userId,
+    userName: null,
+    role: req.userRole,
+    action: "revision_request_approved",
+    detail: `${revisionDate}${assignedName ? ` · ${assignedName}` : ""}`,
+    oldValue: { workflowStatus: "REQUESTED" },
     newValue: {
-      shortageAmount: shortage,
-      collectedAmount: collected,
-      remainingAmount: remaining,
-      workflowStatus,
+      workflowStatus: "ASSIGNED",
+      revisionDate,
+      assignedEmployeeId: assignedId,
     },
   });
 
   if (assignedId) {
     await notifyUser({
       userId: assignedId,
-      text: `Sizga reviziya biriktirildi: ${created.branchName} (${revisionDate})`,
+      text: `Reviziya biriktirildi: ${updated.branchName} — ${revisionDate}`,
       type: "reviziya_assigned",
       linkUrl: "/reviziya",
     });
-    await auditVisit({
-      visitId: created.id,
-      userId: req.userId,
-      userName: null,
-      role: req.userRole,
-      action: "revision_assigned",
-      newValue: { assignedEmployeeId: assignedId, assignedEmployeeName: assignedName },
-    });
   }
 
-  if (completedNow) {
-    await notifyReviziyaStakeholders({
-      branchId: created.branchId,
-      branchName: created.branchName,
-      assignedRevizorId: assignedId,
-      includeReviziyaRahbar: true,
-      text: `${created.branchName}: reviziya yakunlandi. Kamomad ${shortage.toLocaleString("uz-UZ")} so‘m`,
-      type: "reviziya_completed",
-      linkUrl: "/reviziya",
-    });
-  }
+  await notifyReviziyaStakeholders({
+    branchId: updated.branchId,
+    branchName: updated.branchName,
+    assignedRevizorId: assignedId,
+    text: `${updated.branchName}: reviziya arizasi qabul qilindi. Kun: ${revisionDate}`,
+    type: "reviziya_approved",
+    linkUrl: "/reviziya",
+  });
 
-  res.status(201).json(enrichVisit(created));
+  res.json(enrichVisit(updated));
 });
 
 router.patch("/reviziya/visits/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {

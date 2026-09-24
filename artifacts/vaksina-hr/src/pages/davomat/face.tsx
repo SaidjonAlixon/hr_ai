@@ -67,7 +67,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
 import type { User } from "@workspace/api-client-react";
-import { canViewDavomat } from "@/lib/roles";
+import { canViewDavomat, isReviziyaRole } from "@/lib/roles";
 import { roleLabel } from "@/lib/candidate-access";
 import { formatPersonName } from "@/lib/person-name";
 import { ensureMobileTrack, endMobileAttendance } from "@/lib/mobile-attendance-api";
@@ -121,30 +121,6 @@ type Verified = {
 };
 
 type GuideStep = "enroll" | "permission" | "zone" | "face" | "keldim" | "ketdim" | "done";
-
-function tashkentHour(now: number): number {
-  const raw = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Tashkent",
-    hour: "numeric",
-    hour12: false,
-  }).format(new Date(now));
-  return Number(raw);
-}
-
-/** Toshkent vaqti smena tugashiga yetganmi (HH:MM). */
-function isAtOrAfterHm(now: number, hm: string): boolean {
-  const endMin = hmToMinutes(hm);
-  if (endMin == null) return tashkentHour(now) >= 18;
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Tashkent",
-    hour: "numeric",
-    minute: "numeric",
-    hour12: false,
-  }).formatToParts(new Date(now));
-  const hour = Number(parts.find((p) => p.type === "hour")?.value ?? 0);
-  const minute = Number(parts.find((p) => p.type === "minute")?.value ?? 0);
-  return hour * 60 + minute >= endMin;
-}
 
 function formatElapsed(ms: number): string {
   if (ms < 0) ms = 0;
@@ -924,18 +900,25 @@ export default function DavomatFacePage() {
     }
   }, [isAuthenticated]);
 
-  const loadWorkplace = useCallback(async () => {
+  const loadWorkplace = useCallback(async (coords?: { lat: number; lng: number } | null) => {
     if (!isAuthenticated) {
       setWorkplace(null);
       return;
     }
     try {
-      const w = await fetchMyWorkplace();
+      const useField =
+        isReviziyaRole(user?.role) &&
+        coords &&
+        Number.isFinite(coords.lat) &&
+        Number.isFinite(coords.lng);
+      const w = await fetchMyWorkplace(
+        useField ? { lat: coords!.lat, lng: coords!.lng } : undefined,
+      );
       setWorkplace(w);
     } catch {
       setWorkplace(null);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.role]);
 
   const loadHistory = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -976,12 +959,23 @@ export default function DavomatFacePage() {
       label: workplace.site.label,
       latitude: workplace.site.latitude,
       longitude: workplace.site.longitude,
+      kind: workplace.site.kind,
     });
   }, [workplace]);
 
   useEffect(() => {
-    void loadWorkplace();
+    void loadWorkplace(null);
   }, [loadWorkplace]);
+
+  /** Reviziya: GPS bo‘yicha eng yaqin filial/ofis zonasini yangilash (debounce) */
+  useEffect(() => {
+    if (!isReviziyaRole(user?.role)) return;
+    if (!gps || !Number.isFinite(gps.lat) || !Number.isFinite(gps.lng)) return;
+    const t = window.setTimeout(() => {
+      void loadWorkplace({ lat: gps.lat, lng: gps.lng });
+    }, 900);
+    return () => window.clearTimeout(t);
+  }, [user?.role, gps?.lat, gps?.lng, loadWorkplace]);
 
   /** Telefon OS bildirishnomasi ruxsati — Ketdim eslatmalari uchun */
   useEffect(() => {
@@ -1301,6 +1295,7 @@ export default function DavomatFacePage() {
 
   const workDateYmd =
     workplace?.workDate ||
+    (checkInAtIso ? ymdInTashkent(new Date(checkInAtIso).getTime()) : null) ||
     new Intl.DateTimeFormat("en-CA", {
       timeZone: "Asia/Tashkent",
       year: "numeric",
@@ -1415,11 +1410,22 @@ export default function DavomatFacePage() {
     workplace?.shift?.end ||
     (user?.role ? workShiftForUserRole(user.role).end : null) ||
     "18:00";
-  /** Smena tugaganmi — 1-smena 17:00, ofis 18:00, 2-smena 23:45 */
-  const afterShiftEnd = isAtOrAfterHm(nowTick, shiftEndHm);
+  const shiftStartHm =
+    workplace?.shift?.start ||
+    (user?.role ? workShiftForUserRole(user.role).start : null) ||
+    "08:00";
   const shiftOvernight =
     workplace?.shift?.overnight ??
     (user?.role ? Boolean(workShiftForUserRole(user.role).overnight) : false);
+  /** Smena tugaganmi — workDate + end (yarim tun o‘tsa ham to‘g‘ri; 2-smena 23:45 → 00:10 OK) */
+  const shiftEndAtMs = (() => {
+    let endMs = shiftEndMs(workDateYmd, shiftEndHm, shiftOvernight);
+    const startHm = /^\d{1,2}:\d{2}$/.test(shiftStartHm) ? shiftStartHm : "08:00";
+    const startMs = new Date(`${workDateYmd}T${startHm}:00+05:00`).getTime();
+    if (endMs <= startMs) endMs = shiftEndMs(workDateYmd, shiftEndHm, true);
+    return endMs;
+  })();
+  const afterShiftEnd = nowTick >= shiftEndAtMs;
   /** Keldimdan keyin Ketdim muddatgacha ochiq (2→02:00, 3→10:00, 1→23:55) */
   const afterCheckoutDeadline =
     nowTick >

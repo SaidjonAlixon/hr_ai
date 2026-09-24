@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { acceptDeadlineAt, isAcceptOverdue } from "@/lib/vazifalar-permissions";
+import { acceptDeadlineAt, isAcceptOverdue, isAcceptWindowEnabled } from "@/lib/vazifalar-permissions";
 
 type TaskLike = {
   status: string;
   createdAt: string;
   priority?: string | null;
   acceptedAt?: string | null;
-  meta?: { acceptDeadlineBase?: string } | null;
+  meta?: { acceptDeadlineBase?: string; acceptWindowEnabled?: boolean } | null;
 };
 
 type Props = {
@@ -28,12 +28,14 @@ function formatAcceptLeft(ms: number): string {
   return `${secs} sek`;
 }
 
-/** Qabul muddati taymeri — faqat hali qabul qilinmagan (todo) vazifalar */
+/** Qabul muddati taymeri — faqat yoqilgan va hali qabul qilinmagan (todo) vazifalar */
 export function AcceptWindowCountdown({ task, className, compact }: Props) {
   const [, setTick] = useState(0);
 
   const awaitingAccept =
-    task.status === "todo" && !task.acceptedAt;
+    isAcceptWindowEnabled(task as any) &&
+    task.status === "todo" &&
+    !task.acceptedAt;
 
   const deadline = awaitingAccept ? acceptDeadlineAt(task as any) : null;
   const expired = awaitingAccept && isAcceptOverdue(task as any);

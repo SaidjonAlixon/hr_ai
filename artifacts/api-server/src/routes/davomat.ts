@@ -26,6 +26,7 @@ import {
   isDirectorRole,
   hasFullPlatformAccess,
   canViewFullDavomatDashboard,
+  isReviziyaRole,
 } from "../lib/roles";
 import { getActorDepartmentId, resolveDeptHeadContext, isDeptHeadRole } from "../lib/dept-staff";
 import {
@@ -1744,6 +1745,170 @@ async function branchCoordsById(
   };
 }
 
+/** Barcha ishlayotgan filiallar (mudir) GPS — reviziya maydon davomati uchun */
+async function loadAllBranchCoords(): Promise<
+  Array<{ branchId: number; lat: number; lng: number; label: string }>
+> {
+  const rows = await db
+    .select({
+      id: employeesTable.id,
+      latitude: employeesTable.latitude,
+      longitude: employeesTable.longitude,
+      location: employeesTable.location,
+      fullName: employeesTable.fullName,
+    })
+    .from(employeesTable)
+    .where(
+      and(
+        eq(employeesTable.orgRole, "manager"),
+        eq(employeesTable.employmentStatus, "working"),
+      ),
+    );
+  const out: Array<{ branchId: number; lat: number; lng: number; label: string }> = [];
+  for (const r of rows) {
+    const c = coordsFromEmp(r);
+    if (!c) continue;
+    out.push({
+      branchId: r.id,
+      lat: c.lat,
+      lng: c.lng,
+      label: displayBranchName(r.location) || r.location || r.fullName || "Filial",
+    });
+  }
+  return out;
+}
+
+/**
+ * Reviziya (rahbar + revizor): ofis yoki istalgan filial geofence ichida davomat.
+ * preferredBranchId bo‘lsa — avvalo shu filial.
+ */
+async function resolveReviziyaFieldGate(opts: {
+  emp: WorkplaceEmp;
+  latitude: number;
+  longitude: number;
+  mobileAnywhere: boolean;
+  preferredBranchId?: number | null;
+}): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
+  const { emp, latitude, longitude, mobileAnywhere, preferredBranchId } = opts;
+  const GEOFENCE_SLACK_M = 8;
+  const branchR = geofenceMetersForKind("branch");
+  const officeR = geofenceMetersForKind("office");
+
+  const tryBranch = (
+    branchId: number,
+    lat: number,
+    lng: number,
+    label: string,
+  ): GeoGateOk | null => {
+    const distanceMeters = haversineMeters(latitude, longitude, lat, lng);
+    if (!mobileAnywhere && distanceMeters > branchR + GEOFENCE_SLACK_M) return null;
+    return {
+      ok: true,
+      distanceMeters,
+      effectiveRadius: mobileAnywhere
+        ? Math.max(branchR, Math.ceil(distanceMeters) || branchR)
+        : branchR,
+      point: {
+        latitude: lat,
+        longitude: lng,
+        label,
+        kind: "branch",
+      },
+      resolvedBranchId: branchId,
+      resolvedBranchLabel: label,
+      activeShiftKey: null,
+      daySlots: [],
+    };
+  };
+
+  if (
+    preferredBranchId != null &&
+    Number.isFinite(preferredBranchId) &&
+    preferredBranchId > 0
+  ) {
+    const coords = await branchCoordsById(preferredBranchId);
+    if (coords) {
+      const hit = tryBranch(preferredBranchId, coords.lat, coords.lng, coords.label);
+      if (hit) return hit;
+    }
+  }
+
+  const all = await loadAllBranchCoords();
+  let best: { branchId: number; lat: number; lng: number; label: string; d: number } | null =
+    null;
+  for (const b of all) {
+    const d = haversineMeters(latitude, longitude, b.lat, b.lng);
+    if (!best || d < best.d) best = { ...b, d };
+  }
+  if (best && best.d <= branchR + GEOFENCE_SLACK_M) {
+    const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+    if (hit) return hit;
+  }
+
+  const officeDist = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+  if (mobileAnywhere || officeDist <= officeR + GEOFENCE_SLACK_M) {
+    // Ko‘chma ruxsat + filial yaqin emas — ofis sifatida yoziladi (yoki eng yaqin filial 200 m ichida)
+    if (mobileAnywhere && best && best.d <= Math.max(branchR * 3, 200)) {
+      const hit = tryBranch(best.branchId, best.lat, best.lng, best.label);
+      if (hit) return hit;
+    }
+    return {
+      ok: true,
+      distanceMeters: officeDist,
+      effectiveRadius: mobileAnywhere
+        ? Math.max(officeR, Math.ceil(officeDist) || officeR)
+        : officeR,
+      point: {
+        latitude: DAVOMAT_SITE_LAT,
+        longitude: DAVOMAT_SITE_LNG,
+        label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+        kind: "office",
+      },
+      resolvedBranchId: null,
+      resolvedBranchLabel: null,
+      activeShiftKey: null,
+      daySlots: [],
+    };
+  }
+
+  const nearest = all
+    .map((b) => ({
+      ...b,
+      d: haversineMeters(latitude, longitude, b.lat, b.lng),
+    }))
+    .sort((a, b) => a.d - b.d)[0];
+  const remainOffice = Math.max(0, officeDist - officeR);
+  const remainBranch = nearest ? Math.max(0, nearest.d - branchR) : null;
+  return {
+    ok: false,
+    status: 403,
+    body: {
+      error: nearest
+        ? `Reviziya davomati: ofis (${remainOffice} m) yoki eng yaqin filial «${nearest.label}» (${remainBranch} m) zonasiga kiring.`
+        : `Hududdan tashqaridasiz (asosiy ofis): ${officeDist} m. Ruxsat ${officeR} m.`,
+      code: "outside_geofence",
+      distanceMeters: nearest && nearest.d < officeDist ? nearest.d : officeDist,
+      remainMeters: nearest && nearest.d < officeDist ? remainBranch : remainOffice,
+      allowedMeters: nearest && nearest.d < officeDist ? branchR : officeR,
+      workplace: nearest
+        ? {
+            location: nearest.label,
+            latitude: nearest.lat,
+            longitude: nearest.lng,
+            kind: "branch",
+          }
+        : {
+            location: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+            latitude: DAVOMAT_SITE_LAT,
+            longitude: DAVOMAT_SITE_LNG,
+            kind: "office",
+          },
+      fullName: emp.fullName,
+      fieldBranchPunch: true,
+    },
+  };
+}
+
 type GeoGateOk = {
   ok: true;
   distanceMeters: number;
@@ -1773,6 +1938,17 @@ async function geoGate(
   }
 
   if (!usesBranchDavomat(userRole, emp.orgRole)) {
+    // Reviziya bo‘limi: ofis + istalgan filial zonasidan davomat
+    if (isReviziyaRole(userRole)) {
+      return resolveReviziyaFieldGate({
+        emp,
+        latitude,
+        longitude,
+        mobileAnywhere,
+        preferredBranchId,
+      });
+    }
+
     // TEST koordinator: ofis yashil zonasida — biriktirilgan test filialga tashrif
     if (
       userRole === "koordinator" &&
@@ -2799,6 +2975,53 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
 
     // UI GPS: hozirgi aktiv smena filiali; yo‘q bo‘lsa bugungi 1-slot; legacy resolve
     let resolved = await resolveDavomatPoint(emp, user.role);
+    let fieldBranchPunch = false;
+    const qLat = Number(req.query.lat);
+    const qLng = Number(req.query.lng);
+    if (
+      isReviziyaRole(user.role) &&
+      Number.isFinite(qLat) &&
+      Number.isFinite(qLng)
+    ) {
+      fieldBranchPunch = true;
+      let mobileAnywherePreview = false;
+      try {
+        mobileAnywherePreview = await employeeHasMobileAnywhere(emp.id, emp.userId ?? user.id);
+      } catch {
+        mobileAnywherePreview = false;
+      }
+      const fieldGate = await resolveReviziyaFieldGate({
+        emp,
+        latitude: qLat,
+        longitude: qLng,
+        mobileAnywhere: mobileAnywherePreview,
+        preferredBranchId: Number(req.query.branchId) || null,
+      });
+      if (fieldGate.ok) {
+        resolved = { ok: true, point: fieldGate.point };
+      } else {
+        const wp = fieldGate.body.workplace as
+          | { location?: string; latitude?: number; longitude?: number; kind?: string }
+          | undefined;
+        if (
+          wp &&
+          typeof wp.latitude === "number" &&
+          typeof wp.longitude === "number"
+        ) {
+          resolved = {
+            ok: true,
+            point: {
+              latitude: wp.latitude,
+              longitude: wp.longitude,
+              label: wp.location || "Filial",
+              kind: wp.kind === "branch" ? "branch" : "office",
+            },
+          };
+        }
+      }
+    } else if (isReviziyaRole(user.role)) {
+      fieldBranchPunch = true;
+    }
     if (preferredSlot) {
       const coords = await branchCoordsById(preferredSlot.branchId);
       if (coords) {
@@ -2910,6 +3133,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     res.json({
       allowedMeters: geofenceMetersForKind(point.kind),
       mobileAnywhere,
+      fieldBranchPunch: fieldBranchPunch || undefined,
       site: {
         label: point.label,
         latitude: point.latitude,

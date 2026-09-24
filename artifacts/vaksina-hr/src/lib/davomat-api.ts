@@ -334,6 +334,8 @@ export type WorkplaceInfo = {
   allowedMeters: number;
   /** Admin ko‘chma ruxsat — yashil zonadan tashqarida ham davomat */
   mobileAnywhere?: boolean;
+  /** Reviziya: ofis + istalgan filial zonasidan davomat */
+  fieldBranchPunch?: boolean;
   gpsReady?: boolean;
   gpsError?: string | null;
   shiftWindowOpen?: boolean;
@@ -394,8 +396,17 @@ export type WorkplaceInfo = {
   } | null;
 };
 
-export async function fetchMyWorkplace(): Promise<WorkplaceInfo> {
-  return apiJson<WorkplaceInfo>("/davomat/me/workplace");
+export async function fetchMyWorkplace(opts?: {
+  lat?: number;
+  lng?: number;
+  branchId?: number;
+}): Promise<WorkplaceInfo> {
+  const q = new URLSearchParams();
+  if (opts?.lat != null && Number.isFinite(opts.lat)) q.set("lat", String(opts.lat));
+  if (opts?.lng != null && Number.isFinite(opts.lng)) q.set("lng", String(opts.lng));
+  if (opts?.branchId != null && opts.branchId > 0) q.set("branchId", String(opts.branchId));
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  return apiJson<WorkplaceInfo>(`/davomat/me/workplace${suffix}`);
 }
 
 export async function fetchMyDavomat(): Promise<{

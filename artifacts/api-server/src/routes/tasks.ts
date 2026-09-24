@@ -90,10 +90,6 @@ function canAdminTaskOps(role?: string | null) {
   return isStrictAdminRole(role);
 }
 
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
 const ACCEPT_DEADLINE_MS: Record<string, number> = {
   low: 24 * 60 * 60 * 1000,
   normal: 16 * 60 * 60 * 1000,
@@ -105,12 +101,19 @@ function acceptDeadlineMs(priority?: string | null) {
   return ACCEPT_DEADLINE_MS[priority || "normal"] ?? ACCEPT_DEADLINE_MS.normal;
 }
 
+function taskMeta(row: typeof tasksTable.$inferSelect): Record<string, unknown> {
+  return row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+    ? (row.meta as Record<string, unknown>)
+    : {};
+}
+
+/** meta.acceptWindowEnabled === false → qabul muddati o‘chirilgan */
+function isAcceptWindowEnabled(row: typeof tasksTable.$inferSelect) {
+  return taskMeta(row).acceptWindowEnabled !== false;
+}
+
 function acceptWindowStart(row: typeof tasksTable.$inferSelect): Date {
-  const meta =
-    row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
-      ? (row.meta as Record<string, unknown>)
-      : {};
-  const base = meta.acceptDeadlineBase;
+  const base = taskMeta(row).acceptDeadlineBase;
   if (typeof base === "string" && base) {
     const d = new Date(base);
     if (!Number.isNaN(d.getTime())) return d;
@@ -119,6 +122,7 @@ function acceptWindowStart(row: typeof tasksTable.$inferSelect): Date {
 }
 
 function isAcceptOverdue(row: typeof tasksTable.$inferSelect, now = new Date()) {
+  if (!isAcceptWindowEnabled(row)) return false;
   if (
     row.status === "verified" ||
     row.status === "cancelled" ||
@@ -143,9 +147,9 @@ function isDueDateOverdue(row: typeof tasksTable.$inferSelect, now = new Date())
   }
   const raw = row.dueAt || row.createdAt;
   if (!raw) return false;
-  const due = startOfDay(new Date(raw));
-  const today = startOfDay(now);
-  return due.getTime() < today.getTime();
+  const due = new Date(raw);
+  if (Number.isNaN(due.getTime())) return false;
+  return now.getTime() > due.getTime();
 }
 
 /**
@@ -257,6 +261,9 @@ function sanitizeMeta(raw: unknown): Record<string, unknown> {
   if (src.verifiedAt != null) out.verifiedAt = String(src.verifiedAt).slice(0, 40);
   if (src.acceptDeadlineBase != null) {
     out.acceptDeadlineBase = String(src.acceptDeadlineBase).slice(0, 40);
+  }
+  if (src.acceptWindowEnabled != null) {
+    out.acceptWindowEnabled = !!src.acceptWindowEnabled;
   }
   if (src.lastReworkNote != null) out.lastReworkNote = String(src.lastReworkNote).slice(0, 500);
   if (src.lastReworkAt != null) out.lastReworkAt = String(src.lastReworkAt).slice(0, 40);

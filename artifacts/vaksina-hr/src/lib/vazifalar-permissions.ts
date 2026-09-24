@@ -22,16 +22,18 @@ export const ACCEPT_DEADLINE_HOURS: Record<string, number> = {
   urgent: 4,
 };
 
-function startOfDay(d: Date) {
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
-}
-
 export function acceptDeadlineMs(priority?: string | null) {
   return ACCEPT_DEADLINE_MS[priority || "normal"] ?? ACCEPT_DEADLINE_MS.normal;
 }
 
 export function acceptDeadlineHours(priority?: string | null) {
   return ACCEPT_DEADLINE_HOURS[priority || "normal"] ?? ACCEPT_DEADLINE_HOURS.normal;
+}
+
+/** Qabul oynasi yoqilganmi (meta.acceptWindowEnabled === false → o‘chirilgan) */
+export function isAcceptWindowEnabled(task: Pick<Vazifa, "meta">) {
+  const meta = task.meta as { acceptWindowEnabled?: boolean } | null | undefined;
+  return meta?.acceptWindowEnabled !== false;
 }
 
 /** Qabul oynasi boshlanishi: meta.acceptDeadlineBase yoki createdAt */
@@ -56,11 +58,13 @@ export function acceptDeadlineAt(
 /**
  * Muhimlik bo‘yicha qabul muddati o‘tgan va hali qabul qilinmagan (todo).
  * Past 24s · O‘rta 16s · Yuqori 8s · Shoshilinch 4s.
+ * Agar acceptWindowEnabled=false — faqat asosiy muddat (dueAt) bo‘yicha kechikadi.
  */
 export function isAcceptOverdue(
   task: Pick<Vazifa, "status" | "createdAt" | "priority" | "acceptedAt" | "meta">,
   now = new Date(),
 ) {
+  if (!isAcceptWindowEnabled(task)) return false;
   if (
     task.status === "verified" ||
     task.status === "cancelled" ||
@@ -74,7 +78,7 @@ export function isAcceptOverdue(
   return now.getTime() > acceptDeadlineAt(task).getTime();
 }
 
-/** Muddat kuni o‘tgan (dueAt), hali yakunlanmagan */
+/** Muddat (dueAt) o‘tgan, hali yakunlanmagan */
 export function isDueDateOverdue(
   task: Pick<Vazifa, "status" | "dueAt" | "createdAt">,
   now = new Date(),
@@ -84,9 +88,9 @@ export function isDueDateOverdue(
   }
   const raw = task.dueAt || task.createdAt;
   if (!raw) return false;
-  const due = startOfDay(new Date(raw));
-  const today = startOfDay(now);
-  return due.getTime() < today.getTime();
+  const due = new Date(raw);
+  if (Number.isNaN(due.getTime())) return false;
+  return now.getTime() > due.getTime();
 }
 
 /** Kechikkan: qabul muddati yoki bajarish muddati o‘tgan */

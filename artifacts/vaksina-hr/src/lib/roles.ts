@@ -117,17 +117,17 @@ export function canViewAllReviziyaBranches(role?: string | null): boolean {
 }
 
 export function canAssignReviziya(role?: string | null): boolean {
-  return role === "reviziya_rahbar" || hasFullPlatformAccess(role) || isDirectorRole(role) || role === "koordinator";
+  return role === "reviziya_rahbar" || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
+/** Faqat koordinator filial uchun reviziya arizasi qoldiradi */
 export function canCreateReviziyaVisit(role?: string | null): boolean {
-  return (
-    isReviziyaRole(role) ||
-    hasFullPlatformAccess(role) ||
-    isDirectorRole(role) ||
-    role === "koordinator" ||
-    role === "mudir"
-  );
+  return role === "koordinator" || hasFullPlatformAccess(role);
+}
+
+/** Arizani qabul qilib kun/revizor belgilash */
+export function canApproveReviziyaRequest(role?: string | null): boolean {
+  return role === "reviziya_rahbar" || hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
 export function canOverrideRevisionSchedule(role?: string | null): boolean {

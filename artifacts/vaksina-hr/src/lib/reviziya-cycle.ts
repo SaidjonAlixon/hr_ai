@@ -21,6 +21,7 @@ export const CYCLE_STATUS_TONE: Record<string, string> = {
 };
 
 export const WORKFLOW_STATUS_LABEL: Record<string, string> = {
+  REQUESTED: "Ariza (kutilyapti)",
   ASSIGNED: "Biriktirilgan",
   ACCEPTED: "Qabul qilingan",
   IN_PROGRESS: "Jarayonda",

@@ -266,6 +266,14 @@ export function useReviziyaVisitMutations() {
         json(`/api/reviziya/visits/${id}/assign`, { method: "POST", body: JSON.stringify(body) }),
       onSuccess: invalidate,
     }),
+    approveRequest: useMutation({
+      mutationFn: ({ id, ...body }: { id: number } & Record<string, unknown>) =>
+        json(`/api/reviziya/visits/${id}/approve-request`, {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      onSuccess: invalidate,
+    }),
     accept: useMutation({
       mutationFn: (id: number) => json(`/api/reviziya/visits/${id}/accept`, { method: "POST", body: "{}" }),
       onSuccess: invalidate,

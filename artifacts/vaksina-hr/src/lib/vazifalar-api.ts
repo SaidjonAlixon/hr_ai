@@ -71,6 +71,8 @@ export type TaskMeta = {
   verifiedAt?: string;
   /** Qabul muddati hisobi shu vaqtdan (qayta biriktirishda) */
   acceptDeadlineBase?: string;
+  /** false → muhimlik soati yo‘q; kechikish faqat Muddatdan keyin */
+  acceptWindowEnabled?: boolean;
   lastReworkNote?: string | null;
   lastReworkAt?: string | null;
   lastReworkByName?: string | null;

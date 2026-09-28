@@ -83,7 +83,7 @@ export async function removeEmployeesForUser(userId: number): Promise<void> {
   } catch {
     await db
       .update(employeesTable)
-      .set({ userId: null, employmentStatus: "dismissed", updatedAt: new Date() })
+      .set({ userId: null, employmentStatus: "closed", updatedAt: new Date() })
       .where(inArray(employeesTable.id, ids));
   }
 }

@@ -2,8 +2,73 @@
  * Davomat xodimlar guruhi filtri (UI bilan bir xil).
  * Ofis / 1-smena / 2-smena — Excel eksportida ham shu qoida.
  */
+import { isSecurityStaff } from "./security-shifts";
 
-export type DavomatStaffFilter = "all" | "shift_one" | "shift_two" | "office" | "external";
+export type DavomatStaffFilter =
+  | "all"
+  | "pharmacy"
+  | "shift_one"
+  | "shift_two"
+  | "office"
+  | "warehouse"
+  | "security"
+  | "external";
+
+/** Xavfsizlik: SB roli, `sb:` smena yoki «Xavfsizlik» bo‘limi */
+export function isSecurityDavomatStaff(emp: {
+  userRole?: string | null;
+  departmentName?: string | null;
+  shiftType?: string | null;
+}): boolean {
+  if (isSecurityStaff(emp)) return true;
+  const d = normDeptName(emp.departmentName);
+  return d === "xavfsizlik" || d === "хавфсизлик" || d === "безопасность";
+}
+
+const OMBOR_USER_ROLES = new Set(["ombor", "ombor_rahbar"]);
+
+function normDeptName(s?: string | null): string {
+  return String(s || "")
+    .trim()
+    .toLocaleLowerCase("uz")
+    .replace(/[\u2018\u2019\u02BB\u02BC'`´]/g, "");
+}
+
+/** Omborxona: bo‘lim, ombor roli yoki `wh:` smena — ofis/apteka guruhlariga qo‘shilmaydi */
+export function isWarehouseDavomatStaff(emp: {
+  userRole?: string | null;
+  departmentName?: string | null;
+  shiftType?: string | null;
+}): boolean {
+  if (OMBOR_USER_ROLES.has(String(emp.userRole || "").trim())) return true;
+  if (/^wh:/i.test(String(emp.shiftType || "").trim())) return true;
+  const d = normDeptName(emp.departmentName);
+  return d === "omborxona" || d === "омборхона" || d === "склад";
+}
+
+/** `wh:08:00-20:00:o` → `08:00-20:00`; smena biriktirilmagan bo‘lsa null */
+export function warehouseShiftKeyOf(shiftType?: string | null): string | null {
+  const m = /^wh:(\d{2}:\d{2})-(\d{2}:\d{2})/i.exec(String(shiftType || "").trim());
+  return m ? `${m[1]}-${m[2]}` : null;
+}
+
+/** `none` = smena biriktirilmagan omborxona xodimlari */
+export function parseWarehouseShiftFilter(raw?: string | null): string | null {
+  const v = String(raw || "").trim();
+  if (!v || v === "all") return null;
+  if (v === "none") return "none";
+  return /^\d{2}:\d{2}-\d{2}:\d{2}$/.test(v) ? v : null;
+}
+
+export function matchesWarehouseShift(
+  emp: { shiftType?: string | null },
+  shiftFilter: string | null,
+): boolean {
+  if (!shiftFilter) return true;
+  const key = warehouseShiftKeyOf(emp.shiftType);
+  if (shiftFilter === "none") return key == null;
+  return key === shiftFilter;
+}
 
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "supervisor"]);
@@ -81,7 +146,16 @@ function isShiftTwo(emp: {
 
 export function parseDavomatStaffFilter(raw?: string | null): DavomatStaffFilter {
   const v = String(raw || "").trim().toLowerCase();
-  if (v === "shift_one" || v === "shift_two" || v === "office" || v === "external" || v === "all") {
+  if (
+    v === "pharmacy" ||
+    v === "shift_one" ||
+    v === "shift_two" ||
+    v === "office" ||
+    v === "warehouse" ||
+    v === "security" ||
+    v === "external" ||
+    v === "all"
+  ) {
     return v;
   }
   return "all";
@@ -94,6 +168,7 @@ export function matchesDavomatStaffFilter(
     position?: string | null;
     shiftType?: string | null;
     shiftLabel?: string | null;
+    departmentName?: string | null;
     workStart?: string;
     workEnd?: string;
   },
@@ -104,6 +179,14 @@ export function matchesDavomatStaffFilter(
   }
   if (filter === "all") return true;
 
+  const security = isSecurityDavomatStaff(emp);
+  if (filter === "security") return security;
+  if (security) return false;
+
+  const warehouse = isWarehouseDavomatStaff(emp);
+  if (filter === "warehouse") return warehouse;
+  if (warehouse) return false;
+
   const shiftPharmacy = isShiftPharmacyStaff(emp);
   const shiftTwo = isShiftTwo(emp);
   const nonOffice = isNonOfficeStaff(emp);
@@ -113,6 +196,7 @@ export function matchesDavomatStaffFilter(
     return true;
   }
 
+  if (filter === "pharmacy") return shiftPharmacy;
   if (filter === "shift_two") return shiftPharmacy && shiftTwo;
   if (filter === "shift_one") return shiftPharmacy && !shiftTwo;
   return false;
@@ -120,10 +204,16 @@ export function matchesDavomatStaffFilter(
 
 export function staffFilterLabelUz(filter: DavomatStaffFilter): string {
   switch (filter) {
+    case "pharmacy":
+      return "Dorixona";
     case "shift_one":
-      return "1-smena";
+      return "Dorixona · 1-smena";
     case "shift_two":
-      return "2-smena";
+      return "Dorixona · 2-smena";
+    case "warehouse":
+      return "Omborxona";
+    case "security":
+      return "Xavfsizlik";
     case "office":
     case "external":
       return "Ofis";

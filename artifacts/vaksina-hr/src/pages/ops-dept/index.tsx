@@ -115,7 +115,7 @@ export default function OpsDeptPage({ dept }: { dept: "it" | "texnik" }) {
   const myBranch = meta.data?.myBranch || null;
   const canAssign = Boolean(meta.data?.canAssign || isHead);
 
-  const defaultTab: Tab = isItStaff && !isHead ? "board" : canCreate ? "new" : "board";
+  const defaultTab: Tab = isHead ? "board" : isItStaff ? "board" : canCreate ? "new" : "board";
   const [tab, setTab] = useState<Tab>(defaultTab);
   const [busyId, setBusyId] = useState<number | null>(null);
   const [form, setForm] = useState({ title: "", description: "" });

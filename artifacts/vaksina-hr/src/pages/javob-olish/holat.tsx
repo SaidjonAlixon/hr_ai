@@ -1,10 +1,7 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  CalendarDays,
   CheckCircle2,
-  Clock,
-  Clock3,
   Eye,
   FileDown,
   FileSpreadsheet,
@@ -21,12 +18,11 @@ import { useI18n } from "../../i18n/I18nProvider";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
 import { isDirectorRole } from "../../lib/roles";
+import { JavobRequestCard } from "../../components/javob/JavobRequestCard";
 import {
   approveJavobRequest,
   fetchJavobRequests,
-  formatYmdDisplay,
   rejectJavobRequest,
-  type JavobRequestItem,
 } from "../../lib/javob-olish-api";
 import {
   buildJavobApprovedExport,
@@ -35,38 +31,6 @@ import {
 } from "../../lib/javob-olish-export";
 
 type StatusFilter = "all" | "pending_coord" | "pending_hr" | "approved" | "rejected" | "cancelled";
-
-function statusBadge(status: string, t: (k: string) => string) {
-  if (status === "pending" || status === "pending_coord") {
-    return { label: t("javob.statusPendingCoord"), className: "bg-amber-100 text-amber-900" };
-  }
-  if (status === "pending_hr") {
-    return { label: t("javob.statusPendingHr"), className: "bg-sky-100 text-sky-900" };
-  }
-  if (status === "approved") return { label: t("javob.statusApproved"), className: "bg-emerald-100 text-emerald-900" };
-  if (status === "rejected") return { label: t("javob.statusRejected"), className: "bg-rose-100 text-rose-900" };
-  if (status === "cancelled") return { label: t("javob.statusCancelled"), className: "bg-muted text-muted-foreground" };
-  return { label: status, className: "bg-muted text-muted-foreground" };
-}
-
-function isHourlyRequest(item: JavobRequestItem) {
-  return item.kind === "hour" || item.fromHm !== item.shiftStartHm || item.toHm !== item.shiftEndHm;
-}
-
-function formatDecidedAt(v?: string | null) {
-  if (!v) return "—";
-  try {
-    return new Date(v).toLocaleString("uz-UZ", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
-}
 
 function canAccessJavobHolat(role: string) {
   return (
@@ -140,7 +104,8 @@ export default function JavobOlishHolatPage() {
         return false;
       }
       if (!qq) return true;
-      const hay = `${it.fullName || ""} ${it.note || ""} ${it.workDate}`.toLowerCase();
+      const hay =
+        `${it.fullName || ""} ${it.note || ""} ${it.workDate} ${it.branchLabel || ""} ${it.coordinatorName || ""}`.toLowerCase();
       return hay.includes(qq);
     });
   }, [items, statusFilter, q]);
@@ -295,91 +260,37 @@ export default function JavobOlishHolatPage() {
             </p>
           ) : (
             filtered.map((item) => {
-              const badge = statusBadge(item.status, t);
-              const hourly = isHourlyRequest(item);
               const needsHr = canDecide && item.status === "pending_hr";
               return (
-                <div key={item.id} className="space-y-2 rounded-xl border border-border bg-card p-3 shadow-sm">
-                  <div className="flex flex-wrap items-start justify-between gap-2">
-                    <div className="min-w-0 space-y-1">
-                      <p className="truncate text-sm font-semibold text-foreground">
-                        {item.fullName || `#${item.employeeId}`}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
-                        <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 font-medium text-foreground">
-                          {hourly ? <Clock className="h-3 w-3" /> : <CalendarDays className="h-3 w-3" />}
-                          {hourly ? t("javob.modeHour") : t("javob.modeDay")}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <CalendarDays className="h-3 w-3" />
-                          {formatYmdDisplay(item.workDate)}
-                        </span>
-                        <span className="inline-flex items-center gap-1">
-                          <Clock3 className="h-3 w-3" />
-                          {item.fromHm}–{item.toHm}
-                        </span>
-                        {item.durationLabel ? (
-                          <span>
-                            · {t("javob.duration")}: {item.durationLabel}
-                          </span>
-                        ) : null}
+                <JavobRequestCard
+                  key={item.id}
+                  item={item}
+                  t={t}
+                  actions={
+                    needsHr ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                          disabled={decideMut.isPending}
+                          onClick={() => decideMut.mutate({ id: item.id, action: "reject" })}
+                        >
+                          <XCircle className="mr-1.5 h-4 w-4" />
+                          {t("javob.reject")}
+                        </Button>
+                        <Button
+                          type="button"
+                          disabled={decideMut.isPending}
+                          onClick={() => decideMut.mutate({ id: item.id, action: "approve" })}
+                        >
+                          <CheckCircle2 className="mr-1.5 h-4 w-4" />
+                          {t("javob.approveFinal")}
+                        </Button>
                       </div>
-                      <p className="text-[10px] text-muted-foreground">
-                        {t("javob.shift")}: {item.shiftStartHm}–{item.shiftEndHm}
-                      </p>
-                    </div>
-                    <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", badge.className)}>
-                      {badge.label}
-                    </span>
-                  </div>
-                  <p className="rounded-lg bg-muted/50 px-2.5 py-2 text-xs text-foreground">
-                    <span className="font-semibold">{t("javob.note")}: </span>
-                    {item.note || "—"}
-                  </p>
-                  {item.escalatedNote ? (
-                    <p className="rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-[11px] text-amber-950">
-                      {item.escalatedNote}
-                    </p>
-                  ) : null}
-                  {item.decisionNote ? (
-                    <p className="rounded-lg border border-emerald-200 bg-emerald-50/80 px-2.5 py-2 text-[11px] text-emerald-950">
-                      <span className="font-semibold">{t("javob.hrDecisionNote")}: </span>
-                      {item.decisionNote}
-                    </p>
-                  ) : null}
-                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
-                    <span>
-                      {t("javob.sentAt")}: {item.createdAtLabel || "—"}
-                    </span>
-                    {item.decidedAt ? (
-                      <span>
-                        {t("javob.approvedAt")}: {formatDecidedAt(item.decidedAt)}
-                      </span>
-                    ) : null}
-                  </div>
-                  {needsHr ? (
-                    <div className="grid grid-cols-2 gap-2 pt-1">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="border-rose-200 text-rose-700 hover:bg-rose-50"
-                        disabled={decideMut.isPending}
-                        onClick={() => decideMut.mutate({ id: item.id, action: "reject" })}
-                      >
-                        <XCircle className="mr-1.5 h-4 w-4" />
-                        {t("javob.reject")}
-                      </Button>
-                      <Button
-                        type="button"
-                        disabled={decideMut.isPending}
-                        onClick={() => decideMut.mutate({ id: item.id, action: "approve" })}
-                      >
-                        <CheckCircle2 className="mr-1.5 h-4 w-4" />
-                        {t("javob.approveFinal")}
-                      </Button>
-                    </div>
-                  ) : null}
-                </div>
+                    ) : null
+                  }
+                />
               );
             })
           )}

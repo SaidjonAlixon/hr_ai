@@ -213,6 +213,24 @@ function NeedCard({
           </span>
         </div>
 
+        <div className="flex items-center gap-3 rounded-xl border-2 border-primary/40 bg-primary/10 px-3.5 py-3">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground">
+            <Users className="h-5 w-5" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-primary">Kim kerak</p>
+            <p className="truncate text-lg font-extrabold uppercase leading-tight text-foreground">
+              {n.roleDisplay}
+            </p>
+            {n.shiftDisplay ? (
+              <p className="mt-0.5 truncate text-xs font-medium text-muted-foreground">{n.shiftDisplay}</p>
+            ) : null}
+          </div>
+          <span className="shrink-0 rounded-xl bg-primary px-3 py-1.5 text-base font-extrabold text-primary-foreground">
+            {Math.max(1, n.count || 1)} ta
+          </span>
+        </div>
+
         <div className="space-y-2 rounded-xl bg-muted/40 px-3 py-3">
           <InfoRow
             icon={<Building2 className="h-3.5 w-3.5" />}
@@ -232,16 +250,6 @@ function NeedCard({
             icon={<Clock className="h-3.5 w-3.5" />}
             label="Smena"
             value={n.shiftDisplay || "—"}
-          />
-          <InfoRow
-            icon={<User className="h-3.5 w-3.5" />}
-            label="Lavozim"
-            value={n.roleDisplay}
-          />
-          <InfoRow
-            icon={<Users className="h-3.5 w-3.5" />}
-            label="Xodim"
-            value={`${n.roleDisplay} ×${n.count}`}
           />
           <InfoRow
             icon={<Send className="h-3.5 w-3.5" />}

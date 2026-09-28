@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, Play, RotateCcw } from "lucide-react";
+import { ArrowDown, Maximize2, Minimize2, Pause, Play, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type YTPlayer = {
@@ -98,7 +98,8 @@ function FirstPlayHint({
   return (
     <button
       type="button"
-      className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/25"
+      aria-label="Videoni boshlash"
+      className="absolute inset-0 z-30 flex touch-manipulation flex-col items-center justify-center bg-black/55"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -122,7 +123,8 @@ function CenterPlay({ onPlay }: { onPlay: () => void }) {
   return (
     <button
       type="button"
-      className="absolute inset-0 z-30 flex items-center justify-center bg-black/20"
+      aria-label="Videoni boshlash"
+      className="absolute inset-0 z-30 flex touch-manipulation items-center justify-center bg-black/55"
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -169,8 +171,16 @@ export function RestrictedVideoPlayer({
     }
   };
 
+  const { wrapRef, expanded, toggleExpanded } = useExpandablePlayer();
+
   return (
-    <div className="relative h-full w-full">
+    <div
+      ref={wrapRef}
+      className={cn(
+        "relative h-full w-full",
+        expanded && "fixed inset-0 z-[200] h-[100dvh] w-screen bg-black",
+      )}
+    >
       {youtubeId ? (
         <YoutubeRestricted
           id={youtubeId}
@@ -178,6 +188,8 @@ export function RestrictedVideoPlayer({
           onProgress={onProgress}
           onPlaying={hideHint}
           showHint={showHint}
+          expanded={expanded}
+          onToggleExpanded={toggleExpanded}
         />
       ) : driveFileId ? (
         <DriveRestricted
@@ -195,6 +207,8 @@ export function RestrictedVideoPlayer({
           onProgress={onProgress}
           onPlaying={hideHint}
           showHint={showHint}
+          expanded={expanded}
+          onToggleExpanded={toggleExpanded}
         />
       )}
     </div>
@@ -265,13 +279,111 @@ function DriveRestricted({
   );
 }
 
+type FsDocument = Document & {
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+type FsElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+type LockableOrientation = ScreenOrientation & {
+  lock?: (o: string) => Promise<void>;
+  unlock?: () => void;
+};
+
+/**
+ * To‘liq ekran: brauzer Fullscreen API (Android/desktop), bo‘lmasa (iPhone) —
+ * CSS orqali butun ekranga yoyiladi. Iframe ustidagi cheklov qatlamlari saqlanadi.
+ */
+function useExpandablePlayer() {
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const nativeRef = useRef(false);
+
+  const fsElement = () => {
+    const d = document as FsDocument;
+    return d.fullscreenElement || d.webkitFullscreenElement || null;
+  };
+
+  const exit = useCallback(() => {
+    const d = document as FsDocument;
+    if (fsElement()) {
+      try {
+        void (d.exitFullscreen ? d.exitFullscreen() : d.webkitExitFullscreen?.());
+      } catch {
+        /* ignore */
+      }
+    }
+    try {
+      (screen.orientation as LockableOrientation | undefined)?.unlock?.();
+    } catch {
+      /* ignore */
+    }
+    nativeRef.current = false;
+    setExpanded(false);
+  }, []);
+
+  const toggleExpanded = useCallback(async () => {
+    if (expanded) {
+      exit();
+      return;
+    }
+    setExpanded(true);
+    const el = wrapRef.current as FsElement | null;
+    try {
+      if (el?.requestFullscreen) {
+        await el.requestFullscreen();
+        nativeRef.current = true;
+      } else if (el?.webkitRequestFullscreen) {
+        await el.webkitRequestFullscreen();
+        nativeRef.current = true;
+      }
+    } catch {
+      nativeRef.current = false;
+    }
+    try {
+      await (screen.orientation as LockableOrientation | undefined)?.lock?.("landscape");
+    } catch {
+      /* ignore */
+    }
+  }, [expanded, exit]);
+
+  useEffect(() => {
+    const onChange = () => {
+      if (nativeRef.current && !fsElement()) exit();
+    };
+    document.addEventListener("fullscreenchange", onChange);
+    document.addEventListener("webkitfullscreenchange", onChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", onChange);
+      document.removeEventListener("webkitfullscreenchange", onChange);
+    };
+  }, [exit]);
+
+  useEffect(() => {
+    if (!expanded) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") exit();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [expanded, exit]);
+
+  return { wrapRef, expanded, toggleExpanded };
+}
+
 function useTransientControls() {
   const [showUi, setShowUi] = useState(false);
-  const timer = useRef<number>();
+  const timer = useRef<number | undefined>(undefined);
   const reveal = useCallback(() => {
     setShowUi(true);
     if (timer.current) window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => setShowUi(false), 2800);
+    timer.current = window.setTimeout(() => setShowUi(false), 3500);
   }, []);
   useEffect(
     () => () => {
@@ -282,38 +394,81 @@ function useTransientControls() {
   return { showUi, reveal };
 }
 
+/**
+ * Video ustiga bosish (mobil): boshqaruv yashirin bo‘lsa — faqat ko‘rsatadi,
+ * ko‘rinib turgan bo‘lsa — pauza qiladi.
+ */
+function TapSurface({
+  playing,
+  controlsVisible,
+  onReveal,
+  onPause,
+}: {
+  playing: boolean;
+  controlsVisible: boolean;
+  onReveal: () => void;
+  onPause: () => void;
+}) {
+  return (
+    <div
+      className="absolute inset-0 z-20 touch-manipulation bg-transparent"
+      onClick={(e) => {
+        e.preventDefault();
+        if (!playing) return;
+        if (!controlsVisible) {
+          onReveal();
+          return;
+        }
+        onPause();
+        onReveal();
+      }}
+      onContextMenu={(e) => e.preventDefault()}
+    />
+  );
+}
+
 function Controls({
   visible,
+  playing,
   current,
   duration,
   maxWatched,
+  expanded,
   onRewind,
   onSeekBack,
+  onTogglePlay,
+  onToggleExpanded,
   onInteract,
 }: {
   visible: boolean;
+  playing: boolean;
   current: number;
   duration: number;
   maxWatched: number;
+  expanded?: boolean;
   onRewind: () => void;
   onSeekBack: (t: number) => void;
+  onTogglePlay: () => void;
+  onToggleExpanded?: () => void;
   onInteract?: () => void;
 }) {
   const dur = duration || 1;
   const watchedPct = Math.min(100, (maxWatched / dur) * 100);
   const nowPct = Math.min(100, (current / dur) * 100);
+  const btn =
+    "flex h-11 min-w-11 touch-manipulation items-center justify-center gap-1 rounded-full bg-white/15 px-3 text-sm font-semibold text-white active:bg-white/30 sm:h-9 sm:min-w-9 sm:text-xs";
 
   return (
     <div
       className={cn(
-        "absolute inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black/80 to-transparent px-3 pb-3 pt-10 transition-opacity duration-200",
+        "absolute inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-12 transition-opacity duration-200",
         visible ? "opacity-100" : "pointer-events-none opacity-0",
       )}
       onPointerDown={onInteract}
     >
       <button
         type="button"
-        className="relative mb-2 block h-2 w-full rounded-full bg-white/20"
+        className="relative mb-1 flex h-7 w-full touch-manipulation items-center"
         aria-label="Faqat orqaga o‘tish mumkin"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -322,23 +477,45 @@ function Controls({
           if (t <= maxWatched + 0.05) onSeekBack(t);
         }}
       >
-        <span className="absolute inset-y-0 left-0 rounded-full bg-white/35" style={{ width: `${watchedPct}%` }} />
-        <span className="absolute inset-y-0 left-0 rounded-full bg-[#2AABEE]" style={{ width: `${nowPct}%` }} />
+        <span className="relative block h-1.5 w-full overflow-hidden rounded-full bg-white/25">
+          <span className="absolute inset-y-0 left-0 rounded-full bg-white/40" style={{ width: `${watchedPct}%` }} />
+          <span className="absolute inset-y-0 left-0 rounded-full bg-[#2AABEE]" style={{ width: `${nowPct}%` }} />
+        </span>
+        <span
+          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2AABEE] shadow ring-2 ring-white"
+          style={{ left: `${nowPct}%` }}
+        />
       </button>
-      <div className="flex items-center gap-2 text-foreground dark:text-white">
+      <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={onRewind}
-          className="flex h-9 items-center gap-1 rounded-full bg-white/10 px-2.5 text-xs font-medium hover:bg-white/20"
+          onClick={onTogglePlay}
+          className={btn}
+          aria-label={playing ? "Pauza" : "Davom ettirish"}
         >
-          <RotateCcw className="h-3.5 w-3.5" />
+          {playing ? <Pause className="h-5 w-5 fill-white" /> : <Play className="ml-0.5 h-5 w-5 fill-white" />}
+        </button>
+        <button type="button" onClick={onRewind} className={btn} aria-label="10 soniya orqaga">
+          <RotateCcw className="h-4 w-4" />
           10 s
         </button>
-        <span className="ml-auto text-xs tabular-nums text-white/80">
+        <span className="ml-auto text-sm tabular-nums text-white/90 sm:text-xs">
           {formatTime(current)} / {formatTime(duration)}
         </span>
+        {onToggleExpanded ? (
+          <button
+            type="button"
+            onClick={onToggleExpanded}
+            className={btn}
+            aria-label={expanded ? "Kichraytirish" : "To‘liq ekran"}
+          >
+            {expanded ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+          </button>
+        ) : null}
       </div>
-      <p className="mt-1.5 text-[10px] text-white/55">Oldinga o‘tkazish yo‘q · orqaga qaytish mumkin</p>
+      {!playing ? (
+        <p className="mt-1.5 text-[11px] text-white/60">Oldinga o‘tkazish yo‘q · orqaga qaytish mumkin</p>
+      ) : null}
     </div>
   );
 }
@@ -350,6 +527,8 @@ function Html5Restricted({
   onProgress,
   onPlaying,
   showHint,
+  expanded,
+  onToggleExpanded,
 }: {
   src: string;
   poster?: string;
@@ -357,6 +536,8 @@ function Html5Restricted({
   onProgress?: (info: { current: number; duration: number; maxWatched: number; percent: number }) => void;
   onPlaying?: () => void;
   showHint?: boolean;
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const maxRef = useRef(0);
@@ -431,17 +612,11 @@ function Html5Restricted({
           report(el);
         }}
       />
-      <div
-        className="absolute inset-0 z-20 touch-manipulation bg-transparent"
-        onPointerDown={(e) => {
-          if (!playing) return;
-          e.preventDefault();
-          const el = ref.current;
-          if (!el) return;
-          reveal();
-          el.pause();
-        }}
-        onContextMenu={(e) => e.preventDefault()}
+      <TapSurface
+        playing={playing}
+        controlsVisible={showUi}
+        onReveal={reveal}
+        onPause={() => ref.current?.pause()}
       />
       {!playing ? (
         showHint ? (
@@ -467,11 +642,23 @@ function Html5Restricted({
         )
       ) : null}
       <Controls
-        visible={showUi}
+        visible={showUi || (!playing && current > 0)}
+        playing={playing}
         current={current}
         duration={duration}
         maxWatched={maxWatched}
+        expanded={expanded}
+        onToggleExpanded={onToggleExpanded}
         onInteract={reveal}
+        onTogglePlay={() => {
+          const el = ref.current;
+          if (!el) return;
+          reveal();
+          if (el.paused) {
+            onPlaying?.();
+            void el.play();
+          } else el.pause();
+        }}
         onRewind={() => {
           const el = ref.current;
           if (!el) return;
@@ -493,12 +680,16 @@ function YoutubeRestricted({
   onProgress,
   onPlaying,
   showHint,
+  expanded,
+  onToggleExpanded,
 }: {
   id: string;
   onEnded?: () => void;
   onProgress?: (info: { current: number; duration: number; maxWatched: number; percent: number }) => void;
   onPlaying?: () => void;
   showHint?: boolean;
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YTPlayer | null>(null);
@@ -615,17 +806,13 @@ function YoutubeRestricted({
           Video yuklanmoqda...
         </div>
       )}
-      <div
-        className="absolute inset-0 z-20 touch-manipulation bg-transparent"
-        onPointerDown={(e) => {
-          if (!playing) return;
-          e.preventDefault();
-          const p = playerRef.current;
-          if (!p || !ready) return;
-          reveal();
-          p.pauseVideo();
+      <TapSurface
+        playing={playing}
+        controlsVisible={showUi}
+        onReveal={reveal}
+        onPause={() => {
+          if (ready) playerRef.current?.pauseVideo();
         }}
-        onContextMenu={(e) => e.preventDefault()}
       />
       {!playing && ready ? (
         showHint ? (
@@ -651,11 +838,24 @@ function YoutubeRestricted({
         )
       ) : null}
       <Controls
-        visible={showUi}
+        visible={ready && (showUi || (!playing && current > 0))}
+        playing={playing}
         current={current}
         duration={duration}
         maxWatched={maxWatched}
+        expanded={expanded}
+        onToggleExpanded={onToggleExpanded}
         onInteract={reveal}
+        onTogglePlay={() => {
+          const p = playerRef.current;
+          if (!p || !ready) return;
+          reveal();
+          if (playing) p.pauseVideo();
+          else {
+            onPlaying?.();
+            p.playVideo();
+          }
+        }}
         onRewind={() => {
           const p = playerRef.current;
           if (!p) return;

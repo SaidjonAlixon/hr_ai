@@ -13,6 +13,11 @@ import {
   type ShiftScheduleOverrides,
 } from "./attendance-engine";
 import { warnHmBefore } from "./shift-schedule";
+import {
+  isSecurityShiftType,
+  securityPatternLabel,
+  securityShiftFor,
+} from "./security-shifts";
 
 export {
   DEFAULT_SHIFT_DEFS,
@@ -61,6 +66,8 @@ export type WorkSchedule = {
   overnight?: boolean;
   /** Omborxona smenasi — Ketdim = tugash + 2 soat */
   warehouse?: boolean;
+  /** Xavfsizlik 24 soatlik smena (Ketdim qoidasi omborxona bilan bir xil) */
+  security?: boolean;
 };
 
 export type StaffHours = {
@@ -73,6 +80,7 @@ export type StaffHours = {
   /** Barcha smenalar — 1+2 bo‘lsa ["one","two"] */
   shiftKeys?: ShiftKey[];
   warehouse?: boolean;
+  security?: boolean;
 };
 
 function toWorkSchedule(def: ShiftDefinition): WorkSchedule {
@@ -148,6 +156,30 @@ export function parseWarehouseShiftType(
     warehouse: true,
     warnHm: warnAt,
     warnText: `Ombor smena «${label}»: ${range}. ${grace} daqiqadan so‘ng kechikish. Ketdim: tugashdan +2 soat.`,
+  };
+}
+
+export function securityWorkSchedule(
+  userRole?: string | null,
+  shiftType?: string | null,
+  graceMinutes = 15,
+): WorkSchedule | null {
+  const sb = securityShiftFor({ userRole, shiftType });
+  if (!sb) return null;
+  const grace = graceMinutes > 0 ? graceMinutes : 15;
+  const label = `Xavfsizlik · ${securityPatternLabel(sb.pattern)}`;
+  return {
+    key: "office",
+    keys: ["office"],
+    label,
+    start: sb.start,
+    end: sb.end,
+    graceMinutes: grace,
+    overnight: true,
+    warehouse: true,
+    security: true,
+    warnHm: warnHmBefore(sb.start, grace),
+    warnText: `${label}: ${sb.start}–${sb.end} (keyingi kun), 1 ish kuni. ${grace} daqiqadan so‘ng kechikish. Ketdim: tugashdan +2 soat.`,
   };
 }
 
@@ -232,6 +264,8 @@ export function workScheduleForStaff(
 ): WorkSchedule {
   const wh = parseWarehouseShiftType(shiftType, shiftLabel, defs.office?.graceMinutes ?? 15);
   if (wh) return wh;
+  const sb = securityWorkSchedule(userRole, shiftType, defs.office?.graceMinutes ?? 15);
+  if (sb) return sb;
 
   if (isPharmacyShiftStaff(userRole, orgRole)) {
     return shiftWindow(shiftType, shiftLabel, defs);
@@ -331,7 +365,7 @@ export function checkoutDeadlineHmFor(opts?: {
   workDateYmd?: string;
   endHm?: string;
 }): string {
-  if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType)) {
+  if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType) || isSecurityShiftType(opts?.shiftType)) {
     if (opts?.workDateYmd && opts?.endHm) {
       return warehouseCheckoutDeadlineHm(opts.workDateYmd, opts.endHm, opts.overnight);
     }
@@ -360,7 +394,7 @@ export function checkoutDeadlineAt(
     shiftType?: string | null;
   },
 ): Date {
-  if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType)) {
+  if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType) || isSecurityShiftType(opts?.shiftType)) {
     return warehouseCheckoutDeadlineAt(workDateYmd, endHm, overnight);
   }
   const endAt = shiftEndAt(workDateYmd, endHm, overnight);
@@ -386,6 +420,9 @@ export function checkoutDeadlineHint(opts?: {
   warehouse?: boolean;
   shiftType?: string | null;
 }): string {
+  if (isSecurityShiftType(opts?.shiftType)) {
+    return "Xavfsizlik smenasi: «Ketdim» ertasi kun smena tugagach 2 soat ichida (09:00 → 11:00 gacha)";
+  }
   if (opts?.warehouse || isWarehouseShiftType(opts?.shiftType)) {
     return "Ombor smena: «Ketdim» tugash vaqtidan keyin 2 soat ichida";
   }
@@ -419,6 +456,7 @@ export function hoursForStaff(
       shiftKey: "office",
       shiftKeys: ["office"],
       warehouse: true,
+      security: w.security,
     };
   }
   const shiftKeys = isPharmacyShiftStaff(userRole, orgRole)

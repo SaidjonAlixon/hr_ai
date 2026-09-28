@@ -243,6 +243,7 @@ router.post("/ops-tickets", requireAuth, async (req: AuthRequest, res): Promise<
     text: `Yangi AyTi ariza: ${who}${branchTxt} — ${title}`,
     type: "ops_ticket",
     linkUrl: "/it",
+    title: "Yangi AyTi ariza",
   });
 
   res.status(201).json((await enrichTickets([row]))[0]);

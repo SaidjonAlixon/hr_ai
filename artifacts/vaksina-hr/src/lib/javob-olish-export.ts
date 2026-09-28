@@ -1,5 +1,6 @@
 /**
- * Javob olish — «Ruxsat berganlarim» Excel (.xls) va PDF eksport.
+ * Javob olish — Excel (.xls) va PDF eksport.
+ * PDF: A4 portret, har bir so‘rov alohida aniq bo‘limli kartochka.
  */
 
 import { jsPDF } from "jspdf";
@@ -22,31 +23,71 @@ function mmToPx(mm: number, dpi = 160): number {
   return Math.round((mm / 25.4) * dpi);
 }
 
-function truncate(ctx: CanvasRenderingContext2D, text: string, maxW: number): string {
-  const t = String(text || "—");
-  if (ctx.measureText(t).width <= maxW) return t;
-  let s = t;
-  while (s.length > 1 && ctx.measureText(`${s}…`).width > maxW) s = s.slice(0, -1);
-  return `${s}…`;
+function wrapLines(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  maxW: number,
+  maxLines = 6,
+): string[] {
+  const words = String(text || "—").split(/\s+/).filter(Boolean);
+  if (!words.length) return ["—"];
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(next).width <= maxW) {
+      cur = next;
+    } else {
+      if (cur) lines.push(cur);
+      cur = w;
+      if (lines.length >= maxLines - 1) break;
+    }
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
+    const last = lines[maxLines - 1] || "";
+    let s = last;
+    while (s.length > 1 && ctx.measureText(`${s}…`).width > maxW) s = s.slice(0, -1);
+    lines[maxLines - 1] = `${s}…`;
+  }
+  return lines.length ? lines : ["—"];
 }
 
-function fmtDt(v?: string | null): string {
-  if (!v) return "—";
-  try {
-    return new Date(v).toLocaleString("uz-UZ", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return "—";
-  }
+function statusLabelUz(status: string): string {
+  if (status === "pending" || status === "pending_coord") return "Koordinator kutmoqda";
+  if (status === "pending_hr") return "HR kutmoqda";
+  if (status === "approved") return "Tasdiqlangan";
+  if (status === "rejected") return "Rad etilgan";
+  if (status === "cancelled") return "Bekor";
+  return status || "—";
 }
 
 function kindLabel(item: JavobRequestItem): string {
-  return item.kind === "hour" ? "Soatlik" : "Kunlik";
+  return item.kind === "hour" || item.fromHm !== item.shiftStartHm || item.toHm !== item.shiftEndHm
+    ? "Soatlik"
+    : "Kunlik";
+}
+
+function timelineText(item: JavobRequestItem): string {
+  if (item.timeline?.length) {
+    return item.timeline
+      .map((s) => {
+        const who = s.by ? ` (${s.by})` : "";
+        return `${s.label}: ${s.atLabel || "—"}${who}`;
+      })
+      .join(" | ");
+  }
+  const parts = [`Yuborilgan: ${item.createdAtLabel || "—"}`];
+  if (item.coordDecidedAtLabel || item.coordDecidedAt) {
+    parts.push(`Koordinator: ${item.coordDecidedAtLabel || item.coordDecidedAt}`);
+  }
+  if (item.escalatedAtLabel || item.escalatedAt) {
+    parts.push(`HR ga: ${item.escalatedAtLabel || item.escalatedAt}`);
+  }
+  if (item.decidedAtLabel || item.decidedAt) {
+    parts.push(`Qaror: ${item.decidedAtLabel || item.decidedAt}`);
+  }
+  return parts.join(" | ");
 }
 
 export type JavobApprovedExportPayload = {
@@ -73,28 +114,20 @@ export function buildJavobApprovedExport(
   };
 }
 
-function statusLabelUz(status: string): string {
-  if (status === "pending" || status === "pending_coord") return "Koordinator kutmoqda";
-  if (status === "pending_hr") return "HR kutmoqda";
-  if (status === "approved") return "Tasdiqlangan";
-  if (status === "rejected") return "Rad etilgan";
-  if (status === "cancelled") return "Bekor";
-  return status || "—";
-}
-
 export async function exportJavobApprovedExcel(payload: JavobApprovedExportPayload): Promise<void> {
   const headers = [
     "№",
     "Xodim",
+    "Filial",
     "Sana",
     "Turi",
     "Vaqt",
     "Smena",
     "Davomiylik",
+    "Koordinator",
     "Holat",
     "Izoh",
-    "Yuborilgan",
-    "Qaror vaqti",
+    "Tarix",
     "HR izoh",
   ];
   const rowsXml = payload.rows
@@ -102,15 +135,16 @@ export async function exportJavobApprovedExcel(payload: JavobApprovedExportPaylo
       const cells = [
         String(i + 1),
         r.fullName || `#${r.employeeId}`,
+        r.branchLabel || "—",
         formatYmdDisplay(r.workDate),
         kindLabel(r),
         `${r.fromHm}–${r.toHm}`,
         `${r.shiftStartHm}–${r.shiftEndHm}`,
         r.durationLabel || "—",
+        r.coordinatorName || "—",
         statusLabelUz(r.status),
         r.note || "—",
-        r.createdAtLabel || fmtDt(r.createdAt),
-        fmtDt(r.decidedAt),
+        timelineText(r),
         r.decisionNote || "—",
       ];
       return `<Row>${cells.map((c) => `<Cell><Data ss:Type="String">${escXml(c)}</Data></Cell>`).join("")}</Row>`;
@@ -133,107 +167,230 @@ export async function exportJavobApprovedExcel(payload: JavobApprovedExportPaylo
   await deliverFile(blob, `javob-holat-${payload.stamp}.xls`);
 }
 
+function drawSectionBox(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  title: string,
+  lines: string[],
+  scale: number,
+  opts?: { bg?: string; border?: string; titleColor?: string },
+): number {
+  const pad = 3.2 * scale;
+  const titleH = 5.2 * scale;
+  const lineH = 4.2 * scale;
+  const h = pad * 2 + titleH + lines.length * lineH + 1 * scale;
+  ctx.fillStyle = opts?.bg || "#f8fafc";
+  ctx.strokeStyle = opts?.border || "#cbd5e1";
+  ctx.lineWidth = Math.max(1, 0.35 * scale);
+  ctx.beginPath();
+  ctx.roundRect?.(x, y, w, h, 2.5 * scale);
+  if (!ctx.roundRect) {
+    ctx.rect(x, y, w, h);
+  }
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = opts?.titleColor || "#0f172a";
+  ctx.font = `bold ${Math.round(3.2 * scale)}px ${FONT}`;
+  ctx.fillText(title, x + pad, y + pad + 3.2 * scale);
+
+  ctx.fillStyle = "#334155";
+  ctx.font = `${Math.round(3 * scale)}px ${FONT}`;
+  let ly = y + pad + titleH + 2.5 * scale;
+  for (const line of lines) {
+    ctx.fillText(line, x + pad, ly);
+    ly += lineH;
+  }
+  return y + h + 3 * scale;
+}
+
 export async function exportJavobApprovedPdf(payload: JavobApprovedExportPayload): Promise<void> {
-  const pageW = 297;
-  const pageH = 210;
-  const margin = 10;
+  const pageW = 210;
+  const pageH = 297;
+  const margin = 12;
   const dpi = 160;
   const canvasW = mmToPx(pageW, dpi);
   const canvasH = mmToPx(pageH, dpi);
   const scale = canvasW / pageW;
+  const contentW = (pageW - margin * 2) * scale;
 
-  const colW = [8, 36, 24, 16, 22, 24, 18, 28, 42, 24, 24];
-  const headers = [
-    "№",
-    "Xodim",
-    "Sana",
-    "Turi",
-    "Vaqt",
-    "Smena",
-    "Davom.",
-    "Holat",
-    "Izoh",
-    "Yuborilgan",
-    "Qaror",
-  ];
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const rows = payload.rows.length ? payload.rows : [];
 
-  const rowsPerPage = 12;
-  const pages: JavobRequestItem[][] = [];
-  for (let i = 0; i < payload.rows.length; i += rowsPerPage) {
-    pages.push(payload.rows.slice(i, i + rowsPerPage));
-  }
-  if (!pages.length) pages.push([]);
+  // Estimate cards per page: ~2–3 depending on timeline length
+  let pageIndex = 0;
+  let rowIndex = 0;
 
-  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  while (rowIndex < rows.length || (rows.length === 0 && pageIndex === 0)) {
+    if (pageIndex > 0) doc.addPage();
 
-  for (let pi = 0; pi < pages.length; pi++) {
-    if (pi > 0) doc.addPage();
     const canvas = document.createElement("canvas");
     canvas.width = canvasW;
     canvas.height = canvasH;
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvasW, canvasH);
+
     ctx.fillStyle = "#0f172a";
-    ctx.font = `bold ${Math.round(5.2 * scale)}px ${FONT}`;
-    ctx.fillText(payload.title, margin * scale, 14 * scale);
-    ctx.font = `${Math.round(3.2 * scale)}px ${FONT}`;
+    ctx.font = `bold ${Math.round(5.5 * scale)}px ${FONT}`;
+    ctx.fillText(payload.title, margin * scale, 16 * scale);
+    ctx.font = `${Math.round(3 * scale)}px ${FONT}`;
     ctx.fillStyle = "#64748b";
     ctx.fillText(
-      `${payload.generatedAt} · ${payload.rows.length} ta · sahifa ${pi + 1}/${pages.length}`,
+      `${payload.generatedAt} · ${payload.rows.length} ta · sahifa ${pageIndex + 1}`,
       margin * scale,
-      20 * scale,
+      22 * scale,
     );
 
-    let x = margin * scale;
     let y = 28 * scale;
-    const rowH = 11 * scale;
-    ctx.fillStyle = "#e2e8f0";
-    ctx.fillRect(x, y, (pageW - margin * 2) * scale, rowH);
-    ctx.fillStyle = "#0f172a";
-    ctx.font = `bold ${Math.round(2.6 * scale)}px ${FONT}`;
-    let cx = x + 2 * scale;
-    headers.forEach((h, hi) => {
-      ctx.fillText(h, cx, y + rowH * 0.68);
-      cx += colW[hi]! * scale;
-    });
-    y += rowH;
+    const bottom = (pageH - 10) * scale;
 
-    ctx.font = `${Math.round(2.5 * scale)}px ${FONT}`;
-    pages[pi]!.forEach((r, ri) => {
-      const bg = ri % 2 === 0 ? "#f8fafc" : "#ffffff";
-      ctx.fillStyle = bg;
-      ctx.fillRect(x, y, (pageW - margin * 2) * scale, rowH);
-      ctx.fillStyle = "#1e293b";
-      const vals = [
-        String(pi * rowsPerPage + ri + 1),
-        r.fullName || `#${r.employeeId}`,
-        formatYmdDisplay(r.workDate),
-        kindLabel(r),
-        `${r.fromHm}–${r.toHm}`,
-        `${r.shiftStartHm}–${r.shiftEndHm}`,
-        r.durationLabel || "—",
-        statusLabelUz(r.status),
-        r.note || "—",
-        r.createdAtLabel || fmtDt(r.createdAt),
-        fmtDt(r.decidedAt),
-      ];
-      let vx = x + 2 * scale;
-      vals.forEach((v, vi) => {
-        ctx.fillText(truncate(ctx, v, colW[vi]! * scale - 4 * scale), vx, y + rowH * 0.68);
-        vx += colW[vi]! * scale;
-      });
-      y += rowH;
-    });
-
-    if (!pages[pi]!.length) {
+    if (!rows.length) {
       ctx.fillStyle = "#94a3b8";
-      ctx.font = `${Math.round(3.5 * scale)}px ${FONT}`;
+      ctx.font = `${Math.round(4 * scale)}px ${FONT}`;
       ctx.fillText("Hozircha so‘rov yo‘q", margin * scale, 50 * scale);
     }
 
-    const img = canvas.toDataURL("image/jpeg", 0.92);
+    while (rowIndex < rows.length) {
+      const r = rows[rowIndex]!;
+      const startY = y;
+
+      // Measure needed height roughly
+      const timeline = r.timeline?.length
+        ? r.timeline
+        : [
+            {
+              key: "sent",
+              label: "So‘rov yuborildi",
+              atLabel: r.createdAtLabel || "—",
+              by: r.fullName,
+              note: null as string | null,
+            },
+          ];
+      const noteLines = wrapLines(ctx, r.note || "—", contentW - 8 * scale, 4);
+      const histLines = timeline.flatMap((s) => {
+        const head = `${s.label} — ${s.atLabel || "—"}${s.by ? ` · ${s.by}` : ""}`;
+        const wrapped = wrapLines(ctx, head, contentW - 8 * scale, 2);
+        return s.note
+          ? [...wrapped, ...wrapLines(ctx, `  ${s.note}`, contentW - 10 * scale, 2)]
+          : wrapped;
+      });
+      const estH =
+        14 * scale + // header
+        22 * scale + // meta box
+        (6 + noteLines.length * 4.2) * scale +
+        (8 + histLines.length * 4.2) * scale +
+        8 * scale;
+
+      if (startY + estH > bottom && startY > 32 * scale) {
+        break; // new page
+      }
+
+      // Card border
+      const cardPad = 3.5 * scale;
+      let cy = y + cardPad;
+
+      ctx.strokeStyle = "#94a3b8";
+      ctx.lineWidth = Math.max(1, 0.4 * scale);
+      ctx.fillStyle = "#ffffff";
+
+      // We'll draw border after we know height — first draw content, track endY
+      const cardX = margin * scale;
+      const cardInnerX = cardX + cardPad;
+      const cardInnerW = contentW - cardPad * 2;
+
+      // Header row
+      ctx.fillStyle = "#0f172a";
+      ctx.font = `bold ${Math.round(4 * scale)}px ${FONT}`;
+      ctx.fillText(r.fullName || `#${r.employeeId}`, cardInnerX, cy + 4 * scale);
+      ctx.font = `bold ${Math.round(2.8 * scale)}px ${FONT}`;
+      ctx.fillStyle = "#0369a1";
+      const st = statusLabelUz(r.status);
+      const stW = ctx.measureText(st).width;
+      ctx.fillText(st, cardX + contentW - cardPad - stW, cy + 4 * scale);
+      cy += 8 * scale;
+
+      ctx.fillStyle = "#64748b";
+      ctx.font = `${Math.round(2.8 * scale)}px ${FONT}`;
+      ctx.fillText(
+        `${formatYmdDisplay(r.workDate)} · ${kindLabel(r)} · ${r.fromHm}–${r.toHm}` +
+          (r.durationLabel ? ` · ${r.durationLabel}` : ""),
+        cardInnerX,
+        cy,
+      );
+      cy += 5 * scale;
+
+      cy = drawSectionBox(
+        ctx,
+        cardInnerX,
+        cy,
+        cardInnerW,
+        "Filial / Smena / Koordinator",
+        [
+          `Filial: ${r.branchLabel || "—"}`,
+          `Smena: ${r.shiftStartHm}–${r.shiftEndHm}${r.shiftOvernight ? " (keyingi kun)" : ""}${r.shiftLabel ? ` · ${r.shiftLabel}` : ""}`,
+          `Koordinator: ${r.coordinatorName || "—"}`,
+        ],
+        scale,
+        { bg: "#f1f5f9", border: "#94a3b8" },
+      );
+
+      cy = drawSectionBox(
+        ctx,
+        cardInnerX,
+        cy,
+        cardInnerW,
+        "Izoh",
+        noteLines,
+        scale,
+        { bg: "#fffbeb", border: "#fbbf24", titleColor: "#92400e" },
+      );
+
+      cy = drawSectionBox(
+        ctx,
+        cardInnerX,
+        cy,
+        cardInnerW,
+        "Tarix (kim / qachon)",
+        histLines,
+        scale,
+        { bg: "#f0fdf4", border: "#86efac", titleColor: "#166534" },
+      );
+
+      if (r.decisionNote) {
+        cy = drawSectionBox(
+          ctx,
+          cardInnerX,
+          cy,
+          cardInnerW,
+          "HR izohi",
+          wrapLines(ctx, r.decisionNote, cardInnerW - 8 * scale, 3),
+          scale,
+          { bg: "#ecfdf5", border: "#6ee7b7" },
+        );
+      }
+
+      const cardH = cy - y + cardPad;
+      ctx.strokeStyle = "#64748b";
+      ctx.lineWidth = Math.max(1, 0.45 * scale);
+      ctx.strokeRect(cardX, y, contentW, cardH);
+
+      y = cy + cardPad + 4 * scale;
+      rowIndex += 1;
+
+      if (y > bottom - 40 * scale) break;
+    }
+
+    const img = canvas.toDataURL("image/jpeg", 0.93);
     doc.addImage(img, "JPEG", 0, 0, pageW, pageH);
+    pageIndex += 1;
+
+    if (!rows.length) break;
+    if (rowIndex >= rows.length) break;
+    // safety
+    if (pageIndex > 200) break;
   }
 
   const blob = doc.output("blob");

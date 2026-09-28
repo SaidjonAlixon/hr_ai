@@ -71,10 +71,22 @@ export function useOpsMeta(dept: "it" | "texnik") {
   });
 }
 
-export function useOpsDash(dept: "it" | "texnik") {
+export function useOpsDash(dept: "it" | "texnik", opts?: { enabled?: boolean }) {
   return useQuery({
     queryKey: ["ops", dept, "dash"],
-    queryFn: () => json<any>(`/api/ops-tickets/dashboard?dept=${dept}`),
+    queryFn: () =>
+      json<{
+        total: number;
+        open: number;
+        urgent: number;
+        awaitingVerify: number;
+        byStatus: Record<string, number>;
+        byCat: Record<string, number>;
+      }>(`/api/ops-tickets/dashboard?dept=${dept}`),
+    enabled: opts?.enabled !== false,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: true,
+    staleTime: 20_000,
   });
 }
 

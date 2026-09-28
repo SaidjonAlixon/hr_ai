@@ -29,6 +29,8 @@ import VazifalarPage from './pages/vazifalar/index';
 import VazifalarTahlilPage from './pages/vazifalar/tahlil';
 import EslatmalarPage from './pages/eslatmalar/index';
 import KirishPage from './pages/kirish/index';
+import DarsliklarPage from './pages/darsliklar/index';
+import AtestatsiyaPage from './pages/atestatsiya/index';
 import EhtiyojPage from './pages/ehtiyoj/index';
 import XodimKerakPage from './pages/xodim-kerak/index';
 import ChecklistPage from './pages/checklist/index';
@@ -41,8 +43,11 @@ import OpsDeptPage from './pages/ops-dept/index';
 import ReytingPage from './pages/reyting/index';
 import AdminHolatPage from './pages/admin/holat';
 import AdminUsersPage from './pages/admin/users';
+import BoshatilganlarPage from './pages/admin/boshatilganlar';
 import AdminDepartmentsPage from './pages/admin/departments';
 import AdminKirishVideosPage from './pages/admin/kirish-videos';
+import AdminDarsliklarPage from './pages/admin/darsliklar';
+import AdminAtestatsiyaPage from './pages/admin/atestatsiya';
 import AdminFacesPage from './pages/admin/faces';
 import AdminSmenaSozlamalarPage from './pages/admin/smena-sozlamalar';
 import AdminDavomatQrPage from './pages/admin/davomat-qr';
@@ -184,6 +189,8 @@ function Router() {
         <Redirect to="/dashboard" />
       </Route>
       <ProtectedRoute path="/kirish" component={KirishPage} />
+      <ProtectedRoute path="/darsliklar" component={DarsliklarPage} />
+      <ProtectedRoute path="/atestatsiya" component={AtestatsiyaPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
       <ProtectedRoute path="/xodim-kerak" component={XodimKerakPage} />
       <ProtectedRoute path="/checklist" component={ChecklistPage} />
@@ -217,9 +224,12 @@ function Router() {
       <ProtectedRoute path="/internships" component={InternshipsPage} />
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
+      <ProtectedRoute path="/admin/boshatilganlar" component={BoshatilganlarPage} />
       <ProtectedRoute path="/admin/holat" component={AdminHolatPage} />
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
+      <ProtectedRoute path="/admin/darsliklar" component={AdminDarsliklarPage} />
+      <ProtectedRoute path="/admin/atestatsiya" component={AdminAtestatsiyaPage} />
       <ProtectedRoute path="/admin/faces" component={AdminFacesPage} />
       <ProtectedRoute path="/admin/smena-sozlamalar" component={AdminSmenaSozlamalarPage} />
       <ProtectedRoute path="/admin/davomat-qr" component={AdminDavomatQrPage} />

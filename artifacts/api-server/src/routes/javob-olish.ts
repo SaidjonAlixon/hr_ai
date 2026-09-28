@@ -3,7 +3,7 @@
  * Tasdiqlangan soat/kun davomat jarimasidan ozod.
  */
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, or } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
 import {
   db,
   employeesTable,
@@ -21,6 +21,7 @@ import {
   hmToMinutes,
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
+import { displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -41,6 +42,17 @@ function isHrApprover(role: string) {
     role === "admin" ||
     isDirectorRole(role)
   );
+}
+
+/** Admin/rahbar koordinator bosqichini ham yakuniy qaror bilan yopa oladi */
+function isFinalOverrideRole(role: string) {
+  return role === "admin" || isDirectorRole(role);
+}
+
+function canActOn(role: string, status: string): boolean {
+  if (status === "pending_coord") return isCoordRole(role) || isFinalOverrideRole(role);
+  if (status === "pending_hr") return isHrApprover(role);
+  return false;
 }
 
 function isLead(role: string) {
@@ -193,14 +205,154 @@ function normalizeStatus(s: string) {
   return s;
 }
 
-function serializeRow(r: typeof javobOlishRequestsTable.$inferSelect, empName?: string | null) {
+type EmpLite = {
+  id: number;
+  fullName: string;
+  location: string | null;
+  orgRole: string | null;
+  reportsToId: number | null;
+  assignedBranchId: number | null;
+  userId: number | null;
+};
+
+function branchLabelFromEmp(
+  emp: EmpLite | undefined,
+  byId: Map<number, EmpLite>,
+): string | null {
+  if (!emp) return null;
+  if (emp.assignedBranchId) {
+    const br = byId.get(emp.assignedBranchId);
+    if (br) {
+      return (
+        displayBranchName(br.location) ||
+        br.location ||
+        br.fullName ||
+        null
+      );
+    }
+  }
+  if (emp.orgRole === "manager") {
+    return displayBranchName(emp.location) || emp.location || emp.fullName || null;
+  }
+  let cursor: EmpLite | undefined = emp;
+  for (let i = 0; i < 5 && cursor?.reportsToId; i++) {
+    const mgr = byId.get(cursor.reportsToId);
+    if (!mgr) break;
+    if (mgr.orgRole === "manager") {
+      return displayBranchName(mgr.location) || mgr.location || mgr.fullName || null;
+    }
+    cursor = mgr;
+  }
+  return displayBranchName(emp.location) || emp.location || null;
+}
+
+function serializeRow(
+  r: typeof javobOlishRequestsTable.$inferSelect,
+  extra?: {
+    fullName?: string | null;
+    branchLabel?: string | null;
+    coordinatorName?: string | null;
+    coordDecidedByName?: string | null;
+    decidedByName?: string | null;
+  },
+) {
   const status = normalizeStatus(r.status);
   const fullDay = r.fromHm === r.shiftStartHm && r.toHm === r.shiftEndHm;
+  const timeline: Array<{
+    key: string;
+    label: string;
+    at: string | null;
+    atLabel: string;
+    by: string | null;
+    note: string | null;
+  }> = [];
+
+  timeline.push({
+    key: "sent",
+    label: "So‘rov yuborildi",
+    at: r.createdAt ? new Date(r.createdAt).toISOString() : null,
+    atLabel: fmtDt(r.createdAt),
+    by: extra?.fullName || null,
+    note: null,
+  });
+
+  if (r.coordDecidedAt && !r.escalatedAt) {
+    const coordRejected = status === "rejected" && !r.decidedAt;
+    timeline.push({
+      key: "coord",
+      label: coordRejected ? "Koordinator rad etdi" : "Koordinator tasdiqladi",
+      at: new Date(r.coordDecidedAt).toISOString(),
+      atLabel: fmtDt(r.coordDecidedAt),
+      by: extra?.coordDecidedByName || extra?.coordinatorName || null,
+      note: r.coordDecisionNote || null,
+    });
+  }
+
+  if (r.escalatedAt) {
+    timeline.push({
+      key: "escalated",
+      label: "Koordinator javob bermadi — HR ga o‘tdi",
+      at: new Date(r.escalatedAt).toISOString(),
+      atLabel: fmtDt(r.escalatedAt),
+      by: extra?.coordinatorName || null,
+      note: r.escalatedNote || null,
+    });
+  }
+
+  if (r.decidedAt && (status === "approved" || status === "rejected") && r.decidedById) {
+    // HR final (or coord reject that also set decidedById — skip duplicate if same as coord-only reject)
+    const isCoordOnlyReject =
+      status === "rejected" &&
+      r.coordDecidedAt &&
+      !r.escalatedAt &&
+      r.decidedById === r.coordDecidedById &&
+      timeline.some((t) => t.key === "coord");
+    if (!isCoordOnlyReject) {
+      const direct = !r.coordDecidedAt && !r.escalatedAt;
+      timeline.push({
+        key: "hr",
+        label: direct
+          ? status === "approved"
+            ? "Rahbariyat to‘g‘ridan-to‘g‘ri tasdiqladi"
+            : "Rahbariyat to‘g‘ridan-to‘g‘ri rad etdi"
+          : status === "approved"
+            ? "HR yakuniy tasdiqladi"
+            : "HR rad etdi",
+        at: new Date(r.decidedAt).toISOString(),
+        atLabel: fmtDt(r.decidedAt),
+        by: extra?.decidedByName || null,
+        note: r.decisionNote || null,
+      });
+    }
+  }
+
+  if (status === "pending_coord" && !r.coordDecidedAt && !r.escalatedAt) {
+    timeline.push({
+      key: "waiting_coord",
+      label: "Koordinator javobi kutilmoqda",
+      at: null,
+      atLabel: "—",
+      by: extra?.coordinatorName || null,
+      note: null,
+    });
+  }
+  if (status === "pending_hr" && !r.decidedAt) {
+    timeline.push({
+      key: "waiting_hr",
+      label: "HR yakuniy ruxsati kutilmoqda",
+      at: null,
+      atLabel: "—",
+      by: null,
+      note: null,
+    });
+  }
+
   return {
     id: r.id,
     employeeId: r.employeeId,
     userId: r.userId,
-    fullName: empName || null,
+    fullName: extra?.fullName || null,
+    branchLabel: extra?.branchLabel || null,
     workDate: r.workDate,
     shiftType: r.shiftType,
     shiftLabel: r.shiftLabel,
@@ -213,20 +365,127 @@ function serializeRow(r: typeof javobOlishRequestsTable.$inferSelect, empName?: 
     durationLabel: formatDuration(r.durationMinutes),
     note: r.note,
     status,
-    kind: fullDay ? "day" : "hour",
+    kind: fullDay ? ("day" as const) : ("hour" as const),
     coordinatorUserId: r.coordinatorUserId,
+    coordinatorName: extra?.coordinatorName || null,
     coordDecidedById: r.coordDecidedById,
+    coordDecidedByName: extra?.coordDecidedByName || null,
     coordDecidedAt: r.coordDecidedAt,
     coordDecisionNote: r.coordDecisionNote,
     escalatedAt: r.escalatedAt,
     escalatedNote: r.escalatedNote,
     decidedById: r.decidedById,
+    decidedByName: extra?.decidedByName || null,
     decidedAt: r.decidedAt,
     decisionNote: r.decisionNote,
     createdAt: r.createdAt,
     createdAtLabel: fmtDt(r.createdAt),
     escalatedAtLabel: fmtDt(r.escalatedAt),
+    coordDecidedAtLabel: fmtDt(r.coordDecidedAt),
+    decidedAtLabel: fmtDt(r.decidedAt),
+    timeline,
   };
+}
+
+async function enrichRows(
+  rows: (typeof javobOlishRequestsTable.$inferSelect)[],
+): Promise<ReturnType<typeof serializeRow>[]> {
+  if (!rows.length) return [];
+
+  const empIds = [...new Set(rows.map((r) => r.employeeId))];
+  const userIds = new Set<number>();
+  for (const r of rows) {
+    if (r.coordinatorUserId) userIds.add(r.coordinatorUserId);
+    if (r.coordDecidedById) userIds.add(r.coordDecidedById);
+    if (r.decidedById) userIds.add(r.decidedById);
+  }
+
+  const empRows = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+      userId: employeesTable.userId,
+    })
+    .from(employeesTable)
+    .where(inArray(employeesTable.id, empIds));
+
+  const relatedIds = new Set<number>();
+  for (const e of empRows) {
+    if (e.assignedBranchId) relatedIds.add(e.assignedBranchId);
+    if (e.reportsToId) relatedIds.add(e.reportsToId);
+  }
+  // one more hop for mudir→coordinator chain branch resolve
+  if (relatedIds.size) {
+    const extra = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        location: employeesTable.location,
+        orgRole: employeesTable.orgRole,
+        reportsToId: employeesTable.reportsToId,
+        assignedBranchId: employeesTable.assignedBranchId,
+        userId: employeesTable.userId,
+      })
+      .from(employeesTable)
+      .where(inArray(employeesTable.id, [...relatedIds]));
+    for (const e of extra) {
+      empRows.push(e);
+      if (e.reportsToId) relatedIds.add(e.reportsToId);
+      if (e.assignedBranchId) relatedIds.add(e.assignedBranchId);
+    }
+    const stillMissing = [...relatedIds].filter((id) => !empRows.some((e) => e.id === id));
+    if (stillMissing.length) {
+      const more = await db
+        .select({
+          id: employeesTable.id,
+          fullName: employeesTable.fullName,
+          location: employeesTable.location,
+          orgRole: employeesTable.orgRole,
+          reportsToId: employeesTable.reportsToId,
+          assignedBranchId: employeesTable.assignedBranchId,
+          userId: employeesTable.userId,
+        })
+        .from(employeesTable)
+        .where(inArray(employeesTable.id, stillMissing));
+      empRows.push(...more);
+    }
+  }
+
+  const empById = new Map<number, EmpLite>();
+  for (const e of empRows) empById.set(e.id, e);
+
+  // coordinator names may also come from employee.userId match
+  for (const e of empById.values()) {
+    if (e.userId) userIds.add(e.userId);
+  }
+
+  const users =
+    userIds.size > 0
+      ? await db
+          .select({ id: usersTable.id, fullName: usersTable.fullName })
+          .from(usersTable)
+          .where(inArray(usersTable.id, [...userIds]))
+      : [];
+  const nameByUserId = new Map(users.map((u) => [u.id, u.fullName]));
+
+  return rows.map((r) => {
+    const emp = empById.get(r.employeeId);
+    return serializeRow(r, {
+      fullName: emp?.fullName || null,
+      branchLabel: branchLabelFromEmp(emp, empById),
+      coordinatorName: r.coordinatorUserId
+        ? nameByUserId.get(r.coordinatorUserId) || null
+        : null,
+      coordDecidedByName: r.coordDecidedById
+        ? nameByUserId.get(r.coordDecidedById) || null
+        : null,
+      decidedByName: r.decidedById ? nameByUserId.get(r.decidedById) || null : null,
+    });
+  });
 }
 
 router.get("/javob-olish/shifts", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -253,16 +512,16 @@ router.get("/javob-olish/shifts", requireAuth, async (req: AuthRequest, res): Pr
   res.json({ items });
 });
 
+async function enrichOne(row: typeof javobOlishRequestsTable.$inferSelect) {
+  const [item] = await enrichRows([row]);
+  return item!;
+}
+
 router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
   const me = await empByUserId(req.userId!);
   const statusFilter = req.query.status ? String(req.query.status) : null;
   const scope = String(req.query.scope || "mine");
-
-  const people = await db
-    .select({ id: employeesTable.id, fullName: employeesTable.fullName })
-    .from(employeesTable);
-  const nameById = new Map(people.map((p) => [p.id, p.fullName]));
 
   let rows: (typeof javobOlishRequestsTable.$inferSelect)[] = [];
   let canDecide = false;
@@ -288,9 +547,40 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       rows = await db
         .select()
         .from(javobOlishRequestsTable)
-        .where(eq(javobOlishRequestsTable.status, "pending_hr"))
+        .where(inArray(javobOlishRequestsTable.status, ["pending", "pending_coord", "pending_hr"]))
         .orderBy(desc(javobOlishRequestsTable.createdAt));
       canDecide = true;
+    } else {
+      res.status(403).json({ error: "Ruxsat yo‘q" });
+      return;
+    }
+    const items = await enrichRows(rows);
+    res.json({
+      items: items.map((it) => ({ ...it, canAct: canActOn(role, it.status) })),
+      canDecide,
+      roleScope: isHrApprover(role) ? "hr" : isCoordRole(role) ? "coord" : "none",
+    });
+    return;
+  } else if (scope === "decided") {
+    if (isHrApprover(role)) {
+      rows = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(
+          and(
+            inArray(javobOlishRequestsTable.status, ["approved", "rejected"]),
+            isNotNull(javobOlishRequestsTable.decidedAt),
+          ),
+        )
+        .orderBy(desc(javobOlishRequestsTable.decidedAt))
+        .limit(300);
+    } else if (isCoordRole(role)) {
+      rows = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(eq(javobOlishRequestsTable.coordDecidedById, req.userId!))
+        .orderBy(desc(javobOlishRequestsTable.coordDecidedAt))
+        .limit(300);
     } else {
       res.status(403).json({ error: "Ruxsat yo‘q" });
       return;
@@ -339,7 +629,7 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
   }
 
   res.json({
-    items: rows.map((r) => serializeRow(r, nameById.get(r.employeeId))),
+    items: await enrichRows(rows),
     canDecide,
     roleScope: isHrApprover(role) ? "hr" : isCoordRole(role) ? "coord" : "none",
   });
@@ -439,8 +729,15 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
       ),
     );
   if (existing.length) {
+    const datesTxt = existing
+      .map((e) => {
+        const [y, m, d] = e.workDate.split("-");
+        return y && m && d ? `${d}.${m}.${y}` : e.workDate;
+      })
+      .join(", ");
     res.status(409).json({
-      error: `Bu sanalarda allaqachon ochiq so‘rov bor: ${existing.map((e) => e.workDate).join(", ")}`,
+      error: `Shu kun(lar) uchun ochiq so‘rov bor (${datesTxt}). Tasdiqlash yoki rad etishgacha shu kun bo‘yicha qayta yuborib bo‘lmaydi.`,
+      openDates: existing.map((e) => e.workDate),
     });
     return;
   }
@@ -498,7 +795,7 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     ok: true,
     count,
     message: `${count} ta kun uchun so‘rov 1-koordinatorga yuborildi.`,
-    items: created.map((r) => serializeRow(r, me.fullName)),
+    items: await enrichRows(created),
   });
 });
 
@@ -536,7 +833,7 @@ router.post("/javob-olish/:id/cancel", requireAuth, async (req: AuthRequest, res
     .set({ status: "cancelled", updatedAt: new Date() })
     .where(eq(javobOlishRequestsTable.id, id))
     .returning();
-  res.json({ ok: true, item: serializeRow(updated, me.fullName) });
+  res.json({ ok: true, item: await enrichOne(updated) });
 });
 
 async function decide(
@@ -560,9 +857,23 @@ async function decide(
   const status = normalizeStatus(row.status);
   const now = new Date();
 
-  /** 1-bosqich: koordinator */
+  /** Faqat holat o‘zgarmagan bo‘lsa yangilanadi — ikki marta bosish / parallel qaror himoyasi */
+  const guardedUpdate = async (set: Partial<typeof javobOlishRequestsTable.$inferInsert>) => {
+    const [updated] = await db
+      .update(javobOlishRequestsTable)
+      .set(set)
+      .where(and(eq(javobOlishRequestsTable.id, id), eq(javobOlishRequestsTable.status, row.status)))
+      .returning();
+    if (!updated) {
+      res.status(409).json({ error: "Bu so‘rovga allaqachon javob berilgan" });
+      return null;
+    }
+    return updated;
+  };
+
+  /** 1-bosqich: koordinator (admin/rahbar — darhol yakuniy qaror) */
   if (status === "pending_coord") {
-    if (!(isCoordRole(role) || role === "admin" || isDirectorRole(role))) {
+    if (!(isCoordRole(role) || isFinalOverrideRole(role))) {
       res.status(403).json({ error: "Avval 1-koordinator javob beradi" });
       return;
     }
@@ -577,21 +888,42 @@ async function decide(
       }
     }
 
+    if (!isCoordRole(role)) {
+      const updated = await guardedUpdate({
+        status: decision,
+        decidedById: req.userId!,
+        decidedAt: now,
+        decisionNote,
+        updatedAt: now,
+      });
+      if (!updated) return;
+      if (row.userId) {
+        await notifyUser({
+          userId: row.userId,
+          text:
+            decision === "approved"
+              ? `${row.workDate} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (rahbariyat). Bu vaqt/kun jarima qilinmaydi.`
+              : `${row.workDate} javob olish so‘rovingiz rahbariyat tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+          type: "javob_olish_decision",
+          linkUrl: "/javob-olish",
+        });
+      }
+      res.json({ ok: true, item: await enrichOne(updated) });
+      return;
+    }
+
     if (decision === "rejected") {
-      const [updated] = await db
-        .update(javobOlishRequestsTable)
-        .set({
-          status: "rejected",
-          coordDecidedById: req.userId!,
-          coordDecidedAt: now,
-          coordDecisionNote: decisionNote,
-          decidedById: req.userId!,
-          decidedAt: now,
-          decisionNote,
-          updatedAt: now,
-        })
-        .where(eq(javobOlishRequestsTable.id, id))
-        .returning();
+      const updated = await guardedUpdate({
+        status: "rejected",
+        coordDecidedById: req.userId!,
+        coordDecidedAt: now,
+        coordDecisionNote: decisionNote,
+        decidedById: req.userId!,
+        decidedAt: now,
+        decisionNote,
+        updatedAt: now,
+      });
+      if (!updated) return;
       if (row.userId) {
         await notifyUser({
           userId: row.userId,
@@ -600,42 +932,30 @@ async function decide(
           linkUrl: "/javob-olish",
         });
       }
-      const [emp] = await db
-        .select({ fullName: employeesTable.fullName })
-        .from(employeesTable)
-        .where(eq(employeesTable.id, row.employeeId))
-        .limit(1);
-      res.json({ ok: true, item: serializeRow(updated, emp?.fullName) });
+      res.json({ ok: true, item: await enrichOne(updated) });
       return;
     }
 
     // Koordinator tasdiqladi → HR yakuniy
-    const [updated] = await db
-      .update(javobOlishRequestsTable)
-      .set({
-        status: "pending_hr",
-        coordDecidedById: req.userId!,
-        coordDecidedAt: now,
-        coordDecisionNote: decisionNote,
-        updatedAt: now,
-      })
-      .where(eq(javobOlishRequestsTable.id, id))
-      .returning();
+    const updated = await guardedUpdate({
+      status: "pending_hr",
+      coordDecidedById: req.userId!,
+      coordDecidedAt: now,
+      coordDecisionNote: decisionNote,
+      updatedAt: now,
+    });
+    if (!updated) return;
 
-    const [emp] = await db
-      .select({ fullName: employeesTable.fullName })
-      .from(employeesTable)
-      .where(eq(employeesTable.id, row.employeeId))
-      .limit(1);
+    const item = await enrichOne(updated);
 
     await notifyByRoles({
       roles: ["hr_menejer", "hr_direktor", "admin"],
-      text: `${emp?.fullName || "Xodim"}: koordinator tasdiqladi — HR yakuniy ruxsat kerak. ${row.workDate} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. Yuborilgan: ${fmtDt(row.createdAt)}.`,
+      text: `${item.fullName || "Xodim"}: koordinator tasdiqladi — HR yakuniy ruxsat kerak. ${row.workDate} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. Yuborilgan: ${fmtDt(row.createdAt)}.`,
       type: "javob_olish",
       linkUrl: "/javob-olish",
     });
 
-    res.json({ ok: true, item: serializeRow(updated, emp?.fullName) });
+    res.json({ ok: true, item });
     return;
   }
 
@@ -646,17 +966,14 @@ async function decide(
       return;
     }
 
-    const [updated] = await db
-      .update(javobOlishRequestsTable)
-      .set({
-        status: decision === "approved" ? "approved" : "rejected",
-        decidedById: req.userId!,
-        decidedAt: now,
-        decisionNote,
-        updatedAt: now,
-      })
-      .where(eq(javobOlishRequestsTable.id, id))
-      .returning();
+    const updated = await guardedUpdate({
+      status: decision,
+      decidedById: req.userId!,
+      decidedAt: now,
+      decisionNote,
+      updatedAt: now,
+    });
+    if (!updated) return;
 
     if (row.userId) {
       await notifyUser({
@@ -670,17 +987,11 @@ async function decide(
       });
     }
 
-    const [emp] = await db
-      .select({ fullName: employeesTable.fullName })
-      .from(employeesTable)
-      .where(eq(employeesTable.id, row.employeeId))
-      .limit(1);
-
-    res.json({ ok: true, item: serializeRow(updated, emp?.fullName) });
+    res.json({ ok: true, item: await enrichOne(updated) });
     return;
   }
 
-  res.status(400).json({ error: "So‘rov allaqachon yopilgan" });
+  res.status(409).json({ error: "Bu so‘rovga allaqachon javob berilgan" });
 }
 
 export default router;

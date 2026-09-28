@@ -332,7 +332,12 @@ export default function ChecklistPage() {
       Number(openVisit?.branchId) === 0);
   const qc = useQueryClient();
   const [keldimBusy, setKeldimBusy] = useState(false);
+  const keldimBusyRef = useRef(false);
+  keldimBusyRef.current = keldimBusy;
   const [faceOpen, setFaceOpen] = useState(false);
+  const onFaceOpenChange = useCallback((o: boolean) => {
+    if (!keldimBusyRef.current) setFaceOpen(o);
+  }, []);
   const [presenceBusy, setPresenceBusy] = useState(false);
   const [unlockBusy, setUnlockBusy] = useState(false);
   const checklistFormRef = useRef<HTMLDivElement>(null);
@@ -1863,9 +1868,7 @@ export default function ChecklistPage() {
 
       <FaceScanDialog
         open={faceOpen}
-        onOpenChange={(o) => {
-          if (!keldimBusy) setFaceOpen(o);
-        }}
+        onOpenChange={onFaceOpenChange}
         mode="login"
         title="Keldim — Face ID"
         description="Yuzingizni tasdiqlang. QR ishlamaydi. Tasdiqlangach cheklist ochiladi."

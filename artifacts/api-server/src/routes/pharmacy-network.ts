@@ -21,6 +21,7 @@ import {
   dismissPharmacyEmployee,
   fillVacantBranchSlot,
 } from "../lib/dismiss-pharmacy-staff";
+import { sweepDismissedUsers } from "../lib/dismiss-user";
 import { isHrRole } from "../lib/roles";
 
 const router: IRouter = Router();
@@ -1131,6 +1132,7 @@ router.post("/pharmacy-network/dismiss", requireAuth, async (req: AuthRequest, r
       res.status(result.status).json({ error: result.error });
       return;
     }
+    await sweepDismissedUsers().catch(() => 0);
     res.json({
       ok: true,
       kind: result.kind,

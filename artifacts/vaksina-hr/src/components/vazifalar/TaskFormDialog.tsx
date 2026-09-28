@@ -1323,11 +1323,53 @@ export function TaskFormDialog({
     ) {
       el.innerHTML = "";
     }
-    const cleaned = clampDescHtml(el.innerHTML, DESC_MAX);
-    if (cleaned !== el.innerHTML) {
-      el.innerHTML = cleaned || "";
+    // DOM faqat limitdan oshganda qayta yoziladi — aks holda kursor boshiga sakraydi
+    if (htmlDescToPlain(el.innerHTML).length > DESC_MAX) {
+      const clamped = clampDescHtml(el.innerHTML, DESC_MAX);
+      el.innerHTML = clamped || "";
+      placeCaretAtEnd(el);
+      setDescription(clamped);
+      return;
     }
-    setDescription(cleaned);
+    setDescription(sanitizeDescHtml(el.innerHTML));
+  }
+
+  function placeCaretAtEnd(el: HTMLElement) {
+    const sel = window.getSelection();
+    if (!sel) return;
+    const range = document.createRange();
+    range.selectNodeContents(el);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function isCaretInDescList() {
+    const el = descEditorRef.current;
+    const sel = window.getSelection();
+    let node: Node | null = sel && sel.rangeCount ? sel.getRangeAt(0).startContainer : null;
+    while (node && node !== el) {
+      if (node.nodeName === "LI") return true;
+      node = node.parentNode;
+    }
+    return false;
+  }
+
+  function onDescKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Tab" || e.ctrlKey || e.altKey || e.metaKey) return;
+    const inList = isCaretInDescList();
+    if (e.shiftKey && !inList) return;
+    e.preventDefault();
+    try {
+      if (inList) {
+        document.execCommand(e.shiftKey ? "outdent" : "indent");
+      } else {
+        document.execCommand("insertText", false, "\u00a0\u00a0\u00a0\u00a0");
+      }
+    } catch {
+      /* ignore */
+    }
+    syncDescFromEditor();
   }
 
   function setDescEditorContent(nextHtmlOrPlain: string) {
@@ -1368,11 +1410,21 @@ export function TaskFormDialog({
     const el = descEditorRef.current;
     if (!el) return;
     el.focus();
-    const sel = window.getSelection();
-    const hasSelection = !!(sel && !sel.isCollapsed && el.contains(sel.anchorNode));
+    let sel = window.getSelection();
+    const saved =
+      sel && sel.rangeCount && el.contains(sel.getRangeAt(0).commonAncestorContainer)
+        ? sel.getRangeAt(0).cloneRange()
+        : null;
+    const hasSelection = !!(saved && !saved.collapsed);
     const url = window.prompt("Havola (https://...)", "https://");
     if (!url || !/^https?:\/\//i.test(url.trim())) return;
     const href = url.trim();
+    el.focus();
+    sel = window.getSelection();
+    if (saved && sel) {
+      sel.removeAllRanges();
+      sel.addRange(saved);
+    }
     if (!hasSelection) {
       const a = document.createElement("a");
       a.href = href;
@@ -2379,6 +2431,7 @@ export function TaskFormDialog({
                   data-placeholder={t("tasks.form.phDesc")}
                   onInput={syncDescFromEditor}
                   onBlur={syncDescFromEditor}
+                  onKeyDown={onDescKeyDown}
                   className={cn(
                     "min-h-[120px] max-h-[280px] overflow-y-auto px-3 py-2.5 text-sm leading-relaxed text-foreground outline-none",
                     "empty:before:pointer-events-none empty:before:text-muted-foreground empty:before:content-[attr(data-placeholder)]",

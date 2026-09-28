@@ -7,6 +7,8 @@ import {
   addDaysYmd,
   plannedInterval,
   findBranchScheduleConflicts,
+  normalizeShiftKey,
+  parseShiftKeys,
   type ShiftKey,
   type ShiftDefinition,
   DEFAULT_SHIFT_DEFS,
@@ -255,7 +257,13 @@ export function conflictAmongSlots(
 }
 
 const EARLY_IN_MIN = 45;
+/** Eski fallback — asosan smena bo‘yicha Ketdim muddati ishlatiladi */
 const LATE_OUT_MIN = 120;
+
+/** Jadval: 1/ofis→23:55 · 2→ertasi 02:00 · 3→ertalab 10:00 */
+const CHECKOUT_DEADLINE_HM = "23:55";
+const CHECKOUT_DEADLINE_SHIFT_TWO_HM = "02:00";
+const CHECKOUT_DEADLINE_SHIFT_THREE_HM = "10:00";
 
 export type ActivePunchSlot = ResolvedDaySlot & {
   startMs: number;
@@ -263,6 +271,33 @@ export type ActivePunchSlot = ResolvedDaySlot & {
   punchOpenMs: number;
   punchCloseMs: number;
 };
+
+function punchCloseMsForSlot(
+  workDate: string,
+  shiftKey: WorkSlotShiftKey | string,
+  endMs: number,
+  defs: Record<ShiftKey, ShiftDefinition>,
+): number {
+  const keys = parseShiftKeys(String(shiftKey)).filter(
+    (k) => k === "one" || k === "two" || k === "three" || k === "office",
+  ) as ShiftKey[];
+  const lastKey = (keys[keys.length - 1] || normalizeShiftKey(String(shiftKey))) as ShiftKey;
+  const lastDef = defs[lastKey] || DEFAULT_SHIFT_DEFS[lastKey] || DEFAULT_SHIFT_DEFS.one;
+  const overnight = keys.some((k) => Boolean(defs[k]?.overnight)) || Boolean(lastDef.overnight);
+  const endDay = overnight ? addDaysYmd(workDate, 1) : workDate;
+
+  try {
+    if (keys.includes("three") || (overnight && !keys.includes("two"))) {
+      return new Date(`${endDay}T${CHECKOUT_DEADLINE_SHIFT_THREE_HM}:00+05:00`).getTime();
+    }
+    if (keys.includes("two")) {
+      return new Date(`${addDaysYmd(endDay, 1)}T${CHECKOUT_DEADLINE_SHIFT_TWO_HM}:00+05:00`).getTime();
+    }
+    return new Date(`${endDay}T${CHECKOUT_DEADLINE_HM}:00+05:00`).getTime();
+  } catch {
+    return endMs + LATE_OUT_MIN * 60_000;
+  }
+}
 
 /** Kun slotlarini interval bilan (vaqt oynasidan qat’i nazar) */
 export function allPunchSlotsAt(
@@ -277,7 +312,7 @@ export function allPunchSlotsAt(
       startMs: iv.startMs,
       endMs: iv.endMs,
       punchOpenMs: iv.startMs - EARLY_IN_MIN * 60_000,
-      punchCloseMs: iv.endMs + LATE_OUT_MIN * 60_000,
+      punchCloseMs: punchCloseMsForSlot(workDate, s.shiftKey, iv.endMs, defs),
     };
   });
 }

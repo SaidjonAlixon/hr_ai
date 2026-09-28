@@ -117,10 +117,14 @@ export function canSeePrivateTasks(role?: string | null) {
   return TASK_ALL_VISIBILITY_ROLES.has(normalizeUserRole(role));
 }
 
-/** «Barchani» filtri: admin (maxfiy+oddiy) yoki HR auditor (faqat oddiy) */
+/** «Barchani» filtri: admin (maxfiy+oddiy), asoschi/direktor, yoki HR auditor (faqat oddiy) */
 export function canBrowseAllTasks(role?: string | null) {
   const r = normalizeUserRole(role);
-  return TASK_ALL_VISIBILITY_ROLES.has(r) || TASK_AUDIT_BROWSE_ROLES.has(r);
+  return (
+    TASK_ALL_VISIBILITY_ROLES.has(r) ||
+    TASK_AUDIT_BROWSE_ROLES.has(r) ||
+    isDirectorRole(r)
+  );
 }
 
 /** HR auditor — boshqalarning topshiriqlarini faqat ko‘rish */

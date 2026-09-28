@@ -30,11 +30,15 @@ import {
 } from "../lib/roles";
 import { getActorDepartmentId, resolveDeptHeadContext, isDeptHeadRole } from "../lib/dept-staff";
 import {
+  isWarehouseDavomatStaff,
   matchesDavomatStaffFilter,
+  matchesWarehouseShift,
   parseDavomatStaffFilter,
+  parseWarehouseShiftFilter,
   staffFilterLabelUz,
+  warehouseShiftKeyOf,
 } from "../lib/davomat-staff-filter";
-import { isOfisRestDay } from "../lib/ofis-weekend";
+import { isScheduledRestDay } from "../lib/ofis-weekend";
 import {
   applyJavobExemptionToMetrics,
   loadApprovedJavobExemptions,
@@ -93,6 +97,7 @@ import {
   shiftEndAt,
   checkoutDeadlineAt,
   checkoutDeadlineHmFor,
+  checkoutDeadlineHint,
   CHECKOUT_DEADLINE_HM,
   CHECKOUT_DEADLINE_SHIFT_TWO_HM,
   CHECKOUT_DEADLINE_SHIFT_THREE_HM,
@@ -648,6 +653,7 @@ async function loadActiveEmployees(filters: {
   search?: string;
   employeeId?: string;
   staffFilter?: string;
+  warehouseShift?: string;
 }) {
   const staff = await loadStaffFromUsers("active", { skipFacePhotos: true });
   const deptIds = [...new Set(staff.map((s) => s.departmentId))];
@@ -687,6 +693,7 @@ async function loadActiveEmployees(filters: {
     : null;
 
   const staffSeg = parseDavomatStaffFilter(filters.staffFilter);
+  const whShift = staffSeg === "warehouse" ? parseWarehouseShiftFilter(filters.warehouseShift) : null;
 
   return rows.filter((e) => {
     if (filters.employeeId && e.id !== Number(filters.employeeId)) return false;
@@ -704,6 +711,7 @@ async function loadActiveEmployees(filters: {
     if (staffSeg !== "all" && staffSeg !== "external") {
       if (!matchesDavomatStaffFilter(e, staffSeg)) return false;
     }
+    if (whShift && !matchesWarehouseShift(e, whShift)) return false;
     return true;
   });
 }
@@ -787,10 +795,11 @@ function buildReport(
     .map((e) => {
       const hours = staffHours(e);
       const days = dates.map((date) => {
-        const restDay = isOfisRestDay(date, {
+        const restDay = isScheduledRestDay(date, {
           userRole: e.userRole,
           orgRole: e.orgRole,
           position: e.position,
+          shiftType: e.shiftType,
         });
         const rec = byEmpDate.get(`${e.id}|${date}`);
         const ex = exemptions.get(`${e.id}|${date}`);
@@ -815,7 +824,7 @@ function buildReport(
         if (restDay && !rec.checkInAt) {
           return emptyDayMetrics(date, "rest", {
             source: rec.source,
-            notes: rec.notes || "Dam kuni (ofis)",
+            notes: rec.notes || "Dam kuni",
             recordId: rec.id,
           });
         }
@@ -883,6 +892,9 @@ function buildReport(
         phone: e.phone ?? null,
         shiftType: normalizeShiftType(e.shiftType, e.shiftLabel),
         shiftLabel: e.shiftLabel,
+        warehouse: isWarehouseDavomatStaff(e),
+        security: Boolean(hours.security),
+        warehouseShiftKey: warehouseShiftKeyOf(e.shiftType),
         workStart: hours.start,
         workEnd: hours.end,
         days,
@@ -1035,6 +1047,7 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
       search: q.search,
       employeeId: q.employeeId,
       staffFilter: q.staffFilter,
+      warehouseShift: q.warehouseShift,
     });
     employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
     const records = await loadRecords(
@@ -1232,8 +1245,10 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
 });
 
 /**
- * HR/admin: kunlik davomatni bekor qilish (0) —
- * yozuv + smena segmentlari o‘chiriladi, xodim qayta Keldim/Ketdim qila oladi.
+ * Admin: kunlik davomatni bekor qilish (0).
+ * part = "in"  — faqat Keldim (Ketdim bo‘lmasa butun yozuv o‘chadi, xodim qayta Keldim qiladi)
+ * part = "out" — faqat Ketdim (xodim qayta Ketdim qila oladi)
+ * part = "all" — yozuv + smena segmentlari butunlay o‘chiriladi
  */
 router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireDavomat(req, res)) return;
@@ -1242,23 +1257,151 @@ router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promis
     return;
   }
   try {
-    const { employeeId, workDate } = req.body as {
+    const { employeeId, workDate, part: partRaw } = req.body as {
       employeeId?: number;
       workDate?: string;
+      part?: string;
     };
     if (!employeeId || !workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
       res.status(400).json({ error: "employeeId va workDate (YYYY-MM-DD) majburiy" });
       return;
     }
+    const part = partRaw === "in" || partRaw === "out" ? partRaw : "all";
 
     const [emp] = await db
-      .select({ id: employeesTable.id, fullName: employeesTable.fullName })
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        orgRole: employeesTable.orgRole,
+        shiftType: employeesTable.shiftType,
+        shiftLabel: employeesTable.shiftLabel,
+        userRole: usersTable.role,
+      })
       .from(employeesTable)
+      .leftJoin(usersTable, eq(employeesTable.userId, usersTable.id))
       .where(eq(employeesTable.id, employeeId))
       .limit(1);
     if (!emp) {
       res.status(404).json({ error: "Xodim topilmadi" });
       return;
+    }
+
+    if (part !== "all") {
+      const [rec] = await db
+        .select()
+        .from(attendanceRecordsTable)
+        .where(
+          and(
+            eq(attendanceRecordsTable.employeeId, employeeId),
+            eq(attendanceRecordsTable.workDate, workDate),
+          ),
+        )
+        .limit(1);
+      if (!rec) {
+        res.status(404).json({ error: "Bu kunda davomat yozuvi yo‘q" });
+        return;
+      }
+      if (part === "out" && !rec.checkOutAt) {
+        res.status(400).json({ error: "Ketdim belgilanmagan — bekor qiladigan narsa yo‘q" });
+        return;
+      }
+      if (part === "in" && !rec.checkInAt) {
+        res.status(400).json({ error: "Keldim belgilanmagan — bekor qiladigan narsa yo‘q" });
+        return;
+      }
+
+      const loadSegments = async () => {
+        try {
+          return await db
+            .select()
+            .from(attendanceShiftSegmentsTable)
+            .where(
+              and(
+                eq(attendanceShiftSegmentsTable.employeeId, employeeId),
+                eq(attendanceShiftSegmentsTable.workDate, workDate),
+              ),
+            );
+        } catch (segErr) {
+          const msg = String((segErr as Error)?.message || segErr);
+          if (!/does not exist|relation/i.test(msg)) throw segErr;
+          return [];
+        }
+      };
+
+      // Keldim bekor, Ketdim yo‘q — yozuv to‘liq o‘chadi (xodim qayta Keldim qila olishi uchun)
+      const wipeWhole = part === "in" && !rec.checkOutAt;
+      if (!wipeWhole) {
+        const hours = hoursForStaff(
+          emp.orgRole,
+          emp.shiftType,
+          emp.userRole,
+          emp.shiftLabel,
+          await getEffectiveShiftDefs(),
+        );
+        const segs = await loadSegments();
+        const now = new Date();
+
+        if (part === "out") {
+          const outMs = rec.checkOutAt!.getTime();
+          let toReopen = segs.filter(
+            (s) => s.checkOutAt && Math.abs(s.checkOutAt.getTime() - outMs) < 60_000,
+          );
+          if (!toReopen.length) {
+            const last = [...segs]
+              .filter((s) => s.checkOutAt)
+              .sort((a, b) => b.checkOutAt!.getTime() - a.checkOutAt!.getTime())[0];
+            if (last) toReopen = [last];
+          }
+          for (const s of toReopen) {
+            await db
+              .update(attendanceShiftSegmentsTable)
+              .set({ checkOutAt: null, status: "open", updatedAt: now })
+              .where(eq(attendanceShiftSegmentsTable.id, s.id));
+          }
+          await db
+            .update(attendanceRecordsTable)
+            .set({
+              checkOutAt: null,
+              checkOutMethod: null,
+              status: computeMetrics(workDate, rec.checkInAt, null, null, hours).status,
+              updatedAt: now,
+            })
+            .where(eq(attendanceRecordsTable.id, rec.id));
+        } else {
+          const first = [...segs]
+            .filter((s) => s.checkInAt)
+            .sort((a, b) => a.checkInAt!.getTime() - b.checkInAt!.getTime())[0];
+          if (first) {
+            await db
+              .update(attendanceShiftSegmentsTable)
+              .set({ checkInAt: null, updatedAt: now })
+              .where(eq(attendanceShiftSegmentsTable.id, first.id));
+          }
+          await db
+            .update(attendanceRecordsTable)
+            .set({
+              checkInAt: null,
+              checkInMethod: null,
+              status: "incomplete",
+              updatedAt: now,
+            })
+            .where(eq(attendanceRecordsTable.id, rec.id));
+        }
+
+        res.json({
+          ok: true,
+          employeeId,
+          workDate,
+          part,
+          fullName: emp.fullName,
+          deleted: false,
+          message:
+            part === "out"
+              ? "Ketdim bekor qilindi — xodim qayta Ketdim qila oladi"
+              : "Keldim bekor qilindi — Ketdim saqlandi",
+        });
+        return;
+      }
     }
 
     try {
@@ -1290,9 +1433,13 @@ router.post("/davomat/reset", requireAuth, async (req: AuthRequest, res): Promis
       ok: true,
       employeeId,
       workDate,
+      part,
       fullName: emp.fullName,
       deleted: deleted.length > 0,
-      message: "Davomat bekor qilindi — xodim qayta ro‘yxatdan o‘tishi mumkin",
+      message:
+        part === "in"
+          ? "Keldim bekor qilindi — xodim qayta Keldim qila oladi"
+          : "Davomat bekor qilindi — xodim qayta ro‘yxatdan o‘tishi mumkin",
     });
   } catch (err) {
     console.error("POST /davomat/reset error:", err);
@@ -2814,7 +2961,9 @@ async function applyFacePunch(opts: {
               updatedAt: new Date(),
             })
             .where(eq(attendanceRecordsTable.id, existing.id));
-          const ruleNote = sched.warehouse
+          const ruleNote = sched.security
+            ? `Xavfsizlik smenasi: «Ketdim» ertasi kun ${sched.end} dan keyin 2 soat ichida.`
+            : sched.warehouse
             ? `Ombor smena: «Ketdim» tugash (${sched.end}) dan keyin 2 soat ichida.`
             : deadlineHm === CHECKOUT_DEADLINE_SHIFT_TWO_HM
               ? `2-smena: «Ketdim» ertasi kun ${CHECKOUT_DEADLINE_SHIFT_TWO_HM} gacha (23:55 emas).`
@@ -3416,40 +3565,58 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         })),
       },
       shift: (() => {
-        const activeKey = preferredSlot?.shiftKey || activeNow[0]?.shiftKey;
-        const w = workScheduleForStaff(
+        // Ketdim muddati — kunning TO‘LIQ smena rejasiga (1+2 / 2+3), faqat aktiv slotga emas
+        const dayShiftKeys = daySlots.length
+          ? Array.from(
+              new Set(
+                daySlots
+                  .map((s) => normalizeShiftKey(String(s.shiftKey)))
+                  .filter((k): k is ShiftKey => k === "one" || k === "two" || k === "three" || k === "office"),
+              ),
+            )
+          : null;
+        const deadlineShiftType =
+          dayShiftKeys && dayShiftKeys.length
+            ? encodeShiftKeys(dayShiftKeys.filter((k) => k !== "office") as ShiftKey[])
+            : punchShiftType;
+        const wFull = workScheduleForStaff(
           user.role,
           emp.orgRole,
-          activeKey || punchShiftType,
-          activeKey ? null : punchShiftLabel,
+          deadlineShiftType,
+          dayShiftKeys?.length ? null : punchShiftLabel,
           defs,
         );
+        const activeKey = preferredSlot?.shiftKey || activeNow[0]?.shiftKey;
+        const wActive = activeKey
+          ? workScheduleForStaff(user.role, emp.orgRole, activeKey, null, defs)
+          : wFull;
         const deadlineOpts = {
-          shiftKey: w.key,
-          shiftKeys: w.keys,
-          overnight: Boolean(w.overnight),
-          warehouse: Boolean(w.warehouse),
-          shiftType: activeKey || punchShiftType,
+          shiftKey: wFull.key,
+          shiftKeys: wFull.keys || dayShiftKeys || [wFull.key],
+          overnight: Boolean(wFull.overnight),
+          warehouse: Boolean(wFull.warehouse),
+          shiftType: deadlineShiftType,
           workDateYmd: workDate,
-          endHm: w.end,
+          endHm: wFull.end,
         };
-        const deadlineAt = checkoutDeadlineAt(workDate, w.end, w.overnight, deadlineOpts);
+        const deadlineAt = checkoutDeadlineAt(workDate, wFull.end, wFull.overnight, deadlineOpts);
         return {
-          type: w.key,
-          keys: daySlots.length
-            ? daySlots.map((s) => s.shiftKey)
-            : w.keys || [w.key],
+          type: deadlineShiftType || wFull.key,
+          keys: dayShiftKeys?.length ? dayShiftKeys : wFull.keys || [wFull.key],
           label: daySlots.length
             ? daySlots.map((s) => `${formatShiftKeyUz(s.shiftKey)}→${s.branchLabel || s.branchId}`).join(" · ")
-            : w.label,
-          start: w.start,
-          end: w.end,
-          overnight: Boolean(w.overnight),
-          warehouse: Boolean(w.warehouse),
-          warnHm: w.warnHm,
-          warnText: w.warnText,
+            : wFull.label,
+          start: wFull.start,
+          end: wFull.end,
+          activeStart: wActive.start,
+          activeEnd: wActive.end,
+          overnight: Boolean(wFull.overnight),
+          warehouse: Boolean(wFull.warehouse),
+          warnHm: wFull.warnHm,
+          warnText: wFull.warnText,
           checkoutDeadlineHm: checkoutDeadlineHmFor(deadlineOpts),
           checkoutDeadlineAt: deadlineAt.toISOString(),
+          checkoutDeadlineHint: checkoutDeadlineHint(deadlineOpts),
         };
       })(),
       employee: {
@@ -4199,7 +4366,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       search: q.search,
       employeeId: q.employeeId,
     });
-    employees = employees.filter((e) => matchesDavomatStaffFilter(e, staffFilter));
+    const whShiftFilter =
+      staffFilter === "warehouse" ? parseWarehouseShiftFilter(q.warehouseShift) : null;
+    employees = employees.filter(
+      (e) => matchesDavomatStaffFilter(e, staffFilter) && matchesWarehouseShift(e, whShiftFilter),
+    );
     employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
     const records = await loadRecords(
       from,
@@ -4232,7 +4403,9 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const filterNote = [
       `Davr: ${from} — ${to}`,
       q.departmentId ? `Bo'lim ID: ${q.departmentId}` : "Bo'lim: barcha",
-      `Xodimlar guruhi: ${staffFilterLabelUz(staffFilter)}`,
+      `Xodimlar guruhi: ${staffFilterLabelUz(staffFilter)}${
+        whShiftFilter ? ` · smena ${whShiftFilter === "none" ? "biriktirilmagan" : whShiftFilter}` : ""
+      }`,
       q.search ? `Qidiruv: ${q.search}` : null,
       q.location ? `Filial: ${excelFilialLabel(q.location)}` : null,
       `Xodimlar: ${employees.length} ta`,

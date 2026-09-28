@@ -329,6 +329,12 @@ function esc(s: string): string {
     .replace(/>/g, "&gt;");
 }
 
+/** «Kim kerak» — arizaning asosiy mazmuni: `MUDIR — 1 ta` */
+export function staffNeedWhoLabel(roleLabel: string, count?: number | null): string {
+  const n = Math.max(1, Number(count) || 1);
+  return `${String(roleLabel || "Xodim").trim().toLocaleUpperCase("uz")} — ${n} ta`;
+}
+
 export function buildStaffingMonitorCaption(
   report: StaffingMonitorReport,
   opts?: { maxItems?: number },
@@ -366,9 +372,9 @@ export function buildStaffingMonitorCaption(
     lines.push("<b>📍 Qayerda xodim kerak:</b>");
     report.critical.slice(0, maxItems).forEach((it, i) => {
       lines.push(
-        `${i + 1}. <b>${esc(it.branch)}</b> · ${esc(it.district)}`,
-        `   ${esc(it.roleLabel)} · ${esc(it.shift)} · ${esc(it.statusLabel)}`,
-        `   ${esc(it.employeeName)}${it.position ? ` (${esc(it.position)})` : ""}`,
+        `${i + 1}. 👥 <b>KERAK: ${esc(staffNeedWhoLabel(it.roleLabel, it.headcount))}</b>`,
+        `   🏢 ${esc(it.branch)} · ${esc(it.district)}`,
+        `   🕐 ${esc(it.shift)} · ${esc(it.statusLabel)}`,
       );
     });
     if (report.items.length > maxItems) {
@@ -394,11 +400,14 @@ export function buildDismissAlertText(opts: {
   return [
     "🚨 <b>Yangi xodim ehtiyoji</b>",
     "",
+    "━━━━━━━━━━━━━━",
+    `👥 <b>KIM KERAK: ${esc(staffNeedWhoLabel(opts.roleLabel, 1))}</b>`,
+    "━━━━━━━━━━━━━━",
+    "",
     `🏢 <b>Filial:</b> ${esc(opts.branch)}`,
     `🗺 <b>Tuman:</b> ${esc(opts.district)}`,
     `🕐 <b>Smena:</b> ${esc(opts.shift)}`,
-    `👤 <b>Lavozim:</b> ${esc(opts.roleLabel)}`,
-    `🧾 <b>Xodim:</b> ${esc(opts.employeeName)}`,
+    `🧾 <b>Oldingi xodim:</b> ${esc(opts.employeeName)}`,
     `📌 <b>Holat:</b> ${esc(statusLabel)}`,
     "",
     "<i>Jonli monitoring: botda «📊 Ma’lumot» tugmasi</i>",
@@ -421,11 +430,11 @@ export function formatStaffNeedCardLines(opts: {
   mapsUrl?: string | null;
 }): string {
   const lines = [
+    `👥 KIM KERAK: ${staffNeedWhoLabel(opts.roleLabel, opts.count)}`,
+    "",
     `🏢 Filial: ${opts.branch}`,
     `🗺 Tuman: ${opts.district}`,
     `🕐 Smena: ${opts.shift}`,
-    `👤 Lavozim: ${opts.roleLabel}`,
-    `🧾 Xodim: ${opts.roleLabel} ×${opts.count}`,
     `📌 Holat: ${opts.statusLabel}`,
   ];
   if (opts.neededBy) lines.push(`📅 Qachon: ${opts.neededBy}`);
@@ -451,11 +460,13 @@ export function formatStaffNeedTelegramHtml(opts: {
   const lines = [
     "🔴 <b>Xodim kerak — yangi ariza</b>",
     "",
+    "━━━━━━━━━━━━━━",
+    `👥 <b>KIM KERAK: ${esc(staffNeedWhoLabel(opts.roleLabel, opts.count))}</b>`,
+    "━━━━━━━━━━━━━━",
+    "",
     `🏢 <b>Filial:</b> ${esc(opts.branch)}`,
     `🗺 <b>Tuman:</b> ${esc(opts.district)}`,
     `🕐 <b>Smena:</b> ${esc(opts.shift)}`,
-    `👤 <b>Lavozim:</b> ${esc(opts.roleLabel)}`,
-    `🧾 <b>Xodim:</b> ${esc(opts.roleLabel)} ×${opts.count}`,
     `📌 <b>Holat:</b> ${esc(opts.statusLabel)}`,
   ];
   if (opts.neededBy) lines.push(`📅 <b>Qachon:</b> ${esc(opts.neededBy)}`);
@@ -566,8 +577,8 @@ export function formatBranchNeedDetail(g: BranchNeedGroup): string {
   lines.push("", "<b>To‘liq ro‘yxat:</b>");
   g.items.forEach((it, i) => {
     lines.push(
-      `${i + 1}. <b>${esc(it.roleLabel)}</b> · ${esc(it.shift)} · ${esc(it.statusLabel)}`,
-      `   👤 ${esc(it.employeeName)}${it.position ? ` · ${esc(it.position)}` : ""}`,
+      `${i + 1}. 👥 <b>KERAK: ${esc(staffNeedWhoLabel(it.roleLabel, it.headcount))}</b>`,
+      `   🕐 ${esc(it.shift)} · ${esc(it.statusLabel)}`,
     );
   });
   return lines.join("\n");

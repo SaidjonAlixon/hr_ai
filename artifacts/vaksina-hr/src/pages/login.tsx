@@ -49,6 +49,10 @@ export default function Login() {
       setLocation('/vazifalar');
       return;
     }
+    if (user.role === 'it_rahbar') {
+      setLocation('/it');
+      return;
+    }
     setLocation('/dashboard');
   };
 

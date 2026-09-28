@@ -35,6 +35,7 @@ export async function notifyByRoles(opts: {
   text: string;
   type: string;
   linkUrl: string;
+  title?: string;
 }): Promise<void> {
   if (!opts.roles.length) return;
   const users = await db

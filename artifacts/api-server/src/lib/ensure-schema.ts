@@ -6,6 +6,120 @@ import { pool } from "@workspace/db";
 import { logger } from "./logger";
 
 const ENSURE_SQL = `
+-- Bo‘shatilganlar arxivi (Foydalanuvchilardan o‘chirilganlar)
+CREATE TABLE IF NOT EXISTS dismissed_staff (
+  id SERIAL PRIMARY KEY,
+  former_user_id INTEGER,
+  former_employee_id INTEGER,
+  full_name TEXT NOT NULL,
+  phone TEXT,
+  role TEXT,
+  login TEXT,
+  department_id INTEGER,
+  department_name TEXT,
+  position TEXT,
+  location TEXT,
+  hired_at TEXT,
+  registered_at TIMESTAMPTZ,
+  dismissed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  dismissed_by_id INTEGER,
+  dismissed_by_name TEXT,
+  reason TEXT
+);
+CREATE INDEX IF NOT EXISTS dismissed_staff_dismissed_at_idx ON dismissed_staff (dismissed_at);
+
+-- Darsliklar (stajyor / farmasevt / mudir — alohida kurslar)
+CREATE TABLE IF NOT EXISTS darslik_lessons (
+  id SERIAL PRIMARY KEY,
+  track TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  youtube_url TEXT NOT NULL DEFAULT '',
+  youtube_id TEXT NOT NULL DEFAULT '',
+  video_drive_file_id TEXT,
+  pdf_url TEXT,
+  drive_file_id TEXT,
+  questions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  pass_score INTEGER NOT NULL DEFAULT 50,
+  published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_id INTEGER,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS darslik_lessons_track_pos_idx ON darslik_lessons (track, position);
+
+CREATE TABLE IF NOT EXISTS darslik_progress (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  track TEXT NOT NULL,
+  lessons_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  completed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS darslik_progress_user_track_uidx ON darslik_progress (user_id, track);
+
+-- Atestatsiya (vaqt + joy cheklangan test)
+CREATE TABLE IF NOT EXISTS attestatsiya_exams (
+  id SERIAL PRIMARY KEY,
+  track TEXT NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  questions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  pass_score INTEGER NOT NULL DEFAULT 50,
+  duration_minutes INTEGER NOT NULL DEFAULT 30,
+  location_mode TEXT NOT NULL DEFAULT 'branch',
+  starts_at TIMESTAMPTZ NOT NULL,
+  ends_at TIMESTAMPTZ NOT NULL,
+  shuffle_questions BOOLEAN NOT NULL DEFAULT TRUE,
+  show_result BOOLEAN NOT NULL DEFAULT TRUE,
+  published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_id INTEGER,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS attestatsiya_exams_track_idx ON attestatsiya_exams (track, starts_at);
+
+CREATE TABLE IF NOT EXISTS attestatsiya_attempts (
+  id SERIAL PRIMARY KEY,
+  exam_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  attempt_no INTEGER NOT NULL DEFAULT 1,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  question_order JSONB NOT NULL DEFAULT '[]'::jsonb,
+  answers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  deadline_at TIMESTAMPTZ NOT NULL,
+  submitted_at TIMESTAMPTZ,
+  score INTEGER,
+  correct INTEGER,
+  total INTEGER NOT NULL DEFAULT 0,
+  passed BOOLEAN,
+  location_mode TEXT NOT NULL DEFAULT 'branch',
+  location_label TEXT,
+  branch_id INTEGER,
+  distance_m INTEGER,
+  latitude DOUBLE PRECISION,
+  longitude DOUBLE PRECISION,
+  accuracy_m INTEGER,
+  focus_lost INTEGER NOT NULL DEFAULT 0,
+  retake_allowed BOOLEAN NOT NULL DEFAULT FALSE,
+  retake_granted_by_id INTEGER,
+  retake_granted_at TIMESTAMPTZ,
+  annulled_by_id INTEGER,
+  annulled_at TIMESTAMPTZ,
+  annul_reason TEXT,
+  finished_by_id INTEGER,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS attestatsiya_attempts_exam_user_idx ON attestatsiya_attempts (exam_id, user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS attestatsiya_attempts_active_uidx ON attestatsiya_attempts (exam_id, user_id) WHERE status = 'in_progress';
+
 -- Kirish (stajyor o‘quv)
 CREATE TABLE IF NOT EXISTS kirish_progress (
   id SERIAL PRIMARY KEY,

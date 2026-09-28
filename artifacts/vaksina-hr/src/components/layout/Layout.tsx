@@ -3,6 +3,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Link, useLocation } from 'wouter';
 import {
   Users,
+  UserX,
   Briefcase,
   FileText,
   LayoutDashboard,
@@ -49,6 +50,9 @@ import {
   Check,
   Eye,
   AlertTriangle,
+  BookOpen,
+  Library,
+  BadgeCheck,
 } from 'lucide-react';
 import {
   useLogout,
@@ -61,6 +65,7 @@ import {
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useStaffNeeds } from '@/lib/staff-needs-api';
+import { useOpsDash } from '@/lib/ops-dept-api';
 import { cn } from '@/lib/utils';
 import { fetchMyMobileAttendance } from '@/lib/mobile-attendance-api';
 import { MobileGpsBackgroundTracker } from '@/components/davomat/MobileGpsBackgroundTracker';
@@ -135,7 +140,7 @@ const NAV_SECTIONS: {
     id: 'main',
     label: 'Asosiy',
     icon: Layers,
-    paths: ['/dashboard', '/kirish', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it'],
+    paths: ['/dashboard', '/kirish', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it'],
   },
   {
     id: 'work',
@@ -211,7 +216,7 @@ const NAV_SECTIONS: {
     id: 'admin',
     label: 'Sozlamalar',
     icon: Settings,
-    paths: ['/admin/users', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar', '/admin/kochma-davomat', '/admin/kochma-xarita', '/admin/kochma-live'],
+    paths: ['/admin/users', '/admin/boshatilganlar', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/darsliklar', '/admin/atestatsiya', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar', '/admin/kochma-davomat', '/admin/kochma-xarita', '/admin/kochma-live'],
   },
 ];
 
@@ -279,6 +284,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/internships')) return '/internships';
   if (path.startsWith('/pharmacy-network')) return '/pharmacy-network';
   if (path.startsWith('/xodim-kerak')) return '/xodim-kerak';
+  if (path.startsWith('/it')) return '/it';
+  if (path.startsWith('/texnik')) return '/texnik';
   if (path.startsWith('/logistika')) return path;
   if (path.startsWith('/boglanish')) return '/boglanish';
   if (path.startsWith('/tashkiliy-tuzilma')) return '/tashkiliy-tuzilma';
@@ -290,8 +297,11 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/eslatmalar')) return '/eslatmalar';
   if (path.startsWith('/chat')) return '/chat';
   if (path.startsWith('/kirish')) return '/kirish';
+  if (path.startsWith('/darsliklar')) return '/darsliklar';
+  if (path.startsWith('/atestatsiya')) return '/atestatsiya';
   if (path.startsWith('/interviews')) return '/candidates';
   if (path.startsWith('/admin/users')) return '/admin/users';
+  if (path.startsWith('/admin/boshatilganlar')) return '/admin/boshatilganlar';
   if (path.startsWith('/admin/holat')) return '/admin/holat';
   if (path.startsWith('/admin/faces')) return '/admin/faces';
   if (path.startsWith('/admin/smena-sozlamalar')) return '/admin/smena-sozlamalar';
@@ -304,6 +314,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/davomat-kochma')) return '/davomat-kochma';
   if (path.startsWith('/admin/departments')) return '/admin/departments';
   if (path.startsWith('/admin/kirish-videolar')) return '/admin/kirish-videolar';
+  if (path.startsWith('/admin/darsliklar')) return '/admin/darsliklar';
+  if (path.startsWith('/admin/atestatsiya')) return '/admin/atestatsiya';
   if (path.startsWith('/dashboard')) return '/dashboard';
 
   if (
@@ -592,6 +604,22 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       ).length ?? 0)
     : 0;
 
+  const itRahbarBadge =
+    user?.role === 'it_rahbar' ||
+    user?.role === 'director' ||
+    user?.role === 'asoschi' ||
+    user?.role === 'admin';
+  const { data: itOpsDash } = useOpsDash('it', { enabled: Boolean(itRahbarBadge) });
+  const itOpenArizaCount = itRahbarBadge
+    ? Number(itOpsDash?.byStatus?.new ?? 0) +
+      Number(itOpsDash?.byStatus?.assigned ?? 0) +
+      Number(itOpsDash?.byStatus?.in_progress ?? 0)
+    : 0;
+  // Prefer explicit open from API when available
+  const itBadgeCount = itRahbarBadge
+    ? Number(itOpsDash?.open ?? itOpenArizaCount) || 0
+    : 0;
+
   const { data: requests } = useGetRequests(undefined, {
     query: {
       enabled: !!user && isHrLike,
@@ -711,8 +739,22 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     const draftCount = draftVacancies?.length ?? 0;
     if (draftCount > 0) counts['/vacancies'] = draftCount;
 
+    // AyTi rahbar: ochiq arizalar soni (yangi + jarayonda)
+    if (itRahbarBadge && itBadgeCount > 0) {
+      counts['/it'] = itBadgeCount;
+    }
+
     return counts;
-  }, [unreadNotifications, requests, isHrLike, draftVacancies, isPharmacyStaff, staffingOpenCount]);
+  }, [
+    unreadNotifications,
+    requests,
+    isHrLike,
+    draftVacancies,
+    isPharmacyStaff,
+    staffingOpenCount,
+    itRahbarBadge,
+    itBadgeCount,
+  ]);
 
   const totalUnread =
     dashboardStats?.unreadNotifications ??
@@ -728,6 +770,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (isStajyor(user.role)) {
       const stajyorAllowed =
         location.startsWith('/kirish') ||
+        location.startsWith('/darsliklar') ||
+        location.startsWith('/atestatsiya') ||
         location.startsWith('/javob-olish') ||
         location.startsWith('/reyting') ||
         location.startsWith('/davomat-face') ||
@@ -748,16 +792,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/reviziya') && !canViewReviziya(user.role)) {
       setLocation('/dashboard');
     }
-    if (
-      user.role === 'director' &&
-      location.startsWith('/it')
-    ) {
-      setLocation('/dashboard');
-    }
     if (location.startsWith('/employees') && !canViewEmployees(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/admin/users') && !canManageUsers(user.role)) {
+    if (
+      (location.startsWith('/admin/users') || location.startsWith('/admin/boshatilganlar')) &&
+      !canManageUsers(user.role)
+    ) {
       setLocation('/dashboard');
     }
     if (location.startsWith('/admin/qurilmalar') && !canViewKochmaAdmin(user.role)) {
@@ -838,6 +879,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const oylikNav = { name: 'Oylik', path: '/oylik', icon: Banknote };
   const hisobNav = { name: 'Oylik hisob', path: '/hisobkitob', icon: Calculator };
   const reytingNav = { name: 'Reyting', path: '/reyting', icon: Trophy };
+  const darsliklarNav = { name: 'Darsliklar', path: '/darsliklar', icon: BookOpen };
+  const darslikJoylashNav = { name: 'Darslik joylash', path: '/admin/darsliklar', icon: Library };
+  const atestatsiyaNav = { name: 'Atestatsiya', path: '/atestatsiya', icon: BadgeCheck };
+  const atestatsiyaJoylashNav = { name: 'Atestatsiya joylash', path: '/admin/atestatsiya', icon: BadgeCheck };
   const reviziyaNav = { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck };
   const itNav = { name: 'AyTi', path: '/it', icon: Cpu };
   const distribNav = { name: 'Distribyutsiya', path: '/distribyutsiya', icon: Truck };
@@ -994,8 +1039,17 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
           ...next.slice(at),
         ];
       }
+      if (!next.some((i) => i.path === '/admin/boshatilganlar')) {
+        const usersIdx = next.findIndex((i) => i.path === '/admin/users');
+        const at = usersIdx >= 0 ? usersIdx + 1 : next.length;
+        next = [
+          ...next.slice(0, at),
+          { name: 'Bo‘shatilganlar', path: '/admin/boshatilganlar', icon: UserX },
+          ...next.slice(at),
+        ];
+      }
     } else {
-      next = next.filter((i) => i.path !== '/admin/users');
+      next = next.filter((i) => i.path !== '/admin/users' && i.path !== '/admin/boshatilganlar');
     }
     // Qurilmalar + Ko‘chma — rahbariyat / HR
     if (canViewKochmaAdmin(role)) {
@@ -1140,6 +1194,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
       omborIshNav,
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Users },
+      { name: 'Bo‘shatilganlar', path: '/admin/boshatilganlar', icon: UserX },
       { name: 'Qurilmalar', path: '/admin/qurilmalar', icon: MonitorSmartphone },
       { name: "Ko‘chma davomat", path: '/admin/kochma-davomat', icon: MapPin },
       { name: "Ko‘chma xarita", path: '/admin/kochma-xarita', icon: Navigation },
@@ -1151,6 +1206,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+      darslikJoylashNav,
+      atestatsiyaJoylashNav,
     ],
     asoschi: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -1185,6 +1242,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+      darslikJoylashNav,
+      atestatsiyaJoylashNav,
     ],
     recruiter: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -1211,6 +1270,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
+      itNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: 'Xodimlar', path: '/employees', icon: Users },
       hisobNav,
@@ -1224,6 +1284,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 },
       { name: "Bo'limlar", path: '/admin/departments', icon: Settings },
       { name: 'Kirish materiallari', path: '/admin/kirish-videolar', icon: Video },
+      darslikJoylashNav,
+      atestatsiyaJoylashNav,
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
       { name: 'Davomat QR', path: '/admin/davomat-qr', icon: ScanFace },
@@ -1244,9 +1306,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      darslikJoylashNav,
+      atestatsiyaJoylashNav,
     ],
     mudir: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      darsliklarNav,
+      atestatsiyaNav,
       javobNav,
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
@@ -1309,8 +1375,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
     ],
     it_rahbar: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
-      itNav,
+      { name: 'AyTi', path: '/it', icon: Cpu },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
@@ -1481,6 +1546,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     farmasevt: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      darsliklarNav,
+      atestatsiyaNav,
       javobNav,
       { name: 'Oylik', path: '/oylik', icon: Banknote },
       reytingNav,
@@ -1505,6 +1572,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     ],
     stajyor: [
       { name: 'Kirish', path: '/kirish', icon: GraduationCap },
+      darsliklarNav,
+      atestatsiyaNav,
       javobNav,
       reytingNav,
       davomatFaceNav,
@@ -1582,6 +1651,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     : withFace.filter((item) => !isHrRecruitmentPath(item.path))
   )
     .filter((item) => item.path !== '/admin/users' || canManageUsers(userRole))
+    .filter((item) => item.path !== '/admin/boshatilganlar' || canManageUsers(userRole))
     .filter((item) => item.path !== '/admin/qurilmalar' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/kochma-davomat' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/kochma-xarita' || canViewKochmaAdmin(userRole))
@@ -1649,7 +1719,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   ) => {
     const count = badgeByPath[item.path] ?? 0;
     const active = pathIsActive(location, item.path);
-    const pulse = item.path === '/xodim-kerak' && count > 0;
+    const pulse =
+      (item.path === '/xodim-kerak' || item.path === '/it') && count > 0;
     const dropKey = `item:${opts.sectionId}:${opts.itemIndex}`;
     const isDropTarget = navEditMode && dragOverKey === dropKey;
 

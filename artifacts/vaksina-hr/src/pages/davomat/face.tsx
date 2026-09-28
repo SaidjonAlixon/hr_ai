@@ -160,9 +160,15 @@ function shiftEndMs(workDateYmd: string, endHm: string, overnight?: boolean): nu
 
 function normKeys(opts?: { shiftType?: string | null; shiftKeys?: string[] | null }): string[] {
   const fromList = (opts?.shiftKeys || []).map((k) => String(k || "").toLowerCase()).filter(Boolean);
-  if (fromList.length) return fromList;
+  if (fromList.length) {
+    // "one+two" / "1|2" kabi bitta slot kalitini ham ochamiz
+    return fromList.flatMap((k) =>
+      k.split(/[+|,/\s]+/).map((p) => p.trim()).filter(Boolean),
+    );
+  }
   const t = String(opts?.shiftType || "").toLowerCase();
-  return t ? [t] : [];
+  if (!t) return [];
+  return t.split(/[+|,/\s]+/).map((p) => p.trim()).filter(Boolean);
 }
 
 function usesShiftThreeDeadline(opts?: {
@@ -1427,12 +1433,20 @@ export default function DavomatFacePage() {
   })();
   const afterShiftEnd = nowTick >= shiftEndAtMs;
   /** Keldimdan keyin Ketdim muddatgacha ochiq (2→02:00, 3→10:00, 1→23:55) */
-  const afterCheckoutDeadline =
-    nowTick >
-    checkoutDeadlineMs(workDateYmd, shiftEndHm, shiftOvernight, {
-      shiftType: workplace?.shift?.type,
-      shiftKeys: workplace?.shift?.keys,
-    });
+  const afterCheckoutDeadline = (() => {
+    const iso = workplace?.shift?.checkoutDeadlineAt;
+    if (iso) {
+      const t = Date.parse(iso);
+      if (Number.isFinite(t)) return nowTick > t;
+    }
+    return (
+      nowTick >
+      checkoutDeadlineMs(workDateYmd, shiftEndHm, shiftOvernight, {
+        shiftType: workplace?.shift?.type,
+        shiftKeys: workplace?.shift?.keys,
+      })
+    );
+  })();
   const checkoutDeadlineHmLabel = checkoutDeadlineLabel({
     shiftType: workplace?.shift?.type,
     shiftKeys: workplace?.shift?.keys,

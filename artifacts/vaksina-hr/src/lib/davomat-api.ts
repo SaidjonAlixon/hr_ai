@@ -35,6 +35,12 @@ export type DavomatEmployee = {
   userRole?: string | null;
   shiftType?: string | null;
   shiftLabel?: string | null;
+  /** Omborxona xodimi (ofis/apteka guruhlariga kirmaydi) */
+  warehouse?: boolean;
+  /** Xavfsizlik 24 soatlik smena (09:00 → ertasi 09:00) */
+  security?: boolean;
+  /** Omborxona smenasi `HH:MM-HH:MM`; biriktirilmagan bo‘lsa null */
+  warehouseShiftKey?: string | null;
   workStart?: string;
   workEnd?: string;
   days: DavomatDayMetrics[];
@@ -211,10 +217,13 @@ export async function saveDavomatManual(payload: {
   });
 }
 
-/** Kunlik davomatni bekor qilish — yozuv o‘chadi, xodim qayta punch qila oladi */
+export type DavomatResetPart = "in" | "out" | "all";
+
+/** Davomatni bekor qilish: faqat Keldim, faqat Ketdim yoki butun kun */
 export async function resetDavomatManual(payload: {
   employeeId: number;
   workDate: string;
+  part?: DavomatResetPart;
 }): Promise<{ ok: boolean; deleted: boolean; message?: string }> {
   return apiJson("/davomat/reset", {
     method: "POST",
@@ -399,6 +408,7 @@ export type WorkplaceInfo = {
     warnText: string;
     checkoutDeadlineHm?: string;
     checkoutDeadlineAt?: string;
+    checkoutDeadlineHint?: string;
   } | null;
 };
 
@@ -640,6 +650,7 @@ export async function downloadDavomatExcel(params: {
   departmentId?: string;
   location?: string;
   staffFilter?: string;
+  warehouseShift?: string;
 }): Promise<{ via: "telegram" | "browser" }> {
   const q = new URLSearchParams();
   q.set("from", params.from);
@@ -648,6 +659,9 @@ export async function downloadDavomatExcel(params: {
   if (params.departmentId) q.set("departmentId", params.departmentId);
   if (params.location) q.set("location", params.location);
   if (params.staffFilter && params.staffFilter !== "all") q.set("staffFilter", params.staffFilter);
+  if (params.staffFilter === "warehouse" && params.warehouseShift && params.warehouseShift !== "all") {
+    q.set("warehouseShift", params.warehouseShift);
+  }
   const res = await fetch(`/api/davomat/export?${q}`, { credentials: "include" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

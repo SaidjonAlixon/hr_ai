@@ -1,8 +1,100 @@
 import type { DavomatEmployee } from "./davomat-api";
 import { normalizeShiftType } from "./work-schedule";
 
-/** Hammasi | 1-smena | 2-smena | Ofis (tashqi/reviziya/texnik ham ofis) */
-export type DavomatStaffFilter = "all" | "shift_one" | "shift_two" | "office" | "external";
+/** Hammasi | Dorixona (ichida 1/2-smena) | Ofis (tashqi/reviziya/texnik ham ofis) | Omborxona */
+export type DavomatStaffFilter =
+  | "all"
+  | "pharmacy"
+  | "shift_one"
+  | "shift_two"
+  | "office"
+  | "warehouse"
+  | "security"
+  | "external";
+
+const OMBOR_USER_ROLES = new Set(["ombor", "ombor_rahbar"]);
+const SECURITY_USER_ROLES = new Set(["sb", "sb_boshliq"]);
+
+/** Xavfsizlik (SB) — 09:00 dan ertasi 09:00 gacha, 1 ish kuni; Ketdim ertasi 11:00 gacha */
+export const SECURITY_WORK_HOURS = { start: "09:00", end: "09:00" };
+
+export function isSecurityStaff(emp: {
+  security?: boolean;
+  userRole?: string | null;
+  departmentName?: string | null;
+}): boolean {
+  if (emp.security) return true;
+  if (SECURITY_USER_ROLES.has(String(emp.userRole || "").trim())) return true;
+  const d = normDeptName(emp.departmentName);
+  return d === "xavfsizlik" || d === "хавфсизлик" || d === "безопасность";
+}
+
+function normDeptName(s?: string | null): string {
+  return String(s || "")
+    .trim()
+    .toLocaleLowerCase("uz")
+    .replace(/[\u2018\u2019\u02BB\u02BC'`´]/g, "");
+}
+
+/** Omborxona xodimi — backend `warehouse` belgisi, ombor roli, `wh:` smena yoki bo‘lim nomi */
+export function isWarehouseStaff(emp: {
+  warehouse?: boolean;
+  userRole?: string | null;
+  departmentName?: string | null;
+  shiftType?: string | null;
+}): boolean {
+  if (emp.warehouse) return true;
+  if (OMBOR_USER_ROLES.has(String(emp.userRole || "").trim())) return true;
+  if (/^wh:/i.test(String(emp.shiftType || "").trim())) return true;
+  const d = normDeptName(emp.departmentName);
+  return d === "omborxona" || d === "омборхона" || d === "склад";
+}
+
+/** Omborxona smenasi tanlovi: "all" | "none" (biriktirilmagan) | "HH:MM-HH:MM" */
+export type WarehouseShiftFilter = string;
+
+export type WarehouseShiftOption = {
+  key: string;
+  label: string;
+  hours: string;
+  count: number;
+};
+
+export function matchesWarehouseShift(
+  emp: { warehouseShiftKey?: string | null },
+  filter: WarehouseShiftFilter,
+): boolean {
+  if (!filter || filter === "all") return true;
+  if (filter === "none") return !emp.warehouseShiftKey;
+  return emp.warehouseShiftKey === filter;
+}
+
+/** Hisobotdagi omborxona xodimlaridan smenalar ro‘yxati (vaqt bo‘yicha tartiblangan) */
+export function warehouseShiftOptions(employees: DavomatEmployee[]): WarehouseShiftOption[] {
+  const map = new Map<string, WarehouseShiftOption>();
+  let unassigned = 0;
+  for (const e of employees) {
+    if (!isWarehouseStaff(e)) continue;
+    const key = e.warehouseShiftKey;
+    if (!key) {
+      unassigned += 1;
+      continue;
+    }
+    const hours = key.replace("-", "–");
+    const cur = map.get(key);
+    if (cur) {
+      cur.count += 1;
+      if (cur.label === hours && e.shiftLabel) cur.label = e.shiftLabel;
+    } else {
+      map.set(key, { key, label: e.shiftLabel?.trim() || hours, hours, count: 1 });
+    }
+  }
+  const list = [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+  if (unassigned) {
+    list.push({ key: "none", label: "Smena biriktirilmagan", hours: "", count: unassigned });
+  }
+  return list;
+}
 
 /** Apteka smenalari — mudir, farmasevt, stajyor */
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
@@ -90,7 +182,12 @@ export function classifyDavomatStaff(emp: {
   shiftLabel?: string | null;
   workStart?: string;
   workEnd?: string;
+  warehouse?: boolean;
+  security?: boolean;
+  departmentName?: string | null;
 }): Exclude<DavomatStaffFilter, "all" | "external"> {
+  if (isSecurityStaff(emp)) return "security";
+  if (isWarehouseStaff(emp)) return "warehouse";
   if (isOfficeFieldStaff(emp)) return "office";
   if (isShiftPharmacyStaff(emp)) {
     return isShiftTwo(emp) ? "shift_two" : "shift_one";
@@ -101,10 +198,16 @@ export function classifyDavomatStaff(emp: {
 
 export function staffFilterLabel(filter: DavomatStaffFilter): string {
   switch (filter) {
+    case "pharmacy":
+      return "Dorixona";
     case "shift_one":
-      return "1-smena";
+      return "Dorixona · 1-smena";
     case "shift_two":
-      return "2-smena";
+      return "Dorixona · 2-smena";
+    case "warehouse":
+      return "Omborxona";
+    case "security":
+      return "Xavfsizlik";
     case "office":
     case "external":
       return "Ofis";
@@ -126,6 +229,10 @@ export function smenaLabelShort(emp: DavomatEmployee): string {
       return "1-smena";
     case "shift_two":
       return "2-smena";
+    case "warehouse":
+      return emp.shiftLabel?.trim() || (emp.warehouseShiftKey ? `Ombor ${emp.warehouseShiftKey}` : "Omborxona");
+    case "security":
+      return emp.shiftLabel?.trim() || "Xavfsizlik";
     case "office":
     default:
       return "Ofis";
@@ -138,6 +245,8 @@ export function workHoursForStaffFilter(filter: DavomatStaffFilter): { start: st
       return { start: "08:00", end: "17:00" };
     case "shift_two":
       return { start: "17:00", end: "23:45" };
+    case "security":
+      return SECURITY_WORK_HOURS;
     case "office":
     case "external":
       return { start: "09:00", end: "18:00" };
@@ -164,6 +273,14 @@ export function matchesStaffFilter(
   }
   if (filter === "all") return true;
 
+  const security = isSecurityStaff(emp);
+  if (filter === "security") return security;
+  if (security) return false;
+
+  const warehouse = isWarehouseStaff(emp);
+  if (filter === "warehouse") return warehouse;
+  if (warehouse) return false;
+
   const shiftPharmacy = isShiftPharmacyStaff(emp);
   const shiftTwo = isShiftTwo(emp);
   const nonOffice = isNonOfficeStaff(emp);
@@ -178,24 +295,55 @@ export function matchesStaffFilter(
     return true;
   }
 
+  if (filter === "pharmacy") return shiftPharmacy;
   if (filter === "shift_two") return shiftPharmacy && shiftTwo;
   if (filter === "shift_one") return shiftPharmacy && !shiftTwo;
   return false;
 }
 
+/** Dorixona ichidagi smena: "all" | "shift_one" | "shift_two" */
+export type PharmacyShiftFilter = "all" | "shift_one" | "shift_two";
+
+export const PHARMACY_SHIFT_OPTIONS: Array<{
+  key: Exclude<PharmacyShiftFilter, "all">;
+  label: string;
+  hours: string;
+  start: string;
+  end: string;
+}> = [
+  { key: "shift_one", label: "1-smena", hours: "08:00 – 17:00", start: "08:00", end: "17:00" },
+  { key: "shift_two", label: "2-smena", hours: "17:00 – 23:45", start: "17:00", end: "23:45" },
+];
+
+export function matchesPharmacyShift(emp: DavomatEmployee, shift: PharmacyShiftFilter): boolean {
+  if (shift === "all") return true;
+  return shift === "shift_two" ? isShiftTwo(emp) : !isShiftTwo(emp);
+}
+
 export const STAFF_FILTER_OPTIONS: Array<{
-  key: Exclude<DavomatStaffFilter, "external">;
+  key: Exclude<DavomatStaffFilter, "external" | "shift_one" | "shift_two">;
   label: string;
   hint: string;
   hours: string;
 }> = [
   { key: "all", label: "Hammasi", hint: "Barcha xodimlar", hours: "Turiga qarab" },
-  { key: "shift_one", label: "1-smena", hint: "08:00 – 17:00", hours: "08:00–17:00" },
-  { key: "shift_two", label: "2-smena", hint: "17:00 – 23:45", hours: "17:00–23:45" },
+  { key: "pharmacy", label: "Dorixona", hint: "Smenalar bo‘yicha", hours: "Smenaga qarab" },
   {
     key: "office",
     label: "Ofis",
     hint: "09:00 – 18:00",
     hours: "09:00–18:00",
+  },
+  {
+    key: "warehouse",
+    label: "Omborxona",
+    hint: "Smenalar bo‘yicha",
+    hours: "Smenaga qarab",
+  },
+  {
+    key: "security",
+    label: "Xavfsizlik",
+    hint: "09:00 – 09:00 (24 soat)",
+    hours: "09:00–09:00",
   },
 ];

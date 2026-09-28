@@ -401,6 +401,8 @@ export function isDeptHeadRole(role?: string | null): boolean {
 
 /** /dashboard da to‘liq yoki bo‘limga mos davomat analytics ko‘rsatish */
 export function usesDavomatDashboardHome(role?: string | null): boolean {
+  // AyTi rahbar — asosiy sahifa AyTi bo‘limi (/it), davomat dashboard emas
+  if (role === "it_rahbar") return false;
   return canViewFullDavomatDashboard(role) || isDeptHeadRole(role);
 }
 
@@ -456,6 +458,16 @@ export function canExtendVacancy(role?: string | null): boolean {
 /** Kirish o‘quv bo‘limi — faqat stajyor (+ admin/asoschi ko‘rishi mumkin) */
 export function canAccessKirish(role?: string | null): boolean {
   return role === "stajyor" || hasFullPlatformAccess(role);
+}
+
+/** Darsliklar — o‘quvchi (har lavozimning alohida kursi) */
+export function canLearnDarsliklar(role?: string | null): boolean {
+  return role === "stajyor" || role === "farmasevt" || role === "mudir";
+}
+
+/** Darslik joylash — admin, direktor va trener */
+export function canManageDarsliklar(role?: string | null): boolean {
+  return canManageSettings(role) || role === "trainer";
 }
 
 export function isStajyor(role?: string | null): boolean {

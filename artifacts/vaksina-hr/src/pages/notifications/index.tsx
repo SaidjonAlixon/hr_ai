@@ -21,6 +21,7 @@ import {
   ChevronRight,
   MapPin,
   Unlock,
+  Cpu,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Badge } from '../../components/ui/badge';
@@ -60,6 +61,12 @@ const TYPE_ICONS: Record<string, { icon: typeof Bell; color: string; soft: strin
     color: 'text-blue-700',
     soft: 'bg-blue-100',
     key: 'notif.type.task_assigned',
+  },
+  ops_ticket: {
+    icon: Cpu,
+    color: 'text-cyan-800',
+    soft: 'bg-cyan-100',
+    key: 'notif.type.ops_ticket',
   },
   coordinator_presence_ping: {
     icon: MapPin,

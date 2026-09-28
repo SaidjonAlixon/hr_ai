@@ -1,10 +1,11 @@
 import { Router, type IRouter } from "express";
-import { eq, and, ilike, asc } from "drizzle-orm";
+import { eq, and, ilike, asc, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { db, usersTable, departmentsTable, employeesTable } from "@workspace/db";
+import { db, usersTable, departmentsTable, employeesTable, dismissedStaffTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
+import { archiveAndDeleteUser, sweepDismissedUsers } from "../lib/dismiss-user";
 import { canManageUsers, canDeleteUsers, canChangeStaffStatus } from "../lib/roles";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
@@ -234,7 +235,11 @@ router.get("/users", async (req, res): Promise<void> => {
     await Promise.all(adminIds.map((id) => removeEmployeesForUser(id)));
   }
 
-  res.json(rows);
+  // «Tugatilgan» — faqat Bo‘shatilganlarda; qoldiq bo‘lsa fonda ko‘chiriladi
+  if (rows.some((r) => r.status === "terminated")) {
+    void sweepDismissedUsers().catch(() => 0);
+  }
+  res.json(rows.filter((r) => r.status !== "terminated"));
 });
 
 /** Admin — barcha foydalanuvchilar + login/parol Excel */
@@ -482,6 +487,20 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
   }
 });
 
+/** Bo‘shatilganlar — Foydalanuvchilardan o‘chirilganlar arxivi (faqat admin) */
+router.get("/users/dismissed", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdminOnly(req, res)) return;
+  const search = String((req.query as { search?: string }).search || "").trim();
+  await sweepDismissedUsers().catch(() => 0);
+  const archived = await db
+    .select()
+    .from(dismissedStaffTable)
+    .where(search ? ilike(dismissedStaffTable.fullName, `%${search}%`) : undefined)
+    .orderBy(desc(dismissedStaffTable.dismissedAt));
+
+  res.json(archived);
+});
+
 router.get("/users/:id", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const [row] = await db
@@ -629,6 +648,15 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
         .set({ employmentStatus: employmentFromUserStatus(String(updates.status)) })
         .where(eq(employeesTable.userId, id));
     }
+    // «Tugatilgan» — darhol Bo‘shatilganlarga (login/parol bekor, boshqa joyda ko‘rinmaydi)
+    if (updated.status === "terminated") {
+      await archiveAndDeleteUser(id, {
+        actorId: req.userId ?? null,
+        reason: "Holati «Tugatilgan» qilindi",
+      });
+      res.json({ ...publicUser(updated), archived: true });
+      return;
+    }
   }
   res.json(publicUser(updated));
 });
@@ -641,8 +669,13 @@ router.delete("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<
     res.status(400).json({ error: "O'zingizni o'chira olmaysiz" });
     return;
   }
-  await removeEmployeesForUser(id);
-  await db.delete(usersTable).where(eq(usersTable.id, id));
+
+  const reason = String((req.query as { reason?: string }).reason || "").trim() || null;
+  const ok = await archiveAndDeleteUser(id, { actorId: req.userId ?? null, reason });
+  if (!ok) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
   res.sendStatus(204);
 });
 

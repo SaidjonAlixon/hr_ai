@@ -8,11 +8,21 @@ export type JavobShiftInfo = {
   durationLabel: string;
 };
 
+export type JavobTimelineStep = {
+  key: string;
+  label: string;
+  at?: string | null;
+  atLabel: string;
+  by: string | null;
+  note: string | null;
+};
+
 export type JavobRequestItem = {
   id: number;
   employeeId: number;
   userId: number | null;
   fullName: string | null;
+  branchLabel?: string | null;
   workDate: string;
   shiftType: string | null;
   shiftLabel: string | null;
@@ -27,18 +37,29 @@ export type JavobRequestItem = {
   status: string;
   kind?: "day" | "hour";
   coordinatorUserId: number | null;
+  coordinatorName?: string | null;
   coordDecidedById?: number | null;
+  coordDecidedByName?: string | null;
   coordDecidedAt?: string | null;
   coordDecisionNote?: string | null;
   escalatedAt?: string | null;
   escalatedNote?: string | null;
   decidedById: number | null;
+  decidedByName?: string | null;
   decidedAt?: string | null;
   decisionNote: string | null;
   createdAt?: string;
   createdAtLabel?: string;
   escalatedAtLabel?: string;
+  coordDecidedAtLabel?: string;
+  decidedAtLabel?: string;
+  timeline?: JavobTimelineStep[];
+  /** Joriy foydalanuvchi shu so‘rovga hozir javob bera oladimi (faqat scope=pending) */
+  canAct?: boolean;
 };
+
+/** Koordinator 8 soat ichida javob bermasa, so‘rov HR ga o‘tadi */
+export const JAVOB_COORD_ESCALATE_HOURS = 8;
 
 export type JavobDayInput = {
   workDate: string;
@@ -69,7 +90,9 @@ export function fetchJavobShifts(dates: string[]) {
   );
 }
 
-export function fetchJavobRequests(scope: "mine" | "pending" | "all" | "approved-by-me" = "mine") {
+export function fetchJavobRequests(
+  scope: "mine" | "pending" | "all" | "approved-by-me" | "decided" = "mine",
+) {
   return apiJson<{
     items: JavobRequestItem[];
     canDecide: boolean;
@@ -121,4 +144,8 @@ export function dateToYmd(d: Date) {
 export function ymdToLocalDate(ymd: string): Date {
   const [y, m, d] = ymd.split("-").map(Number);
   return new Date(y, (m || 1) - 1, d || 1);
+}
+
+export function isJavobOpenStatus(status: string) {
+  return status === "pending" || status === "pending_coord" || status === "pending_hr";
 }

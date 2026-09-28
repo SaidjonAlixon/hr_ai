@@ -313,6 +313,10 @@ export default function Dashboard() {
     if (kind === 'intern') setLocation('/kirish');
   }, [kind, setLocation]);
 
+  React.useEffect(() => {
+    if (role === 'it_rahbar') setLocation('/it');
+  }, [role, setLocation]);
+
   const showDavomatDash = usesDavomatDashboardHome(role);
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';

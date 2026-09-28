@@ -4,12 +4,11 @@ import {
   useGetDepartments,
   useCreateUser,
   useUpdateUser,
-  useDeleteUser,
   getGetUsersQueryKey,
   type User,
 } from '@workspace/api-client-react';
 import { useQueryClient } from '@tanstack/react-query';
-import { Plus, Search, Copy, Check, ChevronDown, Eye, EyeOff, Trash2, UserPlus, FileSpreadsheet, Loader2, Pencil, KeyRound } from 'lucide-react';
+import { Plus, Search, Copy, Check, ChevronDown, Eye, EyeOff, Trash2, UserPlus, UserX, FileSpreadsheet, Loader2, Pencil, KeyRound } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -37,6 +36,8 @@ import {
 } from '../../lib/phone';
 import { userRoleLabel, canManageUsers, canDeleteUsers, canChangeStaffStatus } from '../../lib/roles';
 import { useI18n } from '../../i18n/I18nProvider';
+import { dismissUser } from '../../lib/dismissed-staff-api';
+import { Link } from 'wouter';
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -154,7 +155,9 @@ export default function AdminUsersPage() {
   const { data: departments } = useGetDepartments();
   const createMutation = useCreateUser();
   const updateMutation = useUpdateUser();
-  const deleteMutation = useDeleteUser();
+  const [dismissTarget, setDismissTarget] = useState<User | null>(null);
+  const [dismissReason, setDismissReason] = useState('');
+  const [dismissing, setDismissing] = useState(false);
 
   const canManage = canManageUsers(me?.role);
   const canChangeStatus = canChangeStaffStatus(me?.role);
@@ -324,6 +327,15 @@ export default function AdminUsersPage() {
       });
       return;
     }
+    if (
+      status === 'terminated' &&
+      normalizeUserStatus(editing.status) !== 'terminated' &&
+      !window.confirm(
+        `${editing.fullName} «Bo‘shatilganlar»ga o‘tadi: login va parol bekor bo‘ladi, boshqa hech qayerda ko‘rinmaydi. Davom etasizmi?`,
+      )
+    ) {
+      return;
+    }
 
     updateMutation.mutate(
       {
@@ -373,6 +385,11 @@ export default function AdminUsersPage() {
     }
     const current = normalizeUserStatus(u.status);
     if (current === next) return;
+    if (next === 'terminated') {
+      // Tugatilgan = Bo‘shatilganlarga o‘tkazish (tasdiqlash oynasi bilan)
+      onDelete(u);
+      return;
+    }
     updateMutation.mutate(
       { id: u.id, data: { status: next } },
       {
@@ -436,19 +453,31 @@ export default function AdminUsersPage() {
       toast({ title: 'O‘zingizni o‘chira olmaysiz', variant: 'destructive' });
       return;
     }
-    if (!window.confirm(`${u.fullName} ni o‘chirasizmi?`)) return;
-    deleteMutation.mutate(
-      { id: u.id },
-      {
-        onSuccess: () => {
-          invalidate();
-          toast({ title: 'O‘chirildi' });
-        },
-        onError: (err: any) => {
-          toast({ title: 'Xatolik', description: err?.message || 'O‘chirilmadi', variant: 'destructive' });
-        },
-      },
-    );
+    setDismissReason('');
+    setDismissTarget(u);
+  };
+
+  const confirmDismiss = async () => {
+    if (!dismissTarget || dismissing) return;
+    setDismissing(true);
+    try {
+      await dismissUser(dismissTarget.id, dismissReason);
+      invalidate();
+      void queryClient.invalidateQueries();
+      toast({
+        title: 'Bo‘shatilganlarga o‘tkazildi',
+        description: `${dismissTarget.fullName} — login va parol bekor qilindi`,
+      });
+      setDismissTarget(null);
+    } catch (err) {
+      toast({
+        title: 'Xatolik',
+        description: (err as Error)?.message || 'O‘chirilmadi',
+        variant: 'destructive',
+      });
+    } finally {
+      setDismissing(false);
+    }
   };
 
   if (!isAdmin) {
@@ -470,6 +499,12 @@ export default function AdminUsersPage() {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button asChild type="button" variant="outline" className="gap-2">
+            <Link href="/admin/boshatilganlar">
+              <UserX className="h-4 w-4 text-rose-600" />
+              Bo‘shatilganlar
+            </Link>
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -688,6 +723,47 @@ export default function AdminUsersPage() {
       </Card>
 
       {/* Create dialog */}
+      <Dialog open={Boolean(dismissTarget)} onOpenChange={(o) => !o && !dismissing && setDismissTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader className="text-left">
+            <DialogTitle className="flex items-center gap-2">
+              <UserX className="h-5 w-5 text-rose-600" />
+              Foydalanuvchini o‘chirish
+            </DialogTitle>
+            <DialogDescription>
+              <span className="font-semibold text-foreground">{dismissTarget?.fullName}</span>{' '}
+              <span className="font-mono text-xs">({dismissTarget?.login})</span> «Bo‘shatilganlar» bo‘limiga o‘tadi.
+            </DialogDescription>
+          </DialogHeader>
+          <ul className="space-y-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+            <li>• Login va parol darhol bekor bo‘ladi, ochiq sessiyalar yopiladi</li>
+            <li>• Face ID, passkey va Telegram bog‘lanishi o‘chiriladi</li>
+            <li>• Xodimlar, davomat, filiallar va boshqa barcha ro‘yxatlardan olib tashlanadi</li>
+            <li>• Faqat «Bo‘shatilganlar» bo‘limida ko‘rinib qoladi</li>
+          </ul>
+          <div className="space-y-1.5">
+            <Label htmlFor="dismiss-reason" className="text-xs">Sabab (ixtiyoriy)</Label>
+            <Input
+              id="dismiss-reason"
+              value={dismissReason}
+              onChange={(e) => setDismissReason(e.target.value)}
+              placeholder="Masalan: o‘z xohishi bilan ketdi"
+              maxLength={500}
+              disabled={dismissing}
+            />
+          </div>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" onClick={() => setDismissTarget(null)} disabled={dismissing}>
+              Bekor qilish
+            </Button>
+            <Button variant="destructive" onClick={() => void confirmDismiss()} disabled={dismissing} className="gap-2">
+              {dismissing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserX className="h-4 w-4" />}
+              O‘chirish va bo‘shatish
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
         <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
           <DialogHeader className="border-b px-5 py-4 text-left">

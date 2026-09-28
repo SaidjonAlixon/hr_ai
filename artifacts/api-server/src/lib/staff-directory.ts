@@ -173,8 +173,16 @@ export async function loadStaffFromUsers(
     .where(ne(usersTable.role, "admin"))
     .orderBy(asc(usersTable.fullName));
 
-  const filteredUsers = users.filter((u) =>
-    group === "active" ? isActiveStaffUser(u.status) : !isActiveStaffUser(u.status),
+  // «Tugatilgan» — faqat Bo‘shatilganlarda (Xodimlar/Oylik/Davomat hech birida emas)
+  if (users.some((u) => u.status === "terminated")) {
+    void import("./dismiss-user")
+      .then(({ sweepDismissedUsers }) => sweepDismissedUsers())
+      .catch(() => 0);
+  }
+  const filteredUsers = users.filter(
+    (u) =>
+      u.status !== "terminated" &&
+      (group === "active" ? isActiveStaffUser(u.status) : !isActiveStaffUser(u.status)),
   );
   // Admin hech qachon xodimlar/davomat ro‘yxatiga kirmaydi
   const staffUsers = filteredUsers.filter((u) => u.role !== "admin");
@@ -346,6 +354,9 @@ export async function loadStaffFromUsers(
         db.update(usersTable).set({ status: "terminated" }).where(eq(usersTable.id, uid)),
       ),
     ).catch(() => undefined);
+    void import("./dismiss-user")
+      .then(({ sweepDismissedUsers }) => sweepDismissedUsers())
+      .catch(() => 0);
   }
   if (healEmpToDismissed.length) {
     await Promise.all(
@@ -362,7 +373,8 @@ export async function loadStaffFromUsers(
     return mapped.filter((row) => !isDismissedEmploymentStatus(row.employmentStatus));
   }
 
-  return mapped;
+  const healed = new Set(healUserToTerminated);
+  return mapped.filter((row) => !(row.userId != null && healed.has(row.userId)));
 }
 
 const PHARMACY_ORG_ROLES = ["coordinator", "manager", "pharmacist", "intern", "supervisor"] as const;

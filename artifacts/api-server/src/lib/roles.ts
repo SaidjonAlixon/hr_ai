@@ -345,6 +345,17 @@ export function canAccessKirish(role?: string | null): boolean {
   return role === "stajyor" || hasFullPlatformAccess(role);
 }
 
+/** Darsliklar kursi — o‘quvchi roli → yo‘nalish (stajyor / farmasevt / mudir) */
+export function darslikTrackForRole(role?: string | null): "stajyor" | "farmasevt" | "mudir" | null {
+  if (role === "stajyor" || role === "farmasevt" || role === "mudir") return role;
+  return null;
+}
+
+/** Darslik joylash — admin, direktor va trener */
+export function canManageDarsliklar(role?: string | null): boolean {
+  return canManageSettings(role) || role === "trainer";
+}
+
 export const HR_ROLE_LABELS: Record<string, string> = {
   hr: "HR",
   hr_direktor: "HR Direktor",

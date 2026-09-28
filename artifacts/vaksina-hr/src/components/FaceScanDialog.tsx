@@ -145,6 +145,9 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
   const streamRef = useRef<MediaStream | null>(null);
   const onCapturedRef = useRef(onCaptured);
   onCapturedRef.current = onCaptured;
+  // Parent may pass an inline callback; the camera effect must not restart on every parent render.
+  const onOpenChangeRef = useRef(onOpenChange);
+  onOpenChangeRef.current = onOpenChange;
 
   const [hint, setHint] = useState(() => t("davomat.scanCamOpening"));
   const [busy, setBusy] = useState(false);
@@ -196,8 +199,50 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     let lastBlinkDesc: number[] | null = null;
     let challengeToken = "";
 
+    // Detection runs every frame; throttle hint text and debounce the oval so the UI doesn't flicker.
+    const HINT_MIN_MS = 400;
+    const ALIGN_MISS_FRAMES = 4;
+    let hintShown = "";
+    let hintAt = 0;
+    let hintTimer: number | null = null;
+    let alignMisses = 0;
+    const setAlignedState = setAligned;
+    const smoothHint = (text: string, force = false) => {
+      if (text === hintShown && !force) {
+        if (hintTimer != null) {
+          window.clearTimeout(hintTimer);
+          hintTimer = null;
+        }
+        return;
+      }
+      const wait = HINT_MIN_MS - (performance.now() - hintAt);
+      const apply = () => {
+        hintTimer = null;
+        if (cancelled) return;
+        hintShown = text;
+        hintAt = performance.now();
+        setHint(text);
+      };
+      if (hintTimer != null) window.clearTimeout(hintTimer);
+      if (force || wait <= 0) apply();
+      else hintTimer = window.setTimeout(apply, wait);
+    };
+    const smoothAligned = (value: boolean) => {
+      if (value) {
+        alignMisses = 0;
+        setAligned(true);
+        return;
+      }
+      alignMisses += 1;
+      if (alignMisses >= ALIGN_MISS_FRAMES) setAligned(false);
+    };
+
     const stopCamera = () => {
       running = false;
+      if (hintTimer != null) {
+        window.clearTimeout(hintTimer);
+        hintTimer = null;
+      }
       streamRef.current?.getTracks().forEach((t) => t.stop());
       streamRef.current = null;
     };
@@ -218,9 +263,12 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
     };
 
     const start = async () => {
+      const setHint = smoothHint;
+      const setAligned = smoothAligned;
       setError(null);
       setBusy(false);
-      setAligned(false);
+      alignMisses = ALIGN_MISS_FRAMES;
+      setAlignedState(false);
       lastDesc = null;
       poseI = 0;
       setPoseIndex(0);
@@ -239,6 +287,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           return;
         }
         streamRef.current = stream;
+        stream.getVideoTracks().forEach((track) => {
+          track.addEventListener("ended", () => {
+            if (!cancelled && running && streamRef.current === stream) {
+              setCamRetryKey((k) => k + 1);
+            }
+          });
+        });
         const video = videoRef.current;
         if (!video) {
           stream.getTracks().forEach((track) => track.stop());
@@ -286,6 +341,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             mode === "enroll"
               ? tRef.current("davomat.scanSaving")
               : tRef.current("davomat.scanChecking"),
+            true,
           );
           const samples = poseBuckets.flat();
           const templates = poseBuckets
@@ -327,11 +383,11 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               captured && typeof captured === "object" && captured.fullName ? captured.fullName.trim() : "";
             if (name) {
               setError(null);
-              setHint(tRef.current("davomat.scanWelcome").replace("{name}", name));
+              setHint(tRef.current("davomat.scanWelcome").replace("{name}", name), true);
               await new Promise((r) => window.setTimeout(r, 700));
             }
             stopCamera();
-            onOpenChange(false);
+            onOpenChangeRef.current(false);
           } catch (err) {
             setError((err as Error)?.message || tRef.current("davomat.scanFailed"));
             setBusy(false);
@@ -352,6 +408,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           }
         };
 
+        let detectFailures = 0;
         const loop = async () => {
           if (!running || cancelled) return;
           const videoEl = videoRef.current;
@@ -481,9 +538,13 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
                   }
                 }
               }
+              detectFailures = 0;
             } catch (err) {
-              if (!cancelled) setError((err as Error)?.message || tRef.current("davomat.scanError"));
-              return;
+              detectFailures += 1;
+              if (detectFailures >= 5) {
+                if (!cancelled) setError((err as Error)?.message || tRef.current("davomat.scanError"));
+                return;
+              }
             }
           }
           if (running && !cancelled) {
@@ -500,12 +561,26 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       }
     };
 
+    // iOS/Android pause the preview when the tab is backgrounded; resume or reopen on return.
+    const onVisible = () => {
+      if (cancelled || document.visibilityState !== "visible" || !streamRef.current) return;
+      const video = videoRef.current;
+      const live = streamRef.current.getVideoTracks().some((tr) => tr.readyState === "live");
+      if (!live) {
+        setCamRetryKey((k) => k + 1);
+        return;
+      }
+      if (video && video.paused) void video.play().catch(() => undefined);
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
     void start();
     return () => {
       cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
       stopCamera();
     };
-  }, [open, mode, onOpenChange, facing, camRetryKey]);
+  }, [open, mode, facing, camRetryKey]);
 
   const switchCamera = () => {
     if (busy || switching) return;

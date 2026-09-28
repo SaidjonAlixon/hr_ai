@@ -20,7 +20,7 @@ import {
   encodeShiftKeys,
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs, warnHmBefore } from "../lib/shift-schedule";
-import { isOfisRestDay } from "../lib/ofis-weekend";
+import { isScheduledRestDay } from "../lib/ofis-weekend";
 
 const FIVE_MIN_MS = 5 * 60 * 1000;
 /** Job 5 daqiqada bir — eslatma oynasi (~bir marta ushlash) */
@@ -137,10 +137,11 @@ export async function remindShiftStart15Min(): Promise<number> {
     if (!e.userId) continue;
     const role = roles.get(e.userId) || "";
     if (
-      isOfisRestDay(ymd, {
+      isScheduledRestDay(ymd, {
         userRole: role,
         orgRole: e.orgRole,
         position: e.position,
+        shiftType: e.shiftType,
       })
     ) {
       continue;
@@ -303,6 +304,10 @@ export async function autoCloseMissedCheckoutSilent(): Promise<{ closed: number 
       shiftKey: w.key,
       shiftKeys: w.keys,
       overnight: Boolean(w.overnight),
+      warehouse: Boolean(w.warehouse),
+      shiftType,
+      workDateYmd: r.workDate,
+      endHm: w.end,
     };
     const deadlineAt = checkoutDeadlineAt(r.workDate, w.end, w.overnight, deadlineOpts);
     const deadlineHm = checkoutDeadlineHmFor(deadlineOpts);

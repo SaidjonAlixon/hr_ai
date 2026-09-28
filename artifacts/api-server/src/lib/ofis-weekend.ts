@@ -1,7 +1,9 @@
 /**
  * Ofis xodimlari: shanba–yakshanba dam kuni.
  * Dorixona / smena xodimlariga tegmaydi.
+ * Xavfsizlik (SB) — o‘z jadvali (security-shifts).
  */
+import { isSecurityRestDay, securityShiftFor, SECURITY_USER_ROLES } from "./security-shifts";
 
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set([
@@ -54,6 +56,7 @@ export function isOfisStaffEmp(emp: {
   const orgRole = emp.orgRole || "";
   const position = emp.position || "";
   if (userRole === "admin" || /^admin$/i.test(position.trim())) return false;
+  if (SECURITY_USER_ROLES.has(userRole)) return false;
 
   if (SHIFT_PHARMACY_USER_ROLES.has(userRole)) return false;
   if (SHIFT_PHARMACY_ORG_ROLES.has(orgRole)) return false;
@@ -79,4 +82,19 @@ export function isOfisRestDay(
   },
 ): boolean {
   return isOfisStaffEmp(emp) && isWeekendYmd(ymd);
+}
+
+/** Jadval bo‘yicha dam kuni: Xavfsizlik — o‘z grafigi, qolganlar — ofis shanba/yakshanba */
+export function isScheduledRestDay(
+  ymd: string,
+  emp: {
+    userRole?: string | null;
+    orgRole?: string | null;
+    position?: string | null;
+    shiftType?: string | null;
+  },
+): boolean {
+  const sb = securityShiftFor(emp);
+  if (sb) return isSecurityRestDay(ymd, sb.pattern);
+  return isOfisRestDay(ymd, emp);
 }

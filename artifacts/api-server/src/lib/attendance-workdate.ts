@@ -10,7 +10,7 @@ export type Ymd = string;
 /**
  * Punch uchun workDate:
  * - ochiq (check-in bor, check-out yo‘q, absent/leave emas) yozuv — o‘sha kun
- * - tungi smena: yarim tundan keyin ham smena boshlangan kun
+ * - tungi / kechikkan Ketdim: kechagi ochiq yozuv (muddat checkoutDeadlineAt da tekshiriladi)
  * - aks holda bugun
  */
 export function resolveAttendanceWorkDate(opts: {
@@ -35,7 +35,11 @@ export function resolveAttendanceWorkDate(opts: {
   const { todayYmd, yesterdayYmd, now, todayRec, yesterdayRec } = opts;
   const keys = parseShiftKeys(opts.shiftType, opts.shiftLabel) as ShiftKey[];
 
-  const isOpen = (rec?: { checkInAt?: Date | null; checkOutAt?: Date | null; status?: string | null } | null) => {
+  const isOpen = (rec?: {
+    checkInAt?: Date | null;
+    checkOutAt?: Date | null;
+    status?: string | null;
+  } | null) => {
     if (!rec?.checkInAt || rec.checkOutAt) return false;
     const st = rec.status || "";
     if (st === "absent" || st === "leave") return false;
@@ -45,24 +49,9 @@ export function resolveAttendanceWorkDate(opts: {
   if (isOpen(todayRec)) {
     return { workDate: todayYmd, reason: "open_today" };
   }
+  // 2-smena 02:00 / 3-smena 10:00 gacha Ketdim — ochiq kechagi yozuv ustun
   if (isOpen(yesterdayRec)) {
     return { workDate: yesterdayYmd, reason: "open_overnight" };
-  }
-
-  // Tungi smena: yarim tundan keyin, lekin hali 07:00+grace ichida — kechagi smena
-  if (keys.includes("three") && isOpen(yesterdayRec)) {
-    const plan = plannedInterval(yesterdayYmd, "three");
-    const graceEnd = plan.endMs + 2 * 60 * 60_000; // +2 soat tuzatish oynasi
-    if (now.getTime() >= plan.startMs && now.getTime() <= graceEnd) {
-      // Agar kecha check-in qilinmagan bo‘lsa ham, endi ertalab "in" qilish — bugun emas
-      // Faqat agar hozir tungi smena oynasida bo‘lsa
-      if (now.getTime() < plan.endMs + 60 * 60_000) {
-        // morning after: prefer completing yesterday only if check-in exists
-        if (yesterdayRec?.checkInAt) {
-          return { workDate: yesterdayYmd, reason: "three_morning_out" };
-        }
-      }
-    }
   }
 
   // 3-smena start: kechqurun 23:00 — workDate = today

@@ -16,6 +16,8 @@ import {
   FileDown,
   FileSpreadsheet,
   Loader2,
+  LogIn,
+  LogOut,
   MoveHorizontal,
   Percent,
   Search,
@@ -46,7 +48,6 @@ import {
 } from "../../components/ui/dialog";
 import {
   AlertDialog,
-  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -68,6 +69,7 @@ import {
   downloadDavomatExcel,
   fetchDavomat,
   resetDavomatManual,
+  type DavomatResetPart,
   saveDavomatManual,
   type DavomatDayMetrics,
   type DavomatEmployee,
@@ -76,7 +78,13 @@ import {
 import { downloadDavomatPdf } from "../../lib/davomat-pdf-export";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
-import { canEditDavomatManual, canResetDavomatManual, canViewDavomat, canViewDavomatNotes } from "../../lib/roles";
+import {
+  canEditDavomatManual,
+  canResetDavomatManual,
+  canViewDavomat,
+  canViewDavomatNotes,
+  userRoleLabel,
+} from "../../lib/roles";
 import {
   type DavomatStaffFilter,
   matchesStaffFilter,
@@ -85,6 +93,11 @@ import {
   smenaLabelShort,
   workHoursForEmployee,
   workHoursForStaffFilter,
+  matchesWarehouseShift,
+  warehouseShiftOptions,
+  matchesPharmacyShift,
+  PHARMACY_SHIFT_OPTIONS,
+  type PharmacyShiftFilter,
 } from "../../lib/davomat-staff-filter";
 
 function todayYmd(): string {
@@ -294,6 +307,8 @@ type ResetTarget = {
   employeeId: number;
   fullName: string;
   workDate: string;
+  checkIn: string | null;
+  checkOut: string | null;
 };
 
 function dayHasPunch(day?: DavomatDayMetrics | null): boolean {
@@ -343,6 +358,13 @@ export default function DavomatPage() {
   const [searchDebounced, setSearchDebounced] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [staffFilter, setStaffFilter] = useState<DavomatStaffFilter>("office");
+  const [warehouseShift, setWarehouseShift] = useState<string>("all");
+  const [pharmacyShift, setPharmacyShift] = useState<PharmacyShiftFilter>("all");
+
+  useEffect(() => {
+    if (staffFilter !== "warehouse") setWarehouseShift("all");
+    if (staffFilter !== "pharmacy") setPharmacyShift("all");
+  }, [staffFilter]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
@@ -362,7 +384,7 @@ export default function DavomatPage() {
   } | null>(null);
   const [resetTarget, setResetTarget] = useState<ResetTarget | null>(null);
   const [saving, setSaving] = useState(false);
-  const [resetting, setResetting] = useState(false);
+  const [resetting, setResetting] = useState<DavomatResetPart | null>(null);
 
   const { data: departments } = useGetDepartments();
 
@@ -436,8 +458,56 @@ export default function DavomatPage() {
 
   const filteredEmployees = useMemo(() => {
     if (!report) return [];
-    return report.employees.filter((emp) => matchesStaffFilter(emp, staffFilter, farOfficeIds));
-  }, [report, staffFilter, farOfficeIds]);
+    return report.employees.filter(
+      (emp) =>
+        matchesStaffFilter(emp, staffFilter, farOfficeIds) &&
+        (staffFilter !== "warehouse" || matchesWarehouseShift(emp, warehouseShift)) &&
+        (staffFilter !== "pharmacy" || matchesPharmacyShift(emp, pharmacyShift)),
+    );
+  }, [report, staffFilter, warehouseShift, pharmacyShift, farOfficeIds]);
+
+  const pharmacyShiftCounts = useMemo(() => {
+    const counts = { shift_one: 0, shift_two: 0 };
+    if (staffFilter !== "pharmacy" || !report) return counts;
+    for (const emp of report.employees) {
+      if (!matchesStaffFilter(emp, "pharmacy")) continue;
+      if (matchesPharmacyShift(emp, "shift_two")) counts.shift_two += 1;
+      else counts.shift_one += 1;
+    }
+    return counts;
+  }, [report, staffFilter]);
+
+  const selectedPharmacyShift =
+    staffFilter === "pharmacy" ? PHARMACY_SHIFT_OPTIONS.find((o) => o.key === pharmacyShift) ?? null : null;
+
+  const whShiftOptions = useMemo(
+    () => (staffFilter === "warehouse" && report ? warehouseShiftOptions(report.employees) : []),
+    [report, staffFilter],
+  );
+
+  useEffect(() => {
+    if (warehouseShift === "all" || !report) return;
+    if (!whShiftOptions.some((o) => o.key === warehouseShift)) setWarehouseShift("all");
+  }, [whShiftOptions, warehouseShift, report]);
+
+  const selectedWhShift = useMemo(
+    () => whShiftOptions.find((o) => o.key === warehouseShift) ?? null,
+    [whShiftOptions, warehouseShift],
+  );
+
+  /** Aralash ish vaqtli ro‘yxat — har bir xodim uchun alohida smena ustuni kerak */
+  const showShiftCol =
+    staffFilter === "all" ||
+    staffFilter === "security" ||
+    (staffFilter === "warehouse" && !selectedWhShift?.hours) ||
+    (staffFilter === "pharmacy" && !selectedPharmacyShift);
+
+  const staffGroupLabel =
+    staffFilter === "warehouse" && selectedWhShift
+      ? `Omborxona · ${selectedWhShift.label}`
+      : selectedPharmacyShift
+        ? `Dorixona · ${selectedPharmacyShift.label}`
+        : staffFilterLabel(staffFilter);
 
   const employeesForDay = useMemo(() => {
     if (!report) return [] as Array<{ emp: (typeof filteredEmployees)[number]; day: (typeof filteredEmployees)[number]["days"][number] }>;
@@ -537,7 +607,22 @@ export default function DavomatPage() {
     };
   }, [filteredEmployees, report?.dates?.length, report?.summary.days]);
 
-  const activeWorkHours = useMemo(() => workHoursForStaffFilter(staffFilter), [staffFilter]);
+  const activeWorkHours = useMemo(() => {
+    if (staffFilter === "warehouse") {
+      const key = selectedWhShift?.hours ? selectedWhShift.key : null;
+      if (key) {
+        const [start, end] = key.split("-");
+        return { start, end };
+      }
+      return { start: "smena boshi", end: "smena oxiri" };
+    }
+    if (staffFilter === "pharmacy") {
+      return selectedPharmacyShift
+        ? { start: selectedPharmacyShift.start, end: selectedPharmacyShift.end }
+        : { start: "smena boshi", end: "smena oxiri" };
+    }
+    return workHoursForStaffFilter(staffFilter);
+  }, [staffFilter, selectedWhShift, selectedPharmacyShift]);
 
   const dayTiming = useMemo(() => {
     const rows = employeesForDay;
@@ -621,14 +706,15 @@ export default function DavomatPage() {
         to,
         search: search.trim() || undefined,
         departmentId: deptFilter !== "all" ? deptFilter : undefined,
-        staffFilter,
+        staffFilter: staffFilter === "pharmacy" && pharmacyShift !== "all" ? pharmacyShift : staffFilter,
+        warehouseShift: staffFilter === "warehouse" ? warehouseShift : undefined,
       });
       toast({
         title: result.via === "telegram" ? t("davomat.excelTelegram") : t("davomat.excelDone"),
         description:
           result.via === "telegram"
             ? t("davomat.excelTelegramHint")
-            : `${filteredEmployees.length} ${t("davomat.peopleCount")} · ${staffFilterLabel(staffFilter)}`,
+            : `${filteredEmployees.length} ${t("davomat.peopleCount")} · ${staffGroupLabel}`,
       });
     } catch (err) {
       toast({
@@ -650,7 +736,7 @@ export default function DavomatPage() {
     });
     try {
       const filterBits = [
-        staffFilterLabel(staffFilter),
+        staffGroupLabel,
         deptFilter !== "all"
           ? departments?.find((d) => String(d.id) === deptFilter)?.name || deptFilter
           : null,
@@ -682,14 +768,16 @@ export default function DavomatPage() {
         await downloadDavomatPdf({
           mode: "day",
           title: `${t("davomat.title")} · ${t("davomat.dayReport")}`,
-          subtitle: `${dayYmd} · ${activeWorkHours.start}–${activeWorkHours.end}`,
+          subtitle: showShiftCol
+            ? `${dayYmd} · ${staffGroupLabel}`
+            : `${dayYmd} · ${activeWorkHours.start}–${activeWorkHours.end}`,
           filterLine,
           statsLine: `${t("davomat.peopleCount")}: ${dayRows.length} · ${t("davomat.arrived")}: ${filteredDayStats.present} · ${t("davomat.lateShort")}: ${filteredDayStats.late} · ${t("davomat.absent")}: ${filteredDayStats.absent}`,
           fileBase: `davomat_${dayYmd}`,
           statusLabel,
           statusShort,
           dayRows,
-          showShiftCol: staffFilter === "all",
+          showShiftCol,
           workStart: activeWorkHours.start,
           workEnd: activeWorkHours.end,
         });
@@ -748,10 +836,13 @@ export default function DavomatPage() {
     if (!canReset) return;
     const day = emp.days.find((d) => d.date === workDate);
     if (!dayHasPunch(day)) return;
+    const hm = (v?: string | null) => (v && v !== "—" ? v : null);
     setResetTarget({
       employeeId: emp.id,
       fullName: emp.fullName,
       workDate,
+      checkIn: hm(day?.checkIn),
+      checkOut: hm(day?.checkOut),
     });
   };
 
@@ -781,16 +872,22 @@ export default function DavomatPage() {
     }
   };
 
-  const confirmReset = async () => {
+  const confirmReset = async (part: DavomatResetPart) => {
     if (!resetTarget || !canReset) return;
-    setResetting(true);
+    setResetting(part);
     try {
       await resetDavomatManual({
         employeeId: resetTarget.employeeId,
         workDate: resetTarget.workDate,
+        part,
       });
       toast({
-        title: t("davomat.resetDone"),
+        title:
+          part === "in"
+            ? t("davomat.resetInDone")
+            : part === "out"
+              ? t("davomat.resetOutDone")
+              : t("davomat.resetDone"),
         description: `${resetTarget.fullName} · ${resetTarget.workDate}`,
       });
       setResetTarget(null);
@@ -802,7 +899,7 @@ export default function DavomatPage() {
         variant: "destructive",
       });
     } finally {
-      setResetting(false);
+      setResetting(null);
     }
   };
 
@@ -828,11 +925,15 @@ export default function DavomatPage() {
     <div
       className={cn(
         "grid gap-2",
-        section === "schedule" && calMode === "day"
-          ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
-          : section === "schedule" && calMode !== "range"
-            ? "sm:grid-cols-2 lg:grid-cols-4"
-            : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
+        staffFilter === "warehouse" || staffFilter === "pharmacy"
+          ? section === "schedule" && calMode !== "range" && calMode !== "day"
+            ? "sm:grid-cols-2 lg:grid-cols-5"
+            : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
+          : section === "schedule" && calMode === "day"
+            ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
+            : section === "schedule" && calMode !== "range"
+              ? "sm:grid-cols-2 lg:grid-cols-4"
+              : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
       )}
     >
       {section === "schedule" && calMode === "range" ? (
@@ -1272,6 +1373,45 @@ export default function DavomatPage() {
           </SelectContent>
         </Select>
       </div>
+      {staffFilter === "pharmacy" ? (
+        <div>
+          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">Dorixona smenasi</Label>
+          <Select value={pharmacyShift} onValueChange={(v) => setPharmacyShift(v as PharmacyShiftFilter)}>
+            <SelectTrigger className={cn(fieldClass, "px-2.5")}>
+              <SelectValue placeholder="Barcha smenalar" />
+            </SelectTrigger>
+            <SelectContent position="popper" className="z-[90]">
+              <SelectItem value="all">
+                Barcha smenalar ({pharmacyShiftCounts.shift_one + pharmacyShiftCounts.shift_two})
+              </SelectItem>
+              {PHARMACY_SHIFT_OPTIONS.map((opt) => (
+                <SelectItem key={opt.key} value={opt.key}>
+                  {opt.label} · {opt.hours} ({pharmacyShiftCounts[opt.key]})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
+      {staffFilter === "warehouse" ? (
+        <div>
+          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">Omborxona smenasi</Label>
+          <Select value={warehouseShift} onValueChange={setWarehouseShift}>
+            <SelectTrigger className={cn(fieldClass, "px-2.5")}>
+              <SelectValue placeholder="Barcha smenalar" />
+            </SelectTrigger>
+            <SelectContent position="popper" className="z-[90]">
+              <SelectItem value="all">Barcha smenalar</SelectItem>
+              {whShiftOptions.map((opt) => (
+                <SelectItem key={opt.key} value={opt.key}>
+                  {opt.label}
+                  {opt.hours && opt.label !== opt.hours ? ` · ${opt.hours}` : ""} ({opt.count})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
       <div className={cn(section === "schedule" && calMode !== "range" ? "sm:col-span-2 lg:col-span-1" : "sm:col-span-2 xl:col-span-1")}>
         <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("ui.search")}</Label>
         <div className="relative">
@@ -1303,7 +1443,9 @@ export default function DavomatPage() {
                 <span className="dv-report-hero-time">
                   {staffFilter === "all"
                     ? "Ofis 09:00–18:00 · 1-smena 08:00–17:00 · 2-smena 17:00–23:45"
-                    : `${staffFilterLabel(staffFilter)} ${activeWorkHours.start}–${activeWorkHours.end}`}
+                    : showShiftCol
+                      ? `${staffGroupLabel} · smenalar bo‘yicha`
+                      : `${staffGroupLabel} ${activeWorkHours.start}–${activeWorkHours.end}`}
                 </span>
               </p>
             </div>
@@ -1483,7 +1625,7 @@ export default function DavomatPage() {
                     Kunlik davomat · {selectedDay}
                     {staffFilter !== "all" ? (
                       <span className="ml-2 text-sm font-medium text-primary">
-                        · {staffFilterLabel(staffFilter)}
+                        · {staffGroupLabel}
                       </span>
                     ) : null}
                   </CardTitle>
@@ -1507,7 +1649,7 @@ export default function DavomatPage() {
                       <span className="mt-0.5 block text-muted-foreground">
                         Kech keldi: {dayTiming.lateArrival} · Erta keldi: {dayTiming.earlyArrival} · Erta
                         ketdi: {dayTiming.earlyLeave} · Kech ketdi: {dayTiming.overtime}
-                        {staffFilter !== "all" ? (
+                        {!showShiftCol ? (
                           <>
                             {" "}
                             · Reja: {activeWorkHours.start}–{activeWorkHours.end}
@@ -1525,7 +1667,7 @@ export default function DavomatPage() {
                         <th className="px-3 py-2">F.I.Sh.</th>
                         <th className="px-3 py-2">Lavozim</th>
                         <th className="px-3 py-2">Holat</th>
-                        {staffFilter === "all" ? (
+                        {showShiftCol ? (
                           <th className="px-3 py-2">Smena / vaqt</th>
                         ) : null}
                         <th className="px-3 py-2">Kelish</th>
@@ -1543,7 +1685,7 @@ export default function DavomatPage() {
                         <tr>
                           <td
                             colSpan={
-                              (staffFilter === "all" ? 11 : 10) +
+                              (showShiftCol ? 11 : 10) +
                               (canSeeNotes ? 1 : 0) +
                               (showRowActions ? 1 : 0)
                             }
@@ -1566,19 +1708,21 @@ export default function DavomatPage() {
                           </td>
                           <td className="px-3 py-2 font-medium text-foreground">{emp.fullName}</td>
                           <td className="px-3 py-2 text-muted-foreground">
-                            {emp.position}
-                            {emp.location ? (
-                              <div className="text-xs text-muted-foreground">{emp.location}</div>
-                            ) : null}
+                            {userRoleLabel(emp.position) || "—"}
                           </td>
                           <td className="px-3 py-2">
                             <StatusPill status={day!.status} />
                           </td>
-                          {staffFilter === "all" ? (
+                          {showShiftCol ? (
                             <td className="px-3 py-2 text-xs text-muted-foreground">
                               {(() => {
                                 const h = workHoursForEmployee(emp);
-                                return `${h.start}–${h.end}`;
+                                if (staffFilter === "pharmacy") {
+                                  return `${matchesPharmacyShift(emp, "shift_two") ? "2-smena" : "1-smena"} · ${h.start}–${h.end}`;
+                                }
+                                return (staffFilter === "warehouse" || staffFilter === "security") && emp.shiftLabel
+                                  ? `${emp.shiftLabel} · ${h.start}–${h.end}`
+                                  : `${h.start}–${h.end}`;
                               })()}
                             </td>
                           ) : null}
@@ -1984,22 +2128,76 @@ export default function DavomatPage() {
                   <br />
                 </>
               ) : null}
-              {t("davomat.resetDesc")}
+              {t("davomat.resetChoose")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {resetTarget ? (
+            <div className="grid gap-2">
+              {(
+                [
+                  {
+                    part: "in" as const,
+                    icon: LogIn,
+                    title: t("davomat.resetIn"),
+                    time: resetTarget.checkIn,
+                    hint: resetTarget.checkOut ? t("davomat.resetInKeepOut") : t("davomat.resetInHint"),
+                    tone: "border-sky-200 hover:bg-sky-50 dark:border-sky-500/30 dark:hover:bg-sky-500/10",
+                  },
+                  {
+                    part: "out" as const,
+                    icon: LogOut,
+                    title: t("davomat.resetOut"),
+                    time: resetTarget.checkOut,
+                    hint: t("davomat.resetOutHint"),
+                    tone: "border-amber-200 hover:bg-amber-50 dark:border-amber-500/30 dark:hover:bg-amber-500/10",
+                  },
+                  {
+                    part: "all" as const,
+                    icon: RotateCcw,
+                    title: t("davomat.resetAll"),
+                    time: null,
+                    hint: t("davomat.resetDesc"),
+                    tone: "border-red-200 hover:bg-red-50 dark:border-red-500/30 dark:hover:bg-red-500/10",
+                  },
+                ]
+              ).map((opt) => {
+                const unavailable = opt.part !== "all" && !opt.time;
+                const Icon = opt.icon;
+                return (
+                  <button
+                    key={opt.part}
+                    type="button"
+                    disabled={Boolean(resetting) || unavailable}
+                    onClick={() => void confirmReset(opt.part)}
+                    className={cn(
+                      "flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                      opt.tone,
+                      opt.part === "all" && "text-destructive",
+                    )}
+                  >
+                    {resetting === opt.part ? (
+                      <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                    ) : (
+                      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center justify-between gap-2 text-sm font-semibold">
+                        {opt.title}
+                        {opt.part !== "all" ? (
+                          <span className="tabular-nums text-xs font-medium text-muted-foreground">
+                            {opt.time ?? t("davomat.resetNotMarked")}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="mt-0.5 block text-xs font-normal text-muted-foreground">{opt.hint}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={resetting}>{t("ui.cancelFull")}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={resetting}
-              onClick={(e) => {
-                e.preventDefault();
-                void confirmReset();
-              }}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-            >
-              {resetting ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <RotateCcw className="mr-1 h-4 w-4" />}
-              {t("davomat.resetBtn")}
-            </AlertDialogAction>
+            <AlertDialogCancel disabled={Boolean(resetting)}>{t("ui.cancelFull")}</AlertDialogCancel>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -2272,7 +2470,7 @@ function PeriodAttendanceGrid({
                           {emp.fullName}
                         </div>
                         <div className="truncate text-[10px] text-muted-foreground">
-                          {emp.position ? `${emp.position} · ` : ""}
+                          {emp.position ? `${userRoleLabel(emp.position)} · ` : ""}
                           {smenaLabelShort(emp)}
                         </div>
                       </td>

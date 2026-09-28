@@ -21,6 +21,7 @@ import {
   normalizeUserStatus,
   type StaffRow,
 } from "../lib/staff-directory";
+import { archiveAndDeleteUser } from "../lib/dismiss-user";
 import { formatPersonName } from "../lib/person-name";
 import { getActorDepartmentId, isDeptHeadRole, resolveDeptHeadContext } from "../lib/dept-staff";
 import { displayBranchName } from "../lib/geo-location";
@@ -1160,10 +1161,21 @@ router.patch("/employees/:id", requireAuth, async (req: AuthRequest, res): Promi
       userId: req.userId,
     });
     if (before.userId) {
+      const nextUserStatus = userStatusFromEmployment(updates.employmentStatus);
       await db
         .update(usersTable)
-        .set({ status: userStatusFromEmployment(updates.employmentStatus) })
+        .set({ status: nextUserStatus })
         .where(eq(usersTable.id, before.userId));
+      // Bo‘shatildi — darhol Bo‘shatilganlarga (login/parol bekor, boshqa joyda ko‘rinmaydi)
+      if (nextUserStatus === "terminated") {
+        const payload = await enrichEmployee(updated);
+        await archiveAndDeleteUser(before.userId, {
+          actorId: req.userId ?? null,
+          reason: "Xodimlar bo‘limida «Bo‘shatilgan» qilindi",
+        });
+        res.json({ ...payload, archived: true });
+        return;
+      }
     }
   }
 

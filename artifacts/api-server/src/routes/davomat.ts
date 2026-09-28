@@ -614,6 +614,29 @@ function excelFilialForEmployee(e: {
   return excelFilialLabel(e.location, { isOffice: w.key === "office" });
 }
 
+/** Dorixona filiali — GPS siz, bir xil nom bitta kalit */
+function branchIdentity(location: string | null | undefined): { key: string; label: string } | null {
+  const name = displayBranchName(location).replace(/\s+/g, " ").trim();
+  if (!name || name === "—" || name === "-" || /^filial$/i.test(name)) return null;
+  return { key: name.toLocaleLowerCase("uz"), label: name };
+}
+
+function resolvedBranchKey(
+  emp: { id: number; location: string | null; reportsToId: number | null },
+  byId: Map<number, { id: number; location: string | null; reportsToId: number | null }>,
+): string {
+  const seen = new Set<number>();
+  let cursor: typeof emp | undefined = emp;
+  for (let i = 0; i < 6 && cursor; i++) {
+    if (seen.has(cursor.id)) break;
+    seen.add(cursor.id);
+    const hit = branchIdentity(cursor.location);
+    if (hit) return hit.key;
+    cursor = cursor.reportsToId != null ? byId.get(cursor.reportsToId) : undefined;
+  }
+  return "none";
+}
+
 /** reportsTo zanjiri: mudir/farmasevt/stajyor → koordinator F.I.Sh. */
 function coordinatorNameFromLinks(
   employeeId: number,
@@ -747,6 +770,27 @@ async function scopeDeptHeadDavomatEmployees<
     if (e.userRole && allowedRoles.has(e.userRole)) return true;
     return false;
   });
+}
+
+const davomatAnalyticsCache = new Map<string, { at: number; body: unknown }>();
+const DAVOMAT_ANALYTICS_CACHE_MS = 25_000;
+
+function readDavomatAnalyticsCache(key: string): unknown | null {
+  const hit = davomatAnalyticsCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > DAVOMAT_ANALYTICS_CACHE_MS) {
+    davomatAnalyticsCache.delete(key);
+    return null;
+  }
+  return hit.body;
+}
+
+function writeDavomatAnalyticsCache(key: string, body: unknown) {
+  if (davomatAnalyticsCache.size > 40) {
+    const oldest = davomatAnalyticsCache.keys().next().value;
+    if (oldest) davomatAnalyticsCache.delete(oldest);
+  }
+  davomatAnalyticsCache.set(key, { at: Date.now(), body });
 }
 
 async function loadRecords(from: string, to: string, employeeIds: number[]) {
@@ -895,6 +939,7 @@ function buildReport(
         warehouse: isWarehouseDavomatStaff(e),
         security: Boolean(hours.security),
         warehouseShiftKey: warehouseShiftKeyOf(e.shiftType),
+        reportsToId: e.reportsToId ?? null,
         workStart: hours.start,
         workEnd: hours.end,
         days,
@@ -1071,19 +1116,34 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
     const to = q.to || todayTashkent();
     const from = q.from || addDays(to, -29);
     const segment = (q.segment === "office" || q.segment === "pharmacy" ? q.segment : "all") as DavomatSegment;
+    const fresh = q.fresh === "1";
+    const shared = canViewFullDavomatDashboard(req.userRole);
+    const cacheKey = `${shared ? "full" : `u${req.userId ?? 0}`}|${from}|${to}|${segment}`;
+    if (!fresh) {
+      const cached = readDavomatAnalyticsCache(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+    }
+
     let employees = await loadActiveEmployees({});
     employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
 
     const employeeIds = employees.map((e) => e.id);
-    const records = await loadRecords(from, to, employeeIds);
-    const defs = await getEffectiveShiftDefs();
-    const report = await buildReportWithJavob(employees, records, from, to, defs);
-
     const span = eachDateInclusive(from, to).length;
     const prevTo = addDays(from, -1);
     const prevFrom = addDays(prevTo, -(span - 1));
-    const prevRecords = await loadRecords(prevFrom, prevTo, employeeIds);
-    const prevReport = await buildReportWithJavob(employees, prevRecords, prevFrom, prevTo, defs);
+    const [defs, allRecords] = await Promise.all([
+      getEffectiveShiftDefs(),
+      loadRecords(prevFrom, to, employeeIds),
+    ]);
+    const records = allRecords.filter((r) => r.workDate >= from && r.workDate <= to);
+    const prevRecords = allRecords.filter((r) => r.workDate >= prevFrom && r.workDate <= prevTo);
+    const [report, prevReport] = await Promise.all([
+      buildReportWithJavob(employees, records, from, to, defs),
+      buildReportWithJavob(employees, prevRecords, prevFrom, prevTo, defs),
+    ]);
 
     const meta = employees.map((e) => ({
       id: e.id,
@@ -1092,7 +1152,9 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
       shiftType: e.shiftType ?? null,
     }));
 
-    res.json(buildDavomatAnalytics(report, meta, segment, prevReport));
+    const body = buildDavomatAnalytics(report, meta, segment, prevReport);
+    writeDavomatAnalyticsCache(cacheKey, body);
+    res.json(body);
   } catch (err) {
     console.error("GET /davomat/analytics error:", err);
     res.status(503).json({ error: "Davomat analitikasi yuklanmadi" });
@@ -4371,6 +4433,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     employees = employees.filter(
       (e) => matchesDavomatStaffFilter(e, staffFilter) && matchesWarehouseShift(e, whShiftFilter),
     );
+    const branchKey = String(q.branch || "").trim().toLocaleLowerCase("uz");
+    if (branchKey && branchKey !== "all") {
+      const byId = new Map(employees.map((e) => [e.id, e]));
+      employees = employees.filter((e) => resolvedBranchKey(e, byId) === branchKey);
+    }
     employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
     const records = await loadRecords(
       from,
@@ -4407,6 +4474,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         whShiftFilter ? ` · smena ${whShiftFilter === "none" ? "biriktirilmagan" : whShiftFilter}` : ""
       }`,
       q.search ? `Qidiruv: ${q.search}` : null,
+      q.branch && q.branch !== "all" ? `Filial: ${q.branchLabel || q.branch}` : null,
       q.location ? `Filial: ${excelFilialLabel(q.location)}` : null,
       `Xodimlar: ${employees.length} ta`,
     ]

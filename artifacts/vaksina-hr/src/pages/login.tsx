@@ -14,7 +14,7 @@ import { LanguageSwitcher } from '../components/language-switcher';
 import { HELP_ASSISTANT_ENABLED, HelpAssistantDialog } from '../components/HelpAssistantDialog';
 import { OperatorHeadsetIcon } from '../components/OperatorHeadsetIcon';
 import { useI18n } from '../i18n/I18nProvider';
-import { isStajyor, isLimitedOfficeStaffRole } from '../lib/roles';
+import { isStajyor, isLimitedOfficeStaffRole, isReviziyaRole } from '../lib/roles';
 import { loginWithDevice, requestDeviceChange } from '../lib/device-security-api';
 
 type DeviceGate =
@@ -51,6 +51,10 @@ export default function Login() {
     }
     if (user.role === 'it_rahbar') {
       setLocation('/it');
+      return;
+    }
+    if (isReviziyaRole(user.role)) {
+      setLocation('/reviziya');
       return;
     }
     setLocation('/dashboard');

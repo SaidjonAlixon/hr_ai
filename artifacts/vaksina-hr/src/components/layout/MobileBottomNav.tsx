@@ -55,8 +55,8 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   gpp_rahbar: ['/dashboard', '/vazifalar', '/employees', '/davomat-face', '/eslatmalar'],
   oshpaz_rahbar: ['/dashboard', '/vazifalar', '/employees', '/davomat-face', '/eslatmalar'],
   marketing_rahbar: ['/dashboard', '/vazifalar', '/employees', '/davomat-face', '/eslatmalar'],
-  revizor: ['/dashboard', '/vazifalar', '/reviziya', '/davomat-face', '/pharmacy-network'],
-  reviziya_rahbar: ['/dashboard', '/vazifalar', '/reviziya', '/employees', '/davomat-face'],
+  revizor: ['/reviziya', '/vazifalar', '/davomat-face', '/pharmacy-network'],
+  reviziya_rahbar: ['/reviziya', '/vazifalar', '/employees', '/davomat-face'],
 };
 
 /** Path → short mobile label key (mobile.*) */

@@ -457,16 +457,25 @@ export default function AdminUsersPage() {
     setDismissTarget(u);
   };
 
-  const confirmDismiss = async () => {
+  const confirmDismiss = async (mode: 'archive' | 'purge') => {
     if (!dismissTarget || dismissing) return;
+    if (mode === 'purge') {
+      const ok = window.confirm(
+        `${dismissTarget.fullName} hamma joydan o‘chadi: login, davomat, javob, darslik, atestatsiya va Bo‘shatilganlar. Qaytarib bo‘lmaydi. Davom etasizmi?`,
+      );
+      if (!ok) return;
+    }
     setDismissing(true);
     try {
-      await dismissUser(dismissTarget.id, dismissReason);
+      await dismissUser(dismissTarget.id, dismissReason, mode);
       invalidate();
       void queryClient.invalidateQueries();
       toast({
-        title: 'Bo‘shatilganlarga o‘tkazildi',
-        description: `${dismissTarget.fullName} — login va parol bekor qilindi`,
+        title: mode === 'purge' ? 'Butunlay o‘chirildi' : 'Bo‘shatilganlarga o‘tkazildi',
+        description:
+          mode === 'purge'
+            ? `${dismissTarget.fullName} hech qayerda qolmadi`
+            : `${dismissTarget.fullName} — faqat Bo‘shatilganlarda qoldi`,
       });
       setDismissTarget(null);
     } catch (err) {
@@ -732,14 +741,15 @@ export default function AdminUsersPage() {
             </DialogTitle>
             <DialogDescription>
               <span className="font-semibold text-foreground">{dismissTarget?.fullName}</span>{' '}
-              <span className="font-mono text-xs">({dismissTarget?.login})</span> «Bo‘shatilganlar» bo‘limiga o‘tadi.
+              <span className="font-mono text-xs">({dismissTarget?.login})</span>
             </DialogDescription>
           </DialogHeader>
           <ul className="space-y-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
             <li>• Login va parol darhol bekor bo‘ladi, ochiq sessiyalar yopiladi</li>
             <li>• Face ID, passkey va Telegram bog‘lanishi o‘chiriladi</li>
-            <li>• Xodimlar, davomat, filiallar va boshqa barcha ro‘yxatlardan olib tashlanadi</li>
-            <li>• Faqat «Bo‘shatilganlar» bo‘limida ko‘rinib qoladi</li>
+            <li>• Xodimlar, davomat va boshqa ro‘yxatlardan olib tashlanadi</li>
+            <li>• Bo‘shatish — faqat «Bo‘shatilganlar»da qoladi</li>
+            <li>• Butunlay o‘chirish — hech qayerda qolmaydi, qaytarib bo‘lmaydi</li>
           </ul>
           <div className="space-y-1.5">
             <Label htmlFor="dismiss-reason" className="text-xs">Sabab (ixtiyoriy)</Label>
@@ -752,13 +762,27 @@ export default function AdminUsersPage() {
               disabled={dismissing}
             />
           </div>
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => setDismissTarget(null)} disabled={dismissing}>
+          <DialogFooter className="flex-col gap-2 sm:flex-col sm:space-x-0">
+            <Button variant="outline" onClick={() => setDismissTarget(null)} disabled={dismissing} className="w-full">
               Bekor qilish
             </Button>
-            <Button variant="destructive" onClick={() => void confirmDismiss()} disabled={dismissing} className="gap-2">
+            <Button
+              variant="outline"
+              onClick={() => void confirmDismiss('archive')}
+              disabled={dismissing}
+              className="w-full gap-2 border-rose-300 text-rose-700 hover:bg-rose-50"
+            >
               {dismissing ? <Loader2 className="h-4 w-4 animate-spin" /> : <UserX className="h-4 w-4" />}
-              O‘chirish va bo‘shatish
+              Bo‘shatish — arxivda qoladi
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => void confirmDismiss('purge')}
+              disabled={dismissing}
+              className="w-full gap-2"
+            >
+              {dismissing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              Butunlay o‘chirish
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -31,10 +31,30 @@ export async function fetchDismissedStaff(search?: string): Promise<DismissedSta
   return body as DismissedStaff[];
 }
 
-/** Foydalanuvchini o‘chirish → Bo‘shatilganlar arxiviga o‘tadi, login/parol bekor */
-export async function dismissUser(id: number, reason?: string): Promise<void> {
-  const q = reason?.trim() ? `?reason=${encodeURIComponent(reason.trim())}` : "";
+/** archive — faqat Bo‘shatilganlarda qoladi. purge — hech qayerda qolmaydi. */
+export async function dismissUser(
+  id: number,
+  reason?: string,
+  mode: "archive" | "purge" = "archive",
+): Promise<void> {
+  const params = new URLSearchParams();
+  if (reason?.trim()) params.set("reason", reason.trim());
+  if (mode === "purge") params.set("mode", "purge");
+  const q = params.toString() ? `?${params.toString()}` : "";
   const res = await fetch(`/api/users/${id}${q}`, {
+    method: "DELETE",
+    credentials: "include",
+    headers: { Accept: "application/json" },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || "O‘chirilmadi");
+  }
+}
+
+/** Bo‘shatilganlar arxividan ham o‘chirish — qaytarib bo‘lmaydi */
+export async function purgeDismissed(id: number): Promise<void> {
+  const res = await fetch(`/api/users/dismissed/${id}`, {
     method: "DELETE",
     credentials: "include",
     headers: { Accept: "application/json" },

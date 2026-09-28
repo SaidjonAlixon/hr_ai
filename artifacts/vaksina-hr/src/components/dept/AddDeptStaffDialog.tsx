@@ -290,11 +290,13 @@ export function AddDeptStaffDialog({ open, onOpenChange, enabled = true }: Props
 export function AddDeptStaffButton({
   enabled,
   className,
+  excelClassName,
   size = "sm",
   showExcel = true,
 }: {
   enabled: boolean;
   className?: string;
+  excelClassName?: string;
   size?: "sm" | "default";
   showExcel?: boolean;
 }) {
@@ -332,7 +334,7 @@ export function AddDeptStaffButton({
           type="button"
           size={size}
           variant="secondary"
-          className="gap-1.5"
+          className={cn("gap-1.5", excelClassName)}
           disabled={excelBusy}
           onClick={() => void onExcel()}
         >

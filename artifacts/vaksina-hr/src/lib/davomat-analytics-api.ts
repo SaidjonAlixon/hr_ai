@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 
 export type DavomatSegment = "all" | "office" | "pharmacy";
@@ -234,11 +235,13 @@ export async function fetchDavomatAnalytics(params: {
   from?: string;
   to?: string;
   segment?: DavomatSegment;
+  fresh?: boolean;
 }): Promise<DavomatAnalytics> {
   const sp = new URLSearchParams();
   if (params.from) sp.set("from", params.from);
   if (params.to) sp.set("to", params.to);
   if (params.segment) sp.set("segment", params.segment);
+  if (params.fresh) sp.set("fresh", "1");
   const res = await fetch(`/api/davomat/analytics?${sp}`, { credentials: "include" });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -254,11 +257,23 @@ export function useDavomatAnalytics(
   params: { from: string; to: string; segment: DavomatSegment },
   enabled = true,
 ) {
-  return useQuery({
+  const freshRef = useRef(false);
+  const query = useQuery({
     queryKey: ["davomat-analytics", params],
-    queryFn: () => fetchDavomatAnalytics(params),
+    queryFn: () => {
+      const fresh = freshRef.current;
+      freshRef.current = false;
+      return fetchDavomatAnalytics({ ...params, fresh });
+    },
     enabled,
-    staleTime: 60_000,
+    staleTime: 90_000,
+    placeholderData: (prev) => prev,
     retry: 1,
+    refetchOnWindowFocus: false,
   });
+  const refetchFresh = () => {
+    freshRef.current = true;
+    return query.refetch();
+  };
+  return { ...query, refetchFresh };
 }

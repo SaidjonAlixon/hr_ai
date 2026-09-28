@@ -41,6 +41,7 @@ export type DavomatEmployee = {
   security?: boolean;
   /** Omborxona smenasi `HH:MM-HH:MM`; biriktirilmagan bo‘lsa null */
   warehouseShiftKey?: string | null;
+  reportsToId?: number | null;
   workStart?: string;
   workEnd?: string;
   days: DavomatDayMetrics[];
@@ -651,6 +652,8 @@ export async function downloadDavomatExcel(params: {
   location?: string;
   staffFilter?: string;
   warehouseShift?: string;
+  branch?: string;
+  branchLabel?: string;
 }): Promise<{ via: "telegram" | "browser" }> {
   const q = new URLSearchParams();
   q.set("from", params.from);
@@ -661,6 +664,10 @@ export async function downloadDavomatExcel(params: {
   if (params.staffFilter && params.staffFilter !== "all") q.set("staffFilter", params.staffFilter);
   if (params.staffFilter === "warehouse" && params.warehouseShift && params.warehouseShift !== "all") {
     q.set("warehouseShift", params.warehouseShift);
+  }
+  if (params.branch && params.branch !== "all") {
+    q.set("branch", params.branch);
+    if (params.branchLabel) q.set("branchLabel", params.branchLabel);
   }
   const res = await fetch(`/api/davomat/export?${q}`, { credentials: "include" });
   if (!res.ok) {

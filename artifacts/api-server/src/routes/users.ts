@@ -5,7 +5,7 @@ import { db, usersTable, departmentsTable, employeesTable, dismissedStaffTable }
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
-import { archiveAndDeleteUser, sweepDismissedUsers } from "../lib/dismiss-user";
+import { archiveAndDeleteUser, purgeDismissedArchive, purgeUserCompletely, sweepDismissedUsers } from "../lib/dismiss-user";
 import { canManageUsers, canDeleteUsers, canChangeStaffStatus } from "../lib/roles";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
@@ -501,6 +501,26 @@ router.get("/users/dismissed", requireAuth, async (req: AuthRequest, res): Promi
   res.json(archived);
 });
 
+/** Arxivdagi odamni ham, qolgan izlarini ham o‘chirish — qaytib tiklanmaydi */
+router.delete("/users/dismissed/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireAdminOnly(req, res)) return;
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (!Number.isInteger(id)) {
+    res.status(400).json({ error: "Noto‘g‘ri id" });
+    return;
+  }
+  try {
+    const ok = await purgeDismissedArchive(id);
+    if (!ok) {
+      res.status(404).json({ error: "Topilmadi" });
+      return;
+    }
+    res.sendStatus(204);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "O‘chirilmadi" });
+  }
+});
+
 router.get("/users/:id", async (req, res): Promise<void> => {
   const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   const [row] = await db
@@ -671,12 +691,19 @@ router.delete("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<
   }
 
   const reason = String((req.query as { reason?: string }).reason || "").trim() || null;
-  const ok = await archiveAndDeleteUser(id, { actorId: req.userId ?? null, reason });
-  if (!ok) {
-    res.status(404).json({ error: "Topilmadi" });
-    return;
+  const mode = String((req.query as { mode?: string }).mode || "archive");
+  try {
+    const ok = mode === "purge"
+      ? await purgeUserCompletely(id)
+      : await archiveAndDeleteUser(id, { actorId: req.userId ?? null, reason });
+    if (!ok) {
+      res.status(404).json({ error: "Topilmadi" });
+      return;
+    }
+    res.sendStatus(204);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : "O‘chirilmadi" });
   }
-  res.sendStatus(204);
 });
 
 export default router;

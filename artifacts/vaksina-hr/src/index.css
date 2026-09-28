@@ -105,16 +105,16 @@
 }
 
 .dark {
-  --background: 222 47% 7%;
+  --background: 226 42% 8%;
   --foreground: 210 40% 98%;
 
-  --border: 217 28% 22%;
-  --input: 217 28% 20%;
-  --ring: 199 89% 58%;
+  --border: 220 24% 26%;
+  --input: 222 28% 18%;
+  --ring: 199 89% 62%;
 
-  --card: 217 33% 13%;
+  --card: 224 38% 13%;
   --card-foreground: 210 40% 98%;
-  --card-border: 217 28% 22%;
+  --card-border: 218 28% 26%;
 
   --popover: 217 33% 13%;
   --popover-foreground: 210 40% 98%;

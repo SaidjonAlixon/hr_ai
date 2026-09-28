@@ -5,6 +5,7 @@ import { useToast } from "../hooks/use-toast";
 import type { User } from "@workspace/api-client-react";
 import { Loader2, RefreshCw } from "lucide-react";
 import { useI18n } from "../i18n/I18nProvider";
+import { isReviziyaRole } from "../lib/roles";
 
 declare global {
   interface Window {
@@ -94,6 +95,8 @@ function redirectAfterLogin(user: User, next: string | null, setLocation: (path:
     clean = next.startsWith("/") ? next : `/${next}`;
   } else if (user.role === "stajyor") {
     clean = "/kirish";
+  } else if (isReviziyaRole(user.role)) {
+    clean = "/reviziya";
   } else {
     clean = "/dashboard";
   }

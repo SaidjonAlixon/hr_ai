@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ArrowDown, Maximize2, Minimize2, Pause, Play, RotateCcw } from "lucide-react";
+import { Maximize2, Minimize2, Pause, Play, RotateCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type YTPlayer = {
@@ -89,54 +89,6 @@ function isFullyWatched(maxWatched: number, duration: number) {
 }
 
 const PLAY_HINT_KEY = "kirish-player-click-hint";
-
-function FirstPlayHint({
-  onPlay,
-}: {
-  onPlay: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-label="Videoni boshlash"
-      className="absolute inset-0 z-30 flex touch-manipulation flex-col items-center justify-center bg-black/55"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onPlay();
-      }}
-    >
-      <div className="mb-2 flex animate-bounce flex-col items-center">
-        <span className="rounded-full bg-[#F1C40F] px-3 py-1 text-xs font-bold text-[#0B1B2B] shadow-lg">
-          Shu yerni bosing
-        </span>
-        <ArrowDown className="mt-1 h-10 w-10 text-[#F1C40F] drop-shadow-[0_2px_6px_rgba(0,0,0,0.6)]" />
-      </div>
-      <span className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-[#2AABEE] text-foreground dark:text-white shadow-[0_0_0_8px_rgba(42,171,238,0.35)]">
-        <Play className="ml-1 h-8 w-8 fill-white" />
-      </span>
-    </button>
-  );
-}
-
-function CenterPlay({ onPlay }: { onPlay: () => void }) {
-  return (
-    <button
-      type="button"
-      aria-label="Videoni boshlash"
-      className="absolute inset-0 z-30 flex touch-manipulation items-center justify-center bg-black/55"
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onPlay();
-      }}
-    >
-      <span className="flex h-[4.5rem] w-[4.5rem] items-center justify-center rounded-full bg-[#2AABEE] text-foreground dark:text-white shadow-[0_0_0_8px_rgba(42,171,238,0.35)]">
-        <Play className="ml-1 h-8 w-8 fill-white" />
-      </span>
-    </button>
-  );
-}
 
 export function RestrictedVideoPlayer({
   youtubeId,
@@ -434,6 +386,7 @@ function Controls({
   duration,
   maxWatched,
   expanded,
+  showHint,
   onRewind,
   onSeekBack,
   onTogglePlay,
@@ -446,6 +399,7 @@ function Controls({
   duration: number;
   maxWatched: number;
   expanded?: boolean;
+  showHint?: boolean;
   onRewind: () => void;
   onSeekBack: (t: number) => void;
   onTogglePlay: () => void;
@@ -455,20 +409,23 @@ function Controls({
   const dur = duration || 1;
   const watchedPct = Math.min(100, (maxWatched / dur) * 100);
   const nowPct = Math.min(100, (current / dur) * 100);
-  const btn =
-    "flex h-11 min-w-11 touch-manipulation items-center justify-center gap-1 rounded-full bg-white/15 px-3 text-sm font-semibold text-white active:bg-white/30 sm:h-9 sm:min-w-9 sm:text-xs";
+  const iconBtn =
+    "flex h-8 w-8 shrink-0 touch-manipulation items-center justify-center rounded-full bg-white/15 text-white active:bg-white/30";
 
   return (
     <div
       className={cn(
-        "absolute inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-12 transition-opacity duration-200",
+        "absolute inset-x-0 bottom-0 z-40 bg-gradient-to-t from-black/90 via-black/55 to-transparent px-2.5 pb-[max(0.45rem,env(safe-area-inset-bottom))] pt-8 transition-opacity duration-200",
         visible ? "opacity-100" : "pointer-events-none opacity-0",
       )}
       onPointerDown={onInteract}
     >
+      {showHint && !playing ? (
+        <p className="mb-1 text-[10px] font-semibold text-[#F1C40F]">Pastdagi tugmani bosing</p>
+      ) : null}
       <button
         type="button"
-        className="relative mb-1 flex h-7 w-full touch-manipulation items-center"
+        className="relative mb-1 flex h-5 w-full touch-manipulation items-center"
         aria-label="Faqat orqaga o‘tish mumkin"
         onClick={(e) => {
           const rect = e.currentTarget.getBoundingClientRect();
@@ -477,44 +434,49 @@ function Controls({
           if (t <= maxWatched + 0.05) onSeekBack(t);
         }}
       >
-        <span className="relative block h-1.5 w-full overflow-hidden rounded-full bg-white/25">
+        <span className="relative block h-1 w-full overflow-hidden rounded-full bg-white/25">
           <span className="absolute inset-y-0 left-0 rounded-full bg-white/40" style={{ width: `${watchedPct}%` }} />
           <span className="absolute inset-y-0 left-0 rounded-full bg-[#2AABEE]" style={{ width: `${nowPct}%` }} />
         </span>
         <span
-          className="absolute top-1/2 h-3.5 w-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2AABEE] shadow ring-2 ring-white"
+          className="absolute top-1/2 h-2 w-2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2AABEE] ring-1 ring-white"
           style={{ left: `${nowPct}%` }}
         />
       </button>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1.5">
         <button
           type="button"
           onClick={onTogglePlay}
-          className={btn}
+          className={iconBtn}
           aria-label={playing ? "Pauza" : "Davom ettirish"}
         >
-          {playing ? <Pause className="h-5 w-5 fill-white" /> : <Play className="ml-0.5 h-5 w-5 fill-white" />}
+          {playing ? <Pause className="h-3.5 w-3.5 fill-white" /> : <Play className="ml-px h-3.5 w-3.5 fill-white" />}
         </button>
-        <button type="button" onClick={onRewind} className={btn} aria-label="10 soniya orqaga">
-          <RotateCcw className="h-4 w-4" />
+        <button
+          type="button"
+          onClick={onRewind}
+          className="flex h-11 min-w-[5.25rem] touch-manipulation items-center justify-center gap-1.5 rounded-full bg-white/25 px-3 text-sm font-bold text-white active:bg-white/40"
+          aria-label="10 soniya orqaga"
+        >
+          <RotateCcw className="h-5 w-5" />
           10 s
         </button>
-        <span className="ml-auto text-sm tabular-nums text-white/90 sm:text-xs">
+        <span className="ml-auto text-[11px] tabular-nums text-white/90">
           {formatTime(current)} / {formatTime(duration)}
         </span>
         {onToggleExpanded ? (
           <button
             type="button"
             onClick={onToggleExpanded}
-            className={btn}
+            className={iconBtn}
             aria-label={expanded ? "Kichraytirish" : "To‘liq ekran"}
           >
-            {expanded ? <Minimize2 className="h-5 w-5" /> : <Maximize2 className="h-5 w-5" />}
+            {expanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
           </button>
         ) : null}
       </div>
       {!playing ? (
-        <p className="mt-1.5 text-[11px] text-white/60">Oldinga o‘tkazish yo‘q · orqaga qaytish mumkin</p>
+        <p className="mt-1 text-[10px] text-white/60">Oldinga o‘tkazish yo‘q · orqaga qaytish mumkin</p>
       ) : null}
     </div>
   );
@@ -618,36 +580,14 @@ function Html5Restricted({
         onReveal={reveal}
         onPause={() => ref.current?.pause()}
       />
-      {!playing ? (
-        showHint ? (
-          <FirstPlayHint
-            onPlay={() => {
-              const el = ref.current;
-              if (!el) return;
-              onPlaying?.();
-              reveal();
-              void el.play();
-            }}
-          />
-        ) : (
-          <CenterPlay
-            onPlay={() => {
-              const el = ref.current;
-              if (!el) return;
-              onPlaying?.();
-              reveal();
-              void el.play();
-            }}
-          />
-        )
-      ) : null}
       <Controls
-        visible={showUi || (!playing && current > 0)}
+        visible={showUi || !playing}
         playing={playing}
         current={current}
         duration={duration}
         maxWatched={maxWatched}
         expanded={expanded}
+        showHint={showHint}
         onToggleExpanded={onToggleExpanded}
         onInteract={reveal}
         onTogglePlay={() => {
@@ -814,36 +754,14 @@ function YoutubeRestricted({
           if (ready) playerRef.current?.pauseVideo();
         }}
       />
-      {!playing && ready ? (
-        showHint ? (
-          <FirstPlayHint
-            onPlay={() => {
-              const p = playerRef.current;
-              if (!p || !ready) return;
-              onPlaying?.();
-              reveal();
-              p.playVideo();
-            }}
-          />
-        ) : (
-          <CenterPlay
-            onPlay={() => {
-              const p = playerRef.current;
-              if (!p || !ready) return;
-              onPlaying?.();
-              reveal();
-              p.playVideo();
-            }}
-          />
-        )
-      ) : null}
       <Controls
-        visible={ready && (showUi || (!playing && current > 0))}
+        visible={ready && (showUi || !playing)}
         playing={playing}
         current={current}
         duration={duration}
         maxWatched={maxWatched}
         expanded={expanded}
+        showHint={showHint}
         onToggleExpanded={onToggleExpanded}
         onInteract={reveal}
         onTogglePlay={() => {

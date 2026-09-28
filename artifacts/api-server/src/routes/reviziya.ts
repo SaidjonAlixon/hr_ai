@@ -197,6 +197,110 @@ router.get("/reviziya/branches", requireAuth, async (req: AuthRequest, res): Pro
   );
 });
 
+router.get("/reviziya/branches/:id/staff", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  const id = parseInt(String(req.params.id || ""), 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Filial noto‘g‘ri" });
+    return;
+  }
+  const [manager] = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      userId: employeesTable.userId,
+      reportsToId: employeesTable.reportsToId,
+      orgRole: employeesTable.orgRole,
+    })
+    .from(employeesTable)
+    .where(and(eq(employeesTable.id, id), eq(employeesTable.orgRole, "manager")))
+    .limit(1);
+  if (!manager) {
+    res.status(404).json({ error: "Filial topilmadi" });
+    return;
+  }
+
+  const staff = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      orgRole: employeesTable.orgRole,
+      userId: employeesTable.userId,
+    })
+    .from(employeesTable)
+    .where(
+      and(
+        eq(employeesTable.reportsToId, manager.id),
+        eq(employeesTable.employmentStatus, "working"),
+        inArray(employeesTable.orgRole, ["pharmacist", "intern", "supervisor"]),
+      ),
+    );
+
+  let coordinator: { id: number; fullName: string; userId: number | null; orgRole: string | null } | null = null;
+  if (manager.reportsToId) {
+    const [row] = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        userId: employeesTable.userId,
+        orgRole: employeesTable.orgRole,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, manager.reportsToId))
+      .limit(1);
+    coordinator = row || null;
+  }
+
+  const userIds = [manager.userId, coordinator?.userId, ...staff.map((s) => s.userId)].filter(
+    (n): n is number => typeof n === "number",
+  );
+  const phoneRows = userIds.length
+    ? await db
+        .select({ id: usersTable.id, phone: usersTable.phone })
+        .from(usersTable)
+        .where(inArray(usersTable.id, userIds))
+    : [];
+  const phoneOf = new Map(phoneRows.map((p) => [p.id, p.phone || ""]));
+
+  const roleLabel = (orgRole: string | null | undefined) => {
+    if (orgRole === "manager") return "Mudir";
+    if (orgRole === "intern") return "Stajyor";
+    if (orgRole === "coordinator") return "Koordinator";
+    if (orgRole === "supervisor") return "Boshqaruvchi";
+    return "Farmasevt";
+  };
+
+  const people = [
+    {
+      id: manager.id,
+      fullName: manager.fullName,
+      orgRole: "manager",
+      roleLabel: "Mudir",
+      phone: manager.userId ? phoneOf.get(manager.userId) || "" : "",
+    },
+    ...staff.map((s) => ({
+      id: s.id,
+      fullName: s.fullName,
+      orgRole: s.orgRole || "pharmacist",
+      roleLabel: roleLabel(s.orgRole),
+      phone: s.userId ? phoneOf.get(s.userId) || "" : "",
+    })),
+    ...(coordinator
+      ? [
+          {
+            id: coordinator.id,
+            fullName: coordinator.fullName,
+            orgRole: "coordinator",
+            roleLabel: "Koordinator",
+            phone: coordinator.userId ? phoneOf.get(coordinator.userId) || "" : "",
+          },
+        ]
+      : []),
+  ];
+
+  res.json({ people });
+});
+
 router.get("/reviziya/documents", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (denyView(req, res)) return;
   const { type, status, branch, q } = req.query as Record<string, string>;

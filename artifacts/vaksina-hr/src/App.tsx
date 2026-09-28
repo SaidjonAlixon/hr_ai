@@ -1,95 +1,104 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { lazy, Suspense, type ComponentType } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { ThemeProvider } from './components/theme-provider';
 import { I18nProvider } from './i18n/I18nProvider';
 import { Toaster } from './components/ui/toaster';
 import { TooltipProvider } from './components/ui/tooltip';
-import { Route, Switch, Router as WouterRouter, Redirect } from 'wouter';
+import { Route, Switch, Router as WouterRouter, Redirect, useLocation } from 'wouter';
 import { AuthProvider } from './contexts/AuthContext';
 import { Layout } from './components/layout/Layout';
 import { RealtimeSync } from './lib/realtime-sync';
 import { DeviceSecurityListener } from './components/DeviceSecurityListener';
 
-// Pages
+// Login asosiy paketda qoladi. Qolgan sahifalar kirish/yangilashda birga tahlil qilinmasin.
 import Login from './pages/login';
-import Dashboard from './pages/dashboard';
-import RequestsList from './pages/requests/index';
-import NewRequest from './pages/requests/new';
-import RequestDetails from './pages/requests/show';
-import VacanciesList from './pages/vacancies/index';
-import NewVacancy from './pages/vacancies/new';
-import VacancyDetails from './pages/vacancies/show';
-import CandidatesList from './pages/candidates/index';
-import NewCandidate from './pages/candidates/new';
-import CandidateProfile from './pages/candidates/show';
-import InternshipsPage from './pages/internships/index';
-import PharmacyNetworkPage from './pages/pharmacy-network/index';
-import TashkiliyTuzilmaPage from './pages/tashkiliy-tuzilma/index';
-import VazifalarPage from './pages/vazifalar/index';
-import VazifalarTahlilPage from './pages/vazifalar/tahlil';
-import EslatmalarPage from './pages/eslatmalar/index';
-import KirishPage from './pages/kirish/index';
-import DarsliklarPage from './pages/darsliklar/index';
-import AtestatsiyaPage from './pages/atestatsiya/index';
-import EhtiyojPage from './pages/ehtiyoj/index';
-import XodimKerakPage from './pages/xodim-kerak/index';
-import ChecklistPage from './pages/checklist/index';
-import ChecklistHolatiPage from './pages/checklist-holati/index';
-import OylikPage from './pages/oylik/index';
-import HisobkitobPage from './pages/hisobkitob/index';
-import ReviziyaPage from './pages/reviziya/index';
-import ReviziyaDocPage from './pages/reviziya/show';
-import OpsDeptPage from './pages/ops-dept/index';
-import ReytingPage from './pages/reyting/index';
-import AdminHolatPage from './pages/admin/holat';
-import AdminUsersPage from './pages/admin/users';
-import BoshatilganlarPage from './pages/admin/boshatilganlar';
-import AdminDepartmentsPage from './pages/admin/departments';
-import AdminKirishVideosPage from './pages/admin/kirish-videos';
-import AdminDarsliklarPage from './pages/admin/darsliklar';
-import AdminAtestatsiyaPage from './pages/admin/atestatsiya';
-import AdminFacesPage from './pages/admin/faces';
-import AdminSmenaSozlamalarPage from './pages/admin/smena-sozlamalar';
-import AdminDavomatQrPage from './pages/admin/davomat-qr';
-import AdminTestPage from './pages/admin/test';
-import AdminQurilmalarPage from './pages/admin/qurilmalar';
-import AdminKochmaDavomatPage from './pages/admin/kochma-davomat';
-import AdminKochmaXaritaPage from './pages/admin/kochma-xarita';
-import AdminKochmaLivePage from './pages/admin/kochma-live';
-import DavomatKochmaPage from './pages/davomat/kochma';
-import LogistikaPage, { LogistikaIndexRedirect } from './pages/logistika/index';
-import DistribyutsiyaPage from './pages/distribyutsiya/index';
-import OmborxonaIshPage from './pages/omborxona-ish/index';
-import EmployeesPage from './pages/employees/index';
-import EmployeesOtherPage from './pages/employees/other';
-import EmployeeDuplicatesPage from './pages/employees/duplicates';
-import DavomatPage from './pages/davomat/index';
-import DavomatAnalyticsPage from './pages/davomat/analytics';
-import DavomatXatoliklarPage from './pages/davomat/xatoliklar';
-import DavomatFacePage from './pages/davomat/face';
-import DavomatQrPage from './pages/davomat/qr';
-import DavomatOfisdaPage from './pages/davomat/ofisda';
-import SmenaFilialPage from './pages/smena-filial/index';
-import BoglanishPage from './pages/boglanish/index';
-import NotificationsPage from './pages/notifications/index';
-import TgEntryPage from './pages/tg-entry';
 import NotFound from './pages/not-found';
 
+const Dashboard = lazy(() => import('./pages/dashboard'));
+const RequestsList = lazy(() => import('./pages/requests/index'));
+const NewRequest = lazy(() => import('./pages/requests/new'));
+const RequestDetails = lazy(() => import('./pages/requests/show'));
+const VacanciesList = lazy(() => import('./pages/vacancies/index'));
+const NewVacancy = lazy(() => import('./pages/vacancies/new'));
+const VacancyDetails = lazy(() => import('./pages/vacancies/show'));
+const CandidatesList = lazy(() => import('./pages/candidates/index'));
+const NewCandidate = lazy(() => import('./pages/candidates/new'));
+const CandidateProfile = lazy(() => import('./pages/candidates/show'));
+const InternshipsPage = lazy(() => import('./pages/internships/index'));
+const PharmacyNetworkPage = lazy(() => import('./pages/pharmacy-network/index'));
+const TashkiliyTuzilmaPage = lazy(() => import('./pages/tashkiliy-tuzilma/index'));
+const VazifalarPage = lazy(() => import('./pages/vazifalar/index'));
+const VazifalarTahlilPage = lazy(() => import('./pages/vazifalar/tahlil'));
+const EslatmalarPage = lazy(() => import('./pages/eslatmalar/index'));
+const KirishPage = lazy(() => import('./pages/kirish/index'));
+const DarsliklarPage = lazy(() => import('./pages/darsliklar/index'));
+const AtestatsiyaPage = lazy(() => import('./pages/atestatsiya/index'));
+const EhtiyojPage = lazy(() => import('./pages/ehtiyoj/index'));
+const XodimKerakPage = lazy(() => import('./pages/xodim-kerak/index'));
+const ChecklistPage = lazy(() => import('./pages/checklist/index'));
+const ChecklistHolatiPage = lazy(() => import('./pages/checklist-holati/index'));
+const OylikPage = lazy(() => import('./pages/oylik/index'));
+const HisobkitobPage = lazy(() => import('./pages/hisobkitob/index'));
+const ReviziyaPage = lazy(() => import('./pages/reviziya/index'));
+const ReviziyaDocPage = lazy(() => import('./pages/reviziya/show'));
+const OpsDeptPage = lazy(() => import('./pages/ops-dept/index'));
+const ReytingPage = lazy(() => import('./pages/reyting/index'));
+const AdminHolatPage = lazy(() => import('./pages/admin/holat'));
+const AdminUsersPage = lazy(() => import('./pages/admin/users'));
+const BoshatilganlarPage = lazy(() => import('./pages/admin/boshatilganlar'));
+const AdminDepartmentsPage = lazy(() => import('./pages/admin/departments'));
+const AdminKirishVideosPage = lazy(() => import('./pages/admin/kirish-videos'));
+const AdminDarsliklarPage = lazy(() => import('./pages/admin/darsliklar'));
+const AdminAtestatsiyaPage = lazy(() => import('./pages/admin/atestatsiya'));
+const AdminFacesPage = lazy(() => import('./pages/admin/faces'));
+const AdminSmenaSozlamalarPage = lazy(() => import('./pages/admin/smena-sozlamalar'));
+const AdminDavomatQrPage = lazy(() => import('./pages/admin/davomat-qr'));
+const AdminTestPage = lazy(() => import('./pages/admin/test'));
+const AdminQurilmalarPage = lazy(() => import('./pages/admin/qurilmalar'));
+const AdminKochmaDavomatPage = lazy(() => import('./pages/admin/kochma-davomat'));
+const AdminKochmaXaritaPage = lazy(() => import('./pages/admin/kochma-xarita'));
+const AdminKochmaLivePage = lazy(() => import('./pages/admin/kochma-live'));
+const DavomatKochmaPage = lazy(() => import('./pages/davomat/kochma'));
+const LogistikaPage = lazy(() => import('./pages/logistika/index'));
+const DistribyutsiyaPage = lazy(() => import('./pages/distribyutsiya/index'));
+const OmborxonaIshPage = lazy(() => import('./pages/omborxona-ish/index'));
+const EmployeesPage = lazy(() => import('./pages/employees/index'));
+const EmployeesOtherPage = lazy(() => import('./pages/employees/other'));
+const EmployeeDuplicatesPage = lazy(() => import('./pages/employees/duplicates'));
+const DavomatPage = lazy(() => import('./pages/davomat/index'));
+const DavomatXatoliklarPage = lazy(() => import('./pages/davomat/xatoliklar'));
+const DavomatFacePage = lazy(() => import('./pages/davomat/face'));
+const DavomatQrPage = lazy(() => import('./pages/davomat/qr'));
+const DavomatOfisdaPage = lazy(() => import('./pages/davomat/ofisda'));
+const SmenaFilialPage = lazy(() => import('./pages/smena-filial/index'));
+const BoglanishPage = lazy(() => import('./pages/boglanish/index'));
+const NotificationsPage = lazy(() => import('./pages/notifications/index'));
+const TgEntryPage = lazy(() => import('./pages/tg-entry'));
 const JavobOlishPage = lazy(() => import('./pages/javob-olish/index'));
 const JavobOlishHolatPage = lazy(() => import('./pages/javob-olish/holat'));
 
-function LazyPage({ component: Component }: { component: ComponentType<any> }) {
+function PageFallback() {
   return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
-          Yuklanmoqda…
-        </div>
-      }
-    >
-      <Component />
-    </Suspense>
+    <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+      Yuklanmoqda…
+    </div>
   );
+}
+
+function ItDeptPage() {
+  return <OpsDeptPage dept="it" />;
+}
+
+function TexnikDeptPage() {
+  return <OpsDeptPage dept="texnik" />;
+}
+
+function LogistikaIndexRedirect() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation('/logistika/dashboard');
+  }, [setLocation]);
+  return <PageFallback />;
 }
 
 const queryClient = new QueryClient({
@@ -113,7 +122,9 @@ function ProtectedRoute({ component: Component, ...rest }: any) {
     <Route {...rest}>
       {params => (
         <Layout>
-          <Component params={params} />
+          <Suspense fallback={<PageFallback />}>
+            <Component params={params} />
+          </Suspense>
         </Layout>
       )}
     </Route>
@@ -124,13 +135,23 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
-      <Route path="/tg" component={TgEntryPage} />
-      <Route path="/davomat-face" component={DavomatFacePage} />
+      <Route path="/tg">
+        <Suspense fallback={<PageFallback />}>
+          <TgEntryPage />
+        </Suspense>
+      </Route>
+      <Route path="/davomat-face">
+        <Suspense fallback={<PageFallback />}>
+          <DavomatFacePage />
+        </Suspense>
+      </Route>
+      <Route path="/davomat/face">
+        <Redirect to="/davomat-face" />
+      </Route>
       <ProtectedRoute path="/davomat-qr" component={DavomatQrPage} />
-      <Route path="/" component={() => {
-        window.location.replace('/dashboard');
-        return null;
-      }} />
+      <Route path="/">
+        <Redirect to="/dashboard" />
+      </Route>
       
       <ProtectedRoute path="/dashboard" component={Dashboard} />
       
@@ -199,21 +220,21 @@ function Router() {
       <ProtectedRoute path="/hisobkitob" component={HisobkitobPage} />
       <ProtectedRoute path="/reviziya/hujjat/:id" component={ReviziyaDocPage} />
       <ProtectedRoute path="/reviziya" component={ReviziyaPage} />
-      <ProtectedRoute path="/it" component={() => <OpsDeptPage dept="it" />} />
-      <ProtectedRoute path="/texnik" component={() => <OpsDeptPage dept="texnik" />} />
+      <ProtectedRoute path="/it" component={ItDeptPage} />
+      <ProtectedRoute path="/texnik" component={TexnikDeptPage} />
       <ProtectedRoute path="/reyting" component={ReytingPage} />
       
       <ProtectedRoute path="/employees/duplicates" component={EmployeeDuplicatesPage} />
       <ProtectedRoute path="/employees/other" component={EmployeesOtherPage} />
       <ProtectedRoute path="/employees" component={EmployeesPage} />
-      <ProtectedRoute path="/davomat/analytics" component={DavomatAnalyticsPage} />
+      <ProtectedRoute path="/davomat/analytics" component={DavomatPage} />
       <ProtectedRoute path="/davomat/xatoliklar" component={DavomatXatoliklarPage} />
       <ProtectedRoute path="/davomat/ofisda" component={DavomatOfisdaPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/davomat-kochma" component={DavomatKochmaPage} />
       <ProtectedRoute path="/smena-filial" component={SmenaFilialPage} />
-      <ProtectedRoute path="/javob-olish/holat" component={() => <LazyPage component={JavobOlishHolatPage} />} />
-      <ProtectedRoute path="/javob-olish" component={() => <LazyPage component={JavobOlishPage} />} />
+      <ProtectedRoute path="/javob-olish/holat" component={JavobOlishHolatPage} />
+      <ProtectedRoute path="/javob-olish" component={JavobOlishPage} />
       <ProtectedRoute path="/pharmacy-network" component={PharmacyNetworkPage} />
       <ProtectedRoute path="/boglanish" component={BoglanishPage} />
       <ProtectedRoute path="/logistika/:section" component={LogistikaPage} />

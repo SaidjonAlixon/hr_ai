@@ -403,6 +403,8 @@ export function isDeptHeadRole(role?: string | null): boolean {
 export function usesDavomatDashboardHome(role?: string | null): boolean {
   // AyTi rahbar — asosiy sahifa AyTi bo‘limi (/it), davomat dashboard emas
   if (role === "it_rahbar") return false;
+  // Reviziya — asosiy sahifa /reviziya
+  if (isReviziyaRole(role)) return false;
   return canViewFullDavomatDashboard(role) || isDeptHeadRole(role);
 }
 

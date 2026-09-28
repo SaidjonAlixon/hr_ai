@@ -1,7 +1,7 @@
 import type { DavomatEmployee } from "./davomat-api";
 import { normalizeShiftType } from "./work-schedule";
 
-/** Hammasi | Dorixona (ichida 1/2-smena) | Ofis (tashqi/reviziya/texnik ham ofis) | Omborxona */
+/** Asosiy guruh: Hammasi | Dorixona | Ofis. Omborxona va xavfsizlik Ofis ichida. */
 export type DavomatStaffFilter =
   | "all"
   | "pharmacy"
@@ -74,7 +74,7 @@ export function warehouseShiftOptions(employees: DavomatEmployee[]): WarehouseSh
   const map = new Map<string, WarehouseShiftOption>();
   let unassigned = 0;
   for (const e of employees) {
-    if (!isWarehouseStaff(e)) continue;
+    if (!isWarehouseStaff(e) || isSecurityStaff(e)) continue;
     const key = e.warehouseShiftKey;
     if (!key) {
       unassigned += 1;
@@ -99,8 +99,18 @@ export function warehouseShiftOptions(employees: DavomatEmployee[]): WarehouseSh
 /** Apteka smenalari — mudir, farmasevt, stajyor */
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "supervisor"]);
-const SHIFT_PHARMACY_POSITION_RE =
-  /mudir|farmasevt|stajyor|stajor|filial\s*mudir|фармацевт|заведующ/i;
+/** Butun so‘z: «mudiri», «boshlig‘i» ofis lavozimi dorixona hisoblanmaydi */
+function positionHasWord(position: string | null | undefined, words: string[]): boolean {
+  const tokens = String(position || "")
+    .toLowerCase()
+    .replace(/[ʻʼ'`´]/g, "'")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  const set = new Set(words);
+  return tokens.some((w) => set.has(w));
+}
+
+const PHARMACY_POSITION_WORDS = ["mudir", "farmasevt", "stajyor", "stajor", "фармацевт", "заведующий", "заведующ"];
 
 /** Ofisdan tashqari — mudir, farmasevt, stajyor, koordinator (filialda ishlaydi) */
 const NON_OFFICE_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
@@ -111,8 +121,7 @@ const NON_OFFICE_ORG_ROLES = new Set([
   "coordinator",
   "supervisor",
 ]);
-const NON_OFFICE_POSITION_RE =
-  /mudir|farmasevt|stajyor|stajor|koordinator|filial\s*mudir|фармацевт|заведующ/i;
+const NON_OFFICE_POSITION_WORDS = [...PHARMACY_POSITION_WORDS, "koordinator"];
 
 /** Reviziya / texnik — endi Ofis filtriga kiradi */
 const OFFICE_FIELD_USER_ROLES = new Set(["revizor", "reviziya_rahbar", "texnik", "texnik_rahbar"]);
@@ -147,7 +156,7 @@ export function isShiftPharmacyStaff(emp: {
   if (SHIFT_PHARMACY_ORG_ROLES.has(emp.orgRole || "")) return true;
   const inferred = orgRoleFromUserRole(emp.userRole);
   if (inferred && SHIFT_PHARMACY_ORG_ROLES.has(inferred)) return true;
-  return SHIFT_PHARMACY_POSITION_RE.test(emp.position || "");
+  return positionHasWord(emp.position, PHARMACY_POSITION_WORDS);
 }
 
 export function isNonOfficeStaff(emp: {
@@ -159,7 +168,7 @@ export function isNonOfficeStaff(emp: {
   if (NON_OFFICE_ORG_ROLES.has(emp.orgRole || "")) return true;
   const inferred = orgRoleFromUserRole(emp.userRole);
   if (inferred && NON_OFFICE_ORG_ROLES.has(inferred)) return true;
-  return NON_OFFICE_POSITION_RE.test(emp.position || "");
+  return positionHasWord(emp.position, NON_OFFICE_POSITION_WORDS);
 }
 
 function isShiftTwo(emp: {
@@ -274,26 +283,25 @@ export function matchesStaffFilter(
   if (filter === "all") return true;
 
   const security = isSecurityStaff(emp);
+  const warehouse = isWarehouseStaff(emp) && !security;
   if (filter === "security") return security;
-  if (security) return false;
-
-  const warehouse = isWarehouseStaff(emp);
   if (filter === "warehouse") return warehouse;
-  if (warehouse) return false;
 
   const shiftPharmacy = isShiftPharmacyStaff(emp);
   const shiftTwo = isShiftTwo(emp);
   const nonOffice = isNonOfficeStaff(emp);
 
   /**
-   * Ofis — faqat ofis xodimlari (+ reviziya/texnik).
-   * Filial GPS ofisdan uzoq bo‘lsa ham mudir/farmasevt Ofisga kirmaydi
-   * (ilgari farFromOffice ularni noto‘g‘ri qo‘shib yuborgan).
+   * Ofis — ofis, omborxona va xavfsizlik.
+   * Dorixona (mudir, farmasevt, stajyor, koordinator) bu yerga kirmaydi.
    */
   if (filter === "office" || filter === "external") {
+    if (security || isWarehouseStaff(emp)) return true;
     if (shiftPharmacy || nonOffice) return false;
     return true;
   }
+
+  if (security || isWarehouseStaff(emp)) return false;
 
   if (filter === "pharmacy") return shiftPharmacy;
   if (filter === "shift_two") return shiftPharmacy && shiftTwo;
@@ -320,30 +328,38 @@ export function matchesPharmacyShift(emp: DavomatEmployee, shift: PharmacyShiftF
   return shift === "shift_two" ? isShiftTwo(emp) : !isShiftTwo(emp);
 }
 
+/** Ofis ichidagi bo‘lim — bir-biriga aralashmaydi */
+export type OfficeInnerFilter = "all" | "desk" | "warehouse" | "security";
+
+export const OFFICE_INNER_OPTIONS: Array<{
+  key: OfficeInnerFilter;
+  label: string;
+  hint: string;
+}> = [
+  { key: "all", label: "Hammasi", hint: "Ofis doirasida" },
+  { key: "desk", label: "Ofis", hint: "09:00 – 18:00" },
+  { key: "warehouse", label: "Omborxona", hint: "Smenalar bo‘yicha" },
+  { key: "security", label: "Xavfsizlik", hint: "09:00 – 09:00" },
+];
+
+export function matchesOfficeInner(
+  emp: Parameters<typeof isSecurityStaff>[0] & Parameters<typeof isWarehouseStaff>[0],
+  inner: OfficeInnerFilter,
+): boolean {
+  if (inner === "all") return true;
+  const security = isSecurityStaff(emp);
+  if (inner === "security") return security;
+  if (inner === "warehouse") return isWarehouseStaff(emp) && !security;
+  return !security && !isWarehouseStaff(emp);
+}
+
 export const STAFF_FILTER_OPTIONS: Array<{
-  key: Exclude<DavomatStaffFilter, "external" | "shift_one" | "shift_two">;
+  key: "all" | "pharmacy" | "office";
   label: string;
   hint: string;
   hours: string;
 }> = [
   { key: "all", label: "Hammasi", hint: "Barcha xodimlar", hours: "Turiga qarab" },
   { key: "pharmacy", label: "Dorixona", hint: "Smenalar bo‘yicha", hours: "Smenaga qarab" },
-  {
-    key: "office",
-    label: "Ofis",
-    hint: "09:00 – 18:00",
-    hours: "09:00–18:00",
-  },
-  {
-    key: "warehouse",
-    label: "Omborxona",
-    hint: "Smenalar bo‘yicha",
-    hours: "Smenaga qarab",
-  },
-  {
-    key: "security",
-    label: "Xavfsizlik",
-    hint: "09:00 – 09:00 (24 soat)",
-    hours: "09:00–09:00",
-  },
+  { key: "office", label: "Ofis", hint: "09:00 – 18:00", hours: "09:00–18:00" },
 ];

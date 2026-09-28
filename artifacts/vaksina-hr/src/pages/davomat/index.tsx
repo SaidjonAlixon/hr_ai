@@ -1,5 +1,7 @@
 import React, {
+  lazy,
   startTransition,
+  Suspense,
   useCallback,
   useEffect,
   useMemo,
@@ -7,14 +9,19 @@ import React, {
   useState,
 } from "react";
 import { useGetDepartments } from "@workspace/api-client-react";
+import { useLocation, useSearch } from "wouter";
 import {
+  Building2,
   CalendarDays,
+  Check,
   ChevronDown,
+  ChevronsUpDown,
   ChevronLeft,
   ChevronRight,
   Clock3,
   FileDown,
   FileSpreadsheet,
+  LineChart,
   Loader2,
   LogIn,
   LogOut,
@@ -28,6 +35,10 @@ import {
   UserX,
   Timer,
   MessageSquareText,
+  Moon,
+  Palmtree,
+  AlarmClock,
+  ClipboardList,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -61,8 +72,16 @@ import {
   PopoverTrigger,
 } from "../../components/ui/popover";
 import { Calendar as DayPickerCalendar } from "../../components/ui/calendar";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "../../components/ui/command";
 import { Label } from "../../components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../../components/ui/tabs";
+import { Tabs, TabsContent } from "../../components/ui/tabs";
 import { useToast } from "../../hooks/use-toast";
 import { cn } from "../../lib/utils";
 import {
@@ -76,20 +95,27 @@ import {
   type DavomatReport,
 } from "../../lib/davomat-api";
 import { downloadDavomatPdf } from "../../lib/davomat-pdf-export";
+import { DavomatAnalyticsDashboard } from "./analytics";
 import { useAuth } from "../../contexts/AuthContext";
 import { useI18n } from "../../i18n/I18nProvider";
+import { displayBranchName } from "../../lib/pharmacy-staff-api";
 import {
   canEditDavomatManual,
   canResetDavomatManual,
+  canViewChecklistStatus,
   canViewDavomat,
   canViewDavomatNotes,
   userRoleLabel,
 } from "../../lib/roles";
 import {
   type DavomatStaffFilter,
+  type OfficeInnerFilter,
   matchesStaffFilter,
+  matchesOfficeInner,
   STAFF_FILTER_OPTIONS,
+  OFFICE_INNER_OPTIONS,
   staffFilterLabel,
+  classifyDavomatStaff,
   smenaLabelShort,
   workHoursForEmployee,
   workHoursForStaffFilter,
@@ -98,7 +124,12 @@ import {
   matchesPharmacyShift,
   PHARMACY_SHIFT_OPTIONS,
   type PharmacyShiftFilter,
+  isSecurityStaff,
+  isWarehouseStaff,
 } from "../../lib/davomat-staff-filter";
+
+const SmenaFilialPage = lazy(() => import("../smena-filial"));
+const ChecklistHolatiPage = lazy(() => import("../checklist-holati"));
 
 function todayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -133,6 +164,21 @@ function lastOfMonth(ymd: string): string {
   const [y, m] = ymd.split("-").map(Number);
   const last = new Date(Date.UTC(y!, m!, 0)).getUTCDate();
   return `${y}-${String(m).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
+}
+
+const MONTHS_UZ = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+const MONTHS_RU = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+const WEEKDAYS_UZ = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
+const WEEKDAYS_RU = ["воскресенье", "понедельник", "вторник", "среда", "четверг", "пятница", "суббота"];
+
+/** 2026-09-28 → 28 sentabr 2026, dushanba / 28 сентября 2026, понедельник */
+function formatLongDate(ymd: string, locale: "uz" | "ru"): string {
+  const d = parseYmdLocal(ymd);
+  if (!d) return ymd;
+  const day = d.getDate();
+  const month = (locale === "ru" ? MONTHS_RU : MONTHS_UZ)[d.getMonth()];
+  const weekday = (locale === "ru" ? WEEKDAYS_RU : WEEKDAYS_UZ)[d.getDay()];
+  return `${day} ${month} ${d.getFullYear()}, ${weekday}`;
 }
 
 /** 2026-09-07 → 07.09.2026 */
@@ -320,29 +366,168 @@ function dayHasPunch(day?: DavomatDayMetrics | null): boolean {
   );
 }
 
-type Section = "schedule" | "totals";
+type Section = "schedule" | "totals" | "analytics" | "smena" | "checklist";
+
+function sectionFromLocation(path: string, search: string): Section | null {
+  if (path.startsWith("/davomat/analytics")) return "analytics";
+  const view = new URLSearchParams(search).get("view");
+  if (
+    view === "analytics" ||
+    view === "totals" ||
+    view === "schedule" ||
+    view === "smena" ||
+    view === "checklist"
+  ) {
+    return view;
+  }
+  return null;
+}
 type CalMode = "day" | "week" | "month" | "range";
-type DayStatusFilter = "all" | "present" | "absent" | "late";
+type DayStatusFilter = "all" | "present" | "absent" | "late" | "leave" | "rest";
 
 function matchesDayStatusFilter(status: string | undefined, filter: DayStatusFilter): boolean {
   if (filter === "all") return true;
   const st = status || "absent";
   if (filter === "absent") return st === "absent";
   if (filter === "late") return st === "late";
-  // Kelgan — kelmagan / tatil / damdan tashqari
+  if (filter === "leave") return st === "leave";
+  if (filter === "rest") return st === "rest";
   return st !== "absent" && st !== "leave" && st !== "rest";
+}
+
+function branchIdentity(location: string | null | undefined): { key: string; label: string } | null {
+  const name = displayBranchName(location).replace(/\s+/g, " ").trim();
+  if (!name || name === "—" || name === "-" || /^filial$/i.test(name)) return null;
+  return { key: name.toLocaleLowerCase("uz"), label: name };
+}
+
+function resolvedBranch(
+  emp: DavomatEmployee,
+  byId: Map<number, DavomatEmployee>,
+): { key: string; label: string } {
+  const seen = new Set<number>();
+  let cursor: DavomatEmployee | undefined = emp;
+  for (let i = 0; i < 6 && cursor; i++) {
+    if (seen.has(cursor.id)) break;
+    seen.add(cursor.id);
+    const hit = branchIdentity(cursor.location);
+    if (hit) return hit;
+    cursor = cursor.reportsToId != null ? byId.get(cursor.reportsToId) : undefined;
+  }
+  return { key: "none", label: "Filialsiz" };
+}
+
+function PharmacyBranchPicker({
+  value,
+  onChange,
+  options,
+  total,
+}: {
+  value: string;
+  onChange: (key: string) => void;
+  options: { key: string; label: string; count: number }[];
+  total: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.key === value);
+  const label = value === "all" ? `Barcha filiallar (${total})` : selected ? `${selected.label} (${selected.count})` : "Filial";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "h-10 w-full justify-between rounded-xl border-border bg-card px-2.5 text-sm font-normal shadow-none hover:bg-emerald-50/70 dark:border-white/10 dark:bg-[#152238] dark:text-slate-100 dark:hover:bg-emerald-500/10",
+            value !== "all" &&
+              "border-emerald-400 bg-emerald-50 text-emerald-950 dark:border-emerald-400/50 dark:bg-emerald-500/15 dark:text-emerald-100",
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Building2 className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
+            <span className="truncate text-left">{label}</span>
+          </span>
+          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="z-[90] w-[var(--radix-popover-trigger-width)] min-w-[16rem] overflow-hidden rounded-xl p-0 shadow-lg"
+        align="start"
+      >
+        <Command
+          filter={(itemValue, query) => {
+            const q = query.trim().toLocaleLowerCase("uz");
+            if (!q) return 1;
+            return itemValue.toLocaleLowerCase("uz").includes(q) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder="Filial nomini yozing…" />
+          <CommandList className="max-h-72">
+            <CommandEmpty>Bunday filial topilmadi</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="barcha filiallar"
+                onSelect={() => {
+                  onChange("all");
+                  setOpen(false);
+                }}
+                className={cn("rounded-lg", value === "all" && "bg-emerald-50 text-emerald-950")}
+              >
+                <Check className={cn("text-emerald-700", value === "all" ? "opacity-100" : "opacity-0")} />
+                <span className="min-w-0 flex-1 truncate">Barcha filiallar</span>
+                <span className="text-xs font-semibold tabular-nums text-muted-foreground">{total}</span>
+              </CommandItem>
+              {options.map((o) => {
+                const active = o.key === value;
+                return (
+                  <CommandItem
+                    key={o.key}
+                    value={`${o.label} ${o.key}`}
+                    onSelect={() => {
+                      onChange(o.key);
+                      setOpen(false);
+                    }}
+                    className={cn("rounded-lg", active && "bg-emerald-50 text-emerald-950")}
+                  >
+                    <Check className={cn("text-emerald-700", active ? "opacity-100" : "opacity-0")} />
+                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                    <span className="text-xs font-semibold tabular-nums text-muted-foreground">{o.count}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
 }
 
 export default function DavomatPage() {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const { toast } = useToast();
+  const [location] = useLocation();
+  const urlSearch = useSearch();
   const allowed = canViewDavomat(user?.role);
   const canEdit = canEditDavomatManual(user?.role);
   const canReset = canResetDavomatManual(user?.role);
   const canSeeNotes = canViewDavomatNotes(user?.role);
+  const canChecklist = canViewChecklistStatus(user?.role);
 
-  const [section, setSection] = useState<Section>("schedule");
+  const [section, setSection] = useState<Section>(() => sectionFromLocation(location, urlSearch) ?? "schedule");
+
+  useEffect(() => {
+    const next = sectionFromLocation(location, urlSearch);
+    if (next) setSection(next);
+  }, [location, urlSearch]);
+
+  useEffect(() => {
+    if (section === "checklist" && !canChecklist) setSection("schedule");
+  }, [section, canChecklist]);
   const [calMode, setCalMode] = useState<CalMode>("day");
   const [selectedDay, setSelectedDay] = useState(() => todayYmd());
   const [weekStart, setWeekStart] = useState(() => mondayOf(todayYmd()));
@@ -358,13 +543,18 @@ export default function DavomatPage() {
   const [searchDebounced, setSearchDebounced] = useState("");
   const [deptFilter, setDeptFilter] = useState("all");
   const [staffFilter, setStaffFilter] = useState<DavomatStaffFilter>("office");
+  const [officeInner, setOfficeInner] = useState<OfficeInnerFilter>("all");
   const [warehouseShift, setWarehouseShift] = useState<string>("all");
   const [pharmacyShift, setPharmacyShift] = useState<PharmacyShiftFilter>("all");
+  const [pharmacyBranch, setPharmacyBranch] = useState("all");
 
   useEffect(() => {
-    if (staffFilter !== "warehouse") setWarehouseShift("all");
-    if (staffFilter !== "pharmacy") setPharmacyShift("all");
-  }, [staffFilter]);
+    if (staffFilter !== "office" || officeInner !== "warehouse") setWarehouseShift("all");
+    if (staffFilter !== "pharmacy") {
+      setPharmacyShift("all");
+      setPharmacyBranch("all");
+    }
+  }, [staffFilter, officeInner]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
@@ -456,33 +646,90 @@ export default function DavomatPage() {
     return new Set((day?.farFromOffice ?? []).map((f) => f.employeeId));
   }, [report, dayInfo?.date, selectedDay]);
 
+  const pharmacyBranchById = useMemo(() => {
+    const map = new Map<number, { key: string; label: string }>();
+    if (!report) return map;
+    const byId = new Map(report.employees.map((e) => [e.id, e]));
+    for (const emp of report.employees) map.set(emp.id, resolvedBranch(emp, byId));
+    return map;
+  }, [report]);
+
   const filteredEmployees = useMemo(() => {
     if (!report) return [];
     return report.employees.filter(
       (emp) =>
         matchesStaffFilter(emp, staffFilter, farOfficeIds) &&
-        (staffFilter !== "warehouse" || matchesWarehouseShift(emp, warehouseShift)) &&
-        (staffFilter !== "pharmacy" || matchesPharmacyShift(emp, pharmacyShift)),
+        (staffFilter !== "office" || matchesOfficeInner(emp, officeInner)) &&
+        (staffFilter !== "office" || officeInner !== "warehouse" || matchesWarehouseShift(emp, warehouseShift)) &&
+        (staffFilter !== "pharmacy" || matchesPharmacyShift(emp, pharmacyShift)) &&
+        (staffFilter !== "pharmacy" ||
+          pharmacyBranch === "all" ||
+          (pharmacyBranchById.get(emp.id)?.key ?? "none") === pharmacyBranch),
     );
-  }, [report, staffFilter, warehouseShift, pharmacyShift, farOfficeIds]);
+  }, [report, staffFilter, officeInner, warehouseShift, pharmacyShift, pharmacyBranch, pharmacyBranchById, farOfficeIds]);
 
   const pharmacyShiftCounts = useMemo(() => {
     const counts = { shift_one: 0, shift_two: 0 };
     if (staffFilter !== "pharmacy" || !report) return counts;
     for (const emp of report.employees) {
       if (!matchesStaffFilter(emp, "pharmacy")) continue;
+      if (pharmacyBranch !== "all" && (pharmacyBranchById.get(emp.id)?.key ?? "none") !== pharmacyBranch) continue;
       if (matchesPharmacyShift(emp, "shift_two")) counts.shift_two += 1;
       else counts.shift_one += 1;
+    }
+    return counts;
+  }, [report, staffFilter, pharmacyBranch, pharmacyBranchById]);
+
+  const pharmacyBranches = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; count: number }>();
+    if (staffFilter !== "pharmacy" || !report) return [];
+    for (const emp of report.employees) {
+      if (!matchesStaffFilter(emp, "pharmacy")) continue;
+      const branch = pharmacyBranchById.get(emp.id) ?? { key: "none", label: "Filialsiz" };
+      const cur = map.get(branch.key) ?? { key: branch.key, label: branch.label, count: 0 };
+      if (matchesPharmacyShift(emp, pharmacyShift)) cur.count += 1;
+      map.set(branch.key, cur);
+    }
+    return [...map.values()]
+      .filter((b) => b.count > 0)
+      .sort((a, b) => {
+        if (a.key === "none") return 1;
+        if (b.key === "none") return -1;
+        return a.label.localeCompare(b.label, "uz");
+      });
+  }, [report, staffFilter, pharmacyShift, pharmacyBranchById]);
+
+  const officeInnerCounts = useMemo(() => {
+    const counts = { all: 0, desk: 0, warehouse: 0, security: 0 };
+    if (staffFilter !== "office" || !report) return counts;
+    for (const emp of report.employees) {
+      if (!matchesStaffFilter(emp, "office")) continue;
+      counts.all += 1;
+      if (isSecurityStaff(emp)) counts.security += 1;
+      else if (isWarehouseStaff(emp)) counts.warehouse += 1;
+      else counts.desk += 1;
     }
     return counts;
   }, [report, staffFilter]);
 
   const selectedPharmacyShift =
     staffFilter === "pharmacy" ? PHARMACY_SHIFT_OPTIONS.find((o) => o.key === pharmacyShift) ?? null : null;
+  const selectedPharmacyBranch =
+    staffFilter === "pharmacy" && pharmacyBranch !== "all"
+      ? pharmacyBranches.find((b) => b.key === pharmacyBranch) ?? null
+      : null;
+
+  useEffect(() => {
+    if (pharmacyBranch === "all" || staffFilter !== "pharmacy") return;
+    if (!pharmacyBranches.some((b) => b.key === pharmacyBranch)) setPharmacyBranch("all");
+  }, [pharmacyBranches, pharmacyBranch, staffFilter]);
 
   const whShiftOptions = useMemo(
-    () => (staffFilter === "warehouse" && report ? warehouseShiftOptions(report.employees) : []),
-    [report, staffFilter],
+    () =>
+      staffFilter === "office" && officeInner === "warehouse" && report
+        ? warehouseShiftOptions(report.employees)
+        : [],
+    [report, staffFilter, officeInner],
   );
 
   useEffect(() => {
@@ -498,16 +745,28 @@ export default function DavomatPage() {
   /** Aralash ish vaqtli ro‘yxat — har bir xodim uchun alohida smena ustuni kerak */
   const showShiftCol =
     staffFilter === "all" ||
-    staffFilter === "security" ||
-    (staffFilter === "warehouse" && !selectedWhShift?.hours) ||
+    (staffFilter === "office" &&
+      (officeInner === "all" ||
+        officeInner === "security" ||
+        (officeInner === "warehouse" && !selectedWhShift?.hours))) ||
     (staffFilter === "pharmacy" && !selectedPharmacyShift);
 
   const staffGroupLabel =
-    staffFilter === "warehouse" && selectedWhShift
-      ? `Omborxona · ${selectedWhShift.label}`
-      : selectedPharmacyShift
-        ? `Dorixona · ${selectedPharmacyShift.label}`
-        : staffFilterLabel(staffFilter);
+    staffFilter === "office" && officeInner === "warehouse" && selectedWhShift
+      ? `Ofis · Omborxona · ${selectedWhShift.label}`
+      : staffFilter === "office" && officeInner === "warehouse"
+        ? "Ofis · Omborxona"
+        : staffFilter === "office" && officeInner === "security"
+          ? "Ofis · Xavfsizlik"
+          : staffFilter === "office" && officeInner === "desk"
+            ? "Ofis · 09:00–18:00"
+            : selectedPharmacyBranch && selectedPharmacyShift
+              ? `Dorixona · ${selectedPharmacyBranch.label} · ${selectedPharmacyShift.label}`
+              : selectedPharmacyBranch
+                ? `Dorixona · ${selectedPharmacyBranch.label}`
+                : selectedPharmacyShift
+                  ? `Dorixona · ${selectedPharmacyShift.label}`
+                  : staffFilterLabel(staffFilter);
 
   const employeesForDay = useMemo(() => {
     if (!report) return [] as Array<{ emp: (typeof filteredEmployees)[number]; day: (typeof filteredEmployees)[number]["days"][number] }>;
@@ -527,19 +786,35 @@ export default function DavomatPage() {
     let absent = 0;
     let incomplete = 0;
     let leave = 0;
-    for (const { day } of employeesForDay) {
+    let rest = 0;
+    const leaveNames: string[] = [];
+    const restNames: string[] = [];
+    for (const { emp, day } of employeesForDay) {
       if (!day) continue;
       if (day.status === "absent") absent += 1;
-      else if (day.status === "leave") leave += 1;
-      else if (day.status === "rest") {
-        /* ofis dam — absent emas */
+      else if (day.status === "leave") {
+        leave += 1;
+        leaveNames.push(emp.fullName);
+      } else if (day.status === "rest") {
+        rest += 1;
+        restNames.push(emp.fullName);
       } else {
         present += 1;
         if (day.status === "late") late += 1;
         if (day.status === "incomplete") incomplete += 1;
       }
     }
-    return { present, late, absent, incomplete, leave, total: employeesForDay.length };
+    return {
+      present,
+      late,
+      absent,
+      incomplete,
+      leave,
+      rest,
+      leaveNames,
+      restNames,
+      total: employeesForDay.length,
+    };
   }, [employeesForDay]);
 
   const visibleEmployeesForDay = useMemo(
@@ -608,7 +883,7 @@ export default function DavomatPage() {
   }, [filteredEmployees, report?.dates?.length, report?.summary.days]);
 
   const activeWorkHours = useMemo(() => {
-    if (staffFilter === "warehouse") {
+    if (staffFilter === "office" && officeInner === "warehouse") {
       const key = selectedWhShift?.hours ? selectedWhShift.key : null;
       if (key) {
         const [start, end] = key.split("-");
@@ -616,13 +891,19 @@ export default function DavomatPage() {
       }
       return { start: "smena boshi", end: "smena oxiri" };
     }
+    if (staffFilter === "office" && officeInner === "security") {
+      return workHoursForStaffFilter("security");
+    }
+    if (staffFilter === "office" && officeInner === "all") {
+      return { start: "smena boshi", end: "smena oxiri" };
+    }
     if (staffFilter === "pharmacy") {
       return selectedPharmacyShift
         ? { start: selectedPharmacyShift.start, end: selectedPharmacyShift.end }
         : { start: "smena boshi", end: "smena oxiri" };
     }
-    return workHoursForStaffFilter(staffFilter);
-  }, [staffFilter, selectedWhShift, selectedPharmacyShift]);
+    return workHoursForStaffFilter(staffFilter === "office" ? "office" : staffFilter);
+  }, [staffFilter, officeInner, selectedWhShift, selectedPharmacyShift]);
 
   const dayTiming = useMemo(() => {
     const rows = employeesForDay;
@@ -706,8 +987,21 @@ export default function DavomatPage() {
         to,
         search: search.trim() || undefined,
         departmentId: deptFilter !== "all" ? deptFilter : undefined,
-        staffFilter: staffFilter === "pharmacy" && pharmacyShift !== "all" ? pharmacyShift : staffFilter,
-        warehouseShift: staffFilter === "warehouse" ? warehouseShift : undefined,
+        staffFilter:
+          staffFilter === "pharmacy" && pharmacyShift !== "all"
+            ? pharmacyShift
+            : staffFilter === "office" && officeInner === "warehouse"
+              ? "warehouse"
+              : staffFilter === "office" && officeInner === "security"
+                ? "security"
+                : staffFilter === "office" && officeInner === "desk"
+                  ? "office_core"
+                  : staffFilter,
+        warehouseShift:
+          staffFilter === "office" && officeInner === "warehouse" ? warehouseShift : undefined,
+        branch: staffFilter === "pharmacy" && pharmacyBranch !== "all" ? pharmacyBranch : undefined,
+        branchLabel:
+          staffFilter === "pharmacy" && pharmacyBranch !== "all" ? selectedPharmacyBranch?.label : undefined,
       });
       toast({
         title: result.via === "telegram" ? t("davomat.excelTelegram") : t("davomat.excelDone"),
@@ -917,25 +1211,13 @@ export default function DavomatPage() {
   }
 
   const fieldClass =
-    "h-8 rounded-lg border-border bg-card text-xs shadow-none sm:text-sm dark:border-slate-600/50 dark:bg-slate-800/60 dark:text-slate-100";
+    "h-10 rounded-xl border-border bg-card text-sm shadow-none dark:border-white/10 dark:bg-[#152238] dark:text-slate-100";
+  const labelClass = "mb-1 flex h-4 items-center text-[10px] font-medium leading-none text-muted-foreground";
   const navBtnClass =
-    "h-8 w-8 shrink-0 rounded-lg border-border";
+    "h-10 w-10 shrink-0 rounded-xl border-border dark:border-white/10 dark:bg-[#152238]";
 
   const filters = (
-    <div
-      className={cn(
-        "grid gap-2",
-        staffFilter === "warehouse" || staffFilter === "pharmacy"
-          ? section === "schedule" && calMode !== "range" && calMode !== "day"
-            ? "sm:grid-cols-2 lg:grid-cols-5"
-            : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6"
-          : section === "schedule" && calMode === "day"
-            ? "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5"
-            : section === "schedule" && calMode !== "range"
-              ? "sm:grid-cols-2 lg:grid-cols-4"
-              : "sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5",
-      )}
-    >
+    <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {section === "schedule" && calMode === "range" ? (
         <>
           <div>
@@ -968,7 +1250,7 @@ export default function DavomatPage() {
         </>
       ) : section === "schedule" ? (
         <div>
-          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">
+          <Label className={labelClass}>
             {calMode === "month"
               ? t("davomat.monthLabel")
               : calMode === "week"
@@ -1292,7 +1574,7 @@ export default function DavomatPage() {
         </>
       )}
       <div>
-        <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("ui.department")}</Label>
+        <Label className={labelClass}>{t("ui.department")}</Label>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
           <SelectTrigger className={cn(fieldClass, "px-2.5")}>
             <SelectValue placeholder={t("ui.allDepartments")} />
@@ -1309,7 +1591,7 @@ export default function DavomatPage() {
       </div>
       {section === "schedule" && calMode === "day" ? (
         <div>
-          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">Holat</Label>
+          <Label className={labelClass}>Holat</Label>
           <Select
             value={dayStatusFilter}
             onValueChange={(v) => {
@@ -1328,6 +1610,10 @@ export default function DavomatPage() {
                   "border-rose-300 bg-rose-50 text-rose-800 dark:border-rose-500/40 dark:bg-rose-500/15 dark:text-rose-300",
                 dayStatusFilter === "late" &&
                   "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-500/40 dark:bg-amber-500/15 dark:text-amber-300",
+                dayStatusFilter === "leave" &&
+                  "border-violet-300 bg-violet-50 text-violet-900 dark:border-violet-500/40 dark:bg-violet-500/15 dark:text-violet-200",
+                dayStatusFilter === "rest" &&
+                  "border-slate-300 bg-slate-100 text-slate-800 dark:border-white/20 dark:bg-white/10 dark:text-slate-100",
               )}
             >
               <SelectValue placeholder="Barchasi" />
@@ -1354,12 +1640,24 @@ export default function DavomatPage() {
               >
                 Kechikkan
               </SelectItem>
+              <SelectItem
+                value="leave"
+                className="font-semibold text-violet-700 focus:bg-violet-50 focus:text-violet-900 dark:text-violet-300 dark:focus:bg-violet-500/15 dark:focus:text-violet-200"
+              >
+                Ta’tilda
+              </SelectItem>
+              <SelectItem
+                value="rest"
+                className="font-semibold text-slate-700 focus:bg-slate-100 focus:text-slate-900 dark:text-slate-200 dark:focus:bg-white/10 dark:focus:text-slate-100"
+              >
+                Dam kuni
+              </SelectItem>
             </SelectContent>
           </Select>
         </div>
       ) : null}
       <div>
-        <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.staffGroup")}</Label>
+        <Label className={labelClass}>{t("davomat.staffGroup")}</Label>
         <Select value={staffFilter} onValueChange={(v) => setStaffFilter(v as DavomatStaffFilter)}>
           <SelectTrigger className={cn(fieldClass, "px-2.5")}>
             <SelectValue placeholder={t("ui.all")} />
@@ -1373,29 +1671,115 @@ export default function DavomatPage() {
           </SelectContent>
         </Select>
       </div>
-      {staffFilter === "pharmacy" ? (
-        <div>
-          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">Dorixona smenasi</Label>
-          <Select value={pharmacyShift} onValueChange={(v) => setPharmacyShift(v as PharmacyShiftFilter)}>
-            <SelectTrigger className={cn(fieldClass, "px-2.5")}>
-              <SelectValue placeholder="Barcha smenalar" />
-            </SelectTrigger>
-            <SelectContent position="popper" className="z-[90]">
-              <SelectItem value="all">
-                Barcha smenalar ({pharmacyShiftCounts.shift_one + pharmacyShiftCounts.shift_two})
-              </SelectItem>
-              {PHARMACY_SHIFT_OPTIONS.map((opt) => (
-                <SelectItem key={opt.key} value={opt.key}>
-                  {opt.label} · {opt.hours} ({pharmacyShiftCounts[opt.key]})
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      {staffFilter === "office" ? (
+        <div className="sm:col-span-2 xl:col-span-4">
+          <div className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-2 dark:border-white/10 dark:bg-white/[0.03]">
+          <div className="mb-1.5 px-1">
+            <Label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Ofis ichida</Label>
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {OFFICE_INNER_OPTIONS.map((opt) => {
+              const on = officeInner === opt.key;
+              const tone =
+                opt.key === "warehouse"
+                  ? {
+                      on: "border-transparent bg-gradient-to-br from-lime-600 to-green-500 text-white shadow-md shadow-lime-500/25",
+                      off: "border-lime-300 bg-lime-50 text-lime-950 hover:border-lime-400 hover:bg-lime-100 dark:border-lime-400/35 dark:bg-lime-400/10 dark:text-lime-100",
+                      badgeOn: "bg-white/25 text-white",
+                      badgeOff: "bg-lime-200/90 text-lime-900 dark:bg-lime-400/20 dark:text-lime-100",
+                    }
+                  : opt.key === "security"
+                    ? {
+                        on: "border-transparent bg-gradient-to-br from-purple-700 to-violet-600 text-white shadow-md shadow-purple-500/25",
+                        off: "border-purple-200 bg-purple-50 text-purple-950 hover:border-purple-300 hover:bg-purple-100 dark:border-purple-400/35 dark:bg-purple-400/10 dark:text-purple-100",
+                        badgeOn: "bg-white/25 text-white",
+                        badgeOff: "bg-purple-200/80 text-purple-900 dark:bg-purple-400/20 dark:text-purple-100",
+                      }
+                    : opt.key === "desk"
+                      ? {
+                          on: "border-transparent bg-gradient-to-br from-red-600 to-rose-600 text-white shadow-md shadow-red-500/25",
+                          off: "border-red-200 bg-red-50 text-red-950 hover:border-red-300 hover:bg-red-100 dark:border-red-400/35 dark:bg-red-400/10 dark:text-red-100",
+                          badgeOn: "bg-white/25 text-white",
+                          badgeOff: "bg-red-200/80 text-red-900 dark:bg-red-400/20 dark:text-red-100",
+                        }
+                      : {
+                          on: "border-transparent bg-gradient-to-br from-cyan-500 to-sky-500 text-white shadow-md shadow-cyan-500/30",
+                          off: "border-cyan-200 bg-cyan-50 text-cyan-950 hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-400/35 dark:bg-cyan-400/10 dark:text-cyan-100",
+                          badgeOn: "bg-white/25 text-white",
+                          badgeOff: "bg-cyan-200/80 text-cyan-900 dark:bg-cyan-400/20 dark:text-cyan-100",
+                        };
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setOfficeInner(opt.key)}
+                  className={cn(
+                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left shadow-sm transition",
+                    on ? tone.on : tone.off,
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold leading-tight">{opt.label}</span>
+                    <span className={cn("block truncate text-[10px] leading-tight", on ? "opacity-80" : "opacity-70")}>
+                      {opt.hint}
+                    </span>
+                  </span>
+                  <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums", on ? tone.badgeOn : tone.badgeOff)}>
+                    {officeInnerCounts[opt.key]}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          </div>
         </div>
       ) : null}
-      {staffFilter === "warehouse" ? (
+      {staffFilter === "pharmacy" ? (
+        <>
+          <div>
+            <Label className={labelClass}>Dorixona smenasi</Label>
+            <Select value={pharmacyShift} onValueChange={(v) => setPharmacyShift(v as PharmacyShiftFilter)}>
+              <SelectTrigger className={cn(fieldClass, "px-2.5")}>
+                <SelectValue placeholder="Barcha smenalar" />
+              </SelectTrigger>
+              <SelectContent position="popper" className="z-[90]">
+                <SelectItem value="all">
+                  Barcha smenalar ({pharmacyShiftCounts.shift_one + pharmacyShiftCounts.shift_two})
+                </SelectItem>
+                {PHARMACY_SHIFT_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.key} value={opt.key}>
+                    {opt.label} · {opt.hours} ({pharmacyShiftCounts[opt.key]})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className={labelClass}>Filial</Label>
+            <PharmacyBranchPicker
+              value={pharmacyBranch}
+              onChange={setPharmacyBranch}
+              options={pharmacyBranches}
+              total={pharmacyBranches.reduce((sum, b) => sum + b.count, 0)}
+            />
+          </div>
+          <div className="xl:col-span-2">
+            <Label className={labelClass}>{t("ui.search")}</Label>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className={cn(fieldClass, "pl-9")}
+                placeholder="Ism, lavozim yoki telefon bo‘yicha qidirish"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </div>
+          </div>
+        </>
+      ) : null}
+      {staffFilter === "office" && officeInner === "warehouse" ? (
         <div>
-          <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">Omborxona smenasi</Label>
+          <Label className={labelClass}>Omborxona smenasi</Label>
           <Select value={warehouseShift} onValueChange={setWarehouseShift}>
             <SelectTrigger className={cn(fieldClass, "px-2.5")}>
               <SelectValue placeholder="Barcha smenalar" />
@@ -1412,141 +1796,234 @@ export default function DavomatPage() {
           </Select>
         </div>
       ) : null}
-      <div className={cn(section === "schedule" && calMode !== "range" ? "sm:col-span-2 lg:col-span-1" : "sm:col-span-2 xl:col-span-1")}>
-        <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("ui.search")}</Label>
+      {staffFilter === "pharmacy" ? null : (
+      <div className="sm:col-span-2 xl:col-span-4">
+        <Label className={labelClass}>{t("ui.search")}</Label>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            className={cn(fieldClass, "pl-8")}
-            placeholder={t("davomat.searchName")}
+            className={cn(fieldClass, "pl-9")}
+            placeholder="Ism, lavozim yoki telefon bo‘yicha qidirish"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
       </div>
+      )}
     </div>
   );
 
-  return (
-    <div className="w-full space-y-5 pb-10">
-      <div className="dv-report-hero">
-        <div className="dv-report-hero-glow" aria-hidden />
-        <div className="relative z-[1] flex flex-col gap-4 p-4 sm:gap-5 sm:p-5 lg:p-6">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <div className="min-w-0">
-              <div className="dv-report-hero-eyebrow">
-                <span className="dv-report-hero-dot" aria-hidden />
-                {t("davomat.report")}
-              </div>
-              <h1 className="dv-report-hero-title">{t("davomat.title")}</h1>
-              <p className="dv-report-hero-sub">
-                <span className="dv-report-hero-time">
-                  {staffFilter === "all"
-                    ? "Ofis 09:00–18:00 · 1-smena 08:00–17:00 · 2-smena 17:00–23:45"
-                    : showShiftCol
-                      ? `${staffGroupLabel} · smenalar bo‘yicha`
-                      : `${staffGroupLabel} ${activeWorkHours.start}–${activeWorkHours.end}`}
-                </span>
-              </p>
-            </div>
-            <div className="dv-report-actions relative z-10">
-              <Button
-                type="button"
-                variant="ghost"
-                className="dv-report-btn-excel flex-1 sm:flex-none"
-                onClick={() => void onExport()}
-                disabled={!!exporting || (loading && !report)}
-                title={t("davomat.excelBtn")}
-              >
-                {exporting === "excel" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <FileSpreadsheet className="h-3.5 w-3.5 shrink-0" />
-                )}
-                {t("davomat.excelBtn")}
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                className="dv-report-btn-pdf flex-1 sm:flex-none"
-                onClick={() => void onExportPdf()}
-                disabled={!!exporting || (loading && !report)}
-                title={t("davomat.pdfBtn")}
-              >
-                {exporting === "pdf" ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <FileDown className="h-3.5 w-3.5 shrink-0" />
-                )}
-                {t("davomat.pdfBtn")}
-              </Button>
-            </div>
-          </div>
+  const cardFoot = (key: DayStatusFilter): string => {
+    if (key === "all") return "Jami xodimlar ulushi";
+    if (key === "late") return "Kelganlar ichida";
+    if (key === "leave") return filteredDayStats.leaveNames.join(", ") || "Ta’tilda";
+    if (key === "rest") return filteredDayStats.restNames.join(", ") || "Dam kuni";
+    return "Shu kundagi ulush";
+  };
 
-          <div className="dv-hero-stats" role="group" aria-label="Kunlik statistika">
-            {(
-              [
-                {
-                  key: "all" as const,
-                  label: "Jami",
-                  value: filteredDayStats.total,
-                  icon: Users,
-                  tone: "dv-hero-stat-total",
-                },
-                {
-                  key: "present" as const,
-                  label: "Kelgan",
-                  value: filteredDayStats.present,
-                  icon: UserCheck,
-                  tone: "dv-hero-stat-present",
-                },
-                {
-                  key: "absent" as const,
-                  label: "Kelmagan",
-                  value: filteredDayStats.absent,
-                  icon: UserX,
-                  tone: "dv-hero-stat-absent",
-                },
-                {
-                  key: "late" as const,
-                  label: "Kechikkan",
-                  value: filteredDayStats.late,
-                  icon: Timer,
-                  tone: "dv-hero-stat-late",
-                },
-              ] as const
-            ).map((card) => {
-              const Icon = card.icon;
-              const active = dayStatusFilter === card.key;
-              const pct =
-                filteredDayStats.total > 0 && card.key !== "all"
-                  ? Math.round((card.value / filteredDayStats.total) * 100)
-                  : null;
-              return (
-                <button
-                  key={card.key}
-                  type="button"
-                  onClick={() => toggleDayStatusFilter(card.key)}
-                  className={cn("dv-hero-stat", card.tone, active && "dv-hero-stat-active")}
-                >
-                  <span className="dv-hero-stat-icon">
-                    <Icon className="h-4 w-4" />
-                  </span>
-                  <span className="dv-hero-stat-meta">
-                    <span className="dv-hero-stat-label">{card.label}</span>
-                    <span className="dv-hero-stat-row">
-                      <span className="dv-hero-stat-value">
-                        {loading && !report ? "…" : card.value}
-                      </span>
-                      {pct != null ? <span className="dv-hero-stat-pct">{pct}%</span> : null}
-                    </span>
-                  </span>
-                </button>
-              );
-            })}
+  const dayCards: Array<{
+    key: DayStatusFilter;
+    label: string;
+    value: number;
+    icon: typeof Users;
+    bar: string;
+    iconBg: string;
+    ring: string;
+    surface: string;
+  }> = [
+    {
+      key: "all",
+      label: "Jami xodim",
+      value: filteredDayStats.total,
+      icon: Users,
+      bar: "bg-[#3b82f6]",
+      iconBg: "bg-sky-50 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300",
+      ring: "#38bdf8",
+      surface: "dark:border-sky-400/30 dark:bg-[#102743] dark:shadow-[0_16px_36px_-22px_rgba(56,189,248,0.7)]",
+    },
+    {
+      key: "present",
+      label: "Kelgan",
+      value: filteredDayStats.present,
+      icon: UserCheck,
+      bar: "bg-emerald-500",
+      iconBg: "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300",
+      ring: "#34d399",
+      surface: "dark:border-emerald-400/25 dark:bg-[#0d2820] dark:shadow-[0_16px_36px_-22px_rgba(52,211,153,0.55)]",
+    },
+    {
+      key: "absent",
+      label: "Kelmagan",
+      value: filteredDayStats.absent,
+      icon: UserX,
+      bar: "bg-rose-500",
+      iconBg: "bg-rose-50 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300",
+      ring: "#fb7185",
+      surface: "dark:border-rose-400/25 dark:bg-[#2a1520] dark:shadow-[0_16px_36px_-22px_rgba(251,113,133,0.5)]",
+    },
+    {
+      key: "late",
+      label: "Kechikkan",
+      value: filteredDayStats.late,
+      icon: Timer,
+      bar: "bg-amber-400",
+      iconBg: "bg-amber-50 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300",
+      ring: "#fbbf24",
+      surface: "dark:border-amber-400/25 dark:bg-[#2a2112] dark:shadow-[0_16px_36px_-22px_rgba(251,191,36,0.45)]",
+    },
+  ];
+  if (filteredDayStats.leave > 0) {
+    dayCards.push({
+      key: "leave",
+      label: "Ta’tilda",
+      value: filteredDayStats.leave,
+      icon: Palmtree,
+      bar: "bg-violet-500",
+      iconBg: "bg-violet-50 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300",
+      ring: "#a78bfa",
+      surface: "dark:border-violet-400/25 dark:bg-[#241832] dark:shadow-[0_16px_36px_-22px_rgba(167,139,250,0.5)]",
+    });
+  }
+  if (filteredDayStats.rest > 0) {
+    dayCards.push({
+      key: "rest",
+      label: "Dam kuni",
+      value: filteredDayStats.rest,
+      icon: Moon,
+      bar: "bg-slate-400",
+      iconBg: "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200",
+      ring: "#94a3b8",
+      surface: "dark:border-white/15 dark:bg-[#1a2436]",
+    });
+  }
+
+  return (
+    <div className="w-full space-y-4 pb-10">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-sm shadow-blue-600/30">
+            <Users className="h-6 w-6" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-2xl font-bold tracking-tight text-[#0f2744] dark:text-white">{t("davomat.title")}</h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Xodimlarning ishga kelish va ketish nazorati</p>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm dark:border-sky-400/20 dark:bg-[#152238]">
+            <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
+            <div className="min-w-0 leading-none">
+              <div className="text-[10px] font-medium text-slate-400">
+                {selectedDay === todayYmd() ? (locale === "ru" ? "Сегодня" : "Bugun") : locale === "ru" ? "Дата" : "Sana"}
+              </div>
+              <div className="mt-0.5 truncate text-xs font-semibold text-[#0f2744] dark:text-slate-100">{formatLongDate(selectedDay, locale)}</div>
+            </div>
+          </div>
+          <Button
+            type="button"
+            className="h-11 gap-2 rounded-xl bg-emerald-600 px-4 text-white shadow-sm hover:bg-emerald-700"
+            onClick={() => void onExport()}
+            disabled={!!exporting || (loading && !report)}
+          >
+            {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+            {t("davomat.excelBtn")}
+          </Button>
+          <Button
+            type="button"
+            className="h-11 gap-2 rounded-xl bg-rose-600 px-4 text-white shadow-sm hover:bg-rose-700"
+            onClick={() => void onExportPdf()}
+            disabled={!!exporting || (loading && !report)}
+          >
+            {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+            {t("davomat.pdfBtn")}
+          </Button>
+        </div>
       </div>
+
+      {section === "schedule" || section === "totals" ? (
+      <div
+        className={cn(
+          "grid grid-cols-1 gap-3 sm:grid-cols-2",
+          dayCards.length > 5 ? "xl:grid-cols-6" : dayCards.length > 4 ? "xl:grid-cols-5" : "xl:grid-cols-4",
+        )}
+      >
+        {dayCards.map((card) => {
+          const Icon = card.icon;
+          const active = dayStatusFilter === card.key;
+          const pct =
+            card.key === "all"
+              ? 100
+              : filteredDayStats.total > 0
+                ? Math.round((card.value / filteredDayStats.total) * 1000) / 10
+                : 0;
+          const ringPct = card.key === "all" ? 100 : pct;
+          const r = 18;
+          const c = 2 * Math.PI * r;
+          const dash = c - (c * Math.min(100, ringPct)) / 100;
+          return (
+            <button
+              key={card.key}
+              type="button"
+              onClick={() => toggleDayStatusFilter(card.key)}
+              className={cn(
+                "rounded-2xl border-2 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                card.surface,
+                active ? "border-sky-500 ring-2 ring-sky-200 dark:ring-sky-400/40" : "border-slate-300",
+              )}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center gap-3">
+                  <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", card.iconBg)}>
+                    <Icon className="h-5 w-5" />
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{card.label}</div>
+                    <div className="mt-0.5 text-2xl font-bold tabular-nums leading-none text-[#0f2744] dark:text-white">
+                      {loading && !report ? "…" : card.value}
+                      <span className="ml-1 text-sm font-medium text-slate-400">xodim</span>
+                    </div>
+                  </div>
+                </div>
+                {card.key === "all" ? (
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-sky-500">
+                    <Users className="h-4 w-4" />
+                  </span>
+                ) : (
+                  <span className="relative h-12 w-12 shrink-0">
+                    <svg viewBox="0 0 44 44" className="h-12 w-12 -rotate-90">
+                      <circle cx="22" cy="22" r={r} fill="none" stroke="currentColor" strokeWidth="4" className="text-slate-100 dark:text-white/10" />
+                      <circle
+                        cx="22"
+                        cy="22"
+                        r={r}
+                        fill="none"
+                        stroke={card.ring}
+                        strokeWidth="4"
+                        strokeLinecap="round"
+                        strokeDasharray={`${c} ${c}`}
+                        strokeDashoffset={dash}
+                      />
+                    </svg>
+                    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tabular-nums text-slate-600 dark:text-slate-200">
+                      {Number.isInteger(pct) ? pct : pct.toFixed(1)}%
+                    </span>
+                  </span>
+                )}
+              </div>
+              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+                <div className={cn("h-full rounded-full", card.bar)} style={{ width: `${Math.min(100, ringPct)}%` }} />
+              </div>
+              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+                <span className="min-w-0 truncate" title={cardFoot(card.key)}>
+                  {cardFoot(card.key)}
+                </span>
+                <span className="shrink-0 font-semibold tabular-nums text-slate-500">{card.key === "all" ? "100%" : `${pct}%`}</span>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+      ) : null}
 
       <Tabs
         value={section}
@@ -1555,57 +2032,136 @@ export default function DavomatPage() {
           setSelectedEmpId("all");
         }}
       >
-        <TabsList className="dv-section-tabs">
-          <TabsTrigger value="schedule" className="dv-section-tab">
-            <CalendarDays className="h-4 w-4 shrink-0" />
-            <span className="truncate sm:hidden">{t("davomat.table")}</span>
-            <span className="hidden truncate sm:inline">{t("davomat.tableHint")}</span>
-          </TabsTrigger>
-          <TabsTrigger value="totals" className="dv-section-tab">
-            <Users className="h-4 w-4 shrink-0" />
-            <span className="truncate sm:hidden">Jami</span>
-            <span className="hidden truncate sm:inline">Xodimlar jami</span>
-          </TabsTrigger>
-        </TabsList>
+        <div
+          className={cn(
+            "grid grid-cols-1 gap-2 rounded-2xl border border-slate-200/90 bg-slate-50/90 p-1.5 shadow-sm dark:border-white/10 dark:bg-[#101a2e]",
+            canChecklist ? "sm:grid-cols-2 xl:grid-cols-5" : "sm:grid-cols-2 xl:grid-cols-4",
+          )}
+        >
+          {(
+            [
+              {
+                id: "schedule" as const,
+                label: "Jadval (kun / hafta / oy)",
+                icon: CalendarDays,
+                idle: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300 hover:bg-sky-100 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-100 dark:hover:bg-sky-400/20",
+                active: "border-transparent bg-gradient-to-br from-[#1e3a8a] to-[#2563eb] text-white shadow-md shadow-blue-500/25",
+              },
+              {
+                id: "analytics" as const,
+                label: "Tahlil va grafik",
+                icon: LineChart,
+                idle: "border-violet-200 bg-violet-50 text-violet-800 hover:border-violet-300 hover:bg-violet-100 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-100 dark:hover:bg-violet-400/20",
+                active: "border-transparent bg-gradient-to-br from-violet-700 to-fuchsia-600 text-white shadow-md shadow-violet-500/25",
+              },
+              {
+                id: "totals" as const,
+                label: "Xodimlar jami",
+                icon: Users,
+                idle: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-100 dark:hover:bg-emerald-400/20",
+                active: "border-transparent bg-gradient-to-br from-emerald-700 to-teal-500 text-white shadow-md shadow-emerald-500/25",
+              },
+              {
+                id: "smena" as const,
+                label: "Smena va filial",
+                icon: AlarmClock,
+                idle: "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100 dark:hover:bg-amber-400/20",
+                active: "border-transparent bg-gradient-to-br from-amber-600 to-orange-500 text-white shadow-md shadow-amber-500/25",
+              },
+              ...(canChecklist
+                ? [
+                    {
+                      id: "checklist" as const,
+                      label: "Cheklist holati",
+                      icon: ClipboardList,
+                      idle: "border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-300 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-100 dark:hover:bg-rose-400/20",
+                      active: "border-transparent bg-gradient-to-br from-rose-700 to-pink-600 text-white shadow-md shadow-rose-500/25",
+                    },
+                  ]
+                : []),
+            ]
+          ).map((tab) => {
+            const Icon = tab.icon;
+            const on = section === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setSection(tab.id)}
+                className={cn(
+                  "flex h-11 items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition",
+                  on ? tab.active : tab.idle,
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
 
         <TabsContent value="schedule" className="mt-4 space-y-4">
-          <Card className="border-border shadow-sm">
+          <Card className="border-border shadow-sm dark:border-white/10 dark:bg-[#101a2e]">
             <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:space-y-4 sm:px-6 sm:pt-5">
               <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Davr turi — tanlang
-                </p>
-                <div className="dv-period-bar" role="group" aria-label="Davr turi">
+                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Davr turi</p>
+                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200/90 bg-slate-50/80 p-1.5 sm:grid-cols-4 dark:border-white/10 dark:bg-white/[0.03]" role="group" aria-label="Davr turi">
                   {(
                     [
-                      { id: "day" as const, short: t("davomat.dayShort"), label: t("davomat.daily"), hint: t("davomat.hint1d") },
-                      { id: "week" as const, short: t("ui.week"), label: t("davomat.weekly"), hint: t("davomat.hint7d") },
-                      { id: "month" as const, short: t("ui.month"), label: t("davomat.monthly"), hint: t("davomat.hint1m") },
-                      { id: "range" as const, short: t("davomat.period"), label: t("ui.fromTo"), hint: t("davomat.hintCustom") },
+                      {
+                        id: "day" as const,
+                        short: t("davomat.dayShort"),
+                        label: t("davomat.daily"),
+                        hint: t("davomat.hint1d"),
+                        idle: "border-orange-200 bg-orange-50 text-orange-950 hover:border-orange-300 hover:bg-orange-100 dark:border-orange-400/30 dark:bg-orange-400/10 dark:text-orange-100",
+                        active: "border-transparent bg-gradient-to-br from-orange-600 to-orange-500 text-white shadow-md shadow-orange-500/25",
+                      },
+                      {
+                        id: "week" as const,
+                        short: t("ui.week"),
+                        label: t("davomat.weekly"),
+                        hint: t("davomat.hint7d"),
+                        idle: "border-teal-200 bg-teal-50 text-teal-950 hover:border-teal-300 hover:bg-teal-100 dark:border-teal-400/30 dark:bg-teal-400/10 dark:text-teal-100",
+                        active: "border-transparent bg-gradient-to-br from-teal-700 to-cyan-600 text-white shadow-md shadow-teal-500/25",
+                      },
+                      {
+                        id: "month" as const,
+                        short: t("ui.month"),
+                        label: t("davomat.monthly"),
+                        hint: t("davomat.hint1m"),
+                        idle: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-950 hover:border-fuchsia-300 hover:bg-fuchsia-100 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-100",
+                        active: "border-transparent bg-gradient-to-br from-fuchsia-700 to-pink-600 text-white shadow-md shadow-fuchsia-500/25",
+                      },
+                      {
+                        id: "range" as const,
+                        short: t("davomat.period"),
+                        label: t("ui.fromTo"),
+                        hint: t("davomat.hintCustom"),
+                        idle: "border-indigo-200 bg-indigo-50 text-indigo-950 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-400/30 dark:bg-indigo-400/10 dark:text-indigo-100",
+                        active: "border-transparent bg-gradient-to-br from-indigo-700 to-blue-600 text-white shadow-md shadow-indigo-500/25",
+                      },
                     ] as const
-                  ).map((m) => (
+                  ).map((m) => {
+                    const on = calMode === m.id;
+                    return (
                     <button
                       key={m.id}
                       type="button"
-                      aria-pressed={calMode === m.id}
+                      aria-pressed={on}
                       className={cn(
-                        "dv-period-btn",
-                        calMode === m.id ? "dv-period-btn-active" : "dv-period-btn-idle",
+                        "rounded-xl border px-3.5 py-2.5 text-left transition",
+                        on ? m.active : m.idle,
                       )}
                       onClick={() => setCalModeSafe(m.id)}
                     >
                       <span className="block text-[11px] font-semibold leading-none sm:hidden">{m.short}</span>
                       <span className="hidden text-sm font-semibold leading-none sm:block">{m.label}</span>
-                      <span
-                        className={cn(
-                          "mt-1.5 block text-[10px] sm:mt-1",
-                          calMode === m.id ? "dv-period-hint-active" : "text-muted-foreground",
-                        )}
-                      >
+                      <span className={cn("mt-1 block text-[10px]", on ? "text-white/80" : "opacity-70")}>
                         {m.hint}
                       </span>
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               {filters}
@@ -1717,12 +2273,16 @@ export default function DavomatPage() {
                             <td className="px-3 py-2 text-xs text-muted-foreground">
                               {(() => {
                                 const h = workHoursForEmployee(emp);
-                                if (staffFilter === "pharmacy") {
-                                  return `${matchesPharmacyShift(emp, "shift_two") ? "2-smena" : "1-smena"} · ${h.start}–${h.end}`;
+                                const kind = classifyDavomatStaff(emp);
+                                if (kind === "shift_one" || kind === "shift_two") {
+                                  return `${kind === "shift_two" ? "2-smena" : "1-smena"} · ${h.start}–${h.end}`;
                                 }
-                                return (staffFilter === "warehouse" || staffFilter === "security") && emp.shiftLabel
-                                  ? `${emp.shiftLabel} · ${h.start}–${h.end}`
-                                  : `${h.start}–${h.end}`;
+                                if (kind === "warehouse" || kind === "security") {
+                                  return emp.shiftLabel
+                                    ? `${emp.shiftLabel} · ${h.start}–${h.end}`
+                                    : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`;
+                                }
+                                return `${h.start}–${h.end}`;
                               })()}
                             </td>
                           ) : null}
@@ -1819,6 +2379,10 @@ export default function DavomatPage() {
               />
             )
           ) : null}
+        </TabsContent>
+
+        <TabsContent value="analytics" className="mt-4">
+          <DavomatAnalyticsDashboard embedded bare />
         </TabsContent>
 
         <TabsContent value="totals" className="mt-4 space-y-4">
@@ -2022,6 +2586,32 @@ export default function DavomatPage() {
             </>
           ) : null}
         </TabsContent>
+
+        <TabsContent value="smena" className="mt-4">
+          <Suspense
+            fallback={
+              <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" /> Yuklanmoqda…
+              </div>
+            }
+          >
+            <SmenaFilialPage />
+          </Suspense>
+        </TabsContent>
+
+        {canChecklist ? (
+          <TabsContent value="checklist" className="mt-4">
+            <Suspense
+              fallback={
+                <div className="flex items-center justify-center gap-2 py-16 text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin" /> Yuklanmoqda…
+                </div>
+              }
+            >
+              <ChecklistHolatiPage />
+            </Suspense>
+          </TabsContent>
+        ) : null}
       </Tabs>
 
       <Dialog open={Boolean(edit) && canEdit} onOpenChange={(o) => !o && setEdit(null)}>

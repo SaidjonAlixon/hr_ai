@@ -1,14 +1,15 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
-import { ArrowLeft, Loader2, Search, UserX } from 'lucide-react';
+import { ArrowLeft, Loader2, Search, Trash2, UserX } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Badge } from '../../components/ui/badge';
 import { useAuth } from '../../contexts/AuthContext';
 import { canManageUsers, userRoleLabel } from '../../lib/roles';
-import { fetchDismissedStaff } from '../../lib/dismissed-staff-api';
+import { fetchDismissedStaff, purgeDismissed } from '../../lib/dismissed-staff-api';
+import { useToast } from '../../hooks/use-toast';
 
 function fmtDateTime(iso?: string | null): string {
   if (!iso) return '—';
@@ -28,8 +29,11 @@ function fmtDateTime(iso?: string | null): string {
 export default function BoshatilganlarPage() {
   const { user } = useAuth();
   const allowed = canManageUsers(user?.role);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
+  const [purgingId, setPurgingId] = useState<number | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebounced(search.trim()), 300);
@@ -112,6 +116,7 @@ export default function BoshatilganlarPage() {
                   <th className="px-3 py-2.5">Bo‘shatilgan</th>
                   <th className="px-3 py-2.5">Kim tomonidan</th>
                   <th className="px-3 py-2.5">Sabab</th>
+                  <th className="px-3 py-2.5" />
                 </tr>
               </thead>
               <tbody>
@@ -141,6 +146,34 @@ export default function BoshatilganlarPage() {
                     <td className="px-3 py-2.5 text-muted-foreground">{r.dismissedByName || '—'}</td>
                     <td className="max-w-[220px] px-3 py-2.5 text-muted-foreground">
                       <span className="line-clamp-2">{r.reason || '—'}</span>
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="destructive"
+                        className="gap-1"
+                        disabled={purgingId === r.id}
+                        onClick={() => {
+                          const ok = window.confirm(
+                            `${r.fullName} arxivdan va qolgan barcha joylardan o‘chadi. Qaytarib bo‘lmaydi. Davom etasizmi?`,
+                          );
+                          if (!ok) return;
+                          setPurgingId(r.id);
+                          void purgeDismissed(r.id)
+                            .then(() => {
+                              toast({ title: 'Butunlay o‘chirildi', description: `${r.fullName} hech qayerda qolmadi` });
+                              void queryClient.invalidateQueries({ queryKey: ['dismissed-staff'] });
+                            })
+                            .catch((err: Error) => {
+                              toast({ title: 'Xatolik', description: err?.message || 'O‘chirilmadi', variant: 'destructive' });
+                            })
+                            .finally(() => setPurgingId(null));
+                        }}
+                      >
+                        {purgingId === r.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                        Butunlay
+                      </Button>
                     </td>
                   </tr>
                 ))}

@@ -10,6 +10,7 @@ export type DavomatStaffFilter =
   | "shift_one"
   | "shift_two"
   | "office"
+  | "office_core"
   | "warehouse"
   | "security"
   | "external";
@@ -72,8 +73,18 @@ export function matchesWarehouseShift(
 
 const SHIFT_PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
 const SHIFT_PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "supervisor"]);
-const SHIFT_PHARMACY_POSITION_RE =
-  /mudir|farmasevt|stajyor|stajor|filial\s*mudir|фармацевт|заведующ/i;
+/** Butun so‘z: «mudiri», «boshlig‘i» ofis lavozimi dorixona hisoblanmaydi */
+function positionHasWord(position: string | null | undefined, words: string[]): boolean {
+  const tokens = String(position || "")
+    .toLowerCase()
+    .replace(/[ʻʼ'`´]/g, "'")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+  const set = new Set(words);
+  return tokens.some((w) => set.has(w));
+}
+
+const PHARMACY_POSITION_WORDS = ["mudir", "farmasevt", "stajyor", "stajor", "фармацевт", "заведующий", "заведующ"];
 
 const NON_OFFICE_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
 const NON_OFFICE_ORG_ROLES = new Set([
@@ -83,8 +94,7 @@ const NON_OFFICE_ORG_ROLES = new Set([
   "coordinator",
   "supervisor",
 ]);
-const NON_OFFICE_POSITION_RE =
-  /mudir|farmasevt|stajyor|stajor|koordinator|filial\s*mudir|фармацевт|заведующ/i;
+const NON_OFFICE_POSITION_WORDS = [...PHARMACY_POSITION_WORDS, "koordinator"];
 
 const OFFICE_FIELD_USER_ROLES = new Set(["revizor", "reviziya_rahbar", "texnik", "texnik_rahbar"]);
 
@@ -117,7 +127,7 @@ function isShiftPharmacyStaff(emp: {
   if (SHIFT_PHARMACY_ORG_ROLES.has(emp.orgRole || "")) return true;
   const inferred = orgRoleFromUserRole(emp.userRole);
   if (inferred && SHIFT_PHARMACY_ORG_ROLES.has(inferred)) return true;
-  return SHIFT_PHARMACY_POSITION_RE.test(emp.position || "");
+  return positionHasWord(emp.position, PHARMACY_POSITION_WORDS);
 }
 
 function isNonOfficeStaff(emp: {
@@ -129,7 +139,7 @@ function isNonOfficeStaff(emp: {
   if (NON_OFFICE_ORG_ROLES.has(emp.orgRole || "")) return true;
   const inferred = orgRoleFromUserRole(emp.userRole);
   if (inferred && NON_OFFICE_ORG_ROLES.has(inferred)) return true;
-  return NON_OFFICE_POSITION_RE.test(emp.position || "");
+  return positionHasWord(emp.position, NON_OFFICE_POSITION_WORDS);
 }
 
 function isShiftTwo(emp: {
@@ -151,6 +161,7 @@ export function parseDavomatStaffFilter(raw?: string | null): DavomatStaffFilter
     v === "shift_one" ||
     v === "shift_two" ||
     v === "office" ||
+    v === "office_core" ||
     v === "warehouse" ||
     v === "security" ||
     v === "external" ||
@@ -180,21 +191,28 @@ export function matchesDavomatStaffFilter(
   if (filter === "all") return true;
 
   const security = isSecurityDavomatStaff(emp);
+  const warehouse = isWarehouseDavomatStaff(emp) && !security;
   if (filter === "security") return security;
-  if (security) return false;
-
-  const warehouse = isWarehouseDavomatStaff(emp);
   if (filter === "warehouse") return warehouse;
-  if (warehouse) return false;
 
   const shiftPharmacy = isShiftPharmacyStaff(emp);
   const shiftTwo = isShiftTwo(emp);
   const nonOffice = isNonOfficeStaff(emp);
 
-  if (filter === "office" || filter === "external") {
+  /** Ofis — ofis xodimlari, omborxona va xavfsizlik. Dorixona aralashmaydi. */
+  if (filter === "office") {
+    if (security || warehouse) return true;
     if (shiftPharmacy || nonOffice) return false;
     return true;
   }
+  /** Faqat 09:00–18:00 ofis, ombor va xavfsizliksiz */
+  if (filter === "office_core" || filter === "external") {
+    if (security || isWarehouseDavomatStaff(emp)) return false;
+    if (shiftPharmacy || nonOffice) return false;
+    return true;
+  }
+
+  if (security || isWarehouseDavomatStaff(emp)) return false;
 
   if (filter === "pharmacy") return shiftPharmacy;
   if (filter === "shift_two") return shiftPharmacy && shiftTwo;
@@ -215,8 +233,10 @@ export function staffFilterLabelUz(filter: DavomatStaffFilter): string {
     case "security":
       return "Xavfsizlik";
     case "office":
-    case "external":
       return "Ofis";
+    case "office_core":
+    case "external":
+      return "Ofis · 09:00–18:00";
     default:
       return "Hammasi";
   }

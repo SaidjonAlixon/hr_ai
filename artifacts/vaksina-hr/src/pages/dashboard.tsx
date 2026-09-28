@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { lazy, Suspense, useMemo, useState } from 'react';
 import {
   useGetDashboardStats,
   useGetRecentActivity,
@@ -52,7 +52,6 @@ import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
 import { cn } from '../lib/utils';
 import { HR_ROLE_LABELS, canViewChecklistStatus, canViewHolat, canViewHolatFull, canSeeHrRecruitment, canViewDavomat, isHrRole, isSbRole, isReviziyaRole, isItRole, isTexnikRole, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "../lib/roles";
-import { DavomatAnalyticsDashboard } from '../pages/davomat/analytics';
 import { useHolat } from '../lib/holat-api';
 import {
   BranchListRows,
@@ -70,6 +69,10 @@ import {
   WorkHomeHeader,
   WorkPanel,
 } from '../components/dashboard/dashboard-widgets';
+
+const DavomatAnalyticsDashboard = lazy(() =>
+  import('../pages/davomat/analytics').then((m) => ({ default: m.DavomatAnalyticsDashboard })),
+);
 
 const OPEN_STATUSES = new Set(['submitted', 'reviewing', 'accepted', 'announced']);
 
@@ -317,7 +320,12 @@ export default function Dashboard() {
     if (role === 'it_rahbar') setLocation('/it');
   }, [role, setLocation]);
 
+  React.useEffect(() => {
+    if (isReviziyaRole(role)) setLocation('/reviziya');
+  }, [role, setLocation]);
+
   const showDavomatDash = usesDavomatDashboardHome(role);
+  const loadWorkWidgets = !showDavomatDash;
   const isRecruitment = kind === 'recruitment';
   const isPharmacy = kind === 'pharmacy';
   const isPharmacyStaff = kind === 'pharmacy_staff';
@@ -333,37 +341,37 @@ export default function Dashboard() {
       role === 'department_head');
 
   const { data: stats, isLoading: statsLoading } = useGetDashboardStats({
-    query: { enabled: isRecruitment || kind === 'department' || kind === 'trainer' },
+    query: { enabled: loadWorkWidgets && (isRecruitment || kind === 'department' || kind === 'trainer') },
   } as any);
   const { data: activities, isLoading: activitiesLoading } = useGetRecentActivity({
-    query: { enabled: isRecruitment || kind === 'department' },
+    query: { enabled: loadWorkWidgets && (isRecruitment || kind === 'department') },
   } as any);
   const { data: tasks, isLoading: tasksLoading } = useGetRecruiterTasks({
-    query: { enabled: canSeeRecruiterTasks },
+    query: { enabled: loadWorkWidgets && canSeeRecruiterTasks },
   } as any);
   const { data: pipeline, isLoading: pipelineLoading } = useGetPipelineOverview({
-    query: { enabled: canSeePipeline },
+    query: { enabled: loadWorkWidgets && canSeePipeline },
   } as any);
   const { data: allRequests, isLoading: requestsLoading } = useGetRequests(undefined, {
-    query: { enabled: !!canWatchRequests || kind === 'department' },
+    query: { enabled: loadWorkWidgets && (!!canWatchRequests || kind === 'department') },
   });
   const { data: vacancies, isLoading: vacanciesLoading } = useGetVacancies(
     { status: undefined } as any,
-    { query: { enabled: !!canFetchVacancies } } as any,
+    { query: { enabled: loadWorkWidgets && !!canFetchVacancies } } as any,
   );
 
   const { data: staffingAlerts, isLoading: staffingLoading } = useStaffingAlerts(
     undefined,
-    { enabled: isPharmacy },
+    { enabled: loadWorkWidgets && isPharmacy },
   );
   const { data: branchNeeds, isLoading: needsLoading } = useBranchNeeds({
-    enabled: isPharmacy || isPharmacyStaff || kind === 'ops',
+    enabled: loadWorkWidgets && (isPharmacy || isPharmacyStaff || kind === 'ops'),
   });
   const { data: myTasks, isLoading: myTasksLoading } = useGetTasks(undefined, {
-    enabled: kind !== 'intern' && kind !== 'mentor',
+    enabled: loadWorkWidgets && kind !== 'intern' && kind !== 'mentor',
   } as any);
   const { data: reminders, isLoading: remindersLoading } = useGetReminders({
-    query: { enabled: kind !== 'intern' },
+    query: { enabled: loadWorkWidgets && kind !== 'intern' },
   });
   const holatOn = canViewHolat(role) && !showDavomatDash;
   const { data: holat, isLoading: holatLoading } = useHolat(holatOn);
@@ -622,7 +630,15 @@ export default function Dashboard() {
             </Button>
           </div>
         ) : null}
-        <DavomatAnalyticsDashboard embedded initialSegment="office" />
+        <Suspense
+          fallback={
+            <div className="flex min-h-[40vh] items-center justify-center text-sm text-muted-foreground">
+              Yuklanmoqda…
+            </div>
+          }
+        >
+          <DavomatAnalyticsDashboard embedded initialSegment="office" />
+        </Suspense>
       </div>
     );
   }

@@ -1038,7 +1038,7 @@ export function TaskFormDialog({
   const [notes, setNotes] = useState("");
   const [reminderEnabled, setReminderEnabled] = useState(true);
   const [reminderOffset, setReminderOffset] = useState("1d");
-  const [acceptWindowEnabled, setAcceptWindowEnabled] = useState(true);
+  const [acceptWindowEnabled, setAcceptWindowEnabled] = useState(false);
   const [recurrence, setRecurrence] = useState("none");
   const [recurrencePeriod, setRecurrencePeriod] = useState<"daily" | "weekly" | "monthly">(
     "weekly",
@@ -1158,7 +1158,7 @@ export function TaskFormDialog({
     setNotes("");
     setReminderEnabled(true);
     setReminderOffset("1d");
-    setAcceptWindowEnabled(true);
+    setAcceptWindowEnabled(false);
     setRecurrence("none");
     setRecurrencePeriod("weekly");
     setVisibility("all");
@@ -2330,7 +2330,7 @@ export function TaskFormDialog({
                     )}
                   </div>
                 </div>
-                <div className="rounded-xl border border-teal-200/70 bg-teal-50/50 px-3 py-2 dark:border-teal-800/50 dark:bg-teal-950/30">
+                <div className="hidden rounded-xl border border-teal-200/70 bg-teal-50/50 px-3 py-2 dark:border-teal-800/50 dark:bg-teal-950/30 xl:block">
                   <p className={cn(LABEL, "mb-1")}>{t("tasks.form.assignee")}</p>
                   <p className="text-sm font-semibold text-foreground">
                     {editing?.assigneeName || "—"}
@@ -2455,23 +2455,67 @@ export function TaskFormDialog({
 
             {(isWork || isView) ? (
               <>
-                <SectionCard title={t("tasks.form.assigner")} tint="teal">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white shadow-md">
-                      {assignerDisplayName.trim().charAt(0).toUpperCase() || "B"}
-                    </span>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm font-bold text-[#0a2540] dark:text-slate-50">
-                        {assignerDisplayName}
-                      </p>
-                      {assignerDisplayRole ? (
-                        <p className="truncate text-[12px] font-medium capitalize text-slate-500">
-                          {assignerDisplayRole}
+                <div className="grid grid-cols-1 gap-2.5 min-[480px]:grid-cols-2 xl:hidden">
+                  <div className="rounded-2xl border border-sky-200/80 bg-white p-3 shadow-sm dark:border-sky-900/60 dark:bg-slate-950">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-sky-700 dark:text-sky-300">
+                      {t("tasks.form.assigner")}
+                    </p>
+                    <div className="mt-2.5 flex items-center gap-2.5">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#0a2540] to-[#0b5fff] text-sm font-bold text-white">
+                        {assignerDisplayName.trim().charAt(0).toUpperCase() || "B"}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-[#0a2540] dark:text-slate-50">
+                          {assignerDisplayName}
                         </p>
-                      ) : null}
+                        {assignerDisplayRole ? (
+                          <p className="truncate text-[11px] font-medium capitalize text-slate-500">
+                            {assignerDisplayRole}
+                          </p>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
-                </SectionCard>
+                  <div className="rounded-2xl border border-teal-200/80 bg-white p-3 shadow-sm dark:border-teal-900/60 dark:bg-slate-950">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-teal-700 dark:text-teal-300">
+                        {t("tasks.form.assignee")}
+                      </p>
+                      <span className="rounded-full bg-teal-50 px-1.5 py-px text-[9px] font-bold uppercase tracking-wide text-teal-700 ring-1 ring-teal-200 dark:bg-teal-950 dark:text-teal-200 dark:ring-teal-800">
+                        {t("tasks.form.receiverBadge")}
+                      </span>
+                    </div>
+                    <div className="mt-2.5 flex items-center gap-2.5">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-teal-700 to-emerald-500 text-sm font-bold text-white">
+                        {(editing?.assigneeName || "M").trim().charAt(0).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold text-[#0a2540] dark:text-slate-50">
+                          {editing?.assigneeName || "—"}
+                        </p>
+                        {selectedAssignee?.meta ? (
+                          <p className="truncate text-[11px] font-medium text-slate-500">
+                            {selectedAssignee.meta}
+                          </p>
+                        ) : (
+                          <p className="truncate text-[11px] font-medium text-slate-500">
+                            {t("tasks.form.assigneeBound")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    {Array.isArray(editing?.meta?.assigneeHistory) &&
+                    editing!.meta!.assigneeHistory!.length > 0 ? (
+                      <p className="mt-2 text-[10px] leading-snug text-muted-foreground">
+                        {t("tasks.transferredFrom")}:{" "}
+                        {editing!.meta!.assigneeHistory!
+                          .map((h) => h.name)
+                          .filter(Boolean)
+                          .join(" → ")}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
 
                 <SectionCard title={t("tasks.form.section.schedule")} tint="amber">
                   <div className="grid gap-3 sm:grid-cols-2">

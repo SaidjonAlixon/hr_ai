@@ -248,6 +248,22 @@ export function useReviziyaRevizors() {
   });
 }
 
+export function fetchNextActNumber() {
+  return json<{ actNumber: string }>("/api/reviziya/visits/next-act-number");
+}
+
+export function fetchBranchStaff(branchId: number) {
+  return json<{
+    people: Array<{ id: number; fullName: string; orgRole: string; roleLabel: string; phone: string }>;
+  }>(`/api/reviziya/branches/${branchId}/staff`);
+}
+
+export function fetchVisitByAct(number: string) {
+  return json<Record<string, unknown>>(
+    `/api/reviziya/visits/by-act?number=${encodeURIComponent(number.trim())}`,
+  );
+}
+
 export function useReviziyaVisitMutations() {
   const qc = useQueryClient();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["reviziya", "visits"] });

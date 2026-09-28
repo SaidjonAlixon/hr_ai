@@ -893,9 +893,11 @@ function OfficeDayPanel({
 
 export function DavomatAnalyticsDashboard({
   embedded = false,
+  bare = false,
   initialSegment = "office",
 }: {
   embedded?: boolean;
+  bare?: boolean;
   initialSegment?: DavomatSegment;
 }) {
   const { user } = useAuth();
@@ -931,7 +933,7 @@ export function DavomatAnalyticsDashboard({
     }
     return rangeForPreset(preset);
   }, [preset, customFrom, customTo]);
-  const { data, isLoading, isError, error, refetch } = useDavomatAnalytics({ ...range, segment }, true);
+  const { data, isLoading, isError, error, refetchFresh } = useDavomatAnalytics({ ...range, segment }, true);
   const chart = useChartTheme();
   const fillId = embedded ? "presentFillDash" : "presentFillPage";
 
@@ -1217,8 +1219,9 @@ export function DavomatAnalyticsDashboard({
         embedded && "rounded-2xl",
       )}
     >
-      <div className={cn("mx-auto max-w-[1600px] space-y-5", embedded ? "p-4 pb-8 md:p-5" : "p-4 pb-10 md:p-6")}>
+      <div className={cn("mx-auto max-w-[1600px] space-y-5", bare ? "p-0" : embedded ? "p-4 pb-8 md:p-5" : "p-4 pb-10 md:p-6")}>
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          {bare ? null : (
           <div>
             {embedded ? (
               <>
@@ -1246,6 +1249,7 @@ export function DavomatAnalyticsDashboard({
               </>
             )}
           </div>
+          )}
           <div className="flex flex-col gap-2">
             <div className="flex flex-wrap items-center gap-2">
               {PRESET_BUTTONS.map(({ key, labelKey }) => (
@@ -1266,7 +1270,7 @@ export function DavomatAnalyticsDashboard({
                 <CalendarDays className="mr-1.5 h-4 w-4" />
                 {t("davomat.period")}
               </Button>
-              <Button size="sm" variant="outline" onClick={() => refetch()}>
+              <Button size="sm" variant="outline" onClick={() => void refetchFresh()}>
                 <Download className="mr-1.5 h-4 w-4" />
                 {t("ui.refresh")}
               </Button>
@@ -1359,7 +1363,7 @@ export function DavomatAnalyticsDashboard({
         {isError ? (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-rose-500/25 bg-rose-500/10 p-6 text-center text-rose-700 dark:text-rose-200">
             <p>{error instanceof Error ? error.message : t("davomat.loadFail")}</p>
-            <Button size="sm" variant="outline" onClick={() => refetch()}>
+            <Button size="sm" variant="outline" onClick={() => void refetchFresh()}>
               {t("davomat.retry")}
             </Button>
           </div>

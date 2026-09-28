@@ -235,6 +235,7 @@ router.get("/reviziya/visits/meta", requireAuth, async (req: AuthRequest, res): 
     nextActNumber: await generateUniqueActNumber(),
     permissions: {
       create: canCreateReviziyaVisit(req.userRole),
+      conduct: canAssignReviziya(req.userRole),
       assign: canAssignReviziya(req.userRole),
       approveRequest: canApproveReviziyaRequest(req.userRole),
       overrideSchedule: canOverrideRevisionSchedule(req.userRole),
@@ -247,6 +248,29 @@ router.get("/reviziya/visits/meta", requireAuth, async (req: AuthRequest, res): 
 router.get("/reviziya/visits/next-act-number", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (denyView(req, res)) return;
   res.json({ actNumber: await generateUniqueActNumber() });
+});
+
+router.get("/reviziya/visits/by-act", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (denyView(req, res)) return;
+  const code = String(req.query.number || "").trim();
+  if (!code) {
+    res.status(400).json({ error: "Akt raqami yozilmagan" });
+    return;
+  }
+  const [row] = await db
+    .select()
+    .from(revisionVisitsTable)
+    .where(eq(revisionVisitsTable.actNumber, code))
+    .limit(1);
+  if (!row) {
+    res.status(404).json({ error: "Bu akt raqami bilan reviziya topilmadi" });
+    return;
+  }
+  if (!(await assertVisitAccess(req, row))) {
+    res.status(403).json({ error: "Bu reviziyaga ruxsat yo‘q" });
+    return;
+  }
+  res.json(enrichVisit(row));
 });
 
 router.get("/reviziya/visits/revizors", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -435,6 +459,17 @@ router.get("/reviziya/visits/dashboard", requireAuth, async (req: AuthRequest, r
   };
 
   const total = filtered.length;
+  filtered.sort((a, b) => {
+    const late = (r: BranchRow) =>
+      r.cycleStatus === "MUDDATI_OTGAN" || r.cycleStatus === "SIKL_OTKAZIB_YUBORILGAN" ? 0 : r.daysLeft == null ? 2 : 1;
+    const ra = late(a);
+    const rb = late(b);
+    if (ra !== rb) return ra - rb;
+    const da = a.daysLeft ?? 100000;
+    const db = b.daysLeft ?? 100000;
+    if (da !== db) return da - db;
+    return a.branchName.localeCompare(b.branchName, "uz");
+  });
   const offset = (page - 1) * limit;
   const pageRows = filtered.slice(offset, offset + limit);
 
@@ -523,7 +558,7 @@ router.get("/reviziya/visits/my-tasks", requireAuth, async (req: AuthRequest, re
     const scope = await resolveScope(req);
     if (scope.mode === "branches") {
       if (!scope.branchIds.length) {
-        res.json({ today: [], upcoming: [], pending: [], todayYmd: today });
+        res.json({ today: [], upcoming: [], overdue: [], pending: [], todayYmd: today });
         return;
       }
       whereParts.push(
@@ -554,15 +589,30 @@ router.get("/reviziya/visits/my-tasks", requireAuth, async (req: AuthRequest, re
     .filter((v) => v.workflowStatus === "REQUESTED")
     .map((v) => enrichVisit(v, today));
   const active = rows.filter((v) => v.workflowStatus !== "REQUESTED");
-  const todayList = active.filter((v) => (v.revisionDate || v.scheduledDate) === today);
-  const upcoming = active.filter((v) => {
-    const d = v.revisionDate || v.scheduledDate || "";
-    return d > today;
-  });
+  const byPlan = (a: (typeof active)[number], b: (typeof active)[number]) => {
+    const da = a.revisionDate || a.scheduledDate || "";
+    const db = b.revisionDate || b.scheduledDate || "";
+    if (da !== db) return da < db ? -1 : 1;
+    return String(a.scheduledStartTime || "").localeCompare(String(b.scheduledStartTime || ""));
+  };
+  const overdue = active
+    .filter((v) => {
+      const d = v.revisionDate || v.scheduledDate || "";
+      return d !== "" && d < today;
+    })
+    .sort(byPlan);
+  const todayList = active.filter((v) => (v.revisionDate || v.scheduledDate) === today).sort(byPlan);
+  const upcoming = active
+    .filter((v) => {
+      const d = v.revisionDate || v.scheduledDate || "";
+      return d > today;
+    })
+    .sort(byPlan);
 
   res.json({
     todayYmd: today,
     pending,
+    overdue: overdue.map((v) => enrichVisit(v, today)),
     today: todayList.map((v) => enrichVisit(v, today)),
     upcoming: upcoming.map((v) => enrichVisit(v, today)),
   });
@@ -734,10 +784,15 @@ router.get("/reviziya/visits/:id", requireAuth, async (req: AuthRequest, res): P
   res.json({ ...enrichVisit(row), audit: logs });
 });
 
+function hmOrNull(value: unknown): string | null {
+  const s = String(value || "").trim().slice(0, 5);
+  return /^\d{2}:\d{2}$/.test(s) ? s : null;
+}
+
 router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (denyView(req, res)) return;
-  if (!canCreateReviziyaVisit(req.userRole)) {
-    res.status(403).json({ error: "Reviziya arizasini faqat koordinator qoldiradi" });
+  if (!canCreateReviziyaVisit(req.userRole) && !canAssignReviziya(req.userRole)) {
+    res.status(403).json({ error: "Reviziya yaratish uchun ruxsat yo‘q" });
     return;
   }
 
@@ -777,6 +832,17 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
 
   const notes = req.body?.notes ? String(req.body.notes).slice(0, 2000) : null;
   const actNumber = await resolveActNumber(req.body?.actNumber);
+  const shortage = moneyInt(req.body?.shortageAmount);
+  const excess = moneyInt(req.body?.excessAmount);
+  let collected = moneyInt(req.body?.collectedAmount);
+  if (collected > shortage) collected = shortage;
+  const remaining = computeRemainingAmount(shortage, collected);
+  const cycle = computeNextRevisionDate(revisionDate, shortage);
+  const actUrl = req.body?.actUrl ? String(req.body.actUrl).slice(0, 2000) : null;
+  const receiptUrl = req.body?.receiptUrl ? String(req.body.receiptUrl).slice(0, 2000) : null;
+  const responsibleName = req.body?.responsibleName
+    ? String(req.body.responsibleName).slice(0, 1000)
+    : manager.fullName;
   const workflowStatus = isCoordinatorRequest ? "REQUESTED" : "ASSIGNED";
 
   let assignedId: number | null = null;
@@ -797,6 +863,21 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
       assignedName = u.fullName;
     }
   }
+  if (!isCoordinatorRequest && !assignedId && req.userRole === "revizor" && req.userId) {
+    const [me] = await db
+      .select({ fullName: usersTable.fullName, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId))
+      .limit(1);
+    if (me && me.role === "revizor") {
+      assignedId = req.userId;
+      assignedName = me.fullName;
+    }
+  }
+  if (!isCoordinatorRequest && !assignedId) {
+    res.status(400).json({ error: "Revizorni tanlang — ruxsat shu odamning bugungi vazifasiga ketadi" });
+    return;
+  }
 
   const [created] = await db
     .insert(revisionVisitsTable)
@@ -805,25 +886,25 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
       branchName: branchLabel(manager.fullName, manager.location),
       revisionDate,
       scheduledDate: revisionDate,
-      scheduledStartTime: null,
-      scheduledEndTime: null,
+      scheduledStartTime: isCoordinatorRequest ? null : hmOrNull(req.body?.scheduledStartTime),
+      scheduledEndTime: isCoordinatorRequest ? null : hmOrNull(req.body?.scheduledEndTime),
       assignedEmployeeId: assignedId,
       assignedEmployeeName: assignedName,
       workflowStatus,
       priority: String(req.body?.priority || "normal"),
-      shortageAmount: 0,
-      excessAmount: 0,
-      collectedAmount: 0,
-      remainingAmount: 0,
+      shortageAmount: shortage,
+      excessAmount: excess,
+      collectedAmount: collected,
+      remainingAmount: remaining,
       actNumber,
-      actUrl: null,
-      receiptUrl: null,
+      actUrl,
+      receiptUrl,
       extraDocs: [],
       notes,
-      responsibleName: manager.fullName,
-      nextRevisionDate: null,
+      responsibleName,
+      nextRevisionDate: cycle.nextRevisionDate,
       nextRevisionDateOverride: null,
-      cycleMonths: null,
+      cycleMonths: cycle.cycleMonths,
       startedAt: null,
       completedAt: null,
       completedById: null,
@@ -846,10 +927,11 @@ router.post("/reviziya/visits", requireAuth, async (req: AuthRequest, res): Prom
   await notifyReviziyaStakeholders({
     branchId: created.branchId,
     branchName: created.branchName,
+    assignedRevizorId: assignedId,
     includeReviziyaRahbar: true,
     text: isCoordinatorRequest
       ? `${created.branchName}: yangi reviziya arizasi (koordinator). Qabul qilib kun belgilang.`
-      : `${created.branchName}: reviziya yaratildi (${revisionDate})`,
+      : `${created.branchName}: reviziya ruxsati berildi (${revisionDate}). Bugungi vazifalardan oching.`,
     type: isCoordinatorRequest ? "reviziya_requested" : "reviziya_created",
     linkUrl: "/reviziya",
   });
@@ -1013,6 +1095,12 @@ router.patch("/reviziya/visits/:id", requireAuth, async (req: AuthRequest, res):
     updates.collectedAmount = col;
     updates.remainingAmount = computeRemainingAmount(sh, col);
     newValue.remainingAmount = updates.remainingAmount;
+    if (row.nextRevisionDateOverride == null && req.body?.nextRevisionDateOverride == null) {
+      const date = String(updates.revisionDate || row.revisionDate || tashkentYmd()).slice(0, 10);
+      const cycle = computeNextRevisionDate(date, sh);
+      updates.nextRevisionDate = cycle.nextRevisionDate;
+      updates.cycleMonths = cycle.cycleMonths;
+    }
   }
 
   if (req.body?.nextRevisionDateOverride !== undefined) {
@@ -1286,6 +1374,12 @@ router.post("/reviziya/visits/:id/complete", requireAuth, async (req: AuthReques
       actUrl: req.body?.actUrl !== undefined ? String(req.body.actUrl || "") || null : row.actUrl,
       receiptUrl: req.body?.receiptUrl !== undefined ? String(req.body.receiptUrl || "") || null : row.receiptUrl,
       notes: req.body?.notes !== undefined ? String(req.body.notes) : row.notes,
+      responsibleName:
+        req.body?.responsibleName !== undefined ? String(req.body.responsibleName || "").slice(0, 1000) || null : row.responsibleName,
+      scheduledStartTime:
+        req.body?.scheduledStartTime !== undefined ? hmOrNull(req.body.scheduledStartTime) : row.scheduledStartTime,
+      scheduledEndTime:
+        req.body?.scheduledEndTime !== undefined ? hmOrNull(req.body.scheduledEndTime) : row.scheduledEndTime,
       extraDocs: Array.isArray(req.body?.extraDocs) ? req.body.extraDocs : row.extraDocs,
       updatedById: req.userId!,
     })

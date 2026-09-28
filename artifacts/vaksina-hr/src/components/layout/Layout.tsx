@@ -79,7 +79,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -143,6 +143,12 @@ const NAV_SECTIONS: {
     paths: ['/dashboard', '/kirish', '/darsliklar', '/atestatsiya', '/javob-olish', '/javob-olish/holat', '/tashkiliy-tuzilma', '/oylik', '/hisobkitob', '/reyting', '/reviziya', '/it'],
   },
   {
+    id: 'attendance',
+    label: 'Davomat',
+    icon: AlarmClock,
+    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
+  },
+  {
     id: 'work',
     label: 'Mening ishim',
     icon: Package,
@@ -175,12 +181,6 @@ const NAV_SECTIONS: {
       '/candidates',
       '/internships',
     ],
-  },
-  {
-    id: 'attendance',
-    label: 'Davomat',
-    icon: AlarmClock,
-    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
   },
   {
     id: 'pharmacy',
@@ -255,6 +255,17 @@ function groupNavItems(
     });
   }
   return groups;
+}
+
+function placeAttendanceAfterMain(sections: NavSection[]): NavSection[] {
+  const mainIdx = sections.findIndex((s) => s.id === "main");
+  const attIdx = sections.findIndex((s) => s.id === "attendance");
+  if (mainIdx < 0 || attIdx < 0 || attIdx === mainIdx + 1) return sections;
+  const next = sections.slice();
+  const [attendance] = next.splice(attIdx, 1);
+  const insertAt = next.findIndex((s) => s.id === "main") + 1;
+  next.splice(insertAt, 0, attendance);
+  return next;
 }
 
 function pathIsActive(location: string, path: string) {
@@ -523,6 +534,26 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const isRecruiter = user?.role === 'recruiter';
   const isPharmacyStaff = user?.role === 'koordinator' || user?.role === 'mudir';
   const davomatDashHome = usesDavomatDashboardHome(user?.role);
+  const [badgesOn, setBadgesOn] = React.useState(false);
+
+  React.useEffect(() => {
+    if (!user?.id) {
+      setBadgesOn(false);
+      return;
+    }
+    let idleId = 0;
+    const timer = window.setTimeout(() => setBadgesOn(true), 1400);
+    const win = window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+    };
+    if (typeof win.requestIdleCallback === 'function') {
+      idleId = win.requestIdleCallback(() => setBadgesOn(true), { timeout: 1600 });
+    }
+    return () => {
+      window.clearTimeout(timer);
+      if (idleId && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleId);
+    };
+  }, [user?.id]);
 
   const { data: unreadNotifications } = useGetNotifications(
     { unreadOnly: true },
@@ -580,7 +611,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   // Badge uchun — og‘ir so‘rovlarni kam poll qilamiz (RealtimeSync yetarli)
   const { data: dashboardStats } = useGetDashboardStats({
     query: {
-      enabled: !!user,
+      enabled: !!user && badgesOn && !davomatDashHome,
       staleTime: 90_000,
       refetchInterval: 180_000,
       refetchOnWindowFocus: false,
@@ -588,6 +619,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   } as any);
 
   const staffNeedsEnabled =
+    badgesOn &&
     !!user &&
     (user.role === 'koordinator' ||
       user.role === 'recruiter' ||
@@ -609,7 +641,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     user?.role === 'director' ||
     user?.role === 'asoschi' ||
     user?.role === 'admin';
-  const { data: itOpsDash } = useOpsDash('it', { enabled: Boolean(itRahbarBadge) });
+  const { data: itOpsDash } = useOpsDash('it', { enabled: Boolean(itRahbarBadge) && badgesOn });
   const itOpenArizaCount = itRahbarBadge
     ? Number(itOpsDash?.byStatus?.new ?? 0) +
       Number(itOpsDash?.byStatus?.assigned ?? 0) +
@@ -622,7 +654,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const { data: requests } = useGetRequests(undefined, {
     query: {
-      enabled: !!user && isHrLike,
+      enabled: !!user && badgesOn && isHrLike && !davomatDashHome,
       staleTime: 90_000,
       refetchInterval: 180_000,
       refetchOnWindowFocus: false,
@@ -633,7 +665,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     { status: 'draft' },
     {
       query: {
-        enabled: !!user && (isRecruiter || isHrManager(user?.role)),
+        enabled: !!user && badgesOn && (isRecruiter || isHrManager(user?.role)) && !davomatDashHome,
         staleTime: 60_000,
         refetchInterval: 120_000,
         refetchOnWindowFocus: false,
@@ -785,6 +817,10 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       if (!stajyorAllowed) {
         setLocation('/kirish');
       }
+    }
+    if (isReviziyaRole(user.role) && (location === '/dashboard' || location === '/')) {
+      setLocation('/reviziya');
+      return;
     }
     if (isHrRecruitmentPath(location) && !canSeeHrRecruitment(user.role)) {
       setLocation('/dashboard');
@@ -1580,7 +1616,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       smenaNav,
     ],
     revizor: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -1590,7 +1625,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     reviziya_rahbar: [
-      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -1659,10 +1693,18 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
+    .filter((item) => item.path !== '/davomat/analytics')
     .filter((item) => item.path !== '/davomat/xatoliklar' || canViewDavomatXatoliklar(userRole))
     .filter((item) => item.path !== '/davomat-kochma')
     // Arizalar — faqat HR rollari; qolganlarga Xodim kerak alohida bo‘lim
     .filter((item) => item.path !== '/requests' || isHrRole(userRole))
+    .filter((item) => !isReviziyaRole(userRole) || item.path !== '/dashboard')
+    .filter((item) => {
+      if (!canViewDavomat(userRole)) return true;
+      if (item.path === '/smena-filial') return false;
+      if (item.path === '/checklist-holati' && item.name === 'Cheklist holati') return false;
+      return true;
+    })
     .concat(canViewLogistika(userRole) ? logistikaNavItems : []);
 
   const toggleNav = () => {
@@ -1674,7 +1716,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   };
 
   const defaultNavSections = groupNavItems(navItems, userRole, t);
-  const navSections = applyNavLayout(defaultNavSections, navLayout, { keepEmpty: navEditMode });
+  const navSections = placeAttendanceAfterMain(
+    applyNavLayout(defaultNavSections, navLayout, { keepEmpty: navEditMode }),
+  );
   const pinnedSet = new Set(pinnedIds);
   const navIsCustom = !!navLayout;
 

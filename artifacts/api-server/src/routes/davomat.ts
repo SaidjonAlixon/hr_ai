@@ -17,6 +17,7 @@ import {
   attendancePunchAuditTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
+import { scriptIncludes } from "../lib/script-search";
 import {
   canViewDavomat,
   canEditDavomatManual,
@@ -358,14 +359,15 @@ function computeMetrics(
     }
   }
 
-  if (forcedStatus === "leave" || forcedStatus === "absent") {
+  if (forcedStatus === "leave" || (forcedStatus === "absent" && !checkInAt)) {
     status = forcedStatus;
-  } else if (engine.missingCheckout) {
-    status = "incomplete";
-    workedMinutes = 0;
   } else if (checkInAt) {
     const grace = hours?.graceMinutes ?? 15;
-    status = lateArrivalMin > grace ? "late" : "present";
+    if (lateArrivalMin > grace) status = "late";
+    else if (engine.missingCheckout) status = "incomplete";
+    else status = "present";
+  } else if (engine.missingCheckout) {
+    status = "incomplete";
   }
 
   if (engine.missingCheckout) {
@@ -596,7 +598,15 @@ function smenaLabelForEmployee(e: {
   if (EXTERNAL_USER_ROLES.has(e.userRole || "")) return "Tashqi xodimlar";
   const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
   if (w.key === "office") return "Asosiy ofis";
-  return `${w.label}da ishlaydiganlar`;
+  if (w.keys.length > 1) {
+    const short = w.keys
+      .map((k) => (k === "one" ? "1" : k === "two" ? "2" : k === "three" ? "3" : ""))
+      .filter(Boolean)
+      .join("+");
+    if (short) return short;
+  }
+  if (w.label === "1-smena" || w.label === "2-smena" || w.label === "3-smena") return w.label;
+  return w.label || "Asosiy ofis";
 }
 
 /** Excel Filial ustuni — GPS yo‘q; ofis → asosiy ofis */
@@ -727,9 +737,8 @@ async function loadActiveEmployees(filters: {
     }
     if (filters.location && (e.location || "") !== filters.location) return false;
     if (filters.search) {
-      const q = filters.search.toLowerCase();
-      const hay = [e.fullName, e.position, e.departmentName, e.location].filter(Boolean).join(" ").toLowerCase();
-      if (!hay.includes(q)) return false;
+      const hay = [e.fullName, e.position, e.departmentName, e.location, e.phone].filter(Boolean).join(" ");
+      if (!scriptIncludes(hay, filters.search)) return false;
     }
     if (staffSeg !== "all" && staffSeg !== "external") {
       if (!matchesDavomatStaffFilter(e, staffSeg)) return false;
@@ -914,7 +923,9 @@ function buildReport(
         else {
           totals.present += 1;
           if (d.status === "late") totals.late += 1;
-          if (d.status === "incomplete") totals.incomplete += 1;
+          if (d.status === "incomplete" || ("missingCheckout" in d && d.missingCheckout)) {
+            totals.incomplete += 1;
+          }
           if (d.restDayWork) totals.extraWork += 1;
         }
         totals.workedMinutes += d.workedMinutes;
@@ -1011,7 +1022,9 @@ function buildReport(
       else {
         present += 1;
         if (d.status === "late") late += 1;
-        if (d.status === "incomplete") incomplete += 1;
+        if (d.status === "incomplete" || ("missingCheckout" in d && d.missingCheckout)) {
+          incomplete += 1;
+        }
       }
     }
     return {
@@ -4549,7 +4562,8 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const dates = report.dates?.length
       ? report.dates
       : report.days.map((d) => d.date);
-    const metaCols = 7; // No, F.I.Sh., Lavozim, Bo'lim, Filial, Smena, Ish vaqti
+    // F.I.Sh. (nomer tagida), Lavozim, Filial, Smena, Ish vaqti, Kelgan, Kelmagan, Kechikkan, Soat
+    const metaCols = 9;
     const lastCol = metaCols + dates.length;
 
     // —— Sheet 0: Qo'llanma ——
@@ -4570,8 +4584,10 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     sGuide.getRow(2).height = 36;
 
     const guideRows: [string, string][] = [
-      ["Ustun: Smena", "1-smenada ishlaydiganlar · 2-smenada ishlaydiganlar · Asosiy ofis · Tashqi xodimlar"],
+      ["Ustun: Smena", "1-smena · 2-smena · 3-smena · 1+2 · 2+3 · Asosiy ofis"],
       ["Ustun: Ish vaqti", "Har xodimning reja bo'yicha kelish/ketish vaqti (masalan 08:00–17:00 yoki 17:00–23:45)"],
+      ["Ustun: F.I.Sh.", "Ism-familiya, tagida telefon raqami"],
+      ["Ish vaqtidan keyin", "Kelgan kun va tagida vaqtida ishlagan soat. Kechikkan kun va tagida kechikish soati. Ish soati — faqat vaqtida kelib to‘liq ishlagan soat. Kechikkan va kelmagan kun soati qo‘shilmaydi."],
       ["Katak: Keldi", "Face ID orqali belgilangan kelish vaqti (qavsda reja vaqti)"],
       ["Katak: Ketdi", "Face ID orqali belgilangan ketish vaqti (qavsda reja vaqti)"],
       ["Katak: Kechikish", "Rejadan kech kelgan vaqt. Yo'q = vaqtida kelgan. Kechiksa − belgisi bilan, qizil"],
@@ -4586,6 +4602,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       ["Rang: och kulrang (Dam kuni)", "Faqat ofis: shanba–yakshanba dam. Kelish majburiy emas"],
       ["Qo'shimcha ish (ixtiyoriy)", "Ofis dam kunida kelgan bo‘lsa — ish soati hisoblanadi, majburiy emas"],
       ["Varaqlar", "Davomat jadvali → Kunlik xulosa → Xodimlar jami → Kelganlar → Kelmaganlar (+ KOORDINATOR)"],
+      ["Kelganlar: Filial", "Filial ustunidagi filtrdan bitta yoki bir nechta filialni tanlang. Sahifadagi filial tanlovi butun hisobotni shu filialga qisqartiradi."],
       ["Kelmaganlar: KOORDINATOR", "Xodimning reportsTo zanjiri bo‘yicha biriktirilgan koordinator F.I.Sh."],
     ];
     sGuide.getRow(3).getCell(1).value = "Maydon";
@@ -4604,7 +4621,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       sGuide.mergeCells(4 + i, 2, 4 + i, 4);
       row.height = 22;
     });
-    sGuide.getColumn(1).width = 22;
+    sGuide.getColumn(1).width = 26;
     sGuide.getColumn(2).width = 70;
 
     // —— Sheet 1: Jadval (1 xodim = 1 qator, sanalar o‘ngga) ——
@@ -4628,11 +4645,21 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     tLegend.alignment = { vertical: "middle", horizontal: "left", indent: 1, wrapText: true };
     sGrid.getRow(2).height = 22;
 
-    const metaHeaders = ["No", "F.I.Sh.", "Lavozim", "Bo‘lim", "Filial", "Smena", "Ish vaqti"];
+    const metaHeaders: Array<{ label: string; fill: string }> = [
+      { label: "F.I.Sh.", fill: "FF1A5F8A" },
+      { label: "Lavozim", fill: "FF1A5F8A" },
+      { label: "Filial", fill: "FF1A5F8A" },
+      { label: "Smena", fill: "FF1A5F8A" },
+      { label: "Ish vaqti", fill: "FF1A5F8A" },
+      { label: "Kelgan kun", fill: "FF047857" },
+      { label: "Kelmagan kun", fill: "FFB91C1C" },
+      { label: "Kechikkan kun", fill: "FFB45309" },
+      { label: "Ish soati", fill: "FF0369A1" },
+    ];
     metaHeaders.forEach((h, i) => {
       const cell = sGrid.getRow(3).getCell(i + 1);
-      cell.value = h;
-      headerStyle(cell, "FF1A5F8A");
+      cell.value = h.label;
+      headerStyle(cell, h.fill);
     });
     dates.forEach((date, i) => {
       const col = metaCols + 1 + i;
@@ -4642,13 +4669,15 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     });
     sGrid.getRow(3).height = 36;
 
-    sGrid.getColumn(1).width = 5;
-    sGrid.getColumn(2).width = 28;
-    sGrid.getColumn(3).width = 16;
-    sGrid.getColumn(4).width = 16;
+    sGrid.getColumn(1).width = 28;
+    sGrid.getColumn(2).width = 16;
+    sGrid.getColumn(3).width = 18;
+    sGrid.getColumn(4).width = 22;
     sGrid.getColumn(5).width = 14;
-    sGrid.getColumn(6).width = 22;
-    sGrid.getColumn(7).width = 13;
+    sGrid.getColumn(6).width = 16;
+    sGrid.getColumn(7).width = 15;
+    sGrid.getColumn(8).width = 16;
+    sGrid.getColumn(9).width = 18;
     dates.forEach((_, i) => {
       sGrid.getColumn(metaCols + 1 + i).width = 28;
     });
@@ -4661,25 +4690,84 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         start: e.workStart ?? WORK_START,
         end: e.workEnd ?? WORK_END,
       };
-      const vals: (string | number)[] = [
-        idx + 1,
+      let onTimeMin = 0;
+      let lateOnlyMin = 0;
+      for (const d of e.days) {
+        if (d.status === "present") onTimeMin += d.workedMinutes || 0;
+        else if (d.status === "late") lateOnlyMin += d.lateArrivalMin || 0;
+      }
+      const onTimeHours = readableWorkedHours(fmtHours(onTimeMin));
+      const lateHours = readableWorkedHours(fmtHours(lateOnlyMin));
+      const summaryCells: Array<{ value: ExcelJS.CellRichTextValue; fill: string }> = [
+        {
+          value: {
+            richText: [
+              { font: { name: "Calibri", size: 14, bold: true, color: { argb: "FF047857" } }, text: String(e.totals.present) },
+              { font: { name: "Calibri", size: 8, color: { argb: "FF047857" } }, text: `\n${onTimeHours}` },
+            ],
+          },
+          fill: "FFECFDF5",
+        },
+        {
+          value: {
+            richText: [
+              { font: { name: "Calibri", size: 14, bold: true, color: { argb: "FFB91C1C" } }, text: String(e.totals.absent) },
+            ],
+          },
+          fill: "FFFEF2F2",
+        },
+        {
+          value: {
+            richText: [
+              { font: { name: "Calibri", size: 14, bold: true, color: { argb: "FFB45309" } }, text: String(e.totals.late) },
+              { font: { name: "Calibri", size: 8, color: { argb: "FFB45309" } }, text: `\n${lateHours}` },
+            ],
+          },
+          fill: "FFFFFBEB",
+        },
+        {
+          value: {
+            richText: [
+              { font: { name: "Calibri", size: 11, bold: true, color: { argb: "FF0369A1" } }, text: onTimeHours },
+            ],
+          },
+          fill: "FFF0F9FF",
+        },
+      ];
+      const vals: Array<string | number | ExcelJS.CellRichTextValue> = [
         e.fullName,
         e.position,
-        e.departmentName || "—",
         excelFilialForEmployee(e),
         smenaLabelForEmployee(e),
         `${empHours.start}–${empHours.end}`,
       ];
       vals.forEach((v, i) => {
         const cell = row.getCell(i + 1);
-        cell.value = v;
-        cell.font = { name: "Calibri", size: 10, bold: i === 1 };
+        if (i === 0) {
+          cell.value = {
+            richText: [
+              { font: { name: "Calibri", size: 11, bold: true, color: { argb: "FF0F172A" } }, text: e.fullName },
+              { font: { name: "Calibri", size: 9, color: { argb: "FF64748B" } }, text: `\n${e.phone || "—"}` },
+            ],
+          };
+        } else {
+          cell.value = v;
+          cell.font = { name: "Calibri", size: 10 };
+        }
         cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: bg } };
-        cell.alignment = {
-          vertical: "middle",
-          horizontal: i === 0 ? "center" : "left",
-          wrapText: true,
+        cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+        cell.border = {
+          top: { style: "thin", color: { argb: "FFE2E8F0" } },
+          left: { style: "thin", color: { argb: "FFE2E8F0" } },
+          bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+          right: { style: "thin", color: { argb: "FFE2E8F0" } },
         };
+      });
+      summaryCells.forEach((s, i) => {
+        const cell = row.getCell(6 + i);
+        cell.value = s.value;
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: s.fill } };
+        cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
         cell.border = {
           top: { style: "thin", color: { argb: "FFE2E8F0" } },
           left: { style: "thin", color: { argb: "FFE2E8F0" } },
@@ -4823,18 +4911,19 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       row.height = 22;
     };
 
-    // —— Sheet 4: Kelganlar ——
+    // —— Sheet 4: Kelganlar (filial ustuni + Excel filtri) ——
     const s4 = workbook.addWorksheet("Kelganlar", {
       views: [{ state: "frozen", ySplit: 2 }],
     });
-    s4.mergeCells("A1:K1");
+    const kelganCols = 13;
+    s4.mergeCells(1, 1, 1, kelganCols);
     const t4 = s4.getCell("A1");
-    t4.value = `Kelganlar — batafsil (${from} — ${to})`;
+    t4.value = `Kelganlar — batafsil (${from} — ${to}) · Filial ustunidan filter qiling`;
     t4.font = { name: "Calibri", size: 13, bold: true, color: { argb: "FFFFFFFF" } };
     t4.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF047857" } };
     t4.alignment = { vertical: "middle", horizontal: "left", indent: 1 };
     s4.getRow(1).height = 30;
-    ["Sana", "No", "F.I.Sh.", "Smena", "Ish vaqti", "Holat", "Keldi", "Ketdi", "Kechikish", "Ishlangan", "Telefon"].forEach((h, i) => {
+    ["Sana", "No", "F.I.Sh.", "Filial", "Lavozim", "Smena", "Ish vaqti", "Holat", "Keldi", "Ketdi", "Kechikish", "Ishlangan", "Telefon"].forEach((h, i) => {
       const cell = s4.getRow(2).getCell(i + 1);
       cell.value = h;
       headerStyle(cell, "FF059669");
@@ -4843,8 +4932,10 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 12 },
       { width: 5 },
       { width: 26 },
+      { width: 22 },
+      { width: 16 },
       { width: 20 },
-      { width: 12 },
+      { width: 14 },
       { width: 18 },
       { width: 10 },
       { width: 10 },
@@ -4852,47 +4943,79 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       { width: 16 },
       { width: 16 },
     ];
-    let presentCount = 0;
+    const arrivedRows: Array<{
+      date: string;
+      filial: string;
+      name: string;
+      position: string;
+      smena: string;
+      hours: string;
+      status: string;
+      cin: string;
+      cout: string;
+      kech: string;
+      worked: string;
+      phone: string;
+    }> = [];
     report.days.forEach((day) => {
-      const arrived = report.employees
-        .map((e) => ({ e, d: e.days.find((x) => x.date === day.date) }))
-        .filter(({ d }) => d && d.status !== "absent" && d.status !== "leave");
-      if (arrived.length === 0) return;
-      const banner = s4.addRow([`${day.date}  ·  ${arrived.length} kishi kelgan`, "", "", "", "", "", "", "", "", "", ""]);
-      s4.mergeCells(banner.number, 1, banner.number, 11);
-      paintBanner(banner, "FF047857", 11);
-      arrived.forEach(({ e, d }, i) => {
-        presentCount += 1;
+      for (const e of report.employees) {
+        const d = e.days.find((x) => x.date === day.date);
+        if (!d || d.status === "absent" || d.status === "leave" || d.status === "rest") continue;
+        if (!d.checkIn || d.checkIn === "—") continue;
         const empHours = {
           start: e.workStart ?? WORK_START,
           end: e.workEnd ?? WORK_END,
         };
-        const cin = d!.checkIn && d!.checkIn !== "—" ? d!.checkIn : "—";
-        const cout = d!.checkOut && d!.checkOut !== "—" ? d!.checkOut : "—";
-        const kech = kechikishDisplay(d!);
-        const row = s4.addRow([
-          day.date,
-          i + 1,
-          e.fullName,
-          smenaLabelForEmployee(e),
-          `${empHours.start}–${empHours.end}`,
-          davomatStatusLine(d!.status),
-          cin,
-          cout,
-          kech,
-          readableWorkedHours(d!.workedHours),
-          e.phone || "—",
-        ]);
-        paintRow(row, i % 2 === 1, [1, 2, 6, 7, 8, 9, 10, 11]);
-        if (kech !== "Yo'q") {
-          row.getCell(9).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFB91C1C" } };
-        }
-      });
+        arrivedRows.push({
+          date: day.date,
+          filial: excelFilialForEmployee(e),
+          name: e.fullName,
+          position: e.position || "—",
+          smena: smenaLabelForEmployee(e),
+          hours: `${empHours.start}–${empHours.end}`,
+          status: davomatStatusLine(d.status, d.restDayWork),
+          cin: d.checkIn,
+          cout: d.checkOut && d.checkOut !== "—" ? d.checkOut : "—",
+          kech: kechikishDisplay(d),
+          worked: readableWorkedHours(d.workedHours),
+          phone: e.phone || "—",
+        });
+      }
     });
-    if (presentCount === 0) {
-      const row = s4.addRow(["—", "", "Bu davrda kelgan xodim yo‘q", "", "", "", "", "", "", "", ""]);
+    arrivedRows.sort((a, b) => a.date.localeCompare(b.date) || a.filial.localeCompare(b.filial, "uz") || a.name.localeCompare(b.name, "uz"));
+    let presentNo = 0;
+    let presentDate = "";
+    arrivedRows.forEach((r, i) => {
+      if (r.date !== presentDate) {
+        presentDate = r.date;
+        presentNo = 0;
+      }
+      presentNo += 1;
+      const row = s4.addRow([
+        r.date,
+        presentNo,
+        r.name,
+        r.filial,
+        r.position,
+        r.smena,
+        r.hours,
+        r.status,
+        r.cin,
+        r.cout,
+        r.kech,
+        r.worked,
+        r.phone,
+      ]);
+      paintRow(row, i % 2 === 1, [1, 2, 8, 9, 10, 11, 12]);
+      if (r.kech !== "Yo'q") {
+        row.getCell(11).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFB91C1C" } };
+      }
+    });
+    if (arrivedRows.length === 0) {
+      const row = s4.addRow(["—", "", "Bu davrda kelgan xodim yo‘q", "", "", "", "", "", "", "", "", "", ""]);
       paintRow(row, false);
     }
+    s4.autoFilter = { from: { row: 2, column: 1 }, to: { row: 2, column: kelganCols } };
 
     // —— Sheet 5: Kelmaganlar ——
     const s5 = workbook.addWorksheet("Kelmaganlar", {

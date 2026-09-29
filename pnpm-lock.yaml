@@ -424,6 +424,9 @@ importers:
       leaflet:
         specifier: ^1.9.4
         version: 1.9.4
+      modern-screenshot:
+        specifier: ^4.7.0
+        version: 4.7.0
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4

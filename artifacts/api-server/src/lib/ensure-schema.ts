@@ -1505,6 +1505,7 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
 `);
     await ensureRevisionVisitsSchema();
     await ensureWarehouseShiftsSchema();
+    await ensureAttendanceSealsSchema();
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");
     throw err;
@@ -1784,6 +1785,31 @@ export async function ensureStaffNeedRequestsSchema(): Promise<void> {
     logger.info("Staff need requests schema + legacy purge ensured");
   } catch (err) {
     logger.warn({ err }, "Staff need requests schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+const ATTENDANCE_SEALS_SQL = `
+CREATE TABLE IF NOT EXISTS employee_attendance_seals (
+  id SERIAL PRIMARY KEY,
+  token TEXT NOT NULL UNIQUE,
+  payload JSONB NOT NULL,
+  sealed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  sealed_by INTEGER,
+  approver_name TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS employee_attendance_seals_token_idx ON employee_attendance_seals (token);
+`;
+
+export async function ensureAttendanceSealsSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(ATTENDANCE_SEALS_SQL);
+    logger.info("Employee attendance seals schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Employee attendance seals schema ensure failed");
     throw err;
   } finally {
     client.release();

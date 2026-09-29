@@ -12,6 +12,7 @@ import {
   usersTable,
 } from "@workspace/db";
 import { loadStaffFromUsers } from "./staff-directory";
+import { scriptIncludes } from "./script-search";
 
 export type KpiWeights = {
   attendance: number;
@@ -730,8 +731,8 @@ export async function computePayrollList(
   const staffRows = await loadStaffFromUsers("active");
   const users = staffRows.filter((u) => {
     if (!needle) return true;
-    const hay = `${u.fullName} ${u.login || ""} ${u.position || ""} ${u.location || ""}`.toLowerCase();
-    return hay.includes(needle.toLowerCase());
+    const hay = `${u.fullName} ${u.login || ""} ${u.position || ""} ${u.location || ""}`;
+    return scriptIncludes(hay, needle);
   });
 
   const empIds = users.map((u) => u.id);

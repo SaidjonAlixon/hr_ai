@@ -216,7 +216,7 @@ const NAV_SECTIONS: {
     id: 'admin',
     label: 'Sozlamalar',
     icon: Settings,
-    paths: ['/admin/users', '/admin/boshatilganlar', '/admin/holat', '/admin/departments', '/admin/kirish-videolar', '/admin/darsliklar', '/admin/atestatsiya', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar', '/admin/kochma-davomat', '/admin/kochma-xarita', '/admin/kochma-live'],
+    paths: ['/admin/users', '/admin/boshatilganlar', '/admin/holat', '/admin/holat/xodim', '/admin/departments', '/admin/kirish-videolar', '/admin/darsliklar', '/admin/atestatsiya', '/admin/faces', '/admin/smena-sozlamalar', '/admin/davomat-qr', '/admin/test', '/admin/qurilmalar', '/admin/kochma-davomat', '/admin/kochma-xarita', '/admin/kochma-live'],
   },
 ];
 
@@ -313,6 +313,7 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/interviews')) return '/candidates';
   if (path.startsWith('/admin/users')) return '/admin/users';
   if (path.startsWith('/admin/boshatilganlar')) return '/admin/boshatilganlar';
+  if (path.startsWith('/admin/holat/xodim')) return '/admin/holat/xodim';
   if (path.startsWith('/admin/holat')) return '/admin/holat';
   if (path.startsWith('/admin/faces')) return '/admin/faces';
   if (path.startsWith('/admin/smena-sozlamalar')) return '/admin/smena-sozlamalar';
@@ -1143,8 +1144,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       if (!next.some((i) => i.path === '/admin/holat')) {
         next = [...next, { name: 'Hisobot', path: '/admin/holat', icon: BarChart3 }];
       }
+      if (!next.some((i) => i.path === '/admin/holat/xodim')) {
+        const at = next.findIndex((i) => i.path === '/admin/holat');
+        const item = { name: 'Xodimlar hisoboti', path: '/admin/holat/xodim', icon: ClipboardList };
+        next = at >= 0 ? [...next.slice(0, at + 1), item, ...next.slice(at + 1)] : [...next, item];
+      }
     } else {
-      next = next.filter((i) => i.path !== '/admin/holat');
+      next = next.filter((i) => i.path !== '/admin/holat' && i.path !== '/admin/holat/xodim');
     }
     // Alohida /davomat-kochma menyu yo‘q — ruxsat asosiy Davomatda yashirin
     next = next.filter((i) => i.path !== '/davomat-kochma');
@@ -1691,6 +1697,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/admin/kochma-xarita' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/kochma-live' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
+    .filter((item) => item.path !== '/admin/holat/xodim' || canViewHolat(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))
     .filter((item) => item.path !== '/omborxona-ish' || canViewOmborxona(userRole))
     .filter((item) => item.path !== '/davomat/analytics')

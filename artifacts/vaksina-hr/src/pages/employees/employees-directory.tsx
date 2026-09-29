@@ -8,6 +8,7 @@ import {
   type Employee,
 } from "@workspace/api-client-react";
 import { FileDown, FileSpreadsheet, Loader2, Search, Users } from "lucide-react";
+import { scriptIncludes } from "../../lib/script-search";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -560,9 +561,8 @@ export function EmployeesDirectory({ group }: { group: StaffGroup }) {
           staffContact(e).login,
         ]
           .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return hay.includes(q);
+          .join(" ");
+        return scriptIncludes(hay, q);
       })
       .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
   }, [

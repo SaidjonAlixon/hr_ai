@@ -88,6 +88,7 @@ export const ru: Messages = {
   "nav.pharmacy": "Сеть аптек",
   "nav.boglanish": "Связь",
   "nav.holat": "Отчёт",
+  "nav.holatXodim": "Отчёт по сотруднику",
   "nav.ehtiyoj": "Потребность",
   "nav.pipeline": "Воронка",
   "nav.internships": "Стажировки",

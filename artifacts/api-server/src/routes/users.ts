@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, ilike, asc, desc } from "drizzle-orm";
+import { eq, and, asc, desc } from "drizzle-orm";
+import { scriptIncludes } from "../lib/script-search";
 import ExcelJS from "exceljs";
 import { db, usersTable, departmentsTable, employeesTable, dismissedStaffTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
@@ -7,6 +8,13 @@ import { requireAuth } from "../middlewares/auth";
 import { ensureEmployeeForNewUser, removeEmployeesForUser } from "../lib/user-employee-sync";
 import { archiveAndDeleteUser, purgeDismissedArchive, purgeUserCompletely, sweepDismissedUsers } from "../lib/dismiss-user";
 import { canManageUsers, canDeleteUsers, canChangeStaffStatus } from "../lib/roles";
+import { setSessionCookie } from "../lib/session";
+import {
+  clientIp,
+  createServerSession,
+  isDeviceSecurityEnforced,
+  writeLoginAudit,
+} from "../lib/device-security";
 import { formatPersonName } from "../lib/person-name";
 import { resolveDepartmentIdForRole } from "../lib/role-departments";
 
@@ -208,7 +216,6 @@ router.get("/users", async (req, res): Promise<void> => {
   const conditions = [];
   if (role) conditions.push(eq(usersTable.role, role));
   if (departmentId) conditions.push(eq(usersTable.departmentId, parseInt(departmentId, 10)));
-  if (search) conditions.push(ilike(usersTable.fullName, `%${search}%`));
 
   const base = db
     .select({
@@ -239,7 +246,12 @@ router.get("/users", async (req, res): Promise<void> => {
   if (rows.some((r) => r.status === "terminated")) {
     void sweepDismissedUsers().catch(() => 0);
   }
-  res.json(rows.filter((r) => r.status !== "terminated"));
+  const visible = rows.filter((r) => r.status !== "terminated");
+  res.json(
+    search
+      ? visible.filter((r) => scriptIncludes([r.fullName, r.login, r.phone, r.departmentName].filter(Boolean).join(" "), search))
+      : visible,
+  );
 });
 
 /** Admin — barcha foydalanuvchilar + login/parol Excel */
@@ -495,10 +507,13 @@ router.get("/users/dismissed", requireAuth, async (req: AuthRequest, res): Promi
   const archived = await db
     .select()
     .from(dismissedStaffTable)
-    .where(search ? ilike(dismissedStaffTable.fullName, `%${search}%`) : undefined)
     .orderBy(desc(dismissedStaffTable.dismissedAt));
 
-  res.json(archived);
+  res.json(
+    search
+      ? archived.filter((r) => scriptIncludes([r.fullName, r.login, r.phone].filter(Boolean).join(" "), search))
+      : archived,
+  );
 });
 
 /** Arxivdagi odamni ham, qolgan izlarini ham o‘chirish — qaytib tiklanmaydi */
@@ -540,6 +555,77 @@ router.get("/users/:id", async (req, res): Promise<void> => {
     .where(eq(usersTable.id, id));
   if (!row) { res.status(404).json({ error: "Topilmadi" }); return; }
   res.json(row);
+});
+
+function canSignIn(status?: string | null) {
+  return status === "active" || status === "on_leave";
+}
+
+router.post("/users/:id/enter", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireUsersAdmin(req, res)) return;
+
+  const id = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
+  if (!Number.isFinite(id)) {
+    res.status(400).json({ error: "Noto‘g‘ri ID" });
+    return;
+  }
+
+  const [row] = await db.select().from(usersTable).where(eq(usersTable.id, id));
+  if (!row) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+  if (!canSignIn(row.status)) {
+    res.status(403).json({ error: "Bu holatdagi akkauntga kirib bo‘lmaydi" });
+    return;
+  }
+
+  const [user] = await db
+    .select({
+      id: usersTable.id,
+      fullName: usersTable.fullName,
+      role: usersTable.role,
+      departmentId: usersTable.departmentId,
+      departmentName: departmentsTable.name,
+      login: usersTable.login,
+      phone: usersTable.phone,
+      status: usersTable.status,
+      deviceSecurityEnforced: usersTable.deviceSecurityEnforced,
+      createdAt: usersTable.createdAt,
+    })
+    .from(usersTable)
+    .leftJoin(departmentsTable, eq(usersTable.departmentId, departmentsTable.id))
+    .where(eq(usersTable.id, id));
+  if (!user) {
+    res.status(404).json({ error: "Topilmadi" });
+    return;
+  }
+
+  const ip = clientIp(req);
+  const ua = String(req.headers["user-agent"] || "");
+  const enforced = !canManageUsers(user.role) && (await isDeviceSecurityEnforced(user));
+  if (!enforced) {
+    setSessionCookie(res, user.id);
+  } else {
+    await createServerSession({
+      userId: user.id,
+      deviceRowId: null,
+      ipAddress: ip,
+      userAgent: `admin-enter:${req.userId ?? 0}`,
+      res,
+    });
+  }
+
+  await writeLoginAudit({
+    userId: user.id,
+    ipAddress: ip,
+    userAgent: ua,
+    action: "admin_enter",
+    status: "success",
+    meta: { by: req.userId ?? null },
+  });
+
+  res.json({ user });
 });
 
 router.post("/users/:id/regenerate-login", requireAuth, async (req: AuthRequest, res): Promise<void> => {

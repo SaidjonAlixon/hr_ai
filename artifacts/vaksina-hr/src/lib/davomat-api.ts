@@ -22,6 +22,8 @@ export type DavomatDayMetrics = {
   recordId?: number | null;
   /** Ofis dam kunida ixtiyoriy kelgan */
   restDayWork?: boolean;
+  /** Kelgan, lekin ketish hali yozilmagan */
+  missingCheckout?: boolean;
 };
 
 export type DavomatEmployee = {

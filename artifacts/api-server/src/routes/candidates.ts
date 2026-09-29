@@ -1,5 +1,6 @@
 import { Router, type IRouter } from "express";
-import { eq, and, ilike, ne, or } from "drizzle-orm";
+import { eq, and, ne, or } from "drizzle-orm";
+import { scriptIncludes } from "../lib/script-search";
 import { db, candidatesTable, vacanciesTable, usersTable, notificationsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
@@ -89,7 +90,6 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res): Promise<vo
     if (stage) conditions.push(eq(candidatesTable.stage, stage));
     if (status) conditions.push(eq(candidatesTable.status, status));
   }
-  if (search) conditions.push(ilike(candidatesTable.fullName, `%${search}%`));
 
   // Rekruter faqat o'ziga biriktirilgan nomzodlarni ko'radi
   if (isRecruiterScoped(req.userRole) && req.userId) {
@@ -128,7 +128,13 @@ router.get("/candidates", requireAuth, async (req: AuthRequest, res): Promise<vo
     ? await baseQuery.where(and(...conditions)).orderBy(candidatesTable.createdAt)
     : await baseQuery.orderBy(candidatesTable.createdAt);
 
-  res.json(rows);
+  res.json(
+    search
+      ? rows.filter((r) =>
+          scriptIncludes([r.fullName, r.phone, r.vacancyTitle, r.address].filter(Boolean).join(" "), search),
+        )
+      : rows,
+  );
 });
 
 router.post("/candidates", async (req, res): Promise<void> => {

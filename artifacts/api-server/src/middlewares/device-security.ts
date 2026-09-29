@@ -6,6 +6,7 @@ import { canManageUsers } from "../lib/roles";
 import {
   clientIp,
   getDeviceSecuritySettings,
+  isAdminEnterSession,
   isDeviceSecurityEnforced,
   isLegacySessionCookie,
   parseSecureSessionCookie,
@@ -112,6 +113,13 @@ export async function requireRegisteredDevice(
         code: "SESSION_REVOKED",
         message: "Sessiya muddati tugagan.",
       });
+      return;
+    }
+
+    if (isAdminEnterSession(session)) {
+      req.secureSessionId = session.id;
+      void touchSession(session.id);
+      next();
       return;
     }
 

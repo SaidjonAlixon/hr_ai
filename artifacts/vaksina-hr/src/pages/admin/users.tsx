@@ -34,10 +34,10 @@ import {
   normalizeUzPhone,
   UZ_PHONE_HINT,
 } from '../../lib/phone';
-import { userRoleLabel, canManageUsers, canDeleteUsers, canChangeStaffStatus } from '../../lib/roles';
+import { userRoleLabel, canManageUsers, canDeleteUsers, canChangeStaffStatus, isLimitedOfficeStaffRole, isReviziyaRole, isStajyor } from '../../lib/roles';
 import { useI18n } from '../../i18n/I18nProvider';
 import { dismissUser } from '../../lib/dismissed-staff-api';
-import { Link } from 'wouter';
+import { Link, useLocation } from 'wouter';
 
 const ROLES = [
   { value: 'admin', label: 'Admin' },
@@ -122,8 +122,17 @@ type CreatedCredentials = {
   temporaryPassword: string;
 };
 
+function homeForRole(role?: string | null) {
+  if (isStajyor(role)) return '/kirish';
+  if (isLimitedOfficeStaffRole(role)) return '/vazifalar';
+  if (role === 'it_rahbar') return '/it';
+  if (isReviziyaRole(role)) return '/reviziya';
+  return '/dashboard';
+}
+
 export default function AdminUsersPage() {
-  const { user: me } = useAuth();
+  const { user: me, switchToUser } = useAuth();
+  const [, setLocation] = useLocation();
   const { toast } = useToast();
   const { t } = useI18n();
   const queryClient = useQueryClient();
@@ -141,6 +150,7 @@ export default function AdminUsersPage() {
   const [copied, setCopied] = useState<'login' | 'password' | 'both' | null>(null);
   const [exporting, setExporting] = useState(false);
   const [regeneratingId, setRegeneratingId] = useState<number | null>(null);
+  const [enteringId, setEnteringId] = useState<number | null>(null);
 
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('recruiter');
@@ -402,6 +412,32 @@ export default function AdminUsersPage() {
         },
       },
     );
+  };
+
+  const enterAccount = async (u: User) => {
+    if (!isAdmin || enteringId) return;
+    const status = normalizeUserStatus(u.status);
+    if (status !== 'active' && status !== 'on_leave') {
+      toast({ title: 'Bu holatdagi akkauntga kirib bo‘lmaydi', variant: 'destructive' });
+      return;
+    }
+    setEnteringId(u.id);
+    try {
+      const res = await fetch(`/api/users/${u.id}/enter`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: { Accept: 'application/json' },
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((data as { error?: string }).error || 'Kirib bo‘lmadi');
+      const next = (data as { user?: User }).user;
+      if (!next) throw new Error('Profil ochilmadi');
+      switchToUser(next);
+      setLocation(homeForRole(next.role));
+    } catch (err) {
+      toast({ title: 'Akkaunt ochilmadi', description: (err as Error).message, variant: 'destructive' });
+      setEnteringId(null);
+    }
   };
 
   const onRegenerateLogin = async (u: User) => {
@@ -687,6 +723,15 @@ export default function AdminUsersPage() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-0.5">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => void enterAccount(u)}
+                            disabled={enteringId != null || (normalizeUserStatus(u.status) !== 'active' && normalizeUserStatus(u.status) !== 'on_leave')}
+                            title="Shu akkauntga kirish"
+                          >
+                            {enteringId === u.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                          </Button>
                           <Button
                             variant="ghost"
                             size="icon"

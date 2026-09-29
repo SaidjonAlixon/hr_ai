@@ -67,6 +67,7 @@ function fmtSignedMin(min: number) {
 export function applyJavobExemptionToMetrics<T extends {
   status: string;
   checkIn: string;
+  missingCheckout?: boolean;
   lateArrivalMin: number;
   earlyLeaveMin: number;
   lateArrivalLabel: string;
@@ -88,7 +89,12 @@ export function applyJavobExemptionToMetrics<T extends {
   const early = Math.max(0, metrics.earlyLeaveMin - ex.durationMinutes);
   let status = metrics.status;
   if (status === "late" && late <= graceMinutes) {
-    status = metrics.checkIn && metrics.checkIn !== "—" ? "present" : status;
+    status =
+      metrics.checkIn && metrics.checkIn !== "—"
+        ? metrics.missingCheckout
+          ? "incomplete"
+          : "present"
+        : status;
   }
   if (status === "absent") {
     // Soatlik ruxsat — to‘liq yo‘qlikni leave qilmaymiz, lekin jarima daqiqalarini kamaytiramiz

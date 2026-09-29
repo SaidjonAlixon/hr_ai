@@ -7,6 +7,7 @@ import {
   useGetDepartments,
 } from "@workspace/api-client-react";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
+import { scriptIncludes } from "@/lib/script-search";
 import { staffWorkplaceOf } from "@/lib/staff-workplace";
 import {
   Plus,
@@ -701,7 +702,7 @@ export default function VazifalarPage() {
   const filteredBranchOptions = useMemo(() => {
     const q = deptPickerQ.trim().toLowerCase();
     if (!q) return branchOptions;
-    return branchOptions.filter((b) => b.toLowerCase().includes(q));
+    return branchOptions.filter((b) => scriptIncludes(b, q));
   }, [branchOptions, deptPickerQ]);
 
   const assigneeDeptKey = useMemo(() => {
@@ -752,11 +753,8 @@ export default function VazifalarPage() {
   const filteredStaffPickerOptions = useMemo(() => {
     const q = staffPickerQ.trim().toLowerCase();
     if (!q) return assigneeSelectOptions;
-    return assigneeSelectOptions.filter(
-      (o) =>
-        o.name.toLowerCase().includes(q) ||
-        o.label.toLowerCase().includes(q) ||
-        o.meta.toLowerCase().includes(q),
+    return assigneeSelectOptions.filter((o) =>
+      scriptIncludes([o.name, o.label, o.meta].filter(Boolean).join(" "), q),
     );
   }, [assigneeSelectOptions, staffPickerQ]);
 
@@ -843,11 +841,8 @@ export default function VazifalarPage() {
       }
     const q = search.trim().toLowerCase();
       if (q && q !== (user?.fullName || "").toLowerCase()) {
-        list = list.filter(
-          (t) =>
-            t.title.toLowerCase().includes(q) ||
-            (t.description || "").toLowerCase().includes(q) ||
-            String(t.id).includes(q),
+        list = list.filter((t) =>
+          scriptIncludes([t.title, t.description, t.assigneeName, String(t.id)].filter(Boolean).join(" "), q),
         );
       }
     } else if (assigneeFilter !== "all") {
@@ -857,11 +852,8 @@ export default function VazifalarPage() {
       );
       const q = search.trim().toLowerCase();
       if (q && q !== assigneeFilter.name.toLowerCase()) {
-        list = list.filter(
-          (t) =>
-            t.title.toLowerCase().includes(q) ||
-            (t.description || "").toLowerCase().includes(q) ||
-            String(t.id).includes(q),
+        list = list.filter((t) =>
+          scriptIncludes([t.title, t.description, t.assigneeName, String(t.id)].filter(Boolean).join(" "), q),
         );
       }
     } else {
@@ -869,10 +861,7 @@ export default function VazifalarPage() {
       if (q) {
         list = list.filter(
       (t) =>
-        t.title.toLowerCase().includes(q) ||
-        (t.assigneeName || "").toLowerCase().includes(q) ||
-            (t.description || "").toLowerCase().includes(q) ||
-            String(t.id).includes(q),
+        scriptIncludes([t.title, t.assigneeName, t.description, String(t.id)].filter(Boolean).join(" "), q),
         );
       }
     }

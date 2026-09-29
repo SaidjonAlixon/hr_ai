@@ -84,6 +84,7 @@ import { Label } from "../../components/ui/label";
 import { Tabs, TabsContent } from "../../components/ui/tabs";
 import { useToast } from "../../hooks/use-toast";
 import { cn } from "../../lib/utils";
+import { scriptIncludes } from "../../lib/script-search";
 import {
   downloadDavomatExcel,
   fetchDavomat,
@@ -385,14 +386,22 @@ function sectionFromLocation(path: string, search: string): Section | null {
 type CalMode = "day" | "week" | "month" | "range";
 type DayStatusFilter = "all" | "present" | "absent" | "late" | "leave" | "rest";
 
-function matchesDayStatusFilter(status: string | undefined, filter: DayStatusFilter): boolean {
+function dayHasCheckIn(day?: { checkIn?: string | null } | null): boolean {
+  return Boolean(day?.checkIn && day.checkIn !== "—");
+}
+
+function matchesDayStatusFilter(
+  day: { status?: string; checkIn?: string | null } | null | undefined,
+  filter: DayStatusFilter,
+): boolean {
   if (filter === "all") return true;
-  const st = status || "absent";
-  if (filter === "absent") return st === "absent";
-  if (filter === "late") return st === "late";
-  if (filter === "leave") return st === "leave";
-  if (filter === "rest") return st === "rest";
-  return st !== "absent" && st !== "leave" && st !== "rest";
+  const st = day?.status || "absent";
+  const came = dayHasCheckIn(day);
+  if (filter === "absent") return !came && st !== "leave" && st !== "rest";
+  if (filter === "late") return came && st === "late";
+  if (filter === "leave") return st === "leave" && !came;
+  if (filter === "rest") return st === "rest" && !came;
+  return came;
 }
 
 function branchIdentity(location: string | null | undefined): { key: string; label: string } | null {
@@ -459,9 +468,7 @@ function PharmacyBranchPicker({
       >
         <Command
           filter={(itemValue, query) => {
-            const q = query.trim().toLocaleLowerCase("uz");
-            if (!q) return 1;
-            return itemValue.toLocaleLowerCase("uz").includes(q) ? 1 : 0;
+            return scriptIncludes(itemValue, query) ? 1 : 0;
           }}
         >
           <CommandInput placeholder="Filial nomini yozing…" />
@@ -791,17 +798,19 @@ export default function DavomatPage() {
     const restNames: string[] = [];
     for (const { emp, day } of employeesForDay) {
       if (!day) continue;
-      if (day.status === "absent") absent += 1;
-      else if (day.status === "leave") {
+      const came = Boolean(day.checkIn && day.checkIn !== "—");
+      if (!came && day.status === "leave") {
         leave += 1;
         leaveNames.push(emp.fullName);
-      } else if (day.status === "rest") {
+      } else if (!came && day.status === "rest") {
         rest += 1;
         restNames.push(emp.fullName);
+      } else if (!came) {
+        absent += 1;
       } else {
         present += 1;
         if (day.status === "late") late += 1;
-        if (day.status === "incomplete") incomplete += 1;
+        if (day.status === "incomplete" || day.missingCheckout) incomplete += 1;
       }
     }
     return {
@@ -819,7 +828,7 @@ export default function DavomatPage() {
 
   const visibleEmployeesForDay = useMemo(
     () =>
-      employeesForDay.filter(({ day }) => matchesDayStatusFilter(day?.status, dayStatusFilter)),
+      employeesForDay.filter(({ day }) => matchesDayStatusFilter(day, dayStatusFilter)),
     [employeesForDay, dayStatusFilter],
   );
 
@@ -1950,12 +1959,15 @@ export default function DavomatPage() {
         {dayCards.map((card) => {
           const Icon = card.icon;
           const active = dayStatusFilter === card.key;
+          const workPool = filteredDayStats.present + filteredDayStats.absent;
+          const pctBase =
+            card.key === "late"
+              ? filteredDayStats.present
+              : card.key === "present" || card.key === "absent"
+                ? workPool
+                : filteredDayStats.total;
           const pct =
-            card.key === "all"
-              ? 100
-              : filteredDayStats.total > 0
-                ? Math.round((card.value / filteredDayStats.total) * 1000) / 10
-                : 0;
+            card.key === "all" ? 100 : pctBase > 0 ? Math.round((card.value / pctBase) * 1000) / 10 : 0;
           const ringPct = card.key === "all" ? 100 : pct;
           const r = 18;
           const c = 2 * Math.PI * r;

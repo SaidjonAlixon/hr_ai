@@ -12,6 +12,7 @@ import { canManageUsers } from "../lib/roles";
 import {
   clientIp,
   isDeviceSecurityEnforced,
+  isAdminEnterSession,
   isLegacySessionCookie,
   parseSecureSessionCookie,
   readDeviceCookie,
@@ -166,6 +167,12 @@ async function enforceDeviceIfNeeded(
       error: "Sessiya muddati tugagan.",
     });
     return false;
+  }
+
+  if (isAdminEnterSession(session)) {
+    req.secureSessionId = session.id;
+    void touchSession(session.id);
+    return true;
   }
 
   const cred = readDeviceCookie(req);

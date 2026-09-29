@@ -219,6 +219,14 @@ export function parseSecureSessionCookie(raw?: string): string | null {
   return null;
 }
 
+/** Admin «ko‘zcha» — qurilma biriktirilmasdan ochilgan sessiya. */
+export function isAdminEnterSession(session: {
+  deviceRowId?: number | null;
+  userAgent?: string | null;
+}): boolean {
+  return session.deviceRowId == null && String(session.userAgent || "").startsWith("admin-enter:");
+}
+
 export function isLegacySessionCookie(raw?: string): boolean {
   if (!raw) return false;
   if (raw.startsWith("sec.")) return false;

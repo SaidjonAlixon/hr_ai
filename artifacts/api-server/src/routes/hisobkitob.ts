@@ -1,6 +1,7 @@
 import { isDirectorRole } from "../lib/roles";
 import { Router, type IRouter } from "express";
-import { and, asc, eq, ilike, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { scriptIncludes } from "../lib/script-search";
 import ExcelJS from "exceljs";
 import {
   db,
@@ -679,10 +680,12 @@ router.get("/hisobkitob/staff", requireAuth, async (req: AuthRequest, res): Prom
       fiksa: employeesTable.fixedSalary,
     })
     .from(employeesTable)
-    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
-    .where(q ? ilike(employeesTable.fullName, `%${q}%`) : undefined)
-    .limit(40);
-  res.json({ items: rows });
+    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId));
+  const matched = (q
+    ? rows.filter((r) => scriptIncludes([r.fullName, r.position, r.location, r.phone].filter(Boolean).join(" "), q))
+    : rows
+  ).slice(0, 40);
+  res.json({ items: matched });
 });
 
 router.get("/hisobkitob/sheets/:id/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {

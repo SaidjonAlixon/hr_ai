@@ -2,6 +2,7 @@
  * Ko‘chma davomat API — faqat admin ruxsat boshqaruvi; xodim start/end/track.
  */
 import { Router, type IRouter } from "express";
+import { scriptIncludes } from "../lib/script-search";
 import { and, desc, eq, gte, lte, inArray, sql, isNotNull } from "drizzle-orm";
 import {
   db,
@@ -1530,8 +1531,8 @@ router.get("/mobile-attendance/employees", requireAuth, async (req: AuthRequest,
           return false;
         }
         if (!q) return true;
-        const hay = `${e.fullName} ${e.position || ""} ${e.location || ""} ${e.userRole || ""}`.toLowerCase();
-        return hay.includes(q);
+        const hay = `${e.fullName} ${e.position || ""} ${e.location || ""} ${e.userRole || ""}`;
+        return scriptIncludes(hay, q);
       });
 
     /** Bir xodim kartasi / bir user — ro‘yxatda 1 marta */

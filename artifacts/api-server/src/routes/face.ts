@@ -9,6 +9,7 @@ import {
   employeesTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
+import { scriptIncludes } from "../lib/script-search";
 import { canManageSettings } from "../lib/roles";
 import {
   FACE_ENROLL_BLOCK_MAX,
@@ -568,12 +569,7 @@ router.get("/admin/faces/export", requireAuth, async (req: AuthRequest, res): Pr
     if (statusFilter === "no" && f.faceRegistered) return false;
     if (onlyRisk && f.similarRisk === "none") return false;
     if (!needle) return true;
-    return (
-      f.fullName.toLowerCase().includes(needle) ||
-      f.login.toLowerCase().includes(needle) ||
-      (f.departmentName || "").toLowerCase().includes(needle) ||
-      f.roleLabel.toLowerCase().includes(needle)
-    );
+    return scriptIncludes([f.fullName, f.login, f.departmentName, f.roleLabel].filter(Boolean).join(" "), needle);
   });
 
   const registeredCount = filtered.filter((f) => f.faceRegistered).length;

@@ -1,4 +1,5 @@
 import { Router, type IRouter } from "express";
+import { scriptIncludes } from "../lib/script-search";
 import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
 import {
   db,
@@ -723,12 +724,9 @@ router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promis
   if (q) {
     people = people.filter((p) => {
       const label = ROLE_LABEL_UZ[p.role] || p.role;
-      return (
-        p.fullName.toLowerCase().includes(q) ||
-        (p.login || "").toLowerCase().includes(q) ||
-        p.role.toLowerCase().includes(q) ||
-        label.toLowerCase().includes(q) ||
-        (p.departmentName || "").toLowerCase().includes(q)
+      return scriptIncludes(
+        [p.fullName, p.login, p.role, label, p.departmentName, p.phone].filter(Boolean).join(" "),
+        q,
       );
     });
   }

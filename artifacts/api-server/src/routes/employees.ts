@@ -25,6 +25,7 @@ import { archiveAndDeleteUser } from "../lib/dismiss-user";
 import { formatPersonName } from "../lib/person-name";
 import { getActorDepartmentId, isDeptHeadRole, resolveDeptHeadContext } from "../lib/dept-staff";
 import { displayBranchName } from "../lib/geo-location";
+import { scriptIncludes } from "../lib/script-search";
 
 const router: IRouter = Router();
 
@@ -462,7 +463,15 @@ function scopeEmployees(
   let filtered = rows.filter((r) => {
     if (filters.departmentId && r.departmentId !== parseInt(filters.departmentId, 10)) return false;
     if (filters.mentorId && r.mentorId !== parseInt(filters.mentorId, 10)) return false;
-    if (filters.search && !r.fullName.toLowerCase().includes(filters.search.toLowerCase())) return false;
+    if (
+      filters.search &&
+      !scriptIncludes(
+        [r.fullName, r.position, r.location, r.phone, r.login].filter(Boolean).join(" "),
+        filters.search,
+      )
+    ) {
+      return false;
+    }
     return true;
   });
 

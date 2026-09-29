@@ -88,6 +88,7 @@ export const uz: Messages = {
   "nav.pharmacy": "Aptekalar tarmog‘i",
   "nav.boglanish": "Bog‘lanish",
   "nav.holat": "Hisobot",
+  "nav.holatXodim": "Xodimlar hisoboti",
   "nav.ehtiyoj": "Ehtiyoj",
   "nav.pipeline": "Pipeline",
   "nav.internships": "Stajirovkalar",

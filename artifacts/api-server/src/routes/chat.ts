@@ -1,11 +1,11 @@
 import { Router, type IRouter } from "express";
+import { scriptIncludes } from "../lib/script-search";
 import {
   and,
   asc,
   desc,
   eq,
   gt,
-  ilike,
   inArray,
   lt,
   ne,
@@ -231,17 +231,7 @@ router.get("/chats/users", requireAuth, async (req: AuthRequest, res): Promise<v
     eq(usersTable.status, "active"),
     ne(usersTable.id, me),
   ];
-  if (q) {
-    conditions.push(
-      or(
-        ilike(usersTable.fullName, `%${q}%`),
-        ilike(usersTable.login, `%${q}%`),
-        ilike(usersTable.role, `%${q}%`),
-      )!,
-    );
-  }
-
-  const rows = await db
+  const found = await db
     .select({
       id: usersTable.id,
       fullName: usersTable.fullName,
@@ -251,8 +241,11 @@ router.get("/chats/users", requireAuth, async (req: AuthRequest, res): Promise<v
     })
     .from(usersTable)
     .where(and(...conditions))
-    .orderBy(asc(usersTable.fullName))
-    .limit(80);
+    .orderBy(asc(usersTable.fullName));
+  const rows = (q
+    ? found.filter((r) => scriptIncludes([r.fullName, r.login, r.role].filter(Boolean).join(" "), q))
+    : found
+  ).slice(0, 80);
 
   res.json({
     users: rows.map((u) => ({

@@ -44,6 +44,8 @@ const ReviziyaDocPage = lazy(() => import('./pages/reviziya/show'));
 const OpsDeptPage = lazy(() => import('./pages/ops-dept/index'));
 const ReytingPage = lazy(() => import('./pages/reyting/index'));
 const AdminHolatPage = lazy(() => import('./pages/admin/holat'));
+const XodimHisobotPage = lazy(() => import('./pages/admin/xodim-hisobot'));
+const HisobotTasdiqPage = lazy(() => import('./pages/hisobot-tasdiq'));
 const AdminUsersPage = lazy(() => import('./pages/admin/users'));
 const BoshatilganlarPage = lazy(() => import('./pages/admin/boshatilganlar'));
 const AdminDepartmentsPage = lazy(() => import('./pages/admin/departments'));
@@ -135,6 +137,11 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/hisobot/tasdiq/:token">
+        <Suspense fallback={<PageFallback />}>
+          <HisobotTasdiqPage />
+        </Suspense>
+      </Route>
       <Route path="/tg">
         <Suspense fallback={<PageFallback />}>
           <TgEntryPage />
@@ -246,6 +253,7 @@ function Router() {
       <ProtectedRoute path="/notifications" component={NotificationsPage} />
       <ProtectedRoute path="/admin/users" component={AdminUsersPage} />
       <ProtectedRoute path="/admin/boshatilganlar" component={BoshatilganlarPage} />
+      <ProtectedRoute path="/admin/holat/xodim" component={XodimHisobotPage} />
       <ProtectedRoute path="/admin/holat" component={AdminHolatPage} />
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />

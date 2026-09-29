@@ -5,6 +5,15 @@ import { requireAuth } from "../middlewares/auth";
 import { canViewHolat, canViewHolatFull } from "../lib/roles";
 import { buildHolatReport, type HolatReport } from "../lib/holat";
 import { buildCoordinatorHisobot } from "../lib/holat-attendance-report";
+import {
+  buildEmployeeAttendanceReport,
+  parseStatuses,
+  readEmployeeSeal,
+  resolveRange,
+  sealEmployeeReport,
+  searchEmployees,
+} from "../lib/employee-attendance-report";
+import { ensureAttendanceSealsSchema } from "../lib/ensure-schema";
 
 const router: IRouter = Router();
 
@@ -265,6 +274,123 @@ router.get("/holat/export", requireAuth, async (req: AuthRequest, res): Promise<
   } catch (err) {
     console.error("GET /holat/export error:", err);
     res.status(503).json({ error: "Excel yuklanmadi" });
+  }
+});
+
+router.get("/holat/employees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewHolat(req.userRole)) {
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
+    return;
+  }
+  try {
+    const q = typeof req.query.q === "string" ? req.query.q : "";
+    const employees = await searchEmployees(q);
+    res.json({ employees });
+  } catch (err) {
+    console.error("GET /holat/employees error:", err);
+    res.status(503).json({ error: "Xodimlar qidiruvi yuklanmadi" });
+  }
+});
+
+function pickedIds(src: { employeeId?: unknown; userId?: unknown }) {
+  const employeeId = Number(src.employeeId);
+  const userId = Number(src.userId);
+  return {
+    employeeId: Number.isFinite(employeeId) && employeeId > 0 ? employeeId : null,
+    userId: Number.isFinite(userId) && userId > 0 ? userId : null,
+  };
+}
+
+router.get("/holat/employee-report", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewHolat(req.userRole)) {
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
+    return;
+  }
+  const ids = pickedIds(req.query);
+  if (!ids.employeeId && !ids.userId) {
+    res.status(400).json({ error: "Xodim tanlanmagan" });
+    return;
+  }
+  const range = resolveRange(req.query.from, req.query.to);
+  if ("error" in range) {
+    res.status(400).json({ error: range.error });
+    return;
+  }
+  try {
+    const report = await buildEmployeeAttendanceReport({
+      ...ids,
+      from: range.from,
+      to: range.to,
+      statuses: parseStatuses(req.query.statuses),
+    });
+    if (!report) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    res.json(report);
+  } catch (err) {
+    console.error("GET /holat/employee-report error:", err);
+    res.status(503).json({ error: "Xodim hisoboti yuklanmadi" });
+  }
+});
+
+router.post("/holat/employee-report/seal", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewHolat(req.userRole)) {
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
+    return;
+  }
+  const ids = pickedIds(req.body ?? {});
+  if (!ids.employeeId && !ids.userId) {
+    res.status(400).json({ error: "Xodim tanlanmagan" });
+    return;
+  }
+  const range = resolveRange(req.body?.from, req.body?.to);
+  if ("error" in range) {
+    res.status(400).json({ error: range.error });
+    return;
+  }
+  try {
+    await ensureAttendanceSealsSchema();
+    const report = await buildEmployeeAttendanceReport({
+      ...ids,
+      from: range.from,
+      to: range.to,
+      statuses: parseStatuses(req.body?.statuses),
+    });
+    if (!report) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    const sealed = await sealEmployeeReport({ report, sealedBy: req.userId ?? null });
+    res.json({
+      token: sealed.token,
+      sealedAt: sealed.sealedAt,
+      title: sealed.payload.title,
+      approverName: sealed.payload.approverName,
+      approverLine: sealed.payload.approverLine,
+      verifyPath: `/hisobot/tasdiq/${sealed.token}`,
+      report: sealed.payload.report,
+    });
+  } catch (err) {
+    console.error("POST /holat/employee-report/seal error:", err);
+    res.status(503).json({ error: "Tasdiq saqlanmadi" });
+  }
+});
+
+/** QR skaner — login shart emas. Saqlangan nusxa va yashil tasdiq. */
+router.get("/holat/verify/:token", async (req, res): Promise<void> => {
+  try {
+    await ensureAttendanceSealsSchema();
+    const seal = await readEmployeeSeal(String(req.params.token || ""));
+    if (!seal) {
+      res.status(404).json({ error: "Tasdiqlangan hisobot topilmadi" });
+      return;
+    }
+    res.setHeader("Cache-Control", "private, max-age=60");
+    res.json(seal);
+  } catch (err) {
+    console.error("GET /holat/verify error:", err);
+    res.status(503).json({ error: "Tasdiq ochilmadi" });
   }
 });
 

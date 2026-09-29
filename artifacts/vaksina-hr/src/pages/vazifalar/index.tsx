@@ -568,8 +568,12 @@ export default function VazifalarPage() {
     const activeUserStatuses = new Set(["active", "on_leave"]);
     const activeEmpStatuses = new Set(["working", "new", "on_leave"]);
 
+    const selfId = user?.id != null ? Number(user.id) : null;
     const activeUsers = (users as any[]).filter(
-      (x) => activeUserStatuses.has(String(x.status || "")) && String(x.role || "") !== "admin",
+      (x) =>
+        activeUserStatuses.has(String(x.status || "")) &&
+        String(x.role || "") !== "admin" &&
+        (selfId == null || Number(x.id) !== selfId),
     );
     const linkedUserIds = new Set<number>(
       activeUsers.map((x) => Number(x.id)).filter((id) => Number.isFinite(id)),
@@ -605,6 +609,7 @@ export default function VazifalarPage() {
       .filter((x) => activeEmpStatuses.has(String(x.employmentStatus || "working")))
       .filter((x) => {
         const uid = x.userId != null ? Number(x.userId) : null;
+        if (selfId != null && uid === selfId) return false;
         if (uid != null && linkedUserIds.has(uid)) return false;
         const name = normName(x.fullName);
         if (name && linkedNames.has(name)) return false;
@@ -635,7 +640,7 @@ export default function VazifalarPage() {
       });
 
     return [...u, ...e].filter((o) => o.name);
-  }, [users, employees]);
+  }, [users, employees, user?.id]);
 
   useEffect(() => {
     if (!deepAssigneeKind || !deepAssigneeId) return;
@@ -747,7 +752,7 @@ export default function VazifalarPage() {
         staffMatchesBranchFilter(o, branchFilter, assigneeDeptKey),
       );
     }
-    return list.slice(0, 100);
+    return list;
   }, [assigneeOptions, workplaceFilter, branchFilter, assigneeDeptKey]);
 
   const filteredStaffPickerOptions = useMemo(() => {
@@ -2137,7 +2142,7 @@ export default function VazifalarPage() {
                 onValueChange={(v) => setWorkplaceFilter(v as "all" | "ofis" | "dorixona")}
               >
                 <SelectTrigger
-                  className={cn(control, "w-full rounded-lg lg:w-[138px]", workplaceActive && controlActive)}
+                  className={cn(control, "w-full rounded-lg lg:w-[148px]", workplaceActive && controlActive)}
                 >
                   <SelectValue placeholder={t("tasks.filter.allWorkplace")} />
                 </SelectTrigger>

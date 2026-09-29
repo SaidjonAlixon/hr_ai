@@ -75,6 +75,12 @@ type Draft = {
   lockedQuestions: boolean;
 };
 
+function audienceTo(track: AttestTrack): string {
+  if (track === "farmasevt") return "barcha farmasevtlarga";
+  if (track === "mudir") return "barcha mudirlarga";
+  return "barcha stajyorlarga";
+}
+
 function emptyQuestion(): AttestQuestion {
   return { id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, text: "", options: ["", "", "", ""], correctIndex: 0 };
 }
@@ -252,7 +258,19 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
       <div className="flex flex-col gap-2 text-sm sm:flex-row sm:flex-wrap sm:items-center">
         <label className="flex items-center gap-2"><Switch checked={d.shuffleQuestions} onCheckedChange={(v) => setD({ ...d, shuffleQuestions: v })} /> Savollar aralashsin</label>
         <label className="flex items-center gap-2"><Switch checked={d.showResult} onCheckedChange={(v) => setD({ ...d, showResult: v })} /> Natijani xodim ko‘rsin</label>
-        <label className="flex items-center gap-2"><Switch checked={d.published} onCheckedChange={(v) => setD({ ...d, published: v })} /> {d.published ? "E’lon qilingan" : "Qoralama"}</label>
+        <div className={cn("w-full rounded-2xl border px-3 py-2.5 sm:basis-full", d.published ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50")}>
+          <label className="flex items-start justify-between gap-3">
+            <span>
+              <span className="block text-sm font-semibold">{d.published ? "E’lon qilingan" : "Hali e’lon qilinmagan"}</span>
+              <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                {d.published
+                  ? `Saqlangach test ${audienceTo(track)} ko‘rinadi. Ular muddat ichida topshiradi.`
+                  : `Saqlangach test faqat sizda (trenerda) qoladi. ${audienceTo(track)} chiqmaydi. Tayyor bo‘lgach e’lon qilasiz.`}
+              </span>
+            </span>
+            <Switch checked={d.published} onCheckedChange={(v) => setD({ ...d, published: v })} />
+          </label>
+        </div>
       </div>
       <div className="flex justify-end gap-2 border-t border-border/60 pt-3">
         <Button variant="outline" onClick={onClose}>Bekor</Button>
@@ -730,16 +748,48 @@ export default function AtestatsiyaAdminPage() {
                       <p className="text-[11px] text-muted-foreground">
                         {formatAttestDt(e.startsAt)} – {formatAttestDt(e.endsAt)} · {e.durationMinutes} daq · {e.locationMode === "office" ? "Ofis" : "Filial"} · {e.questions.length} savol · o‘tish {e.passScore}%
                       </p>
-                      <p className="mt-0.5 text-[11px]">
-                        <span className={cn("rounded-full px-2 py-0.5 font-semibold", e.window === "open" ? "bg-emerald-100 text-emerald-800" : e.window === "upcoming" ? "bg-sky-100 text-sky-800" : "bg-muted text-muted-foreground")}>
-                          {e.window === "open" ? "Ochiq" : e.window === "upcoming" ? "Kutilmoqda" : "Yopilgan"}
+                      <p className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px]">
+                        <span className={cn("rounded-full px-2 py-0.5 font-semibold", e.window === "open" ? "bg-sky-100 text-sky-800" : e.window === "upcoming" ? "bg-slate-100 text-slate-700" : "bg-muted text-muted-foreground")}>
+                          {e.window === "open" ? "Muddat ichida" : e.window === "upcoming" ? "Muddat hali boshlanmagan" : "Muddat tugagan"}
                         </span>
-                        {!e.published ? <span className="ml-1 text-muted-foreground">Qoralama</span> : null}
-                        <span className="ml-2 text-muted-foreground">{e.stats.passed}/{e.stats.finished} o‘tdi · {e.stats.inProgress} ishlayapti</span>
+                        <span className="text-muted-foreground">{e.stats.passed}/{e.stats.finished} o‘tdi · {e.stats.inProgress} ishlayapti</span>
                       </p>
+                      <div className={cn("mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl px-3 py-2", e.published ? "bg-emerald-50" : "bg-amber-50")}>
+                        <div className="min-w-0">
+                          <p className={cn("text-xs font-semibold", e.published ? "text-emerald-800" : "text-amber-900")}>
+                            {e.published ? "E’lon qilingan" : "E’lon qilinmagan"}
+                          </p>
+                          <p className="text-[11px] leading-snug text-muted-foreground">
+                            {e.published
+                              ? `Test ${audienceTo(track)} ko‘rinadi. Muddat ichida topshirishlari mumkin.`
+                              : `Hozir faqat trener ko‘radi. E’lon qilmaguncha ${audienceTo(track)} chiqmaydi.`}
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant={e.published ? "outline" : "default"}
+                          className={cn("h-8 shrink-0", !e.published && "bg-amber-600 text-white hover:bg-amber-700")}
+                          disabled={publish.isPending}
+                          onClick={() =>
+                            void publish
+                              .mutateAsync({ id: e.id, published: !e.published })
+                              .then(() =>
+                                toast({
+                                  title: e.published ? "E’lon yopildi" : "E’lon qilindi",
+                                  description: e.published
+                                    ? "Test yana faqat trenerda. Xodimlar ko‘rmaydi."
+                                    : `Test ${audienceTo(track)} ko‘rinadi.`,
+                                }),
+                              )
+                              .catch((err: Error) => toast({ title: err.message, variant: "destructive" }))
+                          }
+                        >
+                          {e.published ? "E’lonni yopish" : "E’lon qilish"}
+                        </Button>
+                      </div>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Switch checked={e.published} disabled={publish.isPending} onCheckedChange={(v) => void publish.mutateAsync({ id: e.id, published: v }).catch((err: Error) => toast({ title: err.message, variant: "destructive" }))} />
                       <Button size="sm" variant="outline" className="h-8" onClick={() => setMonitorId(e.id)}><BarChart3 className="mr-1 h-3.5 w-3.5" /> Natija</Button>
                       <Button size="icon" variant="ghost" onClick={() => setEditing(fromExam(e))} aria-label="Tahrirlash"><Pencil className="h-4 w-4" /></Button>
                       <Button size="icon" variant="ghost" className="text-red-600" onClick={() => setToDelete(e)} aria-label="O‘chirish"><Trash2 className="h-4 w-4" /></Button>

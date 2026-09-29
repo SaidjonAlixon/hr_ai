@@ -1412,7 +1412,7 @@ export const pagesUz: Messages = {
   "tasks.filter.allStaff": "Barcha",
   "tasks.filter.me": "O‘zim",
   "tasks.filter.allBranches": "Barcha bo‘limlar",
-  "tasks.filter.allWorkplace": "Ofis / Dorixona",
+  "tasks.filter.allWorkplace": "Barcha",
   "tasks.filter.deptSearch": "Bo‘lim qidirish...",
   "tasks.filter.deptEmpty": "Bo‘lim topilmadi",
   "tasks.filter.allPriority": "Barcha ustuvorlik",

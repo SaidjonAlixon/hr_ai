@@ -1411,7 +1411,7 @@ export const pagesRu: Messages = {
   "tasks.filter.allStaff": "Все",
   "tasks.filter.me": "Я",
   "tasks.filter.allBranches": "Все отделы",
-  "tasks.filter.allWorkplace": "Офис / Аптека",
+  "tasks.filter.allWorkplace": "Все",
   "tasks.filter.deptSearch": "Поиск отдела...",
   "tasks.filter.deptEmpty": "Отдел не найден",
   "tasks.filter.allPriority": "Все приоритеты",

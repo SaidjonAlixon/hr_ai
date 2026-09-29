@@ -67,7 +67,7 @@ import {
   useReviziyaVisitsDashboard,
   useReviziyaVisitsMeta,
 } from "@/lib/reviziya-api";
-import { CYCLE_STATUS_TONE, formatYmd, moneySoum, WORKFLOW_STATUS_LABEL } from "@/lib/reviziya-cycle";
+import { CYCLE_STATUS_LABEL, CYCLE_STATUS_TONE, formatYmd, moneySoum, WORKFLOW_STATUS_LABEL } from "@/lib/reviziya-cycle";
 
 type SubTab = "branches" | "tasks" | "calendar" | "create" | "conduct";
 

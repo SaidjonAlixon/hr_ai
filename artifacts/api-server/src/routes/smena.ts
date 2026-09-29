@@ -75,6 +75,12 @@ function hasGps(e: { latitude: number | null; longitude: number | null }) {
   return e.latitude != null && e.longitude != null && Number.isFinite(e.latitude) && Number.isFinite(e.longitude);
 }
 
+/** Bo‘sh «2-smena — xodim kerak» slot — haqiqiy xodim emas, tanlashda chiqmasin */
+function isOpenHireSlot(p: { fullName: string; userId: number | null; employmentStatus: string | null }) {
+  if (/xodim kerak/i.test(p.fullName)) return true;
+  return p.employmentStatus === "need_hire" && !p.userId;
+}
+
 async function listBranches() {
   const rows = await db
     .select({
@@ -252,6 +258,7 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
     const branchName = (id: number | null) => branches.find((b) => b.id === id)?.name || null;
     for (const p of people) {
       if (!canAssignTarget({ role, me, target: p, scope })) continue;
+      if (isOpenHireSlot(p)) continue;
       if (p.id === me.id && (role === "farmasevt" || p.orgRole === "pharmacist")) continue;
       // GPS yo‘q / bo‘sh filial kartalari — smena xodim tanlashda chiqmasin
       if (p.orgRole === MANAGER_ORG && !hasGps(p)) continue;

@@ -1099,7 +1099,9 @@ export function TaskFormDialog({
       setPriority(editing.priority);
       setDueDate(due.date);
       setDueTime(due.time);
-      setAssigneeKey(`${editing.assigneeKind}:${editing.assigneeId}`);
+      const loadedKey = `${editing.assigneeKind}:${editing.assigneeId}`;
+      const selfKey = currentUserId != null ? `user:${currentUserId}` : "";
+      setAssigneeKey(selfKey && loadedKey === selfKey ? "" : loadedKey);
       setMultiAssigneeKeys([]);
       setBatchDetailId(null);
       setBranchOrDept(meta.branchOrDept || "");
@@ -1556,6 +1558,21 @@ export function TaskFormDialog({
     }>;
 
     const useMulti = !editing && multiSpecs.length > 0;
+    const assignsSelf = (kind: string, id: number) =>
+      currentUserId != null && kind === "user" && id === currentUserId;
+    if (
+      (useMulti && multiSpecs.some((s) => assignsSelf(s.assigneeKind, s.assigneeId))) ||
+      (!useMulti &&
+        assigneeKey.startsWith("user:") &&
+        assignsSelf("user", parseInt(assigneeKey.split(":")[1] || "", 10)))
+    ) {
+      toast({
+        title: "O‘zingizga vazifa qo‘yib bo‘lmaydi",
+        description: "Mas’ul qilib boshqa xodimni tanlang",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!useMulti && !assigneeKey) {
       toast({ title: t("tasks.form.needAssignee"), variant: "destructive" });
       return;

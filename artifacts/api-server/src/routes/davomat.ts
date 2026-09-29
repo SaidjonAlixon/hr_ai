@@ -2222,8 +2222,10 @@ async function resolveReviziyaFieldGate(opts: {
   longitude: number;
   mobileAnywhere: boolean;
   preferredBranchId?: number | null;
+  /** QR: skaner qilingan filial zonasida bo‘lish shart, boshqa joyga tushmaydi */
+  strictPreferred?: boolean;
 }): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
-  const { emp, latitude, longitude, mobileAnywhere, preferredBranchId } = opts;
+  const { emp, latitude, longitude, mobileAnywhere, preferredBranchId, strictPreferred } = opts;
   const GEOFENCE_SLACK_M = 8;
   const branchR = geofenceMetersForKind("branch");
   const officeR = geofenceMetersForKind("office");
@@ -2264,6 +2266,39 @@ async function resolveReviziyaFieldGate(opts: {
     if (coords) {
       const hit = tryBranch(preferredBranchId, coords.lat, coords.lng, coords.label);
       if (hit) return hit;
+      if (strictPreferred) {
+        const distanceMeters = haversineMeters(latitude, longitude, coords.lat, coords.lng);
+        const remainMeters = Math.max(0, Math.round(distanceMeters - branchR));
+        return {
+          ok: false,
+          status: 403,
+          body: {
+            error: `«${coords.label}» filial zonasida emassiz (${distanceMeters} m). Yana ${remainMeters} m yaqinlashib, shu filial QR ini qayta skanerlang.`,
+            code: "outside_geofence",
+            distanceMeters,
+            remainMeters,
+            allowedMeters: branchR,
+            workplace: {
+              location: coords.label,
+              latitude: coords.lat,
+              longitude: coords.lng,
+              kind: "branch",
+            },
+            fullName: emp.fullName,
+            fieldBranchPunch: true,
+          },
+        };
+      }
+    } else if (strictPreferred) {
+      return {
+        ok: false,
+        status: 400,
+        body: {
+          error: "Bu filialning GPS nuqtasi kiritilmagan.",
+          code: "branch_gps_missing",
+          fullName: emp.fullName,
+        },
+      };
     }
   }
 
@@ -2362,6 +2397,7 @@ async function geoGate(
   _accuracyMeters?: number,
   action: "in" | "out" = "in",
   preferredBranchId?: number | null,
+  strictPreferred = false,
 ): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
   // Admin bergan ko‘chma ruxsat — yashil zona (geofence) talab qilinmaydi
   let mobileAnywhere = false;
@@ -2380,6 +2416,7 @@ async function geoGate(
         longitude,
         mobileAnywhere,
         preferredBranchId,
+        strictPreferred,
       });
     }
 
@@ -5748,14 +5785,15 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       throw err;
     }
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
+    const reviziyaField = isReviziyaRole(user.role);
     const effective = await effectiveBranchIdForDay(emp);
     const myBranchId = effective.branchId;
     const myDeptId = user.departmentId;
 
     const branchQr = await verifyBranchQrPayload(payload);
     if (branchQr.ok) {
-      /** Filial QR: apteka yo‘li yoki filial biriktirilgan xodim; ofis — bo‘lim QR */
-      const canUseBranchQr = pharmacy || adminAnywhere || Boolean(myBranchId);
+      /** Filial QR: apteka, biriktirilgan filial, admin yoki reviziya (istalgan filial) */
+      const canUseBranchQr = pharmacy || adminAnywhere || reviziyaField || Boolean(myBranchId);
       if (!canUseBranchQr) {
         await writePunchAudit({
           employeeId: emp.id,
@@ -5773,7 +5811,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         });
         return;
       }
-      if (!adminAnywhere && !myBranchId) {
+      if (!adminAnywhere && !reviziyaField && !myBranchId) {
         res.status(400).json({
           error: "Filial biriktirilmagan — avval smena/filial belgilansin",
           code: "branch_unassigned",
@@ -5790,7 +5828,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         // Standart doimiy filial: bugun alohida rotatsiya qo‘yilmagan bo‘lsa ham ishlayveradi
         allowedBranchIds.add(myBranchId);
       }
-      if (!adminAnywhere && allowedBranchIds.size === 0) {
+      if (!adminAnywhere && !reviziyaField && allowedBranchIds.size === 0) {
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
@@ -5815,7 +5853,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         });
         return;
       }
-      if (!adminAnywhere && !allowedBranchIds.has(branchQr.row.branchId)) {
+      if (!adminAnywhere && !reviziyaField && !allowedBranchIds.has(branchQr.row.branchId)) {
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
@@ -5871,6 +5909,8 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           longitude,
           Number.isFinite(accuracy) ? accuracy : undefined,
           action === "out" ? "out" : "in",
+          reviziyaField ? branchQr.row.branchId : undefined,
+          reviziyaField,
         );
         if (!gate.ok) {
           await writePunchAudit({

@@ -753,6 +753,13 @@ router.post("/tasks", requireAuth, async (req: AuthRequest, res): Promise<void> 
     res.status(400).json({ error: "Ijrochi tanlanishi shart" });
     return;
   }
+  for (const a of list) {
+    const uid = await resolveNotifyUserId(a.kind, a.id);
+    if (uid != null && uid === req.userId) {
+      res.status(400).json({ error: "O‘zingizga vazifa qo‘yib bo‘lmaydi" });
+      return;
+    }
+  }
   if (list.length > 40) {
     res.status(400).json({ error: "Bir vaqtda 40 tadan ortiq xodimga berib bo‘lmaydi" });
     return;
@@ -1052,6 +1059,11 @@ router.patch("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<v
     const name = await resolveAssigneeName(kind, aid);
     if (!name) {
       res.status(400).json({ error: "Ijrochi topilmadi" });
+      return;
+    }
+    const assigneeUserId = await resolveNotifyUserId(kind, aid);
+    if (assigneeUserId != null && assigneeUserId === req.userId) {
+      res.status(400).json({ error: "O‘zingizga vazifa qo‘yib bo‘lmaydi" });
       return;
     }
     const changed =

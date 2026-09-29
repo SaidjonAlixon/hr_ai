@@ -348,6 +348,7 @@ export default function SmenaFilialPage() {
       if (!(p.orgRole === "pharmacist" || p.orgRole === "intern" || p.orgRole === "manager")) {
         return false;
       }
+      if (/xodim kerak/i.test(p.fullName)) return false;
       // Bo‘sh filial kartalari (masalan «16-йиллик · filial yo‘q») — xodim tanlashda kerak emas
       if (p.orgRole === "manager" && !p.assignedBranchName) return false;
       return true;

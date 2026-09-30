@@ -185,8 +185,8 @@ function denyIfAssigneeOverdue(
 
 /**
  * Ko‘rinish:
- * - sof admin / asoschi / direktor: Maxfiy + oddiy — hammasi (to‘liq kuzatuv)
- * - HR auditor: oddiy (Maxfiy emas) barcha topshiriqlar — faqat o‘rganish / ko‘rish
+ * - sof admin / asoschi / direktor: Maxfiy + oddiy — hammasi (to‘liq kuzatuv va boshqaruv)
+ * - HR direktor va HR auditor: oddiy (Maxfiy emas) barcha topshiriqlar — faqat ko‘rish
  * - beruvchi / oluvchi: o‘z vazifasi
  * - boshqalar: faqat o‘ziga tegishli
  */
@@ -198,15 +198,16 @@ function isPrivateTask(row: typeof tasksTable.$inferSelect): boolean {
   return meta.visibility === "private";
 }
 
-function isHrAuditorRole(role?: string | null) {
-  return (role ?? "").trim().toLowerCase() === "hr_auditor";
+function isTaskBrowseRole(role?: string | null) {
+  const r = (role ?? "").trim().toLowerCase();
+  return r === "hr_auditor" || r === "hr_direktor";
 }
 
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
   if (isStrictAdminRole(role) || isDirectorRole(role)) return true;
   if (isCreator(row, userId) || isAssignee(row, userId)) return true;
   // Auditor: Maxfiydan tashqari barcha topshiriqlarni ko‘radi (tahrirlash yo‘q)
-  if (isHrAuditorRole(role) && !isPrivateTask(row)) return true;
+  if (isTaskBrowseRole(role) && !isPrivateTask(row)) return true;
   return false;
 }
 

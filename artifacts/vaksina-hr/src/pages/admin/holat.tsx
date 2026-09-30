@@ -7,6 +7,7 @@ import { downloadHisobotPdf } from "../../lib/hisobot-pdf";
 import { Button } from "../../components/ui/button";
 import { Skeleton } from "../../components/ui/skeleton";
 import { HisobotPanel, daysAgoYmd, todayYmd } from "./hisobot-panel";
+import { HolatDashboardPanel } from "./holat-dashboard";
 import { BarChart3, Download, FileText, Loader2 } from "lucide-react";
 import { useToast } from "../../hooks/use-toast";
 import { useI18n } from "../../i18n/I18nProvider";
@@ -153,6 +154,12 @@ export default function AdminHolatPage() {
           </div>
         </div>
       </div>
+
+      <HolatDashboardPanel
+        data={data}
+        coordKey={data.scoped ? "" : dashCoordKey}
+        onCoordKey={setDashCoordKey}
+      />
 
       <HisobotPanel
         data={data}

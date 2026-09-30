@@ -455,10 +455,10 @@ function Controls({
         <button
           type="button"
           onClick={onRewind}
-          className="flex h-11 min-w-[5.25rem] touch-manipulation items-center justify-center gap-1.5 rounded-full bg-white/25 px-3 text-sm font-bold text-white active:bg-white/40"
+          className="flex h-8 min-w-[4.25rem] touch-manipulation items-center justify-center gap-1 rounded-full bg-white/20 px-2 text-xs font-semibold text-white active:bg-white/35"
           aria-label="10 soniya orqaga"
         >
-          <RotateCcw className="h-5 w-5" />
+          <RotateCcw className="h-3.5 w-3.5" />
           10 s
         </button>
         <span className="ml-auto text-[11px] tabular-nums text-white/90">
@@ -529,7 +529,7 @@ function Html5Restricted({
   const clampSeek = useCallback(() => {
     const el = ref.current;
     if (!el) return;
-    if (el.currentTime > maxRef.current + 0.35) {
+    if (el.currentTime > maxRef.current + 2) {
       el.currentTime = maxRef.current;
     }
   }, []);
@@ -555,10 +555,10 @@ function Html5Restricted({
         onTimeUpdate={() => {
           const el = ref.current;
           if (!el) return;
-          if (el.currentTime > maxRef.current + 0.35) {
-            el.currentTime = maxRef.current;
-            return;
-          }
+        if (el.currentTime > maxRef.current + 2) {
+          el.currentTime = maxRef.current;
+          return;
+        }
           maxRef.current = Math.max(maxRef.current, el.currentTime);
           setMaxWatched(maxRef.current);
           setCurrent(el.currentTime);
@@ -574,6 +574,20 @@ function Html5Restricted({
           report(el);
         }}
       />
+      {!playing ? (
+        <button
+          type="button"
+          className="absolute left-1/2 top-[42%] z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-900 shadow-md"
+          aria-label="Play"
+          onClick={() => {
+            reveal();
+            onPlaying?.();
+            void ref.current?.play();
+          }}
+        >
+          <Play className="ml-0.5 h-5 w-5 fill-current" />
+        </button>
+      ) : null}
       <TapSurface
         playing={playing}
         controlsVisible={showUi}
@@ -706,7 +720,7 @@ function YoutubeRestricted({
         hideYoutubeCaptions(p);
         const t = p.getCurrentTime();
         const d = p.getDuration() || 0;
-        if (t > maxRef.current + 0.4) {
+        if (t > maxRef.current + 2) {
           p.seekTo(maxRef.current, true);
           return;
         }
@@ -746,6 +760,20 @@ function YoutubeRestricted({
           Video yuklanmoqda...
         </div>
       )}
+      {!playing && ready ? (
+        <button
+          type="button"
+          className="absolute left-1/2 top-[42%] z-30 flex h-11 w-11 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white text-slate-900 shadow-md"
+          aria-label="Play"
+          onClick={() => {
+            reveal();
+            onPlaying?.();
+            playerRef.current?.playVideo();
+          }}
+        >
+          <Play className="ml-0.5 h-5 w-5 fill-current" />
+        </button>
+      ) : null}
       <TapSurface
         playing={playing}
         controlsVisible={showUi}

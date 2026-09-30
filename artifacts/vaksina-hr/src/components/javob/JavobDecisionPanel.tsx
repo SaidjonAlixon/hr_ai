@@ -97,7 +97,15 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
   const decideMut = useMutation({
     mutationFn: (p: { item: JavobRequestItem; action: "approve" | "reject"; note?: string }) =>
       p.action === "approve" ? approveJavobRequest(p.item.id, p.note) : rejectJavobRequest(p.item.id, p.note),
-    onMutate: (p) => setBusy((b) => ({ ...b, [p.item.id]: p.action })),
+    onMutate: async (p) => {
+      setBusy((b) => ({ ...b, [p.item.id]: p.action }));
+      await qc.cancelQueries({ queryKey: PENDING_KEY });
+      const snapshot = qc.getQueryData<PendingData>(PENDING_KEY);
+      qc.setQueryData<PendingData>(PENDING_KEY, (old) =>
+        old ? { ...old, items: old.items.filter((i) => i.id !== p.item.id) } : old,
+      );
+      return { snapshot };
+    },
     onSuccess: (res, p) => {
       qc.setQueryData<PendingData>(PENDING_KEY, (old) =>
         old ? { ...old, items: old.items.filter((i) => i.id !== p.item.id) } : old,
@@ -109,7 +117,8 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
       });
       void qc.invalidateQueries({ queryKey: ["javob-olish"] });
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _p, ctx) => {
+      if (ctx?.snapshot) qc.setQueryData(PENDING_KEY, ctx.snapshot);
       toast({ title: t("javob.decideFail"), description: e.message, variant: "destructive" });
       void qc.invalidateQueries({ queryKey: PENDING_KEY });
     },

@@ -9,6 +9,7 @@ import {
   db,
   darslikLessonsTable,
   darslikProgressTable,
+  darslikSectionsTable,
   usersTable,
   type DarslikLessonState,
   type DarslikLessonsMap,
@@ -34,6 +35,7 @@ const TRACK_LABEL: Record<Track, string> = {
 const DEFAULT_PASS_SCORE = 50;
 
 type LessonRow = typeof darslikLessonsTable.$inferSelect;
+type SectionRow = typeof darslikSectionsTable.$inferSelect;
 
 function parseTrack(raw: unknown): Track | null {
   const v = String(raw ?? "").trim().toLowerCase();
@@ -52,6 +54,18 @@ function videoKind(l: LessonRow): "youtube" | "drive" | null {
   if ((l.youtubeId || "").trim()) return "youtube";
   if (l.videoDriveFileId) return "drive";
   return null;
+}
+
+async function loadSections(track: Track, opts?: { includeDrafts?: boolean }) {
+  return db
+    .select()
+    .from(darslikSectionsTable)
+    .where(
+      opts?.includeDrafts
+        ? eq(darslikSectionsTable.track, track)
+        : and(eq(darslikSectionsTable.track, track), eq(darslikSectionsTable.published, true)),
+    )
+    .orderBy(asc(darslikSectionsTable.position), asc(darslikSectionsTable.id));
 }
 
 async function loadLessons(track: Track, opts?: { includeDrafts?: boolean }) {
@@ -87,14 +101,20 @@ async function getOrCreateProgress(userId: number, track: Track) {
   return again!;
 }
 
-/** Oldingi barcha darslar o‘tilgan bo‘lsagina dars ochiq */
-function unlockedIds(lessons: LessonRow[], map: DarslikLessonsMap): Set<number> {
-  const open = new Set<number>();
-  for (const l of lessons) {
-    open.add(l.id);
-    if (!map[String(l.id)]?.passed) break;
+/** Bo‘limlar ketma-ket: oldingi bo‘limdagi darslar o‘tilmasa keyingisi yopiq */
+function lockMap(sections: SectionRow[], lessons: LessonRow[], map: DarslikLessonsMap, preview: boolean) {
+  const lessonsLocked = new Map<number, boolean>();
+  const sectionsLocked = new Map<number, boolean>();
+  let blocked = false;
+  for (const section of sections) {
+    sectionsLocked.set(section.id, preview ? false : blocked);
+    const list = lessons.filter((l) => l.sectionId === section.id);
+    for (const l of list) {
+      lessonsLocked.set(l.id, preview ? false : blocked);
+      if (!preview && !map[String(l.id)]?.passed) blocked = true;
+    }
   }
-  return open;
+  return { lessonsLocked, sectionsLocked };
 }
 
 function summarize(lessons: LessonRow[], map: DarslikLessonsMap) {
@@ -199,7 +219,7 @@ function parseLessonBody(body: Record<string, unknown> | undefined): LessonInput
   const qs = parseQuestions(body?.questions);
   if (!Array.isArray(qs)) return qs;
 
-  if (!youtubeId && !videoDriveFileId && !driveFileId && qs.length === 0) {
+  if (!youtubeId && !videoDriveFileId && !driveFileId && qs.length === 0 && body?.published !== false) {
     return { error: "Video, slayd (PDF) yoki kamida bitta test savolini qo‘shing" };
   }
 
@@ -228,6 +248,7 @@ function manageLesson(l: LessonRow) {
   return {
     id: l.id,
     track: l.track,
+    sectionId: l.sectionId,
     position: l.position,
     title: l.title,
     description: l.description,
@@ -265,19 +286,36 @@ function resolveLearnerTrack(req: AuthRequest, res: Response): { track: Track; p
 }
 
 async function buildMePayload(userId: number, track: Track, preview: boolean) {
-  const lessons = await loadLessons(track);
+  const sections = await loadSections(track);
+  const sectionIds = new Set(sections.map((s) => s.id));
+  const lessons = (await loadLessons(track)).filter((l) => l.sectionId != null && sectionIds.has(l.sectionId));
   const progress = preview ? null : await getOrCreateProgress(userId, track);
   const map: DarslikLessonsMap = (progress?.lessonsJson as DarslikLessonsMap) || {};
-  const open = preview ? new Set(lessons.map((l) => l.id)) : unlockedIds(lessons, map);
+  const locked = lockMap(sections, lessons, map, preview);
+  const flat = sections.flatMap((s) => lessons.filter((l) => l.sectionId === s.id));
   return {
     track,
     trackLabel: TRACK_LABEL[track],
     preview,
-    lessons: lessons.map((l, i) =>
-      publicLesson(l, i, map[String(l.id)] || emptyState(), !open.has(l.id)),
+    sections: sections.map((s) => {
+      const list = lessons.filter((l) => l.sectionId === s.id);
+      return {
+        id: s.id,
+        title: s.title,
+        description: s.description,
+        coverUrl: s.coverUrl || "",
+        locked: Boolean(locked.sectionsLocked.get(s.id)),
+        summary: summarize(list, map),
+        lessons: list.map((l, i) =>
+          publicLesson(l, i, map[String(l.id)] || emptyState(), Boolean(locked.lessonsLocked.get(l.id))),
+        ),
+      };
+    }),
+    lessons: flat.map((l, i) =>
+      publicLesson(l, i, map[String(l.id)] || emptyState(), Boolean(locked.lessonsLocked.get(l.id))),
     ),
     summary: {
-      ...summarize(lessons, map),
+      ...summarize(flat, map),
       completedAt: progress?.completedAt ? progress.completedAt.toISOString() : null,
     },
   };
@@ -309,18 +347,20 @@ async function learnerLessonContext(req: AuthRequest, res: Response) {
   }
   const id = Number(req.params.id);
   const lessons = await loadLessons(own);
+  const sections = await loadSections(own);
   const lesson = lessons.find((l) => l.id === id);
-  if (!lesson) {
+  if (!lesson || !sections.some((s) => s.id === lesson.sectionId)) {
     res.status(404).json({ error: "Dars topilmadi" });
     return null;
   }
   const progress = await getOrCreateProgress(req.userId!, own);
   const map: DarslikLessonsMap = { ...((progress.lessonsJson as DarslikLessonsMap) || {}) };
-  if (!unlockedIds(lessons, map).has(id)) {
+  const visible = lessons.filter((l) => sections.some((s) => s.id === l.sectionId));
+  if (lockMap(sections, visible, map, false).lessonsLocked.get(id)) {
     res.status(400).json({ error: "Avval oldingi darsni yakunlang" });
     return null;
   }
-  return { track: own, lessons, lesson, progress, map };
+  return { track: own, lessons: visible, lesson, progress, map };
 }
 
 router.get("/darsliklar/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -397,6 +437,7 @@ router.get("/darsliklar/manage", requireAuth, async (req: AuthRequest, res): Pro
   if (!requireManager(req, res)) return;
   const track = parseTrack(req.query.track) || "stajyor";
   const lessons = await loadLessons(track, { includeDrafts: true });
+  const sections = await loadSections(track, { includeDrafts: true });
 
   const counts = await Promise.all(
     TRACKS.map(async (t) => {
@@ -404,7 +445,11 @@ router.get("/darsliklar/manage", requireAuth, async (req: AuthRequest, res): Pro
         .select({ id: darslikLessonsTable.id, published: darslikLessonsTable.published })
         .from(darslikLessonsTable)
         .where(eq(darslikLessonsTable.track, t));
-      return [t, { total: rows.length, published: rows.filter((r) => r.published).length }] as const;
+      const secs = await db
+        .select({ id: darslikSectionsTable.id })
+        .from(darslikSectionsTable)
+        .where(eq(darslikSectionsTable.track, t));
+      return [t, { total: rows.length, published: rows.filter((r) => r.published).length, sections: secs.length }] as const;
     }),
   );
 
@@ -412,6 +457,17 @@ router.get("/darsliklar/manage", requireAuth, async (req: AuthRequest, res): Pro
     track,
     trackLabel: TRACK_LABEL[track],
     tracks: TRACKS.map((t) => ({ key: t, label: TRACK_LABEL[t], ...Object.fromEntries(counts)[t] })),
+    sections: sections.map((s) => ({
+      id: s.id,
+      track: s.track,
+      position: s.position,
+      title: s.title,
+      description: s.description,
+      coverUrl: s.coverUrl || "",
+      published: s.published,
+      lessonCount: lessons.filter((l) => l.sectionId === s.id).length,
+      publishedCount: lessons.filter((l) => l.sectionId === s.id && l.published).length,
+    })),
     lessons: lessons.map(manageLesson),
   });
 });
@@ -428,12 +484,19 @@ router.post("/darsliklar/manage", requireAuth, async (req: AuthRequest, res): Pr
     res.status(400).json({ error: input.error });
     return;
   }
-  const existing = await loadLessons(track, { includeDrafts: true });
+  const sectionId = Number(req.body?.sectionId);
+  const [section] = await db.select().from(darslikSectionsTable).where(eq(darslikSectionsTable.id, sectionId)).limit(1);
+  if (!section || section.track !== track) {
+    res.status(400).json({ error: "Avval bo‘limni tanlang" });
+    return;
+  }
+  const existing = (await loadLessons(track, { includeDrafts: true })).filter((l) => l.sectionId === sectionId);
   const position = existing.length ? Math.max(...existing.map((l) => l.position)) + 1 : 1;
   const [created] = await db
     .insert(darslikLessonsTable)
     .values({
       track,
+      sectionId,
       position,
       ...input,
       createdById: req.userId ?? null,
@@ -504,14 +567,16 @@ router.delete("/darsliklar/manage/:id", requireAuth, async (req: AuthRequest, re
 router.post("/darsliklar/manage/reorder", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireManager(req, res)) return;
   const track = parseTrack(req.body?.track);
+  const sectionId = Number(req.body?.sectionId);
   const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
   if (!track || !ids.length) {
     res.status(400).json({ error: "Tartib noto‘g‘ri" });
     return;
   }
   const lessons = await loadLessons(track, { includeDrafts: true });
-  const known = new Set(lessons.map((l) => l.id));
-  if (ids.length !== lessons.length || ids.some((id: number) => !known.has(id))) {
+  const pool = Number.isInteger(sectionId) && sectionId > 0 ? lessons.filter((l) => l.sectionId === sectionId) : lessons;
+  const known = new Set(pool.map((l) => l.id));
+  if (ids.length !== pool.length || ids.some((id: number) => !known.has(id))) {
     res.status(400).json({ error: "Darslar ro‘yxati eskirgan — sahifani yangilang" });
     return;
   }
@@ -531,6 +596,7 @@ router.post("/darsliklar/manage/reorder", requireAuth, async (req: AuthRequest, 
 router.get("/darsliklar/manage/results", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireManager(req, res)) return;
   const track = parseTrack(req.query.track) || "stajyor";
+  const sections = await loadSections(track, { includeDrafts: true });
   const lessons = await loadLessons(track);
   const users = await db
     .select({ id: usersTable.id, fullName: usersTable.fullName })
@@ -555,7 +621,8 @@ router.get("/darsliklar/manage/results", requireAuth, async (req: AuthRequest, r
 
   res.json({
     track,
-    lessons: lessons.map((l, i) => ({ id: l.id, number: i + 1, title: l.title })),
+    sections: sections.map((s) => ({ id: s.id, title: s.title, coverUrl: s.coverUrl || "" })),
+    lessons: lessons.map((l, i) => ({ id: l.id, number: i + 1, title: l.title, sectionId: l.sectionId })),
     learners: users.map((u) => {
       const p = byUser.get(u.id);
       const map = (p?.lessonsJson as DarslikLessonsMap) || {};
@@ -579,6 +646,124 @@ router.get("/darsliklar/manage/results", requireAuth, async (req: AuthRequest, r
       };
     }),
   });
+});
+
+function parseCover(raw: unknown): string | { error: string } {
+  const url = String(raw ?? "").trim();
+  if (!url) return "";
+  if (url.length > 2000) return { error: "Muqova manzili juda uzun" };
+  if (url.startsWith("/api/uploads/")) return url;
+  if (/^https:\/\/.+/i.test(url)) return url;
+  return { error: "Muqova rasmini yuklang" };
+}
+
+router.post("/darsliklar/manage/sections", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const track = parseTrack(req.body?.track);
+  const title = String(req.body?.title ?? "").trim().slice(0, 140);
+  if (!track) {
+    res.status(400).json({ error: "Yo‘nalishni tanlang" });
+    return;
+  }
+  if (!title) {
+    res.status(400).json({ error: "Bo‘lim nomini yozing" });
+    return;
+  }
+  const cover = parseCover(req.body?.coverUrl);
+  if (typeof cover !== "string") {
+    res.status(400).json({ error: cover.error });
+    return;
+  }
+  const existing = await loadSections(track, { includeDrafts: true });
+  const position = existing.length ? Math.max(...existing.map((s) => s.position)) + 1 : 1;
+  const [created] = await db
+    .insert(darslikSectionsTable)
+    .values({
+      track,
+      position,
+      title,
+      description: String(req.body?.description ?? "").trim().slice(0, 600),
+      coverUrl: cover,
+      published: req.body?.published === undefined ? true : Boolean(req.body.published),
+      createdById: req.userId ?? null,
+      updatedById: req.userId ?? null,
+    })
+    .returning();
+  res.status(201).json({ section: created });
+});
+
+router.put("/darsliklar/manage/sections/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const id = Number(req.params.id);
+  const title = String(req.body?.title ?? "").trim().slice(0, 140);
+  if (!title) {
+    res.status(400).json({ error: "Bo‘lim nomini yozing" });
+    return;
+  }
+  const cover = parseCover(req.body?.coverUrl);
+  if (typeof cover !== "string") {
+    res.status(400).json({ error: cover.error });
+    return;
+  }
+  const [updated] = await db
+    .update(darslikSectionsTable)
+    .set({
+      title,
+      description: String(req.body?.description ?? "").trim().slice(0, 600),
+      coverUrl: cover,
+      published: req.body?.published === undefined ? true : Boolean(req.body.published),
+      updatedById: req.userId ?? null,
+      updatedAt: new Date(),
+    })
+    .where(eq(darslikSectionsTable.id, id))
+    .returning();
+  if (!updated) {
+    res.status(404).json({ error: "Bo‘lim topilmadi" });
+    return;
+  }
+  res.json({ section: updated });
+});
+
+router.delete("/darsliklar/manage/sections/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const id = Number(req.params.id);
+  const lessons = await db
+    .select({ id: darslikLessonsTable.id })
+    .from(darslikLessonsTable)
+    .where(eq(darslikLessonsTable.sectionId, id))
+    .limit(1);
+  if (lessons.length) {
+    res.status(409).json({ error: "Avval shu bo‘limdagi darslarni o‘chiring" });
+    return;
+  }
+  const deleted = await db.delete(darslikSectionsTable).where(eq(darslikSectionsTable.id, id)).returning({ id: darslikSectionsTable.id });
+  if (!deleted.length) {
+    res.status(404).json({ error: "Bo‘lim topilmadi" });
+    return;
+  }
+  res.json({ ok: true });
+});
+
+router.post("/darsliklar/manage/sections/reorder", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const track = parseTrack(req.body?.track);
+  const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+  if (!track || !ids.length) {
+    res.status(400).json({ error: "Tartib noto‘g‘ri" });
+    return;
+  }
+  const sections = await loadSections(track, { includeDrafts: true });
+  const known = new Set(sections.map((s) => s.id));
+  if (ids.length !== sections.length || ids.some((id: number) => !known.has(id))) {
+    res.status(400).json({ error: "Bo‘limlar ro‘yxati eskirgan — sahifani yangilang" });
+    return;
+  }
+  await db.transaction(async (tx) => {
+    for (let i = 0; i < ids.length; i++) {
+      await tx.update(darslikSectionsTable).set({ position: i + 1 }).where(eq(darslikSectionsTable.id, ids[i]));
+    }
+  });
+  res.json({ ok: true });
 });
 
 export default router;

@@ -209,7 +209,11 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
   const exams = await db
     .select()
     .from(attestatsiyaExamsTable)
-    .where(and(eq(attestatsiyaExamsTable.track, who.track), eq(attestatsiyaExamsTable.published, true)))
+    .where(
+      who.preview
+        ? eq(attestatsiyaExamsTable.track, who.track)
+        : and(eq(attestatsiyaExamsTable.track, who.track), eq(attestatsiyaExamsTable.published, true)),
+    )
     .orderBy(desc(attestatsiyaExamsTable.startsAt))
     .limit(60);
   const examById = new Map(exams.map((e) => [e.id, e]));
@@ -233,7 +237,11 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
     .map((e) => {
       const mine = attempts.filter((a) => a.examId === e.id);
       const latest = latestOf(mine);
-      const policy = who.preview ? { canStart: false, canResume: false, reason: "Ko‘rish rejimi" } : startPolicy(e, mine);
+      const policy = who.preview
+        ? (e.questionsJson || []).length
+          ? { canStart: true, canResume: false, reason: null as string | null }
+          : { canStart: false, canResume: false, reason: "Testda savollar yo‘q" }
+        : startPolicy(e, mine);
       return {
         id: e.id,
         title: e.title,
@@ -247,6 +255,7 @@ router.get("/atestatsiya/me", requireAuth, async (req: AuthRequest, res): Promis
         startsAt: e.startsAt.toISOString(),
         endsAt: e.endsAt.toISOString(),
         window: windowState(e),
+        published: e.published,
         attempt: latest ? learnerAttempt(latest, e, false) : null,
         attemptsCount: mine.length,
         ...policy,
@@ -405,6 +414,91 @@ router.post("/atestatsiya/me/exams/:id/start", requireAuth, async (req: AuthRequ
     return;
   }
   res.json({ attempt: learnerAttempt(attempt, exam, true), serverNow: new Date().toISOString(), resumed: !created });
+});
+
+function practiceAttempt(exam: Exam, withQuestions: boolean, order: string[]) {
+  const now = new Date();
+  const deadline = new Date(now.getTime() + exam.durationMinutes * 60_000);
+  const byId = new Map((exam.questionsJson || []).map((q) => [q.id, q]));
+  return {
+    id: 0,
+    attemptNo: 0,
+    status: "in_progress" as const,
+    startedAt: now.toISOString(),
+    deadlineAt: deadline.toISOString(),
+    submittedAt: null,
+    answeredCount: 0,
+    total: order.length,
+    score: null,
+    correct: null,
+    passed: null,
+    resultHidden: false,
+    locationLabel: "Ko‘rish rejimi",
+    retakeAllowed: false,
+    annulReason: null,
+    questions: withQuestions
+      ? order
+          .map((id) => byId.get(id))
+          .filter((q): q is NonNullable<typeof q> => Boolean(q))
+          .map((q) => ({ id: q.id, text: q.text, options: q.options }))
+      : undefined,
+    answers: {} as Record<string, number>,
+  };
+}
+
+/** Trener / admin sinovi — urinish yozilmaydi, GPS va oyna tekshirilmaydi */
+router.post("/atestatsiya/preview/exams/:id/start", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const examId = Number(req.params.id);
+  const [exam] = await db.select().from(attestatsiyaExamsTable).where(eq(attestatsiyaExamsTable.id, examId)).limit(1);
+  if (!exam) {
+    res.status(404).json({ error: "Test topilmadi" });
+    return;
+  }
+  const ids = (exam.questionsJson || []).map((q) => q.id);
+  if (!ids.length) {
+    res.status(409).json({ error: "Testda savollar yo‘q" });
+    return;
+  }
+  const order = exam.shuffleQuestions ? shuffled(ids) : ids;
+  res.json({
+    attempt: practiceAttempt(exam, true, order),
+    serverNow: new Date().toISOString(),
+    practice: true,
+  });
+});
+
+router.post("/atestatsiya/preview/exams/:id/score", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireManager(req, res)) return;
+  const examId = Number(req.params.id);
+  const [exam] = await db.select().from(attestatsiyaExamsTable).where(eq(attestatsiyaExamsTable.id, examId)).limit(1);
+  if (!exam) {
+    res.status(404).json({ error: "Test topilmadi" });
+    return;
+  }
+  const answers = sanitizeAnswers(exam, req.body?.answers);
+  const g = grade(exam, answers);
+  const now = new Date().toISOString();
+  res.json({
+    attempt: {
+      id: 0,
+      attemptNo: 0,
+      status: "submitted",
+      startedAt: now,
+      deadlineAt: now,
+      submittedAt: now,
+      answeredCount: Object.keys(answers).length,
+      total: g.total,
+      score: g.score,
+      correct: g.correct,
+      passed: g.passed,
+      resultHidden: false,
+      locationLabel: "Ko‘rish rejimi",
+      retakeAllowed: false,
+      annulReason: null,
+    },
+    serverNow: now,
+  });
 });
 
 async function loadOwnAttempt(req: AuthRequest, res: Response) {

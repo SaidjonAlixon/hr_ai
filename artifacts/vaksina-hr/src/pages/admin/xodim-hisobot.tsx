@@ -7,6 +7,7 @@ import { useToast } from "../../hooks/use-toast";
 import {
   fetchXodimReport,
   searchXodimlar,
+  publicVerifyUrl,
   sealXodimReport,
   PLATFORM_START,
   XODIM_STATUS_OPTIONS,
@@ -226,7 +227,7 @@ export default function XodimHisobotPage() {
     setPdfing(true);
     try {
       const active = wantSeal && seal ? seal : null;
-      const verifyUrl = active ? `${window.location.origin}${active.verifyPath}` : "";
+      const verifyUrl = active ? publicVerifyUrl(active.verifyPath) : "";
       await downloadXodimHisobotPdf(
         sheetRoot.current,
         active ? active.report : report,
@@ -256,7 +257,7 @@ export default function XodimHisobotPage() {
           sealedAt: seal.sealedAt,
           title: seal.title,
           approverLine: seal.approverLine,
-          verifyUrl: `${window.location.origin}${seal.verifyPath}`,
+          verifyUrl: publicVerifyUrl(seal.verifyPath),
         }
       : null;
 
@@ -462,7 +463,7 @@ export default function XodimHisobotPage() {
                 {sealing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
               </span>
               <span className="mt-2 block text-xs leading-relaxed text-slate-500">
-                Belgilansa, hisobot yopiladi: sana, soat va «Tasdiqlaydi platforma mas'uli Saidmuhammadalixon» yozuvi hamda QR chiqadi. QR ochilganda hujjatda yashil «TASDIQLANGAN» pechati turadi.
+                Belgilansa, hisobot yopiladi: sana, soat va «Tasdiqlaydi platforma masʼuli Saidmuhammadalixon» yozuvi hamda QR chiqadi. QR ochilganda hujjatda yashil «TASDIQLANGAN» pechati turadi.
               </span>
             </label>
             <div className="rounded-xl bg-slate-50 p-3 ring-1 ring-slate-200">

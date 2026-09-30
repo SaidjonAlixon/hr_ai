@@ -117,7 +117,7 @@ import {
   type TaskAttachment,
 } from "@/lib/vazifalar-api";
 
-import { userRoleLabel } from "@/lib/roles";
+import { isDirectorRole, normalizeUserRole, userRoleLabel } from "@/lib/roles";
 import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
@@ -472,6 +472,8 @@ export default function VazifalarPage() {
   const canBrowseAll = canBrowseAllTasks(user?.role);
   const canSeePrivate = canSeePrivateTasks(user?.role);
   const isAuditViewer = isTaskAuditViewer(user?.role);
+  const opensOnFullBoard =
+    isDirectorRole(user?.role) || normalizeUserRole(user?.role) === "hr_direktor";
 
   const [search, setSearch] = useState(deepQ || "");
   const [viewMode, setViewMode] = useState<BoardView>(() => {
@@ -533,6 +535,7 @@ export default function VazifalarPage() {
   const [activeTask, setActiveTask] = useState<Vazifa | null>(null);
   const [createDueAt, setCreateDueAt] = useState<string | null>(null);
   const deepLinkHandled = useRef<string | null>(null);
+  const fullBoardOpened = useRef(false);
 
   const [completionNote, setCompletionNote] = useState("");
   const [completionFiles, setCompletionFiles] = useState<TaskAttachment[]>([]);
@@ -547,6 +550,12 @@ export default function VazifalarPage() {
   useEffect(() => {
     if (deepQ && !deepAssigneeKind) setSearch(deepQ);
   }, [deepQ, deepAssigneeKind]);
+
+  useEffect(() => {
+    if (fullBoardOpened.current || !opensOnFullBoard) return;
+    fullBoardOpened.current = true;
+    setAssigneeFilter("all");
+  }, [opensOnFullBoard]);
 
   useEffect(() => {
     if (!deepTaskId || !tasks.length) return;

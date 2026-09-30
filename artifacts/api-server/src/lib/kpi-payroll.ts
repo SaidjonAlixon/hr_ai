@@ -228,17 +228,90 @@ export function expectedWorkdays(from: string, to: string, month: string, overri
   return workdaysBetween(from, closeTo, overrides);
 }
 
-export async function loadWorkDayOverrides(): Promise<Map<string, boolean>> {
-  const map = new Map<string, boolean>();
+/** Ofis — oddiy ofis xodimlari bitta kalendar. Xavfsizlik alohida. Dorixona har smena alohida. */
+export function isPayrollCalendarScope(scope: string) {
+  return scope === "ofis" || scope === "xavfsizlik" || /^dorixona:[a-z0-9]{1,16}$/.test(scope);
+}
+
+export function calendarStorageKey(scope: string, iso: string) {
+  if (scope === "ofis") return iso;
+  return `${scope}|${iso}`;
+}
+
+export function parseCalendarStorageKey(raw: string): { scope: string; iso: string } | null {
+  const scoped = /^([a-z0-9:_-]{1,40})\|(\d{4}-\d{2}-\d{2})$/.exec(raw);
+  if (scoped && isPayrollCalendarScope(scoped[1]!)) return { scope: scoped[1]!, iso: scoped[2]! };
+  if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return { scope: "ofis", iso: raw };
+  return null;
+}
+
+function normPayroll(s: unknown) {
+  return String(s ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[ʻʼ'`´]/g, "'");
+}
+
+function payrollShiftKey(shiftType?: string | null, shiftLabel?: string | null) {
+  const compact = normPayroll(shiftLabel).replace(/\s+/g, "");
+  const t = normPayroll(shiftType);
+  if (compact.includes("1+2") || compact.includes("1-2") || t === "one_two" || t === "12") return "12";
+  if (compact.includes("2+3") || compact.includes("2-3") || t === "two_three" || t === "23") return "23";
+  if (t === "three" || t === "3" || compact.includes("3-smena") || compact === "3smena") return "3";
+  if (t === "two" || t === "2" || compact.includes("2-smena") || compact === "2smena") return "2";
+  if (t === "office" || compact.includes("ofis")) return "office";
+  if (t === "one" || t === "1" || compact.includes("1-smena") || compact === "1smena" || !t) return "1";
+  return "other";
+}
+
+export function payrollCalendarScope(input: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+  location?: string | null;
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+}) {
+  const role = normPayroll(input.userRole);
+  const org = normPayroll(input.orgRole);
+  const pos = normPayroll(input.position);
+  if (role === "sb" || role === "sb_boshliq" || /xavfsiz/.test(role) || /xavfsiz/.test(pos)) {
+    return "xavfsizlik";
+  }
+  const dorixonaRole = new Set(["mudir", "farmasevt", "stajyor", "stajor", "koordinator"]);
+  const dorixonaOrg = new Set(["manager", "pharmacist", "intern", "supervisor", "coordinator", "mudir", "farmasevt", "stajyor"]);
+  const hay = `${org} ${role} ${pos}`;
+  const dorixona =
+    dorixonaRole.has(role) ||
+    dorixonaOrg.has(org) ||
+    /\b(mudir|farmasevt|stajyor|stajor|koordinator|pharmacist|manager|intern|supervisor)\b/.test(hay) ||
+    /filial\s*mudir/.test(pos);
+  if (dorixona) return `dorixona:${payrollShiftKey(input.shiftType, input.shiftLabel)}`;
+  return "ofis";
+}
+
+export async function loadScopedCalendars(): Promise<Map<string, Map<string, boolean>>> {
+  const out = new Map<string, Map<string, boolean>>();
   try {
     const rows = await db
       .select({ day: workCalendarDaysTable.day, isWork: workCalendarDaysTable.isWork })
       .from(workCalendarDaysTable);
-    for (const r of rows) map.set(r.day, Boolean(r.isWork));
+    for (const r of rows) {
+      const parsed = parseCalendarStorageKey(r.day);
+      if (!parsed) continue;
+      const bucket = out.get(parsed.scope) ?? new Map<string, boolean>();
+      bucket.set(parsed.iso, Boolean(r.isWork));
+      out.set(parsed.scope, bucket);
+    }
   } catch (err) {
-    console.error("loadWorkDayOverrides", err);
+    console.error("loadScopedCalendars", err);
   }
-  return map;
+  return out;
+}
+
+export async function loadWorkDayOverrides(scope = "ofis"): Promise<Map<string, boolean>> {
+  const all = await loadScopedCalendars();
+  return all.get(scope) ?? new Map();
 }
 
 function round1(n: number) {
@@ -348,7 +421,7 @@ function effectiveWeights(
 export async function computePayroll(userId: number, monthKey: string): Promise<PayrollCompute | null> {
   const { month, from, to, monthLabel } = monthBounds(monthKey);
   const weights = await loadKpiWeights();
-  const workOverrides = await loadWorkDayOverrides();
+  const scopedCalendars = await loadScopedCalendars();
 
   const [user] = await db
     .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role })
@@ -361,6 +434,9 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
     id: number;
     position: string | null;
     location: string | null;
+    orgRole: string | null;
+    shiftType: string | null;
+    shiftLabel: string | null;
     fixedSalary: number | null;
     bonusPercent: number | null;
   };
@@ -371,6 +447,9 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
         id: employeesTable.id,
         position: employeesTable.position,
         location: employeesTable.location,
+        orgRole: employeesTable.orgRole,
+        shiftType: employeesTable.shiftType,
+        shiftLabel: employeesTable.shiftLabel,
         fixedSalary: employeesTable.fixedSalary,
         bonusPercent: employeesTable.bonusPercent,
       })
@@ -388,7 +467,9 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
       .from(employeesTable)
       .where(eq(employeesTable.userId, userId))
       .limit(1);
-    emp = row ? { ...row, fixedSalary: 0, bonusPercent: 30 } : undefined;
+    emp = row
+      ? { ...row, orgRole: null, shiftType: null, shiftLabel: null, fixedSalary: 0, bonusPercent: 30 }
+      : undefined;
   }
 
   const fixedSalary = Math.max(0, Math.round(Number(emp?.fixedSalary ?? 0)));
@@ -427,7 +508,15 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
       console.error("computePayroll attendance", userId, err);
     }
   }
-  const expected = expectedWorkdays(from, to, month, workOverrides);
+  const calendarScope = payrollCalendarScope({
+    userRole: user.role,
+    orgRole: emp?.orgRole,
+    position: emp?.position,
+    location: emp?.location,
+    shiftType: emp?.shiftType,
+    shiftLabel: emp?.shiftLabel,
+  });
+  const expected = expectedWorkdays(from, to, month, scopedCalendars.get(calendarScope) ?? new Map());
   const recorded = new Set(attDays.map((d) => d.date));
   const complete = expected.length > 0 && expected.every((d) => recorded.has(d));
   const closedDays = expected.filter((d) => recorded.has(d)).length;
@@ -621,7 +710,13 @@ export type PayrollListRow = {
   roleLabel: string;
   position: string | null;
   branch: string | null;
+  shiftType: string | null;
+  shiftLabel: string | null;
+  calendarScope: string;
   fixedSalary: number;
+  salary: number;
+  jarima: number;
+  jarimaNote: string | null;
   bonusPercent: number;
   kpiPercent: number;
   bonusAmount: number;
@@ -718,11 +813,17 @@ function scoreTaskRows(rows: Array<{ status: string; dueAt: Date | null; complet
 export async function computePayrollList(
   monthKey: string,
   q = "",
-): Promise<{ month: string; monthLabel: string; workDays: string[]; items: PayrollListRow[] }> {
+): Promise<{ month: string; monthLabel: string; workDays: string[]; calendars: Record<string, string[]>; items: PayrollListRow[] }> {
   const { month, from, to, monthLabel } = monthBounds(monthKey);
-  const workOverrides = await loadWorkDayOverrides();
-  const workDays = workdaysBetween(from, to, workOverrides);
-  const expected = expectedWorkdays(from, to, month, workOverrides);
+  const scopedCalendars = await loadScopedCalendars();
+  const expectedByScope = new Map<string, string[]>();
+  const expectedFor = (scope: string) => {
+    const cached = expectedByScope.get(scope);
+    if (cached) return cached;
+    const days = expectedWorkdays(from, to, month, scopedCalendars.get(scope) ?? new Map());
+    expectedByScope.set(scope, days);
+    return days;
+  };
   const weights = await loadKpiWeights();
   const fromDt = new Date(`${from}T00:00:00+05:00`);
   const toDt = new Date(`${to}T23:59:59+05:00`);
@@ -829,13 +930,23 @@ export async function computePayrollList(
   }
 
   const statusByUser = new Map<number, string>();
+  const payByUser = new Map<number, { salary: number; jarima: number; note: string | null }>();
   if (userIds.length) {
     try {
       const saved = await db
-        .select({ userId: payrollMonthsTable.userId, status: payrollMonthsTable.status })
+        .select({
+          userId: payrollMonthsTable.userId,
+          status: payrollMonthsTable.status,
+          salary: payrollMonthsTable.fixedSalary,
+          jarima: payrollMonthsTable.jarima,
+          note: payrollMonthsTable.jarimaNote,
+        })
         .from(payrollMonthsTable)
         .where(and(eq(payrollMonthsTable.month, month), inArray(payrollMonthsTable.userId, userIds)));
-      for (const s of saved) statusByUser.set(s.userId, s.status);
+      for (const s of saved) {
+        statusByUser.set(s.userId, s.status);
+        payByUser.set(s.userId, { salary: s.salary, jarima: s.jarima, note: s.note });
+      }
     } catch (err) {
       console.error("payroll list months", err);
     }
@@ -846,6 +957,15 @@ export async function computePayrollList(
     const bonusPercent = Math.max(0, Number(u.bonusPercent ?? 30));
     const uid = u.userId;
     const empId = u.id;
+    const calendarScope = payrollCalendarScope({
+      userRole: u.userRole,
+      orgRole: u.orgRole,
+      position: u.position,
+      location: u.location,
+      shiftType: u.shiftType,
+      shiftLabel: u.shiftLabel,
+    });
+    const expected = expectedFor(calendarScope);
     const att = scoreAttendanceDays(attByEmp.get(empId) ?? [], weights.workStartHm, expected);
     const mergedTasks = [...(uid != null ? taskByUser.get(uid) ?? [] : []), ...(taskByEmp.get(empId) ?? [])];
     const tasks = scoreTaskRows(mergedTasks);
@@ -877,7 +997,13 @@ export async function computePayrollList(
       roleLabel: ROLE_LABELS[roleKey] || roleKey,
       position: u.position ?? null,
       branch: u.location ?? null,
+      shiftType: u.shiftType ?? null,
+      shiftLabel: u.shiftLabel ?? null,
+      calendarScope,
       fixedSalary,
+      salary: uid != null ? payByUser.get(uid)?.salary ?? 0 : 0,
+      jarima: uid != null ? payByUser.get(uid)?.jarima ?? 0 : 0,
+      jarimaNote: uid != null ? payByUser.get(uid)?.note ?? null : null,
       bonusPercent,
       kpiPercent: money.kpiPercent,
       bonusAmount: money.bonusAmount,
@@ -896,7 +1022,22 @@ export async function computePayrollList(
   });
 
   items.sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
-  return { month, monthLabel, workDays, items };
+  const scopeKeys = new Set<string>([
+    "ofis",
+    "xavfsizlik",
+    "dorixona:1",
+    "dorixona:2",
+    "dorixona:3",
+    "dorixona:12",
+    "dorixona:23",
+  ]);
+  for (const key of scopedCalendars.keys()) scopeKeys.add(key);
+  for (const item of items) scopeKeys.add(item.calendarScope);
+  const calendars: Record<string, string[]> = {};
+  for (const scope of scopeKeys) {
+    calendars[scope] = workdaysBetween(from, to, scopedCalendars.get(scope) ?? new Map());
+  }
+  return { month, monthLabel, workDays: calendars.ofis ?? [], calendars, items };
 }
 
 export async function upsertPayrollDraft(report: PayrollCompute, status?: string) {
@@ -934,4 +1075,141 @@ export async function upsertPayrollDraft(report: PayrollCompute, status?: string
 
 export function formatSom(n: number) {
   return `${Math.round(n).toLocaleString("ru-RU")} so‘m`;
+}
+
+export async function savePayrollLine(input: {
+  userId: number;
+  employeeId?: number | null;
+  month: string;
+  salary: number;
+  jarima: number;
+  note?: string | null;
+}) {
+  const salary = Math.max(0, Math.round(Number(input.salary) || 0));
+  const jarima = Math.max(0, Math.round(Number(input.jarima) || 0));
+  const note = String(input.note ?? "").trim().slice(0, 240) || null;
+  const net = salary - jarima;
+  const [existing] = await db
+    .select({ id: payrollMonthsTable.id })
+    .from(payrollMonthsTable)
+    .where(and(eq(payrollMonthsTable.userId, input.userId), eq(payrollMonthsTable.month, input.month)))
+    .limit(1);
+  const patch = {
+    employeeId: input.employeeId ?? null,
+    fixedSalary: salary,
+    jarima,
+    jarimaNote: note,
+    totalAmount: net,
+    updatedAt: new Date(),
+  };
+  if (existing) {
+    await db.update(payrollMonthsTable).set(patch).where(eq(payrollMonthsTable.id, existing.id));
+    return { ...patch, status: "kept" as const };
+  }
+  await db.insert(payrollMonthsTable).values({
+    userId: input.userId,
+    month: input.month,
+    status: "draft",
+    bonusPercent: 0,
+    kpiPercent: 0,
+    maxBonus: 0,
+    bonusAmount: 0,
+    ...patch,
+  });
+  return { ...patch, status: "draft" as const };
+}
+
+export async function loadPayrollSlip(userId: number, month: string) {
+  const [row] = await db
+    .select({
+      status: payrollMonthsTable.status,
+      salary: payrollMonthsTable.fixedSalary,
+      jarima: payrollMonthsTable.jarima,
+      note: payrollMonthsTable.jarimaNote,
+      approvedAt: payrollMonthsTable.approvedAt,
+    })
+    .from(payrollMonthsTable)
+    .where(and(eq(payrollMonthsTable.userId, userId), eq(payrollMonthsTable.month, month)))
+    .limit(1);
+  const [user] = await db
+    .select({ fullName: usersTable.fullName })
+    .from(usersTable)
+    .where(eq(usersTable.id, userId))
+    .limit(1);
+  const status = row?.status === "approved" || row?.status === "returned" ? row.status : "draft";
+  if (status !== "approved") {
+    return {
+      approved: false as const,
+      returned: status === "returned",
+      status,
+      month,
+      fullName: user?.fullName ?? "",
+    };
+  }
+  return {
+    approved: true as const,
+    returned: false as const,
+    status: "approved" as const,
+    month,
+    fullName: user?.fullName ?? "",
+    salary: row!.salary,
+    jarima: row!.jarima,
+    note: row!.note,
+    net: row!.salary - row!.jarima,
+    approvedAt: row!.approvedAt,
+  };
+}
+
+export async function loadPayrollYear(userId: number, year: string) {
+  const from = `${year}-01`;
+  const to = `${year}-12`;
+  const rows = await db
+    .select({
+      month: payrollMonthsTable.month,
+      status: payrollMonthsTable.status,
+      salary: payrollMonthsTable.fixedSalary,
+      jarima: payrollMonthsTable.jarima,
+    })
+    .from(payrollMonthsTable)
+    .where(and(eq(payrollMonthsTable.userId, userId), gte(payrollMonthsTable.month, from), lte(payrollMonthsTable.month, to)));
+  const months = rows
+    .map((row) => {
+      const approved = row.status === "approved";
+      return {
+        month: row.month,
+        status: row.status === "approved" || row.status === "returned" ? row.status : "draft",
+        salary: approved ? row.salary : 0,
+        jarima: approved ? row.jarima : 0,
+        net: approved ? row.salary - row.jarima : 0,
+      };
+    })
+    .sort((a, b) => a.month.localeCompare(b.month));
+  const approvedNet = months.reduce((sum, row) => sum + (row.status === "approved" ? row.net : 0), 0);
+  return { year, months, approvedNet };
+}
+
+export async function loadJarimaSummary(month: string, userId: number, manage: boolean) {
+  if (!manage) {
+    const slip = await loadPayrollSlip(userId, month);
+    return {
+      month,
+      own: true,
+      approved: slip.approved,
+      people: slip.approved && slip.jarima > 0 ? 1 : 0,
+      total: slip.approved ? slip.jarima : 0,
+    };
+  }
+  const rows = await db
+    .select({ jarima: payrollMonthsTable.jarima })
+    .from(payrollMonthsTable)
+    .where(eq(payrollMonthsTable.month, month));
+  let people = 0;
+  let total = 0;
+  for (const row of rows) {
+    if (row.jarima > 0) {
+      people += 1;
+      total += row.jarima;
+    }
+  }
+  return { month, own: false, approved: true, people, total };
 }

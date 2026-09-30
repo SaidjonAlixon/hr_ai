@@ -3,7 +3,7 @@ import ExcelJS from "exceljs";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canViewHolat, canViewHolatFull } from "../lib/roles";
-import { buildHolatReport, type HolatReport } from "../lib/holat";
+import { buildHolatReport, type HolatPerson, type HolatReport } from "../lib/holat";
 import { buildCoordinatorHisobot } from "../lib/holat-attendance-report";
 import {
   buildEmployeeAttendanceReport,
@@ -16,6 +16,37 @@ import {
 import { ensureAttendanceSealsSchema } from "../lib/ensure-schema";
 
 const router: IRouter = Router();
+
+/** null — butun tarmoq. Aks holda faqat shu koordinator/mudir daraxti. */
+async function scopePeople(req: AuthRequest): Promise<HolatPerson[] | null> {
+  if (canViewHolatFull(req.userRole)) return null;
+  const report = await buildHolatReport({
+    full: false,
+    scopeRole: req.userRole,
+    scopeUserId: req.userId,
+  });
+  const people: HolatPerson[] = [];
+  for (const c of report.coordinators) {
+    people.push(c);
+    for (const m of c.mudirs ?? []) {
+      people.push(m);
+      for (const s of m.staff ?? []) people.push(s);
+    }
+  }
+  return people;
+}
+
+function personInScope(
+  people: HolatPerson[] | null,
+  ids: { employeeId: number | null; userId: number | null },
+) {
+  if (!people) return true;
+  return people.some(
+    (p) =>
+      (ids.employeeId != null && p.employeeId === ids.employeeId) ||
+      (ids.userId != null && p.userId === ids.userId),
+  );
+}
 
 function navyTitle(sheet: ExcelJS.Worksheet, lastCol: number, text: string) {
   sheet.mergeCells(1, 1, 1, lastCol);
@@ -284,7 +315,17 @@ router.get("/holat/employees", requireAuth, async (req: AuthRequest, res): Promi
   }
   try {
     const q = typeof req.query.q === "string" ? req.query.q : "";
-    const employees = await searchEmployees(q);
+    const people = await scopePeople(req);
+    let employees = await searchEmployees(q);
+    if (people) {
+      const empIds = new Set(people.map((p) => p.employeeId).filter((id): id is number => id != null));
+      const userIds = new Set(people.map((p) => p.userId).filter((id): id is number => id != null));
+      employees = employees.filter(
+        (e) =>
+          (e.employeeId != null && empIds.has(e.employeeId)) ||
+          (e.userId != null && userIds.has(e.userId)),
+      );
+    }
     res.json({ employees });
   } catch (err) {
     console.error("GET /holat/employees error:", err);
@@ -317,6 +358,11 @@ router.get("/holat/employee-report", requireAuth, async (req: AuthRequest, res):
     return;
   }
   try {
+    const people = await scopePeople(req);
+    if (!personInScope(people, ids)) {
+      res.status(403).json({ error: "Bu xodim sizning hisobotingizda yo‘q" });
+      return;
+    }
     const report = await buildEmployeeAttendanceReport({
       ...ids,
       from: range.from,
@@ -350,6 +396,11 @@ router.post("/holat/employee-report/seal", requireAuth, async (req: AuthRequest,
     return;
   }
   try {
+    const people = await scopePeople(req);
+    if (!personInScope(people, ids)) {
+      res.status(403).json({ error: "Bu xodim sizning hisobotingizda yo‘q" });
+      return;
+    }
     await ensureAttendanceSealsSchema();
     const report = await buildEmployeeAttendanceReport({
       ...ids,

@@ -1,6 +1,7 @@
 import { asc } from "drizzle-orm";
 import { db, employeesTable, usersTable, departmentsTable } from "@workspace/db";
 import { displayBranchName } from "./geo-location";
+import { isVacancyPlaceholder } from "./vacancy-slot";
 
 const ORG_UZ: Record<string, string> = {
   coordinator: "Koordinator",
@@ -57,6 +58,8 @@ export type HolatPerson = {
   firstName: string;
   lastName: string;
   fullName: string;
+  /** Bog‘langan foydalanuvchi hisobidagi ism. */
+  accountName: string | null;
   position: string;
   orgRole: string | null;
   orgRoleLabel: string;
@@ -266,6 +269,7 @@ function toPerson(
     firstName: names.firstName,
     lastName: names.lastName,
     fullName: e.fullName,
+    accountName: u?.fullName?.trim() || null,
     position: e.position || ORG_UZ[org] || "—",
     orgRole: e.orgRole,
     orgRoleLabel: ORG_UZ[org] || e.orgRole || "—",
@@ -367,7 +371,9 @@ export async function buildHolatReport(opts: {
 
   const people = empRows.map((e) => toPerson(e, ctx));
 
-  const active = people.filter((p) => isActiveEmp(p.employmentStatus));
+  const active = people.filter(
+    (p) => isActiveEmp(p.employmentStatus) && !isVacancyPlaceholder(p),
+  );
   let coords = active.filter((p) => p.orgRole === "coordinator");
   const coordIds = new Set(coords.map((c) => c.employeeId));
   for (const p of active) {

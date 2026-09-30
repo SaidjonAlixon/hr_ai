@@ -19,7 +19,7 @@ import { scriptIncludes } from "./script-search";
 import { stripGpsSuffix } from "./geo-location";
 
 export const APPROVER_NAME = "Saidmuhammadalixon";
-export const APPROVER_LINE = "Tasdiqlaydi platforma mas'uli Saidmuhammadalixon";
+export const APPROVER_LINE = "Tasdiqlaydi platforma masʼuli Saidmuhammadalixon";
 export const SEALED_TITLE = "Hisobot VAKSINAMEDHR";
 
 export const DAY_STATUSES = ["present", "late", "absent", "incomplete", "leave", "planned", "rest"] as const;
@@ -1006,7 +1006,7 @@ export async function readEmployeeSeal(token: string): Promise<SealedEmployeeRep
   return {
     ...row.payload,
     approverName: row.approver_name || APPROVER_NAME,
-    approverLine: row.payload.approverLine || APPROVER_LINE,
+    approverLine: APPROVER_LINE,
     sealedAt: row.sealed_at ? new Date(row.sealed_at).toISOString() : row.payload.sealedAt,
   };
 }

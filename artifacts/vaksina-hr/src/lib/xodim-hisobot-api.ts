@@ -152,6 +152,30 @@ export type XodimSeal = {
   report: XodimReport;
 };
 
+/** Telefon skaneri kompyuterdagi localhost ni ochmaydi — haqiqiy sayt. */
+const PUBLIC_SITE_ORIGIN = "https://vaksina-hr.uz";
+
+function isLocalHost(host: string) {
+  return host === "localhost" || host === "127.0.0.1" || host === "[::1]";
+}
+
+/** QR ichidagi havola. Lokal sahifada ham https://vaksina-hr.uz ga yo‘naladi. */
+export function publicVerifyUrl(pathOrHref: string): string {
+  const raw = pathOrHref.trim();
+  const here = typeof window !== "undefined" ? window.location : null;
+  const base = here && !isLocalHost(here.hostname) ? here.origin : PUBLIC_SITE_ORIGIN;
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const u = new URL(raw);
+      if (!isLocalHost(u.hostname)) return raw;
+      return `${PUBLIC_SITE_ORIGIN}${u.pathname}${u.search}${u.hash}`;
+    } catch {
+      return raw;
+    }
+  }
+  return `${base}${raw.startsWith("/") ? raw : `/${raw}`}`;
+}
+
 export type XodimVerified = {
   kind: "employee-attendance";
   title: string;

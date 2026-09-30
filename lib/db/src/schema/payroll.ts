@@ -27,6 +27,8 @@ export const payrollMonthsTable = pgTable(
     maxBonus: integer("max_bonus").notNull().default(0),
     bonusAmount: integer("bonus_amount").notNull().default(0),
     totalAmount: integer("total_amount").notNull().default(0),
+    jarima: integer("jarima").notNull().default(0),
+    jarimaNote: text("jarima_note"),
     status: text("status").notNull().default("draft"),
     snapshot: jsonb("snapshot").$type<PayrollSnapshot>().notNull().default({}),
     computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),

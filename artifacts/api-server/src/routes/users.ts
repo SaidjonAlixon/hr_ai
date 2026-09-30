@@ -452,9 +452,8 @@ router.post("/users", requireAuth, async (req: AuthRequest, res): Promise<void> 
 
   try {
     let resolvedDeptId = departmentId ? parseInt(String(departmentId), 10) : null;
-    const autoDeptId = await resolveDepartmentIdForRole(role);
-    if (autoDeptId != null) {
-      resolvedDeptId = autoDeptId;
+    if (!resolvedDeptId) {
+      resolvedDeptId = await resolveDepartmentIdForRole(role);
     }
 
     const [user] = await db
@@ -708,11 +707,11 @@ router.patch("/users/:id", requireAuth, async (req: AuthRequest, res): Promise<v
   }
 
   const effectiveRole = (updates.role as string | undefined) || existing.role;
-  const autoDeptId = await resolveDepartmentIdForRole(effectiveRole);
-  if (autoDeptId != null) {
-    updates.departmentId = autoDeptId;
-  } else if (updates.departmentId !== undefined && updates.departmentId !== null) {
+  if (updates.departmentId !== undefined && updates.departmentId !== null && String(updates.departmentId) !== "") {
     updates.departmentId = parseInt(String(updates.departmentId), 10);
+  } else if (updates.role) {
+    const autoDeptId = await resolveDepartmentIdForRole(effectiveRole);
+    if (autoDeptId != null) updates.departmentId = autoDeptId;
   }
 
   if (typeof updates.fullName === "string") {

@@ -11,6 +11,7 @@ import {
   Loader2,
   MapPin,
   Pencil,
+  Play,
   Plus,
   Save,
   Trash2,
@@ -52,12 +53,15 @@ import {
   usePublishAttest,
   useRestoreAttempt,
   useSaveAttestExam,
+  startAttestPreview,
+  type AttestLearnerAttempt,
   type AttestManageExam,
   type AttestMonitorRow,
   type AttestQuestion,
   type AttestTrack,
 } from "@/lib/atestatsiya-api";
 import { exportAttestExcel, exportAttestPdf, exportAttestResultsExcel, exportAttestResultsPdf } from "@/lib/atestatsiya-export";
+import { ExamRunner } from "@/pages/atestatsiya";
 
 type Draft = {
   id: number | null;
@@ -649,6 +653,20 @@ export default function AtestatsiyaAdminPage() {
   const [editing, setEditing] = useState<Draft | null>(null);
   const [monitorId, setMonitorId] = useState<number | null>(null);
   const [toDelete, setToDelete] = useState<AttestManageExam | null>(null);
+  const [tryingId, setTryingId] = useState<number | null>(null);
+  const [practice, setPractice] = useState<{
+    title: string;
+    attempt: AttestLearnerAttempt;
+    serverNow: string;
+    examId: number;
+  } | null>(null);
+  const [trial, setTrial] = useState<{
+    title: string;
+    score: number | null;
+    correct: number | null;
+    total: number;
+    passed: boolean | null;
+  } | null>(null);
   const manage = useAttestManage(track, allowed);
   const publish = usePublishAttest();
   const remove = useDeleteAttest();
@@ -663,8 +681,43 @@ export default function AtestatsiyaAdminPage() {
   }
   const counts = new Map((manage.data?.tracks ?? []).map((t) => [t.key, t]));
 
+  const beginTrial = async (exam: AttestManageExam) => {
+    if (!exam.questions.length) {
+      toast({ title: "Testda savollar yo‘q", variant: "destructive" });
+      return;
+    }
+    setTryingId(exam.id);
+    try {
+      const res = await startAttestPreview(exam.id);
+      setTrial(null);
+      setPractice({ title: exam.title, attempt: res.attempt, serverNow: res.serverNow, examId: exam.id });
+    } catch (err) {
+      toast({ title: "Test ochilmadi", description: err instanceof Error ? err.message : "", variant: "destructive" });
+    } finally {
+      setTryingId(null);
+    }
+  };
+
   return (
     <div className="h-full min-h-0 overflow-y-auto">
+      {practice ? (
+        <ExamRunner
+          attempt={practice.attempt}
+          serverNow={practice.serverNow}
+          practiceExamId={practice.examId}
+          onDone={(result) => {
+            const title = practice.title;
+            setPractice(null);
+            setTrial({
+              title,
+              score: result.score,
+              correct: result.correct,
+              total: result.total,
+              passed: result.passed,
+            });
+          }}
+        />
+      ) : null}
       <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:py-8">
         <section className="surface-brand rounded-3xl p-5 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -735,6 +788,23 @@ export default function AtestatsiyaAdminPage() {
                 <Plus className="mr-1.5 h-4 w-4" /> Yangi atestatsiya
               </Button>
             )}
+            {trial ? (
+              <div
+                className={cn(
+                  "rounded-2xl border px-4 py-3 text-sm",
+                  trial.passed ? "border-emerald-200 bg-emerald-50 text-emerald-950" : "border-rose-200 bg-rose-50 text-rose-950",
+                )}
+              >
+                <p className="font-semibold">
+                  Sinov natijasi · {trial.title}
+                  {trial.score != null ? ` · ${trial.score}%` : ""}
+                  {trial.correct != null ? ` (${trial.correct}/${trial.total})` : ""}
+                </p>
+                <p className="mt-0.5 text-xs opacity-80">
+                  {trial.passed ? "O‘tish balidan o‘tdi." : "O‘tish bali yetmadi."} Bu sinov saqlanmadi, xodimlar ro‘yxatiga tushmaydi.
+                </p>
+              </div>
+            ) : null}
             {manage.isLoading ? (
               <Skeleton className="h-24 rounded-2xl" />
             ) : manage.isError ? (
@@ -762,7 +832,7 @@ export default function AtestatsiyaAdminPage() {
                           <p className="text-[11px] leading-snug text-muted-foreground">
                             {e.published
                               ? `Test ${audienceTo(track)} ko‘rinadi. Muddat ichida topshirishlari mumkin.`
-                              : `Hozir faqat trener ko‘radi. E’lon qilmaguncha ${audienceTo(track)} chiqmaydi.`}
+                              : `Xodimlarga chiqmaydi. Sinab ko‘rish mumkin — natija saqlanmaydi va ro‘yxatga tushmaydi.`}
                           </p>
                         </div>
                         <Button
@@ -790,6 +860,16 @@ export default function AtestatsiyaAdminPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-1">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8"
+                        disabled={tryingId === e.id || !e.questions.length}
+                        onClick={() => void beginTrial(e)}
+                      >
+                        {tryingId === e.id ? <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" /> : <Play className="mr-1 h-3.5 w-3.5" />}
+                        Sinab ko‘rish
+                      </Button>
                       <Button size="sm" variant="outline" className="h-8" onClick={() => setMonitorId(e.id)}><BarChart3 className="mr-1 h-3.5 w-3.5" /> Natija</Button>
                       <Button size="icon" variant="ghost" onClick={() => setEditing(fromExam(e))} aria-label="Tahrirlash"><Pencil className="h-4 w-4" /></Button>
                       <Button size="icon" variant="ghost" className="text-red-600" onClick={() => setToDelete(e)} aria-label="O‘chirish"><Trash2 className="h-4 w-4" /></Button>

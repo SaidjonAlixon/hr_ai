@@ -218,7 +218,6 @@ export async function fillVacantBranchSlot(
       and(
         eq(employeesTable.id, slotId),
         eq(employeesTable.orgRole, "manager"),
-        eq(employeesTable.employmentStatus, "no_manager"),
         isNull(employeesTable.userId),
       ),
     );

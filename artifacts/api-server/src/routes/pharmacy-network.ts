@@ -6,6 +6,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { parseGpsText, displayBranchName } from "../lib/geo-location";
 import { dedupeActiveBranches, weakerDuplicateBranchIds } from "../lib/branch-dedupe";
+import { isVacancyPlaceholder } from "../lib/vacancy-slot";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
 import {
@@ -264,7 +265,10 @@ async function loadStaffCredentials(actorUserId: number, actorRole: string): Pro
     .where(inArray(employeesTable.reportsToId, managerIds));
 
   const mine = staff.filter(
-    (s) => STAFF_ORG.has(s.orgRole || "") && s.employmentStatus !== "dismissed",
+    (s) =>
+      STAFF_ORG.has(s.orgRole || "") &&
+      s.employmentStatus !== "dismissed" &&
+      !isVacancyPlaceholder(s),
   );
   const byUser = await usersByIds(
     [...new Set(mine.map((s) => s.userId).filter((id): id is number => id != null))],

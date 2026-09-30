@@ -40,6 +40,7 @@ import {
   AlarmClock,
   ClipboardList,
 } from "lucide-react";
+import { DavomatJarimaCard } from "../oylik/pay-table";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -1953,7 +1954,7 @@ export default function DavomatPage() {
       <div
         className={cn(
           "grid grid-cols-1 gap-3 sm:grid-cols-2",
-          dayCards.length > 5 ? "xl:grid-cols-6" : dayCards.length > 4 ? "xl:grid-cols-5" : "xl:grid-cols-4",
+          dayCards.length + 1 > 5 ? "xl:grid-cols-6" : dayCards.length + 1 > 4 ? "xl:grid-cols-5" : "xl:grid-cols-4",
         )}
       >
         {dayCards.map((card) => {
@@ -2034,6 +2035,7 @@ export default function DavomatPage() {
             </button>
           );
         })}
+        <DavomatJarimaCard month={selectedDay.slice(0, 7)} />
       </div>
       ) : null}
 

@@ -295,7 +295,7 @@ export default function KirishPage() {
                 )}
               </div>
               <div className="p-4 sm:p-5">
-                <div className="relative aspect-video w-full overflow-hidden rounded-2xl border border-border bg-slate-900">
+                <div className="relative mx-auto aspect-video w-full max-w-lg overflow-hidden rounded-xl border border-border bg-slate-900">
                   {stageContent.youtubeId || stageContent.videoDriveFileId ? (
                     <RestrictedVideoPlayer
                       key={`${stageContent.youtubeId || stageContent.videoDriveFileId}-${playerKey}`}

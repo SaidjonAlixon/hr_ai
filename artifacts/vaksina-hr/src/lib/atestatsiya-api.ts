@@ -42,6 +42,7 @@ export type AttestExamCard = {
   startsAt: string;
   endsAt: string;
   window: AttestWindow;
+  published: boolean;
   attempt: AttestLearnerAttempt | null;
   attemptsCount: number;
   canStart: boolean;
@@ -204,6 +205,20 @@ export function readGps(): Promise<{ latitude: number; longitude: number; accura
       { enableHighAccuracy: true, timeout: 20_000, maximumAge: 0 },
     );
   });
+}
+
+export function startAttestPreview(examId: number) {
+  return apiFetch<{ attempt: AttestLearnerAttempt; serverNow: string; practice: boolean }>(
+    `/atestatsiya/preview/exams/${examId}/start`,
+    { method: "POST", body: "{}" },
+  );
+}
+
+export function scoreAttestPreview(examId: number, answers: Record<string, number>) {
+  return apiFetch<{ attempt: AttestLearnerAttempt; serverNow: string }>(
+    `/atestatsiya/preview/exams/${examId}/score`,
+    { method: "POST", body: JSON.stringify({ answers }) },
+  );
 }
 
 export function useStartAttest() {

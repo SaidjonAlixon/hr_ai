@@ -50,6 +50,8 @@ const AdminUsersPage = lazy(() => import('./pages/admin/users'));
 const BoshatilganlarPage = lazy(() => import('./pages/admin/boshatilganlar'));
 const AdminDepartmentsPage = lazy(() => import('./pages/admin/departments'));
 const AdminKirishVideosPage = lazy(() => import('./pages/admin/kirish-videos'));
+const AdminPreboardingPage = lazy(() => import('./pages/admin/preboarding'));
+const PreboardingPage = lazy(() => import('./pages/preboarding/index'));
 const AdminDarsliklarPage = lazy(() => import('./pages/admin/darsliklar'));
 const AdminAtestatsiyaPage = lazy(() => import('./pages/admin/atestatsiya'));
 const AdminFacesPage = lazy(() => import('./pages/admin/faces'));
@@ -217,6 +219,7 @@ function Router() {
         <Redirect to="/dashboard" />
       </Route>
       <ProtectedRoute path="/kirish" component={KirishPage} />
+      <ProtectedRoute path="/preboarding" component={PreboardingPage} />
       <ProtectedRoute path="/darsliklar" component={DarsliklarPage} />
       <ProtectedRoute path="/atestatsiya" component={AtestatsiyaPage} />
       <ProtectedRoute path="/ehtiyoj" component={EhtiyojPage} />
@@ -257,6 +260,7 @@ function Router() {
       <ProtectedRoute path="/admin/holat" component={AdminHolatPage} />
       <ProtectedRoute path="/admin/departments" component={AdminDepartmentsPage} />
       <ProtectedRoute path="/admin/kirish-videolar" component={AdminKirishVideosPage} />
+      <ProtectedRoute path="/admin/preboarding" component={AdminPreboardingPage} />
       <ProtectedRoute path="/admin/darsliklar" component={AdminDarsliklarPage} />
       <ProtectedRoute path="/admin/atestatsiya" component={AdminAtestatsiyaPage} />
       <ProtectedRoute path="/admin/faces" component={AdminFacesPage} />

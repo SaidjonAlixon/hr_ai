@@ -21,10 +21,20 @@ import {
 import { cn } from "../../lib/utils";
 import type { HolatReport } from "../../lib/holat-api";
 import {
+  HISOBOT_SHIFTS,
+  HISOBOT_STATUSES,
+  hisobotIdentity,
+  hisobotLateDays,
+  hisobotOnTimeDays,
+  hisobotStatusTitle,
+  sliceHisobot,
   useCoordinatorHisobot,
   type HisobotEmployeeRow,
+  type HisobotStatusKey,
 } from "../../lib/hisobot-api";
+import { downloadAbsentHisobotPdf } from "../../lib/hisobot-pdf";
 import { Skeleton } from "../../components/ui/skeleton";
+import { useToast } from "../../hooks/use-toast";
 
 function todayYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -62,7 +72,7 @@ function matchesQuery(parts: Array<string | null | undefined>, q: string) {
   return parts.filter(Boolean).join(" ").toLowerCase().includes(q);
 }
 
-function DateChips({ dates, tone }: { dates: string[]; tone: "ok" | "bad" }) {
+function DateChips({ dates, tone }: { dates: string[]; tone: "ok" | "bad" | "late" }) {
   if (!dates.length) {
     return <span className="text-xs text-muted-foreground">—</span>;
   }
@@ -75,7 +85,9 @@ function DateChips({ dates, tone }: { dates: string[]; tone: "ok" | "bad" }) {
             "inline-flex rounded-md px-1.5 py-0.5 text-[10px] font-semibold tabular-nums",
             tone === "ok"
               ? "bg-emerald-100 text-emerald-800"
-              : "bg-rose-100 text-rose-800",
+              : tone === "late"
+                ? "bg-amber-100 text-amber-900"
+                : "bg-rose-100 text-rose-800",
           )}
           title={d}
         >
@@ -86,18 +98,34 @@ function DateChips({ dates, tone }: { dates: string[]; tone: "ok" | "bad" }) {
   );
 }
 
+function statusBadge(e: HisobotEmployeeRow): { label: string; className: string } {
+  const late = hisobotLateDays(e);
+  const onTime = hisobotOnTimeDays(e);
+  if (e.presentDays === 0) return { label: "Kelmagan", className: "bg-rose-100 text-rose-800 border-rose-200" };
+  if (late > 0 && onTime === 0) return { label: "Kechikkan", className: "bg-amber-100 text-amber-900 border-amber-200" };
+  if (late > 0) return { label: "Kelgan · kechikkan", className: "bg-amber-50 text-amber-900 border-amber-200" };
+  return { label: "Kelgan", className: "bg-emerald-100 text-emerald-800 border-emerald-200" };
+}
+
 function EmployeeReportCard({ e }: { e: HisobotEmployeeRow }) {
+  const idn = hisobotIdentity(e);
+  const badge = statusBadge(e);
   return (
     <div className="rounded-xl border border-border bg-card p-3 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-wide text-[#0b3a5c]">
             {e.roleLabel}
+            {idn.position && idn.position !== e.roleLabel ? ` · ${idn.position}` : ""}
           </p>
-          <p className="mt-0.5 font-semibold text-foreground">{e.fullName}</p>
+          <p className="mt-0.5 font-semibold text-foreground">{idn.name}</p>
+          {idn.alias ? (
+            <p className="text-[11px] text-muted-foreground">Yozuvdagi ism: {idn.alias}</p>
+          ) : null}
           <p className="mt-0.5 text-xs text-muted-foreground">
             {e.branch} · {e.shiftDisplay}
-            {e.phone ? ` · ${e.phone}` : ""}
+            {` · ${idn.phone || "telefon kiritilmagan"}`}
+            {` · ${idn.login || "login kiritilmagan"}`}
           </p>
         </div>
         <div
@@ -111,6 +139,9 @@ function EmployeeReportCard({ e }: { e: HisobotEmployeeRow }) {
             davomat
           </p>
         </div>
+        <span className={cn("rounded-md border px-2 py-0.5 text-[10px] font-bold", badge.className)}>
+          {badge.label}
+        </span>
       </div>
       <div className="mt-3 grid gap-2 sm:grid-cols-2">
         <div>
@@ -149,6 +180,10 @@ export function HisobotPanel({
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [coordSearch, setCoordSearch] = useState("");
+  const [shift, setShift] = useState("all");
+  const [statuses, setStatuses] = useState<HisobotStatusKey[]>(["missed"]);
+  const [absentPdf, setAbsentPdf] = useState(false);
+  const { toast } = useToast();
 
   const allCoords = useMemo(
     () => (data.coordinators ?? []).filter((c) => c.employeeId != null),
@@ -169,6 +204,19 @@ export function HisobotPanel({
   const coordinatorId = selected?.employeeId ?? null;
 
   const reportQ = useCoordinatorHisobot(coordinatorId, from, to, Boolean(coordinatorId));
+  const report = reportQ.data;
+  const view = useMemo(
+    () => (report ? sliceHisobot(report, shift, statuses) : null),
+    [report, shift, statuses],
+  );
+
+  const toggleStatus = (key: HisobotStatusKey) => {
+    setStatuses((cur) => {
+      const has = cur.includes(key);
+      if (has && cur.length === 1) return cur;
+      return has ? cur.filter((k) => k !== key) : [...cur, key];
+    });
+  };
 
   const coords = useMemo(() => {
     const s = coordSearch.trim().toLowerCase();
@@ -184,8 +232,6 @@ export function HisobotPanel({
     setCoordSearch("");
   }
 
-  const report = reportQ.data;
-
   return (
     <div className="space-y-4">
       {/* Filters */}
@@ -195,6 +241,17 @@ export function HisobotPanel({
             <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#0b3a5c]">
               Koordinator
             </p>
+            {data.scoped ? (
+              <div className="mt-1.5 rounded-xl border border-[#0b3a5c]/25 bg-[#0b3a5c]/5 px-3 py-2.5">
+                <p className="truncate font-semibold text-foreground">
+                  {selected?.fullName || "Sizning hisobotingiz"}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                  O‘z holatingiz va biriktirilgan xodimlar
+                  {selected ? ` · ${selected.mudirs?.length ?? 0} filial` : ""}
+                </p>
+              </div>
+            ) : (
             <button
               type="button"
               onClick={() => setPickerOpen(true)}
@@ -218,6 +275,7 @@ export function HisobotPanel({
               </div>
               <ChevronDown className="h-4 w-4 shrink-0 text-[#0b3a5c]" />
             </button>
+            )}
           </div>
 
           <div>
@@ -250,6 +308,7 @@ export function HisobotPanel({
           </div>
           <div className="flex flex-wrap gap-1.5 pb-0.5">
             {[
+              { label: "Bugun", days: 0 },
               { label: "7 kun", days: 6 },
               { label: "30 kun", days: 29 },
               { label: "90 kun", days: 89 },
@@ -261,8 +320,9 @@ export function HisobotPanel({
                 variant="outline"
                 className="h-8 rounded-lg text-xs"
                 onClick={() => {
-                  onTo(todayYmd());
-                  onFrom(daysAgoYmd(p.days));
+                  const end = todayYmd();
+                  onTo(end);
+                  onFrom(p.days === 0 ? end : daysAgoYmd(p.days));
                 }}
               >
                 {p.label}
@@ -363,22 +423,70 @@ export function HisobotPanel({
         </div>
       ) : (
         <>
+          {report.self ? (
+            <div className="rounded-2xl border border-[#0b3a5c]/20 bg-[#0b3a5c]/5 p-4">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#0b3a5c]">
+                Sizning holatingiz
+              </p>
+              <div className="mt-2 flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-lg font-semibold text-foreground">{report.self.fullName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Koordinator
+                    {report.self.shiftDisplay ? ` · ${report.self.shiftDisplay}` : ""}
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-sm">
+                  <span className="rounded-lg bg-emerald-50 px-2.5 py-1 font-medium text-emerald-800">
+                    Kelgan {report.self.presentDays}
+                  </span>
+                  <span className="rounded-lg bg-amber-50 px-2.5 py-1 font-medium text-amber-800">
+                    Kechikkan {report.self.lateDays ?? 0}
+                  </span>
+                  <span className="rounded-lg bg-rose-50 px-2.5 py-1 font-medium text-rose-800">
+                    Kelmagan {report.self.absentDays}
+                  </span>
+                  <span className="rounded-lg bg-white px-2.5 py-1 font-medium text-[#0b3a5c]">
+                    {report.self.presentRate}%
+                  </span>
+                </div>
+              </div>
+            </div>
+          ) : null}
           {/* KPI */}
-          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+          <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-7">
             {[
-              { label: "Filial", value: report.summary.branchCount, icon: Store },
-              { label: "Mudir", value: report.summary.mudirCount, icon: UserRound },
-              { label: "Farmasevt", value: report.summary.pharmacistCount, icon: Users },
-              { label: "Stajyor", value: report.summary.internCount, icon: Users },
+              { label: "Filial", value: view?.branches.length ?? report.summary.branchCount, icon: Store },
               {
-                label: "O‘rtacha %",
-                value: `${report.summary.avgPresentRate}%`,
-                icon: FileText,
-                tone: rateTone(report.summary.avgPresentRate),
+                label: "Mudir",
+                value: view?.byRole.find((r) => r.key === "mudir")?.total ?? report.summary.mudirCount,
+                icon: UserRound,
               },
               {
-                label: "Kelmaganlar",
-                value: report.summary.noShowCount,
+                label: "Farmasevt",
+                value: view?.byRole.find((r) => r.key === "farmasevt")?.total ?? report.summary.pharmacistCount,
+                icon: Users,
+              },
+              {
+                label: "Stajyor",
+                value: view?.byRole.find((r) => r.key === "stajyor")?.total ?? report.summary.internCount,
+                icon: Users,
+              },
+              {
+                label: "Kelgan",
+                value: view?.came ?? 0,
+                icon: FileText,
+                tone: "text-emerald-700 bg-emerald-50 border-emerald-200",
+              },
+              {
+                label: "Kechikkan",
+                value: view?.late ?? 0,
+                icon: CalendarRange,
+                tone: "text-amber-800 bg-amber-50 border-amber-200",
+              },
+              {
+                label: "Kelmagan",
+                value: view?.missed ?? report.summary.noShowCount,
                 icon: XCircle,
                 tone: "text-rose-700 bg-rose-50 border-rose-200",
               },
@@ -407,6 +515,111 @@ export function HisobotPanel({
             yangilangan {report.generatedAt}
           </p>
 
+          <div className="rounded-2xl border border-border bg-card p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-[#0b3a5c]">Smena</p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  Smena va holatni tanlang. PDF shu tanlovdagi xodimlarning to‘liq kimligi va sana holati bilan chiqadi.
+                </p>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="h-9 gap-1.5 rounded-xl bg-[#0b3a5c] hover:bg-[#08283f]"
+                disabled={absentPdf || !view}
+                onClick={() => {
+                  if (!view) return;
+                  setAbsentPdf(true);
+                  void downloadAbsentHisobotPdf({
+                    report,
+                    slice: view,
+                    shiftLabel: HISOBOT_SHIFTS.find((s) => s.key === shift)?.label || "Barcha smenalar",
+                    statuses,
+                  })
+                    .then(() => toast({ title: "Hisobot PDF yuklandi" }))
+                    .catch((e: Error) => toast({ title: "PDF xato", description: e.message, variant: "destructive" }))
+                    .finally(() => setAbsentPdf(false));
+                }}
+              >
+                <FileText className="h-3.5 w-3.5" />
+                {absentPdf ? "PDF…" : "Tanlangan holat PDF"}
+              </Button>
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              {HISOBOT_STATUSES.map((s) => {
+                const on = statuses.includes(s.key);
+                return (
+                  <button
+                    key={s.key}
+                    type="button"
+                    onClick={() => toggleStatus(s.key)}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-xs font-semibold",
+                      on && s.key === "missed" && "border-rose-300 bg-rose-700 text-white",
+                      on && s.key === "came" && "border-emerald-300 bg-emerald-700 text-white",
+                      on && s.key === "late" && "border-amber-300 bg-amber-600 text-white",
+                      !on && "border-border bg-muted text-foreground",
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {HISOBOT_SHIFTS.map((s) => (
+                <button
+                  key={s.key}
+                  type="button"
+                  onClick={() => setShift(s.key)}
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold",
+                    shift === s.key ? "bg-[#0b3a5c] text-white" : "bg-muted text-foreground",
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+            {view ? (
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <p className="bg-muted/60 px-3 py-2 text-xs font-semibold">Lavozim</p>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {view.byRole.map((r) => (
+                        <tr key={r.key} className="border-t border-border">
+                          <td className="px-3 py-2 font-medium">{r.label}</td>
+                          <td className="px-2 py-2 text-center text-emerald-700">Kelgan {r.came}</td>
+                          <td className="px-2 py-2 text-center text-amber-800">Kechikkan {r.late}</td>
+                          <td className="px-2 py-2 text-center font-semibold text-rose-700">Kelmagan {r.missed}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{r.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="overflow-hidden rounded-xl border border-border">
+                  <p className="bg-muted/60 px-3 py-2 text-xs font-semibold">Smena</p>
+                  <table className="w-full text-sm">
+                    <tbody>
+                      {view.byShift.map((r) => (
+                        <tr key={r.key} className="border-t border-border">
+                          <td className="px-3 py-2 font-medium">{r.label}</td>
+                          <td className="px-2 py-2 text-center text-emerald-700">Kelgan {r.came}</td>
+                          <td className="px-2 py-2 text-center text-amber-800">Kechikkan {r.late}</td>
+                          <td className="px-2 py-2 text-center font-semibold text-rose-700">Kelmagan {r.missed}</td>
+                          <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{r.total}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : null}
+          </div>
+
           {/* Branches */}
           <div className="space-y-4">
             <div>
@@ -416,12 +629,12 @@ export function HisobotPanel({
               </p>
             </div>
 
-            {report.branches.length === 0 ? (
+            {view && view.branches.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground">
                 Bu koordinatorda filial yo‘q
               </div>
             ) : (
-              report.branches.map((b) => (
+              view!.branches.map((b) => (
                 <section
                   key={b.branch + (b.mudir?.employeeId ?? "")}
                   className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm"
@@ -429,6 +642,9 @@ export function HisobotPanel({
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-gradient-to-r from-[#0b3a5c]/5 to-transparent px-4 py-3">
                     <div>
                       <p className="font-semibold text-foreground">{b.branch}</p>
+                      {b.mudirMissing ? (
+                        <p className="mt-0.5 text-sm font-semibold text-rose-700">Bu filialda mudir yo‘q</p>
+                      ) : null}
                       <p className="text-xs text-muted-foreground">
                         {b.staffCount} xodim · farmasevt {b.pharmacists.length} · stajyor{" "}
                         {b.interns.length}
@@ -443,6 +659,10 @@ export function HisobotPanel({
                         </p>
                         <EmployeeReportCard e={b.mudir} />
                       </div>
+                    ) : b.mudirMissing ? (
+                      <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700">
+                        Bu filialda mudir yo‘q
+                      </p>
                     ) : null}
                     <div>
                       <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#0b3a5c]">
@@ -495,7 +715,7 @@ export function HisobotPanel({
             <div className="border-b border-border px-4 py-3">
               <h2 className="text-base font-semibold">Xodimlar davomati — jadval</h2>
               <p className="text-sm text-muted-foreground">
-                № · F.I.Sh. · lavozim · filial · smena · kelgan / kelmagan kunlar · foiz. Yashil/qizil sanalar.
+                Tanlangan smena va holat. Har bir qatorda F.I.Sh., telefon, login, lavozim, filial va sana holati.
               </p>
             </div>
             <div className="overflow-x-auto">
@@ -508,21 +728,49 @@ export function HisobotPanel({
                     <th className="px-3 py-2.5 font-semibold">Filial</th>
                     <th className="px-3 py-2.5 font-semibold">Smena</th>
                     <th className="px-3 py-2.5 text-center font-semibold">Kelgan</th>
+                    <th className="px-3 py-2.5 text-center font-semibold">Kechikkan</th>
                     <th className="px-3 py-2.5 text-center font-semibold">Kelmagan</th>
                     <th className="px-3 py-2.5 text-center font-semibold">%</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {report.employees.map((e, i) => (
+                  {view!.roster.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="px-4 py-8 text-center text-sm text-muted-foreground">
+                        Bu smena va holat tanlovida xodim yo‘q.
+                      </td>
+                    </tr>
+                  ) : null}
+                  {view!.roster.map((e, i) => {
+                    const idn = hisobotIdentity(e);
+                    const badge = statusBadge(e);
+                    return (
                     <React.Fragment key={e.employeeId}>
                       <tr className={cn("border-b border-border/60", i % 2 === 1 && "bg-slate-50/80")}>
                         <td className="px-3 py-2.5 tabular-nums text-muted-foreground">{i + 1}</td>
-                        <td className="px-3 py-2.5 font-semibold">{e.fullName}</td>
-                        <td className="px-3 py-2.5 text-muted-foreground">{e.roleLabel}</td>
+                        <td className="px-3 py-2.5">
+                          <p className="font-semibold">{idn.name}</p>
+                          {idn.alias ? (
+                            <p className="text-[11px] text-muted-foreground">Yozuv: {idn.alias}</p>
+                          ) : null}
+                          <p className="text-[11px] text-muted-foreground">
+                            {idn.phone || "telefon kiritilmagan"} · {idn.login || "login kiritilmagan"}
+                          </p>
+                          <span className={cn("mt-1 inline-flex rounded-md border px-1.5 py-0.5 text-[10px] font-bold", badge.className)}>
+                            {badge.label}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2.5 text-muted-foreground">
+                          {e.roleLabel}
+                          {idn.position && idn.position !== e.roleLabel ? ` · ${idn.position}` : ""}
+                        </td>
                         <td className="px-3 py-2.5 text-muted-foreground">{e.branch}</td>
                         <td className="px-3 py-2.5 text-muted-foreground">{e.shiftDisplay}</td>
                         <td className="px-3 py-2.5 text-center text-base font-bold tabular-nums text-emerald-700">
                           {e.presentDays}
+                        </td>
+                        <td className="px-3 py-2.5 text-center text-base font-bold tabular-nums text-amber-800">
+                          {hisobotLateDays(e)}
                         </td>
                         <td className="px-3 py-2.5 text-center text-base font-bold tabular-nums text-rose-700">
                           {e.absentDays}
@@ -539,17 +787,23 @@ export function HisobotPanel({
                         </td>
                       </tr>
                       <tr className={cn("border-b border-border/70", i % 2 === 1 && "bg-slate-50/80")}>
-                        <td colSpan={8} className="px-3 pb-3 pt-0">
-                          <div className="grid gap-2 sm:grid-cols-2">
+                        <td colSpan={9} className="px-3 pb-3 pt-0">
+                          <div className="grid gap-2 sm:grid-cols-3">
                             <div>
                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-emerald-700">
-                                Kelgan sanalar ({e.presentDays})
+                                O‘z vaqtida ({hisobotOnTimeDays(e)})
                               </p>
-                              <DateChips dates={e.presentDates} tone="ok" />
+                              <DateChips dates={e.onTimeDates ?? e.presentDates} tone="ok" />
+                            </div>
+                            <div>
+                              <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                                Kechikkan ({hisobotLateDays(e)})
+                              </p>
+                              <DateChips dates={e.lateDates ?? []} tone="late" />
                             </div>
                             <div>
                               <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-rose-700">
-                                Kelmagan sanalar ({e.absentDays})
+                                Kelmagan ({e.absentDays})
                               </p>
                               <DateChips dates={e.absentDates} tone="bad" />
                             </div>
@@ -557,47 +811,62 @@ export function HisobotPanel({
                         </td>
                       </tr>
                     </React.Fragment>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           </section>
 
-          {/* No-shows */}
-          <section className="overflow-hidden rounded-2xl border border-rose-200 bg-rose-50/40 shadow-sm">
-            <div className="flex items-center gap-2 border-b border-rose-200 px-4 py-3">
-              <XCircle className="h-4 w-4 text-rose-600" />
+          <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
+            <div className="flex items-center gap-2 border-b border-border px-4 py-3">
+              <XCircle className="h-4 w-4 text-[#0b3a5c]" />
               <div>
-                <h2 className="text-base font-semibold text-rose-900">
-                  Davomat qilmaganlar ({report.noShows.length})
+                <h2 className="text-base font-semibold text-foreground">
+                  {hisobotStatusTitle(statuses)} ({view?.roster.length ?? 0})
                 </h2>
-                <p className="text-sm text-rose-800/80">
-                  Tanlangan davrda birorta ham kelmagan xodimlar.
+                <p className="text-sm text-muted-foreground">
+                  {report.from} — {report.to}. Tanlangan smenadagi xodim: ism, lavozim, filial, telefon, login va shu sana holati.
                 </p>
               </div>
             </div>
-            {report.noShows.length === 0 ? (
-              <p className="px-4 py-6 text-sm text-emerald-800">
-                Barcha xodimlar kamida bir marta davomat qilgan.
+            {!(view?.roster.length) ? (
+              <p className="px-4 py-6 text-sm text-muted-foreground">
+                Bu smena va holat tanlovida xodim yo‘q.
               </p>
             ) : (
-              <ul className="divide-y divide-rose-100">
-                {report.noShows.map((e) => (
-                  <li
-                    key={e.employeeId}
-                    className="flex flex-wrap items-center justify-between gap-2 px-4 py-3"
-                  >
-                    <div>
-                      <p className="font-semibold text-rose-950">{e.fullName}</p>
-                      <p className="text-xs text-rose-800/80">
-                        {e.roleLabel} · {e.branch} · {e.shiftDisplay}
-                      </p>
-                    </div>
-                    <span className="rounded-md border border-rose-300 bg-white px-2 py-0.5 text-xs font-bold text-rose-700">
-                      0% · {e.absentDays} kun
-                    </span>
-                  </li>
-                ))}
+              <ul className="divide-y divide-border">
+                {view!.roster.map((e, i) => {
+                  const idn = hisobotIdentity(e);
+                  const badge = statusBadge(e);
+                  return (
+                    <li key={e.employeeId} className="flex flex-wrap items-start justify-between gap-3 px-4 py-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-foreground">
+                          {i + 1}. {idn.name}
+                        </p>
+                        {idn.alias ? (
+                          <p className="text-[11px] text-muted-foreground">Yozuvdagi ism: {idn.alias}</p>
+                        ) : null}
+                        <p className="text-xs text-muted-foreground">
+                          {e.roleLabel}
+                          {idn.position && idn.position !== e.roleLabel ? ` · ${idn.position}` : ""}
+                          {" · "}
+                          {e.branch}
+                          {" · "}
+                          {e.shiftDisplay}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {idn.phone || "telefon kiritilmagan"} · {idn.login || "login kiritilmagan"}
+                        </p>
+                      </div>
+                      <span className={cn("rounded-md border px-2 py-0.5 text-xs font-bold", badge.className)}>
+                        {badge.label}
+                        {e.presentDays === 0 ? ` · ${e.absentDays} kun` : hisobotLateDays(e) ? ` · ${hisobotLateDays(e)} kun` : ` · ${e.presentDays} kun`}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </section>

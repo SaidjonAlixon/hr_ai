@@ -16,6 +16,7 @@ export * from "./reminders";
 export * from "./goals";
 export * from "./chat";
 export * from "./kirish";
+export * from "./preboarding";
 export * from "./darsliklar";
 export * from "./attestatsiya";
 export * from "./webauthn";

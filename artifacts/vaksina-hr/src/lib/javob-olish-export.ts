@@ -56,10 +56,68 @@ function wrapLines(
 function statusLabelUz(status: string): string {
   if (status === "pending" || status === "pending_coord") return "Koordinator kutmoqda";
   if (status === "pending_hr") return "HR kutmoqda";
-  if (status === "approved") return "Tasdiqlangan";
+  if (status === "approved") return "Ruxsat berilgan";
   if (status === "rejected") return "Rad etilgan";
   if (status === "cancelled") return "Bekor";
   return status || "—";
+}
+
+function statusStamp(status: string): { label: string; fill: string; border: string; ink: string } {
+  if (status === "approved") {
+    return { label: "RUXSAT BERILGAN", fill: "#dcfce7", border: "#15803d", ink: "#14532d" };
+  }
+  if (status === "rejected") {
+    return { label: "RAD ETILGAN", fill: "#fee2e2", border: "#b91c1c", ink: "#7f1d1d" };
+  }
+  if (status === "pending_hr") {
+    return { label: "HR KUTMOQDA", fill: "#ffedd5", border: "#c2410c", ink: "#9a3412" };
+  }
+  if (status === "pending" || status === "pending_coord") {
+    return { label: "KOORDINATOR KUTMOQDA", fill: "#dbeafe", border: "#1d4ed8", ink: "#1e3a8a" };
+  }
+  if (status === "cancelled") {
+    return { label: "BEKOR", fill: "#f1f5f9", border: "#64748b", ink: "#334155" };
+  }
+  return { label: statusLabelUz(status).toUpperCase(), fill: "#f8fafc", border: "#64748b", ink: "#0f172a" };
+}
+
+function drawStatusStamp(
+  ctx: CanvasRenderingContext2D,
+  right: number,
+  top: number,
+  scale: number,
+  stamp: { label: string; fill: string; border: string; ink: string },
+): { w: number; h: number } {
+  const fontPx = Math.round(3.6 * scale);
+  ctx.font = `bold ${fontPx}px ${FONT}`;
+  const textW = ctx.measureText(stamp.label).width;
+  const w = textW + 8 * scale;
+  const h = 11 * scale;
+  const x = right - w;
+  ctx.save();
+  ctx.translate(x + w / 2, top + h / 2);
+  ctx.rotate((-7 * Math.PI) / 180);
+  ctx.fillStyle = stamp.fill;
+  ctx.strokeStyle = stamp.border;
+  ctx.lineWidth = Math.max(2.2, 0.75 * scale);
+  const r = 1.6 * scale;
+  ctx.beginPath();
+  ctx.roundRect?.(-w / 2, -h / 2, w, h, r);
+  if (!ctx.roundRect) ctx.rect(-w / 2, -h / 2, w, h);
+  ctx.fill();
+  ctx.stroke();
+  ctx.lineWidth = Math.max(1, 0.28 * scale);
+  const inset = 1.15 * scale;
+  ctx.beginPath();
+  ctx.roundRect?.(-w / 2 + inset, -h / 2 + inset, w - inset * 2, h - inset * 2, r * 0.6);
+  if (!ctx.roundRect) ctx.rect(-w / 2 + inset, -h / 2 + inset, w - inset * 2, h - inset * 2);
+  ctx.stroke();
+  ctx.fillStyle = stamp.ink;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(stamp.label, 0, 0.3 * scale);
+  ctx.restore();
+  return { w, h };
 }
 
 function kindLabel(item: JavobRequestItem): string {
@@ -278,7 +336,7 @@ export async function exportJavobApprovedPdf(payload: JavobApprovedExportPayload
           : wrapped;
       });
       const estH =
-        14 * scale + // header
+        20 * scale + // header + shtamp
         22 * scale + // meta box
         (6 + noteLines.length * 4.2) * scale +
         (8 + histLines.length * 4.2) * scale +
@@ -301,16 +359,20 @@ export async function exportJavobApprovedPdf(payload: JavobApprovedExportPayload
       const cardInnerX = cardX + cardPad;
       const cardInnerW = contentW - cardPad * 2;
 
-      // Header row
+      const stamp = statusStamp(r.status);
+      const stampBox = drawStatusStamp(ctx, cardX + contentW - cardPad, cy, scale, stamp);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(cardInnerX, cy, Math.max(20 * scale, cardInnerW - stampBox.w - 4 * scale), stampBox.h);
+      ctx.clip();
       ctx.fillStyle = "#0f172a";
-      ctx.font = `bold ${Math.round(4 * scale)}px ${FONT}`;
-      ctx.fillText(r.fullName || `#${r.employeeId}`, cardInnerX, cy + 4 * scale);
-      ctx.font = `bold ${Math.round(2.8 * scale)}px ${FONT}`;
-      ctx.fillStyle = "#0369a1";
-      const st = statusLabelUz(r.status);
-      const stW = ctx.measureText(st).width;
-      ctx.fillText(st, cardX + contentW - cardPad - stW, cy + 4 * scale);
-      cy += 8 * scale;
+      ctx.font = `bold ${Math.round(4.2 * scale)}px ${FONT}`;
+      ctx.textAlign = "left";
+      ctx.textBaseline = "alphabetic";
+      ctx.fillText(r.fullName || `#${r.employeeId}`, cardInnerX, cy + 5.2 * scale);
+      ctx.restore();
+      cy += Math.max(8 * scale, stampBox.h + 3.2 * scale);
 
       ctx.fillStyle = "#64748b";
       ctx.font = `${Math.round(2.8 * scale)}px ${FONT}`;
@@ -373,9 +435,11 @@ export async function exportJavobApprovedPdf(payload: JavobApprovedExportPayload
       }
 
       const cardH = cy - y + cardPad;
-      ctx.strokeStyle = "#64748b";
-      ctx.lineWidth = Math.max(1, 0.45 * scale);
+      ctx.strokeStyle = stamp.border;
+      ctx.lineWidth = Math.max(1.4, 0.55 * scale);
       ctx.strokeRect(cardX, y, contentW, cardH);
+      ctx.fillStyle = stamp.border;
+      ctx.fillRect(cardX, y, 1.8 * scale, cardH);
 
       y = cy + cardPad + 4 * scale;
       rowIndex += 1;

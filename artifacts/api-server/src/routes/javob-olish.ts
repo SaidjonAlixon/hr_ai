@@ -3,7 +3,7 @@
  * Tasdiqlangan soat/kun davomat jarimasidan ozod.
  */
 import { Router, type IRouter } from "express";
-import { and, desc, eq, inArray, isNotNull, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, or } from "drizzle-orm";
 import {
   db,
   employeesTable,
@@ -603,11 +603,19 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       .limit(500);
     canDecide = false;
   } else if (scope === "all" && isLead(role)) {
-    rows = await db
-      .select()
-      .from(javobOlishRequestsTable)
-      .orderBy(desc(javobOlishRequestsTable.createdAt))
-      .limit(500);
+    const employeeId = Number(req.query.employeeId);
+    const from = String(req.query.from || "");
+    const to = String(req.query.to || "");
+    const personOnly = Number.isFinite(employeeId) && employeeId > 0;
+    const conds = [];
+    if (personOnly) conds.push(eq(javobOlishRequestsTable.employeeId, employeeId));
+    if (YMD.test(from)) conds.push(gte(javobOlishRequestsTable.workDate, from));
+    if (YMD.test(to)) conds.push(lte(javobOlishRequestsTable.workDate, to));
+    const base = db.select().from(javobOlishRequestsTable);
+    const filteredQ = conds.length ? base.where(and(...conds)) : base;
+    rows = await filteredQ
+      .orderBy(desc(javobOlishRequestsTable.workDate), desc(javobOlishRequestsTable.createdAt))
+      .limit(personOnly ? 1000 : 800);
     if (isCoordRole(role) && me) {
       const scopeIds = await coordinatorScopeEmployeeIds(me.id);
       rows = rows.filter((r) => scopeIds.has(r.employeeId) || r.coordinatorUserId === req.userId);

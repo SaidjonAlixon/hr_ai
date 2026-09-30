@@ -7,6 +7,7 @@ import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
 import { isHrManager, isHrRole, isSbRole, canChangeStaffStatus, isDirectorRole } from "../../lib/roles";
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
+import { isVacancyPlaceholder } from '../../lib/vacancy-slot';
 import {
   EMPLOYMENT_STATUS_LABELS,
   type EmploymentStatus,
@@ -448,7 +449,7 @@ export default function PharmacyNetworkPage() {
     const map = new Map<number, Employee[]>();
     const staffRoles = new Set(['pharmacist', 'intern', 'supervisor']);
     for (const p of orgPeople) {
-      if (!staffRoles.has(p.orgRole || '') || empStatus(p) === 'dismissed') continue;
+      if (!staffRoles.has(p.orgRole || '') || empStatus(p) === 'dismissed' || isVacancyPlaceholder(p)) continue;
       const branchIds = new Set<number>();
       if (p.reportsToId) branchIds.add(p.reportsToId);
       const assigned = (p as BranchEmployee).assignedBranchId;
@@ -492,7 +493,8 @@ export default function PharmacyNetworkPage() {
       const orphansUnder = orgPeople.filter(
         (p) =>
           (p.orgRole === 'pharmacist' || p.orgRole === 'intern' || p.orgRole === 'supervisor') &&
-          p.reportsToId === c.id,
+          p.reportsToId === c.id &&
+          !isVacancyPlaceholder(p),
       );
       const personShiftOk = (p: Employee) => shiftFilter === 'all' || (p.shiftType || 'one') === shiftFilter;
       const underMatchesShift =
@@ -832,7 +834,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
   const fillingVacantSlot = useMemo(() => {
     if (addKind !== 'mudir' || !addManagerId) return false;
     const slot = allManagers.find((m) => m.id === Number(addManagerId));
-    return !!slot && isNoManagerStatus(empStatus(slot));
+    return !!slot && (!slot.userId || isNoManagerStatus(empStatus(slot)) || empStatus(slot) === "closed");
   }, [addKind, addManagerId, allManagers]);
 
   const handleCreateStaff = () => {
@@ -1421,18 +1423,34 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                     <p className="text-sm text-amber-800 dark:text-amber-300">
                       Bu filialda farmasevt va stajyor yo‘q
                     </p>
-                    {(isKoordinatorOnly || canAddMudir || canAddTeam) && (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        className="h-8 gap-1.5 border-sky-300 bg-sky-50 px-3 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-950/60"
-                        onClick={() => openAddStaff('xodim', manager.id)}
-                      >
-                        <Plus className="h-3.5 w-3.5" />
-                        Farmasevt qo‘shish
-                      </Button>
-                    )}
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      {isNoManagerStatus(empStatus(manager)) || empStatus(manager) === "closed" || !manager.userId ? (
+                        canAddMudir ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            className="h-8 gap-1.5 border-rose-300 bg-rose-50 px-3 text-xs font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-200"
+                            onClick={() => openAddStaff("mudir", manager.id)}
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            Mudir qo‘shish
+                          </Button>
+                        ) : null
+                      ) : null}
+                      {(isKoordinatorOnly || canAddMudir || canAddTeam) && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          className="h-8 gap-1.5 border-sky-300 bg-sky-50 px-3 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-950/60"
+                          onClick={() => openAddStaff("xodim", manager.id)}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          Farmasevt qo‘shish
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">
@@ -1539,7 +1557,10 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                 const counts = staffCounts(fullTeam);
                 const hasTeam = counts.total > 0;
                 const open = expandedId === manager.id;
-                const noMudir = isNoManagerStatus(empStatus(manager));
+                const noMudir =
+                  isNoManagerStatus(empStatus(manager)) ||
+                  empStatus(manager) === "closed" ||
+                  !manager.userId;
                 const branchClosed = empStatus(manager) === 'closed';
                 const alert = branchHasAlert(manager.id);
                 const branch = manager as BranchEmployee;
@@ -1807,11 +1828,11 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                           {initials(manager.fullName)}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <p className="text-sm font-semibold leading-snug text-foreground">
-                            {manager.fullName}
+                          <p className={cn("text-sm font-semibold leading-snug", noMudir ? "text-rose-700" : "text-foreground")}>
+                            {noMudir ? "Bu filialda mudir yo‘q" : manager.fullName}
                           </p>
-                          <p className="mt-0.5 text-[11px] text-muted-foreground">
-                            {noMudir ? t('pharmacy.noMudir') : t('pharmacy.mudirRole')}
+                          <p className={cn("mt-0.5 text-[11px]", noMudir ? "font-semibold text-rose-600" : "text-muted-foreground")}>
+                            {noMudir ? "Bo‘sh mudir o‘rniga yangi mudir qo‘shish mumkin" : t("pharmacy.mudirRole")}
                           </p>
                           <p className="mt-1 flex items-start gap-1 text-xs font-semibold leading-snug text-sky-900 dark:text-sky-300">
                             <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-400" />
@@ -1888,14 +1909,14 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                               type="button"
                               size="sm"
                               variant="outline"
-                              className="h-8 gap-1 border-amber-300 bg-amber-50 px-2.5 text-xs font-semibold text-amber-950 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200"
-                              onClick={() => openAddStaff('mudir', manager.id)}
+                              className="h-8 gap-1 border-rose-300 bg-rose-50 px-2.5 text-xs font-semibold text-rose-800 hover:bg-rose-100 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-200"
+                              onClick={() => openAddStaff("mudir", manager.id)}
                             >
                               <Plus className="h-3.5 w-3.5" />
                               Mudir qo‘shish
                             </Button>
                           ) : null}
-                          {!hasTeam && (isKoordinatorOnly || canAddMudir || canAddTeam) ? (
+                          {(!hasTeam || noMudir) && (isKoordinatorOnly || canAddMudir || canAddTeam) ? (
                             <Button
                               type="button"
                               size="sm"

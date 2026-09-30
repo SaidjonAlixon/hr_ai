@@ -42,10 +42,21 @@ export type DarslikSummary = {
   completedAt: string | null;
 };
 
+export type DarslikSectionPublic = {
+  id: number;
+  title: string;
+  description: string;
+  coverUrl: string;
+  locked: boolean;
+  summary: Omit<DarslikSummary, "completedAt">;
+  lessons: DarslikLessonPublic[];
+};
+
 export type DarslikMeResponse = {
   track: DarslikTrack;
   trackLabel: string;
   preview: boolean;
+  sections: DarslikSectionPublic[];
   lessons: DarslikLessonPublic[];
   summary: DarslikSummary;
 };
@@ -68,6 +79,7 @@ export type DarslikQuestion = {
 export type DarslikManageLesson = {
   id: number;
   track: DarslikTrack;
+  sectionId: number | null;
   position: number;
   title: string;
   description: string;
@@ -83,15 +95,29 @@ export type DarslikManageLesson = {
   updatedAt: string;
 };
 
+export type DarslikSection = {
+  id: number;
+  track: DarslikTrack;
+  position: number;
+  title: string;
+  description: string;
+  coverUrl: string;
+  published: boolean;
+  lessonCount: number;
+  publishedCount: number;
+};
+
 export type DarslikManageResponse = {
   track: DarslikTrack;
   trackLabel: string;
-  tracks: Array<{ key: DarslikTrack; label: string; total: number; published: number }>;
+  tracks: Array<{ key: DarslikTrack; label: string; total: number; published: number; sections: number }>;
+  sections: DarslikSection[];
   lessons: DarslikManageLesson[];
 };
 
 export type DarslikLessonInput = {
   track: DarslikTrack;
+  sectionId: number;
   title: string;
   description: string;
   videoUrl: string;
@@ -103,7 +129,8 @@ export type DarslikLessonInput = {
 
 export type DarslikResults = {
   track: DarslikTrack;
-  lessons: Array<{ id: number; number: number; title: string }>;
+  sections: Array<{ id: number; title: string; coverUrl: string }>;
+  lessons: Array<{ id: number; number: number; title: string; sectionId: number | null }>;
   learners: Array<{
     userId: number;
     fullName: string;
@@ -228,8 +255,40 @@ export function useDeleteDarslik() {
 }
 
 export function useReorderDarsliklar() {
-  return useManageMutation(({ track, ids }: { track: DarslikTrack; ids: number[] }) =>
+  return useManageMutation(({ track, sectionId, ids }: { track: DarslikTrack; sectionId: number; ids: number[] }) =>
     apiFetch<{ lessons: DarslikManageLesson[] }>("/darsliklar/manage/reorder", {
+      method: "POST",
+      body: JSON.stringify({ track, sectionId, ids }),
+    }),
+  );
+}
+
+export function useSaveDarslikSection() {
+  return useManageMutation(
+    (input: {
+      id?: number | null;
+      track: DarslikTrack;
+      title: string;
+      description: string;
+      coverUrl: string;
+      published: boolean;
+    }) =>
+      apiFetch(input.id ? `/darsliklar/manage/sections/${input.id}` : "/darsliklar/manage/sections", {
+        method: input.id ? "PUT" : "POST",
+        body: JSON.stringify(input),
+      }),
+  );
+}
+
+export function useDeleteDarslikSection() {
+  return useManageMutation((id: number) =>
+    apiFetch<{ ok: boolean }>(`/darsliklar/manage/sections/${id}`, { method: "DELETE" }),
+  );
+}
+
+export function useReorderDarslikSections() {
+  return useManageMutation(({ track, ids }: { track: DarslikTrack; ids: number[] }) =>
+    apiFetch<{ ok: boolean }>("/darsliklar/manage/sections/reorder", {
       method: "POST",
       body: JSON.stringify({ track, ids }),
     }),

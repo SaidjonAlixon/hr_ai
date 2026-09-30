@@ -57,6 +57,12 @@ export type PayrollRow = {
   roleLabel: string;
   position: string | null;
   branch: string | null;
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+  calendarScope?: string | null;
+  salary?: number;
+  jarima?: number;
+  jarimaNote?: string | null;
   fixedSalary: number;
   bonusPercent: number;
   kpiPercent: number;
@@ -157,6 +163,88 @@ async function json<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+export type PayrollSlip = {
+  approved: boolean;
+  returned?: boolean;
+  status?: "approved" | "returned" | "draft";
+  month: string;
+  fullName: string;
+  salary?: number;
+  jarima?: number;
+  note?: string | null;
+  net?: number;
+};
+
+export type PayrollYearMonth = {
+  month: string;
+  status: string;
+  salary: number;
+  jarima: number;
+  net: number;
+};
+
+export function useOylikSlip(month: string, enabled = true) {
+  return useQuery({
+    queryKey: ["oylik", "slip", month],
+    queryFn: () => json<PayrollSlip>(`/api/oylik/slip?month=${encodeURIComponent(month)}`),
+    enabled,
+    staleTime: 20_000,
+  });
+}
+
+export function useOylikYear(year: string, enabled = true) {
+  return useQuery({
+    queryKey: ["oylik", "year", year],
+    queryFn: () =>
+      json<{ year: string; months: PayrollYearMonth[]; approvedNet: number }>(
+        `/api/oylik/year?year=${encodeURIComponent(year)}`,
+      ),
+    enabled,
+    staleTime: 20_000,
+  });
+}
+
+export function useReturnOylik() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (p: { month: string; userIds: number[] }) =>
+      json("/api/oylik/return", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["oylik"] });
+    },
+  });
+}
+
+export function useJarimaSummary(month: string) {
+  return useQuery({
+    queryKey: ["oylik", "jarima", month],
+    queryFn: () =>
+      json<{ month: string; own: boolean; approved: boolean; people: number; total: number }>(
+        `/api/oylik/jarima-summary?month=${encodeURIComponent(month)}`,
+      ),
+    staleTime: 20_000,
+  });
+}
+
+export function useSaveOylikLine() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (p: { userId: number; employeeId?: number; month: string; salary: number; jarima: number; note?: string }) =>
+      json("/api/oylik/line", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(p),
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["oylik"] });
+    },
+  });
+}
+
 export function useOylikMe(month?: string) {
   const q = month ? `?month=${encodeURIComponent(month)}` : "";
   return useQuery({
@@ -184,7 +272,10 @@ export function useOylikEmployees(month: string, q: string, enabled: boolean) {
   if (q.trim()) qs.set("q", q.trim());
   return useQuery({
     queryKey: ["oylik", "employees", month, q],
-    queryFn: () => json<{ month: string; workDays?: string[]; items: PayrollRow[] }>(`/api/oylik/employees?${qs}`),
+    queryFn: () =>
+      json<{ month: string; workDays?: string[]; calendars?: Record<string, string[]>; items: PayrollRow[] }>(
+        `/api/oylik/employees?${qs}`,
+      ),
     enabled,
     staleTime: 20_000,
   });
@@ -272,8 +363,8 @@ export function useRecalculateOylik() {
 export function useToggleWorkDay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (p: { day: string; isWork: boolean }) =>
-      json<{ ok: boolean; day: string; isWork: boolean; workDays: string[] }>("/api/oylik/calendar", {
+    mutationFn: (p: { day: string; isWork: boolean; scope: string }) =>
+      json<{ ok: boolean; day: string; isWork: boolean; scope: string; workDays: string[] }>("/api/oylik/calendar", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(p),
@@ -287,7 +378,7 @@ export function useToggleWorkDay() {
 export function useApproveOylik() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (p: { userId?: number; month: string; all?: boolean; position?: string }) =>
+    mutationFn: (p: { userId?: number; month: string; all?: boolean; position?: string; userIds?: number[] }) =>
       json("/api/oylik/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

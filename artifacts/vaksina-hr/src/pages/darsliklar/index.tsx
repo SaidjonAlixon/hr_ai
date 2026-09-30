@@ -20,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { RestrictedVideoPlayer } from "@/components/kirish/RestrictedVideoPlayer";
 import { DrivePdfViewer } from "@/components/kirish/DrivePdfViewer";
 import { useToast } from "@/hooks/use-toast";
+import { AuthImage } from "@/components/vazifalar/TaskAttachmentViewer";
 import { cn } from "@/lib/utils";
 import { canLearnDarsliklar, canManageDarsliklar } from "@/lib/roles";
 import {
@@ -119,8 +120,11 @@ export default function DarsliklarPage() {
   const submitTest = useSubmitDarslikTest();
 
   const data = me.data;
-  const lessons = data?.lessons ?? [];
   const preview = Boolean(data?.preview);
+  const [sectionId, setSectionId] = useState<number | null>(null);
+  const sections = data?.sections ?? [];
+  const section = sections.find((s) => s.id === sectionId) ?? null;
+  const lessons = section?.lessons ?? [];
 
   const [activeId, setActiveId] = useState<number | null>(null);
   const [answers, setAnswers] = useState<Record<string, number>>({});
@@ -145,6 +149,10 @@ export default function DarsliklarPage() {
       setActiveId(firstOpen?.id ?? lessons[0]!.id);
     }
   }, [lessons, activeId, firstOpen]);
+
+  useEffect(() => {
+    setSectionId(null);
+  }, [previewTrack, data?.track]);
 
   useEffect(() => {
     setAnswers({});
@@ -243,7 +251,7 @@ export default function DarsliklarPage() {
                 <p className="text-xs font-semibold uppercase tracking-wider text-sky-200/80">Darsliklar</p>
                 <h1 className="text-xl font-bold sm:text-2xl">{data?.trackLabel ?? "…"} kursi</h1>
                 <p className="mt-1 max-w-xl text-sm text-sky-100/80">
-                  Har bir dars: video → slayd → test. Testdan o‘tish balini olsangiz, keyingi dars ochiladi.
+                  Avval bo‘limni tanlang. Ichidagi darslar ketma-ket ochiladi: video, slayd, test.
                 </p>
               </div>
             </div>
@@ -326,15 +334,56 @@ export default function DarsliklarPage() {
           <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">
             {(me.error as Error)?.message || "Yuklanmadi"}
           </p>
-        ) : !lessons.length ? (
+        ) : !sections.length ? (
           <div className="rounded-3xl border border-dashed border-border bg-card/70 p-10 text-center">
             <BookOpen className="mx-auto mb-3 h-10 w-10 text-muted-foreground/60" />
-            <p className="font-semibold text-foreground">Hozircha darslar joylanmagan</p>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Trener yoki admin darslik qo‘shganda shu yerda ko‘rinadi.
-            </p>
+            <p className="font-semibold text-foreground">Hozircha bo‘lim yo‘q</p>
+            <p className="mt-1 text-sm text-muted-foreground">Trener yoki admin bo‘lim ochganda shu yerda muqova chiqadi.</p>
+          </div>
+        ) : !section ? (
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {sections.map((s, i) => (
+              <button
+                key={s.id}
+                type="button"
+                disabled={s.locked}
+                onClick={() => setSectionId(s.id)}
+                className={cn(
+                  "overflow-hidden rounded-3xl border text-left shadow-sm transition",
+                  s.locked ? "cursor-not-allowed border-dashed border-border opacity-70" : "border-border bg-card hover:-translate-y-0.5 hover:border-[#2AABEE]/50",
+                )}
+              >
+                <div className={cn("relative h-40 bg-gradient-to-br", ["from-[#16324F] to-[#2AABEE]", "from-emerald-700 to-teal-500", "from-violet-700 to-indigo-500", "from-amber-600 to-orange-500"][i % 4])}>
+                  {s.coverUrl ? <AuthImage url={s.coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
+                  <span className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/70 to-transparent" />
+                  {s.locked ? (
+                    <span className="absolute right-3 top-3 inline-flex items-center gap-1 rounded-full bg-black/45 px-2 py-1 text-[11px] font-semibold text-white">
+                      <Lock className="h-3 w-3" /> Yopiq
+                    </span>
+                  ) : null}
+                </div>
+                <div className="space-y-1 p-4">
+                  <p className="text-base font-bold text-foreground">{s.title}</p>
+                  {s.description ? <p className="line-clamp-2 text-sm text-muted-foreground">{s.description}</p> : null}
+                  <p className="text-xs font-medium text-[#1583bd]">
+                    {s.locked ? "Oldingi bo‘limni tugating" : `${s.summary.passed}/${s.summary.total} dars · ${s.summary.percent}%`}
+                  </p>
+                </div>
+              </button>
+            ))}
+          </div>
+        ) : !lessons.length ? (
+          <div className="rounded-3xl border border-dashed border-border bg-card/70 p-10 text-center">
+            <button type="button" className="mb-4 text-sm font-semibold text-[#2AABEE]" onClick={() => setSectionId(null)}>
+              Bo‘limlarga qaytish
+            </button>
+            <p className="font-semibold text-foreground">Bu bo‘limda hali dars yo‘q</p>
           </div>
         ) : (
+          <div className="space-y-4">
+            <button type="button" className="text-sm font-semibold text-[#2AABEE] hover:underline" onClick={() => setSectionId(null)}>
+              ← {section.title}
+            </button>
           <div className="grid gap-5 lg:grid-cols-[300px_1fr]">
             <aside className="lg:sticky lg:top-4 lg:self-start">
               <p className="mb-2 px-1 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -559,6 +608,7 @@ export default function DarsliklarPage() {
                 ) : null}
               </div>
             ) : null}
+          </div>
           </div>
         )}
       </div>

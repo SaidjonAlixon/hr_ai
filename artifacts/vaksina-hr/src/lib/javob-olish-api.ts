@@ -92,12 +92,17 @@ export function fetchJavobShifts(dates: string[]) {
 
 export function fetchJavobRequests(
   scope: "mine" | "pending" | "all" | "approved-by-me" | "decided" = "mine",
+  extra?: { employeeId?: number; from?: string; to?: string },
 ) {
+  const qs = new URLSearchParams({ scope });
+  if (extra?.employeeId) qs.set("employeeId", String(extra.employeeId));
+  if (extra?.from) qs.set("from", extra.from);
+  if (extra?.to) qs.set("to", extra.to);
   return apiJson<{
     items: JavobRequestItem[];
     canDecide: boolean;
     roleScope?: "coord" | "hr" | "none";
-  }>(`/javob-olish?scope=${scope}`);
+  }>(`/javob-olish?${qs.toString()}`);
 }
 
 export function submitJavobRequests(body: { dates: string[]; note: string } | JavobDayInput[]) {

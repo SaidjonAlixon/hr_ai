@@ -243,6 +243,11 @@ export function HolatDashboardPanel({
             {t("admin.holatDash.hint")}
           </p>
         </div>
+        {data.scoped ? (
+          <p className="shrink-0 rounded-xl bg-[#0b3a5c]/10 px-3 py-2 text-sm font-medium text-[#0b3a5c]">
+            Faqat sizning filiallaringiz
+          </p>
+        ) : (
         <Button
           type="button"
           className="h-11 shrink-0 gap-2 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90"
@@ -251,6 +256,7 @@ export function HolatDashboardPanel({
           {t("admin.holatDash.pickCoord")}
           <ChevronDown className="h-4 w-4" />
         </Button>
+        )}
       </section>
 
       <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>

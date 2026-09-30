@@ -29,6 +29,8 @@ import {
   formatAttestDt,
   readGps,
   saveAttestProgress,
+  scoreAttestPreview,
+  startAttestPreview,
   submitAttest,
   useAttestMe,
   useStartAttest,
@@ -59,19 +61,22 @@ function clock(ms: number) {
   return h > 0 ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
 }
 
-function ExamRunner({
+export function ExamRunner({
   attempt,
   serverNow,
   onDone,
+  practiceExamId,
 }: {
   attempt: AttestLearnerAttempt;
   serverNow: string;
   onDone: (result: AttestLearnerAttempt) => void;
+  practiceExamId?: number | null;
 }) {
   const { toast } = useToast();
   const questions = attempt.questions || [];
   const [answers, setAnswers] = useState<Record<string, number>>(attempt.answers || {});
   const [index, setIndex] = useState(0);
+  const [review, setReview] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [saveState, setSaveState] = useState<"saved" | "saving" | "error">("saved");
   const focusLost = useRef(attempt ? 0 : 0);
@@ -100,6 +105,7 @@ function ExamRunner({
   }, []);
 
   useEffect(() => {
+    if (practiceExamId) return;
     const id = window.setInterval(() => {
       setSaveState("saving");
       void saveAttestProgress(attempt.id, answersRef.current, focusLost.current)
@@ -107,14 +113,16 @@ function ExamRunner({
         .catch(() => setSaveState("error"));
     }, 8000);
     return () => window.clearInterval(id);
-  }, [attempt.id]);
+  }, [attempt.id, practiceExamId]);
 
   const finish = async (auto: boolean) => {
     if (submitted.current) return;
     submitted.current = true;
     setSubmitting(true);
     try {
-      const res = await submitAttest(attempt.id, answersRef.current, focusLost.current);
+      const res = practiceExamId
+        ? await scoreAttestPreview(practiceExamId, answersRef.current)
+        : await submitAttest(attempt.id, answersRef.current, focusLost.current);
       onDone(res.attempt);
     } catch (e) {
       submitted.current = false;
@@ -137,11 +145,25 @@ function ExamRunner({
   const q = questions[index];
   const answered = Object.keys(answers).length;
   const urgent = left < 60_000;
+  const onLast = questions.length > 0 && index === questions.length - 1;
+  const showSubmit = review || onLast;
+
+  const submitButton = (
+    <Button
+      className="h-12 w-full max-w-sm bg-emerald-600 text-base font-semibold shadow-sm hover:bg-emerald-700"
+      disabled={submitting}
+      onClick={() => void finish(false)}
+    >
+      {submitting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Send className="mr-2 h-4 w-4" />}
+      Tugadi, topshirish bosing
+    </Button>
+  );
 
   const pick = (qi: number) => {
     if (!q) return;
     const next = { ...answers, [q.id]: qi };
     setAnswers(next);
+    if (practiceExamId) return;
     setSaveState("saving");
     void saveAttestProgress(attempt.id, next, focusLost.current)
       .then(() => setSaveState("saved"))
@@ -154,17 +176,25 @@ function ExamRunner({
         <Timer className={cn("h-5 w-5 shrink-0", urgent ? "text-rose-600" : "text-[#2AABEE]")} />
         <span className={cn("text-xl font-bold tabular-nums", urgent && "text-rose-600")}>{clock(left)}</span>
         <span className="hidden text-xs text-muted-foreground sm:inline">
-          {answered}/{questions.length} javob ·{" "}
-          {saveState === "saving" ? "saqlanmoqda…" : saveState === "error" ? "saqlanmadi" : "saqlangan"}
+          {answered}/{questions.length} javob
+          {practiceExamId
+            ? " · sinov, natija saqlanmaydi"
+            : ` · ${saveState === "saving" ? "saqlanmoqda…" : saveState === "error" ? "saqlanmadi" : "saqlangan"}`}
         </span>
-        <Button
-          className="ml-auto h-10 bg-emerald-600 hover:bg-emerald-700"
-          disabled={submitting}
-          onClick={() => void finish(false)}
-        >
-          {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Send className="mr-1.5 h-4 w-4" />}
-          Topshirish
-        </Button>
+        {showSubmit ? (
+          <span className="ml-auto text-xs text-muted-foreground sm:hidden">
+            {answered}/{questions.length}
+          </span>
+        ) : (
+          <Button
+            className="ml-auto h-10 bg-emerald-600 hover:bg-emerald-700"
+            disabled={submitting}
+            onClick={() => void finish(false)}
+          >
+            {submitting ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <Send className="mr-1.5 h-4 w-4" />}
+            Topshirish
+          </Button>
+        )}
       </header>
 
       <div className="flex gap-1.5 overflow-x-auto border-b border-border px-3 py-2 [scrollbar-width:none] sm:px-5 [&::-webkit-scrollbar]:hidden">
@@ -172,7 +202,10 @@ function ExamRunner({
           <button
             key={qq.id}
             type="button"
-            onClick={() => setIndex(i)}
+            onClick={() => {
+              setReview(false);
+              setIndex(i);
+            }}
             className={cn(
               "h-8 w-8 shrink-0 rounded-lg text-xs font-bold",
               i === index && "bg-[#2AABEE] text-white",
@@ -185,11 +218,58 @@ function ExamRunner({
         ))}
       </div>
 
-      {q ? (
+      {review ? (
         <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-4 py-5 sm:px-6">
-          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-            {index + 1}-savol / {questions.length}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ko‘rib chiqish</p>
+              <h2 className="mt-1 text-lg font-semibold text-foreground">Barcha savollar</h2>
+            </div>
+            <Button variant="outline" className="shrink-0" onClick={() => setReview(false)}>
+              Savolga qaytish
+            </Button>
+          </div>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {answered}/{questions.length} javob belgilangan. Savolni bosib, javobni o‘zgartirish mumkin.
           </p>
+          <div className="mt-4 grid gap-2 pb-4">
+            {questions.map((qq, i) => {
+              const picked = answers[qq.id];
+              const chosen = picked === undefined ? null : qq.options[picked];
+              return (
+                <button
+                  key={qq.id}
+                  type="button"
+                  onClick={() => {
+                    setIndex(i);
+                    setReview(false);
+                  }}
+                  className="rounded-2xl border border-border bg-card px-3 py-3 text-left transition hover:border-[#2AABEE]/50"
+                >
+                  <p className="text-xs font-semibold text-muted-foreground">{i + 1}-savol</p>
+                  <p className="mt-0.5 text-sm font-medium leading-snug text-foreground">{qq.text}</p>
+                  <p className={cn("mt-1.5 text-sm", chosen ? "text-[#0B3A5C]" : "text-amber-700")}>
+                    {chosen ? `${String.fromCharCode(65 + picked!)}. ${chosen}` : "Javob belgilanmagan"}
+                  </p>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      ) : q ? (
+        <div className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-4 py-5 sm:px-6">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              {index + 1}-savol / {questions.length}
+            </p>
+            <button
+              type="button"
+              onClick={() => setReview(true)}
+              className="text-sm font-semibold text-[#2AABEE] hover:underline"
+            >
+              Barchasini ko‘rish
+            </button>
+          </div>
           <h2 className="mt-2 text-lg font-semibold leading-snug text-foreground">{q.text}</h2>
           <div className="mt-4 grid gap-2">
             {q.options.map((opt, oi) => {
@@ -217,17 +297,34 @@ function ExamRunner({
               );
             })}
           </div>
-          <div className="mt-5 flex gap-2">
-            <Button variant="outline" className="flex-1" disabled={index === 0} onClick={() => setIndex((i) => i - 1)}>
-              Oldingi
-            </Button>
-            <Button
-              className="flex-1 bg-[#2AABEE] hover:bg-[#229ED9]"
-              disabled={index === questions.length - 1}
-              onClick={() => setIndex((i) => i + 1)}
-            >
-              Keyingi
-            </Button>
+          {onLast ? (
+            <div className="mt-6 flex justify-center">
+              <Button variant="outline" className="h-11 min-w-36" disabled={index === 0} onClick={() => setIndex((i) => i - 1)}>
+                Oldingi
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-5 flex gap-2">
+              <Button variant="outline" className="flex-1" disabled={index === 0} onClick={() => setIndex((i) => i - 1)}>
+                Oldingi
+              </Button>
+              <Button className="flex-1 bg-[#2AABEE] hover:bg-[#229ED9]" onClick={() => setIndex((i) => i + 1)}>
+                Keyingi
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {showSubmit ? (
+        <div className="border-t border-border bg-background/95 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur">
+          <div className="mx-auto flex w-full max-w-sm flex-col items-center gap-1.5">
+            {submitButton}
+            <p className="text-center text-xs text-muted-foreground">
+              {answered === questions.length
+                ? "Barcha savollarga javob berilgan"
+                : `${questions.length - answered} ta savol javobsiz`}
+            </p>
           </div>
         </div>
       ) : null}
@@ -284,7 +381,11 @@ export default function AtestatsiyaPage() {
   const me = useAttestMe(isLearner ? null : previewTrack);
   const start = useStartAttest();
   const [locatingId, setLocatingId] = useState<number | null>(null);
-  const [runner, setRunner] = useState<{ attempt: AttestLearnerAttempt; serverNow: string } | null>(null);
+  const [runner, setRunner] = useState<{
+    attempt: AttestLearnerAttempt;
+    serverNow: string;
+    practiceExamId?: number | null;
+  } | null>(null);
 
   if (!isLearner && !isManager) {
     return (
@@ -299,6 +400,11 @@ export default function AtestatsiyaPage() {
   const begin = async (exam: AttestExamCard) => {
     setLocatingId(exam.id);
     try {
+      if (data?.preview) {
+        const res = await startAttestPreview(exam.id);
+        setRunner({ attempt: res.attempt, serverNow: res.serverNow, practiceExamId: exam.id });
+        return;
+      }
       const gps = await readGps();
       const res = await start.mutateAsync({ examId: exam.id, ...gps });
       setRunner({ attempt: res.attempt, serverNow: res.serverNow });
@@ -315,12 +421,27 @@ export default function AtestatsiyaPage() {
         <ExamRunner
           attempt={runner.attempt}
           serverNow={runner.serverNow}
+          practiceExamId={runner.practiceExamId}
           onDone={(result) => {
+            const practice = Boolean(runner.practiceExamId);
             setRunner(null);
-            void me.refetch();
+            if (!practice) void me.refetch();
             toast({
-              title: result.passed ? "Tabriklaymiz, o‘tdingiz" : result.resultHidden ? "Test topshirildi" : "Test yakunlandi",
-              description: result.score != null ? `Natija: ${result.score}%` : undefined,
+              title: practice
+                ? result.passed
+                  ? "Sinov: o‘tdingiz"
+                  : "Sinov yakunlandi"
+                : result.passed
+                  ? "Tabriklaymiz, o‘tdingiz"
+                  : result.resultHidden
+                    ? "Test topshirildi"
+                    : "Test yakunlandi",
+              description:
+                result.score != null
+                  ? practice
+                    ? `Sinov natijasi ${result.score}% — saqlanmadi`
+                    : `Natija: ${result.score}%`
+                  : undefined,
             });
           }}
         />
@@ -362,7 +483,7 @@ export default function AtestatsiyaPage() {
         {isManager && !isLearner ? (
           <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <Eye className="h-4 w-4 shrink-0" />
-            <span className="mr-auto">Ko‘rish rejimi — testni boshlab bo‘lmaydi.</span>
+            <span className="mr-auto">Ko‘rish rejimi — testni sinab ko‘rish mumkin. Natija saqlanmaydi.</span>
             {ATTESTATSIYA_TRACKS.map((t) => (
               <button
                 key={t.key}
@@ -398,16 +519,23 @@ export default function AtestatsiyaPage() {
                     <h2 className="text-base font-bold text-foreground">{exam.title}</h2>
                     {exam.description ? <p className="mt-1 text-sm text-muted-foreground">{exam.description}</p> : null}
                   </div>
-                  <span
-                    className={cn(
-                      "shrink-0 rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
-                      exam.window === "open" && "bg-emerald-100 text-emerald-800",
-                      exam.window === "upcoming" && "bg-sky-100 text-sky-800",
-                      exam.window === "closed" && "bg-muted text-muted-foreground",
-                    )}
-                  >
-                    {exam.window === "open" ? "Ochiq" : exam.window === "upcoming" ? "Kutilmoqda" : "Yopilgan"}
-                  </span>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    {data.preview && exam.published === false ? (
+                      <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-semibold text-amber-900">
+                        E’lon qilinmagan
+                      </span>
+                    ) : null}
+                    <span
+                      className={cn(
+                        "rounded-full px-2.5 py-0.5 text-[11px] font-semibold",
+                        exam.window === "open" && "bg-emerald-100 text-emerald-800",
+                        exam.window === "upcoming" && "bg-sky-100 text-sky-800",
+                        exam.window === "closed" && "bg-muted text-muted-foreground",
+                      )}
+                    >
+                      {exam.window === "open" ? "Ochiq" : exam.window === "upcoming" ? "Kutilmoqda" : "Yopilgan"}
+                    </span>
+                  </div>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
                   {[
@@ -444,10 +572,14 @@ export default function AtestatsiyaPage() {
                       <Play className="mr-1.5 h-4 w-4" />
                     )}
                     {locatingId === exam.id
-                      ? "Joylashuv tekshirilmoqda…"
-                      : exam.canResume
-                        ? "Davom ettirish"
-                        : "Testni boshlash"}
+                      ? data?.preview
+                        ? "Ochilmoqda…"
+                        : "Joylashuv tekshirilmoqda…"
+                      : data?.preview
+                        ? "Sinab ko‘rish"
+                        : exam.canResume
+                          ? "Davom ettirish"
+                          : "Testni boshlash"}
                   </Button>
                 ) : null}
               </article>

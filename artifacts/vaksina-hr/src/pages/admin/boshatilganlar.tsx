@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
-import { ArrowLeft, Loader2, Search, Trash2, UserX } from 'lucide-react';
+import { ArrowLeft, FileDown, FileSpreadsheet, Loader2, Search, Trash2, UserX } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
@@ -9,21 +9,11 @@ import { Badge } from '../../components/ui/badge';
 import { useAuth } from '../../contexts/AuthContext';
 import { canManageUsers, userRoleLabel } from '../../lib/roles';
 import { fetchDismissedStaff, purgeDismissed } from '../../lib/dismissed-staff-api';
+import { exportDismissedExcel, exportDismissedPdf, fmtDismissedWhen } from '../../lib/dismissed-export';
 import { useToast } from '../../hooks/use-toast';
 
 function fmtDateTime(iso?: string | null): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return new Intl.DateTimeFormat('uz-UZ', {
-    timeZone: 'Asia/Tashkent',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).format(d);
+  return fmtDismissedWhen(iso);
 }
 
 export default function BoshatilganlarPage() {
@@ -34,6 +24,7 @@ export default function BoshatilganlarPage() {
   const [search, setSearch] = useState('');
   const [debounced, setDebounced] = useState('');
   const [purgingId, setPurgingId] = useState<number | null>(null);
+  const [exporting, setExporting] = useState<'excel' | 'pdf' | null>(null);
 
   useEffect(() => {
     const t = window.setTimeout(() => setDebounced(search.trim()), 300);
@@ -48,6 +39,27 @@ export default function BoshatilganlarPage() {
   });
 
   const rows = useMemo(() => data ?? [], [data]);
+
+  async function runExport(kind: 'excel' | 'pdf') {
+    if (!rows.length) {
+      toast({ title: 'Yuklash uchun ro‘yxat bo‘sh', variant: 'destructive' });
+      return;
+    }
+    setExporting(kind);
+    try {
+      if (kind === 'excel') await exportDismissedExcel(rows, debounced);
+      else await exportDismissedPdf(rows, debounced);
+      toast({ title: kind === 'excel' ? 'Excel yuklandi' : 'PDF yuklandi' });
+    } catch (err) {
+      toast({
+        title: 'Yuklab bo‘lmadi',
+        description: err instanceof Error ? err.message : undefined,
+        variant: 'destructive',
+      });
+    } finally {
+      setExporting(null);
+    }
+  }
 
   if (!allowed) {
     return (
@@ -70,12 +82,34 @@ export default function BoshatilganlarPage() {
             O‘chirilgan yoki «Tugatilgan» holati berilgan xodimlar. Login va parol bekor qilingan, boshqa hech qayerda ko‘rinmaydi.
           </p>
         </div>
-        <Button asChild variant="outline" className="gap-2">
-          <Link href="/admin/users">
-            <ArrowLeft className="h-4 w-4" />
-            Foydalanuvchilar
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            disabled={exporting !== null || !rows.length}
+            onClick={() => void runExport('excel')}
+          >
+            {exporting === 'excel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4 text-emerald-700" />}
+            Excel
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="gap-2"
+            disabled={exporting !== null || !rows.length}
+            onClick={() => void runExport('pdf')}
+          >
+            {exporting === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4 text-rose-700" />}
+            PDF
+          </Button>
+          <Button asChild variant="outline" className="gap-2">
+            <Link href="/admin/users">
+              <ArrowLeft className="h-4 w-4" />
+              Foydalanuvchilar
+            </Link>
+          </Button>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-3 shadow-sm">

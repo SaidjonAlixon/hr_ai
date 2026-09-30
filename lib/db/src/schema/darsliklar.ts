@@ -31,11 +31,33 @@ export type DarslikLessonState = {
 /** lessonId → holat */
 export type DarslikLessonsMap = Record<string, DarslikLessonState>;
 
+export const darslikSectionsTable = pgTable(
+  "darslik_sections",
+  {
+    id: serial("id").primaryKey(),
+    track: text("track").notNull(),
+    position: integer("position").notNull().default(0),
+    title: text("title").notNull(),
+    description: text("description").notNull().default(""),
+    coverUrl: text("cover_url").notNull().default(""),
+    published: boolean("published").notNull().default(true),
+    createdById: integer("created_by_id"),
+    updatedById: integer("updated_by_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [index("darslik_sections_track_pos_idx").on(t.track, t.position)],
+);
+
 export const darslikLessonsTable = pgTable(
   "darslik_lessons",
   {
     id: serial("id").primaryKey(),
     track: text("track").notNull(),
+    sectionId: integer("section_id"),
     position: integer("position").notNull().default(0),
     title: text("title").notNull(),
     description: text("description").notNull().default(""),
@@ -55,7 +77,10 @@ export const darslikLessonsTable = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (t) => [index("darslik_lessons_track_pos_idx").on(t.track, t.position)],
+  (t) => [
+    index("darslik_lessons_track_pos_idx").on(t.track, t.position),
+    index("darslik_lessons_section_pos_idx").on(t.sectionId, t.position),
+  ],
 );
 
 export const darslikProgressTable = pgTable(

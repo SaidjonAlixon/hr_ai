@@ -7,6 +7,7 @@ import {
 import { displayBranchName } from "./geo-location";
 import { addDaysYmd } from "./attendance-engine";
 import { buildHolatReport, type HolatCoordNode, type HolatPerson } from "./holat";
+import { isVacancyPlaceholder } from "./vacancy-slot";
 
 function todayTashkentYmd(): string {
   return new Intl.DateTimeFormat("en-CA", {
@@ -29,14 +30,27 @@ function eachDateInclusive(from: string, to: string): string[] {
   return out;
 }
 
-function shiftDisplay(shiftType?: string | null, shiftLabel?: string | null): string {
-  const label = String(shiftLabel || "").trim();
-  if (label) return label;
-  const t = String(shiftType || "one").toLowerCase();
-  if (t === "two" || t === "2") return "2-smena";
-  if (t === "three" || t === "3") return "3-smena";
-  if (t === "office") return "Ofis";
-  return "1-smena";
+function shiftBucket(shiftType?: string | null, shiftLabel?: string | null): { key: string; label: string } {
+  const rawLabel = String(shiftLabel || "").trim();
+  const compact = rawLabel.toLowerCase().replace(/\s+/g, "");
+  const t = String(shiftType || "").trim().toLowerCase();
+  if (compact.includes("1+2") || compact.includes("1-2") || t === "one_two" || t === "12") {
+    return { key: "12", label: "1+2" };
+  }
+  if (compact.includes("2+3") || compact.includes("2-3") || t === "two_three" || t === "23") {
+    return { key: "23", label: "2+3" };
+  }
+  if (t === "office" || compact.includes("ofis")) return { key: "office", label: "Asosiy ofis" };
+  if (t === "three" || t === "3" || compact.includes("3-smena") || compact === "3smena") {
+    return { key: "3", label: "3-smena" };
+  }
+  if (t === "two" || t === "2" || compact.includes("2-smena") || compact === "2smena") {
+    return { key: "2", label: "2-smena" };
+  }
+  if (t === "one" || t === "1" || compact.includes("1-smena") || compact === "1smena" || !t) {
+    return { key: "1", label: "1-smena" };
+  }
+  return { key: "other", label: rawLabel || "Boshqa" };
 }
 
 function roleKeyOf(p: HolatPerson): "mudir" | "farmasevt" | "stajyor" | "other" {
@@ -64,22 +78,31 @@ function roleLabelOf(key: ReturnType<typeof roleKeyOf>): string {
 export type HisobotEmployeeRow = {
   employeeId: number;
   fullName: string;
+  accountName: string | null;
+  position: string;
   phone: string | null;
   login: string | null;
   roleKey: "mudir" | "farmasevt" | "stajyor" | "other";
   roleLabel: string;
   branch: string;
+  shiftKey: string;
   shiftDisplay: string;
   presentDays: number;
+  onTimeDays: number;
+  lateDays: number;
   absentDays: number;
   presentRate: number;
   presentDates: string[];
+  onTimeDates: string[];
+  lateDates: string[];
   absentDates: string[];
 };
 
 export type HisobotBranchBlock = {
   branch: string;
   mudir: HisobotEmployeeRow | null;
+  /** Mudir yopiq yoki tayinlanmagan — filial qobig‘i, odam emas. */
+  mudirMissing: boolean;
   pharmacists: HisobotEmployeeRow[];
   interns: HisobotEmployeeRow[];
   others: HisobotEmployeeRow[];
@@ -109,6 +132,8 @@ export type CoordinatorHisobot = {
   branches: HisobotBranchBlock[];
   employees: HisobotEmployeeRow[];
   noShows: HisobotEmployeeRow[];
+  /** Koordinatorning o‘z davomati — xodimlar jadvaliga aralashmaydi. */
+  self: HisobotEmployeeRow | null;
 };
 
 async function loadShiftMap(employeeIds: number[]): Promise<Map<number, { shiftType: string | null; shiftLabel: string | null }>> {
@@ -134,34 +159,49 @@ function buildPersonAttendance(
   byEmpDate: Map<string, { checkInAt: Date | null; status: string | null }>,
   shifts: Map<number, { shiftType: string | null; shiftLabel: string | null }>,
 ): HisobotEmployeeRow | null {
-  if (p.employeeId == null) return null;
-  const presentDates: string[] = [];
+  if (p.employeeId == null || isVacancyPlaceholder(p)) return null;
+  // Filial qobig‘i: mudir tayinlanmagan, ism o‘rnida dorixona nomi turadi.
+  if (p.employmentStatus === "no_manager") return null;
+  const onTimeDates: string[] = [];
+  const lateDates: string[] = [];
   const absentDates: string[] = [];
   for (const d of dates) {
     const rec = byEmpDate.get(`${p.employeeId}|${d}`);
-    const present = Boolean(rec?.checkInAt) && rec?.status !== "absent" && rec?.status !== "leave";
-    if (present) presentDates.push(d);
-    else absentDates.push(d);
+    const came = Boolean(rec?.checkInAt) && rec?.status !== "absent" && rec?.status !== "leave";
+    if (!came) absentDates.push(d);
+    else if (rec?.status === "late") lateDates.push(d);
+    else onTimeDates.push(d);
   }
+  const presentDates = [...onTimeDates, ...lateDates].sort();
   const dayCount = dates.length || 1;
   const presentDays = presentDates.length;
+  const onTimeDays = onTimeDates.length;
+  const lateDays = lateDates.length;
   const absentDays = absentDates.length;
   const presentRate = Math.round((presentDays / dayCount) * 1000) / 10;
   const sh = shifts.get(p.employeeId);
   const key = roleKeyOf(p);
+  const shift = shiftBucket(sh?.shiftType, sh?.shiftLabel);
   return {
     employeeId: p.employeeId,
     fullName: p.fullName,
+    accountName: p.accountName,
+    position: p.position || roleLabelOf(key),
     phone: p.phone,
     login: p.login,
     roleKey: key,
     roleLabel: roleLabelOf(key),
     branch: displayBranchName(p.branch) || p.branch || "—",
-    shiftDisplay: shiftDisplay(sh?.shiftType, sh?.shiftLabel),
+    shiftKey: shift.key,
+    shiftDisplay: shift.label,
     presentDays,
+    onTimeDays,
+    lateDays,
     absentDays,
     presentRate,
     presentDates,
+    onTimeDates,
+    lateDates,
     absentDates,
   };
 }
@@ -202,9 +242,12 @@ export async function buildCoordinatorHisobot(opts: {
   if (!coord || coord.employeeId == null) return null;
 
   const people = collectPeople(coord);
-  const ids = people
-    .map((p) => p.employeeId)
-    .filter((id): id is number => typeof id === "number" && Number.isFinite(id));
+  const ids = [
+    ...people
+      .map((p) => p.employeeId)
+      .filter((id): id is number => typeof id === "number" && Number.isFinite(id)),
+    ...(coord.employeeId != null ? [coord.employeeId] : []),
+  ];
   const dates = eachDateInclusive(from, to);
   const shifts = await loadShiftMap(ids);
 
@@ -240,7 +283,11 @@ export async function buildCoordinatorHisobot(opts: {
   const branches: HisobotBranchBlock[] = [];
 
   for (const mudirNode of coord.mudirs ?? []) {
-    const mudirRow = buildPersonAttendance(mudirNode, dates, byEmpDate, shifts);
+    const mudirMissing =
+      mudirNode.employmentStatus === "no_manager" ||
+      mudirNode.employmentStatus === "closed" ||
+      isVacancyPlaceholder(mudirNode);
+    const mudirRow = mudirMissing ? null : buildPersonAttendance(mudirNode, dates, byEmpDate, shifts);
     const pharmacists: HisobotEmployeeRow[] = [];
     const interns: HisobotEmployeeRow[] = [];
     const others: HisobotEmployeeRow[] = [];
@@ -256,6 +303,7 @@ export async function buildCoordinatorHisobot(opts: {
     branches.push({
       branch: displayBranchName(mudirNode.branch) || mudirNode.branch || mudirNode.fullName,
       mudir: mudirRow,
+      mudirMissing,
       pharmacists,
       interns,
       others,
@@ -306,6 +354,11 @@ export async function buildCoordinatorHisobot(opts: {
     branches,
     employees,
     noShows,
+    self: (() => {
+      const row = buildPersonAttendance(coord, dates, byEmpDate, shifts);
+      if (!row) return null;
+      return { ...row, roleLabel: "Koordinator", position: row.position || "Koordinator" };
+    })(),
   };
 }
 

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   useGetUsers,
   useGetDepartments,
@@ -15,7 +15,7 @@ import { Input } from '../../components/ui/input';
 import { Label } from '../../components/ui/label';
 import { Badge } from '../../components/ui/badge';
 import { Checkbox } from '../../components/ui/checkbox';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { Popover, PopoverContent, PopoverTrigger } from '../../components/ui/popover';
 import {
   Dialog,
@@ -154,6 +154,7 @@ export default function AdminUsersPage() {
 
   const [fullName, setFullName] = useState('');
   const [role, setRole] = useState('recruiter');
+  const [rolePick, setRolePick] = useState('recruiter');
   const [phone, setPhone] = useState('');
   const [departmentId, setDepartmentId] = useState<string>('none');
   const [status, setStatus] = useState('active');
@@ -162,12 +163,31 @@ export default function AdminUsersPage() {
     search: search || undefined,
     role: roleFilter !== 'all' ? roleFilter : undefined,
   });
-  const { data: departments } = useGetDepartments();
+  const { data: departments, refetch: refetchDepartments } = useGetDepartments();
   const createMutation = useCreateUser();
   const updateMutation = useUpdateUser();
   const [dismissTarget, setDismissTarget] = useState<User | null>(null);
   const [dismissReason, setDismissReason] = useState('');
   const [dismissing, setDismissing] = useState(false);
+
+  const deptChoices = useMemo(
+    () => [...(departments ?? [])].sort((a, b) => a.name.localeCompare(b.name, 'uz')),
+    [departments],
+  );
+
+  useEffect(() => {
+    if (createOpen || editOpen) void refetchDepartments();
+  }, [createOpen, editOpen, refetchDepartments]);
+
+  function onCreateRole(value: string) {
+    if (value.startsWith('dept:')) {
+      setRolePick(value);
+      setDepartmentId(value.slice(5));
+      return;
+    }
+    setRolePick(value);
+    setRole(value);
+  }
 
   const canManage = canManageUsers(me?.role);
   const canChangeStatus = canChangeStaffStatus(me?.role);
@@ -238,6 +258,7 @@ export default function AdminUsersPage() {
   const resetForm = () => {
     setFullName('');
     setRole('recruiter');
+    setRolePick('recruiter');
     setPhone('');
     setDepartmentId('none');
     setStatus('active');
@@ -249,6 +270,7 @@ export default function AdminUsersPage() {
     setFullName(u.fullName);
     // Eski «hr» roli ro‘yxatdan olib tashlangan — tahrirda HR Menejer
     setRole(u.role === 'hr' ? 'hr_menejer' : u.role);
+    setRolePick(u.role === 'hr' ? 'hr_menejer' : u.role);
     setPhone(u.phone || '');
     setDepartmentId(u.departmentId != null ? String(u.departmentId) : 'none');
     setStatus(normalizeUserStatus(u.status));
@@ -855,16 +877,34 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Rol *</Label>
-                <Select value={role} onValueChange={setRole}>
+                <Select value={rolePick} onValueChange={onCreateRole}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Rolni tanlang" />
+                    <SelectValue placeholder="Rol yoki bo‘lim" />
                   </SelectTrigger>
-                  <SelectContent position="popper" className="z-[100]">
-                    {ROLES.map((r) => (
-                      <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
-                    ))}
+                  <SelectContent position="popper" className="z-[100] max-h-80">
+                    {deptChoices.length > 0 ? (
+                      <SelectGroup>
+                        <SelectLabel>Bo‘limlar</SelectLabel>
+                        {deptChoices.map((d) => (
+                          <SelectItem key={`dept-${d.id}`} value={`dept:${d.id}`}>{d.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ) : null}
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>Rollar</SelectLabel>
+                      {ROLES.map((r) => (
+                        <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground">
+                  Bo‘limlar sahifasida qo‘shilgan bo‘lim shu ro‘yxatning boshida. Rol: {ROLES.find((r) => r.value === role)?.label || role}
+                  {departmentId !== 'none'
+                    ? ` · Bo‘lim: ${deptChoices.find((d) => String(d.id) === departmentId)?.name || ''}`
+                    : ''}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label>Telefon (ixtiyoriy)</Label>
@@ -879,7 +919,7 @@ export default function AdminUsersPage() {
                   </SelectTrigger>
                   <SelectContent position="popper" className="z-[100]">
                     <SelectItem value="none">Belgilanmagan</SelectItem>
-                    {(departments ?? []).map((d) => (
+                    {(deptChoices).map((d) => (
                       <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                     ))}
                   </SelectContent>
@@ -957,7 +997,7 @@ export default function AdminUsersPage() {
                   </SelectTrigger>
                   <SelectContent position="popper" className="z-[100]">
                     <SelectItem value="none">Belgilanmagan</SelectItem>
-                    {(departments ?? []).map((d) => (
+                    {(deptChoices).map((d) => (
                       <SelectItem key={d.id} value={String(d.id)}>{d.name}</SelectItem>
                     ))}
                   </SelectContent>

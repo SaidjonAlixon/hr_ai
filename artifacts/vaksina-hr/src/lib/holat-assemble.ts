@@ -1,4 +1,5 @@
 import { displayBranchName } from "./pharmacy-staff-api";
+import { isVacancyPlaceholder } from "./vacancy-slot";
 import type {
   HolatCoordNode,
   HolatMudirNode,
@@ -213,7 +214,12 @@ export function assembleHolatReport(opts: {
     };
   });
 
-  const active = people.filter((p) => p.employmentStatus !== "dismissed" && p.employmentStatus !== "closed");
+  const active = people.filter(
+    (p) =>
+      p.employmentStatus !== "dismissed" &&
+      p.employmentStatus !== "closed" &&
+      !isVacancyPlaceholder(p),
+  );
   let coords = active.filter((p) => p.orgRole === "coordinator");
   const coordIds = new Set(coords.map((c) => c.employeeId));
   for (const p of active) {

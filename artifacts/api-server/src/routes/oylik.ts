@@ -11,12 +11,18 @@ import {
   computePayroll,
   computePayrollList,
   currentMonthKey,
+  calendarStorageKey,
   defaultIsWorkDay,
   formatSom,
+  isPayrollCalendarScope,
   loadKpiWeights,
   loadWorkDayOverrides,
   monthBounds,
   saveKpiWeights,
+  loadJarimaSummary,
+  loadPayrollSlip,
+  loadPayrollYear,
+  savePayrollLine,
   upsertPayrollDraft,
   workdaysBetween,
 } from "../lib/kpi-payroll";
@@ -92,29 +98,35 @@ router.patch("/oylik/calendar", requireAuth, async (req: AuthRequest, res): Prom
     return;
   }
   const day = String(req.body?.day || "").slice(0, 10);
+  const scope = String(req.body?.scope || "ofis").slice(0, 40);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
     res.status(400).json({ error: "Sana noto‘g‘ri" });
     return;
   }
+  if (!isPayrollCalendarScope(scope)) {
+    res.status(400).json({ error: "Ish kuni guruhi noto‘g‘ri" });
+    return;
+  }
   const isWork = Boolean(req.body?.isWork);
+  const key = calendarStorageKey(scope, day);
   try {
     const now = new Date();
     if (isWork === defaultIsWorkDay(day)) {
-      await db.delete(workCalendarDaysTable).where(eq(workCalendarDaysTable.day, day));
+      await db.delete(workCalendarDaysTable).where(eq(workCalendarDaysTable.day, key));
     } else {
       const [existing] = await db
         .select({ day: workCalendarDaysTable.day })
         .from(workCalendarDaysTable)
-        .where(eq(workCalendarDaysTable.day, day))
+        .where(eq(workCalendarDaysTable.day, key))
         .limit(1);
       if (existing) {
         await db
           .update(workCalendarDaysTable)
           .set({ isWork, updatedById: req.userId!, updatedAt: now })
-          .where(eq(workCalendarDaysTable.day, day));
+          .where(eq(workCalendarDaysTable.day, key));
       } else {
         await db.insert(workCalendarDaysTable).values({
-          day,
+          day: key,
           isWork,
           updatedById: req.userId!,
           updatedAt: now,
@@ -122,8 +134,8 @@ router.patch("/oylik/calendar", requireAuth, async (req: AuthRequest, res): Prom
       }
     }
     const { from, to } = monthBounds(day.slice(0, 7));
-    const overrides = await loadWorkDayOverrides();
-    res.json({ ok: true, day, isWork, workDays: workdaysBetween(from, to, overrides) });
+    const overrides = await loadWorkDayOverrides(scope);
+    res.json({ ok: true, day, isWork, scope, workDays: workdaysBetween(from, to, overrides) });
   } catch (err) {
     console.error("PATCH /oylik/calendar", err);
     res.status(503).json({ error: "Kalendar saqlanmadi" });
@@ -293,7 +305,42 @@ router.post("/oylik/approve", requireAuth, async (req: AuthRequest, res): Promis
     const all = Boolean(req.body?.all);
     const position = normPosition(req.body?.position);
     const userId = req.body?.userId != null ? Number(req.body.userId) : null;
+    const userIds = Array.isArray(req.body?.userIds)
+      ? [...new Set(req.body.userIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0))].slice(0, 2000)
+      : [];
     const now = new Date();
+
+    if (userIds.length) {
+      const existing = await db
+        .select({ userId: payrollMonthsTable.userId })
+        .from(payrollMonthsTable)
+        .where(and(eq(payrollMonthsTable.month, month), inArray(payrollMonthsTable.userId, userIds)));
+      const have = new Set(existing.map((r) => r.userId));
+      const missing = userIds.filter((id) => !have.has(id));
+      if (missing.length) {
+        await db.insert(payrollMonthsTable).values(
+          missing.map((id) => ({
+            userId: id,
+            month,
+            status: "approved",
+            fixedSalary: 0,
+            bonusPercent: 0,
+            kpiPercent: 0,
+            maxBonus: 0,
+            bonusAmount: 0,
+            totalAmount: 0,
+            approvedById: req.userId!,
+            approvedAt: now,
+          })),
+        );
+      }
+      await db
+        .update(payrollMonthsTable)
+        .set({ status: "approved", approvedById: req.userId!, approvedAt: now, updatedAt: now })
+        .where(and(eq(payrollMonthsTable.month, month), inArray(payrollMonthsTable.userId, userIds)));
+      res.json({ ok: true, month, count: userIds.length, status: "approved" });
+      return;
+    }
 
     if (position && (all || !userId)) {
       const ids = await userIdsByPosition(position);
@@ -382,6 +429,88 @@ router.post("/oylik/approve", requireAuth, async (req: AuthRequest, res): Promis
   }
 });
 
+router.post("/oylik/return", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canApprovePayroll(req.userRole)) {
+    res.status(403).json({ error: "Tasdiqni qaytarish: admin, direktor yoki moliyachi" });
+    return;
+  }
+  try {
+    const month = String(req.body?.month || currentMonthKey()).slice(0, 7);
+    const userIds = Array.isArray(req.body?.userIds)
+      ? [...new Set(req.body.userIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0))].slice(0, 2000)
+      : [];
+    if (!userIds.length) {
+      res.status(400).json({ error: "Xodim tanlanmagan" });
+      return;
+    }
+    await db
+      .update(payrollMonthsTable)
+      .set({ status: "returned", updatedAt: new Date() })
+      .where(and(eq(payrollMonthsTable.month, month), inArray(payrollMonthsTable.userId, userIds), eq(payrollMonthsTable.status, "approved")));
+    res.json({ ok: true, month, count: userIds.length, status: "returned" });
+  } catch (err) {
+    console.error("POST /oylik/return", err);
+    res.status(503).json({ error: "Tasdiq qaytarilmadi" });
+  }
+});
+
+router.get("/oylik/slip", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const month = String(req.query.month || currentMonthKey()).slice(0, 7);
+    res.json(await loadPayrollSlip(req.userId!, month));
+  } catch (err) {
+    console.error("GET /oylik/slip", err);
+    res.status(503).json({ error: "Oylik yuklanmadi" });
+  }
+});
+
+router.get("/oylik/year", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const year = String(req.query.year || currentMonthKey().slice(0, 4)).slice(0, 4);
+    res.json(await loadPayrollYear(req.userId!, year));
+  } catch (err) {
+    console.error("GET /oylik/year", err);
+    res.status(503).json({ error: "Yil yuklanmadi" });
+  }
+});
+
+router.get("/oylik/jarima-summary", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const month = String(req.query.month || currentMonthKey()).slice(0, 7);
+    res.json(await loadJarimaSummary(month, req.userId!, canManagePayroll(req.userRole)));
+  } catch (err) {
+    console.error("GET /oylik/jarima-summary", err);
+    res.status(503).json({ error: "Jarima yuklanmadi" });
+  }
+});
+
+router.patch("/oylik/line", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canEditKpiSettings(req.userRole)) {
+    res.status(403).json({ error: "Oylik va jarimani yozish ruxsati yo‘q" });
+    return;
+  }
+  try {
+    const userId = Number(req.body?.userId);
+    const month = String(req.body?.month || currentMonthKey()).slice(0, 7);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      res.status(400).json({ error: "Xodim tanlanmagan" });
+      return;
+    }
+    const saved = await savePayrollLine({
+      userId,
+      employeeId: Number(req.body?.employeeId) || null,
+      month,
+      salary: Number(req.body?.salary) || 0,
+      jarima: Number(req.body?.jarima) || 0,
+      note: req.body?.note,
+    });
+    res.json({ ok: true, userId, month, salary: saved.fixedSalary, jarima: saved.jarima, net: saved.totalAmount });
+  } catch (err) {
+    console.error("PATCH /oylik/line", err);
+    res.status(503).json({ error: "Saqlanmadi" });
+  }
+});
+
 router.get("/oylik/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canManagePayroll(req.userRole)) {
     res.status(403).json({ error: "Ruxsat yo‘q" });
@@ -391,40 +520,34 @@ router.get("/oylik/export", requireAuth, async (req: AuthRequest, res): Promise<
     const month = String(req.query.month || currentMonthKey()).slice(0, 7);
     const { items } = await computePayrollList(month);
     const wb = new ExcelJS.Workbook();
-    const ws = wb.addWorksheet("Oylik KPI");
+    const ws = wb.addWorksheet("Oylik");
     ws.columns = [
       { header: "F.I.Sh.", width: 28 },
       { header: "Lavozim", width: 18 },
       { header: "Filial", width: 16 },
-      { header: "Fiks maosh", width: 14 },
-      { header: "Bonus %", width: 10 },
-      { header: "Davomat KPI", width: 12 },
-      { header: "Topshiriq KPI", width: 14 },
-      { header: "Checklist KPI", width: 14 },
-      { header: "Umumiy KPI", width: 12 },
-      { header: "Bonus", width: 14 },
-      { header: "Jami oylik", width: 14 },
-      { header: "Holat", width: 12 },
+      { header: "Smena", width: 14 },
+      { header: "Oylik", width: 14 },
+      { header: "Jarima", width: 14 },
+      { header: "Izoh", width: 24 },
+      { header: "Qo‘lda qoladi", width: 16 },
+      { header: "Holat", width: 16 },
     ];
     for (const r of items) {
       ws.addRow([
         r.fullName,
         r.position || r.roleLabel,
         r.branch || "",
-        r.fixedSalary,
-        r.bonusPercent,
-        r.attendanceAvailable ? r.attendance : "—",
-        r.tasksAvailable ? r.tasks : "—",
-        r.checklistAvailable ? r.checklist : "—",
-        r.kpiPercent,
-        r.bonusAmount,
-        r.totalAmount,
-        r.status === "approved" ? "Tasdiqlangan" : "Qoralama",
+        r.shiftLabel || "",
+        r.salary,
+        r.jarima,
+        r.jarimaNote || "",
+        r.salary - r.jarima,
+        r.status === "approved" ? "Tasdiqlangan" : r.status === "returned" ? "Qaytarilgan" : "Tasdiqlanmagan",
       ]);
     }
     const buf = Buffer.from(await wb.xlsx.writeBuffer());
     res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-    res.setHeader("Content-Disposition", `attachment; filename="oylik-kpi-${month}.xlsx"`);
+    res.setHeader("Content-Disposition", `attachment; filename="oylik-${month}.xlsx"`);
     res.send(buf);
   } catch (err) {
     console.error("GET /oylik/export", err);

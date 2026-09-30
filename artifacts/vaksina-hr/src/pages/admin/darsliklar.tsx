@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import {
   ArrowDown,
+  ArrowLeft,
   ArrowUp,
   BarChart3,
   CheckCircle2,
@@ -9,6 +10,7 @@ import {
   Eye,
   FileText,
   GraduationCap,
+  ImageIcon,
   Pencil,
   Plus,
   Save,
@@ -43,13 +45,19 @@ import {
   useDarsliklarManage,
   useDarsliklarResults,
   useDeleteDarslik,
+  useDeleteDarslikSection,
   usePublishDarslik,
   useReorderDarsliklar,
+  useReorderDarslikSections,
   useSaveDarslik,
+  useSaveDarslikSection,
   type DarslikManageLesson,
   type DarslikQuestion,
+  type DarslikSection,
   type DarslikTrack,
 } from "@/lib/darsliklar-api";
+import { fileToAttachment } from "@/lib/vazifalar-api";
+import { AuthImage } from "@/components/vazifalar/TaskAttachmentViewer";
 
 type Draft = {
   id: number | null;
@@ -110,10 +118,12 @@ function validateDraft(d: Draft): string | null {
 
 function LessonEditor({
   track,
+  sectionId,
   initial,
   onClose,
 }: {
   track: DarslikTrack;
+  sectionId: number;
   initial: Draft;
   onClose: () => void;
 }) {
@@ -147,6 +157,7 @@ function LessonEditor({
       await save.mutateAsync({
         id: d.id,
         track,
+        sectionId,
         title: d.title.trim(),
         description: d.description.trim(),
         videoUrl: d.videoUrl.trim(),
@@ -345,6 +356,7 @@ function LessonEditor({
 function ResultsPanel({ track }: { track: DarslikTrack }) {
   const results = useDarsliklarResults(track, true);
   const data = results.data;
+  const [picked, setPicked] = useState<number | null>(null);
 
   if (results.isLoading) return <Skeleton className="h-64 rounded-3xl" />;
   if (results.isError) {
@@ -358,83 +370,136 @@ function ResultsPanel({ track }: { track: DarslikTrack }) {
     );
   }
 
-  const completed = data.learners.filter((l) => l.completed).length;
-  const started = data.learners.filter((l) => l.started).length;
+  const sections = data.sections ?? [];
+  const active = sections.find((s) => s.id === picked) ?? null;
+  const lessons = active ? data.lessons.filter((l) => l.sectionId === active.id) : data.lessons;
+
+  const rows = data.learners.map((u) => {
+    const cells = lessons.map((l) => u.lessons.find((x) => x.lessonId === l.id));
+    const passed = cells.filter((s) => s?.passed).length;
+    const scores = cells.map((s) => s?.score).filter((s): s is number => typeof s === "number");
+    return {
+      ...u,
+      passed,
+      total: lessons.length,
+      percent: lessons.length ? Math.round((passed / lessons.length) * 100) : 0,
+      completed: lessons.length > 0 && passed === lessons.length,
+      averageScore: scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+    };
+  });
+  const completed = rows.filter((l) => l.completed).length;
+  const started = rows.filter((l) => l.lessons.some((x) => lessons.some((l2) => l2.id === x.lessonId) && (x.passed || x.attempts > 0))).length;
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: "Xodimlar", value: data.learners.length },
-          { label: "Boshlagan", value: started },
-          { label: "Tugatgan", value: completed },
-        ].map((s) => (
-          <div key={s.label} className="rounded-2xl border border-border bg-card p-4 text-center">
-            <p className="text-2xl font-bold tabular-nums text-foreground">{s.value}</p>
-            <p className="text-xs text-muted-foreground">{s.label}</p>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {sections.map((s) => {
+          const ids = new Set(data.lessons.filter((l) => l.sectionId === s.id).map((l) => l.id));
+          const done = data.learners.filter((u) => {
+            const mine = u.lessons.filter((x) => ids.has(x.lessonId));
+            return ids.size > 0 && mine.filter((x) => x.passed).length === ids.size;
+          }).length;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => setPicked(s.id)}
+              className={cn(
+                "rounded-2xl border p-3 text-left transition",
+                picked === s.id ? "border-[#2AABEE] bg-[#2AABEE]/10" : "border-border bg-card hover:border-[#2AABEE]/40",
+              )}
+            >
+              <p className="font-semibold text-foreground">{s.title}</p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {done}/{data.learners.length} xodim tugatgan · {ids.size} dars
+              </p>
+            </button>
+          );
+        })}
+      </div>
+      {!active ? (
+        <p className="text-sm text-muted-foreground">Natijani alohida ko‘rish uchun bo‘limni tanlang.</p>
+      ) : null}
+      {active ? (
+        <>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground">{active.title}</p>
+            <Button variant="ghost" size="sm" onClick={() => setPicked(null)}>
+              Barcha bo‘limlar
+            </Button>
           </div>
-        ))}
-      </div>
-      <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
-        <table className="w-full min-w-[640px] text-sm">
-          <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-            <tr>
-              <th className="px-4 py-3 text-left font-semibold">Xodim</th>
-              <th className="px-3 py-3 text-left font-semibold">Progress</th>
-              {data.lessons.map((l) => (
-                <th key={l.id} className="px-2 py-3 text-center font-semibold" title={l.title}>
-                  {l.number}
-                </th>
-              ))}
-              <th className="px-3 py-3 text-center font-semibold">O‘rtacha</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.learners.map((u) => (
-              <tr key={u.userId} className="border-t border-border/60">
-                <td className="px-4 py-2.5 font-medium text-foreground">{u.fullName}</td>
-                <td className="px-3 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className={cn("h-full rounded-full", u.completed ? "bg-emerald-500" : "bg-[#2AABEE]")}
-                        style={{ width: `${u.percent}%` }}
-                      />
-                    </div>
-                    <span className="text-xs tabular-nums text-muted-foreground">
-                      {u.passed}/{u.total}
-                    </span>
-                  </div>
-                </td>
-                {data.lessons.map((l) => {
-                  const s = u.lessons.find((x) => x.lessonId === l.id);
-                  return (
-                    <td key={l.id} className="px-2 py-2.5 text-center text-xs tabular-nums">
-                      {s?.passed ? (
-                        <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700">
-                          {s.score ?? "✓"}
-                        </span>
-                      ) : s && s.attempts > 0 ? (
-                        <span className="rounded-md bg-red-100 px-1.5 py-0.5 font-semibold text-red-700" title={`${s.attempts} urinish`}>
-                          {s.score ?? 0}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground/50">—</span>
-                      )}
-                    </td>
-                  );
-                })}
-                <td className="px-3 py-2.5 text-center text-xs font-semibold tabular-nums">
-                  {u.averageScore != null ? `${u.averageScore}%` : "—"}
-                </td>
-              </tr>
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: "Xodimlar", value: rows.length },
+              { label: "Boshlagan", value: started },
+              { label: "Tugatgan", value: completed },
+            ].map((s) => (
+              <div key={s.label} className="rounded-2xl border border-border bg-card p-4 text-center">
+                <p className="text-2xl font-bold tabular-nums text-foreground">{s.value}</p>
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+              </div>
             ))}
-          </tbody>
-        </table>
-      </div>
-      <p className="text-xs text-muted-foreground">
-        Yashil — testdan o‘tgan (ball, %), qizil — o‘tolmagan oxirgi natija.
-      </p>
+          </div>
+          <div className="overflow-x-auto rounded-3xl border border-border bg-card shadow-sm">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">Xodim</th>
+                  <th className="px-3 py-3 text-left font-semibold">Progress</th>
+                  {lessons.map((l, i) => (
+                    <th key={l.id} className="px-2 py-3 text-center font-semibold" title={l.title}>
+                      {i + 1}
+                    </th>
+                  ))}
+                  <th className="px-3 py-3 text-center font-semibold">O‘rtacha</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((u) => (
+                  <tr key={u.userId} className="border-t border-border/60">
+                    <td className="px-4 py-2.5 font-medium text-foreground">{u.fullName}</td>
+                    <td className="px-3 py-2.5">
+                      <div className="flex items-center gap-2">
+                        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn("h-full rounded-full", u.completed ? "bg-emerald-500" : "bg-[#2AABEE]")}
+                            style={{ width: `${u.percent}%` }}
+                          />
+                        </div>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {u.passed}/{u.total}
+                        </span>
+                      </div>
+                    </td>
+                    {lessons.map((l) => {
+                      const s = u.lessons.find((x) => x.lessonId === l.id);
+                      return (
+                        <td key={l.id} className="px-2 py-2.5 text-center text-xs tabular-nums">
+                          {s?.passed ? (
+                            <span className="rounded-md bg-emerald-100 px-1.5 py-0.5 font-semibold text-emerald-700">
+                              {s.score ?? "✓"}
+                            </span>
+                          ) : s && s.attempts > 0 ? (
+                            <span className="rounded-md bg-red-100 px-1.5 py-0.5 font-semibold text-red-700" title={`${s.attempts} urinish`}>
+                              {s.score ?? 0}
+                            </span>
+                          ) : (
+                            <span className="text-muted-foreground/50">—</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                    <td className="px-3 py-2.5 text-center text-xs font-semibold tabular-nums">
+                      {u.averageScore != null ? `${u.averageScore}%` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground">Yashil — o‘tgan ball, qizil — o‘tolmagan oxirgi natija. Hisob faqat shu bo‘lim darslari.</p>
+        </>
+      ) : null}
     </div>
   );
 }
@@ -447,17 +512,40 @@ export default function DarsliklarAdminPage() {
   const [tab, setTab] = useState<"lessons" | "results">("lessons");
   const [editing, setEditing] = useState<Draft | null>(null);
   const [toDelete, setToDelete] = useState<DarslikManageLesson | null>(null);
+  const [openId, setOpenId] = useState<number | null>(null);
+  const [sectionForm, setSectionForm] = useState<{
+    id: number | null;
+    title: string;
+    description: string;
+    coverUrl: string;
+    published: boolean;
+  } | null>(null);
+  const [deleteSection, setDeleteSection] = useState<DarslikSection | null>(null);
+  const [quickTitle, setQuickTitle] = useState("");
+  const [quickVideo, setQuickVideo] = useState("");
+  const [coverBusy, setCoverBusy] = useState(false);
 
   const manage = useDarsliklarManage(track, allowed);
   const publish = usePublishDarslik();
   const remove = useDeleteDarslik();
   const reorder = useReorderDarsliklar();
+  const saveSection = useSaveDarslikSection();
+  const removeSection = useDeleteDarslikSection();
+  const reorderSections = useReorderDarslikSections();
+  const saveLesson = useSaveDarslik();
 
   useEffect(() => {
     setEditing(null);
+    setOpenId(null);
+    setSectionForm(null);
+    setQuickTitle("");
+    setQuickVideo("");
   }, [track]);
 
-  const lessons = manage.data?.lessons ?? [];
+  const allLessons = manage.data?.lessons ?? [];
+  const sections = manage.data?.sections ?? [];
+  const openSection = sections.find((s) => s.id === openId) ?? null;
+  const lessons = openSection ? allLessons.filter((l) => l.sectionId === openSection.id) : [];
   const counts = useMemo(
     () => new Map((manage.data?.tracks ?? []).map((t) => [t.key, t])),
     [manage.data?.tracks],
@@ -477,7 +565,7 @@ export default function DarsliklarAdminPage() {
     const ids = lessons.map((l) => l.id);
     [ids[index], ids[target]] = [ids[target]!, ids[index]!];
     try {
-      await reorder.mutateAsync({ track, ids });
+      await reorder.mutateAsync({ track, sectionId: openSection!.id, ids });
     } catch (e) {
       toast({ title: "Tartib saqlanmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
     }
@@ -503,6 +591,87 @@ export default function DarsliklarAdminPage() {
     }
   };
 
+  const moveSection = async (index: number, dir: -1 | 1) => {
+    const target = index + dir;
+    if (target < 0 || target >= sections.length) return;
+    const ids = sections.map((s) => s.id);
+    [ids[index], ids[target]] = [ids[target]!, ids[index]!];
+    try {
+      await reorderSections.mutateAsync({ track, ids });
+    } catch (e) {
+      toast({ title: "Tartib saqlanmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
+  const onCoverFile = async (file: File | undefined) => {
+    if (!file || !sectionForm) return;
+    if (!file.type.startsWith("image/")) {
+      toast({ title: "Faqat rasm yuklang (JPG, PNG, WEBP)", variant: "destructive" });
+      return;
+    }
+    setCoverBusy(true);
+    try {
+      const att = await fileToAttachment(file);
+      setSectionForm({ ...sectionForm, coverUrl: att.url });
+    } catch (e) {
+      toast({ title: "Rasm yuklanmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    } finally {
+      setCoverBusy(false);
+    }
+  };
+
+  const saveSectionForm = async () => {
+    if (!sectionForm) return;
+    if (!sectionForm.title.trim()) {
+      toast({ title: "Bo‘lim nomini yozing", variant: "destructive" });
+      return;
+    }
+    try {
+      await saveSection.mutateAsync({
+        id: sectionForm.id,
+        track,
+        title: sectionForm.title.trim(),
+        description: sectionForm.description.trim(),
+        coverUrl: sectionForm.coverUrl.trim(),
+        published: sectionForm.published,
+      });
+      toast({ title: sectionForm.id ? "Bo‘lim yangilandi" : "Bo‘lim ochildi" });
+      setSectionForm(null);
+    } catch (e) {
+      toast({ title: "Saqlanmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
+  const quickAdd = async () => {
+    if (!openSection || !quickTitle.trim()) {
+      toast({ title: "Dars nomini yozing", variant: "destructive" });
+      return;
+    }
+    const video = quickVideo.trim();
+    if (video && !previewYoutubeId(video) && !previewDriveFileId(video)) {
+      toast({ title: "Video havolasi YouTube yoki Google Drive bo‘lsin", variant: "destructive" });
+      return;
+    }
+    try {
+      await saveLesson.mutateAsync({
+        track,
+        sectionId: openSection.id,
+        title: quickTitle.trim(),
+        description: "",
+        videoUrl: video,
+        pdfUrl: "",
+        questions: [],
+        passScore: 50,
+        published: Boolean(video),
+      });
+      setQuickTitle("");
+      setQuickVideo("");
+      toast({ title: video ? "Dars qo‘shildi" : "Qoralama qo‘shildi", description: video ? undefined : "Video yoki test qo‘shib e’lon qiling" });
+    } catch (e) {
+      toast({ title: "Qo‘shilmadi", description: e instanceof Error ? e.message : "", variant: "destructive" });
+    }
+  };
+
   return (
     <div className="h-full min-h-0 overflow-y-auto">
       <div className="mx-auto max-w-5xl space-y-5 px-4 py-6 sm:py-8">
@@ -515,7 +684,7 @@ export default function DarsliklarAdminPage() {
               <div>
                 <h1 className="text-xl font-bold sm:text-2xl">Darslik joylash</h1>
                 <p className="mt-1 max-w-xl text-sm opacity-80">
-                  Stajyor, farmasevt va mudir uchun alohida darslar: video, slayd va test. Xodim darslarni ketma-ket o‘tadi.
+                  Stajyor, farmasevt va mudir uchun avval bo‘lim ochiladi. Muqovaga bosilganda ichidagi darslar ketma-ket joylanadi.
                 </p>
               </div>
             </div>
@@ -547,7 +716,7 @@ export default function DarsliklarAdminPage() {
                 </p>
                 <p className="mt-0.5 hidden text-xs text-muted-foreground sm:block">{t.hint}</p>
                 <p className="mt-1 text-xs tabular-nums text-muted-foreground">
-                  {c ? `${c.published} / ${c.total} faol` : "—"}
+                  {c ? `${c.sections} bo‘lim · ${c.published}/${c.total} dars` : "—"}
                 </p>
               </button>
             );
@@ -577,26 +746,158 @@ export default function DarsliklarAdminPage() {
 
         {tab === "results" ? (
           <ResultsPanel track={track} />
-        ) : (
-          <>
-            {editing ? (
-              <LessonEditor key={editing.id ?? "new"} track={track} initial={editing} onClose={() => setEditing(null)} />
+        ) : manage.isLoading ? (
+          <div className="space-y-3">
+            <Skeleton className="h-36 rounded-3xl" />
+            <Skeleton className="h-36 rounded-3xl" />
+          </div>
+        ) : manage.isError ? (
+          <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{(manage.error as Error)?.message}</p>
+        ) : !openSection ? (
+          <div className="space-y-4">
+            {sectionForm ? (
+              <div className="space-y-3 rounded-3xl border border-[#2AABEE]/40 bg-card p-4 shadow-sm sm:p-5">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold">{sectionForm.id ? "Bo‘limni tahrirlash" : "Yangi bo‘lim"}</h2>
+                  <Button variant="ghost" size="icon" onClick={() => setSectionForm(null)} aria-label="Yopish">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Bo‘lim nomi *</Label>
+                    <Input value={sectionForm.title} maxLength={140} placeholder="Masalan: Dori saqlash" onChange={(e) => setSectionForm({ ...sectionForm, title: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label>Qisqa tavsif</Label>
+                    <Input value={sectionForm.description} maxLength={600} placeholder="Bo‘lim nima haqida" onChange={(e) => setSectionForm({ ...sectionForm, description: e.target.value })} />
+                  </div>
+                  <div className="space-y-1.5 sm:col-span-2">
+                    <Label className="flex items-center gap-2"><ImageIcon className="h-4 w-4" /> Muqova rasmi</Label>
+                    <label className="flex cursor-pointer flex-col overflow-hidden rounded-2xl border border-dashed border-border bg-muted/30">
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="sr-only"
+                        disabled={coverBusy}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          e.target.value = "";
+                          void onCoverFile(file);
+                        }}
+                      />
+                      {sectionForm.coverUrl ? (
+                        <AuthImage url={sectionForm.coverUrl} alt="Muqova" className="h-40 w-full object-cover" />
+                      ) : (
+                        <span className="flex h-32 items-center justify-center text-sm text-muted-foreground">
+                          {coverBusy ? "Yuklanmoqda…" : "Rasmni tanlang"}
+                        </span>
+                      )}
+                    </label>
+                    {sectionForm.coverUrl ? (
+                      <button
+                        type="button"
+                        className="text-xs font-semibold text-rose-600"
+                        onClick={() => setSectionForm({ ...sectionForm, coverUrl: "" })}
+                      >
+                        Rasmni olib tashlash
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="flex items-center gap-2 text-sm">
+                    <Switch checked={sectionForm.published} onCheckedChange={(v) => setSectionForm({ ...sectionForm, published: v })} />
+                    {sectionForm.published ? "Xodimlarga ko‘rinadi" : "Yashirin"}
+                  </label>
+                  <Button className="bg-[#2AABEE] hover:bg-[#229ED9]" disabled={saveSection.isPending} onClick={() => void saveSectionForm()}>
+                    <Save className="mr-1.5 h-4 w-4" /> Saqlash
+                  </Button>
+                </div>
+              </div>
             ) : (
-              <Button className="h-11 w-full rounded-2xl bg-[#2AABEE] hover:bg-[#229ED9]" onClick={() => setEditing(emptyDraft())}>
-                <Plus className="mr-1.5 h-4 w-4" /> Yangi dars qo‘shish
+              <Button
+                className="h-11 w-full rounded-2xl bg-[#2AABEE] hover:bg-[#229ED9]"
+                onClick={() => setSectionForm({ id: null, title: "", description: "", coverUrl: "", published: true })}
+              >
+                <Plus className="mr-1.5 h-4 w-4" /> Bo‘lim ochish
               </Button>
             )}
-
-            {manage.isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-20 rounded-2xl" />
-                <Skeleton className="h-20 rounded-2xl" />
-              </div>
-            ) : manage.isError ? (
-              <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{(manage.error as Error)?.message}</p>
-            ) : !lessons.length ? (
+            {!sections.length ? (
               <div className="rounded-3xl border border-dashed border-border bg-card/70 p-10 text-center text-sm text-muted-foreground">
-                Bu yo‘nalishda hali dars yo‘q. “Yangi dars qo‘shish” tugmasini bosing.
+                Avval bo‘lim oching. Xodim muqovani bosib, shu bo‘limdagi darslarga kiradi.
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {sections.map((s, i) => (
+                  <article key={s.id} className="overflow-hidden rounded-3xl border border-border bg-card shadow-sm">
+                    <button type="button" className="block w-full text-left" onClick={() => { setOpenId(s.id); setEditing(null); }}>
+                      <div className="relative h-36 bg-gradient-to-br from-[#16324F] to-[#2AABEE]">
+                        {s.coverUrl ? (
+                          <AuthImage url={s.coverUrl} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                        ) : null}
+                        <span className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/75 to-transparent" />
+                        <span className="absolute bottom-2 left-3 right-3 text-base font-bold text-white drop-shadow">{s.title}</span>
+                      </div>
+                      <div className="space-y-1 p-3">
+                        {s.description ? <p className="line-clamp-2 text-xs text-muted-foreground">{s.description}</p> : null}
+                        <p className="text-xs font-medium text-foreground">{s.lessonCount} dars · {s.publishedCount} faol</p>
+                      </div>
+                    </button>
+                    <div className="flex items-center justify-between border-t border-border px-2 py-1">
+                      <div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === 0 || reorderSections.isPending} onClick={() => void moveSection(i, -1)} aria-label="Oldinga">
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" disabled={i === sections.length - 1 || reorderSections.isPending} onClick={() => void moveSection(i, 1)} aria-label="Keyinga">
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <div>
+                        <Button variant="ghost" size="icon" className="h-8 w-8" aria-label="Tahrirlash" onClick={() => setSectionForm({ id: s.id, title: s.title, description: s.description, coverUrl: s.coverUrl, published: s.published })}>
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-8 w-8 text-red-600" aria-label="O‘chirish" onClick={() => setDeleteSection(s)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="outline" className="h-10" onClick={() => { setOpenId(null); setEditing(null); }}>
+                <ArrowLeft className="mr-1.5 h-4 w-4" /> Bo‘limlar
+              </Button>
+              <div className="min-w-0">
+                <p className="truncate text-lg font-bold text-foreground">{openSection.title}</p>
+                <p className="text-xs text-muted-foreground">{lessons.length} dars · ketma-ket</p>
+              </div>
+            </div>
+            <form
+              className="grid gap-2 rounded-3xl border border-border bg-card p-3 shadow-sm sm:grid-cols-[1fr_1fr_auto]"
+              onSubmit={(e) => { e.preventDefault(); void quickAdd(); }}
+            >
+              <Input value={quickTitle} placeholder="Yangi dars nomi" onChange={(e) => setQuickTitle(e.target.value)} />
+              <Input value={quickVideo} placeholder="Video havolasi (ixtiyoriy)" onChange={(e) => setQuickVideo(e.target.value)} />
+              <Button type="submit" className="bg-[#2AABEE] hover:bg-[#229ED9]" disabled={saveLesson.isPending}>
+                <Plus className="mr-1.5 h-4 w-4" /> Qo‘shish
+              </Button>
+            </form>
+            {editing ? (
+              <LessonEditor key={editing.id ?? "new"} track={track} sectionId={openSection.id} initial={editing} onClose={() => setEditing(null)} />
+            ) : (
+              <button type="button" className="text-sm font-semibold text-[#2AABEE] hover:underline" onClick={() => setEditing(emptyDraft())}>
+                To‘liq forma: tavsif, slayd va test
+              </button>
+            )}
+            {!lessons.length ? (
+              <div className="rounded-3xl border border-dashed border-border bg-card/70 p-10 text-center text-sm text-muted-foreground">
+                Bu bo‘limda hali dars yo‘q. Nomini yozib, Qo‘shish ni bosing.
               </div>
             ) : (
               <div className="space-y-2.5">
@@ -696,6 +997,32 @@ export default function DarsliklarAdminPage() {
           <AlertDialogFooter>
             <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
             <AlertDialogAction className="bg-red-600 hover:bg-red-700" onClick={() => void confirmDelete()}>
+              O‘chirish
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      <AlertDialog open={Boolean(deleteSection)} onOpenChange={(o) => !o && setDeleteSection(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Bo‘limni o‘chirasizmi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              “{deleteSection?.title}” o‘chadi. Ichida dars bo‘lsa, avval darslarni o‘chirish kerak.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Bekor qilish</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-red-600 hover:bg-red-700"
+              onClick={() => {
+                if (!deleteSection) return;
+                void removeSection.mutateAsync(deleteSection.id).then(
+                  () => toast({ title: "Bo‘lim o‘chirildi" }),
+                  (e: Error) => toast({ title: e.message, variant: "destructive" }),
+                );
+                setDeleteSection(null);
+              }}
+            >
               O‘chirish
             </AlertDialogAction>
           </AlertDialogFooter>

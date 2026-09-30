@@ -49,6 +49,36 @@ CREATE TABLE IF NOT EXISTS darslik_lessons (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS darslik_lessons_track_pos_idx ON darslik_lessons (track, position);
+ALTER TABLE darslik_lessons ADD COLUMN IF NOT EXISTS section_id INTEGER;
+CREATE INDEX IF NOT EXISTS darslik_lessons_section_pos_idx ON darslik_lessons (section_id, position);
+
+CREATE TABLE IF NOT EXISTS darslik_sections (
+  id SERIAL PRIMARY KEY,
+  track TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  cover_url TEXT NOT NULL DEFAULT '',
+  published BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_id INTEGER,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS darslik_sections_track_pos_idx ON darslik_sections (track, position);
+
+INSERT INTO darslik_sections (track, position, title, description, published)
+SELECT DISTINCT l.track, 0, 'Asosiy bo‘lim', 'Avval joylangan darslar', TRUE
+FROM darslik_lessons l
+WHERE l.section_id IS NULL
+  AND NOT EXISTS (
+    SELECT 1 FROM darslik_sections s WHERE s.track = l.track AND s.title = 'Asosiy bo‘lim'
+  );
+
+UPDATE darslik_lessons l
+SET section_id = s.id
+FROM darslik_sections s
+WHERE l.section_id IS NULL AND s.track = l.track AND s.title = 'Asosiy bo‘lim';
 
 CREATE TABLE IF NOT EXISTS darslik_progress (
   id SERIAL PRIMARY KEY,
@@ -165,6 +195,35 @@ ON CONFLICT (stage) DO UPDATE SET
     ELSE kirish_videos.youtube_url
   END,
   updated_at = NOW();
+
+CREATE TABLE IF NOT EXISTS preboarding_stages (
+  id SERIAL PRIMARY KEY,
+  track TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  subtitle TEXT NOT NULL DEFAULT '',
+  youtube_url TEXT NOT NULL DEFAULT '',
+  youtube_id TEXT NOT NULL DEFAULT '',
+  video_drive_file_id TEXT,
+  pdf_url TEXT,
+  drive_file_id TEXT,
+  questions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  published BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS preboarding_progress (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  track TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  stages_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  completed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS preboarding_progress_user_track_uidx ON preboarding_progress (user_id, track);
 
 -- Chat
 CREATE TABLE IF NOT EXISTS chats (
@@ -733,6 +792,8 @@ CREATE TABLE IF NOT EXISTS payroll_months (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS payroll_months_user_month_uidx ON payroll_months (user_id, month);
+ALTER TABLE payroll_months ADD COLUMN IF NOT EXISTS jarima INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE payroll_months ADD COLUMN IF NOT EXISTS jarima_note TEXT;
 
 CREATE TABLE IF NOT EXISTS work_calendar_days (
   day TEXT PRIMARY KEY,
@@ -1814,6 +1875,40 @@ export async function ensureAttendanceSealsSchema(): Promise<void> {
   } finally {
     client.release();
   }
+}
+
+const PREBOARDING_SQL = `
+CREATE TABLE IF NOT EXISTS preboarding_stages (
+  id SERIAL PRIMARY KEY,
+  track TEXT NOT NULL,
+  position INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL,
+  subtitle TEXT NOT NULL DEFAULT '',
+  youtube_url TEXT NOT NULL DEFAULT '',
+  youtube_id TEXT NOT NULL DEFAULT '',
+  video_drive_file_id TEXT,
+  pdf_url TEXT,
+  drive_file_id TEXT,
+  questions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+  published BOOLEAN NOT NULL DEFAULT FALSE,
+  updated_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE TABLE IF NOT EXISTS preboarding_progress (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  track TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'in_progress',
+  stages_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+  completed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS preboarding_progress_user_track_uidx ON preboarding_progress (user_id, track);
+`;
+
+export async function ensurePreboardingSchema(): Promise<void> {
+  await pool.query(PREBOARDING_SQL);
 }
 
 export async function ensureRevisionVisitsSchema(): Promise<void> {

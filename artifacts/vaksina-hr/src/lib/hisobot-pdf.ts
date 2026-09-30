@@ -1,7 +1,8 @@
 /** Koordinator hisobot PDF — aniq jadval, rangli foiz, tushunarli. */
 import { jsPDF } from "jspdf";
 import { deliverFile } from "./tg-download";
-import type { CoordinatorHisobot, HisobotBranchBlock } from "./hisobot-api";
+import type { CoordinatorHisobot, HisobotBranchBlock, HisobotEmployeeRow, HisobotSlice, HisobotStatusKey } from "./hisobot-api";
+import { hisobotIdentity, hisobotLateDays, hisobotOnTimeDays, hisobotStatusTitle, isBranchShellRow } from "./hisobot-api";
 
 const FONT =
   '"Segoe UI", "Noto Sans", "DejaVu Sans", Arial, "Helvetica Neue", sans-serif';
@@ -281,7 +282,11 @@ export async function downloadHisobotPdf(report: CoordinatorHisobot) {
         const cells: Array<{ text: string; align: CanvasTextAlign; color?: string }> = [
           { text: String(n), align: "center" },
           { text: b.branch, align: "left" },
-          { text: b.mudir?.fullName || "—", align: "left" },
+          {
+            text: b.mudirMissing || (b.mudir && isBranchShellRow(b.mudir)) ? "Mudir yo‘q" : b.mudir?.fullName || "—",
+            align: "left",
+            color: b.mudirMissing || (b.mudir && isBranchShellRow(b.mudir)) ? "#be123c" : undefined,
+          },
           { text: String(b.pharmacists.length), align: "center" },
           { text: String(b.interns.length), align: "center" },
           { text: String(b.staffCount), align: "center" },
@@ -292,8 +297,8 @@ export async function downloadHisobotPdf(report: CoordinatorHisobot) {
           if (i === 6) {
             drawRateBadge(ctx, avg, cx + (w - 48) / 2, y + 18, 48);
           } else {
-            ctx.fillStyle = "#0f172a";
-            ctx.font = i === 1 ? `bold 10px ${FONT}` : `10px ${FONT}`;
+            ctx.fillStyle = cell.color || "#0f172a";
+            ctx.font = i === 1 || cell.color ? `bold 10px ${FONT}` : `10px ${FONT}`;
             ctx.textAlign = cell.align;
             const tx =
               cell.align === "center"
@@ -544,4 +549,309 @@ export async function downloadHisobotPdf(report: CoordinatorHisobot) {
   const stamp = report.to.replace(/-/g, "");
   const safeName = report.coordinator.fullName.replace(/[^\w\u0400-\u04FF]+/g, "_");
   await deliverFile(pdf.output("blob"), `Hisobot_${safeName}_${stamp}.pdf`);
+}
+
+function wrapLines(ctx: CanvasRenderingContext2D, text: string, maxW: number, maxLines: number): string[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let cur = "";
+  for (const w of words) {
+    const next = cur ? `${cur} ${w}` : w;
+    if (ctx.measureText(next).width <= maxW) {
+      cur = next;
+      continue;
+    }
+    if (cur) lines.push(cur);
+    cur = w;
+    if (lines.length >= maxLines) break;
+  }
+  if (cur && lines.length < maxLines) lines.push(cur);
+  if (!lines.length) lines.push("");
+  const last = lines.length - 1;
+  lines[last] = truncate(ctx, lines[last] || "", maxW);
+  return lines.slice(0, maxLines);
+}
+
+function personStatusLabel(e: HisobotEmployeeRow): { text: string; color: string; bg: string } {
+  const late = hisobotLateDays(e);
+  const onTime = hisobotOnTimeDays(e);
+  if (e.presentDays === 0) return { text: "KELMAGAN", color: "#9f1239", bg: "#ffe4e6" };
+  if (late > 0 && onTime === 0) return { text: "KECHIKKAN", color: "#b45309", bg: "#fef3c7" };
+  if (late > 0) return { text: "KELGAN · KECHIKKAN", color: "#b45309", bg: "#fff7ed" };
+  return { text: "KELGAN", color: "#047857", bg: "#d1fae5" };
+}
+
+function personStatusLine(e: HisobotEmployeeRow): string {
+  const late = hisobotLateDays(e);
+  const onTime = hisobotOnTimeDays(e);
+  const bits = [
+    onTime ? `o‘z vaqtida ${onTime} kun` : "",
+    late ? `kechikkan ${late} kun` : "",
+    e.absentDays ? `kelmagan ${e.absentDays} kun` : "",
+  ].filter(Boolean);
+  const dates = [
+    ...(e.onTimeDates ?? []).slice(0, 4).map((d) => fmtDate(d)),
+    ...(e.lateDates ?? []).slice(0, 3).map((d) => `${fmtDate(d)} kech`),
+    ...e.absentDates.slice(0, 4).map((d) => fmtDate(d)),
+  ];
+  const dateText = dates.slice(0, 6).join(", ");
+  return [bits.join(" · "), dateText].filter(Boolean).join(" — ");
+}
+
+export async function downloadAbsentHisobotPdf(opts: {
+  report: CoordinatorHisobot;
+  slice: HisobotSlice;
+  shiftLabel: string;
+  statuses: HisobotStatusKey[];
+}) {
+  const { report, slice, shiftLabel, statuses } = opts;
+  const people = slice.roster ?? slice.noShows;
+  const title = hisobotStatusTitle(statuses);
+  const pageWmm = 210;
+  const pageHmm = 297;
+  const scale = 2;
+  const pages: HTMLCanvasElement[] = [];
+  const marginX = 28;
+
+  const newPage = () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = mmToPx(pageWmm) * scale;
+    canvas.height = mmToPx(pageHmm) * scale;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("Canvas ishlamaydi");
+    ctx.scale(scale, scale);
+    const W = canvas.width / scale;
+    const H = canvas.height / scale;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = "#9f1239";
+    ctx.fillRect(0, 0, W, 8);
+    pages.push(canvas);
+    return { ctx, W, H };
+  };
+
+  let { ctx, W, H } = newPage();
+  const maxW = () => W - marginX * 2;
+  const bottom = () => H - 36;
+  let y = 28;
+  let pageNo = 1;
+
+  const footer = () => {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = `10px ${FONT}`;
+    ctx.fillText("VAKSINA MED HR · tanlangan sana davomati", marginX, H - 16);
+    ctx.textAlign = "right";
+    ctx.fillText(String(pageNo), W - marginX, H - 16);
+    ctx.textAlign = "left";
+  };
+
+  const ensure = (need: number) => {
+    if (y + need <= bottom()) return;
+    footer();
+    pageNo += 1;
+    const next = newPage();
+    ctx = next.ctx;
+    W = next.W;
+    H = next.H;
+    y = 28;
+  };
+
+  ctx.fillStyle = "#0f172a";
+  ctx.font = `bold 18px ${FONT}`;
+  ctx.fillText(truncate(ctx, title, maxW()), marginX, y);
+  y += 18;
+  ctx.fillStyle = "#334155";
+  ctx.font = `12px ${FONT}`;
+  ctx.fillText(truncate(ctx, report.coordinator.fullName, maxW()), marginX, y);
+  y += 16;
+  ctx.fillStyle = "#64748b";
+  ctx.font = `11px ${FONT}`;
+  ctx.fillText(
+    truncate(
+      ctx,
+      `${fmtDate(report.from)} — ${fmtDate(report.to)} · ${report.dayCount} kun · ${shiftLabel}`,
+      maxW(),
+    ),
+    marginX,
+    y,
+  );
+  y += 8;
+  if (report.coordinator.phone || report.coordinator.login) {
+    ctx.fillText(
+      truncate(ctx, [report.coordinator.phone, report.coordinator.login].filter(Boolean).join(" · "), maxW()),
+      marginX,
+      y + 12,
+    );
+    y += 16;
+  }
+  y += 10;
+
+  const boxes = [
+    { label: "Jami xodim", value: String(slice.employees.length), color: "#0b3a5c" },
+    { label: "Kelgan", value: String(slice.came), color: "#047857" },
+    { label: "Kechikkan", value: String(slice.late ?? 0), color: "#b45309" },
+    { label: "Kelmagan", value: String(slice.missed), color: "#be123c" },
+  ];
+  const boxW = (maxW() - 24) / 4;
+  boxes.forEach((b, i) => {
+    const x = marginX + i * (boxW + 8);
+    ctx.fillStyle = "#f8fafc";
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.strokeRect(x, y, boxW, 48);
+    ctx.fillRect(x, y, boxW, 48);
+    ctx.fillStyle = "#64748b";
+    ctx.font = `10px ${FONT}`;
+    ctx.fillText(b.label, x + 10, y + 16);
+    ctx.fillStyle = b.color;
+    ctx.font = `bold 18px ${FONT}`;
+    ctx.fillText(b.value, x + 10, y + 36);
+  });
+  y += 64;
+
+  const drawCountTable = (title: string, rows: HisobotSlice["byRole"]) => {
+    ensure(28 + rows.length * 22);
+    ctx.fillStyle = "#0f172a";
+    ctx.font = `bold 12px ${FONT}`;
+    ctx.fillText(title, marginX, y);
+    y += 8;
+    ctx.fillStyle = "#0b3a5c";
+    ctx.fillRect(marginX, y, maxW(), 20);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = `bold 10px ${FONT}`;
+    ctx.fillText("Guruh", marginX + 8, y + 14);
+    ctx.fillText("Jami", marginX + maxW() * 0.48, y + 14);
+    ctx.fillText("Kelgan", marginX + maxW() * 0.62, y + 14);
+    ctx.fillText("Kechikkan", marginX + maxW() * 0.76, y + 14);
+    ctx.fillText("Kelmagan", marginX + maxW() * 0.9, y + 14);
+    y += 20;
+    rows.forEach((r, i) => {
+      ensure(22);
+      ctx.fillStyle = i % 2 ? "#f8fafc" : "#ffffff";
+      ctx.fillRect(marginX, y, maxW(), 22);
+      ctx.fillStyle = "#0f172a";
+      ctx.font = `11px ${FONT}`;
+      ctx.fillText(r.label, marginX + 8, y + 15);
+      ctx.fillText(String(r.total), marginX + maxW() * 0.48, y + 15);
+      ctx.fillStyle = "#047857";
+      ctx.fillText(String(r.came), marginX + maxW() * 0.62, y + 15);
+      ctx.fillStyle = "#b45309";
+      ctx.fillText(String(r.late), marginX + maxW() * 0.76, y + 15);
+      ctx.fillStyle = "#be123c";
+      ctx.font = `bold 11px ${FONT}`;
+      ctx.fillText(String(r.missed), marginX + maxW() * 0.9, y + 15);
+      y += 22;
+    });
+    y += 14;
+  };
+
+  drawCountTable("Lavozim bo‘yicha", slice.byRole);
+  drawCountTable("Smena bo‘yicha", slice.byShift);
+
+  ensure(36);
+  ctx.fillStyle = "#0f172a";
+  ctx.font = `bold 13px ${FONT}`;
+  ctx.fillText(`Ro‘yxat · ${people.length} kishi · ${title}`, marginX, y);
+  y += 16;
+
+  if (!people.length) {
+    ctx.fillStyle = "#047857";
+    ctx.font = `12px ${FONT}`;
+    ctx.fillText("Bu smena va holat tanlovida xodim yo‘q.", marginX, y);
+  } else {
+    const groups = new Map<string, HisobotEmployeeRow[]>();
+    for (const e of people) {
+      const key = e.shiftDisplay || "—";
+      const list = groups.get(key) || [];
+      list.push(e);
+      groups.set(key, list);
+    }
+    let n = 0;
+    for (const [shiftName, group] of groups) {
+      ensure(28);
+      ctx.fillStyle = "#f1f5f9";
+      ctx.fillRect(marginX, y, maxW(), 22);
+      ctx.fillStyle = "#0b3a5c";
+      ctx.font = `bold 11px ${FONT}`;
+      ctx.fillText(`${shiftName} · ${group.length} kishi`, marginX + 8, y + 15);
+      y += 26;
+      group.forEach((e) => {
+        n += 1;
+        const idn = hisobotIdentity(e);
+        const stamp = personStatusLabel(e);
+        ctx.font = `bold 12px ${FONT}`;
+        const nameLines = wrapLines(ctx, `${n}. ${idn.name}`, maxW() - 150, 2);
+        const rowH = 28 + nameLines.length * 15 + (idn.alias ? 14 : 0) + 58;
+        ensure(rowH + 6);
+        ctx.fillStyle = n % 2 ? "#ffffff" : "#f8fafc";
+        ctx.fillRect(marginX, y, maxW(), rowH);
+        ctx.strokeStyle = "#e2e8f0";
+        ctx.strokeRect(marginX, y, maxW(), rowH);
+        let ty = y + 16;
+        ctx.fillStyle = "#0f172a";
+        ctx.font = `bold 12px ${FONT}`;
+        for (const line of nameLines) {
+          ctx.fillText(line, marginX + 8, ty);
+          ty += 15;
+        }
+        const badge = stamp.text;
+        ctx.font = `bold 9px ${FONT}`;
+        const badgeW = Math.min(148, ctx.measureText(badge).width + 16);
+        ctx.fillStyle = stamp.bg;
+        ctx.fillRect(marginX + maxW() - badgeW - 8, y + 8, badgeW, 16);
+        ctx.fillStyle = stamp.color;
+        ctx.textAlign = "right";
+        ctx.fillText(badge, marginX + maxW() - 16, y + 19);
+        ctx.textAlign = "left";
+        if (idn.alias) {
+          ctx.fillStyle = "#64748b";
+          ctx.font = `10px ${FONT}`;
+          ctx.fillText(truncate(ctx, `Yozuvdagi ism: ${idn.alias}`, maxW() - 16), marginX + 8, ty);
+          ty += 14;
+        }
+        ctx.fillStyle = "#334155";
+        ctx.font = `10px ${FONT}`;
+        ctx.fillText(
+          truncate(ctx, `Lavozim: ${e.roleLabel}${idn.position && idn.position !== e.roleLabel ? ` · ${idn.position}` : ""}`, maxW() - 16),
+          marginX + 8,
+          ty,
+        );
+        ty += 13;
+        ctx.fillText(
+          truncate(ctx, `Filial: ${e.branch}    Smena: ${e.shiftDisplay}`, maxW() - 16),
+          marginX + 8,
+          ty,
+        );
+        ty += 13;
+        ctx.fillText(
+          truncate(
+            ctx,
+            `Telefon: ${idn.phone || "kiritilmagan"}    Login: ${idn.login || "kiritilmagan"}`,
+            maxW() - 16,
+          ),
+          marginX + 8,
+          ty,
+        );
+        ty += 14;
+        ctx.fillStyle = stamp.color;
+        ctx.font = `10px ${FONT}`;
+        ctx.fillText(truncate(ctx, personStatusLine(e), maxW() - 16), marginX + 8, ty);
+        y += rowH + 6;
+      });
+      y += 4;
+    }
+  }
+
+  footer();
+
+  const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4", compress: true });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  for (let i = 0; i < pages.length; i++) {
+    if (i > 0) pdf.addPage();
+    pdf.addImage(pages[i]!.toDataURL("image/jpeg", 0.92), "JPEG", 0, 0, pageW, pageH, undefined, "FAST");
+  }
+  const stamp = report.to.replace(/-/g, "");
+  const safeName = report.coordinator.fullName.replace(/[^\w\u0400-\u04FF]+/g, "_");
+  const fileBit = title.replace(/[^\w\u0400-\u04FF]+/g, "_");
+  await deliverFile(pdf.output("blob"), `${fileBit}_${safeName}_${stamp}.pdf`);
 }

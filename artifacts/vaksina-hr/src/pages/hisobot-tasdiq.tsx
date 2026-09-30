@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRoute } from "wouter";
-import { fetchVerifiedHisobot, type XodimVerified } from "../lib/xodim-hisobot-api";
+import { fetchVerifiedHisobot, publicVerifyUrl, type XodimVerified } from "../lib/xodim-hisobot-api";
 import { XodimHisobotSheet } from "./admin/xodim-hisobot-sheet";
 
 export default function HisobotTasdiqPage() {
@@ -40,8 +40,8 @@ export default function HisobotTasdiqPage() {
             seal={{
               sealedAt: data.sealedAt,
               title: data.title || "Hisobot VAKSINAMEDHR",
-              approverLine: data.approverLine || "Tasdiqlaydi platforma mas'uli Saidmuhammadalixon",
-              verifyUrl: window.location.href,
+              approverLine: data.approverLine || "Tasdiqlaydi platforma masʼuli Saidmuhammadalixon",
+              verifyUrl: publicVerifyUrl(window.location.href),
             }}
           />
         ) : null}

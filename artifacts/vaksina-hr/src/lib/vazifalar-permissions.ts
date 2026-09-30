@@ -4,8 +4,8 @@ import type { Vazifa } from "@/lib/vazifalar-api";
 /** To‘liq kuzatuv (Maxfiy + oddiy) — faqat sof admin */
 export const TASK_ALL_VISIBILITY_ROLES = new Set(["admin"]);
 
-/** Maxfiysiz barcha topshiriqlarni ko‘rish (auditor) */
-export const TASK_AUDIT_BROWSE_ROLES = new Set(["hr_auditor"]);
+/** Maxfiysiz barcha topshiriqlarni faqat ko‘rish (auditor va HR direktor) */
+export const TASK_AUDIT_BROWSE_ROLES = new Set(["hr_auditor", "hr_direktor"]);
 
 /** Qabul qilish muddati — yaratilgan (yoki qayta biriktirilgan) vaqtdan */
 export const ACCEPT_DEADLINE_MS: Record<string, number> = {
@@ -117,7 +117,7 @@ export function canSeePrivateTasks(role?: string | null) {
   return TASK_ALL_VISIBILITY_ROLES.has(normalizeUserRole(role));
 }
 
-/** «Barchani» filtri: admin (maxfiy+oddiy), asoschi/direktor, yoki HR auditor (faqat oddiy) */
+/** «Barchani» filtri: admin va direktor (to‘liq), HR direktor va auditor (oddiy, faqat ko‘rish) */
 export function canBrowseAllTasks(role?: string | null) {
   const r = normalizeUserRole(role);
   return (
@@ -127,7 +127,7 @@ export function canBrowseAllTasks(role?: string | null) {
   );
 }
 
-/** HR auditor — boshqalarning topshiriqlarini faqat ko‘rish */
+/** HR auditor va HR direktor — boshqalarning topshiriqlarini faqat ko‘rish */
 export function isTaskAuditViewer(role?: string | null) {
   return TASK_AUDIT_BROWSE_ROLES.has(normalizeUserRole(role));
 }
@@ -135,7 +135,7 @@ export function isTaskAuditViewer(role?: string | null) {
 /**
  * To‘liq tahrirlash (forma, mas’ulni o‘zgartirish):
  * - admin, director — barcha
- * - qolganlar (shu jumladan hr_direktor / hr_auditor) — faqat o‘zi yaratgani
+ * - qolganlar (shu jumladan hr_direktor / hr_auditor) — faqat o‘zi yaratganini tahrirlaydi
  */
 export function canManageTaskUi(
   task: Pick<Vazifa, "createdById">,

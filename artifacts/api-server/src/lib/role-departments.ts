@@ -205,7 +205,7 @@ export async function syncAllRoleDepartmentAssignments(): Promise<void> {
       UPDATE users
       SET department_id = ${deptId}
       WHERE role = ${role}
-        AND department_id IS DISTINCT FROM ${deptId}
+        AND department_id IS NULL
     `);
     await db.execute(sql`
       UPDATE employees e
@@ -213,7 +213,7 @@ export async function syncAllRoleDepartmentAssignments(): Promise<void> {
       FROM users u
       WHERE e.user_id = u.id
         AND u.role = ${role}
-        AND e.department_id IS DISTINCT FROM ${deptId}
+        AND e.department_id IS NULL
     `);
   }
 

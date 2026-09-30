@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { cn } from "@/lib/utils";
 import { useGetEmployees, useGetUsers, type Employee, type User } from "@workspace/api-client-react";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
+import { isVacancyPlaceholder } from "@/lib/vacancy-slot";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
   Network,
@@ -349,7 +350,7 @@ function makeDeptFallback(
 }
 
 function isActiveEmp(e: Employee) {
-  return e.employmentStatus !== "dismissed";
+  return e.employmentStatus !== "dismissed" && !isVacancyPlaceholder(e);
 }
 
 function isAdminLinked(e: Employee, usersById: Map<number, User>) {

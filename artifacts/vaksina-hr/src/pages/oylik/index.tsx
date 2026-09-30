@@ -574,6 +574,7 @@ export default function OylikPage() {
                     Ofis xodimlari yoki dorixonani tanlang. Ichida smena bo‘yicha ajratiladi.
                   </div>
                 ) : (
+                <>
                 <p className="text-xs text-muted-foreground">Har oy alohida saqlanadi. Tasdiqlangan oy xodimda qoladi va keyingi oylar unga qo‘shiladi. Qaytarilsa faqat shu oy yopiladi.</p>
                 <PayTable
                   rows={filteredRows}
@@ -583,6 +584,7 @@ export default function OylikPage() {
                   onToggle={(id) => setSelected((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])}
                   onTogglePage={(ids, on) => setSelected((cur) => on ? [...new Set([...cur, ...ids])] : cur.filter((id) => !ids.includes(id)))}
                 />
+                </>
                 )}
               </div>
             )}

@@ -1,4 +1,5 @@
 import React from "react";
+import { isChunkLoadError, reloadForFreshBuild } from "../lib/chunk-reload";
 
 type Props = { children: React.ReactNode };
 
@@ -17,6 +18,7 @@ export class AppErrorBoundary extends React.Component<Props, State> {
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error("[AppErrorBoundary]", error, info.componentStack);
+    if (isChunkLoadError(error)) reloadForFreshBuild();
   }
 
   componentDidUpdate() {

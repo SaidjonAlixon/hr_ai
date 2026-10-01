@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageSettings } from "@/lib/roles";
+import { canManageOnboardingContent } from "@/lib/roles";
 import { useI18n } from "@/i18n/I18nProvider";
 import {
   useClearKirishVideo,
@@ -83,7 +83,7 @@ export default function AdminKirishVideosPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const { t } = useI18n();
-  const isAdmin = canManageSettings(user?.role);
+  const isAdmin = canManageOnboardingContent(user?.role);
   const list = useKirishAdminVideos(isAdmin);
   const save = useSaveKirishVideo();
   const clear = useClearKirishVideo();

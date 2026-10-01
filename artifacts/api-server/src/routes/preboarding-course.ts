@@ -11,7 +11,7 @@ import {
 } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { canManageSettings } from "../lib/roles";
+import { canManageOnboardingContent } from "../lib/roles";
 import { parseYoutubeId } from "../lib/youtube-id";
 import { parseDriveFileId } from "../lib/drive-id";
 import { ensurePreboardingSchema } from "../lib/ensure-schema";
@@ -31,7 +31,7 @@ const PASS = 50;
 const TRACKS = new Set(["farmasevt", "mudir"]);
 
 function canManage(role?: string | null) {
-  return canManageSettings(role) || role === "trainer";
+  return canManageOnboardingContent(role) || role === "trainer";
 }
 
 function trackOf(role?: string | null) {

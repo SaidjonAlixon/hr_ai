@@ -79,6 +79,12 @@ export function canManageSettings(role?: string | null): boolean {
   return hasFullPlatformAccess(role) || isDirectorRole(role);
 }
 
+/** Kirish materiallari va Preboarding — HR direktor ham to‘liq ochadi */
+export function canManageOnboardingContent(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return canManageSettings(r) || r === "hr_direktor";
+}
+
 /** Xodim / foydalanuvchi HOLAT — faqat admin va direktor */
 export function canChangeStaffStatus(role?: string | null): boolean {
   return hasFullPlatformAccess(role) || isDirectorRole(role);

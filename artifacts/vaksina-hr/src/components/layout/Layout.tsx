@@ -864,6 +864,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/holat') && !canViewHolat(user.role)) {
       setLocation('/dashboard');
     }
+    if (location.startsWith('/smena-filial') && normalizeUserRole(user.role) === 'mudir') {
+      setLocation('/dashboard');
+    }
     if (location.startsWith('/logistika') && !canViewLogistika(user.role)) {
       setLocation('/dashboard');
     }
@@ -1375,7 +1378,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       orgNav,
       davomatFaceNav,
       davomatQrNav,
-      smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
@@ -1712,6 +1714,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     .filter((item) => item.path !== '/admin/kochma-davomat' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/kochma-xarita' || canViewKochmaAdmin(userRole))
     .filter((item) => item.path !== '/admin/kochma-live' || canViewKochmaAdmin(userRole))
+    .filter((item) => item.path !== '/smena-filial' || userRole !== 'mudir')
     .filter((item) => item.path !== '/admin/holat' || canViewHolat(userRole))
     .filter((item) => item.path !== '/admin/holat/xodim' || canViewHolat(userRole))
     .filter((item) => item.path !== '/distribyutsiya' || canViewDistribyutsiya(userRole))

@@ -148,6 +148,10 @@ function isMudirPerson(orgRole: string | null | undefined) {
   return orgRole === MANAGER_ORG;
 }
 
+function mudirActor(role: string, orgRole?: string | null) {
+  return role === "mudir" || orgRole === MANAGER_ORG;
+}
+
 function canAssignTarget(opts: {
   role: string;
   me: EmpRow;
@@ -156,6 +160,7 @@ function canAssignTarget(opts: {
 }): boolean {
   const { role, me, target, scope } = opts;
   const org = target.orgRole || "";
+  if (org === MANAGER_ORG || mudirActor(role, me.orgRole)) return false;
   if (isLeadRole(role) && role !== "koordinator") {
     return STAFF_ORG.has(org) || org === MANAGER_ORG;
   }
@@ -252,7 +257,8 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
     assignedBranchName: string | null;
   }> = [];
 
-  if (me && (role === "mudir" || role === "farmasevt" || role === "koordinator" || isLeadRole(role))) {
+  const viewerIsMudir = mudirActor(role, me?.orgRole);
+  if (me && !viewerIsMudir && (role === "farmasevt" || role === "koordinator" || isLeadRole(role))) {
     const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
     const people = await db
       .select(EMP_COLS)
@@ -285,14 +291,14 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
 
   res.json({
     pharmacyStaff: pharmacy,
-    canPickShift: pharmacy,
-    canPickOwnBranch: Boolean(me && canPickOwnBranch(role, me.orgRole)),
-    canAssignOthers: assignable.length > 0,
+    canPickShift: pharmacy && !viewerIsMudir,
+    canPickOwnBranch: Boolean(me && !viewerIsMudir && canPickOwnBranch(role, me.orgRole)),
+    canAssignOthers: !viewerIsMudir && assignable.length > 0,
     canDayRotate: Boolean(
-      me && (role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG),
+      me && !viewerIsMudir && (role === "koordinator" || isLeadRole(role)),
     ),
     canManageSlots: Boolean(
-      me && (role === "mudir" || role === "koordinator" || isLeadRole(role) || me.orgRole === MANAGER_ORG),
+      me && !viewerIsMudir && (role === "koordinator" || isLeadRole(role)),
     ),
     employee: me
       ? {
@@ -334,6 +340,10 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
 
 router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
+  if (role === "mudir") {
+    res.status(403).json({ error: "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi" });
+    return;
+  }
   const me = await empByUserId(req.userId!);
   if (!me) {
     res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
@@ -341,13 +351,6 @@ router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<vo
   }
   const body = req.body as { shiftType?: string; assignedBranchId?: number | null };
   const patch: Record<string, unknown> = { updatedAt: new Date() };
-
-  if (isMudirPerson(me.orgRole) && (body.shiftType != null || body.assignedBranchId !== undefined)) {
-    res.status(400).json({
-      error: "Mudirga doimiy smena va filial qo‘yilmaydi. Kunlik rotatsiya qiling.",
-    });
-    return;
-  }
 
   if (body.shiftType != null) {
     if (!isPharmacyShiftStaff(role, me.orgRole)) {
@@ -386,6 +389,10 @@ router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<vo
 
 router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
+  if (role === "mudir") {
+    res.status(403).json({ error: "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi" });
+    return;
+  }
   const me = await empByUserId(req.userId!);
   if (!me) {
     res.status(400).json({ error: "Sizning xodim kartochkangiz yo‘q" });
@@ -403,9 +410,7 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
     return;
   }
   if (isMudirPerson(target.orgRole)) {
-    res.status(400).json({
-      error: "Mudirga doimiy smena va filial qo‘yilmaydi. Kunlik rotatsiya qiling.",
-    });
+    res.status(400).json({ error: "Mudirga smena, filial va rotatsiya qo‘yilmaydi" });
     return;
   }
   if (target.orgRole === "pharmacist" && !(role === "mudir" || role === "koordinator" || isLeadRole(role))) {
@@ -492,6 +497,10 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
  */
 router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
+  if (role === "mudir") {
+    res.status(403).json({ error: "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi" });
+    return;
+  }
   const me = await empByUserId(req.userId!);
   if (!me) {
     res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
@@ -540,8 +549,12 @@ router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promi
     return;
   }
   const org = target.orgRole || "";
-  if (!(org === MANAGER_ORG || STAFF_ORG.has(org))) {
-    res.status(400).json({ error: "Rotatsiya faqat mudir, farmasevt yoki stajyor uchun" });
+  if (org === MANAGER_ORG) {
+    res.status(400).json({ error: "Mudirga smena, filial va rotatsiya qo‘yilmaydi" });
+    return;
+  }
+  if (!STAFF_ORG.has(org)) {
+    res.status(400).json({ error: "Rotatsiya faqat farmasevt va stajyor uchun" });
     return;
   }
 
@@ -952,10 +965,8 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
     res.status(400).json({ error: "Faqat mudir, farmasevt yoki stajyor" });
     return;
   }
-  if (isMudirPerson(org) && String(req.body?.mode || "") !== "days") {
-    res.status(400).json({
-      error: "Mudirga doimiy smena va filial qo‘yilmaydi. Faqat kunlik rotatsiya.",
-    });
+  if (isMudirPerson(org)) {
+    res.status(400).json({ error: "Mudirga smena, filial va rotatsiya qo‘yilmaydi" });
     return;
   }
   const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
@@ -1296,9 +1307,7 @@ router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthReque
       return;
     }
     if (isMudirPerson(target.orgRole)) {
-      res.status(400).json({
-        error: "Mudirga doimiy smena qo‘yilmaydi. Kunlik rotatsiya qiling.",
-      });
+      res.status(400).json({ error: "Mudirga smena, filial va rotatsiya qo‘yilmaydi" });
       return;
     }
     if (!isPharmacyShiftStaff(null, target.orgRole)) {

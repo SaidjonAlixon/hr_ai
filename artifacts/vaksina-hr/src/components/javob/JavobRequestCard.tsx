@@ -132,13 +132,16 @@ type Props = {
   t: (k: string) => string;
   /** Hide employee name (e.g. «Mening so‘rovlarim») */
   hideName?: boolean;
+  /** Ketma-ket kunlar bitta so‘rov sifatida */
+  datesLabel?: string;
+  dayCount?: number;
   actions?: ReactNode;
   /** Qaror yuborilayotganda karta xiralashadi */
   busy?: boolean;
   className?: string;
 };
 
-export function JavobRequestCard({ item, t, hideName, actions, busy, className }: Props) {
+export function JavobRequestCard({ item, t, hideName, datesLabel, dayCount = 1, actions, busy, className }: Props) {
   const badge = javobStatusBadge(item.status, t);
   const hourly = isHourlyRequest(item);
   const kindLabel = hourly ? t("javob.modeHour") : t("javob.modeDay");
@@ -187,7 +190,12 @@ export function JavobRequestCard({ item, t, hideName, actions, busy, className }
           <p className="flex items-center gap-1 text-muted-foreground">
             <CalendarDays className="h-3 w-3" /> {t("javob.date")}
           </p>
-          <p className="mt-0.5 font-semibold text-foreground">{formatYmdDisplay(item.workDate)}</p>
+          <p className="mt-0.5 font-semibold text-foreground">
+            {datesLabel || formatYmdDisplay(item.workDate)}
+            {dayCount > 1 ? (
+              <span className="ml-1 font-medium text-muted-foreground">· {dayCount} kun</span>
+            ) : null}
+          </p>
         </div>
         <div className="rounded-xl bg-muted/50 px-2.5 py-2">
           <p className="flex items-center gap-1 text-muted-foreground">

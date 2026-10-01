@@ -28,9 +28,9 @@ import { cn } from "../../lib/utils";
 import {
   approveJavobRequest,
   fetchJavobRequests,
-  formatYmdDisplay,
+  groupConsecutiveJavob,
   rejectJavobRequest,
-  type JavobRequestItem,
+  type JavobRequestGroup,
 } from "../../lib/javob-olish-api";
 import {
   buildJavobApprovedExport,
@@ -61,7 +61,7 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
   const [tab, setTab] = useState<Tab>(hrView ? "hr" : "coord");
   const [decidedFilter, setDecidedFilter] = useState<DecidedFilter>("all");
   const [busy, setBusy] = useState<Record<number, "approve" | "reject">>({});
-  const [rejectFor, setRejectFor] = useState<JavobRequestItem | null>(null);
+  const [rejectFor, setRejectFor] = useState<JavobRequestGroup | null>(null);
   const [rejectNote, setRejectNote] = useState("");
   const [exporting, setExporting] = useState<"excel" | "pdf" | null>(null);
 
@@ -95,25 +95,27 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
   );
 
   const decideMut = useMutation({
-    mutationFn: (p: { item: JavobRequestItem; action: "approve" | "reject"; note?: string }) =>
-      p.action === "approve" ? approveJavobRequest(p.item.id, p.note) : rejectJavobRequest(p.item.id, p.note),
+    mutationFn: (p: { group: JavobRequestGroup; action: "approve" | "reject"; note?: string }) =>
+      p.action === "approve" ? approveJavobRequest(p.group.id, p.note) : rejectJavobRequest(p.group.id, p.note),
     onMutate: async (p) => {
-      setBusy((b) => ({ ...b, [p.item.id]: p.action }));
+      const ids = new Set(p.group.items.map((i) => i.id));
+      setBusy((b) => ({ ...b, [p.group.id]: p.action }));
       await qc.cancelQueries({ queryKey: PENDING_KEY });
       const snapshot = qc.getQueryData<PendingData>(PENDING_KEY);
       qc.setQueryData<PendingData>(PENDING_KEY, (old) =>
-        old ? { ...old, items: old.items.filter((i) => i.id !== p.item.id) } : old,
+        old ? { ...old, items: old.items.filter((i) => !ids.has(i.id)) } : old,
       );
       return { snapshot };
     },
     onSuccess: (res, p) => {
+      const ids = new Set(p.group.items.map((i) => i.id));
       qc.setQueryData<PendingData>(PENDING_KEY, (old) =>
-        old ? { ...old, items: old.items.filter((i) => i.id !== p.item.id) } : old,
+        old ? { ...old, items: old.items.filter((i) => !ids.has(i.id)) } : old,
       );
       const movedToHr = res.item.status === "pending_hr";
       toast({
         title: p.action === "approve" ? (movedToHr ? "Tasdiqlandi — HR ga yuborildi" : t("javob.approved")) : t("javob.rejected"),
-        description: `${p.item.fullName || "Xodim"} · ${formatYmdDisplay(p.item.workDate)}. «Javob berilganlar» bo‘limiga o‘tdi.`,
+        description: `${p.group.head.fullName || "Xodim"} · ${p.group.datesLabel}. «Javob berilganlar» bo‘limiga o‘tdi.`,
       });
       void qc.invalidateQueries({ queryKey: ["javob-olish"] });
     },
@@ -125,14 +127,14 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
     onSettled: (_r, _e, p) =>
       setBusy((b) => {
         const next = { ...b };
-        delete next[p.item.id];
+        delete next[p.group.id];
         return next;
       }),
   });
 
   const confirmReject = () => {
     if (!rejectFor) return;
-    decideMut.mutate({ item: rejectFor, action: "reject", note: rejectNote.trim() || undefined });
+    decideMut.mutate({ group: rejectFor, action: "reject", note: rejectNote.trim() || undefined });
     setRejectFor(null);
     setRejectNote("");
   };
@@ -155,7 +157,8 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
     }
   }
 
-  const renderActions = (item: JavobRequestItem) => {
+  const renderActions = (group: JavobRequestGroup) => {
+    const item = group.head;
     if (!item.canAct) {
       return (
         <p className="flex items-center gap-1.5 rounded-xl bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
@@ -164,7 +167,7 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
         </p>
       );
     }
-    const state = busy[item.id];
+    const state = busy[group.id];
     const approveLabel =
       item.status === "pending_hr" ? t("javob.approveFinal") : isCoord ? t("javob.approve") : t("javob.approveFinal");
     return (
@@ -176,7 +179,7 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
           disabled={Boolean(state)}
           onClick={() => {
             setRejectNote("");
-            setRejectFor(item);
+            setRejectFor(group);
           }}
         >
           {state === "reject" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <XCircle className="mr-1.5 h-4 w-4 shrink-0" />}
@@ -186,7 +189,7 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
           type="button"
           className="h-11 min-w-0 bg-emerald-600 text-white hover:bg-emerald-700"
           disabled={Boolean(state)}
-          onClick={() => decideMut.mutate({ item, action: "approve" })}
+          onClick={() => decideMut.mutate({ group, action: "approve" })}
         >
           {state === "approve" ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : <CheckCircle2 className="mr-1.5 h-4 w-4 shrink-0" />}
           <span className="truncate">{approveLabel}</span>
@@ -195,18 +198,23 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
     );
   };
 
+  const hrGroups = useMemo(() => groupConsecutiveJavob(hrItems), [hrItems]);
+  const coordGroups = useMemo(() => groupConsecutiveJavob(coordItems), [coordItems]);
+  const decidedGroupsAll = useMemo(() => groupConsecutiveJavob(decided), [decided]);
+  const decidedGroups = useMemo(() => groupConsecutiveJavob(decidedFiltered), [decidedFiltered]);
+
   const tabs: Array<{ key: Tab; label: string; count: number; icon: typeof Inbox }> = hrView
     ? [
-        { key: "hr", label: "HR kutmoqda", count: hrItems.length, icon: ShieldCheck },
-        { key: "coord", label: "Koordinatorda", count: coordItems.length, icon: Hourglass },
-        { key: "decided", label: "Javob berilganlar", count: decided.length, icon: CheckCircle2 },
+        { key: "hr", label: "HR kutmoqda", count: hrGroups.length, icon: ShieldCheck },
+        { key: "coord", label: "Koordinatorda", count: coordGroups.length, icon: Hourglass },
+        { key: "decided", label: "Javob berilganlar", count: decidedGroupsAll.length, icon: CheckCircle2 },
       ]
     : [
-        { key: "coord", label: "Kutilayotgan", count: coordItems.length, icon: Inbox },
-        { key: "decided", label: "Javob berilganlar", count: decided.length, icon: CheckCircle2 },
+        { key: "coord", label: "Kutilayotgan", count: coordGroups.length, icon: Inbox },
+        { key: "decided", label: "Javob berilganlar", count: decidedGroupsAll.length, icon: CheckCircle2 },
       ];
 
-  const list = tab === "hr" ? hrItems : tab === "coord" ? coordItems : decidedFiltered;
+  const list = tab === "hr" ? hrGroups : tab === "coord" ? coordGroups : decidedGroups;
   const loading = tab === "decided" ? decidedQ.isLoading : pendingQ.isLoading;
   const error = tab === "decided" ? decidedQ.error : pendingQ.error;
   const refreshing = tab === "decided" ? decidedQ.isFetching : pendingQ.isFetching;
@@ -347,13 +355,15 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
           </div>
         ) : (
           <div className="grid gap-3 lg:grid-cols-2">
-            {list.map((item) => (
+            {list.map((group) => (
               <JavobRequestCard
-                key={item.id}
-                item={item}
+                key={group.id}
+                item={group.head}
+                datesLabel={group.datesLabel}
+                dayCount={group.dayCount}
                 t={t}
-                busy={Boolean(busy[item.id])}
-                actions={tab === "decided" ? undefined : renderActions(item)}
+                busy={Boolean(busy[group.id])}
+                actions={tab === "decided" ? undefined : renderActions(group)}
               />
             ))}
           </div>
@@ -366,7 +376,7 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
             <AlertDialogTitle>So‘rovni rad etasizmi?</AlertDialogTitle>
             <AlertDialogDescription>
               {rejectFor
-                ? `${rejectFor.fullName || "Xodim"} · ${formatYmdDisplay(rejectFor.workDate)} · ${rejectFor.fromHm}–${rejectFor.toHm}. Xodimga sabab bilan xabar boradi.`
+                ? `${rejectFor.head.fullName || "Xodim"} · ${rejectFor.datesLabel} · ${rejectFor.head.fromHm}–${rejectFor.head.toHm}. Ketma-ket kunlarning hammasi birga rad etiladi.`
                 : null}
             </AlertDialogDescription>
           </AlertDialogHeader>

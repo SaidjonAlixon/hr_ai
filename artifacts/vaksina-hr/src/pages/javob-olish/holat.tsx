@@ -33,6 +33,7 @@ import {
   approveJavobRequest,
   fetchJavobRequests,
   formatYmdDisplay,
+  groupConsecutiveJavob,
   rejectJavobRequest,
   type JavobRequestItem,
 } from "../../lib/javob-olish-api";
@@ -152,10 +153,15 @@ export default function JavobOlishHolatPage() {
   });
 
   const decideMut = useMutation({
-    mutationFn: (p: { id: number; action: "approve" | "reject" }) =>
-      p.action === "approve" ? approveJavobRequest(p.id) : rejectJavobRequest(p.id),
+    mutationFn: (p: { ids: number[]; action: "approve" | "reject" }) =>
+      p.action === "approve" ? approveJavobRequest(p.ids[0]!) : rejectJavobRequest(p.ids[0]!),
     onMutate: async (p) => {
-      setDismissed((prev) => new Set(prev).add(p.id));
+      const ids = new Set(p.ids);
+      setDismissed((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      });
       await qc.cancelQueries({ queryKey: holatKey });
       const snapshot = qc.getQueryData<{ items: JavobRequestItem[] }>(holatKey);
       const nextStatus = p.action === "approve" ? "approved" : "rejected";
@@ -164,29 +170,24 @@ export default function JavobOlishHolatPage() {
           ? {
               ...old,
               items: old.items.map((it) =>
-                it.id === p.id ? { ...it, status: nextStatus, canAct: false } : it,
+                ids.has(it.id) ? { ...it, status: nextStatus, canAct: false } : it,
               ),
             }
           : old,
       );
       return { snapshot };
     },
-    onSuccess: (res, p) => {
-      toast({ title: p.action === "approve" ? t("javob.approved") : t("javob.rejected") });
-      qc.setQueryData<{ items: JavobRequestItem[] }>(holatKey, (old) =>
-        old
-          ? {
-              ...old,
-              items: old.items.map((it) => (it.id === p.id ? { ...it, ...res.item } : it)),
-            }
-          : old,
-      );
+    onSuccess: (_res, p) => {
+      toast({
+        title: p.action === "approve" ? t("javob.approved") : t("javob.rejected"),
+        description: p.ids.length > 1 ? `${p.ids.length} ketma-ket kun birga yopildi` : undefined,
+      });
       void qc.invalidateQueries({ queryKey: ["javob-olish"] });
     },
     onError: (e: Error, p, ctx) => {
       setDismissed((prev) => {
         const next = new Set(prev);
-        next.delete(p.id);
+        for (const id of p.ids) next.delete(id);
         return next;
       });
       if (ctx?.snapshot) qc.setQueryData(holatKey, ctx.snapshot);
@@ -227,15 +228,16 @@ export default function JavobOlishHolatPage() {
     });
   }, [items, statusFilter, q]);
 
-  const visible = useMemo(() => {
+  const visibleGroups = useMemo(() => {
     const queue = statusFilter === "all" || statusFilter === "pending_coord" || statusFilter === "pending_hr";
     const base = queue ? filtered.filter((it) => !dismissed.has(it.id)) : filtered;
-    return base.filter((it) => {
-      if (pickedDay && it.workDate !== pickedDay) return false;
-      if (personId != null && it.employeeId !== personId) return false;
+    return groupConsecutiveJavob(base).filter((group) => {
+      if (pickedDay && !group.items.some((it) => it.workDate === pickedDay)) return false;
+      if (personId != null && group.head.employeeId !== personId) return false;
       return true;
     });
   }, [filtered, dismissed, statusFilter, pickedDay, personId]);
+  const visible = useMemo(() => visibleGroups.flatMap((group) => group.items), [visibleGroups]);
 
   const dayCounts = useMemo(() => {
     const map = new Map<string, number>();
@@ -538,7 +540,7 @@ export default function JavobOlishHolatPage() {
           <CardTitle className="flex items-center gap-2 text-base">
             <PhoneCall className="h-4 w-4 text-primary" />
             {t("javob.holatListTitle")}
-            <span className="text-sm font-normal text-muted-foreground">({visible.length})</span>
+            <span className="text-sm font-normal text-muted-foreground">({visibleGroups.length})</span>
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2 pt-0">
@@ -547,17 +549,21 @@ export default function JavobOlishHolatPage() {
               <Loader2 className="h-4 w-4 animate-spin" />
               …
             </p>
-          ) : visible.length === 0 ? (
+          ) : visibleGroups.length === 0 ? (
             <p className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
               {t("javob.holatEmpty")}
             </p>
           ) : (
-            visible.map((item) => {
+            visibleGroups.map((group) => {
+              const item = group.head;
               const needsHr = canDecide && item.status === "pending_hr";
+              const ids = group.items.map((it) => it.id);
               return (
                 <JavobRequestCard
-                  key={item.id}
+                  key={group.id}
                   item={item}
+                  datesLabel={group.datesLabel}
+                  dayCount={group.dayCount}
                   t={t}
                   actions={
                     needsHr ? (
@@ -567,7 +573,7 @@ export default function JavobOlishHolatPage() {
                           variant="outline"
                           className="border-rose-200 text-rose-700 hover:bg-rose-50"
                           disabled={decideMut.isPending}
-                          onClick={() => decideMut.mutate({ id: item.id, action: "reject" })}
+                          onClick={() => decideMut.mutate({ ids, action: "reject" })}
                         >
                           <XCircle className="mr-1.5 h-4 w-4" />
                           {t("javob.reject")}
@@ -575,7 +581,7 @@ export default function JavobOlishHolatPage() {
                         <Button
                           type="button"
                           disabled={decideMut.isPending}
-                          onClick={() => decideMut.mutate({ id: item.id, action: "approve" })}
+                          onClick={() => decideMut.mutate({ ids, action: "approve" })}
                         >
                           <CheckCircle2 className="mr-1.5 h-4 w-4" />
                           {t("javob.approveFinal")}

@@ -191,6 +191,83 @@ async function readJson<T>(res: Response): Promise<T> {
   return data;
 }
 
+export type FilialEmployeePick = {
+  employeeId: number;
+  userId: number | null;
+  fullName: string;
+  roleLabel: string;
+  phone: string | null;
+  hiredAt: string | null;
+};
+
+export type FilialPick = {
+  id: number;
+  name: string;
+  mudirName: string | null;
+  mudirMissing: boolean;
+  coordinatorName: string | null;
+  employees: FilialEmployeePick[];
+};
+
+export type FilialEmployeeRow = {
+  employeeId: number;
+  fullName: string;
+  roleLabel: string;
+  phone: string | null;
+  shiftDisplay: string;
+  presentDays: number;
+  onTimeDays: number;
+  lateDays: number;
+  absentDays: number;
+  presentRate: number;
+  days?: XodimDay[];
+};
+
+export type FilialReport = {
+  filial: FilialPick;
+  from: string;
+  to: string;
+  dayCount: number;
+  employees: FilialEmployeeRow[];
+};
+
+export async function fetchFilials(): Promise<FilialPick[]> {
+  const res = await fetch("/api/holat/filials", { credentials: "include" });
+  const data = await readJson<{ filials: FilialPick[] }>(res);
+  return data.filials ?? [];
+}
+
+export async function fetchStaffDays(input: {
+  employeeIds: number[];
+  from: string;
+  to: string;
+}): Promise<Array<{ employeeId: number; days: XodimDay[] }>> {
+  const qs = new URLSearchParams({
+    employeeIds: input.employeeIds.join(","),
+    from: input.from,
+    to: input.to,
+  });
+  const res = await fetch(`/api/holat/staff-days?${qs}`, { credentials: "include" });
+  const data = await readJson<{ packs: Array<{ employeeId: number; days: XodimDay[] }> }>(res);
+  return data.packs ?? [];
+}
+
+export async function fetchFilialReport(input: {
+  branchId: number;
+  employeeIds: number[];
+  from: string;
+  to: string;
+}): Promise<FilialReport> {
+  const qs = new URLSearchParams({
+    branchId: String(input.branchId),
+    from: input.from,
+    to: input.to,
+    employeeIds: input.employeeIds.join(","),
+  });
+  const res = await fetch(`/api/holat/filial-report?${qs}`, { credentials: "include" });
+  return readJson<FilialReport>(res);
+}
+
 export async function searchXodimlar(q: string): Promise<XodimSearchHit[]> {
   const res = await fetch(`/api/holat/employees?q=${encodeURIComponent(q)}`, { credentials: "include" });
   const data = await readJson<{ employees: XodimSearchHit[] }>(res);

@@ -18,6 +18,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { scriptIncludes } from "../lib/script-search";
+import { isVacancyPlaceholder } from "../lib/vacancy-slot";
 import {
   canViewDavomat,
   canEditDavomatManual,
@@ -680,6 +681,48 @@ function coordinatorNameFromLinks(
   return "—";
 }
 
+/** Xodim → uning koordinatorini topadi (mudir va filial tuguni orqali ham). */
+async function loadCoordinatorByEmployee(): Promise<Map<number, { id: number; name: string }>> {
+  const rows = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+      orgRole: employeesTable.orgRole,
+      userRole: usersTable.role,
+    })
+    .from(employeesTable)
+    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId));
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const out = new Map<number, { id: number; name: string }>();
+  const resolve = (employeeId: number) => {
+    const seen = new Set<number>();
+    const start = byId.get(employeeId);
+    if (!start) return null;
+    let nextId = start.reportsToId ?? start.assignedBranchId ?? null;
+    for (let i = 0; i < 8 && nextId != null; i++) {
+      if (seen.has(nextId)) return null;
+      seen.add(nextId);
+      const node = byId.get(nextId);
+      if (!node) return null;
+      const org = String(node.orgRole || "").toLowerCase();
+      const role = String(node.userRole || "").toLowerCase();
+      if (org === "coordinator" || role === "koordinator") {
+        const name = formatPersonName(node.fullName) || node.fullName || "";
+        return name ? { id: node.id, name } : null;
+      }
+      nextId = node.reportsToId;
+    }
+    return null;
+  };
+  for (const row of rows) {
+    const hit = resolve(row.id);
+    if (hit) out.set(row.id, hit);
+  }
+  return out;
+}
+
 async function loadActiveEmployees(filters: {
   departmentId?: string;
   location?: string;
@@ -728,7 +771,7 @@ async function loadActiveEmployees(filters: {
   const staffSeg = parseDavomatStaffFilter(filters.staffFilter);
   const whShift = staffSeg === "warehouse" ? parseWarehouseShiftFilter(filters.warehouseShift) : null;
 
-  return rows.filter((e) => {
+  const filtered = rows.filter((e) => {
     if (filters.employeeId && e.id !== Number(filters.employeeId)) return false;
     if (departmentFilter) {
       if (!matchesDepartmentFilter(e, departmentFilter)) return false;
@@ -745,6 +788,15 @@ async function loadActiveEmployees(filters: {
     }
     if (whShift && !matchesWarehouseShift(e, whShift)) return false;
     return true;
+  });
+  const coordinatorById = await loadCoordinatorByEmployee();
+  return filtered.map((e) => {
+    const coordinator = coordinatorById.get(e.id);
+    return {
+      ...e,
+      coordinatorId: coordinator?.id ?? null,
+      coordinatorName: coordinator?.name ?? null,
+    };
   });
 }
 
@@ -779,6 +831,92 @@ async function scopeDeptHeadDavomatEmployees<
     if (e.userRole && allowedRoles.has(e.userRole)) return true;
     return false;
   });
+}
+
+/** Filial tuguni — odam emas (user yo‘q mudir qatori). */
+function isBranchShellPerson(e: {
+  orgRole?: string | null;
+  userId?: number | null;
+}): boolean {
+  return String(e.orgRole || "") === "manager" && (e.userId == null || e.userId === 0);
+}
+
+/**
+ * Koordinator: faqat o‘z daraxtidagi filiallar va xodimlar.
+ * Bo‘sh o‘rin va filial tuguni hisobotga kirmaydi. Biriktirilgan filialdagi xodim ham kiradi.
+ */
+async function scopeCoordinatorDavomatEmployees<T extends { id: number }>(
+  userId: number | undefined,
+  employees: T[],
+): Promise<T[]> {
+  if (!userId) return [];
+  const rows = await db
+    .select({
+      id: employeesTable.id,
+      userId: employeesTable.userId,
+      orgRole: employeesTable.orgRole,
+      reportsToId: employeesTable.reportsToId,
+      assignedBranchId: employeesTable.assignedBranchId,
+      fullName: employeesTable.fullName,
+      employmentStatus: employeesTable.employmentStatus,
+    })
+    .from(employeesTable);
+
+  const me =
+    rows.find((r) => r.userId === userId && String(r.orgRole || "") === "coordinator") ??
+    rows.find((r) => r.userId === userId);
+  if (!me) return [];
+
+  const children = new Map<number, typeof rows>();
+  for (const r of rows) {
+    if (r.reportsToId == null) continue;
+    const list = children.get(r.reportsToId) ?? [];
+    list.push(r);
+    children.set(r.reportsToId, list);
+  }
+
+  const keep = new Set<number>();
+  const branchIds = new Set<number>();
+  const queue = [me.id];
+  const seen = new Set<number>([me.id]);
+  while (queue.length) {
+    const id = queue.shift()!;
+    for (const child of children.get(id) ?? []) {
+      if (seen.has(child.id)) continue;
+      seen.add(child.id);
+      if (isVacancyPlaceholder(child)) {
+        queue.push(child.id);
+        continue;
+      }
+      const shell = isBranchShellPerson(child);
+      if (shell || String(child.orgRole || "") === "manager") branchIds.add(child.id);
+      if (!shell) keep.add(child.id);
+      queue.push(child.id);
+    }
+  }
+
+  if (branchIds.size) {
+    for (const r of rows) {
+      if (r.assignedBranchId == null || !branchIds.has(r.assignedBranchId)) continue;
+      if (r.id === me.id || isVacancyPlaceholder(r) || isBranchShellPerson(r)) continue;
+      keep.add(r.id);
+    }
+  }
+
+  return employees.filter((e) => keep.has(e.id));
+}
+
+async function scopeDavomatViewer<
+  T extends {
+    id: number;
+    departmentId: number | null;
+    departmentName?: string | null;
+    userRole?: string | null;
+  },
+>(role: string | undefined, userId: number | undefined, employees: T[]): Promise<T[]> {
+  const scoped = await scopeDeptHeadDavomatEmployees(role, userId, employees);
+  if ((role ?? "").trim().toLowerCase() !== "koordinator") return scoped;
+  return scopeCoordinatorDavomatEmployees(userId, scoped);
 }
 
 const davomatAnalyticsCache = new Map<string, { at: number; body: unknown }>();
@@ -951,6 +1089,8 @@ function buildReport(
         security: Boolean(hours.security),
         warehouseShiftKey: warehouseShiftKeyOf(e.shiftType),
         reportsToId: e.reportsToId ?? null,
+        coordinatorId: e.coordinatorId ?? null,
+        coordinatorName: e.coordinatorName ?? null,
         workStart: hours.start,
         workEnd: hours.end,
         days,
@@ -1107,7 +1247,7 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
       staffFilter: q.staffFilter,
       warehouseShift: q.warehouseShift,
     });
-    employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
+    employees = await scopeDavomatViewer(req.userRole, req.userId, employees);
     const records = await loadRecords(
       from,
       to,
@@ -1128,7 +1268,13 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
     const q = req.query as Record<string, string>;
     const to = q.to || todayTashkent();
     const from = q.from || addDays(to, -29);
-    const segment = (q.segment === "office" || q.segment === "pharmacy" ? q.segment : "all") as DavomatSegment;
+    const segment = (
+      (req.userRole ?? "").trim().toLowerCase() === "koordinator"
+        ? "pharmacy"
+        : q.segment === "office" || q.segment === "pharmacy"
+          ? q.segment
+          : "all"
+    ) as DavomatSegment;
     const fresh = q.fresh === "1";
     const shared = canViewFullDavomatDashboard(req.userRole);
     const cacheKey = `${shared ? "full" : `u${req.userId ?? 0}`}|${from}|${to}|${segment}`;
@@ -1141,7 +1287,7 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
     }
 
     let employees = await loadActiveEmployees({});
-    employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
+    employees = await scopeDavomatViewer(req.userRole, req.userId, employees);
 
     const employeeIds = employees.map((e) => e.id);
     const span = eachDateInclusive(from, to).length;
@@ -1193,7 +1339,11 @@ router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise
   if (!requireDavomat(req, res)) return;
   try {
     const date = (req.query as { date?: string }).date || todayTashkent();
-    const employees = await loadActiveEmployees({});
+    const employees = await scopeDavomatViewer(
+      req.userRole,
+      req.userId,
+      await loadActiveEmployees({}),
+    );
     const records = await loadRecords(date, date, employees.map((e) => e.id));
     const defs = await getEffectiveShiftDefs();
     const report = await buildReportWithJavob(employees, records, date, date, defs);
@@ -4488,7 +4638,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       const byId = new Map(employees.map((e) => [e.id, e]));
       employees = employees.filter((e) => resolvedBranchKey(e, byId) === branchKey);
     }
-    employees = await scopeDeptHeadDavomatEmployees(req.userRole, req.userId, employees);
+    const coordinatorId = Number(q.coordinatorId);
+    if (Number.isFinite(coordinatorId) && coordinatorId > 0) {
+      employees = employees.filter((e) => e.coordinatorId === coordinatorId);
+    }
+    employees = await scopeDavomatViewer(req.userRole, req.userId, employees);
     const records = await loadRecords(
       from,
       to,
@@ -4525,6 +4679,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       }`,
       q.search ? `Qidiruv: ${q.search}` : null,
       q.branch && q.branch !== "all" ? `Filial: ${q.branchLabel || q.branch}` : null,
+      Number(q.coordinatorId) > 0 ? `Koordinator: ${q.coordinatorLabel || q.coordinatorId}` : null,
       q.location ? `Filial: ${excelFilialLabel(q.location)}` : null,
       `Xodimlar: ${employees.length} ta`,
     ]

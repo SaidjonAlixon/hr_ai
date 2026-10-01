@@ -107,6 +107,7 @@ import {
   canViewChecklistStatus,
   canViewDavomat,
   canViewDavomatNotes,
+  normalizeUserRole,
   userRoleLabel,
 } from "../../lib/roles";
 import {
@@ -514,6 +515,93 @@ function PharmacyBranchPicker({
   );
 }
 
+function PharmacyCoordinatorPicker({
+  value,
+  onChange,
+  options,
+  total,
+}: {
+  value: string;
+  onChange: (key: string) => void;
+  options: { key: string; label: string; count: number }[];
+  total: number;
+}) {
+  const [open, setOpen] = useState(false);
+  const selected = options.find((o) => o.key === value);
+  const label = value === "all" ? `Barcha koordinatorlar (${total})` : selected ? `${selected.label} (${selected.count})` : "Koordinator";
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          variant="outline"
+          role="combobox"
+          aria-expanded={open}
+          className={cn(
+            "h-10 w-full justify-between rounded-xl border-border bg-card px-2.5 text-sm font-normal shadow-none hover:bg-indigo-50/70 dark:border-white/10 dark:bg-[#152238] dark:text-slate-100 dark:hover:bg-indigo-500/10",
+            value !== "all" &&
+              "border-indigo-400 bg-indigo-50 text-indigo-950 dark:border-indigo-400/50 dark:bg-indigo-500/15 dark:text-indigo-100",
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-2">
+            <Users className="h-3.5 w-3.5 shrink-0 text-indigo-600 dark:text-indigo-300" />
+            <span className="truncate text-left">{label}</span>
+          </span>
+          <ChevronsUpDown className="ml-2 h-3.5 w-3.5 shrink-0 opacity-60" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent
+        className="z-[90] w-[var(--radix-popover-trigger-width)] min-w-[16rem] overflow-hidden rounded-xl p-0 shadow-lg"
+        align="start"
+      >
+        <Command
+          filter={(itemValue, query) => {
+            return scriptIncludes(itemValue, query) ? 1 : 0;
+          }}
+        >
+          <CommandInput placeholder="Koordinator ismini yozing…" />
+          <CommandList className="max-h-72">
+            <CommandEmpty>Bunday koordinator topilmadi</CommandEmpty>
+            <CommandGroup>
+              <CommandItem
+                value="barcha koordinatorlar"
+                onSelect={() => {
+                  onChange("all");
+                  setOpen(false);
+                }}
+                className={cn("rounded-lg", value === "all" && "bg-indigo-50 text-indigo-950")}
+              >
+                <Check className={cn("text-indigo-700", value === "all" ? "opacity-100" : "opacity-0")} />
+                <span className="min-w-0 flex-1 truncate">Barcha koordinatorlar</span>
+                <span className="text-xs font-semibold tabular-nums text-muted-foreground">{total}</span>
+              </CommandItem>
+              {options.map((o) => {
+                const active = o.key === value;
+                return (
+                  <CommandItem
+                    key={o.key}
+                    value={`${o.label} ${o.key}`}
+                    onSelect={() => {
+                      onChange(o.key);
+                      setOpen(false);
+                    }}
+                    className={cn("rounded-lg", active && "bg-indigo-50 text-indigo-950")}
+                  >
+                    <Check className={cn("text-indigo-700", active ? "opacity-100" : "opacity-0")} />
+                    <span className="min-w-0 flex-1 truncate">{o.label}</span>
+                    <span className="text-xs font-semibold tabular-nums text-muted-foreground">{o.count}</span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </CommandList>
+        </Command>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 export default function DavomatPage() {
   const { user } = useAuth();
   const { t, locale } = useI18n();
@@ -521,6 +609,7 @@ export default function DavomatPage() {
   const [location] = useLocation();
   const urlSearch = useSearch();
   const allowed = canViewDavomat(user?.role);
+  const pharmacyScope = normalizeUserRole(user?.role) === "koordinator";
   const canEdit = canEditDavomatManual(user?.role);
   const canReset = canResetDavomatManual(user?.role);
   const canSeeNotes = canViewDavomatNotes(user?.role);
@@ -554,15 +643,18 @@ export default function DavomatPage() {
   const [officeInner, setOfficeInner] = useState<OfficeInnerFilter>("all");
   const [warehouseShift, setWarehouseShift] = useState<string>("all");
   const [pharmacyShift, setPharmacyShift] = useState<PharmacyShiftFilter>("all");
+  const [pharmacyCoordinator, setPharmacyCoordinator] = useState("all");
   const [pharmacyBranch, setPharmacyBranch] = useState("all");
+  const viewFilter: DavomatStaffFilter = pharmacyScope ? "pharmacy" : staffFilter;
 
   useEffect(() => {
-    if (staffFilter !== "office" || officeInner !== "warehouse") setWarehouseShift("all");
-    if (staffFilter !== "pharmacy") {
+    if (viewFilter !== "office" || officeInner !== "warehouse") setWarehouseShift("all");
+    if (viewFilter !== "pharmacy") {
       setPharmacyShift("all");
+      setPharmacyCoordinator("all");
       setPharmacyBranch("all");
     }
-  }, [staffFilter, officeInner]);
+  }, [viewFilter, officeInner]);
 
   useEffect(() => {
     const t = window.setTimeout(() => setSearchDebounced(search.trim()), 350);
@@ -621,8 +713,8 @@ export default function DavomatPage() {
         from,
         to,
         search: searchDebounced || undefined,
-        departmentId: deptFilter !== "all" ? deptFilter : undefined,
-        staffFilter: staffFilter !== "all" ? staffFilter : undefined,
+        departmentId: pharmacyScope || deptFilter === "all" ? undefined : deptFilter,
+        staffFilter: viewFilter !== "all" ? viewFilter : undefined,
       });
       if (seq !== loadSeq.current) return;
       startTransition(() => {
@@ -638,7 +730,7 @@ export default function DavomatPage() {
     } finally {
       if (seq === loadSeq.current) setLoading(false);
     }
-  }, [allowed, from, to, searchDebounced, deptFilter, staffFilter, toast]);
+  }, [allowed, from, to, searchDebounced, deptFilter, pharmacyScope, viewFilter, toast]);
 
   useEffect(() => {
     void load();
@@ -666,33 +758,38 @@ export default function DavomatPage() {
     if (!report) return [];
     return report.employees.filter(
       (emp) =>
-        matchesStaffFilter(emp, staffFilter, farOfficeIds) &&
-        (staffFilter !== "office" || matchesOfficeInner(emp, officeInner)) &&
-        (staffFilter !== "office" || officeInner !== "warehouse" || matchesWarehouseShift(emp, warehouseShift)) &&
-        (staffFilter !== "pharmacy" || matchesPharmacyShift(emp, pharmacyShift)) &&
-        (staffFilter !== "pharmacy" ||
+        matchesStaffFilter(emp, viewFilter, farOfficeIds) &&
+        (viewFilter !== "office" || matchesOfficeInner(emp, officeInner)) &&
+        (viewFilter !== "office" || officeInner !== "warehouse" || matchesWarehouseShift(emp, warehouseShift)) &&
+        (viewFilter !== "pharmacy" || matchesPharmacyShift(emp, pharmacyShift)) &&
+        (viewFilter !== "pharmacy" ||
+          pharmacyCoordinator === "all" ||
+          String(emp.coordinatorId ?? "none") === pharmacyCoordinator) &&
+        (viewFilter !== "pharmacy" ||
           pharmacyBranch === "all" ||
           (pharmacyBranchById.get(emp.id)?.key ?? "none") === pharmacyBranch),
     );
-  }, [report, staffFilter, officeInner, warehouseShift, pharmacyShift, pharmacyBranch, pharmacyBranchById, farOfficeIds]);
+  }, [report, viewFilter, officeInner, warehouseShift, pharmacyShift, pharmacyCoordinator, pharmacyBranch, pharmacyBranchById, farOfficeIds]);
 
   const pharmacyShiftCounts = useMemo(() => {
     const counts = { shift_one: 0, shift_two: 0 };
-    if (staffFilter !== "pharmacy" || !report) return counts;
+    if (viewFilter !== "pharmacy" || !report) return counts;
     for (const emp of report.employees) {
       if (!matchesStaffFilter(emp, "pharmacy")) continue;
+      if (pharmacyCoordinator !== "all" && String(emp.coordinatorId ?? "none") !== pharmacyCoordinator) continue;
       if (pharmacyBranch !== "all" && (pharmacyBranchById.get(emp.id)?.key ?? "none") !== pharmacyBranch) continue;
       if (matchesPharmacyShift(emp, "shift_two")) counts.shift_two += 1;
       else counts.shift_one += 1;
     }
     return counts;
-  }, [report, staffFilter, pharmacyBranch, pharmacyBranchById]);
+  }, [report, viewFilter, pharmacyCoordinator, pharmacyBranch, pharmacyBranchById]);
 
   const pharmacyBranches = useMemo(() => {
     const map = new Map<string, { key: string; label: string; count: number }>();
-    if (staffFilter !== "pharmacy" || !report) return [];
+    if (viewFilter !== "pharmacy" || !report) return [];
     for (const emp of report.employees) {
       if (!matchesStaffFilter(emp, "pharmacy")) continue;
+      if (pharmacyCoordinator !== "all" && String(emp.coordinatorId ?? "none") !== pharmacyCoordinator) continue;
       const branch = pharmacyBranchById.get(emp.id) ?? { key: "none", label: "Filialsiz" };
       const cur = map.get(branch.key) ?? { key: branch.key, label: branch.label, count: 0 };
       if (matchesPharmacyShift(emp, pharmacyShift)) cur.count += 1;
@@ -705,11 +802,28 @@ export default function DavomatPage() {
         if (b.key === "none") return -1;
         return a.label.localeCompare(b.label, "uz");
       });
-  }, [report, staffFilter, pharmacyShift, pharmacyBranchById]);
+  }, [report, viewFilter, pharmacyShift, pharmacyCoordinator, pharmacyBranchById]);
+
+  const pharmacyCoordinators = useMemo(() => {
+    const map = new Map<string, { key: string; label: string; count: number }>();
+    if (viewFilter !== "pharmacy" || !report) return [];
+    for (const emp of report.employees) {
+      if (!matchesStaffFilter(emp, "pharmacy")) continue;
+      if (!matchesPharmacyShift(emp, pharmacyShift)) continue;
+      const key = emp.coordinatorId != null ? String(emp.coordinatorId) : "none";
+      const label = emp.coordinatorName?.trim() || "Koordinatorsiz";
+      const cur = map.get(key) ?? { key, label, count: 0 };
+      cur.count += 1;
+      map.set(key, cur);
+    }
+    return [...map.values()]
+      .filter((c) => c.count > 0 && c.key !== "none")
+      .sort((a, b) => a.label.localeCompare(b.label, "uz"));
+  }, [report, viewFilter, pharmacyShift]);
 
   const officeInnerCounts = useMemo(() => {
     const counts = { all: 0, desk: 0, warehouse: 0, security: 0 };
-    if (staffFilter !== "office" || !report) return counts;
+    if (viewFilter !== "office" || !report) return counts;
     for (const emp of report.employees) {
       if (!matchesStaffFilter(emp, "office")) continue;
       counts.all += 1;
@@ -718,26 +832,35 @@ export default function DavomatPage() {
       else counts.desk += 1;
     }
     return counts;
-  }, [report, staffFilter]);
+  }, [report, viewFilter]);
 
   const selectedPharmacyShift =
-    staffFilter === "pharmacy" ? PHARMACY_SHIFT_OPTIONS.find((o) => o.key === pharmacyShift) ?? null : null;
+    viewFilter === "pharmacy" ? PHARMACY_SHIFT_OPTIONS.find((o) => o.key === pharmacyShift) ?? null : null;
   const selectedPharmacyBranch =
-    staffFilter === "pharmacy" && pharmacyBranch !== "all"
+    viewFilter === "pharmacy" && pharmacyBranch !== "all"
       ? pharmacyBranches.find((b) => b.key === pharmacyBranch) ?? null
+      : null;
+  const selectedPharmacyCoordinator =
+    viewFilter === "pharmacy" && pharmacyCoordinator !== "all"
+      ? pharmacyCoordinators.find((c) => c.key === pharmacyCoordinator) ?? null
       : null;
 
   useEffect(() => {
-    if (pharmacyBranch === "all" || staffFilter !== "pharmacy") return;
+    if (pharmacyBranch === "all" || viewFilter !== "pharmacy") return;
     if (!pharmacyBranches.some((b) => b.key === pharmacyBranch)) setPharmacyBranch("all");
-  }, [pharmacyBranches, pharmacyBranch, staffFilter]);
+  }, [pharmacyBranches, pharmacyBranch, viewFilter]);
+
+  useEffect(() => {
+    if (pharmacyCoordinator === "all" || viewFilter !== "pharmacy") return;
+    if (!pharmacyCoordinators.some((c) => c.key === pharmacyCoordinator)) setPharmacyCoordinator("all");
+  }, [pharmacyCoordinators, pharmacyCoordinator, viewFilter]);
 
   const whShiftOptions = useMemo(
     () =>
-      staffFilter === "office" && officeInner === "warehouse" && report
+      viewFilter === "office" && officeInner === "warehouse" && report
         ? warehouseShiftOptions(report.employees)
         : [],
-    [report, staffFilter, officeInner],
+    [report, viewFilter, officeInner],
   );
 
   useEffect(() => {
@@ -752,21 +875,21 @@ export default function DavomatPage() {
 
   /** Aralash ish vaqtli ro‘yxat — har bir xodim uchun alohida smena ustuni kerak */
   const showShiftCol =
-    staffFilter === "all" ||
-    (staffFilter === "office" &&
+    viewFilter === "all" ||
+    (viewFilter === "office" &&
       (officeInner === "all" ||
         officeInner === "security" ||
         (officeInner === "warehouse" && !selectedWhShift?.hours))) ||
-    (staffFilter === "pharmacy" && !selectedPharmacyShift);
+    (viewFilter === "pharmacy" && !selectedPharmacyShift);
 
   const staffGroupLabel =
-    staffFilter === "office" && officeInner === "warehouse" && selectedWhShift
+    viewFilter === "office" && officeInner === "warehouse" && selectedWhShift
       ? `Ofis · Omborxona · ${selectedWhShift.label}`
-      : staffFilter === "office" && officeInner === "warehouse"
+      : viewFilter === "office" && officeInner === "warehouse"
         ? "Ofis · Omborxona"
-        : staffFilter === "office" && officeInner === "security"
+        : viewFilter === "office" && officeInner === "security"
           ? "Ofis · Xavfsizlik"
-          : staffFilter === "office" && officeInner === "desk"
+          : viewFilter === "office" && officeInner === "desk"
             ? "Ofis · 09:00–18:00"
             : selectedPharmacyBranch && selectedPharmacyShift
               ? `Dorixona · ${selectedPharmacyBranch.label} · ${selectedPharmacyShift.label}`
@@ -774,7 +897,9 @@ export default function DavomatPage() {
                 ? `Dorixona · ${selectedPharmacyBranch.label}`
                 : selectedPharmacyShift
                   ? `Dorixona · ${selectedPharmacyShift.label}`
-                  : staffFilterLabel(staffFilter);
+                  : pharmacyScope
+                    ? "Dorixona · barcha smenalar"
+                    : staffFilterLabel(viewFilter);
 
   const employeesForDay = useMemo(() => {
     if (!report) return [] as Array<{ emp: (typeof filteredEmployees)[number]; day: (typeof filteredEmployees)[number]["days"][number] }>;
@@ -893,7 +1018,7 @@ export default function DavomatPage() {
   }, [filteredEmployees, report?.dates?.length, report?.summary.days]);
 
   const activeWorkHours = useMemo(() => {
-    if (staffFilter === "office" && officeInner === "warehouse") {
+    if (viewFilter === "office" && officeInner === "warehouse") {
       const key = selectedWhShift?.hours ? selectedWhShift.key : null;
       if (key) {
         const [start, end] = key.split("-");
@@ -901,19 +1026,19 @@ export default function DavomatPage() {
       }
       return { start: "smena boshi", end: "smena oxiri" };
     }
-    if (staffFilter === "office" && officeInner === "security") {
+    if (viewFilter === "office" && officeInner === "security") {
       return workHoursForStaffFilter("security");
     }
-    if (staffFilter === "office" && officeInner === "all") {
+    if (viewFilter === "office" && officeInner === "all") {
       return { start: "smena boshi", end: "smena oxiri" };
     }
-    if (staffFilter === "pharmacy") {
+    if (viewFilter === "pharmacy") {
       return selectedPharmacyShift
         ? { start: selectedPharmacyShift.start, end: selectedPharmacyShift.end }
         : { start: "smena boshi", end: "smena oxiri" };
     }
-    return workHoursForStaffFilter(staffFilter === "office" ? "office" : staffFilter);
-  }, [staffFilter, officeInner, selectedWhShift, selectedPharmacyShift]);
+    return workHoursForStaffFilter(viewFilter === "office" ? "office" : viewFilter);
+  }, [viewFilter, officeInner, selectedWhShift, selectedPharmacyShift]);
 
   const dayTiming = useMemo(() => {
     const rows = employeesForDay;
@@ -996,22 +1121,30 @@ export default function DavomatPage() {
         from,
         to,
         search: search.trim() || undefined,
-        departmentId: deptFilter !== "all" ? deptFilter : undefined,
+        departmentId: pharmacyScope || deptFilter === "all" ? undefined : deptFilter,
         staffFilter:
-          staffFilter === "pharmacy" && pharmacyShift !== "all"
+          viewFilter === "pharmacy" && pharmacyShift !== "all"
             ? pharmacyShift
-            : staffFilter === "office" && officeInner === "warehouse"
+            : viewFilter === "office" && officeInner === "warehouse"
               ? "warehouse"
-              : staffFilter === "office" && officeInner === "security"
+              : viewFilter === "office" && officeInner === "security"
                 ? "security"
-                : staffFilter === "office" && officeInner === "desk"
+                : viewFilter === "office" && officeInner === "desk"
                   ? "office_core"
-                  : staffFilter,
+                  : viewFilter,
         warehouseShift:
-          staffFilter === "office" && officeInner === "warehouse" ? warehouseShift : undefined,
-        branch: staffFilter === "pharmacy" && pharmacyBranch !== "all" ? pharmacyBranch : undefined,
+          viewFilter === "office" && officeInner === "warehouse" ? warehouseShift : undefined,
+        branch: viewFilter === "pharmacy" && pharmacyBranch !== "all" ? pharmacyBranch : undefined,
         branchLabel:
-          staffFilter === "pharmacy" && pharmacyBranch !== "all" ? selectedPharmacyBranch?.label : undefined,
+          viewFilter === "pharmacy" && pharmacyBranch !== "all" ? selectedPharmacyBranch?.label : undefined,
+        coordinatorId:
+          viewFilter === "pharmacy" && pharmacyCoordinator !== "all"
+            ? Number(pharmacyCoordinator)
+            : undefined,
+        coordinatorLabel:
+          viewFilter === "pharmacy" && pharmacyCoordinator !== "all"
+            ? selectedPharmacyCoordinator?.label
+            : undefined,
       });
       toast({
         title: result.via === "telegram" ? t("davomat.excelTelegram") : t("davomat.excelDone"),
@@ -1045,6 +1178,12 @@ export default function DavomatPage() {
           ? departments?.find((d) => String(d.id) === deptFilter)?.name || deptFilter
           : null,
         search.trim() ? `${t("ui.search")}: ${search.trim()}` : null,
+        viewFilter === "pharmacy" && selectedPharmacyCoordinator
+          ? `Koordinator: ${selectedPharmacyCoordinator.label}`
+          : null,
+        viewFilter === "pharmacy" && selectedPharmacyBranch
+          ? `Filial: ${selectedPharmacyBranch.label}`
+          : null,
         section === "schedule" && calMode === "day" && dayStatusFilter !== "all"
           ? dayStatusFilter
           : null,
@@ -1583,6 +1722,7 @@ export default function DavomatPage() {
           </div>
         </>
       )}
+      {pharmacyScope ? null : (
       <div>
         <Label className={labelClass}>{t("ui.department")}</Label>
         <Select value={deptFilter} onValueChange={setDeptFilter}>
@@ -1599,6 +1739,7 @@ export default function DavomatPage() {
           </SelectContent>
         </Select>
       </div>
+      )}
       {section === "schedule" && calMode === "day" ? (
         <div>
           <Label className={labelClass}>Holat</Label>
@@ -1666,6 +1807,14 @@ export default function DavomatPage() {
           </Select>
         </div>
       ) : null}
+      {pharmacyScope ? (
+        <div>
+          <Label className={labelClass}>Dorixona</Label>
+          <div className={cn(fieldClass, "flex items-center px-2.5 text-sm font-semibold text-emerald-800")}>
+            To‘liq dorixona · o‘z filiallaringiz
+          </div>
+        </div>
+      ) : (
       <div>
         <Label className={labelClass}>{t("davomat.staffGroup")}</Label>
         <Select value={staffFilter} onValueChange={(v) => setStaffFilter(v as DavomatStaffFilter)}>
@@ -1681,7 +1830,8 @@ export default function DavomatPage() {
           </SelectContent>
         </Select>
       </div>
-      {staffFilter === "office" ? (
+      )}
+      {viewFilter === "office" ? (
         <div className="sm:col-span-2 xl:col-span-4">
           <div className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-2 dark:border-white/10 dark:bg-white/[0.03]">
           <div className="mb-1.5 px-1">
@@ -1744,7 +1894,7 @@ export default function DavomatPage() {
           </div>
         </div>
       ) : null}
-      {staffFilter === "pharmacy" ? (
+      {viewFilter === "pharmacy" ? (
         <>
           <div>
             <Label className={labelClass}>Dorixona smenasi</Label>
@@ -1765,15 +1915,24 @@ export default function DavomatPage() {
             </Select>
           </div>
           <div>
+            <Label className={labelClass}>Koordinator</Label>
+            <PharmacyCoordinatorPicker
+              value={pharmacyCoordinator}
+              onChange={setPharmacyCoordinator}
+              options={pharmacyCoordinators}
+              total={pharmacyCoordinators.length}
+            />
+          </div>
+          <div>
             <Label className={labelClass}>Filial</Label>
             <PharmacyBranchPicker
               value={pharmacyBranch}
               onChange={setPharmacyBranch}
               options={pharmacyBranches}
-              total={pharmacyBranches.reduce((sum, b) => sum + b.count, 0)}
+              total={pharmacyBranches.length}
             />
           </div>
-          <div className="xl:col-span-2">
+          <div>
             <Label className={labelClass}>{t("ui.search")}</Label>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -1787,7 +1946,7 @@ export default function DavomatPage() {
           </div>
         </>
       ) : null}
-      {staffFilter === "office" && officeInner === "warehouse" ? (
+      {viewFilter === "office" && officeInner === "warehouse" ? (
         <div>
           <Label className={labelClass}>Omborxona smenasi</Label>
           <Select value={warehouseShift} onValueChange={setWarehouseShift}>
@@ -1806,7 +1965,7 @@ export default function DavomatPage() {
           </Select>
         </div>
       ) : null}
-      {staffFilter === "pharmacy" ? null : (
+      {viewFilter === "pharmacy" ? null : (
       <div className="sm:col-span-2 xl:col-span-4">
         <Label className={labelClass}>{t("ui.search")}</Label>
         <div className="relative">
@@ -1916,7 +2075,11 @@ export default function DavomatPage() {
           </span>
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight text-[#0f2744] dark:text-white">{t("davomat.title")}</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Xodimlarning ishga kelish va ketish nazorati</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              {pharmacyScope
+                ? "Faqat sizning filiallaringiz, barcha smenalar va o‘z xodimlaringiz"
+                : "Xodimlarning ishga kelish va ketish nazorati"}
+            </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -2193,7 +2356,7 @@ export default function DavomatPage() {
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base">
                     Kunlik davomat · {selectedDay}
-                    {staffFilter !== "all" ? (
+                    {viewFilter !== "all" ? (
                       <span className="ml-2 text-sm font-medium text-primary">
                         · {staffGroupLabel}
                       </span>
@@ -2204,7 +2367,7 @@ export default function DavomatPage() {
                       <span className="font-semibold text-foreground">
                         Ko‘rsatilmoqda: {visibleEmployeesForDay.length}
                         {dayStatusFilter !== "all" ? ` / ${filteredDayStats.total}` : ""} xodim
-                        {staffFilter !== "all" && report && report.summary.employees > visibleEmployeesForDay.length ? (
+                        {viewFilter !== "all" && report && report.summary.employees > visibleEmployeesForDay.length ? (
                           ` · filtr: ${report.summary.employees}`
                         ) : null}
                       </span>
@@ -2383,7 +2546,7 @@ export default function DavomatPage() {
                 dates={periodDates}
                 employees={filteredEmployees}
                 employeeCount={filteredEmployees.length}
-                staffFilter={staffFilter}
+                staffFilter={viewFilter}
                 canEdit={canEdit}
                 canSeeNotes={canSeeNotes}
                 onViewNote={(fullName, workDate, notes) =>

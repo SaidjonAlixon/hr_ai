@@ -815,6 +815,59 @@ router.post("/javob-olish/:id/reject", requireAuth, async (req: AuthRequest, res
   await decide(req, res, "rejected");
 });
 
+const BATCH_MS = 10 * 60 * 1000;
+
+function shiftYmd(ymd: string, delta: number) {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y || 1970, (m || 1) - 1, (d || 1) + delta));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
+}
+
+function spanLabel(dates: string[]) {
+  const sorted = [...dates].sort();
+  if (!sorted.length) return "";
+  const show = (ymd: string) => {
+    const [y, m, d] = ymd.split("-");
+    return y && m && d ? `${d}.${m}.${y}` : ymd;
+  };
+  if (sorted.length === 1) return show(sorted[0]!);
+  return `${show(sorted[0]!)}–${show(sorted[sorted.length - 1]!)} (${sorted.length} kun)`;
+}
+
+/** Bir yuborishdagi ketma-ket kunlar — bitta qaror. */
+async function consecutiveBatch(row: typeof javobOlishRequestsTable.$inferSelect) {
+  const created = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
+  const rows = await db
+    .select()
+    .from(javobOlishRequestsTable)
+    .where(
+      and(
+        eq(javobOlishRequestsTable.employeeId, row.employeeId),
+        eq(javobOlishRequestsTable.status, row.status),
+        eq(javobOlishRequestsTable.note, row.note),
+        eq(javobOlishRequestsTable.fromHm, row.fromHm),
+        eq(javobOlishRequestsTable.toHm, row.toHm),
+        gte(javobOlishRequestsTable.createdAt, new Date(created.getTime() - BATCH_MS)),
+        lte(javobOlishRequestsTable.createdAt, new Date(created.getTime() + BATCH_MS)),
+      ),
+    );
+  const byDate = new Map(rows.map((r) => [r.workDate, r]));
+  const keep = new Map<string, (typeof rows)[number]>();
+  const stack = [row.workDate];
+  while (stack.length) {
+    const day = stack.pop()!;
+    if (keep.has(day)) continue;
+    const hit = byDate.get(day);
+    if (!hit) continue;
+    keep.set(day, hit);
+    const prev = byDate.get(shiftYmd(day, -1));
+    const next = byDate.get(shiftYmd(day, 1));
+    if (prev) stack.push(prev.workDate);
+    if (next) stack.push(next.workDate);
+  }
+  return [...keep.values()].sort((a, b) => a.workDate.localeCompare(b.workDate));
+}
+
 router.post("/javob-olish/:id/cancel", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const me = await empByUserId(req.userId!);
   const id = Number(req.params.id);
@@ -836,12 +889,27 @@ router.post("/javob-olish/:id/cancel", requireAuth, async (req: AuthRequest, res
     res.status(403).json({ error: "Faqat o‘z so‘rovingizni bekor qilasiz" });
     return;
   }
-  const [updated] = await db
+  const batch = await consecutiveBatch(row);
+  const now = new Date();
+  const updated = await db
     .update(javobOlishRequestsTable)
-    .set({ status: "cancelled", updatedAt: new Date() })
-    .where(eq(javobOlishRequestsTable.id, id))
+    .set({ status: "cancelled", updatedAt: now })
+    .where(
+      and(
+        inArray(
+          javobOlishRequestsTable.id,
+          batch.map((r) => r.id),
+        ),
+        eq(javobOlishRequestsTable.status, row.status),
+      ),
+    )
     .returning();
-  res.json({ ok: true, item: await enrichOne(updated) });
+  const head = updated.find((r) => r.id === row.id) ?? updated[0];
+  if (!head) {
+    res.status(409).json({ error: "Bu so‘rovga allaqachon javob berilgan" });
+    return;
+  }
+  res.json({ ok: true, item: await enrichOne(head), count: updated.length });
 });
 
 async function decide(
@@ -864,14 +932,18 @@ async function decide(
 
   const status = normalizeStatus(row.status);
   const now = new Date();
+  const batch = await consecutiveBatch(row);
+  const batchIds = batch.map((r) => r.id);
+  const when = spanLabel(batch.map((r) => r.workDate));
 
-  /** Faqat holat o‘zgarmagan bo‘lsa yangilanadi — ikki marta bosish / parallel qaror himoyasi */
+  /** Ketma-ket kunlarning hammasi bir qaror. Holat o‘zgarmagan bo‘lsa yangilanadi. */
   const guardedUpdate = async (set: Partial<typeof javobOlishRequestsTable.$inferInsert>) => {
-    const [updated] = await db
+    const updatedRows = await db
       .update(javobOlishRequestsTable)
       .set(set)
-      .where(and(eq(javobOlishRequestsTable.id, id), eq(javobOlishRequestsTable.status, row.status)))
+      .where(and(inArray(javobOlishRequestsTable.id, batchIds), eq(javobOlishRequestsTable.status, row.status)))
       .returning();
+    const updated = updatedRows.find((r) => r.id === row.id);
     if (!updated) {
       res.status(409).json({ error: "Bu so‘rovga allaqachon javob berilgan" });
       return null;
@@ -910,8 +982,8 @@ async function decide(
           userId: row.userId,
           text:
             decision === "approved"
-              ? `${row.workDate} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (rahbariyat). Bu vaqt/kun jarima qilinmaydi.`
-              : `${row.workDate} javob olish so‘rovingiz rahbariyat tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+              ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (rahbariyat). Bu vaqt/kun jarima qilinmaydi.`
+              : `${when} javob olish so‘rovingiz rahbariyat tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
           type: "javob_olish_decision",
           linkUrl: "/javob-olish",
         });
@@ -935,7 +1007,7 @@ async function decide(
       if (row.userId) {
         await notifyUser({
           userId: row.userId,
-          text: `${row.workDate} javob olish so‘rovingiz koordinator tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+          text: `${when} javob olish so‘rovingiz koordinator tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
           type: "javob_olish_decision",
           linkUrl: "/javob-olish",
         });
@@ -958,7 +1030,7 @@ async function decide(
 
     await notifyByRoles({
       roles: ["hr_menejer", "hr_direktor", "admin"],
-      text: `${item.fullName || "Xodim"}: koordinator tasdiqladi — HR yakuniy ruxsat kerak. ${row.workDate} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. Yuborilgan: ${fmtDt(row.createdAt)}.`,
+      text: `${item.fullName || "Xodim"}: koordinator tasdiqladi — HR yakuniy ruxsat kerak. ${when} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. Yuborilgan: ${fmtDt(row.createdAt)}.`,
       type: "javob_olish",
       linkUrl: "/javob-olish",
     });
@@ -988,8 +1060,8 @@ async function decide(
         userId: row.userId,
         text:
           decision === "approved"
-            ? `${row.workDate} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (HR). Bu vaqt/kun jarima qilinmaydi.`
-            : `${row.workDate} javob olish so‘rovingiz HR tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+            ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (HR). Bu vaqt/kun jarima qilinmaydi.`
+            : `${when} javob olish so‘rovingiz HR tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
         type: "javob_olish_decision",
         linkUrl: "/javob-olish",
       });

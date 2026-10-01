@@ -87,6 +87,102 @@ const ROLES = [
   { value: 'direktor_yordamchisi', label: 'Direktor yordamchisi' },
 ] as const;
 
+/** Rol qaysi bo‘limga tegishli. Yangi foydalanuvchida bo‘lim tanlansa shu rol qo‘yiladi. */
+const ROLE_DEPARTMENT: Record<string, string> = {
+  admin: "Rahbariyat",
+  director: "Rahbariyat",
+  asoschi: "Rahbariyat",
+  moliya: "Rahbariyat",
+  moliya_rahbar: "Moliya",
+  moliya_xodim: "Moliya",
+  taminot_rahbar: "Ta’minot",
+  taminot: "Ta’minot",
+  rivojlantirish_rahbar: "Rivojlantirish",
+  rivojlantirish: "Rivojlantirish",
+  mamuriy_rahbar: "Ma’muriy-xo‘jalik",
+  mamuriy: "Ma’muriy-xo‘jalik",
+  gpp_rahbar: "GPP",
+  gpp: "GPP",
+  ombor_rahbar: "Omborxona",
+  oshpaz_rahbar: "Oshpaz",
+  oshpaz: "Oshpaz",
+  marketing_rahbar: "Marketing",
+  marketing: "Marketing",
+  mudir: "Farmasevt",
+  farmasevt: "Farmasevt",
+  stajyor: "Farmasevt",
+  kassir: "Moliya",
+  yurist: "Rahbariyat",
+  komunalniy: "Ma’muriy-xo‘jalik",
+  direktor_yordamchisi: "Rahbariyat",
+  hr: "HR",
+  hr_direktor: "HR",
+  hr_kadr_rahbar: "HR",
+  hr_menejer: "HR",
+  hr_auditor: "HR",
+  recruiter: "Rekruting",
+  trainer: "Trening",
+  koordinator: "Koordinator",
+  it: "AyTi",
+  it_rahbar: "AyTi",
+  it_dasturchi: "AyTi",
+  it_tarmoq: "AyTi",
+  revizor: "Reviziya",
+  reviziya_rahbar: "Reviziya",
+  sb: "Xavfsizlik",
+  sb_boshliq: "Xavfsizlik",
+  ombor: "Omborxona",
+  distrib_rahbar: "Distribyutsiya",
+  distrib_hr: "Distribyutsiya",
+  distrib: "Distribyutsiya",
+};
+
+const DEPT_DEFAULT_ROLE: Record<string, string> = {
+  farmasevt: "farmasevt",
+  hr: "hr_menejer",
+  rekruting: "recruiter",
+  trening: "trainer",
+  rahbariyat: "director",
+  koordinator: "koordinator",
+  ayti: "it",
+  "ta'minot": "taminot",
+  moliya: "moliya_xodim",
+  rivojlantirish: "rivojlantirish",
+  "ma'muriy-xo'jalik": "mamuriy",
+  gpp: "gpp",
+  omborxona: "ombor",
+  oshpaz: "oshpaz",
+  marketing: "marketing",
+  reviziya: "revizor",
+  xavfsizlik: "sb",
+  distribyutsiya: "distrib",
+};
+
+function normDept(name: string) {
+  return String(name || "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .toLocaleLowerCase("uz")
+    .replace(/[\u2018\u2019\u02BB\u02BC'`]/g, "'");
+}
+
+function rolesForDepartment(name: string) {
+  const key = normDept(name);
+  return ROLES.map((r) => r.value).filter((role) => normDept(ROLE_DEPARTMENT[role] || "") === key);
+}
+
+function primaryRoleForDepartment(name: string): string | null {
+  const roles = rolesForDepartment(name);
+  const key = normDept(name);
+  const byLabel = ROLES.find((r) => normDept(r.label) === key)?.value;
+  if (byLabel && (roles.length === 0 || roles.includes(byLabel))) return byLabel;
+  if (roles.length === 1) return roles[0]!;
+  const preferred = DEPT_DEFAULT_ROLE[key];
+  if (preferred && roles.includes(preferred)) return preferred;
+  const worker = roles.find((r) => !/rahbar|boshliq|direktor|admin|asoschi/.test(r));
+  return worker || roles[0] || null;
+}
+
 const STATUSES = [
   { value: 'active', labelKey: 'admin.status.active' },
   { value: 'vacant', labelKey: 'admin.status.idle' },
@@ -153,8 +249,8 @@ export default function AdminUsersPage() {
   const [enteringId, setEnteringId] = useState<number | null>(null);
 
   const [fullName, setFullName] = useState('');
-  const [role, setRole] = useState('recruiter');
-  const [rolePick, setRolePick] = useState('recruiter');
+  const [role, setRole] = useState('');
+  const [rolePick, setRolePick] = useState('');
   const [phone, setPhone] = useState('');
   const [departmentId, setDepartmentId] = useState<string>('none');
   const [status, setStatus] = useState('active');
@@ -179,14 +275,34 @@ export default function AdminUsersPage() {
     if (createOpen || editOpen) void refetchDepartments();
   }, [createOpen, editOpen, refetchDepartments]);
 
+  function applyDepartment(id: string) {
+    setDepartmentId(id);
+    if (id === 'none') return;
+    const dept = deptChoices.find((d) => String(d.id) === id);
+    const next = dept ? primaryRoleForDepartment(dept.name) : null;
+    if (next) {
+      setRole(next);
+      setRolePick(next);
+      return;
+    }
+    setRole('');
+    setRolePick(`dept:${id}`);
+  }
+
   function onCreateRole(value: string) {
     if (value.startsWith('dept:')) {
-      setRolePick(value);
-      setDepartmentId(value.slice(5));
+      applyDepartment(value.slice(5));
       return;
     }
     setRolePick(value);
     setRole(value);
+    const deptName = ROLE_DEPARTMENT[value];
+    if (!deptName) return;
+    const hit = deptChoices.find((d) => normDept(d.name) === normDept(deptName));
+    if (!hit) return;
+    const current = deptChoices.find((d) => String(d.id) === departmentId);
+    const currentIsKnown = current ? rolesForDepartment(current.name).length > 0 : false;
+    if (departmentId === 'none' || currentIsKnown) setDepartmentId(String(hit.id));
   }
 
   const canManage = canManageUsers(me?.role);
@@ -257,8 +373,8 @@ export default function AdminUsersPage() {
 
   const resetForm = () => {
     setFullName('');
-    setRole('recruiter');
-    setRolePick('recruiter');
+    setRole('');
+    setRolePick('');
     setPhone('');
     setDepartmentId('none');
     setStatus('active');
@@ -292,7 +408,14 @@ export default function AdminUsersPage() {
       return;
     }
     if (!role) {
-      toast({ title: 'Xatolik', description: 'Rolni tanlang', variant: 'destructive' });
+      const deptName = deptChoices.find((d) => String(d.id) === departmentId)?.name;
+      toast({
+        title: 'Rol tanlanmagan',
+        description: deptName
+          ? `«${deptName}» bo‘limi saqlanadi. Shu bo‘limga mos rolni tanlang — Rekruter avtomatik yozilmaydi.`
+          : 'Rol yoki bo‘limni tanlang',
+        variant: 'destructive',
+      });
       return;
     }
     if (!isOptionalUzPhoneValid(phone)) {
@@ -877,7 +1000,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Rol *</Label>
-                <Select value={rolePick} onValueChange={onCreateRole}>
+                <Select value={rolePick || undefined} onValueChange={onCreateRole}>
                   <SelectTrigger>
                     <SelectValue placeholder="Rol yoki bo‘lim" />
                   </SelectTrigger>
@@ -900,7 +1023,9 @@ export default function AdminUsersPage() {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Bo‘limlar sahifasida qo‘shilgan bo‘lim shu ro‘yxatning boshida. Rol: {ROLES.find((r) => r.value === role)?.label || role}
+                  {role
+                    ? `Rol: ${ROLES.find((r) => r.value === role)?.label || role}`
+                    : "Bo‘limni tanlang — rol shu bo‘limga mos qo‘yiladi. Rekruter avtomatik yozilmaydi."}
                   {departmentId !== 'none'
                     ? ` · Bo‘lim: ${deptChoices.find((d) => String(d.id) === departmentId)?.name || ''}`
                     : ''}
@@ -913,7 +1038,7 @@ export default function AdminUsersPage() {
               </div>
               <div className="space-y-2">
                 <Label>Bo‘lim (ixtiyoriy)</Label>
-                <Select value={departmentId} onValueChange={setDepartmentId}>
+                <Select value={departmentId} onValueChange={applyDepartment}>
                   <SelectTrigger>
                     <SelectValue placeholder="Bo‘lim" />
                   </SelectTrigger>

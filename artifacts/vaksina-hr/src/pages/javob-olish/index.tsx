@@ -20,6 +20,7 @@ import {
   fetchJavobRequests,
   fetchJavobShifts,
   formatYmdDisplay,
+  groupConsecutiveJavob,
   isJavobOpenStatus,
   submitJavobRequests,
   type JavobDayInput,
@@ -392,23 +393,25 @@ export default function JavobOlishPage() {
               {t("javob.noMine")}
             </p>
           ) : (
-            mineQ.data!.items.map((item) => (
+            groupConsecutiveJavob(mineQ.data!.items).map((group) => (
               <JavobRequestCard
-                key={item.id}
-                item={item}
+                key={group.id}
+                item={group.head}
+                datesLabel={group.datesLabel}
+                dayCount={group.dayCount}
                 t={t}
                 hideName
                 actions={
-                  isJavobOpenStatus(item.status) ? (
+                  isJavobOpenStatus(group.head.status) ? (
                     <Button
                       type="button"
                       size="sm"
                       variant="ghost"
                       className="h-8 w-full text-xs text-rose-600"
                       disabled={cancelMut.isPending}
-                      onClick={() => cancelMut.mutate(item.id)}
+                      onClick={() => cancelMut.mutate(group.id)}
                     >
-                      {t("javob.cancel")}
+                      {group.dayCount > 1 ? `${t("javob.cancel")} · ${group.dayCount} kun` : t("javob.cancel")}
                     </Button>
                   ) : null
                 }

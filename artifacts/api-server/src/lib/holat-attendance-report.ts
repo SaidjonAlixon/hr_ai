@@ -362,4 +362,169 @@ export async function buildCoordinatorHisobot(opts: {
   };
 }
 
+export type FilialEmployeePick = {
+  employeeId: number;
+  userId: number | null;
+  fullName: string;
+  roleLabel: string;
+  phone: string | null;
+  hiredAt: string | null;
+};
+
+export type FilialPick = {
+  id: number;
+  name: string;
+  mudirName: string | null;
+  mudirMissing: boolean;
+  coordinatorName: string | null;
+  employees: FilialEmployeePick[];
+};
+
+function isShellPerson(p: HolatPerson): boolean {
+  return (
+    p.employmentStatus === "no_manager" ||
+    p.employmentStatus === "closed" ||
+    isVacancyPlaceholder(p)
+  );
+}
+
+function toFilialEmployee(p: HolatPerson): FilialEmployeePick | null {
+  if (p.employeeId == null || isShellPerson(p)) return null;
+  return {
+    employeeId: p.employeeId,
+    userId: p.userId,
+    fullName: p.fullName,
+    roleLabel: p.orgRoleLabel || p.position || "Xodim",
+    phone: p.phone,
+    hiredAt: p.hiredAt,
+  };
+}
+
+/** Koordinator faqat o‘z filiallarini oladi. Bo‘sh o‘rin va filial qobig‘i xodim emas. */
+export async function listScopedFilials(opts: {
+  full: boolean;
+  scopeRole?: string | null;
+  scopeUserId?: number | null;
+}): Promise<FilialPick[]> {
+  const holat = await buildHolatReport({
+    full: opts.full,
+    scopeRole: opts.scopeRole,
+    scopeUserId: opts.scopeUserId,
+  });
+  const filials: FilialPick[] = [];
+  for (const coord of holat.coordinators) {
+    for (const mudirNode of coord.mudirs ?? []) {
+      if (mudirNode.employeeId == null) continue;
+      const mudirMissing = isShellPerson(mudirNode);
+      const employees: FilialEmployeePick[] = [];
+      const mudirPick = mudirMissing ? null : toFilialEmployee(mudirNode);
+      if (mudirPick) employees.push(mudirPick);
+      for (const staff of mudirNode.staff ?? []) {
+        const pick = toFilialEmployee(staff);
+        if (pick) employees.push(pick);
+      }
+      filials.push({
+        id: mudirNode.employeeId,
+        name: displayBranchName(mudirNode.branch) || mudirNode.branch || mudirNode.fullName,
+        mudirName: mudirMissing ? null : mudirNode.fullName,
+        mudirMissing,
+        coordinatorName: coord.fullName,
+        employees,
+      });
+    }
+  }
+  filials.sort((a, b) => a.name.localeCompare(b.name, "uz"));
+  return filials;
+}
+
+export async function buildFilialAttendance(opts: {
+  branchId: number;
+  employeeIds?: number[];
+  from: string;
+  to: string;
+  full: boolean;
+  scopeRole?: string | null;
+  scopeUserId?: number | null;
+}): Promise<{
+  filial: FilialPick;
+  from: string;
+  to: string;
+  dayCount: number;
+  employees: HisobotEmployeeRow[];
+} | null> {
+  const holat = await buildHolatReport({
+    full: opts.full,
+    scopeRole: opts.scopeRole,
+    scopeUserId: opts.scopeUserId,
+  });
+  let found: { coordName: string; mudir: HolatCoordNode["mudirs"][number] } | null = null;
+  for (const coord of holat.coordinators) {
+    const mudir = (coord.mudirs ?? []).find((m) => m.employeeId === opts.branchId);
+    if (mudir && mudir.employeeId != null) {
+      found = { coordName: coord.fullName, mudir };
+      break;
+    }
+  }
+  if (!found) return null;
+
+  const mudirMissing = isShellPerson(found.mudir);
+  const people: HolatPerson[] = [];
+  if (!mudirMissing) people.push(found.mudir);
+  for (const staff of found.mudir.staff ?? []) {
+    if (!isShellPerson(staff)) people.push(staff);
+  }
+  const allowed = new Set(people.map((p) => p.employeeId).filter((id): id is number => id != null));
+  const wanted =
+    opts.employeeIds && opts.employeeIds.length
+      ? people.filter((p) => p.employeeId != null && opts.employeeIds!.includes(p.employeeId) && allowed.has(p.employeeId))
+      : people;
+  const ids = wanted.map((p) => p.employeeId).filter((id): id is number => id != null);
+  const dates = eachDateInclusive(opts.from, opts.to);
+  const shifts = await loadShiftMap(ids);
+  const records =
+    ids.length === 0
+      ? []
+      : await db
+          .select({
+            employeeId: attendanceRecordsTable.employeeId,
+            workDate: attendanceRecordsTable.workDate,
+            checkInAt: attendanceRecordsTable.checkInAt,
+            status: attendanceRecordsTable.status,
+          })
+          .from(attendanceRecordsTable)
+          .where(
+            and(
+              inArray(attendanceRecordsTable.employeeId, ids),
+              gte(attendanceRecordsTable.workDate, opts.from),
+              lte(attendanceRecordsTable.workDate, opts.to),
+            ),
+          );
+  const byEmpDate = new Map<string, { checkInAt: Date | null; status: string | null }>();
+  for (const r of records) {
+    byEmpDate.set(`${r.employeeId}|${r.workDate}`, { checkInAt: r.checkInAt, status: r.status });
+  }
+  const employees = wanted
+    .map((p) => buildPersonAttendance(p, dates, byEmpDate, shifts))
+    .filter((row): row is HisobotEmployeeRow => row != null)
+    .sort((a, b) => {
+      const order = { mudir: 0, farmasevt: 1, stajyor: 2, other: 3 } as const;
+      return order[a.roleKey] - order[b.roleKey] || a.fullName.localeCompare(b.fullName, "uz");
+    });
+  const picks = wanted.map((p) => toFilialEmployee(p)).filter((p): p is FilialEmployeePick => p != null);
+  return {
+    filial: {
+      id: found.mudir.employeeId!,
+      name: displayBranchName(found.mudir.branch) || found.mudir.branch || found.mudir.fullName,
+      mudirName: mudirMissing ? null : found.mudir.fullName,
+      mudirMissing,
+      coordinatorName: found.coordName,
+      employees: picks,
+    },
+    from: opts.from,
+    to: opts.to,
+    dayCount: dates.length,
+    employees,
+  };
+}
+
 export { todayTashkentYmd };

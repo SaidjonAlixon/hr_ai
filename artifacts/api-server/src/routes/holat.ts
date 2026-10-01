@@ -4,9 +4,10 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canViewHolat, canViewHolatFull } from "../lib/roles";
 import { buildHolatReport, type HolatPerson, type HolatReport } from "../lib/holat";
-import { buildCoordinatorHisobot } from "../lib/holat-attendance-report";
+import { buildCoordinatorHisobot, buildFilialAttendance, listScopedFilials } from "../lib/holat-attendance-report";
 import {
   buildEmployeeAttendanceReport,
+  buildStaffAttendanceDays,
   parseStatuses,
   readEmployeeSeal,
   resolveRange,
@@ -341,6 +342,114 @@ function pickedIds(src: { employeeId?: unknown; userId?: unknown }) {
     userId: Number.isFinite(userId) && userId > 0 ? userId : null,
   };
 }
+
+router.get("/holat/filials", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewHolat(req.userRole)) {
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
+    return;
+  }
+  try {
+    const filials = await listScopedFilials({
+      full: canViewHolatFull(req.userRole),
+      scopeRole: req.userRole,
+      scopeUserId: req.userId,
+    });
+    res.json({ filials });
+  } catch (err) {
+    console.error("GET /holat/filials error:", err);
+    res.status(503).json({ error: "Filiallar yuklanmadi" });
+  }
+});
+
+router.get("/holat/staff-days", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewHolat(req.userRole)) {
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
+    return;
+  }
+  const range = resolveRange(req.query.from, req.query.to);
+  if ("error" in range) {
+    res.status(400).json({ error: range.error });
+    return;
+  }
+  const employeeIds = String(req.query.employeeIds || "")
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  if (!employeeIds.length) {
+    res.status(400).json({ error: "Xodim tanlanmagan" });
+    return;
+  }
+  try {
+    const people = await scopePeople(req);
+    const blocked = employeeIds.some((id) => !personInScope(people, { employeeId: id, userId: null }));
+    if (blocked) {
+      res.status(403).json({ error: "Bu xodim sizning hisobotingizda yo‘q" });
+      return;
+    }
+    const packs = await buildStaffAttendanceDays({
+      employeeIds,
+      from: range.from,
+      to: range.to,
+    });
+    res.json({ packs });
+  } catch (err) {
+    console.error("GET /holat/staff-days error:", err);
+    res.status(503).json({ error: "Xodimlar hisoboti yuklanmadi" });
+  }
+});
+
+router.get("/holat/filial-report", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canViewHolat(req.userRole)) {
+    res.status(403).json({ error: "Hisobot sizga ochiq emas" });
+    return;
+  }
+  const branchId = Number(req.query.branchId);
+  if (!Number.isFinite(branchId) || branchId <= 0) {
+    res.status(400).json({ error: "Filial tanlanmagan" });
+    return;
+  }
+  const range = resolveRange(req.query.from, req.query.to);
+  if ("error" in range) {
+    res.status(400).json({ error: range.error });
+    return;
+  }
+  const employeeIds = String(req.query.employeeIds || "")
+    .split(",")
+    .map((s) => Number(s.trim()))
+    .filter((n) => Number.isFinite(n) && n > 0);
+  try {
+    const report = await buildFilialAttendance({
+      branchId,
+      employeeIds,
+      from: range.from,
+      to: range.to,
+      full: canViewHolatFull(req.userRole),
+      scopeRole: req.userRole,
+      scopeUserId: req.userId,
+    });
+    if (!report) {
+      res.status(404).json({ error: "Bu filial sizning hisobotingizda yo‘q" });
+      return;
+    }
+    if (!report.employees.length) {
+      res.status(400).json({ error: "Filialdan xodim tanlanmagan" });
+      return;
+    }
+    const dayPacks = await buildStaffAttendanceDays({
+      employeeIds: report.employees.map((e) => e.employeeId),
+      from: range.from,
+      to: range.to,
+    });
+    const daysById = new Map(dayPacks.map((p) => [p.employeeId, p.days]));
+    res.json({
+      ...report,
+      employees: report.employees.map((e) => ({ ...e, days: daysById.get(e.employeeId) ?? [] })),
+    });
+  } catch (err) {
+    console.error("GET /holat/filial-report error:", err);
+    res.status(503).json({ error: "Filial hisoboti yuklanmadi" });
+  }
+});
 
 router.get("/holat/employee-report", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canViewHolat(req.userRole)) {

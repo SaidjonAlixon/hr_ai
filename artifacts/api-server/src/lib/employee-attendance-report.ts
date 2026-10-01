@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lte, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import {
   attendanceRecordsTable,
@@ -989,6 +989,110 @@ export async function sealEmployeeReport(input: {
     sealedAt: at ? new Date(at).toISOString() : sealedAt,
     payload,
   };
+}
+
+/** Bir nechta xodimning kunlik holati — yakka hisobotdagi tasnif bilan bir xil. */
+export async function buildStaffAttendanceDays(input: {
+  employeeIds: number[];
+  from: string;
+  to: string;
+}): Promise<
+  Array<{
+    employeeId: number;
+    days: EmployeeDay[];
+  }>
+> {
+  const ids = [...new Set(input.employeeIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (!ids.length) return [];
+  const emps = await db
+    .select({
+      id: employeesTable.id,
+      userRole: usersTable.role,
+      orgRole: employeesTable.orgRole,
+      shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
+      position: employeesTable.position,
+      hiredAt: employeesTable.hiredAt,
+    })
+    .from(employeesTable)
+    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
+    .where(inArray(employeesTable.id, ids));
+  const records = await db
+    .select({
+      employeeId: attendanceRecordsTable.employeeId,
+      workDate: attendanceRecordsTable.workDate,
+      status: attendanceRecordsTable.status,
+      checkInAt: attendanceRecordsTable.checkInAt,
+      checkOutAt: attendanceRecordsTable.checkOutAt,
+      branch: attendanceRecordsTable.resolvedBranchLabel,
+    })
+    .from(attendanceRecordsTable)
+    .where(
+      and(
+        inArray(attendanceRecordsTable.employeeId, ids),
+        gte(attendanceRecordsTable.workDate, input.from),
+        lte(attendanceRecordsTable.workDate, input.to),
+      ),
+    );
+  const plans = await db
+    .select({
+      employeeId: employeeDayShiftPlansTable.employeeId,
+      workDate: employeeDayShiftPlansTable.workDate,
+      shiftKeys: employeeDayShiftPlansTable.shiftKeys,
+    })
+    .from(employeeDayShiftPlansTable)
+    .where(
+      and(
+        inArray(employeeDayShiftPlansTable.employeeId, ids),
+        gte(employeeDayShiftPlansTable.workDate, input.from),
+        lte(employeeDayShiftPlansTable.workDate, input.to),
+      ),
+    );
+  const shiftDefs = await getEffectiveShiftDefs();
+  const today = todayTashkentYmd();
+  const byEmpDate = new Map<string, (typeof records)[number]>();
+  for (const rec of records) {
+    const key = `${rec.employeeId}|${rec.workDate}`;
+    const prev = byEmpDate.get(key);
+    if (!prev || (!prev.checkInAt && rec.checkInAt)) byEmpDate.set(key, rec);
+  }
+  const plansByEmp = new Map<number, Map<string, string[]>>();
+  for (const plan of plans) {
+    const map = plansByEmp.get(plan.employeeId) ?? new Map<string, string[]>();
+    map.set(plan.workDate, plan.shiftKeys || []);
+    plansByEmp.set(plan.employeeId, map);
+  }
+  return emps.map((emp) => {
+    const staffShift = {
+      userRole: emp.userRole,
+      orgRole: emp.orgRole,
+      shiftType: emp.shiftType,
+      shiftLabel: emp.shiftLabel,
+      position: emp.position,
+    };
+    const hiredYmd = emp.hiredAt && isYmd(String(emp.hiredAt).slice(0, 10)) ? String(emp.hiredAt).slice(0, 10) : null;
+    let spanFrom = input.from < PLATFORM_START ? PLATFORM_START : input.from;
+    if (hiredYmd && hiredYmd > spanFrom) spanFrom = hiredYmd;
+    if (spanFrom > input.to) spanFrom = input.to;
+    const planByDate = plansByEmp.get(emp.id) ?? new Map<string, string[]>();
+    const days: EmployeeDay[] = [];
+    for (const ymd of eachDateInclusive(spanFrom, input.to > today ? today : input.to)) {
+      const rec = byEmpDate.get(`${emp.id}|${ymd}`);
+      const schedule = scheduleForDay(planByDate.get(ymd), staffShift, shiftDefs);
+      const status = classify(rec, ymd, today, schedule, staffShift);
+      days.push({
+        date: ymd,
+        weekday: weekdayOf(ymd),
+        status,
+        statusLabel: STATUS_LABEL[status],
+        checkIn: hm(rec?.checkInAt),
+        checkOut: hm(rec?.checkOutAt),
+        hours: hoursBetween(rec?.checkInAt, rec?.checkOutAt),
+        branch: rec?.branch ? cleanBranch(String(rec.branch)) : null,
+      });
+    }
+    return { employeeId: emp.id, days };
+  });
 }
 
 export async function readEmployeeSeal(token: string): Promise<SealedEmployeeReport | null> {

@@ -1011,7 +1011,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const at = orgIdx >= 0 ? orgIdx + 1 : next.length;
         next = [...next.slice(0, at), reviziyaNav, ...next.slice(at)];
       }
-      if (canViewDavomat(role) && !next.some((i) => i.path === '/davomat/analytics')) {
+      if (canViewDavomat(role) && role !== 'koordinator' && !next.some((i) => i.path === '/davomat/analytics')) {
         const davIdx = next.findIndex((i) => i.path === '/davomat');
         const at = davIdx >= 0 ? davIdx : next.length;
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
@@ -1393,6 +1393,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
       davomatOfisdaNav,
       davomatQrNav,

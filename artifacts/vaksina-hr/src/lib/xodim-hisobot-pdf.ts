@@ -27,7 +27,7 @@ function sliceCanvas(source: HTMLCanvasElement, offset: number, height: number) 
   return slice;
 }
 
-export async function downloadXodimHisobotPdf(root: HTMLElement, report: XodimReport, seal: XodimSealView | null) {
+export async function downloadPagesPdf(root: HTMLElement, fileName: string) {
   const pages = [...root.querySelectorAll<HTMLElement>("[data-hisobot-page]")];
   if (!pages.length) throw new Error("Hisobot hali chiqmagan");
   if (document.fonts?.ready) await document.fonts.ready;
@@ -57,9 +57,12 @@ export async function downloadXodimHisobotPdf(root: HTMLElement, report: XodimRe
       part += 1;
     }
   }
+  await deliverFile(pdf.output("blob"), fileName);
+}
 
+export async function downloadXodimHisobotPdf(root: HTMLElement, report: XodimReport, seal: XodimSealView | null) {
   const safe = report.employee.fullName.replace(/[^\w\u0400-\u04FF]+/g, "_").slice(0, 40);
   const stamp = report.to.replace(/-/g, "");
   const prefix = seal ? "Hisobot_VAKSINAMEDHR" : "Xodim_hisoboti";
-  await deliverFile(pdf.output("blob"), `${prefix}_${safe}_${stamp}.pdf`);
+  await downloadPagesPdf(root, `${prefix}_${safe}_${stamp}.pdf`);
 }

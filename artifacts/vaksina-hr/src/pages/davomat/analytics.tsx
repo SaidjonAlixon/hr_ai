@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "wouter";
 import {
   AlertTriangle,
@@ -38,7 +38,7 @@ import {
 } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
 import { useI18n } from "@/i18n/I18nProvider";
-import { canViewDavomat, canViewFullDavomatDashboard } from "@/lib/roles";
+import { canViewDavomat, canViewFullDavomatDashboard, normalizeUserRole } from "@/lib/roles";
 import {
   type DavomatAnalytics,
   type DavomatSegment,
@@ -904,13 +904,15 @@ export function DavomatAnalyticsDashboard({
   const { t } = useI18n();
   const search = useSearch();
   const fullDash = canViewFullDavomatDashboard(user?.role);
+  const pharmacyScope = normalizeUserRole(user?.role) === "koordinator";
   const segmentFromUrl = useMemo(() => {
+    if (pharmacyScope) return "pharmacy" as DavomatSegment;
     if (!fullDash) return "all" as DavomatSegment;
     if (embedded) return initialSegment;
     const seg = new URLSearchParams(search).get("segment");
     if (seg === "office" || seg === "pharmacy" || seg === "all") return seg;
     return "office";
-  }, [embedded, initialSegment, search, fullDash]);
+  }, [embedded, initialSegment, search, fullDash, pharmacyScope]);
   const [preset, setPreset] = useState<RangePreset>("today");
   const [dynamicsChart, setDynamicsChart] = useState<"line" | "bar" | "both">("both");
   const [customFrom, setCustomFrom] = useState(() => addDaysYmd(tashkentTodayYmd(), -6));

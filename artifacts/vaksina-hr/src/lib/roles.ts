@@ -207,13 +207,15 @@ export function canViewFullDavomatDashboard(role?: string | null): boolean {
   );
 }
 
-/** Davomat: direktor, HR direktor, HR menejer (+ admin) */
+/** Davomat: direktor, HR, SB, bo‘lim boshlig‘i va koordinator (koordinator faqat o‘z dorixonasi) */
 export function canViewDavomat(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
   return (
-    canViewFullDavomatDashboard(role) ||
-    hasHrOversightNav(role) ||
-    isSbRole(role) ||
-    isDeptHeadRole(role)
+    canViewFullDavomatDashboard(r) ||
+    hasHrOversightNav(r) ||
+    isSbRole(r) ||
+    isDeptHeadRole(r) ||
+    r === "koordinator"
   );
 }
 

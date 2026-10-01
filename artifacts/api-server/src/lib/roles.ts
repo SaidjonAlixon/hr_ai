@@ -175,12 +175,14 @@ export function canViewDavomatNotes(role?: string | null): boolean {
   return canViewLeadershipModules(role);
 }
 
-/** Davomat: to‘liq dashboard rollari + SB + bo‘lim boshliqlari */
+/** Davomat: to‘liq dashboard rollari + SB + bo‘lim boshliqlari + koordinator (faqat o‘z dorixonasi) */
 export function canViewDavomat(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
   return (
-    canViewFullDavomatDashboard(role) ||
-    isSbRole(role) ||
-    isDeptHeadRole(role)
+    canViewFullDavomatDashboard(r) ||
+    isSbRole(r) ||
+    isDeptHeadRole(r) ||
+    r === "koordinator"
   );
 }
 

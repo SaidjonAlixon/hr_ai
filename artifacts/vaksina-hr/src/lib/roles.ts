@@ -220,11 +220,10 @@ export function canViewDavomat(role?: string | null): boolean {
 }
 
 /**
- * Davomat erta-ketish / qo‘lda izoh — rahbariyat va HR (auditor ham).
- * Bo‘lim boshliqlari / SB ga chiqmaydi.
+ * Davomat erta-ketish / qo‘lda izoh — rahbariyat, HR va SB (boshliq ham, xodim ham).
  */
 export function canViewDavomatNotes(role?: string | null): boolean {
-  return canViewLeadershipModules(role);
+  return canViewLeadershipModules(role) || isSbRole(role);
 }
 
 /** Davomat qo‘lda tahrirlash (vaqt) — admin va HR direktor */

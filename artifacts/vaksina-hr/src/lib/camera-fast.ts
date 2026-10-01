@@ -136,35 +136,37 @@ async function ensurePermissionOnce(): Promise<void> {
 }
 
 function preferredConstraints(facing: CameraFacing, deviceId?: string): MediaStreamConstraints[] {
-  const list: MediaStreamConstraints[] = [];
+  const list: MediaStreamConstraints[] = [
+    {
+      audio: false,
+      video: {
+        facingMode: { ideal: facing },
+        width: { ideal: facing === "user" ? 1280 : 1280 },
+        height: { ideal: facing === "user" ? 720 : 720 },
+      },
+    },
+    { audio: false, video: { facingMode: { ideal: facing } } },
+  ];
   if (deviceId) {
     list.push({
       audio: false,
-      video: {
-        deviceId: { ideal: deviceId },
-        width: { ideal: facing === "user" ? 640 : 1280 },
-      },
+      video: { deviceId: { ideal: deviceId } },
     });
   }
-  // ideal facingMode — exact ko‘p telefonda NotFoundError beradi
-  list.push({
-    audio: false,
-    video: {
-      facingMode: { ideal: facing },
-      width: { ideal: facing === "user" ? 640 : 1280 },
-      height: { ideal: facing === "user" ? 480 : 720 },
-    },
-  });
-  list.push({ audio: false, video: { facingMode: facing } });
-  // Oxirgi zaxira — ba’zi desktop/WebView facingMode bilmaydi
-  if (facing === "user") {
-    list.push({
-      audio: false,
-      video: { width: { ideal: 640 }, height: { ideal: 480 } },
-    });
-    list.push({ audio: false, video: true });
-  }
+  if (facing === "user") list.push({ audio: false, video: true });
   return list;
+}
+
+async function resetDigitalZoom(stream: MediaStream) {
+  const track = stream.getVideoTracks()[0];
+  const caps = track?.getCapabilities?.() as { zoom?: { min?: number } } | undefined;
+  const min = caps?.zoom?.min;
+  if (!track || typeof min !== "number") return;
+  try {
+    await track.applyConstraints({ advanced: [{ zoom: min } as MediaTrackConstraintSet] });
+  } catch {
+    /* ba’zi telefonlar zoom bermaydi */
+  }
 }
 
 function reportedFacing(stream: MediaStream): CameraFacing | null {
@@ -199,15 +201,14 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
   if (!window.isSecureContext) throw new Error("secure_context");
   if (!navigator.mediaDevices?.getUserMedia) throw new Error("camera_unsupported");
 
-  await ensurePermissionOnce();
-
   const stored = loadDeviceCache()[facing] || cache[facing]?.deviceId;
   let lastErr: unknown;
   let denied = false;
 
   for (const constraints of preferredConstraints(facing, stored)) {
     try {
-      const stream = await tryGet(constraints, 10000);
+      const stream = await tryGet(constraints, 6000);
+      await resetDigitalZoom(stream);
       const got = reportedFacing(stream);
       // Faqat aniq noto‘g‘ri kamerani rad etamiz; facing noma’lum bo‘lsa qabul
       if (got && got !== facing) {
@@ -248,7 +249,8 @@ export async function openCameraFast(facing: CameraFacing): Promise<MediaStream>
           audio: false,
           video: { deviceId: { ideal: pick.deviceId } },
         };
-        const stream = await tryGet(constraints, 10000);
+        const stream = await tryGet(constraints, 6000);
+        await resetDigitalZoom(stream);
         remember(facing, stream, constraints);
         return stream;
       }

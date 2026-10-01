@@ -153,13 +153,14 @@ function mapVideoBoxToElement(
   video: HTMLVideoElement,
   box: { x: number; y: number; width: number; height: number },
   mirrored: boolean,
+  fit: "cover" | "contain" = "cover",
 ) {
   const cw = video.clientWidth;
   const ch = video.clientHeight;
   const vw = video.videoWidth;
   const vh = video.videoHeight;
   if (!cw || !ch || !vw || !vh) return null;
-  const scale = Math.max(cw / vw, ch / vh);
+  const scale = fit === "contain" ? Math.min(cw / vw, ch / vh) : Math.max(cw / vw, ch / vh);
   const dw = vw * scale;
   const dh = vh * scale;
   const ox = (cw - dw) / 2;
@@ -231,8 +232,8 @@ export function poseMatchesWant(
   pitchFrom?: number,
 ): boolean {
   if (want === "center") return Math.abs(yaw) < 0.18 && Math.abs(pitch) < 0.16;
-  if (want === "left") return yaw < -0.14;
-  if (want === "right") return yaw > 0.14;
+  if (want === "left") return yaw < -0.1;
+  if (want === "right") return yaw > 0.1;
   if (want === "up") return pitch > 0.07 || pose === "up";
   if (want === "down") {
     const dropped = pitchFrom != null && pitch <= pitchFrom - 0.06;
@@ -341,14 +342,14 @@ export async function detectFaceDescriptor(
   video: HTMLVideoElement,
   frame?: FaceOvalFrame | null,
   mirrored = true,
-  opts?: { allowTurn?: boolean; allowBlink?: boolean },
+  opts?: { allowTurn?: boolean; allowBlink?: boolean; fit?: "cover" | "contain" },
 ): Promise<FaceDetectResult> {
   const faceapi = await ensureFaceModels();
   const detector = new faceapi.TinyFaceDetectorOptions(
     opts?.allowBlink ? DETECT_OPTS_BLINK : DETECT_OPTS,
   );
 
-  if (video.videoWidth > 0 && video.videoWidth < 420) {
+  if (video.videoWidth > 0 && video.videoWidth < 240) {
     return { descriptor: null, status: "low_camera" };
   }
   const brightness = frameBrightness(video);
@@ -379,18 +380,18 @@ export async function detectFaceDescriptor(
     return { descriptor: null, status: "outside" };
   }
 
-  const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored);
+  const mapped = mapVideoBoxToElement(video, result.detection.box, mirrored, opts?.fit ?? "cover");
   if (!mapped) return { descriptor: null, status: "no_face" };
 
-  if (ellipseNorm(mapped.cx, mapped.cy, frame) > (opts?.allowTurn || opts?.allowBlink ? 1.35 : 0.92)) {
+  if (ellipseNorm(mapped.cx, mapped.cy, frame) > (opts?.allowTurn || opts?.allowBlink ? 1.85 : 1.15)) {
     return { descriptor: null, status: "outside" };
   }
 
   const fillW = mapped.width / (frame.rx * 2);
   const fillH = mapped.height / (frame.ry * 2);
-  const minFill = opts?.allowTurn || opts?.allowBlink ? 0.22 : 0.38;
+  const minFill = opts?.allowTurn || opts?.allowBlink ? 0.18 : 0.28;
   if (fillW < minFill || fillH < minFill - 0.05) return { descriptor: null, status: "too_far" };
-  if (fillW > 1.75 || fillH > 1.75) return { descriptor: null, status: "too_close" };
+  if (fillW > 2.4 || fillH > 2.4) return { descriptor: null, status: "too_close" };
 
   const positions = result.landmarks.positions ?? [];
   const leftEye = result.landmarks.getLeftEye?.() ?? positions.slice(36, 42);

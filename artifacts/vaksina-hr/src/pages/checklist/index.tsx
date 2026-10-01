@@ -497,21 +497,43 @@ export default function ChecklistPage() {
     snapshot?: string,
     liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number },
   ) => {
-    if (!managerId || !gps) {
+    if (!managerId) {
       throw new Error("GPS va filial kerak");
-    }
-    if (!withinGeofence) {
-      throw new Error(`Yashil zonadan tashqaridasiz — ${AUDIT_GEOFENCE_METERS} m ichiga kiring`);
     }
     setKeldimBusy(true);
     try {
+      const live = await new Promise<GeolocationPosition>((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error("GPS yo‘q"));
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error("GPS o‘chiq. Yashil zonada joylashuvni yoqing.")), {
+          enableHighAccuracy: true,
+          maximumAge: 0,
+          timeout: 10_000,
+        });
+      });
+      const age = Date.now() - live.timestamp;
+      if (!Number.isFinite(live.timestamp) || age > 20_000) {
+        throw new Error("Joylashuv eskirgan. Yashil zonada, GPS yoqilgan holda qayta urinib ko‘ring.");
+      }
+      const lat = live.coords.latitude;
+      const lng = live.coords.longitude;
+      if (
+        selectedBranch?.latitude != null &&
+        selectedBranch.longitude != null &&
+        (haversineMeters(lat, lng, selectedBranch.latitude, selectedBranch.longitude) ?? 1e9) > AUDIT_GEOFENCE_METERS
+      ) {
+        throw new Error(`Yashil zonadan tashqaridasiz — ${AUDIT_GEOFENCE_METERS} m ichiga kiring`);
+      }
       const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
       const vec = list[0]!;
       const result = await facePunchDavomat({
         descriptor: vec,
-        latitude: gps.lat,
-        longitude: gps.lng,
-        accuracy: gps.accuracy ?? undefined,
+        latitude: lat,
+        longitude: lng,
+        accuracy: live.coords.accuracy ?? undefined,
+        gpsCapturedAt: live.timestamp,
         action: "in",
         branchId: Number(managerId),
         snapshot,

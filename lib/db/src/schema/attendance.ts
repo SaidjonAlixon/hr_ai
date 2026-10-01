@@ -292,3 +292,24 @@ export const attendancePaySettingsTable = pgTable("attendance_pay_settings", {
   updatedById: integer("updated_by_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Dorixona ochilish/yopilish — SB yozgan fakt. Tizim vaqti davomatdan hisoblanadi. */
+export const branchOpenLogsTable = pgTable(
+  "branch_open_logs",
+  {
+    id: serial("id").primaryKey(),
+    branchId: integer("branch_id").notNull(),
+    workDate: text("work_date").notNull(),
+    sbOpenHm: text("sb_open_hm"),
+    sbCloseHm: text("sb_close_hm"),
+    note: text("note"),
+    filledByUserId: integer("filled_by_user_id"),
+    filledAt: timestamp("filled_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (t) => [
+    uniqueIndex("branch_open_logs_branch_date_uidx").on(t.branchId, t.workDate),
+    index("branch_open_logs_date_idx").on(t.workDate),
+  ],
+);

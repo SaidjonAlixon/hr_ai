@@ -139,6 +139,27 @@ export function userStatusFromEmployment(status: string): string {
   return "vacant";
 }
 
+const PHARMACY_USER_ROLE_SET = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
+const PHARMACY_ORG_ROLE_SET = new Set(["manager", "pharmacist", "intern", "supervisor", "coordinator"]);
+
+/** Xodimlar bo‘limidagi Ofis / Dorixona ajratish. Boshqa sahifalar shu qoidani ishlatadi. */
+export function isPharmacyStaffRow(e: {
+  userRole?: string | null;
+  orgRole?: string | null;
+  position?: string | null;
+  departmentName?: string | null;
+}): boolean {
+  const role = String(e.userRole || "").trim().toLowerCase();
+  const org = String(e.orgRole || "").trim().toLowerCase();
+  const pos = String(e.position || "").trim().toLowerCase();
+  const dept = String(e.departmentName || "").trim().toLowerCase();
+  if (PHARMACY_USER_ROLE_SET.has(role)) return true;
+  if (PHARMACY_ORG_ROLE_SET.has(org)) return true;
+  if (/filial\s*mudir|farmasevt|stajyor|stajor/.test(pos)) return true;
+  if (/(farmasevt|dorixona|apteka)/.test(dept) && /(mudir|farmasevt|stajyor)/.test(`${pos} ${role}`)) return true;
+  return false;
+}
+
 /** Bo‘shatilgan / yopilgan — davomat va «Faol xodimlar»dan chiqariladi */
 export function isDismissedEmploymentStatus(status: string | null | undefined): boolean {
   const s = String(status || "").trim().toLowerCase();

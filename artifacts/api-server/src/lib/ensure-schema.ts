@@ -794,6 +794,27 @@ CREATE TABLE IF NOT EXISTS payroll_months (
 CREATE UNIQUE INDEX IF NOT EXISTS payroll_months_user_month_uidx ON payroll_months (user_id, month);
 ALTER TABLE payroll_months ADD COLUMN IF NOT EXISTS jarima INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE payroll_months ADD COLUMN IF NOT EXISTS jarima_note TEXT;
+ALTER TABLE payroll_months ADD COLUMN IF NOT EXISTS returned_days JSONB NOT NULL DEFAULT '[]'::jsonb;
+
+CREATE TABLE IF NOT EXISTS payroll_days (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  employee_id INTEGER,
+  day TEXT NOT NULL,
+  salary INTEGER,
+  jarima INTEGER,
+  note TEXT,
+  manual BOOLEAN NOT NULL DEFAULT FALSE,
+  status TEXT NOT NULL DEFAULT 'draft',
+  published_salary INTEGER,
+  published_jarima INTEGER,
+  published_note TEXT,
+  approved_by_id INTEGER,
+  approved_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS payroll_days_user_day_uidx ON payroll_days (user_id, day);
 
 CREATE TABLE IF NOT EXISTS work_calendar_days (
   day TEXT PRIMARY KEY,
@@ -1028,6 +1049,21 @@ ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_method TEXT;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS resolved_branch_id INTEGER;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS resolved_branch_label TEXT;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS shift_plan TEXT;
+
+CREATE TABLE IF NOT EXISTS branch_open_logs (
+  id SERIAL PRIMARY KEY,
+  branch_id INTEGER NOT NULL,
+  work_date TEXT NOT NULL,
+  sb_open_hm TEXT,
+  sb_close_hm TEXT,
+  note TEXT,
+  filled_by_user_id INTEGER,
+  filled_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS branch_open_logs_branch_date_uidx ON branch_open_logs (branch_id, work_date);
+CREATE INDEX IF NOT EXISTS branch_open_logs_date_idx ON branch_open_logs (work_date);
 
 CREATE TABLE IF NOT EXISTS branch_attendance_qr (
   id SERIAL PRIMARY KEY,
@@ -1341,6 +1377,8 @@ CREATE INDEX IF NOT EXISTS lokatsiya_bot_recruiters_active_idx ON lokatsiya_bot_
 
 -- ========== Device Security (opt-in) ==========
 ALTER TABLE users ADD COLUMN IF NOT EXISTS device_security_enforced BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS davomat_face_allowed BOOLEAN;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS davomat_qr_allowed BOOLEAN;
 
 CREATE TABLE IF NOT EXISTS device_security_settings (
   id SERIAL PRIMARY KEY,

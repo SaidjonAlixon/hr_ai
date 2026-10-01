@@ -16,6 +16,7 @@ import { HR_ROLES, isHrManager, canViewEmployees, canViewEmployeesFull, canChang
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from "../lib/dedupe-employees";
 import {
+  isPharmacyStaffRow,
   loadStaffFromUsers,
   userStatusFromEmployment,
   normalizeUserStatus,
@@ -288,29 +289,6 @@ async function enrichEmployee(r: EmpRow | typeof employeesTable.$inferSelect) {
   const hydrated = await hydrateEmployeeRow(r as EmpRow);
   const [enriched] = await enrichMany([hydrated]);
   return enriched;
-}
-
-const PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
-const PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "supervisor", "coordinator"]);
-
-/** Apteka (mudir/farmasevt/stajyor) — Xodimlar ofis ro‘yxatiga kirmaydi */
-function isPharmacyStaffRow(e: {
-  userRole?: string | null;
-  orgRole?: string | null;
-  position?: string | null;
-  departmentName?: string | null;
-}): boolean {
-  const role = String(e.userRole || "").toLowerCase();
-  const org = String(e.orgRole || "").toLowerCase();
-  const pos = String(e.position || "").toLowerCase();
-  const dept = String(e.departmentName || "").toLowerCase();
-  if (PHARMACY_USER_ROLES.has(role)) return true;
-  if (PHARMACY_ORG_ROLES.has(org)) return true;
-  if (/filial\s*mudir|farmasevt|stajyor|stajor/.test(pos)) return true;
-  if (/(farmasevt|dorixona|apteka)/.test(dept) && /(mudir|farmasevt|stajyor)/.test(`${pos} ${role}`)) {
-    return true;
-  }
-  return false;
 }
 
 function isMudirFarmasevtStajyor(e: {

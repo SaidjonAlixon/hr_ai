@@ -170,9 +170,9 @@ export function canViewLeadershipModules(role?: string | null): boolean {
   );
 }
 
-/** Davomat erta-ketish / qo‘lda izoh — rahbariyat va HR (auditor ham) */
+/** Davomat erta-ketish / qo‘lda izoh — rahbariyat, HR va SB */
 export function canViewDavomatNotes(role?: string | null): boolean {
-  return canViewLeadershipModules(role);
+  return canViewLeadershipModules(role) || isSbRole(role);
 }
 
 /** Davomat: to‘liq dashboard rollari + SB + bo‘lim boshliqlari + koordinator (faqat o‘z dorixonasi) */

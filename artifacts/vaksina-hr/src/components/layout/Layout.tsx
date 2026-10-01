@@ -50,6 +50,7 @@ import {
   Check,
   Eye,
   AlertTriangle,
+  ShieldOff,
   BookOpen,
   Library,
   BadgeCheck,
@@ -79,7 +80,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -146,7 +147,7 @@ const NAV_SECTIONS: {
     id: 'attendance',
     label: 'Davomat',
     icon: AlarmClock,
-    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
+    paths: ['/davomat/analytics', '/davomat/xatoliklar', '/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat/ofisda', '/davomat-face', '/davomat', '/davomat-qr', '/smena-filial', '/checklist-holati'],
   },
   {
     id: 'work',
@@ -279,6 +280,7 @@ function pathIsActive(location: string, path: string) {
   if (!location.startsWith(`${path}/`)) return false;
   // /vazifalar should not highlight when on /vazifalar/tahlil
   if (path === '/vazifalar' && location.startsWith('/vazifalar/tahlil')) return false;
+  if (path === '/davomat' && location !== '/davomat') return false;
   if (path === '/logistika' && location.startsWith('/logistika/')) return false;
   return true;
 }
@@ -294,6 +296,8 @@ function linkToNavPath(linkUrl?: string | null): string | null {
   if (path.startsWith('/smena-filial')) return '/smena-filial';
   if (path.startsWith('/davomat/analytics')) return '/davomat/analytics';
   if (path.startsWith('/davomat/xatoliklar')) return '/davomat/xatoliklar';
+  if (path.startsWith('/davomat/bloklash')) return '/davomat/bloklash';
+  if (path.startsWith('/davomat/dorixona-ochilishi')) return '/davomat/dorixona-ochilishi';
   if (path.startsWith('/davomat/ofisda')) return '/davomat/ofisda';
   if (path.startsWith('/davomat-face')) return '/davomat-face';
   if (path.startsWith('/davomat')) return '/davomat';
@@ -917,6 +921,8 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
   const orgNav = { name: 'Tashkiliy tuzilma', path: '/tashkiliy-tuzilma', icon: Network };
   const davomatAnalyticsNav = { name: 'Davomat tahlili', path: '/davomat/analytics', icon: BarChart3 };
   const davomatXatoliklarNav = { name: 'Xatoliklar', path: '/davomat/xatoliklar', icon: AlertTriangle };
+  const davomatBloklashNav = { name: 'Bloklash oynasi', path: '/davomat/bloklash', icon: ShieldOff };
+  const dorixonaOchilishNav = { name: 'Dorixona ochilishi', path: '/davomat/dorixona-ochilishi', icon: Store };
   const davomatFaceNav = { name: 'Davomat', path: '/davomat-face', icon: ScanFace };
   const davomatOfisdaNav = { name: 'Asosiy ofisda qolish', path: '/davomat/ofisda', icon: Building2 };
   const davomatKochmaNav = { name: "Ko‘chma davomat", path: '/davomat-kochma', icon: MapPin };
@@ -1015,6 +1021,16 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const davIdx = next.findIndex((i) => i.path === '/davomat');
         const at = davIdx >= 0 ? davIdx : next.length;
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
+      }
+      if (hasFullPlatformAccess(role) && !next.some((i) => i.path === '/davomat/bloklash')) {
+        const reportIdx = next.findIndex((i) => i.path === '/davomat');
+        const at = reportIdx >= 0 ? reportIdx + 1 : next.length;
+        next = [...next.slice(0, at), davomatBloklashNav, ...next.slice(at)];
+      }
+      if ((hasFullPlatformAccess(role) || isSbRole(role)) && !next.some((i) => i.path === '/davomat/dorixona-ochilishi')) {
+        const reportIdx = next.findIndex((i) => i.path === '/davomat');
+        const at = reportIdx >= 0 ? reportIdx + 1 : next.length;
+        next = [...next.slice(0, at), dorixonaOchilishNav, ...next.slice(at)];
       }
       if (canViewDavomatXatoliklar(role) && !next.some((i) => i.path === '/davomat/xatoliklar')) {
         const baseIdx = next.findIndex(
@@ -2459,7 +2475,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               location.startsWith('/tashkiliy-tuzilma') ||
               location.startsWith('/logistika')
               ? 'overflow-hidden p-0'
-              : location === '/hisobkitob'
+              : location === '/hisobkitob' || location === '/oylik'
                 ? 'overflow-x-hidden overflow-y-auto p-1 sm:p-2'
                 : 'overflow-x-hidden overflow-y-auto p-3 sm:p-6',
           )}

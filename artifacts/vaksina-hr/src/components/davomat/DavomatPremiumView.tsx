@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -17,6 +17,7 @@ import { Link } from "wouter";
 import { DavomatZoneMap } from "@/components/davomat/DavomatZoneMap";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { formatShortUz } from "@/lib/oylik-period";
 import type { DavomatDayMetrics } from "@/lib/davomat-api";
 
 export type PremiumMethod = "FACE_ID" | "QR";
@@ -61,6 +62,8 @@ type Props = {
   onPickMethod: (m: PremiumMethod) => void;
   canOpenFace: boolean;
   canOpenQr: boolean;
+  faceDenied?: boolean;
+  qrDenied?: boolean;
   /** GPS bor, lekin zona tashqarisida */
   outsideZone?: boolean;
   outsideWarn?: string | null;
@@ -82,11 +85,10 @@ type Props = {
   isTgMiniApp: boolean;
   isAuthenticated: boolean;
   salary?: {
-    monthLabel: string;
-    fixedSalary: number;
-    kpiPercent: number;
-    bonusAmount: number;
-    totalAmount: number;
+    periodLabel: string;
+    periodSalary: number;
+    periodJarima: number;
+    lines: Array<{ date: string; jarima: number; note: string }>;
   } | null;
   formatSom: (n: number) => string;
   historyDays: DavomatDayMetrics[];
@@ -98,6 +100,7 @@ type Props = {
 
 export function DavomatPremiumView(p: Props) {
   const { toast } = useToast();
+  const [salaryOpen, setSalaryOpen] = useState(false);
   const inDone = Boolean(p.hasIn || p.done);
   /** Faqat kun butunlay yopilganda «Ketdi» — 2-filial Keldim kutayotganda ochiq */
   const outDone = Boolean(p.done);
@@ -303,15 +306,15 @@ export function DavomatPremiumView(p: Props) {
               <button
                 type="button"
                 id="dv-coach-face"
-                disabled={p.outsideZone || !p.canOpenFace || p.busy}
+                disabled={p.outsideZone || p.busy || (!p.faceDenied && !p.canOpenFace)}
                 onClick={() => p.onPickMethod("FACE_ID")}
                 className={cn(
                   "dv-method-card relative px-3 py-2.5 text-left",
-                  p.selectedMethod === "FACE_ID" && !p.outsideZone && "dv-method-card-on",
-                  (p.outsideZone || !p.canOpenFace) && "dv-method-card-locked",
+                  p.selectedMethod === "FACE_ID" && !p.outsideZone && !p.faceDenied && "dv-method-card-on",
+                  (p.outsideZone || p.faceDenied || !p.canOpenFace) && "dv-method-card-locked",
                 )}
               >
-                {p.selectedMethod === "FACE_ID" && !p.outsideZone ? (
+                {p.selectedMethod === "FACE_ID" && !p.outsideZone && !p.faceDenied ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
@@ -323,10 +326,12 @@ export function DavomatPremiumView(p: Props) {
                 <p
                   className={cn(
                     "mt-0.5 text-[10px] leading-snug",
-                    p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
+                    p.outsideZone || p.faceDenied ? "font-semibold text-rose-400" : "text-white/50",
                   )}
                 >
-                  {p.outsideZone
+                  {p.faceDenied
+                    ? "Aynan sizga ruxsat yo‘q"
+                    : p.outsideZone
                     ? "Hududga kiring"
                     : p.faceRegistered === false
                       ? "Avval yuzni ro‘yxatdan o‘tkazing"
@@ -336,15 +341,15 @@ export function DavomatPremiumView(p: Props) {
               <button
                 type="button"
                 id="dv-coach-qr"
-                disabled={p.outsideZone || !p.canOpenQr || p.busy}
+                disabled={p.outsideZone || p.busy || (!p.qrDenied && !p.canOpenQr)}
                 onClick={() => p.onPickMethod("QR")}
                 className={cn(
                   "dv-method-card relative px-3 py-2.5 text-left",
-                  p.selectedMethod === "QR" && !p.outsideZone && "dv-method-card-on",
-                  (p.outsideZone || !p.canOpenQr) && "dv-method-card-locked",
+                  p.selectedMethod === "QR" && !p.outsideZone && !p.qrDenied && "dv-method-card-on",
+                  (p.outsideZone || p.qrDenied || !p.canOpenQr) && "dv-method-card-locked",
                 )}
               >
-                {p.selectedMethod === "QR" && !p.outsideZone ? (
+                {p.selectedMethod === "QR" && !p.outsideZone && !p.qrDenied ? (
                   <span className="absolute right-2 top-2 text-sky-300">
                     <CheckCircle2 className="h-4 w-4" />
                   </span>
@@ -356,10 +361,10 @@ export function DavomatPremiumView(p: Props) {
                 <p
                   className={cn(
                     "mt-0.5 text-[10px] leading-snug",
-                    p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
+                    p.outsideZone || p.qrDenied ? "font-semibold text-rose-400" : "text-white/50",
                   )}
                 >
-                  {p.outsideZone ? "Hududga kiring" : "QR kodni skaner qiling"}
+                  {p.qrDenied ? "Aynan sizga ruxsat yo‘q" : p.outsideZone ? "Hududga kiring" : "QR kodni skaner qiling"}
                 </p>
               </button>
             </div>
@@ -447,42 +452,50 @@ export function DavomatPremiumView(p: Props) {
 
         {p.isAuthenticated && p.salary ? (
           <section className="dv-panel dv-panel-salary mt-3">
-            <div className="dv-panel-head">
+            <button type="button" className="dv-panel-head w-full border-0 bg-transparent text-left" onClick={() => setSalaryOpen((open) => !open)}>
               <div className="flex min-w-0 items-center gap-2.5">
                 <span className="dv-panel-icon dv-panel-icon-emerald">
                   <Banknote className="h-4 w-4" />
                 </span>
                 <div className="min-w-0">
                   <h2 className="truncate text-sm font-semibold text-white">{p.t("davomat.mySalary")}</h2>
-                  <p className="text-[10px] text-white/45">{p.salary.monthLabel}</p>
+                  <p className="text-[10px] text-white/45">{p.salary.periodLabel}</p>
                 </div>
               </div>
-              <Link
-                href="/oylik"
-                className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-sky-300"
-              >
-                Batafsil
-              </Link>
-            </div>
+              <span className="shrink-0 rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-[10px] font-semibold text-sky-300">
+                {salaryOpen ? "Yopish" : "Batafsil"}
+              </span>
+            </button>
             <div className="dv-panel-body">
               <div className="grid grid-cols-2 gap-2">
                 <div className="dv-salary-cell">
-                  <p className="dv-salary-label">{p.t("davomat.fixedPay")}</p>
-                  <p className="dv-salary-value">{p.formatSom(p.salary.fixedSalary)}</p>
+                  <p className="dv-salary-label">Fiksa</p>
+                  <p className="dv-salary-value">{p.formatSom(p.salary.periodSalary)}</p>
                 </div>
                 <div className="dv-salary-cell">
-                  <p className="dv-salary-label">KPI</p>
-                  <p className="dv-salary-value">{p.salary.kpiPercent}%</p>
+                  <p className="dv-salary-label">Jarima</p>
+                  <p className={cn("dv-salary-value", p.salary.periodJarima > 0 && "text-rose-300")}>{p.formatSom(p.salary.periodJarima)}</p>
                 </div>
-                <div className="dv-salary-cell">
-                  <p className="dv-salary-label">{p.t("davomat.bonus")}</p>
-                  <p className="dv-salary-value">{p.formatSom(p.salary.bonusAmount)}</p>
-                </div>
-                <div className="dv-salary-cell dv-salary-cell-total">
-                  <p className="dv-salary-label">{p.t("davomat.totalPay")}</p>
-                  <p className="dv-salary-value text-sky-300">{p.formatSom(p.salary.totalAmount)}</p>
+                <div className="dv-salary-cell dv-salary-cell-total col-span-2">
+                  <p className="dv-salary-label">Qoladi</p>
+                  <p className="dv-salary-value text-sky-300">{p.formatSom(p.salary.periodSalary - p.salary.periodJarima)}</p>
                 </div>
               </div>
+              {salaryOpen ? (
+                <div className="mt-2 space-y-1.5">
+                  {p.salary.lines.length ? p.salary.lines.map((line) => (
+                    <div key={line.date} className="flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-semibold text-white">{formatShortUz(line.date)}</p>
+                        <p className="truncate text-[10px] text-white/55">{line.note || "Jarima"}</p>
+                      </div>
+                      <p className="shrink-0 text-sm font-semibold tabular-nums text-rose-300">−{p.formatSom(line.jarima)}</p>
+                    </div>
+                  )) : (
+                    <p className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs text-white/55">Bu davrda jarima yo‘q.</p>
+                  )}
+                </div>
+              ) : null}
             </div>
           </section>
         ) : null}

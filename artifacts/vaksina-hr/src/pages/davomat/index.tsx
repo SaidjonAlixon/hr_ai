@@ -40,7 +40,7 @@ import {
   AlarmClock,
   ClipboardList,
 } from "lucide-react";
-import { DavomatJarimaCard } from "../oylik/pay-table";
+import { DavomatJarimaCard, DavomatJarimaPanel } from "../oylik/pay-table";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -2968,6 +2968,7 @@ export default function DavomatPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <DavomatJarimaPanel month={selectedDay.slice(0, 7)} />
     </div>
   );
 }

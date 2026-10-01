@@ -89,6 +89,8 @@ export const NAV_PATH_KEYS: Record<string, string> = {
   "/davomat-qr": "nav.davomatQr",
   "/davomat/analytics": "nav.davomatAnalytics",
   "/davomat/xatoliklar": "nav.davomatXatoliklar",
+  "/davomat/bloklash": "nav.davomatBloklash",
+  "/davomat/dorixona-ochilishi": "nav.dorixonaOchilishi",
   "/smena-filial": "nav.smena",
   "/javob-olish": "nav.javobOlish",
   "/javob-olish/holat": "nav.javobOlishHolat",

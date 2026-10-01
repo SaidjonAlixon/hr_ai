@@ -18,6 +18,7 @@ import {
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { scriptIncludes } from "../lib/script-search";
+import { METHOD_FORBIDDEN, effectiveDavomatAccess, readDavomatAccess } from "../lib/davomat-method-access";
 import { isVacancyPlaceholder } from "../lib/vacancy-slot";
 import {
   canViewDavomat,
@@ -106,7 +107,7 @@ import {
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { resolveAttendanceWorkDate } from "../lib/attendance-workdate";
-import { loadStaffFromUsers } from "../lib/staff-directory";
+import { isPharmacyStaffRow, loadStaffFromUsers } from "../lib/staff-directory";
 import { formatPersonName } from "../lib/person-name";
 import { buildDavomatAnalytics, type DavomatSegment } from "../lib/davomat-analytics";
 import { matchesDepartmentFilter, resolveDepartmentFilter } from "../lib/department-filter";
@@ -4204,6 +4205,11 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       res.status(resolved.status).json(resolved.body);
       return;
     }
+    const verifyAccess = await readDavomatAccess(resolved.user.id);
+    if (!verifyAccess.face) {
+      res.status(403).json({ error: METHOD_FORBIDDEN, code: "method_forbidden" });
+      return;
+    }
     await maybeBackfillFacePhoto(resolved.faceId, req.body?.snapshot ?? req.body?.photo);
     const workDate = todayTashkent();
     const [rec] = await db
@@ -4289,6 +4295,11 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
       });
       return;
     }
+    const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+    if (staleGps) {
+      res.status(403).json(staleGps);
+      return;
+    }
     if (!action) {
       res.status(400).json({ error: "action: in | out", code: "action_required" });
       return;
@@ -4324,6 +4335,11 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
     });
     if (!resolved.ok) {
       res.status(resolved.status).json(resolved.body);
+      return;
+    }
+    const faceAccess = await readDavomatAccess(resolved.user.id);
+    if (!faceAccess.face) {
+      res.status(403).json({ error: METHOD_FORBIDDEN, code: "method_forbidden" });
       return;
     }
     await maybeBackfillFacePhoto(resolved.faceId, req.body?.snapshot ?? req.body?.photo);
@@ -5425,6 +5441,27 @@ function isAdminQrAnywhere(role: string | null | undefined) {
   return hasFullPlatformAccess(role);
 }
 
+/** Keldim/Ketdimdagi GPS skanerdagi eski nuqta bo‘lmasin. */
+const PUNCH_GPS_MAX_AGE_MS = 45_000;
+
+function stalePunchGps(capturedAtRaw: unknown): { error: string; code: string } | null {
+  const capturedAt = Number(capturedAtRaw);
+  if (!Number.isFinite(capturedAt)) {
+    return {
+      error: "Joylashuv yangilanmadi. GPS yoqilgan holda hududda turib qayta bosing.",
+      code: "gps_stale",
+    };
+  }
+  const age = Date.now() - capturedAt;
+  if (age > PUNCH_GPS_MAX_AGE_MS || age < -5 * 60_000) {
+    return {
+      error: "Joylashuv eskirgan. GPS yoqilgan holda hududda turib qayta bosing.",
+      code: "gps_stale",
+    };
+  }
+  return null;
+}
+
 async function assertCanViewDeptQr(
   role: string | null | undefined,
   userId: number,
@@ -5893,12 +5930,9 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
 
-    if (user.role === "koordinator") {
-      res.status(403).json({
-        error:
-          "Koordinator uchun QR o‘chirilgan. Cheklist va davomatni faqat Face ID orqali tasdiqlang.",
-        code: "coordinator_face_only",
-      });
+    const punchAccess = await readDavomatAccess(user.id);
+    if (!punchAccess.qr) {
+      res.status(403).json({ error: METHOD_FORBIDDEN, code: "method_forbidden" });
       return;
     }
 
@@ -5918,6 +5952,13 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       });
       res.status(400).json({ error: "GPS majburiy — lokatsiyaga ruxsat bering", code: "gps_required" });
       return;
+    }
+    if (!adminAnywhere) {
+      const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+      if (staleGps) {
+        res.status(403).json(staleGps);
+        return;
+      }
     }
 
     let emp: WorkplaceEmp;
@@ -6453,14 +6494,21 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
     const editBranch = canEditBranchQr(user.role);
     const viewDept = canViewDeptQrRole(user.role);
     const editDept = canEditDeptQrRole(user.role);
-    const methods: Array<"FACE_ID" | "QR"> =
-      user.role === "koordinator" ? ["FACE_ID"] : ["FACE_ID", "QR"];
+    const [flags] = await db
+      .select({ face: usersTable.davomatFaceAllowed, qr: usersTable.davomatQrAllowed })
+      .from(usersTable)
+      .where(eq(usersTable.id, user.id))
+      .limit(1);
+    const allowed = effectiveDavomatAccess(user.role, flags?.face, flags?.qr);
+    const methods = allowed.methods;
     res.json({
       pharmacyStaff: pharmacy,
       officeStaff,
       adminQrAnywhere,
       methods,
-      faceOnly: user.role === "koordinator",
+      face: allowed.face,
+      qr: allowed.qr,
+      faceOnly: methods.length === 1 && methods[0] === "FACE_ID",
       canManageQr: editBranch || editDept,
       canManageBranchQr: editBranch,
       canViewBranchQr: viewBranch,
@@ -6472,6 +6520,127 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
   } catch (err) {
     console.error("GET /davomat/methods error:", err);
     res.status(503).json({ error: "Usullar yuklanmadi" });
+  }
+});
+
+/** Admin: xodimning Face ID / QR ruxsati */
+router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin", code: "method_admin" });
+    return;
+  }
+  try {
+    const q = String(req.query.q || "").trim();
+    const staff = await loadStaffFromUsers("active");
+    const ids = staff.map((row) => row.userId).filter((id): id is number => id != null);
+    const flags = ids.length
+      ? await db
+          .select({
+            id: usersTable.id,
+            face: usersTable.davomatFaceAllowed,
+            qr: usersTable.davomatQrAllowed,
+          })
+          .from(usersTable)
+          .where(inArray(usersTable.id, ids))
+      : [];
+    const flagById = new Map(flags.map((row) => [row.id, row]));
+    const items = staff
+      .filter((row) => row.userId != null)
+      .map((row) => {
+        const flag = flagById.get(row.userId!);
+        const access = effectiveDavomatAccess(row.userRole, flag?.face, flag?.qr);
+        return {
+          userId: row.userId!,
+          fullName: row.fullName,
+          role: row.userRole || "",
+          position: row.position || "",
+          location: row.location || "",
+          place: isPharmacyStaffRow(row) ? "dorixona" : "ofis",
+          status: row.userStatus || "active",
+          face: access.face,
+          qr: access.qr,
+        };
+      })
+      .filter((row) => !q || scriptIncludes(`${row.fullName} ${row.role} ${row.position} ${row.location}`, q))
+      .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
+    res.json({ items, total: items.length });
+  } catch (err) {
+    console.error("GET /davomat/method-access", err);
+    res.status(503).json({ error: "Ruxsatlar yuklanmadi" });
+  }
+});
+
+router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin", code: "method_admin" });
+    return;
+  }
+  try {
+    const userId = Number(req.body?.userId);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      res.status(400).json({ error: "Xodim tanlanmagan" });
+      return;
+    }
+    const face = req.body?.face;
+    const qr = req.body?.qr;
+    if (typeof face !== "boolean" && typeof qr !== "boolean") {
+      res.status(400).json({ error: "Face ID yoki QR holati kerak" });
+      return;
+    }
+    const [user] = await db
+      .select({ id: usersTable.id, role: usersTable.role })
+      .from(usersTable)
+      .where(eq(usersTable.id, userId))
+      .limit(1);
+    if (!user) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    await db
+      .update(usersTable)
+      .set({
+        ...(typeof face === "boolean" ? { davomatFaceAllowed: face } : {}),
+        ...(typeof qr === "boolean" ? { davomatQrAllowed: qr } : {}),
+      })
+      .where(eq(usersTable.id, userId));
+    const saved = await readDavomatAccess(userId);
+    res.json({ ok: true, userId, face: saved.face, qr: saved.qr });
+  } catch (err) {
+    console.error("PATCH /davomat/method-access", err);
+    res.status(503).json({ error: "Ruxsat saqlanmadi" });
+  }
+});
+
+router.post("/davomat/method-access/bulk", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin", code: "method_admin" });
+    return;
+  }
+  try {
+    const userIds = Array.isArray(req.body?.userIds)
+      ? [...new Set(req.body.userIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0))]
+      : [];
+    if (!userIds.length || userIds.length > 800) {
+      res.status(400).json({ error: "Xodimlar tanlanmagan" });
+      return;
+    }
+    const face = req.body?.face;
+    const qr = req.body?.qr;
+    if (typeof face !== "boolean" && typeof qr !== "boolean") {
+      res.status(400).json({ error: "Face ID yoki QR holati kerak" });
+      return;
+    }
+    await db
+      .update(usersTable)
+      .set({
+        ...(typeof face === "boolean" ? { davomatFaceAllowed: face } : {}),
+        ...(typeof qr === "boolean" ? { davomatQrAllowed: qr } : {}),
+      })
+      .where(inArray(usersTable.id, userIds));
+    res.json({ ok: true, updated: userIds.length });
+  } catch (err) {
+    console.error("POST /davomat/method-access/bulk", err);
+    res.status(503).json({ error: "Ruxsat saqlanmadi" });
   }
 });
 

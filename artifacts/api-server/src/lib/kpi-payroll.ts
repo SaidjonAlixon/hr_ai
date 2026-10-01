@@ -7,12 +7,15 @@ import {
   employeesTable,
   workCalendarDaysTable,
   kpiSettingsTable,
+  payrollDaysTable,
   payrollMonthsTable,
   tasksTable,
   usersTable,
 } from "@workspace/db";
-import { loadStaffFromUsers } from "./staff-directory";
+import { displayBranchName } from "./geo-location";
+import { isPharmacyStaffRow, loadStaffFromUsers } from "./staff-directory";
 import { scriptIncludes } from "./script-search";
+import { applyAttendanceJarima, JARIMA_RULE, JARIMA_START, salaryShareOnDates } from "./attendance-jarima";
 
 export type KpiWeights = {
   attendance: number;
@@ -278,15 +281,9 @@ export function payrollCalendarScope(input: {
   if (role === "sb" || role === "sb_boshliq" || /xavfsiz/.test(role) || /xavfsiz/.test(pos)) {
     return "xavfsizlik";
   }
-  const dorixonaRole = new Set(["mudir", "farmasevt", "stajyor", "stajor", "koordinator"]);
-  const dorixonaOrg = new Set(["manager", "pharmacist", "intern", "supervisor", "coordinator", "mudir", "farmasevt", "stajyor"]);
-  const hay = `${org} ${role} ${pos}`;
-  const dorixona =
-    dorixonaRole.has(role) ||
-    dorixonaOrg.has(org) ||
-    /\b(mudir|farmasevt|stajyor|stajor|koordinator|pharmacist|manager|intern|supervisor)\b/.test(hay) ||
-    /filial\s*mudir/.test(pos);
-  if (dorixona) return `dorixona:${payrollShiftKey(input.shiftType, input.shiftLabel)}`;
+  if (isPharmacyStaffRow({ userRole: role, orgRole: org, position: pos })) {
+    return `dorixona:${payrollShiftKey(input.shiftType, input.shiftLabel)}`;
+  }
   return "ofis";
 }
 
@@ -665,7 +662,7 @@ export async function computePayroll(userId: number, monthKey: string): Promise<
     role: user.role,
     roleLabel: ROLE_LABELS[user.role] || user.role,
     position: emp?.position ?? null,
-    branch: emp?.location ?? null,
+    branch: displayBranchName(emp?.location) || null,
     fixedSalary,
     bonusPercent,
     attendance: {
@@ -708,6 +705,8 @@ export type PayrollListRow = {
   userId: number | null;
   fullName: string;
   roleLabel: string;
+  userRole: string | null;
+  orgRole: string | null;
   position: string | null;
   branch: string | null;
   shiftType: string | null;
@@ -717,6 +716,9 @@ export type PayrollListRow = {
   salary: number;
   jarima: number;
   jarimaNote: string | null;
+  jarimaEvents: Array<{ date: string; kind: "late" | "absent"; n: number; amount: number }>;
+  jarimaLocked: boolean;
+  returnedDays: Array<{ date: string; salary: number; jarima: number }>;
   bonusPercent: number;
   kpiPercent: number;
   bonusAmount: number;
@@ -930,7 +932,7 @@ export async function computePayrollList(
   }
 
   const statusByUser = new Map<number, string>();
-  const payByUser = new Map<number, { salary: number; jarima: number; note: string | null }>();
+  const payByUser = new Map<number, { salary: number; jarima: number; note: string | null; returnedDays: Array<{ date: string; salary: number; jarima: number }> }>();
   if (userIds.length) {
     try {
       const saved = await db
@@ -940,12 +942,13 @@ export async function computePayrollList(
           salary: payrollMonthsTable.fixedSalary,
           jarima: payrollMonthsTable.jarima,
           note: payrollMonthsTable.jarimaNote,
+          returnedDays: payrollMonthsTable.returnedDays,
         })
         .from(payrollMonthsTable)
         .where(and(eq(payrollMonthsTable.month, month), inArray(payrollMonthsTable.userId, userIds)));
       for (const s of saved) {
         statusByUser.set(s.userId, s.status);
-        payByUser.set(s.userId, { salary: s.salary, jarima: s.jarima, note: s.note });
+        payByUser.set(s.userId, { salary: s.salary, jarima: s.jarima, note: s.note, returnedDays: Array.isArray(s.returnedDays) ? s.returnedDays : [] });
       }
     } catch (err) {
       console.error("payroll list months", err);
@@ -995,8 +998,10 @@ export async function computePayrollList(
       userId: uid,
       fullName: u.fullName,
       roleLabel: ROLE_LABELS[roleKey] || roleKey,
+      userRole: u.userRole,
+      orgRole: u.orgRole,
       position: u.position ?? null,
-      branch: u.location ?? null,
+      branch: displayBranchName(u.location) || null,
       shiftType: u.shiftType ?? null,
       shiftLabel: u.shiftLabel ?? null,
       calendarScope,
@@ -1004,6 +1009,9 @@ export async function computePayrollList(
       salary: uid != null ? payByUser.get(uid)?.salary ?? 0 : 0,
       jarima: uid != null ? payByUser.get(uid)?.jarima ?? 0 : 0,
       jarimaNote: uid != null ? payByUser.get(uid)?.note ?? null : null,
+      jarimaEvents: [],
+      jarimaLocked: false,
+      returnedDays: uid != null ? payByUser.get(uid)?.returnedDays ?? [] : [],
       bonusPercent,
       kpiPercent: money.kpiPercent,
       bonusAmount: money.bonusAmount,
@@ -1020,6 +1028,26 @@ export async function computePayrollList(
       checklistAvailable,
     };
   });
+
+  if (month >= JARIMA_START.slice(0, 7)) {
+    try {
+      const snap = await applyAttendanceJarima(month);
+      const byUser = new Map(snap.people.map((person) => [person.userId, person]));
+      for (const item of items) {
+        if (item.userId == null) continue;
+        const hit = byUser.get(item.userId);
+        if (!hit) continue;
+        item.jarimaEvents = hit.events;
+        item.jarimaLocked = hit.locked;
+        if (hit.locked) continue;
+        item.salary = hit.salary;
+        item.jarima = hit.amount;
+        item.jarimaNote = hit.note;
+      }
+    } catch (err) {
+      console.error("payroll attendance jarima", err);
+    }
+  }
 
   items.sort((a, b) => a.fullName.localeCompare(b.fullName, "ru"));
   const scopeKeys = new Set<string>([
@@ -1119,6 +1147,76 @@ export async function savePayrollLine(input: {
   return { ...patch, status: "draft" as const };
 }
 
+export async function savePayrollFiksa(input: {
+  month: string;
+  lines: Array<{ userId: number; employeeId?: number | null; salary: number }>;
+}) {
+  const month = String(input.month || "").slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Oy noto‘g‘ri");
+  const lines = input.lines.slice(0, 500);
+  let saved = 0;
+  for (const line of lines) {
+    const userId = Number(line.userId);
+    if (!Number.isFinite(userId) || userId <= 0) continue;
+    const salary = Math.max(0, Math.round(Number(line.salary) || 0));
+    const employeeId = Number(line.employeeId) > 0 ? Number(line.employeeId) : null;
+    const [existing] = await db
+      .select({ id: payrollMonthsTable.id, jarima: payrollMonthsTable.jarima })
+      .from(payrollMonthsTable)
+      .where(and(eq(payrollMonthsTable.userId, userId), eq(payrollMonthsTable.month, month)))
+      .limit(1);
+    if (existing) {
+      await db
+        .update(payrollMonthsTable)
+        .set({
+          ...(employeeId ? { employeeId } : {}),
+          fixedSalary: salary,
+          totalAmount: salary - Math.max(0, existing.jarima ?? 0),
+          updatedAt: new Date(),
+        })
+        .where(eq(payrollMonthsTable.id, existing.id));
+    } else {
+      await db.insert(payrollMonthsTable).values({
+        userId,
+        employeeId,
+        month,
+        status: "draft",
+        fixedSalary: salary,
+        bonusPercent: 0,
+        kpiPercent: 0,
+        maxBonus: 0,
+        bonusAmount: 0,
+        totalAmount: salary,
+        jarima: 0,
+        jarimaNote: null,
+      });
+    }
+    if (employeeId) {
+      await db.update(employeesTable).set({ fixedSalary: salary }).where(eq(employeesTable.id, employeeId));
+    } else {
+      await db.update(employeesTable).set({ fixedSalary: salary }).where(eq(employeesTable.userId, userId));
+    }
+    await db
+      .update(payrollDaysTable)
+      .set({ salary: null, updatedAt: new Date() })
+      .where(and(eq(payrollDaysTable.userId, userId), gte(payrollDaysTable.day, `${month}-01`), lte(payrollDaysTable.day, `${month}-31`)));
+    saved += 1;
+  }
+  return { saved };
+}
+
+function netAfterReturnedDays(salary: number, jarima: number, returnedDays: unknown): number {
+  const days = Array.isArray(returnedDays) ? returnedDays : [];
+  let holdSalary = 0;
+  let holdJarima = 0;
+  for (const day of days) {
+    if (!day || typeof day !== "object") continue;
+    holdSalary += Math.max(0, Math.round(Number((day as { salary?: unknown }).salary) || 0));
+    holdJarima += Math.max(0, Math.round(Number((day as { jarima?: unknown }).jarima) || 0));
+  }
+  return salary - jarima - holdSalary + holdJarima;
+}
+
 export async function loadPayrollSlip(userId: number, month: string) {
   const [row] = await db
     .select({
@@ -1126,6 +1224,7 @@ export async function loadPayrollSlip(userId: number, month: string) {
       salary: payrollMonthsTable.fixedSalary,
       jarima: payrollMonthsTable.jarima,
       note: payrollMonthsTable.jarimaNote,
+      returnedDays: payrollMonthsTable.returnedDays,
       approvedAt: payrollMonthsTable.approvedAt,
     })
     .from(payrollMonthsTable)
@@ -1136,6 +1235,31 @@ export async function loadPayrollSlip(userId: number, month: string) {
     .from(usersTable)
     .where(eq(usersTable.id, userId))
     .limit(1);
+  const dayRows = await db
+    .select({
+      status: payrollDaysTable.status,
+      publishedSalary: payrollDaysTable.publishedSalary,
+      publishedJarima: payrollDaysTable.publishedJarima,
+    })
+    .from(payrollDaysTable)
+    .where(and(eq(payrollDaysTable.userId, userId), gte(payrollDaysTable.day, `${month}-01`), lte(payrollDaysTable.day, `${month}-31`)));
+  const published = dayRows.filter((day) => day.status === "approved" || day.status === "returned");
+  if (published.length) {
+    const salary = published.reduce((sum, day) => sum + Math.max(0, day.publishedSalary ?? 0), 0);
+    const jarima = published.reduce((sum, day) => sum + (day.status === "returned" ? 0 : Math.max(0, day.publishedJarima ?? 0)), 0);
+    return {
+      approved: true as const,
+      returned: false as const,
+      status: "approved" as const,
+      month,
+      fullName: user?.fullName ?? "",
+      salary,
+      jarima,
+      note: null,
+      net: salary - jarima,
+      approvedAt: row?.approvedAt ?? null,
+    };
+  }
   const status = row?.status === "approved" || row?.status === "returned" ? row.status : "draft";
   if (status !== "approved") {
     return {
@@ -1155,7 +1279,7 @@ export async function loadPayrollSlip(userId: number, month: string) {
     salary: row!.salary,
     jarima: row!.jarima,
     note: row!.note,
-    net: row!.salary - row!.jarima,
+    net: netAfterReturnedDays(row!.salary, row!.jarima, row!.returnedDays),
     approvedAt: row!.approvedAt,
   };
 }
@@ -1169,6 +1293,7 @@ export async function loadPayrollYear(userId: number, year: string) {
       status: payrollMonthsTable.status,
       salary: payrollMonthsTable.fixedSalary,
       jarima: payrollMonthsTable.jarima,
+      returnedDays: payrollMonthsTable.returnedDays,
     })
     .from(payrollMonthsTable)
     .where(and(eq(payrollMonthsTable.userId, userId), gte(payrollMonthsTable.month, from), lte(payrollMonthsTable.month, to)));
@@ -1180,7 +1305,7 @@ export async function loadPayrollYear(userId: number, year: string) {
         status: row.status === "approved" || row.status === "returned" ? row.status : "draft",
         salary: approved ? row.salary : 0,
         jarima: approved ? row.jarima : 0,
-        net: approved ? row.salary - row.jarima : 0,
+        net: approved ? netAfterReturnedDays(row.salary, row.jarima, row.returnedDays) : 0,
       };
     })
     .sort((a, b) => a.month.localeCompare(b.month));
@@ -1189,27 +1314,117 @@ export async function loadPayrollYear(userId: number, year: string) {
 }
 
 export async function loadJarimaSummary(month: string, userId: number, manage: boolean) {
+  const snap = month >= JARIMA_START.slice(0, 7) ? await applyAttendanceJarima(month) : null;
+  const self = snap?.people.find((person) => person.userId === userId) ?? null;
+  const counted = (snap?.people ?? []).filter((person) => person.amount > 0);
+  const total = counted.reduce((sum, person) => sum + person.amount, 0);
+  const rule = [...JARIMA_RULE];
   if (!manage) {
-    const slip = await loadPayrollSlip(userId, month);
+    const dayRows = await db
+      .select({
+        status: payrollDaysTable.status,
+        publishedJarima: payrollDaysTable.publishedJarima,
+        publishedNote: payrollDaysTable.publishedNote,
+      })
+      .from(payrollDaysTable)
+      .where(and(eq(payrollDaysTable.userId, userId), gte(payrollDaysTable.day, `${month}-01`), lte(payrollDaysTable.day, `${month}-31`)));
+    const published = dayRows.filter((day) => day.status === "approved" || day.status === "returned");
+    if (published.length) {
+      const total = published.reduce((sum, day) => sum + (day.status === "returned" ? 0 : Math.max(0, day.publishedJarima ?? 0)), 0);
+      return {
+        month,
+        own: true,
+        approved: true,
+        people: total > 0 ? 1 : 0,
+        total,
+        active: Boolean(snap?.active),
+        start: JARIMA_START,
+        rule,
+        self: self
+          ? { ...self, amount: total, note: published.find((day) => day.status === "approved" && (day.publishedJarima ?? 0) > 0)?.publishedNote ?? null, status: "approved" }
+          : null,
+        rows: [] as typeof counted,
+      };
+    }
     return {
       month,
       own: true,
-      approved: slip.approved,
-      people: slip.approved && slip.jarima > 0 ? 1 : 0,
-      total: slip.approved ? slip.jarima : 0,
+      approved: self?.status === "approved",
+      people: self && self.amount > 0 ? 1 : 0,
+      total: self?.amount ?? 0,
+      active: Boolean(snap?.active),
+      start: JARIMA_START,
+      rule,
+      self,
+      rows: [] as typeof counted,
     };
   }
-  const rows = await db
-    .select({ jarima: payrollMonthsTable.jarima })
+  return {
+    month,
+    own: false,
+    approved: false,
+    people: counted.length,
+    total,
+    active: Boolean(snap?.active),
+    start: JARIMA_START,
+    rule,
+    self,
+    rows: counted.sort((a, b) => b.amount - a.amount || a.fullName.localeCompare(b.fullName, "ru")),
+  };
+}
+
+export async function loadMyPayrollCard(userId: number, monthKey: string) {
+  const { month, from, to, monthLabel } = monthBounds(monthKey);
+  const snap = month >= JARIMA_START.slice(0, 7) ? await applyAttendanceJarima(month) : null;
+  const self = snap?.people.find((person) => person.userId === userId) ?? null;
+  const [pay] = await db
+    .select({ salary: payrollMonthsTable.fixedSalary })
     .from(payrollMonthsTable)
-    .where(eq(payrollMonthsTable.month, month));
-  let people = 0;
-  let total = 0;
-  for (const row of rows) {
-    if (row.jarima > 0) {
-      people += 1;
-      total += row.jarima;
+    .where(and(eq(payrollMonthsTable.userId, userId), eq(payrollMonthsTable.month, month)))
+    .limit(1);
+  const emps = await db
+    .select({ fixedSalary: employeesTable.fixedSalary })
+    .from(employeesTable)
+    .where(eq(employeesTable.userId, userId));
+  const empSalary = emps.reduce((max, row) => Math.max(max, Math.round(Number(row.fixedSalary) || 0)), 0);
+  const salary = Math.max(0, Math.round(Number(self?.salary || pay?.salary || empSalary || 0)));
+  const sheets = await db
+    .select({
+      day: payrollDaysTable.day,
+      status: payrollDaysTable.status,
+      publishedJarima: payrollDaysTable.publishedJarima,
+      publishedNote: payrollDaysTable.publishedNote,
+    })
+    .from(payrollDaysTable)
+    .where(and(eq(payrollDaysTable.userId, userId), gte(payrollDaysTable.day, from), lte(payrollDaysTable.day, to)));
+  const byDay = new Map(sheets.map((row) => [row.day, row]));
+  const days: Array<{ date: string; salary: number; jarima: number; kind: "late" | "absent" | null; n: number; note: string }> = [];
+  for (let cursor = from; cursor <= to; cursor = nextIsoDay(cursor)) {
+    const event = self?.events.find((item) => item.date === cursor);
+    const sheet = byDay.get(cursor);
+    let jarima = Math.max(0, Math.round(event?.amount || 0));
+    let note = event ? (event.kind === "late" ? "Kech kelindi" : "Kelmagansiz") : "";
+    if (sheet?.status === "returned") {
+      jarima = 0;
+      note = "Qaytarilgan";
+    } else if (sheet?.status === "approved") {
+      jarima = Math.max(0, sheet.publishedJarima ?? jarima);
+      note = sheet.publishedNote || note;
     }
+    days.push({
+      date: cursor,
+      salary: salaryShareOnDates(salary, month, [cursor]),
+      jarima,
+      kind: event?.kind ?? null,
+      n: event?.n ?? 0,
+      note,
+    });
   }
-  return { month, own: false, approved: true, people, total };
+  return { month, monthLabel, salary, days };
+}
+
+function nextIsoDay(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + 1));
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }

@@ -292,6 +292,8 @@ export async function facePunchDavomat(payload: {
   latitude: number;
   longitude: number;
   accuracy?: number;
+  /** Qurilma GPS vaqti (ms). Eskirgan nuqta bilan davomat yozilmaydi. */
+  gpsCapturedAt?: number;
   action: "in" | "out";
   /** Cheklist dan tanlangan filial (mudir employee id) */
   branchId?: number;
@@ -496,6 +498,9 @@ export type DavomatMethods = {
   /** Faqat admin: istalgan filial QR, lokatsiya shartsiz */
   adminQrAnywhere?: boolean;
   methods: Array<"FACE_ID" | "QR">;
+  /** Admin o‘chirgan bo‘lsa false */
+  face?: boolean;
+  qr?: boolean;
   canManageQr: boolean;
   canManageBranchQr?: boolean;
   canViewBranchQr?: boolean;
@@ -508,6 +513,38 @@ export type DavomatMethods = {
 
 export function fetchDavomatMethods(): Promise<DavomatMethods> {
   return apiJson<DavomatMethods>("/davomat/methods");
+}
+
+export type DavomatMethodAccessRow = {
+  userId: number;
+  fullName: string;
+  role: string;
+  position: string;
+  location: string;
+  place: "ofis" | "dorixona";
+  status: string;
+  face: boolean;
+  qr: boolean;
+};
+
+export function fetchDavomatMethodAccess(q = ""): Promise<{ items: DavomatMethodAccessRow[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (q.trim()) qs.set("q", q.trim());
+  return apiJson(`/davomat/method-access?${qs}`);
+}
+
+export function saveDavomatMethodAccess(body: { userId: number; face?: boolean; qr?: boolean }) {
+  return apiJson<{ ok: boolean; userId: number; face: boolean; qr: boolean }>("/davomat/method-access", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function saveDavomatMethodAccessBulk(body: { userIds: number[]; face?: boolean; qr?: boolean }) {
+  return apiJson<{ ok: boolean; updated: number }>("/davomat/method-access/bulk", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
 }
 
 export type QrBranchRow = {
@@ -621,6 +658,7 @@ export async function qrPunchDavomat(payload: {
   latitude?: number;
   longitude?: number;
   accuracy?: number;
+  gpsCapturedAt?: number;
   action: "in" | "out";
   deviceId?: string;
   /** Erta ketish sababi */

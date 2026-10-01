@@ -71,6 +71,8 @@ const EmployeesOtherPage = lazy(() => import('./pages/employees/other'));
 const EmployeeDuplicatesPage = lazy(() => import('./pages/employees/duplicates'));
 const DavomatPage = lazy(() => import('./pages/davomat/index'));
 const DavomatXatoliklarPage = lazy(() => import('./pages/davomat/xatoliklar'));
+const DavomatBloklashPage = lazy(() => import('./pages/davomat/bloklash'));
+const DorixonaOchilishiPage = lazy(() => import('./pages/davomat/dorixona-ochilishi'));
 const DavomatFacePage = lazy(() => import('./pages/davomat/face'));
 const DavomatQrPage = lazy(() => import('./pages/davomat/qr'));
 const DavomatOfisdaPage = lazy(() => import('./pages/davomat/ofisda'));
@@ -239,6 +241,8 @@ function Router() {
       <ProtectedRoute path="/employees" component={EmployeesPage} />
       <ProtectedRoute path="/davomat/analytics" component={DavomatPage} />
       <ProtectedRoute path="/davomat/xatoliklar" component={DavomatXatoliklarPage} />
+      <ProtectedRoute path="/davomat/bloklash" component={DavomatBloklashPage} />
+      <ProtectedRoute path="/davomat/dorixona-ochilishi" component={DorixonaOchilishiPage} />
       <ProtectedRoute path="/davomat/ofisda" component={DavomatOfisdaPage} />
       <ProtectedRoute path="/davomat" component={DavomatPage} />
       <ProtectedRoute path="/davomat-kochma" component={DavomatKochmaPage} />

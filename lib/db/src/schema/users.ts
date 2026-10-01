@@ -13,5 +13,9 @@ export const usersTable = pgTable("users", {
   telegramId: text("telegram_id"),
   /** Device security majburiy (enforcementMode=selected) */
   deviceSecurityEnforced: boolean("device_security_enforced").notNull().default(false),
+  /** null = standart (ochiq). false = admin o‘chirgan */
+  davomatFaceAllowed: boolean("davomat_face_allowed"),
+  /** null = standart (koordinator uchun yopiq, qolganlar ochiq) */
+  davomatQrAllowed: boolean("davomat_qr_allowed"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

@@ -9,6 +9,7 @@ import {
 } from "@workspace/api-client-react";
 import { FileDown, FileSpreadsheet, Loader2, Search, Users } from "lucide-react";
 import { scriptIncludes } from "../../lib/script-search";
+import { isDorixonaStaffLike } from "../../lib/staff-workplace";
 import { isVacancyPlaceholder } from "../../lib/vacancy-slot";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
@@ -98,27 +99,6 @@ function staffContact(e: Employee): StaffRow {
   return e as StaffRow;
 }
 
-/** Dorixona / apteka tarmog‘i — ofis emas */
-const DORIXONA_ORG = new Set([
-  "manager",
-  "pharmacist",
-  "intern",
-  "supervisor",
-  "coordinator",
-  "mudir",
-  "farmasevt",
-  "stajyor",
-  "stajor",
-  "koordinator",
-]);
-const DORIXONA_USER = new Set([
-  "mudir",
-  "farmasevt",
-  "stajyor",
-  "stajor",
-  "koordinator",
-]);
-
 function norm(s: unknown): string {
   return String(s ?? "")
     .trim()
@@ -129,36 +109,12 @@ function norm(s: unknown): string {
 
 function isDorixonaStaff(e: Employee): boolean {
   const row = staffContact(e);
-  const org = norm(row.orgRole);
-  const role = norm(row.userRole);
-  const pos = norm(row.position);
-  const dept = norm(row.departmentName);
-  const loc = norm(row.location);
-
-  if (org && DORIXONA_ORG.has(org)) return true;
-  if (role && DORIXONA_USER.has(role)) return true;
-
-  // Lavozim / bo‘lim / rol matnida apteka belgisi
-  const hay = `${org} ${role} ${pos} ${dept}`;
-  if (
-    /\b(mudir|farmasevt|stajyor|stajor|koordinator|pharmacist|manager|intern|supervisor)\b/.test(
-      hay,
-    ) ||
-    /filial\s*mudir/.test(pos) ||
-    /фармацевт|заведующ/.test(hay)
-  ) {
-    return true;
-  }
-
-  // «Farmasevt» bo‘limi (aniq yoki ichida)
-  if (dept && /(farmasevt|dorixona|apteka|фармацевт)/.test(dept)) return true;
-
-  // Filial GPS / joyi bor va lavozim apteka tipida
-  if (loc && (pos.includes("farmasevt") || pos.includes("mudir") || pos.includes("stajyor"))) {
-    return true;
-  }
-
-  return false;
+  return isDorixonaStaffLike({
+    role: row.userRole,
+    orgRole: row.orgRole,
+    position: row.position,
+    departmentName: row.departmentName,
+  });
 }
 
 /** Bo‘lim nomiga yozilgan rol (DB dagi noto‘g‘ri «Mudir» bo‘limi) */

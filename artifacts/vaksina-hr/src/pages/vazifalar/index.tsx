@@ -599,7 +599,6 @@ export default function VazifalarPage() {
         orgRole: x.orgRole,
         position: x.position,
         departmentName: deptName,
-        location: x.location,
       });
       return {
         key: `user:${x.id}`,
@@ -633,7 +632,6 @@ export default function VazifalarPage() {
           orgRole: x.orgRole,
           position: x.position,
           departmentName: deptName,
-          location: x.location,
         });
         return {
       key: `employee:${x.id}`,

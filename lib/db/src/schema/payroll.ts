@@ -29,6 +29,7 @@ export const payrollMonthsTable = pgTable(
     totalAmount: integer("total_amount").notNull().default(0),
     jarima: integer("jarima").notNull().default(0),
     jarimaNote: text("jarima_note"),
+    returnedDays: jsonb("returned_days").$type<Array<{ date: string; salary: number; jarima: number }>>().notNull().default([]),
     status: text("status").notNull().default("draft"),
     snapshot: jsonb("snapshot").$type<PayrollSnapshot>().notNull().default({}),
     computedAt: timestamp("computed_at", { withTimezone: true }).notNull().defaultNow(),
@@ -38,6 +39,30 @@ export const payrollMonthsTable = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [uniqueIndex("payroll_months_user_month_uidx").on(t.userId, t.month)],
+);
+
+/** Kunlik jadval. Tasdiqlanguncha foydalanuvchiga ko‘rinmaydi. */
+export const payrollDaysTable = pgTable(
+  "payroll_days",
+  {
+    id: serial("id").primaryKey(),
+    userId: integer("user_id").notNull(),
+    employeeId: integer("employee_id"),
+    day: text("day").notNull(),
+    salary: integer("salary"),
+    jarima: integer("jarima"),
+    note: text("note"),
+    manual: boolean("manual").notNull().default(false),
+    status: text("status").notNull().default("draft"),
+    publishedSalary: integer("published_salary"),
+    publishedJarima: integer("published_jarima"),
+    publishedNote: text("published_note"),
+    approvedById: integer("approved_by_id"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("payroll_days_user_day_uidx").on(t.userId, t.day)],
 );
 
 /** Ish / dam kunlari — default: Du–Sha ish, Ya dam. Qator faqat o‘zgartirilgan sanalar. */

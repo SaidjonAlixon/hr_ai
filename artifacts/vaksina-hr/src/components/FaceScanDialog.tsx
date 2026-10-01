@@ -303,13 +303,22 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
         video.muted = true;
         video.playsInline = true;
         video.setAttribute("playsinline", "true");
-        await video.play().catch(() => undefined);
+        void Promise.race([
+          video.play().catch(() => undefined),
+          new Promise((resolve) => window.setTimeout(resolve, 900)),
+        ]);
         setSwitching(false);
-        if (!isFaceModelsReady()) {
-          setHint(tRef.current("davomat.scanModelLoading"));
-        }
+        setHint(
+          isFaceModelsReady()
+            ? tRef.current("davomat.align.default")
+            : tRef.current("davomat.scanModelLoading"),
+          true,
+        );
 
-        await modelsP;
+        await Promise.race([
+          modelsP,
+          new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("model_timeout")), 18000)),
+        ]);
         if (cancelled) return;
 
         const issued = await Promise.race([
@@ -422,6 +431,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
               const result = await detectFaceDescriptor(videoEl, readFrame(), true, {
                 allowTurn: Boolean(want.pose && want.pose !== "center"),
                 allowBlink: Boolean(want.blink),
+                fit: "contain",
               });
               const alignStatus: FaceAlignStatus = result.status;
               const wantPose = want.pose ?? "center";
@@ -557,7 +567,10 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
       } catch (err) {
         if (cancelled) return;
         setSwitching(false);
-        setError(mapCameraError(err, tRef.current));
+        const message = (err as Error)?.message === "model_timeout"
+          ? "Model yuklanmadi. Internetni tekshirib, qayta urinib ko‘ring."
+          : mapCameraError(err, tRef.current);
+        setError(message);
       }
     };
 
@@ -617,7 +630,7 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
           <video
             ref={videoRef}
             className={cn(
-              "absolute inset-0 h-full w-full object-cover",
+              "absolute inset-0 h-full w-full bg-black object-contain",
               mirrorPreview && "-scale-x-100",
             )}
             playsInline
@@ -628,15 +641,15 @@ export function FaceScanDialog({ open, onOpenChange, mode, onCaptured, title, de
             className="pointer-events-none absolute inset-0 bg-black/50"
             style={{
               WebkitMaskImage:
-                "radial-gradient(ellipse 29% 38% at 50% 48%, transparent 96%, #000 100%)",
-              maskImage: "radial-gradient(ellipse 29% 38% at 50% 48%, transparent 96%, #000 100%)",
+                "radial-gradient(ellipse 36% 40% at 50% 50%, transparent 97%, #000 100%)",
+              maskImage: "radial-gradient(ellipse 36% 40% at 50% 50%, transparent 97%, #000 100%)",
             }}
           />
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div
               ref={ovalRef}
               className={cn(
-                "aspect-[3/4] w-[58%] max-w-[220px] rounded-full border-[2.5px] bg-transparent",
+                "aspect-[3/4] w-[72%] max-w-[280px] rounded-full border-[2.5px] bg-transparent",
                 aligned ? "border-emerald-400" : "border-white",
               )}
             />

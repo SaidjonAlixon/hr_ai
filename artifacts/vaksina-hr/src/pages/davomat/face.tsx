@@ -73,7 +73,8 @@ import { formatPersonName } from "@/lib/person-name";
 import { ensureMobileTrack, endMobileAttendance } from "@/lib/mobile-attendance-api";
 import { MOBILE_GPS_GRANTED_EVENT } from "@/components/davomat/MobileGpsBackgroundTracker";
 import { useTelegramMiniAppChrome } from "@/pages/tg-entry";
-import { formatSom, useOylikMe } from "@/lib/oylik-api";
+import { formatSom, useMyPayrollCard } from "@/lib/oylik-api";
+import { datesFromTo, formatShortUz, monthEnd, weeksOfMonth } from "@/lib/oylik-period";
 import { workShiftForUserRole, workplaceDisplayTitle } from "@/lib/work-schedule";
 import {
   gpsEnableTipKey,
@@ -103,9 +104,53 @@ type Gps = {
   lat: number;
   lng: number;
   accuracy: number;
+  /** Qurilma bergan vaqt — eskirgan nuqta bilan Keldim/Ketdim yozilmasin */
+  at: number;
   heading?: number | null;
   speed?: number | null;
 };
+
+/** Keldim/Ketdim paytida yangi o‘lchov. Kesh (ofisdagi eski nuqta) qabul qilinmaydi. */
+function readLivePunchGps(): Promise<{ lat: number; lng: number; accuracy: number; capturedAt: number }> {
+  return new Promise((resolve, reject) => {
+    if (!navigator.geolocation) {
+      reject(Object.assign(new Error("gps_unsupported"), { code: 2 }));
+      return;
+    }
+    let settled = false;
+    const timer = window.setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(Object.assign(new Error("gps_timeout"), { code: 3 }));
+    }, 12_000);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        const age = Date.now() - pos.timestamp;
+        if (!Number.isFinite(pos.timestamp) || age > 20_000 || age < -60_000) {
+          reject(Object.assign(new Error("gps_stale"), { code: "gps_stale" }));
+          return;
+        }
+        const accRaw = pos.coords.accuracy;
+        resolve({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: typeof accRaw === "number" && Number.isFinite(accRaw) ? Math.round(accRaw) : 0,
+          capturedAt: pos.timestamp,
+        });
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        reject(err);
+      },
+      { enableHighAccuracy: true, maximumAge: 0, timeout: 10_000 },
+    );
+  });
+}
 type Verified = {
   descriptor: number[];
   fullName: string;
@@ -817,7 +862,8 @@ export default function DavomatFacePage() {
   const { user, isAuthenticated, switchToUser } = useAuth();
   const { t, locale } = useI18n();
   const [, setLocation] = useLocation();
-  const oylikMe = useOylikMe();
+  const cardMonth = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" }).slice(0, 7);
+  const oylikCard = useMyPayrollCard(cardMonth, isAuthenticated);
   const isTgMiniApp = useMemo(() => isTelegramMiniAppContext(), []);
   const checklistBranchId = useMemo(() => {
     try {
@@ -857,6 +903,7 @@ export default function DavomatFacePage() {
   const [adminQrAnywhere, setAdminQrAnywhere] = useState(false);
   const [methodsReady, setMethodsReady] = useState(false);
   const [qrMethodAllowed, setQrMethodAllowed] = useState(true);
+  const [faceMethodAllowed, setFaceMethodAllowed] = useState(true);
   const [canManageQr, setCanManageQr] = useState(false);
   const [qrOpen, setQrOpen] = useState(false);
   const [methodsHidden, setMethodsHidden] = useState(false);
@@ -1004,6 +1051,8 @@ export default function DavomatFacePage() {
       setPharmacyStaff(false);
       setAdminQrAnywhere(false);
       setCanManageQr(false);
+      setQrMethodAllowed(true);
+      setFaceMethodAllowed(true);
       setMethodsReady(true);
       pharmacyGateRef.current = false;
       return;
@@ -1016,8 +1065,10 @@ export default function DavomatFacePage() {
         setOfficeStaff(Boolean(m.officeStaff) || (m.methods.includes("QR") && !m.pharmacyStaff && !m.adminQrAnywhere));
         setAdminQrAnywhere(Boolean(m.adminQrAnywhere));
         setCanManageQr(m.canManageQr);
-        setQrMethodAllowed(m.methods.includes("QR"));
-        if (!m.methods.includes("QR")) setSelectedMethod("FACE_ID");
+        setQrMethodAllowed(m.qr !== false && m.methods.includes("QR"));
+        setFaceMethodAllowed(m.face !== false && m.methods.includes("FACE_ID"));
+        if (m.face === false && m.methods.includes("QR")) setSelectedMethod("QR");
+        else if (!m.methods.includes("QR")) setSelectedMethod("FACE_ID");
       })
       .catch(() => {
         setPharmacyStaff(false);
@@ -1025,6 +1076,7 @@ export default function DavomatFacePage() {
         setAdminQrAnywhere(false);
         setCanManageQr(false);
         setQrMethodAllowed(true);
+        setFaceMethodAllowed(true);
       })
       .finally(() => {
         setMethodsReady(true);
@@ -1089,6 +1141,7 @@ export default function DavomatFacePage() {
         lat,
         lng,
         accuracy: acc,
+        at: Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now(),
         heading: nextHeading,
         speed,
       };
@@ -1158,6 +1211,7 @@ export default function DavomatFacePage() {
     watchRef.current = navigator.geolocation.watchPosition(
       applyGps,
       (err) => {
+        if (err.code === 1 || err.code === 2) setGps(null);
         setGpsError(
           err.code === 1
             ? t("davomat.gpsDenied")
@@ -1398,7 +1452,9 @@ export default function DavomatFacePage() {
    * Faqat masofa. Avval gpsReady/hasGps bilan AND qilinganda hudud ichida
    * (qolgan 0 m) bo‘lsa ham «Hududdan tashqaridasiz» chiqardi.
    */
+  const gpsLive = gps?.at != null && nowTick - gps.at <= 45_000;
   const geoInside =
+    gpsLive &&
     distance != null &&
     (distance <= effectiveAllowedM || Math.round(Math.max(0, distance - allowedMeters)) <= 0);
   const inside = !workplaceGateBlocked && geoInside;
@@ -1460,6 +1516,7 @@ export default function DavomatFacePage() {
    */
   /** Face ID: barcha xodimlar — enroll bo‘lmasa ham tugma ochilsin */
   const canOpenFace =
+    faceMethodAllowed &&
     methodsReady &&
     cameraGranted &&
     Boolean(gps) &&
@@ -1772,8 +1829,6 @@ export default function DavomatFacePage() {
   const punch = async (action: "in" | "out", opts?: { notes?: string }) => {
     if (!verified) return;
     const usingQr = Boolean(verified.qrPayload) || methodHint === "QR";
-    if (!usingQr && !gps) return;
-    if (!adminQrAnywhere && usingQr && !gps) return;
     if (punchLockRef.current || busy) return;
     if (action === "out" && afterCheckoutDeadline) {
       toast({
@@ -1804,12 +1859,51 @@ export default function DavomatFacePage() {
     const refreshQuiet = () => {
       void Promise.all([loadWorkplace(), loadHistory()]);
     };
+    let live: { lat: number; lng: number; accuracy: number; capturedAt: number } | null = null;
+    const mustBeOnSite = !adminQrAnywhere && !mobileAnywhere;
+    if (mustBeOnSite) {
+      try {
+        live = await readLivePunchGps();
+      } catch {
+        toast({
+          title: "Joylashuv qabul qilinmadi",
+          description:
+            "GPS o‘chiq yoki eskirgan. Keldim va Ketdim faqat belgilangan hududda, joylashuv yoqilgan paytda qabul qilinadi.",
+          variant: "destructive",
+        });
+        unlock();
+        return;
+      }
+    } else {
+      try {
+        live = await readLivePunchGps();
+      } catch {
+        live = gps
+          ? { lat: gps.lat, lng: gps.lng, accuracy: gps.accuracy, capturedAt: gps.at || Date.now() }
+          : null;
+      }
+    }
+    if (live) {
+      setGps((prev) => ({
+        lat: live!.lat,
+        lng: live!.lng,
+        accuracy: live!.accuracy,
+        at: live!.capturedAt,
+        heading: prev?.heading ?? null,
+        speed: null,
+      }));
+    }
     try {
       if (usingQr && verified.qrPayload) {
         const result = await qrPunchDavomat({
           payload: verified.qrPayload,
-          ...(gps
-            ? { latitude: gps.lat, longitude: gps.lng, accuracy: gps.accuracy }
+          ...(live
+            ? {
+                latitude: live.lat,
+                longitude: live.lng,
+                accuracy: live.accuracy,
+                gpsCapturedAt: live.capturedAt,
+              }
             : {}),
           action,
           ...(earlyNotes ? { notes: earlyNotes } : {}),
@@ -1840,7 +1934,16 @@ export default function DavomatFacePage() {
         return;
       }
 
-      if (!gps) return;
+      if (!live) {
+        toast({
+          title: "Joylashuv qabul qilinmadi",
+          description:
+            "GPS o‘chiq yoki eskirgan. Keldim va Ketdim faqat belgilangan hududda, joylashuv yoqilgan paytda qabul qilinadi.",
+          variant: "destructive",
+        });
+        unlock();
+        return;
+      }
       const snap =
         (verified.faceImage?.startsWith("data:image/") ? verified.faceImage : null) ||
         (faceImage?.startsWith("data:image/") ? faceImage : null) ||
@@ -1857,7 +1960,10 @@ export default function DavomatFacePage() {
       }
       const result = await facePunchDavomat({
         descriptor: verified.descriptor,
-        ...geoPayload(),
+        latitude: live.lat,
+        longitude: live.lng,
+        accuracy: live.accuracy,
+        gpsCapturedAt: live.capturedAt,
         action,
         snapshot: snap,
         liveness: verified.liveness,
@@ -1952,6 +2058,26 @@ export default function DavomatFacePage() {
         refreshQuiet();
         return;
       }
+      if (err instanceof DavomatApiError && err.code === "method_forbidden") {
+        toast({ title: "Aynan sizga ruxsat yo‘q", variant: "destructive" });
+        unlock();
+        return;
+      }
+      if (
+        err instanceof DavomatApiError &&
+        (err.code === "outside_geofence" || err.code === "gps_stale" || err.code === "gps_required")
+      ) {
+        toast({
+          title: err.code === "outside_geofence" ? "Hududdan tashqaridasiz" : "Joylashuv qabul qilinmadi",
+          description:
+            err.code === "outside_geofence"
+              ? err.message || "Keldim va Ketdim faqat belgilangan hududda qabul qilinadi."
+              : "GPS o‘chiq yoki eskirgan. Hududda turib, joylashuv yoqilgan holda qayta bosing.",
+          variant: "destructive",
+        });
+        unlock();
+        return;
+      }
       toast({
         title: t("common.error"),
         description: (err as Error)?.message,
@@ -1970,6 +2096,7 @@ export default function DavomatFacePage() {
       }
       const action = (verified?.nextAction || workplace?.today.nextAction || "in") as "in" | "out" | "done";
       if (action === "done") throw new Error(t("davomat.oncePerDay"));
+      if (!qrMethodAllowed) throw new Error("Aynan sizga ruxsat yo‘q");
       if (!payload.trim()) throw new Error("QR bo‘sh");
 
       // QR skan = tasdiq. Face ID ochilmasin — keyin Keldim/Ketdim.
@@ -1992,7 +2119,7 @@ export default function DavomatFacePage() {
         description: action === "out" ? "Endi «Ketdim» ni bosing" : "Endi «Keldim» ni bosing",
       });
     },
-    [adminQrAnywhere, gps, geoOk, verified?.nextAction, workplace, user?.fullName, t],
+    [adminQrAnywhere, gps, geoOk, verified?.nextAction, workplace, user?.fullName, t, qrMethodAllowed],
   );
 
   const displayName = formatPersonName(
@@ -2045,6 +2172,32 @@ export default function DavomatFacePage() {
       month: "2-digit",
       day: "2-digit",
     }).format(nowTick);
+
+  const salaryCard = useMemo(() => {
+    const days = oylikCard.data?.days ?? [];
+    const month = oylikCard.data?.month || cardMonth;
+    let dates: string[] = [];
+    let periodLabel = oylikCard.data?.monthLabel || month;
+    if (historyRange === "day") {
+      dates = [todayStamp];
+      periodLabel = `Kun · ${formatShortUz(todayStamp)}`;
+    } else if (historyRange === "week") {
+      const weeks = weeksOfMonth(month);
+      const week = weeks.find((item) => todayStamp >= item.from && todayStamp <= item.to) ?? weeks[0];
+      dates = week ? datesFromTo(week.from, week.to) : [];
+      periodLabel = week ? `Hafta · ${week.label}` : "Hafta";
+    } else {
+      dates = datesFromTo(`${month}-01`, monthEnd(month));
+      periodLabel = `Oy · ${oylikCard.data?.monthLabel || month}`;
+    }
+    const picked = days.filter((day) => dates.includes(day.date));
+    return {
+      periodLabel,
+      periodSalary: picked.reduce((sum, day) => sum + day.salary, 0),
+      periodJarima: picked.reduce((sum, day) => sum + day.jarima, 0),
+      lines: picked.filter((day) => day.jarima > 0).map((day) => ({ date: day.date, jarima: day.jarima, note: day.note })),
+    };
+  }, [oylikCard.data, cardMonth, historyRange, todayStamp]);
 
   const filteredHistoryDays = useMemo(() => {
     const sorted = sortDaysDesc(historyDays);
@@ -2263,13 +2416,35 @@ export default function DavomatFacePage() {
 
   const handleContinue = () => {
     if (done || busy) return;
-    if (outsideZone) return;
+    if (outsideZone) {
+      toast({
+        title: "Hududdan tashqaridasiz",
+        description: "Keldim va Ketdim faqat belgilangan hududda qabul qilinadi.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (needsPerms) {
       void requestLocationPermission();
       return;
     }
-    if (!geoOk) return;
+    if (!geoOk) {
+      toast({
+        title: "Hududdan tashqaridasiz",
+        description: "Keldim va Ketdim faqat belgilangan hududda qabul qilinadi. GPS yoqilgan bo‘lsin.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!methodReady) {
+      if (selectedMethod === "QR" && !qrMethodAllowed) {
+        toast({ title: "Aynan sizga ruxsat yo‘q", description: "QR siz uchun o‘chirilgan." });
+        return;
+      }
+      if (selectedMethod === "FACE_ID" && !faceMethodAllowed) {
+        toast({ title: "Aynan sizga ruxsat yo‘q", description: "Face ID siz uchun o‘chirilgan." });
+        return;
+      }
       if (selectedMethod === "QR") openQrMethod();
       else openFaceMethod();
       return;
@@ -2282,6 +2457,14 @@ export default function DavomatFacePage() {
   };
 
   const pickMethod = (m: PremiumMethod) => {
+    if (m === "FACE_ID" && !faceMethodAllowed) {
+      toast({ title: "Aynan sizga ruxsat yo‘q", description: "Face ID siz uchun o‘chirilgan." });
+      return;
+    }
+    if (m === "QR" && !qrMethodAllowed) {
+      toast({ title: "Aynan sizga ruxsat yo‘q", description: "QR siz uchun o‘chirilgan." });
+      return;
+    }
     if (done || busy || outsideZone) return;
     if (m === "FACE_ID" && !canOpenFace) return;
     if (m === "QR" && !canOpenQr) return;
@@ -2386,6 +2569,8 @@ export default function DavomatFacePage() {
         onPickMethod={pickMethod}
         canOpenFace={canOpenFace}
         canOpenQr={canOpenQr}
+        faceDenied={methodsReady && !faceMethodAllowed}
+        qrDenied={methodsReady && !qrMethodAllowed}
         outsideZone={outsideZone}
         outsideWarn={outsideWarn}
         methodReady={methodReady}
@@ -2406,17 +2591,7 @@ export default function DavomatFacePage() {
         canReport={canReport}
         isTgMiniApp={isTgMiniApp}
         isAuthenticated={isAuthenticated}
-        salary={
-          oylikMe.data
-            ? {
-                monthLabel: oylikMe.data.monthLabel,
-                fixedSalary: oylikMe.data.fixedSalary,
-                kpiPercent: oylikMe.data.kpiPercent,
-                bonusAmount: oylikMe.data.bonusAmount,
-                totalAmount: oylikMe.data.totalAmount,
-              }
-            : null
-        }
+        salary={isAuthenticated ? salaryCard : null}
         formatSom={formatSom}
         historyDays={historyDays}
         historyRange={historyRange}

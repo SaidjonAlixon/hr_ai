@@ -368,7 +368,6 @@ export default function EslatmalarPage() {
           orgRole: u.orgRole,
           position: u.position,
           departmentName: dept,
-          location: u.location,
         });
         const name = String(u.fullName || "").trim() || `User #${u.id}`;
         return {

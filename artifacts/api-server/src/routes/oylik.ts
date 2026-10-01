@@ -2,6 +2,7 @@ import { Router, type IRouter } from "express";
 import { and, eq, inArray } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import { db, employeesTable, payrollMonthsTable, usersTable, workCalendarDaysTable } from "@workspace/db";
+import { approvePayrollDays, listPayrollDays, refreshPayrollDays, returnPayrollDays, savePayrollDay } from "../lib/payroll-days";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import {
@@ -20,9 +21,11 @@ import {
   monthBounds,
   saveKpiWeights,
   loadJarimaSummary,
+  loadMyPayrollCard,
   loadPayrollSlip,
   loadPayrollYear,
   savePayrollLine,
+  savePayrollFiksa,
   upsertPayrollDraft,
   workdaysBetween,
 } from "../lib/kpi-payroll";
@@ -151,6 +154,22 @@ router.get("/oylik/employees", requireAuth, async (req: AuthRequest, res): Promi
     const month = String(req.query.month || currentMonthKey()).slice(0, 7);
     const q = String(req.query.q || "").trim();
     const payload = await computePayrollList(month, q);
+    let sheets: Awaited<ReturnType<typeof listPayrollDays>> = [];
+    try {
+      sheets = await listPayrollDays(month);
+    } catch (sheetErr) {
+      console.error("payroll day sheets", sheetErr);
+    }
+    const byUser = new Map<number, typeof sheets>();
+    for (const sheet of sheets) {
+      const list = byUser.get(sheet.userId) ?? [];
+      list.push(sheet);
+      byUser.set(sheet.userId, list);
+    }
+    for (const item of payload.items) {
+      if (item.userId == null) continue;
+      (item as { daySheets?: typeof sheets }).daySheets = byUser.get(item.userId) ?? [];
+    }
     res.json(payload);
   } catch (err) {
     console.error("GET /oylik/employees", err);
@@ -429,28 +448,111 @@ router.post("/oylik/approve", requireAuth, async (req: AuthRequest, res): Promis
   }
 });
 
+function dayBody(req: AuthRequest): { month: string; day: string; userIds: number[] } | { error: string } {
+  const month = String(req.body?.month || currentMonthKey()).slice(0, 7);
+  const day = String(req.body?.day || "").slice(0, 10);
+  const userIds = Array.isArray(req.body?.userIds)
+    ? [...new Set(req.body.userIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0))].slice(0, 2000)
+    : [];
+  if (!userIds.length) return { error: "Xodim tanlanmagan" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !day.startsWith(`${month}-`)) return { error: "Kun tanlanmagan" };
+  return { month, day, userIds };
+}
+
+router.post("/oylik/day", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canEditKpiSettings(req.userRole)) {
+    res.status(403).json({ error: "Oylik va jarimani yozish ruxsati yo‘q" });
+    return;
+  }
+  try {
+    const userId = Number(req.body?.userId);
+    const day = String(req.body?.day || "").slice(0, 10);
+    if (!Number.isFinite(userId) || userId <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+      res.status(400).json({ error: "Kun yoki xodim tanlanmagan" });
+      return;
+    }
+    await savePayrollDay({
+      userId,
+      employeeId: Number(req.body?.employeeId) || null,
+      day,
+      salary: Number(req.body?.salary) || 0,
+      jarima: Number(req.body?.jarima) || 0,
+      note: String(req.body?.note || ""),
+    });
+    res.json({ ok: true, day });
+  } catch (err) {
+    console.error("POST /oylik/day", err);
+    res.status(503).json({ error: "Kun saqlanmadi" });
+  }
+});
+
+router.post("/oylik/day/approve", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canApprovePayroll(req.userRole)) {
+    res.status(403).json({ error: "Tasdiq: admin, direktor yoki moliyachi" });
+    return;
+  }
+  try {
+    const body = dayBody(req);
+    if ("error" in body) {
+      res.status(400).json(body);
+      return;
+    }
+    const { items } = await computePayrollList(body.month);
+    const count = await approvePayrollDays({ ...body, approvedById: req.userId!, people: items });
+    res.json({ ok: true, ...body, count });
+  } catch (err) {
+    console.error("POST /oylik/day/approve", err);
+    res.status(503).json({ error: "Kun tasdiqlanmadi" });
+  }
+});
+
+router.post("/oylik/day/refresh", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canApprovePayroll(req.userRole)) {
+    res.status(403).json({ error: "Yangilash: admin, direktor yoki moliyachi" });
+    return;
+  }
+  try {
+    const body = dayBody(req);
+    if ("error" in body) {
+      res.status(400).json(body);
+      return;
+    }
+    const { items } = await computePayrollList(body.month);
+    const count = await refreshPayrollDays({ ...body, approvedById: req.userId!, people: items });
+    res.json({ ok: true, ...body, count });
+  } catch (err) {
+    console.error("POST /oylik/day/refresh", err);
+    res.status(503).json({ error: "Kun yangilanmadi" });
+  }
+});
+
 router.post("/oylik/return", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!canApprovePayroll(req.userRole)) {
     res.status(403).json({ error: "Tasdiqni qaytarish: admin, direktor yoki moliyachi" });
     return;
   }
   try {
-    const month = String(req.body?.month || currentMonthKey()).slice(0, 7);
-    const userIds = Array.isArray(req.body?.userIds)
-      ? [...new Set(req.body.userIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isFinite(id) && id > 0))].slice(0, 2000)
-      : [];
-    if (!userIds.length) {
-      res.status(400).json({ error: "Xodim tanlanmagan" });
+    const body = dayBody(req);
+    if ("error" in body) {
+      res.status(400).json(body);
       return;
     }
-    await db
-      .update(payrollMonthsTable)
-      .set({ status: "returned", updatedAt: new Date() })
-      .where(and(eq(payrollMonthsTable.month, month), inArray(payrollMonthsTable.userId, userIds), eq(payrollMonthsTable.status, "approved")));
-    res.json({ ok: true, month, count: userIds.length, status: "returned" });
+    const { items } = await computePayrollList(body.month);
+    const count = await returnPayrollDays({ ...body, approvedById: req.userId!, people: items });
+    res.json({ ok: true, ...body, count, jarima: 0 });
   } catch (err) {
     console.error("POST /oylik/return", err);
     res.status(503).json({ error: "Tasdiq qaytarilmadi" });
+  }
+});
+
+router.get("/oylik/my-card", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const month = String(req.query.month || currentMonthKey()).slice(0, 7);
+    res.json(await loadMyPayrollCard(req.userId!, month));
+  } catch (err) {
+    console.error("GET /oylik/my-card", err);
+    res.status(503).json({ error: "Oylik kartasi yuklanmadi" });
   }
 });
 
@@ -481,6 +583,29 @@ router.get("/oylik/jarima-summary", requireAuth, async (req: AuthRequest, res): 
   } catch (err) {
     console.error("GET /oylik/jarima-summary", err);
     res.status(503).json({ error: "Jarima yuklanmadi" });
+  }
+});
+
+router.post("/oylik/fiksa", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canEditKpiSettings(req.userRole)) {
+    res.status(403).json({ error: "Oylik fiksani yozish ruxsati yo‘q" });
+    return;
+  }
+  try {
+    const month = String(req.body?.month || currentMonthKey()).slice(0, 7);
+    const lines = Array.isArray(req.body?.lines) ? req.body.lines : [];
+    const result = await savePayrollFiksa({
+      month,
+      lines: lines.map((line: { userId?: number; employeeId?: number; salary?: number }) => ({
+        userId: Number(line?.userId),
+        employeeId: Number(line?.employeeId) || null,
+        salary: Number(line?.salary) || 0,
+      })),
+    });
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("POST /oylik/fiksa", err);
+    res.status(503).json({ error: (err as Error).message || "Fiksa saqlanmadi" });
   }
 });
 

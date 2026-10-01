@@ -1,32 +1,10 @@
-/** Ofis / Dorixona segmenti — mas’ul tanlash filtri */
+/** Xodimlar bo‘limidagi Ofis / Dorixona ajratish. Boshqa sahifalar shu qoidani ishlatadi. */
 
-const DORIXONA_ORG = new Set([
-  "manager",
-  "pharmacist",
-  "intern",
-  "supervisor",
-  "coordinator",
-  "mudir",
-  "farmasevt",
-  "stajyor",
-  "stajor",
-  "koordinator",
-]);
-
-const DORIXONA_USER = new Set([
-  "mudir",
-  "farmasevt",
-  "stajyor",
-  "stajor",
-  "koordinator",
-]);
+const PHARMACY_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor", "koordinator"]);
+const PHARMACY_ORG_ROLES = new Set(["manager", "pharmacist", "intern", "supervisor", "coordinator"]);
 
 function norm(s: unknown): string {
-  return String(s ?? "")
-    .trim()
-    .toLowerCase()
-    .replace(/[ʻʼ'`´]/g, "'")
-    .replace(/\s+/g, " ");
+  return String(s ?? "").trim().toLowerCase();
 }
 
 export type StaffWorkplace = "ofis" | "dorixona";
@@ -36,31 +14,15 @@ export function isDorixonaStaffLike(input: {
   orgRole?: string | null;
   position?: string | null;
   departmentName?: string | null;
-  location?: string | null;
 }): boolean {
-  const org = norm(input.orgRole);
   const role = norm(input.role);
+  const org = norm(input.orgRole);
   const pos = norm(input.position);
   const dept = norm(input.departmentName);
-  const loc = norm(input.location);
-
-  if (org && DORIXONA_ORG.has(org)) return true;
-  if (role && DORIXONA_USER.has(role)) return true;
-
-  const hay = `${org} ${role} ${pos} ${dept}`;
-  if (
-    /\b(mudir|farmasevt|stajyor|stajor|koordinator|pharmacist|manager|intern|supervisor)\b/.test(
-      hay,
-    ) ||
-    /filial\s*mudir/.test(pos) ||
-    /фармацевт|заведующ/.test(hay)
-  ) {
-    return true;
-  }
-  if (dept && /(farmasevt|dorixona|apteka|фармацевт)/.test(dept)) return true;
-  if (loc && (pos.includes("farmasevt") || pos.includes("mudir") || pos.includes("stajyor"))) {
-    return true;
-  }
+  if (PHARMACY_USER_ROLES.has(role)) return true;
+  if (PHARMACY_ORG_ROLES.has(org)) return true;
+  if (/filial\s*mudir|farmasevt|stajyor|stajor/.test(pos)) return true;
+  if (/(farmasevt|dorixona|apteka)/.test(dept) && /(mudir|farmasevt|stajyor)/.test(`${pos} ${role}`)) return true;
   return false;
 }
 
@@ -69,7 +31,6 @@ export function staffWorkplaceOf(input: {
   orgRole?: string | null;
   position?: string | null;
   departmentName?: string | null;
-  location?: string | null;
 }): StaffWorkplace {
   return isDorixonaStaffLike(input) ? "dorixona" : "ofis";
 }

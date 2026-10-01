@@ -144,6 +144,10 @@ function canPickOwnBranch(role: string, orgRole: string | null) {
   return role === "mudir" || orgRole === MANAGER_ORG || isLeadRole(role);
 }
 
+function isMudirPerson(orgRole: string | null | undefined) {
+  return orgRole === MANAGER_ORG;
+}
+
 function canAssignTarget(opts: {
   role: string;
   me: EmpRow;
@@ -338,6 +342,13 @@ router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<vo
   const body = req.body as { shiftType?: string; assignedBranchId?: number | null };
   const patch: Record<string, unknown> = { updatedAt: new Date() };
 
+  if (isMudirPerson(me.orgRole) && (body.shiftType != null || body.assignedBranchId !== undefined)) {
+    res.status(400).json({
+      error: "Mudirga doimiy smena va filial qo‘yilmaydi. Kunlik rotatsiya qiling.",
+    });
+    return;
+  }
+
   if (body.shiftType != null) {
     if (!isPharmacyShiftStaff(role, me.orgRole)) {
       res.status(403).json({ error: "Smena tanlash faqat mudir, farmasevt va stajyor uchun" });
@@ -389,6 +400,12 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
   const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
   if (!canAssignTarget({ role, me, target, scope })) {
     res.status(403).json({ error: "Bu xodimning filialini belgilash huquqi yo‘q" });
+    return;
+  }
+  if (isMudirPerson(target.orgRole)) {
+    res.status(400).json({
+      error: "Mudirga doimiy smena va filial qo‘yilmaydi. Kunlik rotatsiya qiling.",
+    });
     return;
   }
   if (target.orgRole === "pharmacist" && !(role === "mudir" || role === "koordinator" || isLeadRole(role))) {
@@ -935,6 +952,12 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
     res.status(400).json({ error: "Faqat mudir, farmasevt yoki stajyor" });
     return;
   }
+  if (isMudirPerson(org) && String(req.body?.mode || "") !== "days") {
+    res.status(400).json({
+      error: "Mudirga doimiy smena va filial qo‘yilmaydi. Faqat kunlik rotatsiya.",
+    });
+    return;
+  }
   const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
   if (!canAssignTarget({ role, me, target, scope })) {
     res.status(403).json({ error: "Bu xodimni biriktirish huquqi yo‘q" });
@@ -1270,6 +1293,12 @@ router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthReque
     const scope = role === "koordinator" ? await coordinatorScopeIds(me) : null;
     if (!canAssignTarget({ role, me, target, scope })) {
       res.status(403).json({ error: "Bu xodimning smenasini o‘zgartirish huquqi yo‘q" });
+      return;
+    }
+    if (isMudirPerson(target.orgRole)) {
+      res.status(400).json({
+        error: "Mudirga doimiy smena qo‘yilmaydi. Kunlik rotatsiya qiling.",
+      });
       return;
     }
     if (!isPharmacyShiftStaff(null, target.orgRole)) {

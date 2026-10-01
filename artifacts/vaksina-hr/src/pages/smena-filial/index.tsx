@@ -417,7 +417,7 @@ export default function SmenaFilialPage() {
         employeeId: pickedPersonId,
         branchId: pickedBranchId,
         shiftKey: pickedShift,
-        mode: tab,
+        mode: picked?.orgRole === "manager" ? "days" : tab,
         validFrom: tab === "days" ? workDates[0] : validFrom,
         validTo: tab === "permanent" ? validTo || null : tab === "period" ? validTo : tab === "weekly" ? validTo || null : null,
         weekdays: tab === "weekly" ? weekdays : undefined,
@@ -493,6 +493,7 @@ export default function SmenaFilialPage() {
     setPickedBranchId(null);
     setBranchQ("");
     setPeopleQ("");
+    if (p.orgRole === "manager") setTab("days");
     const cur = String(p.shiftType || "one").toLowerCase() as SlotShiftKey;
     setShiftOnlyKey(
       SHIFT_KEYS.some((x) => x.value === cur) ? cur : "one",
@@ -529,6 +530,7 @@ export default function SmenaFilialPage() {
     return map;
   }, [slotsQ.data?.items]);
 
+  const pickedIsMudir = picked?.orgRole === "manager";
   const nextSlotNo = slotsForPicked.length + 1;
   const pickedBranch = (data?.branches ?? []).find((b) => b.id === pickedBranchId) ?? null;
   const usedShiftsByPicked = useMemo(
@@ -644,6 +646,11 @@ export default function SmenaFilialPage() {
 
       {canManage ? (
         <>
+          {pickedIsMudir ? (
+            <div className="rounded-2xl border border-sky-200 bg-sky-50 px-3 py-2.5 text-sm text-sky-950">
+              Mudirga doimiy smena va filial qo‘yilmaydi. Faqat kunlik rotatsiya: tanlangan kunlarda qaysi filial va smenada turishini belgilang.
+            </div>
+          ) : (
           <div className="grid grid-cols-2 gap-1 rounded-2xl border border-border bg-muted/40 p-1 sm:grid-cols-4">
             {tabs.map((tb) => (
               <button
@@ -663,11 +670,16 @@ export default function SmenaFilialPage() {
               </button>
             ))}
           </div>
+          )}
 
           <Card className="overflow-hidden border-primary/20 shadow-sm">
             <CardHeader className="space-y-2 border-b bg-gradient-to-br from-primary/10 via-card to-card py-4">
-              <CardTitle className="text-base">{tabs.find((x) => x.id === tab)?.label}</CardTitle>
-              <p className="text-xs leading-relaxed text-muted-foreground">{tabs.find((x) => x.id === tab)?.hint}</p>
+              <CardTitle className="text-base">{pickedIsMudir ? "Rotatsiya" : tabs.find((x) => x.id === tab)?.label}</CardTitle>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {pickedIsMudir
+                  ? "Mudirning doimiy smenasi va filiali yo‘q. Kalendardan kunlarni tanlang — shu kunlarda qaysi filial va smenada turadi."
+                  : tabs.find((x) => x.id === tab)?.hint}
+              </p>
             </CardHeader>
             <CardContent className="space-y-4 py-4">
               {/* 1-QADAM: xodim */}
@@ -708,7 +720,7 @@ export default function SmenaFilialPage() {
                               <span className="min-w-0">
                                 <span className="block truncate text-sm font-medium">{p.fullName}</span>
                                 <span className="text-[11px] text-muted-foreground">
-                                  {orgLabel(p.orgRole)} · {p.assignedBranchName || t("smena.noBranch")}
+                                  {p.orgRole === "manager" ? "Mudir · faqat rotatsiya" : orgLabel(p.orgRole)} · {p.assignedBranchName || t("smena.noBranch")}
                                   {branchN > 0 ? ` · ${branchN} filial / ${shiftN} smena` : ""}
                                 </span>
                               </span>
@@ -744,10 +756,9 @@ export default function SmenaFilialPage() {
                     />
                   </div>
 
-                  {/* Filialni ko‘chirmasdan faqat smena */}
-                  {(picked.assignedBranchId ||
-                    slotsForPicked.length > 0 ||
-                    picked.orgRole === "manager") && (
+                  {/* Filialni ko‘chirmasdan faqat smena — mudirda yo‘q, faqat rotatsiya */}
+                  {!pickedIsMudir &&
+                  (picked.assignedBranchId || slotsForPicked.length > 0) && (
                     <div className="rounded-2xl border border-amber-300/60 bg-amber-50/80 p-3 dark:border-amber-500/30 dark:bg-amber-950/30">
                       <p className="text-sm font-semibold text-amber-950 dark:text-amber-100">
                         Faqat smenani o‘zgartirish
@@ -789,10 +800,16 @@ export default function SmenaFilialPage() {
                   {/* 2-QADAM: filial */}
                   <div>
                     <label className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      2. {nextSlotNo === 1 ? "Yangi filial qo‘shish (ixtiyoriy)" : `${nextSlotNo}-filialni tanlang`}
+                      2. {pickedIsMudir
+                        ? "Rotatsiya filiali"
+                        : nextSlotNo === 1
+                          ? "Yangi filial qo‘shish (ixtiyoriy)"
+                          : `${nextSlotNo}-filialni tanlang`}
                     </label>
                     <p className="mb-2 text-[11px] leading-snug text-muted-foreground">
-                      Faqat smena kerak bo‘lsa — yuqoridagi sariq blokdan foydalaning. Bu yerda yangi filial qo‘shiladi.
+                      {pickedIsMudir
+                        ? "Shu kunlar uchun mudir qaysi filialda turadi. Doimiy joyi o‘zgarmaydi."
+                        : "Faqat smena kerak bo‘lsa — yuqoridagi sariq blokdan foydalaning. Bu yerda yangi filial qo‘shiladi."}
                     </p>
                     <SearchBox value={branchQ} onChange={setBranchQ} placeholder={t("smena.searchBranch")} />
                     <CompactList className="mt-2 max-h-64">

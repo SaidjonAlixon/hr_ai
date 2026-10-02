@@ -25,6 +25,7 @@ export type SmenaMe = {
   canAssignOthers: boolean;
   canDayRotate?: boolean;
   canManageSlots?: boolean;
+  viewOnly?: boolean;
   employee: {
     id: number;
     fullName: string;

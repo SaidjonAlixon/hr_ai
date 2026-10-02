@@ -174,20 +174,20 @@ function calendarMeta(scope: string): { title: string; hint: string } {
   if (scope === "ofis") {
     return {
       title: "Ofis ish kuni",
-      hint: "Oddiy ofis xodimlarining hammasi shu kunlarda ishlaydi",
+      hint: "Oddiy ofis xodimlari. Yashil — ish kuni, kulrang — dam. Dam kuniga jarima yozilmaydi",
     };
   }
   if (scope === "xavfsizlik") {
     return {
       title: "Xavfsizlik ish kuni",
-      hint: "Faqat xavfsizlik xodimlari. Ofis kalendaridan alohida",
+      hint: "Faqat xavfsizlik. Yashil — ish kuni, kulrang — dam. Dam kuniga jarima yozilmaydi",
     };
   }
   const shift = scope.replace(/^dorixona:/, "");
   const label = DORIXONA_SHIFT_CHIPS.find((s) => s.key === shift)?.label || shift;
   return {
     title: `${label} ish kuni`,
-    hint: "Faqat shu dorixona smenasi. Boshqa smenalar o‘zgarmaydi",
+      hint: "Faqat shu dorixona smenasi. Yashil — ish kuni, kulrang — dam. Dam kuniga jarima yozilmaydi",
   };
 }
 
@@ -459,6 +459,12 @@ export default function OylikPage() {
     return filteredRows.filter((row) => row.userId && present(row).dirty).map((row) => row.userId as number);
   }, [filteredRows, grain, present]);
 
+  const actionIds = useMemo(() => {
+    const visible = filteredRows.filter((row) => row.userId).map((row) => row.userId as number);
+    if (grain === "kun" && selected.length) return visible.filter((id) => selected.includes(id));
+    return visible;
+  }, [filteredRows, grain, selected]);
+
   const activeScope = !place || !shift
     ? ""
     : place === "ofis"
@@ -493,68 +499,52 @@ export default function OylikPage() {
                   <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ism, lavozim..." className="h-9 rounded-lg" />
                 </div>
                 {canApprovePayroll(user?.role) ? (
-                  <>
-                    <div>
-                      <p className="mb-1 text-[11px] font-medium text-muted-foreground">{grain === "kun" ? formatDayUz(anchor) : "Kun jadvalida"} · {selected.length}</p>
-                      <div className="flex flex-wrap gap-1">
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-9 rounded-lg"
-                          disabled={grain !== "kun" || approveDay.isPending || !selected.length}
-                          onClick={() => {
-                            const ids = filteredRows.filter((r) => r.userId && selected.includes(r.userId)).map((r) => r.userId as number);
-                            if (!ids.length) return;
-                            approveDay.mutate({ month, day: anchor, userIds: ids }, { onSuccess: () => { setSelected([]); toast({ title: "Kun tasdiqlandi", description: `${formatDayUz(anchor)} · ${ids.length} xodim. Foydalanuvchiga shu kun ko‘rinadi.` }); } });
-                          }}
-                        >
-                          <Lock className="mr-1 h-4 w-4" /> Tasdiqlash
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="outline"
-                          className="h-9 rounded-lg"
-                          disabled={grain !== "kun" || ret.isPending || !selected.length}
-                          onClick={() => {
-                            const ids = filteredRows.filter((r) => r.userId && selected.includes(r.userId)).map((r) => r.userId as number);
-                            if (!ids.length) return;
-                            if (!window.confirm(`${formatDayUz(anchor)} — ${ids.length} xodimning jarimasi 0 bo‘lsinmi? Foydalanuvchida ham 0 ko‘rinadi.`)) return;
-                            ret.mutate({ month, userIds: ids, day: anchor }, { onSuccess: () => { setSelected([]); toast({ title: "Jarima qaytarildi", description: `${formatDayUz(anchor)} · 0 so‘m` }); } });
-                          }}
-                        >
-                          Qaytarish
-                        </Button>
-                        {dirtyIds.length ? (
-                          <Button
-                            type="button"
-                            className="h-9 rounded-lg bg-amber-500 text-white hover:bg-amber-600"
-                            disabled={refreshDay.isPending}
-                            onClick={() => {
-                              refreshDay.mutate({ month, day: anchor, userIds: dirtyIds }, { onSuccess: (res) => toast({ title: "Yangilandi", description: `${formatDayUz(anchor)} · ${(res as { count?: number }).count ?? dirtyIds.length} xodim. Foydalanuvchida yangi holat.` }) });
-                            }}
-                          >
-                            Yangilash · {dirtyIds.length}
-                          </Button>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div>
-                      <p className="mb-1 text-[11px] font-medium text-muted-foreground">Shu kunning hammasi</p>
+                  <div>
+                    <p className="mb-1 text-[11px] font-medium text-muted-foreground">
+                      {grain === "kun" ? formatDayUz(anchor) : "Avval Kun ni tanlang"} · {actionIds.length} xodim
+                      {grain === "kun" && selected.length ? " · belgilanganlar" : grain === "kun" ? " · ekrandagilar" : ""}
+                    </p>
+                    <div className="flex flex-wrap gap-1">
                       <Button
                         type="button"
-                        className="h-9 rounded-lg"
-                        disabled={grain !== "kun" || approveDay.isPending || !place}
+                        className="h-9 rounded-lg bg-[#0b3a5c] text-white hover:bg-[#0b3a5c]/90"
+                        disabled={grain !== "kun" || approveDay.isPending || !actionIds.length}
                         onClick={() => {
-                          const ids = filteredRows.filter((r) => r.userId).map((r) => r.userId as number);
-                          if (!ids.length) return;
-                          if (!window.confirm(`${formatDayUz(anchor)} — ${ids.length} xodim tasdiqlansinmi?`)) return;
-                          approveDay.mutate({ month, day: anchor, userIds: ids }, { onSuccess: () => toast({ title: "Kun to‘liq tasdiqlandi", description: `${ids.length} xodim` }) });
+                          if (!actionIds.length) return;
+                          if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodim tasdiqlansinmi? Xodim shu kunni ko‘radi.`)) return;
+                          approveDay.mutate({ month, day: anchor, userIds: actionIds }, { onSuccess: () => { setSelected([]); toast({ title: "Tasdiqlandi", description: `${formatDayUz(anchor)} · ${actionIds.length} xodim` }); } });
                         }}
                       >
-                        To‘liq tasdiqlash
+                        <Lock className="mr-1 h-4 w-4" /> Tasdiqlash
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-lg border-rose-300 text-rose-700 hover:bg-rose-50"
+                        disabled={grain !== "kun" || ret.isPending || !actionIds.length}
+                        onClick={() => {
+                          if (!actionIds.length) return;
+                          if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodimning jarimasi 0 bo‘lsinmi? Xodimda ham 0 ko‘rinadi. Keyin tahrirlab yana tasdiqlash mumkin.`)) return;
+                          ret.mutate({ month, userIds: actionIds, day: anchor }, { onSuccess: () => { setSelected([]); toast({ title: "Bekor qilindi", description: `${formatDayUz(anchor)} · jarima 0` }); } });
+                        }}
+                      >
+                        Bekor qilish
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="h-9 rounded-lg"
+                        disabled={grain !== "kun" || refreshDay.isPending || !actionIds.length}
+                        onClick={() => {
+                          if (!actionIds.length) return;
+                          if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodim tizim hisobi bilan yangilansinmi? Dam kunida jarima yo‘q.`)) return;
+                          refreshDay.mutate({ month, day: anchor, userIds: actionIds }, { onSuccess: (res) => { setSelected([]); toast({ title: "Yangilandi", description: `${formatDayUz(anchor)} · ${(res as { count?: number }).count ?? actionIds.length} xodim` }); } });
+                        }}
+                      >
+                        Yangilash{dirtyIds.length ? ` · ${dirtyIds.length}` : ""}
                       </Button>
                     </div>
-                  </>
+                  </div>
                 ) : null}
                 <div>
                   <p className="mb-1 text-[11px] font-medium text-muted-foreground">Ekrandagi filtr · {place ? filteredRows.length : 0}</p>
@@ -568,7 +558,7 @@ export default function OylikPage() {
                         return;
                       }
                       const shiftLabel = shift ? (shiftOptions.find((item) => item.key === shift)?.label || shift) : "Barcha smenalar";
-                      const holatLabel = statusFilter === "approved" ? "Tasdiqlangan" : statusFilter === "returned" ? "Qaytarilgan" : statusFilter === "draft" ? "Tasdiqlanmagan" : "Barcha holat";
+                      const holatLabel = statusFilter === "approved" ? "Tasdiqlangan" : statusFilter === "returned" ? "Bekor qilingan" : statusFilter === "draft" ? "Tasdiqlanmagan" : "Barcha holat";
                       const fiksaLabel = fiksaFilter === "written" ? "Fiksa yozilgan" : fiksaFilter === "empty" ? "Fiksa yozilmagan" : "Fiksa hammasi";
                       const jarimaLabel = jarimaFilter === "fined" ? "Jarima qilingan" : jarimaFilter === "clear" ? "Jarima qilinmagan" : "Jarima hammasi";
                       const lavozimLabel = lavozimFilter ? (lavozimOptions.find((item) => item.key === lavozimFilter)?.label || lavozimFilter) : "Barcha lavozim";
@@ -698,7 +688,7 @@ export default function OylikPage() {
                         <FilterChip on={statusFilter === ""} tone="navy" label="Barchasi" count={statusCounts.all} onClick={() => setStatusFilter("")} />
                         <FilterChip on={statusFilter === "approved"} tone="emerald" label="Tasdiqlangan" count={statusCounts.approved} onClick={() => setStatusFilter("approved")} />
                         <FilterChip on={statusFilter === "draft"} tone="amber" label="Tasdiqlanmagan" count={statusCounts.draft} onClick={() => setStatusFilter("draft")} />
-                        <FilterChip on={statusFilter === "returned"} tone="rose" label="Qaytarilgan" count={statusCounts.returned} onClick={() => setStatusFilter("returned")} />
+                        <FilterChip on={statusFilter === "returned"} tone="rose" label="Bekor qilingan" count={statusCounts.returned} onClick={() => setStatusFilter("returned")} />
                       </div>
                     </div>
                     <div className="h-px bg-slate-100 dark:bg-white/10" />
@@ -847,7 +837,7 @@ export default function OylikPage() {
                     </div>
                   ) : null}
                   <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                    Har kun alohida jadval. Jarima va holat davomat bilan yangilanib turadi. Tasdiqlangach foydalanuvchi shu kunni ko‘radi. Keyin o‘zgartirsangiz Yangilash chiqadi — bosilsa hammaga yangi holat yoziladi. Qaytarish belgilanganlarning shu kun jarimasini 0 qiladi.
+                    Kun jadvalida uchta tugma: Tasdiqlash — xodim ko‘radi. Bekor qilish — shu kun jarimasi 0, xodimda ham 0. Yangilash — tizim hisobini qayta yozadi. Belgilamasangiz ekrandagi hamma xodim olinadi. Yashil kun — ish, kulrang — dam. Dam kuniga jarima yozilmaydi.
                   </p>
                 </div>
                 {grain === "kun" ? (
@@ -867,6 +857,14 @@ export default function OylikPage() {
                     approveDay.mutate(
                       { month, day: anchor, userIds: [row.userId] },
                       { onSuccess: () => toast({ title: "Tasdiqlandi", description: `${row.fullName} · ${formatDayUz(anchor)}` }) },
+                    );
+                  }}
+                  onCancel={(row) => {
+                    if (!row.userId) return;
+                    if (!window.confirm(`${row.fullName} — ${formatDayUz(anchor)} jarimasi 0 bo‘lsinmi? Xodimda ham 0 ko‘rinadi.`)) return;
+                    ret.mutate(
+                      { month, day: anchor, userIds: [row.userId] },
+                      { onSuccess: () => toast({ title: "Bekor qilindi", description: `${row.fullName} · jarima 0` }) },
                     );
                   }}
                   selected={selected}

@@ -225,7 +225,7 @@ export async function ensureTestOfficeCoordinator(): Promise<TestCoordEnsureResu
     visitCount,
     maxVisits: TEST_COORD_MAX_VISITS,
     message:
-      `Ofis yashil zonasida (${TEST_OFFICE_LABEL}) Keldim → Cheklist → Ketdim. ` +
+      `Ofis yashil hududida (${TEST_OFFICE_LABEL}) Keldim → Cheklist → Ketdim. ` +
       `2 ta tashrifdan keyin akkaunt avtomatik o‘chadi.`,
   };
 }

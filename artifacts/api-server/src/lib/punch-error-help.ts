@@ -31,7 +31,7 @@ const HELP: Record<string, Omit<PunchErrorHelp, "code">> = {
   wrong_branch: {
     title: "Boshqa filial",
     meaning: "QR yoki urinish boshqa filialga tegishli.",
-    fix: "O‘z filialingiz QR/GPS zonasi da davomat qiling.",
+    fix: "O‘z filialingiz QR/GPS hududida davomat qiling.",
     severity: "medium",
   },
   role_not_allowed: {
@@ -48,13 +48,13 @@ const HELP: Record<string, Omit<PunchErrorHelp, "code">> = {
   },
   outside_geofence: {
     title: "Hududdan tashqarida",
-    meaning: "GPS bo‘yicha xodim filialning ruxsat etilgan zonasidan uzoqda.",
+    meaning: "GPS bo‘yicha xodim filialning ruxsat etilgan hududidan uzoqda.",
     fix: "Filial binosi yoniga keling. Joyda turib xato bersa — filial GPS ni tekshiring.",
     severity: "medium",
   },
   outside_office_geofence: {
-    title: "Ofis zonasidan tashqari",
-    meaning: "GPS ofis yashil zonasidan uzoqda.",
+    title: "Ofis hududidan tashqari",
+    meaning: "GPS ofis yashil hududidan uzoqda.",
     fix: "Ofis binosi yoniga keling yoki ofis GPS ni tekshiring.",
     severity: "medium",
   },
@@ -240,7 +240,7 @@ const TEXT_HINTS: Array<{ re: RegExp; code: string }> = [
   { re: /wrong[_\s-]?branch|noto[‘']?g[‘']?ri\s*filial|boshqa\s*filial|ruxsat\s*etilgan\s*filial/i, code: "qr_wrong_branch" },
   { re: /no[_\s-]?assignment|bugun\s*filial|biriktirilmagan|smena\s*topilmadi|filial\/smena/i, code: "no_assignment_today" },
   { re: /branch[_\s-]?unassigned|filial\s*belgilanmagan/i, code: "branch_unassigned" },
-  { re: /outside[_\s-]?office|ofis\s*zona/i, code: "outside_office_geofence" },
+  { re: /outside[_\s-]?office|ofis\s*zona|ofis\s*hudud/i, code: "outside_office_geofence" },
   { re: /outside[_\s-]?geofence|hududdan\s*tashqari|zonasidan\s*uzoq|70\s*m/i, code: "outside_geofence" },
   { re: /gps[_\s-]?required|gps\s*majburiy|lokatsiyaga\s*ruxsat|joylashuv/i, code: "gps_required" },
   { re: /branch[_\s-]?gps|filial\s*gps|koordinata\s*kiritilmagan/i, code: "branch_gps_missing" },

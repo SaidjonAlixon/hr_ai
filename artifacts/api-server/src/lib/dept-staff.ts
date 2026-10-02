@@ -40,7 +40,7 @@ const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   moliya_rahbar: ["moliya_xodim", "kassir"],
   taminot_rahbar: ["taminot"],
   rivojlantirish_rahbar: ["rivojlantirish"],
-  mamuriy_rahbar: ["mamuriy", "komunalniy"],
+  mamuriy_rahbar: ["mamuriy", "komunalniy", "farrosh"],
   gpp_rahbar: ["gpp"],
   ombor_rahbar: ["ombor"],
   oshpaz_rahbar: ["oshpaz"],
@@ -97,6 +97,7 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   kassir: "Kassir",
   yurist: "Yurist",
   komunalniy: "Kommunal",
+  farrosh: "Farrosh",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

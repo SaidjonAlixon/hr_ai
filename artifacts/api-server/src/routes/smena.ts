@@ -33,6 +33,12 @@ function isLeadRole(role: string) {
   return role === "admin" || isDirectorRole(role) || role === "koordinator" || isHrRole(role);
 }
 
+function denyCoordinatorEdit(role: string, res: { status(code: number): { json(body: unknown): void } }): boolean {
+  if (role !== "koordinator") return false;
+  res.status(403).json({ error: "Koordinator smena va filialni faqat ko‘radi. O‘zgartirish admin va HR menejerda." });
+  return true;
+}
+
 type EmpRow = {
   id: number;
   userId: number | null;
@@ -291,15 +297,12 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
 
   res.json({
     pharmacyStaff: pharmacy,
-    canPickShift: pharmacy && !viewerIsMudir,
-    canPickOwnBranch: Boolean(me && !viewerIsMudir && canPickOwnBranch(role, me.orgRole)),
-    canAssignOthers: !viewerIsMudir && assignable.length > 0,
-    canDayRotate: Boolean(
-      me && !viewerIsMudir && (role === "koordinator" || isLeadRole(role)),
-    ),
-    canManageSlots: Boolean(
-      me && !viewerIsMudir && (role === "koordinator" || isLeadRole(role)),
-    ),
+    canPickShift: pharmacy && !viewerIsMudir && role !== "koordinator",
+    canPickOwnBranch: Boolean(me && !viewerIsMudir && role !== "koordinator" && canPickOwnBranch(role, me.orgRole)),
+    canAssignOthers: !viewerIsMudir && role !== "koordinator" && assignable.length > 0,
+    canDayRotate: Boolean(me && !viewerIsMudir && role !== "koordinator" && isLeadRole(role)),
+    canManageSlots: Boolean(me && !viewerIsMudir && role !== "koordinator" && isLeadRole(role)),
+    viewOnly: role === "koordinator",
     employee: me
       ? {
           id: me.id,
@@ -340,8 +343,12 @@ router.get("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void
 
 router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
-  if (role === "mudir") {
-    res.status(403).json({ error: "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi" });
+  if (role === "mudir" || role === "koordinator") {
+    res.status(403).json({
+      error: role === "koordinator"
+        ? "Koordinator smena va filialni faqat ko‘radi. O‘zgartirish admin va HR menejerda."
+        : "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi",
+    });
     return;
   }
   const me = await empByUserId(req.userId!);
@@ -389,8 +396,12 @@ router.patch("/smena/me", requireAuth, async (req: AuthRequest, res): Promise<vo
 
 router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
-  if (role === "mudir") {
-    res.status(403).json({ error: "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi" });
+  if (role === "mudir" || role === "koordinator") {
+    res.status(403).json({
+      error: role === "koordinator"
+        ? "Koordinator smena va filialni faqat ko‘radi. O‘zgartirish admin va HR menejerda."
+        : "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi",
+    });
     return;
   }
   const me = await empByUserId(req.userId!);
@@ -497,8 +508,12 @@ router.patch("/smena/assign/:employeeId", requireAuth, async (req: AuthRequest, 
  */
 router.post("/smena/rotation", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
-  if (role === "mudir") {
-    res.status(403).json({ error: "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi" });
+  if (role === "mudir" || role === "koordinator") {
+    res.status(403).json({
+      error: role === "koordinator"
+        ? "Koordinator smena va filialni faqat ko‘radi. O‘zgartirish admin va HR menejerda."
+        : "Mudir smena, filial va rotatsiyani o‘zgartira olmaydi",
+    });
     return;
   }
   const me = await empByUserId(req.userId!);
@@ -751,6 +766,7 @@ router.get("/smena/rotations", requireAuth, async (req: AuthRequest, res): Promi
 
 router.delete("/smena/rotation/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
+  if (denyCoordinatorEdit(role, res)) return;
   const me = await empByUserId(req.userId!);
   if (!me) {
     res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
@@ -939,6 +955,7 @@ router.get("/smena/slots/all", requireAuth, async (req: AuthRequest, res): Promi
 router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
   const role = req.userRole || "";
+  if (denyCoordinatorEdit(role, res)) return;
   const me = await empByUserId(req.userId!);
   if (!me) {
     res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
@@ -1142,6 +1159,7 @@ router.post("/smena/slots", requireAuth, async (req: AuthRequest, res): Promise<
 
 router.delete("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole || "";
+  if (denyCoordinatorEdit(role, res)) return;
   const me = await empByUserId(req.userId!);
   if (!me) {
     res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
@@ -1178,6 +1196,7 @@ router.delete("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pr
 router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const role = req.userRole || "";
+    if (denyCoordinatorEdit(role, res)) return;
     const me = await empByUserId(req.userId!);
     if (!me) {
       res.status(400).json({ error: "Xodim kartochkasi yo‘q" });
@@ -1286,6 +1305,7 @@ router.patch("/smena/slots/:id", requireAuth, async (req: AuthRequest, res): Pro
 router.patch("/smena/shift-only/:employeeId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const role = req.userRole || "";
+    if (denyCoordinatorEdit(role, res)) return;
     const me = await empByUserId(req.userId!);
     if (!me) {
       res.status(400).json({ error: "Xodim kartochkasi yo‘q" });

@@ -1,6 +1,5 @@
 import { eq } from "drizzle-orm";
 import { db, employeesTable } from "@workspace/db";
-import { isHrRole, isDirectorRole } from "./roles";
 import { displayBranchName, parseGpsText, withGpsSuffix } from "./geo-location";
 
 export type BranchGpsOk = {
@@ -21,13 +20,9 @@ export async function saveManagerBranchLocation(opts: {
   /** Filialning ko‘rinadigan nomi (masalan: Novza, Olmos 2) */
   branchName?: string | null;
 }): Promise<BranchGpsOk | BranchGpsErr> {
-  const canSet =
-    opts.actorRole === "koordinator" ||
-    opts.actorRole === "admin" ||
-    isDirectorRole(opts.actorRole) ||
-    isHrRole(opts.actorRole);
+  const canSet = opts.actorRole === "admin" || opts.actorRole === "asoschi" || opts.actorRole === "hr_menejer";
   if (!canSet) {
-    return { ok: false, status: 403, error: "Filial lokatsiyasini koordinator kiritadi" };
+    return { ok: false, status: 403, error: "Filial nomini admin yoki HR menejer yozadi" };
   }
 
   const [manager] = await db

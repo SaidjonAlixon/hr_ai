@@ -300,7 +300,7 @@ export default function SmenaFilialPage() {
   const q = useQuery({ queryKey: ["smena-me"], queryFn: fetchSmenaMe });
   const data = q.data;
 
-  const canManage = Boolean(data?.canManageSlots || data?.canAssignOthers || data?.canDayRotate);
+  const canManage = Boolean(data?.canManageSlots || data?.canAssignOthers || data?.canDayRotate) && !data?.viewOnly;
   const [tab, setTab] = useState<Tab>("permanent");
   const [branchQ, setBranchQ] = useState("");
   const [peopleQ, setPeopleQ] = useState("");
@@ -637,6 +637,35 @@ export default function SmenaFilialPage() {
               </p>
               <p className="mt-1 text-[11px] leading-snug text-muted-foreground">{t("smena.attendanceRule")}</p>
             </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {data.viewOnly ? (
+        <Card className="border-border/80 shadow-sm">
+          <CardHeader className="py-4">
+            <CardTitle className="text-base">Smena va filial</CardTitle>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Ko‘rish rejimi. O‘zgartirish admin va HR menejerda.
+            </p>
+          </CardHeader>
+          <CardContent className="space-y-2 pb-4">
+            {(data.assignable ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">Hozircha xodim yo‘q.</p>
+            ) : (
+              (data.assignable ?? []).map((person) => (
+                <div key={person.id} className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-foreground">{person.fullName}</p>
+                    <p className="text-[11px] text-muted-foreground">{orgLabel(person.orgRole)}</p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs font-semibold text-foreground">{person.assignedBranchName || "Filial yo‘q"}</p>
+                    <p className="text-[11px] text-muted-foreground">{SHIFT_KEYS.find((item) => item.value === person.shiftType)?.label || person.shiftType || "—"}</p>
+                  </div>
+                </div>
+              ))
+            )}
           </CardContent>
         </Card>
       ) : null}

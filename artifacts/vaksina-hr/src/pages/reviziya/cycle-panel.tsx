@@ -482,7 +482,7 @@ export function ReviziyaCyclePanel() {
                 Filialda davomat
               </p>
               <p className="text-xs leading-snug text-violet-800/80 dark:text-violet-200/80">
-                Ofis yoki borgan filial GPS zonasida «Keldim / Ketdim» qilishingiz mumkin.
+                Ofis yoki borgan filial GPS hududida «Keldim / Ketdim» qilishingiz mumkin.
               </p>
             </div>
           </div>

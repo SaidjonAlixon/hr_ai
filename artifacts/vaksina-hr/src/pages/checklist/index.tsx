@@ -474,7 +474,7 @@ export default function ChecklistPage() {
     }
     if (!withinGeofence || !gps) {
       toast({
-        title: "Yashil zona kerak",
+        title: "Yashil hudud kerak",
         description: `Filialga ${AUDIT_GEOFENCE_METERS} m ichida kiring, keyin Face ID bilan Keldim qiling.`,
         variant: "destructive",
       });
@@ -507,7 +507,7 @@ export default function ChecklistPage() {
           reject(new Error("GPS yo‘q"));
           return;
         }
-        navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error("GPS o‘chiq. Yashil zonada joylashuvni yoqing.")), {
+        navigator.geolocation.getCurrentPosition(resolve, () => reject(new Error("GPS o‘chiq. Yashil hududda joylashuvni yoqing.")), {
           enableHighAccuracy: true,
           maximumAge: 0,
           timeout: 10_000,
@@ -515,7 +515,7 @@ export default function ChecklistPage() {
       });
       const age = Date.now() - live.timestamp;
       if (!Number.isFinite(live.timestamp) || age > 20_000) {
-        throw new Error("Joylashuv eskirgan. Yashil zonada, GPS yoqilgan holda qayta urinib ko‘ring.");
+        throw new Error("Joylashuv eskirgan. Yashil hududda, GPS yoqilgan holda qayta urinib ko‘ring.");
       }
       const lat = live.coords.latitude;
       const lng = live.coords.longitude;
@@ -524,7 +524,7 @@ export default function ChecklistPage() {
         selectedBranch.longitude != null &&
         (haversineMeters(lat, lng, selectedBranch.latitude, selectedBranch.longitude) ?? 1e9) > AUDIT_GEOFENCE_METERS
       ) {
-        throw new Error(`Yashil zonadan tashqaridasiz — ${AUDIT_GEOFENCE_METERS} m ichiga kiring`);
+        throw new Error(`Yashil hududdan tashqaridasiz — ${AUDIT_GEOFENCE_METERS} m ichiga kiring`);
       }
       const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
       const vec = list[0]!;
@@ -580,7 +580,7 @@ export default function ChecklistPage() {
           : null;
       if (dist != null && dist > AUDIT_GEOFENCE_METERS) {
         toast({
-          title: "Yashil zonadan tashqarida",
+          title: "Yashil hududdan tashqarida",
           description: `Hozir ${dist} m uzoqdasiz. ${AUDIT_GEOFENCE_METERS} m ichida tasdiqlang.`,
           variant: "destructive",
         });
@@ -598,7 +598,7 @@ export default function ChecklistPage() {
     } catch (err) {
       toast({
         title: "Tasdiqlanmadi",
-        description: (err as Error)?.message || "Yashil zonaga kiring va qayta urinib ko‘ring",
+        description: (err as Error)?.message || "Yashil hududga kiring va qayta urinib ko‘ring",
         variant: "destructive",
       });
     } finally {
@@ -782,8 +782,8 @@ export default function ChecklistPage() {
     if (!openVisit) return;
     if (!withinGeofence || !gps) {
       toast({
-        title: "Yashil zona kerak",
-        description: `«Ketdim» faqat filial hududida (${AUDIT_GEOFENCE_METERS} m). GPS yoqing va yashil zonaga kiring.`,
+        title: "Yashil hudud kerak",
+        description: `«Ketdim» faqat filial hududida (${AUDIT_GEOFENCE_METERS} m). GPS yoqing va yashil hududga kiring.`,
         variant: "destructive",
       });
       return;
@@ -821,7 +821,7 @@ export default function ChecklistPage() {
     } catch (err) {
       toast({
         title: "Yopilmadi",
-        description: (err as Error)?.message || "Yashil zonada qayta urinib ko‘ring",
+        description: (err as Error)?.message || "Yashil hududda qayta urinib ko‘ring",
         variant: "destructive",
       });
     } finally {
@@ -973,7 +973,7 @@ export default function ChecklistPage() {
         toast({
           title: "Cheklist saqlandi",
           description:
-            "Endi yashil zonada «Ketdim» qiling — aks holda boshqa filialga tashrif qila olmaysiz. Telegram/platformadan eslatma keladi.",
+            "Endi yashil hududda «Ketdim» qiling — aks holda boshqa filialga tashrif qila olmaysiz. Telegram/platformadan eslatma keladi.",
         });
         window.scrollTo({ top: 0, behavior: "smooth" });
         return;
@@ -1200,16 +1200,16 @@ export default function ChecklistPage() {
                       <Clock3 className="h-4 w-4 shrink-0" />
                       {openVisit && String(openVisit.branchId) === managerId
                         ? openVisit.checklistAt
-                          ? "Cheklist saqlandi — endi Ketdim (yashil zona)"
+                          ? "Cheklist saqlandi — endi Ketdim (yashil hudud)"
                           : "Ochiq tashrif — cheklist yoki Ketdim"
                         : "Filial tanlandi — Face ID bilan Keldim"}
                     </p>
                     <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
                       {openVisit && String(openVisit.branchId) === managerId
                         ? openVisit.checklistAt
-                          ? `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Ketdim qilmasangiz boshqa filialga o‘ta olmaysiz. Faqat yashil zonada (${AUDIT_GEOFENCE_METERS} m).`
+                          ? `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Ketdim qilmasangiz boshqa filialga o‘ta olmaysiz. Faqat yashil hududda (${AUDIT_GEOFENCE_METERS} m).`
                           : `«${openVisit.branchLabel || selectedBranch?.location || "Filial"}». Cheklistni saqlashingiz mumkin. Yoki izoh yozib «Ketdim» qiling — keyin boshqa filialga o‘tasiz. Har 30 daqiqada hududni tasdiqlang.`
-                        : `«${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Yashil zonada Face ID (old kamera) bilan Keldim qiling — keyin cheklist ochiladi.`}
+                        : `«${selectedBranch?.location || selectedBranch?.managerName || "Filial"}». Yashil hududda Face ID (old kamera) bilan Keldim qiling — keyin cheklist ochiladi.`}
                     </p>
                     {openVisit && String(openVisit.branchId) === managerId ? (
                       <p className="mt-1 text-[11px] font-medium text-emerald-800 dark:text-emerald-300">
@@ -1247,7 +1247,7 @@ export default function ChecklistPage() {
                           ? openVisit.checklistAt
                             ? "Ketdim"
                             : "Cheklist ixtiyoriy — izoh yozib Ketdim qilishingiz mumkin"
-                          : `Faqat yashil zonada (${AUDIT_GEOFENCE_METERS} m)`
+                          : `Faqat yashil hududda (${AUDIT_GEOFENCE_METERS} m)`
                       }
                       onClick={() => setFinishOpen(true)}
                     >
@@ -1309,7 +1309,7 @@ export default function ChecklistPage() {
                             : "Har 30 daqiqada hududni tasdiqlang"}
                         </p>
                         <p className="mt-0.5 text-[11px] text-muted-foreground">
-                          Faqat yashil zonada. Tasdiqlab turing yoki ish tugasa «Ketdim» — vaqt yoziladi.
+                          Faqat yashil hududda. Tasdiqlab turing yoki ish tugasa «Ketdim» — vaqt yoziladi.
                         </p>
                       </div>
                       <Button

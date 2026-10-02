@@ -163,6 +163,12 @@ export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || hasFullPlatformAccess(role);
 }
 
+/** Filial, mudir, farmasevt qo‘shish va o‘chirish — faqat admin va HR menejer. */
+export function canManagePharmacyOps(role?: string | null): boolean {
+  const r = String(role || "");
+  return r === "admin" || r === "asoschi" || r === "hr_menejer";
+}
+
 /** Sozlamalar: foydalanuvchilar, Face ID, kirish materiallari */
 export function canManageSettings(role?: string | null): boolean {
   return hasFullPlatformAccess(role) || isDirectorRole(role);
@@ -336,6 +342,7 @@ export const LIMITED_OFFICE_STAFF_ROLES = [
   "kassir",
   "yurist",
   "komunalniy",
+  "farrosh",
   "direktor_yordamchisi",
 ] as const;
 
@@ -585,6 +592,7 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   kassir: "Kassir",
   yurist: "Yurist",
   komunalniy: "Kommunal",
+  farrosh: "Farrosh",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

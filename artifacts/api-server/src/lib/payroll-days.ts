@@ -18,6 +18,11 @@ export type PayrollDaySheet = {
 
 type SheetRow = typeof payrollDaysTable.$inferSelect;
 
+function isCancelNote(note: string | null | undefined) {
+  const text = note || "";
+  return text.startsWith("Qaytarilgan") || text.startsWith("Bekor qilingan");
+}
+
 function asStatus(value: string | null | undefined): PayrollDaySheet["status"] {
   if (value === "approved" || value === "returned") return value;
   return "draft";
@@ -105,7 +110,7 @@ export function currentDayFigures(input: {
   const share = salaryShareOnDates(input.monthSalary, input.month, [input.day]);
   const event = input.events.find((item) => item.date === input.day);
   const sheet = input.sheet;
-  const returnedUntouched = sheet?.status === "returned" && (sheet.jarima ?? 0) === 0 && (sheet.note || "").startsWith("Qaytarilgan");
+  const returnedUntouched = sheet?.status === "returned" && (sheet.jarima ?? 0) === 0 && isCancelNote(sheet.note);
   if (returnedUntouched) {
     return { salary: sheet?.salary ?? share, jarima: 0, note: sheet?.note || "Qaytarilgan · jarima 0" };
   }
@@ -221,21 +226,24 @@ export async function approvePayrollDays(input: {
     const person = byUser.get(userId);
     if (!person) continue;
     const sheet = have.get(userId);
+    const parsed = sheet ? toSheet(sheet) : null;
+    const cancelled = parsed?.status === "returned" && (parsed.jarima ?? 0) === 0 && isCancelNote(parsed.note);
+    const edited = Boolean(parsed?.manual) && !cancelled;
     const current = currentDayFigures({
       monthSalary: person.salary ?? 0,
       month: input.month,
       day: input.day,
       events: person.jarimaEvents ?? [],
-      sheet: sheet ? toSheet(sheet) : null,
+      sheet: edited ? parsed : null,
     });
     await writeDay({
       userId,
       employeeId: person.employeeId ?? sheet?.employeeId ?? null,
       day: input.day,
-      salary: sheet?.manual ? current.salary : null,
-      jarima: sheet?.manual ? current.jarima : null,
-      note: sheet?.manual ? current.note : null,
-      manual: Boolean(sheet?.manual),
+      salary: edited ? current.salary : null,
+      jarima: edited ? current.jarima : null,
+      note: edited ? current.note : null,
+      manual: edited,
       status: "approved",
       publishedSalary: current.salary,
       publishedJarima: current.jarima,
@@ -262,25 +270,22 @@ export async function refreshPayrollDays(input: {
   for (const userId of input.userIds) {
     const row = have.get(userId);
     const person = byUser.get(userId);
-    if (!row || !person) continue;
-    const sheet = toSheet(row);
-    if (sheet.status !== "approved" && sheet.status !== "returned") continue;
+    if (!person) continue;
     const current = currentDayFigures({
       monthSalary: person.salary ?? 0,
       month: input.month,
       day: input.day,
       events: person.jarimaEvents ?? [],
-      sheet,
+      sheet: null,
     });
-    if (!isDayDirty(sheet, current)) continue;
     await writeDay({
       userId,
-      employeeId: person.employeeId ?? row.employeeId,
+      employeeId: person.employeeId ?? row?.employeeId ?? null,
       day: input.day,
-      salary: sheet.manual ? current.salary : row.salary,
-      jarima: sheet.manual ? current.jarima : row.jarima,
-      note: sheet.manual ? current.note : row.note,
-      manual: sheet.manual,
+      salary: null,
+      jarima: null,
+      note: null,
+      manual: false,
       status: "approved",
       publishedSalary: current.salary,
       publishedJarima: current.jarima,
@@ -316,12 +321,12 @@ export async function returnPayrollDays(input: {
       day: input.day,
       salary,
       jarima: 0,
-      note: "Qaytarilgan · jarima 0",
+      note: "Bekor qilingan · jarima 0",
       manual: true,
       status: "returned",
       publishedSalary: salary,
       publishedJarima: 0,
-      publishedNote: "Qaytarilgan · jarima 0",
+      publishedNote: "Bekor qilingan · jarima 0",
       approvedById: input.approvedById,
       approvedAt: now,
     });

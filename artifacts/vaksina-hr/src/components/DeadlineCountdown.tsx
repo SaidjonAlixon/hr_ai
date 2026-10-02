@@ -15,6 +15,8 @@ type Props = {
   compact?: boolean;
   showDate?: boolean;
   dateLabel?: string;
+  /** Masalan: "Topshiriq muddati tugashiga" — qolgan vaqt oldiga aniq yoziladi */
+  lead?: string;
 };
 
 export function DeadlineCountdown({
@@ -23,6 +25,7 @@ export function DeadlineCountdown({
   compact,
   showDate,
   dateLabel,
+  lead,
 }: Props) {
   const [, setTick] = useState(0);
 
@@ -47,7 +50,10 @@ export function DeadlineCountdown({
   if (urgency === 'none' || !deadline) return null;
 
   const style = URGENCY_STYLES[urgency];
-  const label = formatRemaining(deadline);
+  const remaining = formatRemaining(deadline);
+  const leadText = lead?.trim();
+  const label =
+    leadText && urgency !== "expired" ? `${leadText} ${remaining}` : remaining;
   const d = new Date(deadline);
   const dateStr = Number.isNaN(d.getTime())
     ? ''
@@ -78,8 +84,8 @@ export function DeadlineCountdown({
         >
           {style.label}
         </span>
-        <div className={cn('inline-flex items-center gap-1 font-semibold', style.text, compact ? 'text-[11px]' : 'text-xs')}>
-          <Clock className={cn('shrink-0', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
+        <div className={cn('inline-flex min-w-0 items-start justify-end gap-1 text-right font-semibold leading-snug', style.text, compact ? 'text-[11px]' : 'text-xs')}>
+          <Clock className={cn('mt-0.5 shrink-0', compact ? 'h-3 w-3' : 'h-3.5 w-3.5')} />
           <span>{label}</span>
         </div>
       </div>

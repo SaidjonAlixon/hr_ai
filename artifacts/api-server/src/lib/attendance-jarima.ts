@@ -13,6 +13,14 @@ export const JARIMA_RULE = [
 ] as const;
 
 const PHARMACY_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
+
+function roleTitle(role: string | null | undefined): string {
+  const key = String(role || "").toLowerCase();
+  if (key === "mudir") return "Filial mudiri";
+  if (key === "farmasevt") return "Farmasevt";
+  if (key === "stajyor" || key === "stajor") return "Stajyor";
+  return "";
+}
 const AUTO_NOTE = "Davomat jarimasi";
 
 export type JarimaEvent = {
@@ -26,6 +34,7 @@ export type JarimaPerson = {
   userId: number;
   employeeId: number;
   fullName: string;
+  position: string;
   salary: number;
   strikes: number;
   late: number;
@@ -109,7 +118,17 @@ function isAutoNote(note: string | null | undefined): boolean {
   return !text || text.startsWith(AUTO_NOTE) || text.startsWith("Siz ") || text.startsWith("Kech kelindi") || text.startsWith("Kelmagansiz") || /^\d+ marta (kech kelindi|kelmagansiz)/.test(text) || text.includes("Ogohlantirish:");
 }
 
-export async function applyAttendanceJarima(monthKey: string): Promise<{
+export async function applyAttendanceJarima(
+  monthKey: string,
+  isWorkDayFor?: (person: {
+    role: string | null;
+    orgRole: string | null;
+    position: string | null;
+    location: string | null;
+    shiftType: string | null;
+    shiftLabel: string | null;
+  }, date: string) => boolean,
+): Promise<{
   month: string;
   active: boolean;
   people: JarimaPerson[];
@@ -127,6 +146,11 @@ export async function applyAttendanceJarima(monthKey: string): Promise<{
       employeeId: employeesTable.id,
       userId: employeesTable.userId,
       fullName: employeesTable.fullName,
+      position: employeesTable.position,
+      orgRole: employeesTable.orgRole,
+      location: employeesTable.location,
+      shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
       fixedSalary: employeesTable.fixedSalary,
       role: usersTable.role,
       status: employeesTable.employmentStatus,
@@ -174,7 +198,13 @@ export async function applyAttendanceJarima(monthKey: string): Promise<{
     const salary = Math.max(0, Math.round(Number(saved?.salary || person.fixedSalary || 0)));
     const days = daysByEmp.get(person.employeeId) ?? [];
     const counted = days
-      .filter((day) => day.date >= JARIMA_START && (day.status === "late" || (day.status === "absent" && day.date < today)))
+      .filter((day) => {
+        if (day.date < JARIMA_START) return false;
+        if (day.status === "rest" || day.status === "leave" || day.status === "planned") return false;
+        if (isWorkDayFor && !isWorkDayFor(person, day.date)) return false;
+        if (day.status === "late") return true;
+        return day.status === "absent" && day.date < today;
+      })
       .sort((a, b) => a.date.localeCompare(b.date));
     const events: JarimaEvent[] = [];
     for (const day of counted) {
@@ -199,6 +229,7 @@ export async function applyAttendanceJarima(monthKey: string): Promise<{
       userId,
       employeeId: person.employeeId,
       fullName: person.fullName,
+      position: person.position || roleTitle(person.role),
       salary,
       strikes,
       late,

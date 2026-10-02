@@ -32,6 +32,7 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   kassir: "Moliya",
   yurist: "Rahbariyat",
   komunalniy: "Ma’muriy-xo‘jalik",
+  farrosh: "Farrosh",
   direktor_yordamchisi: "Rahbariyat",
   hr: "HR",
   hr_direktor: "HR",

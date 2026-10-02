@@ -57,6 +57,7 @@ import {
   COORD_OFFICE_LABEL,
   isCoordinatorOfficeVisit,
   normalizeCoordinatorPunchBranchId,
+  coordinatorOfficeDay,
 } from "../lib/coordinator-visits";
 import {
   isTestOfficeCoordinatorName,
@@ -2338,7 +2339,7 @@ async function resolveCoordinatorGeoGate(opts: {
     status: 403,
     body: {
       error: best
-        ? `Koordinator davomati: asosiy ofis (${remainOffice} m) yoki o‘z filialingiz «${best.label}» (${remainBranch} m) zonasiga kiring.`
+        ? `Koordinator davomati: asosiy ofis (${remainOffice} m) yoki o‘z filialingiz «${best.label}» (${remainBranch} m) hududiga kiring.`
         : `Hududdan tashqaridasiz (asosiy ofis): ${officeDist} m. Ruxsat ${officeR} m. O‘z filiallaringiz GPS kiritilmagan.`,
       code: "outside_geofence",
       distanceMeters: best && best.d < officeDist ? best.d : officeDist,
@@ -2424,7 +2425,7 @@ async function resolveReviziyaFieldGate(opts: {
           ok: false,
           status: 403,
           body: {
-            error: `«${coords.label}» filial zonasida emassiz (${distanceMeters} m). Yana ${remainMeters} m yaqinlashib, shu filial QR ini qayta skanerlang.`,
+            error: `«${coords.label}» filial hududida emassiz (${distanceMeters} m). Yana ${remainMeters} m yaqinlashib, shu filial QR ini qayta skanerlang.`,
             code: "outside_geofence",
             distanceMeters,
             remainMeters,
@@ -2504,7 +2505,7 @@ async function resolveReviziyaFieldGate(opts: {
     status: 403,
     body: {
       error: nearest
-        ? `Reviziya davomati: ofis (${remainOffice} m) yoki eng yaqin filial «${nearest.label}» (${remainBranch} m) zonasiga kiring.`
+        ? `Reviziya davomati: ofis (${remainOffice} m) yoki eng yaqin filial «${nearest.label}» (${remainBranch} m) hududiga kiring.`
         : `Hududdan tashqaridasiz (asosiy ofis): ${officeDist} m. Ruxsat ${officeR} m.`,
       code: "outside_geofence",
       distanceMeters: nearest && nearest.d < officeDist ? nearest.d : officeDist,
@@ -3010,6 +3011,31 @@ async function applyFacePunch(opts: {
   );
 
   const source = verificationMethod === "QR" ? ("qr" as const) : ("face" as const);
+  const coordinatorBranch =
+    userRole === "koordinator" && resolvedBranchId != null && Number(resolvedBranchId) > 0;
+  const coordinatorOffice = userRole === "koordinator" && !coordinatorBranch;
+  if (coordinatorBranch) {
+    return {
+      ok: true,
+      payload: {
+        ok: true,
+        action,
+        workDate,
+        fullName: emp.fullName,
+        location: resolvedBranchLabel || emp.location,
+        coordinatorBranchOnly: true,
+        nextAction: "in",
+        checkIn: "—",
+        checkOut: "—",
+        checkInAt: null,
+        checkOutAt: null,
+        message:
+          action === "in"
+            ? `${emp.fullName}: filialda Keldim. Cheklist alohida — ofis davomati yopilmaydi.`
+            : `${emp.fullName}: filialda Ketdim. Ofisga kelganda «Keldim» alohida yoziladi.`,
+      },
+    };
+  }
   const geoFields = {
     checkLatitude: latitude,
     checkLongitude: longitude,
@@ -3030,6 +3056,30 @@ async function applyFacePunch(opts: {
         .limit(1)
         .for("update");
 
+      const branchSession =
+        existing != null &&
+        ((existing.resolvedBranchId != null && existing.resolvedBranchId > 0) ||
+          /filial\s*#/i.test(String(existing.notes || "")));
+      const officeReentry =
+        coordinatorOffice &&
+        action === "in" &&
+        existing != null &&
+        existing.status !== "absent" &&
+        existing.status !== "leave" &&
+        (Boolean(existing.checkOutAt) || branchSession);
+      let officeOutWhileClosed = false;
+      if (
+        coordinatorOffice &&
+        action === "out" &&
+        existing?.checkOutAt &&
+        existing.status !== "absent" &&
+        existing.status !== "leave" &&
+        emp.userId
+      ) {
+        const openVisit = await getOpenCoordinatorVisit(emp.userId);
+        officeOutWhileClosed = Boolean(openVisit && isCoordinatorOfficeVisit(openVisit));
+      }
+
       if (existing?.checkOutAt || existing?.status === "absent" || existing?.status === "leave") {
         // Ko‘p filial: 1-smena Ketdi → 2-filialda qayta «Keldim» (kunni butunlay yopmaymiz)
         const multiBranchAfterOut =
@@ -3039,9 +3089,47 @@ async function applyFacePunch(opts: {
           existing.status !== "leave" &&
           isMultiBranchDay(daySlots) &&
           Boolean(activeShiftKey && resolvedBranchId);
-        if (!multiBranchAfterOut) {
+        if (!multiBranchAfterOut && !officeReentry && !officeOutWhileClosed) {
           return oncePerDayFail(emp, existing, "already_complete");
         }
+      }
+      if (officeReentry && existing) {
+        const checkInAt = now;
+        const status = computeMetrics(workDate, checkInAt, null, null, punchHours).status;
+        await tx
+          .update(attendanceRecordsTable)
+          .set({
+            ...geoFields,
+            checkInAt,
+            checkOutAt: null,
+            checkOutMethod: null,
+            status,
+            checkInMethod: verificationMethod,
+            resolvedBranchId: null,
+            resolvedBranchLabel: COORD_OFFICE_LABEL,
+            notes: null,
+          })
+          .where(eq(attendanceRecordsTable.id, existing.id));
+        const metrics = computeMetrics(workDate, checkInAt, null, null, punchHours);
+        return {
+          ok: true as const,
+          payload: {
+            ok: true,
+            action: "in" as const,
+            workDate,
+            fullName: emp.fullName,
+            location: COORD_OFFICE_LABEL,
+            distanceMeters,
+            allowedMeters,
+            verificationMethod,
+            nextAction: "out" as const,
+            checkInAt: checkInAt.toISOString(),
+            message: `${emp.fullName}: ofisda Keldim (${metrics.checkIn}). Cheklist vaqti bu yerga qo‘shilmaydi.`,
+            ...metrics,
+            checkOut: "—",
+            checkOutAt: null,
+          },
+        };
       }
       // Ko‘p filial: 2-smenaga boshqa filialda qayta «Keldim» — asosiy yozuvni yopmaymiz
       const multiBranchDay = isMultiBranchDay(daySlots);
@@ -3345,10 +3433,24 @@ async function applyFacePunch(opts: {
           checkInAt: checkInAt ? checkInAt.toISOString() : null,
           checkOutAt: checkOutAt ? checkOutAt.toISOString() : null,
           message:
-            action === "in"
-              ? `${emp.fullName}: Keldim (${metrics.checkIn}) · ${verificationMethod === "QR" ? "QR" : "Face ID"}`
-              : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours} · ${verificationMethod === "QR" ? "QR" : "Face ID"}`,
+            coordinatorOffice && action === "in"
+              ? `${emp.fullName}: ofisda Keldim (${metrics.checkIn}). Cheklist vaqti bu yerga qo‘shilmaydi.`
+              : coordinatorOffice && action === "out"
+                ? `${emp.fullName}: ofisdan Ketdim (${metrics.checkOut}). Ofis soati alohida — cheklist kunni yopmaydi.`
+                : action === "in"
+                  ? `${emp.fullName}: Keldim (${metrics.checkIn}) · ${verificationMethod === "QR" ? "QR" : "Face ID"}`
+                  : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours} · ${verificationMethod === "QR" ? "QR" : "Face ID"}`,
           ...metrics,
+          ...(coordinatorOffice && action === "in" ? { nextAction: "out" as const } : {}),
+          ...(coordinatorOffice && action === "out"
+            ? {
+                nextAction: "in" as const,
+                checkIn: "—",
+                checkOut: "—",
+                checkInAt: null,
+                checkOutAt: null,
+              }
+            : {}),
         },
       };
     });
@@ -3791,6 +3893,39 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       mobileAnywhere = false;
     }
 
+    const coordinatorAtOffice = user.role === "koordinator" && point.kind === "office";
+    const coordinatorAtBranch = user.role === "koordinator" && point.kind === "branch";
+    const coordinatorToday = coordinatorAtOffice
+      ? await (async () => {
+          const officeDay = await coordinatorOfficeDay(emp.id, workDate);
+          return {
+            checkIn: formatHm(officeDay.checkInAt),
+            checkOut: "—",
+            checkInAt: officeDay.checkInAt ? officeDay.checkInAt.toISOString() : null,
+            checkOutAt: null,
+            checkInMethod: null,
+            checkOutMethod: null,
+            status: officeDay.open ? "present" : "pending",
+            complete: false,
+            nextAction: officeDay.nextAction,
+            priorOfficeMs: officeDay.priorOfficeMs,
+          };
+        })()
+      : coordinatorAtBranch
+        ? {
+            checkIn: "—",
+            checkOut: "—",
+            checkInAt: null,
+            checkOutAt: null,
+            checkInMethod: null,
+            checkOutMethod: null,
+            status: "pending",
+            complete: false,
+            nextAction: "in" as const,
+            priorOfficeMs: 0,
+          }
+        : null;
+
     res.json({
       allowedMeters: geofenceMetersForKind(point.kind),
       mobileAnywhere,
@@ -3890,7 +4025,9 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         longitude: point.longitude,
         hasGps: resolved.ok,
       },
-      today: rec
+      today: coordinatorToday
+        ? coordinatorToday
+        : rec
         ? (() => {
             const workSlots =
               workDate === today || workDate === planWorkDate
@@ -4244,7 +4381,29 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
     } else if (rec?.checkInAt) {
       punchedForNext = punchedShiftKeysFromParts(daySlotsForNext, rec, []);
     }
-    const nextAction = nextActionForRecord(rec, daySlotsForNext, punchedForNext);
+    let nextAction = nextActionForRecord(rec, daySlotsForNext, punchedForNext);
+    let checkIn = formatHm(rec?.checkInAt ?? null);
+    let checkOut = formatHm(rec?.checkOutAt ?? null);
+    let checkInAt = rec?.checkInAt ? rec.checkInAt.toISOString() : null;
+    let checkOutAt = rec?.checkOutAt ? rec.checkOutAt.toISOString() : null;
+    if (resolved.user.role === "koordinator") {
+      const atBranch =
+        resolved.gate.resolvedBranchId != null && resolved.gate.resolvedBranchId > 0;
+      if (atBranch) {
+        nextAction = "in";
+        checkIn = "—";
+        checkOut = "—";
+        checkInAt = null;
+        checkOutAt = null;
+      } else {
+        const officeDay = await coordinatorOfficeDay(resolved.emp.id, workDate);
+        nextAction = officeDay.nextAction;
+        checkIn = formatHm(officeDay.checkInAt);
+        checkOut = "—";
+        checkInAt = officeDay.checkInAt ? officeDay.checkInAt.toISOString() : null;
+        checkOutAt = null;
+      }
+    }
     const own = await ownEmployeeReport(resolved.emp.id);
     const sessionUser = await adoptFaceSession(res, resolved.user.id);
     res.json({
@@ -4255,10 +4414,10 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
       allowedMeters: resolved.gate.effectiveRadius,
       workDate,
       nextAction,
-      checkIn: formatHm(rec?.checkInAt ?? null),
-      checkOut: formatHm(rec?.checkOutAt ?? null),
-      checkInAt: rec?.checkInAt ? rec.checkInAt.toISOString() : null,
-      checkOutAt: rec?.checkOutAt ? rec.checkOutAt.toISOString() : null,
+      checkIn,
+      checkOut,
+      checkInAt,
+      checkOutAt,
       employee: own.employee,
       user: sessionUser,
       sessionSwitched: !expectedUserId || expectedUserId !== resolved.user.id,
@@ -5818,7 +5977,7 @@ router.post("/davomat/qr/department/issue", requireAuth, async (req: AuthRequest
       expiresAt: null,
       payload,
       sharedOffice: true,
-      note: "Ofis QR saqlandi. Faqat ofis xodimlari yashil zonada skaner yoki Face ID qiladi. Mudir/farmasevt/stajyor — filial QR.",
+      note: "Ofis QR saqlandi. Faqat ofis xodimlari yashil hududda skaner yoki Face ID qiladi. Mudir/farmasevt/stajyor — filial QR.",
     });
   } catch (err) {
     console.error("POST /davomat/qr/department/issue error:", err);
@@ -6325,7 +6484,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     if (!skipOfficeGeofence) {
       if (!hasGps) {
         res.status(400).json({
-          error: "Lokatsiya yoqilishi shart — ofis yashil zonasida bo‘ling",
+          error: "Lokatsiya yoqilishi shart — ofis yashil hududida bo‘ling",
           code: "gps_required",
         });
         return;
@@ -6432,6 +6591,28 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         ...(mobileAnywhere ? { mobileAnywhere: true } : {}),
       },
     });
+
+    if (user.role === "koordinator" && user.id) {
+      try {
+        const workDate =
+          typeof punched.payload.workDate === "string"
+            ? punched.payload.workDate
+            : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+        await syncCoordinatorVisitOnPunch({
+          userId: user.id,
+          employeeId: emp.id,
+          fullName: user.fullName || emp.fullName,
+          action,
+          branchId: COORD_OFFICE_BRANCH_ID,
+          branchLabel: COORD_OFFICE_LABEL,
+          workDate,
+          latitude,
+          longitude,
+        });
+      } catch (e) {
+        console.error("coordinator office visit sync (qr) error:", e);
+      }
+    }
 
     const own = await ownEmployeeReport(emp.id);
     res.json({

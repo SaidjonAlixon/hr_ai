@@ -50,6 +50,9 @@ type Props = {
   addressHint?: string | null;
   needsGps: boolean;
   gpsDenied?: boolean;
+  /** GPS o‘chiq yoki nuqta eskirgan — «tashqaridasiz» emas */
+  gpsOff?: boolean;
+  gpsFresh?: boolean;
   gpsSharing: boolean;
   methodsReady: boolean;
   /** Admin ko‘chma ruxsat — istalgan joydan davomat */
@@ -72,6 +75,8 @@ type Props = {
   busy: boolean;
   working: boolean;
   elapsedLabel: string;
+  /** Koordinator ofis vaqti — «Yakunlandi» o‘rniga */
+  workedCaption?: string;
   ctaLabel: string;
   ctaSub: string;
   ctaDisabled: boolean;
@@ -193,7 +198,8 @@ export function DavomatPremiumView(p: Props) {
                   {p.elapsedLabel}
                 </p>
                 <p className="mt-1 text-[9px] font-medium text-white/55">
-                  {p.working ? "Davom etmoqda" : p.done ? "Yakunlandi" : "Hali boshlanmagan"}
+                  {p.workedCaption ??
+                    (p.working ? "Davom etmoqda" : p.done ? "Yakunlandi" : "Hali boshlanmagan")}
                 </p>
               </div>
             </div>
@@ -271,6 +277,7 @@ export function DavomatPremiumView(p: Props) {
             distanceMeters={p.distance}
             needsGps={p.needsGps}
             gpsDenied={p.gpsDenied}
+            gpsFresh={p.gpsFresh !== false}
             baseTag="Asos"
             onEnableGps={p.onEnableGps}
           />
@@ -372,9 +379,18 @@ export function DavomatPremiumView(p: Props) {
         ) : null}
 
         {p.methodReady && !p.done ? (
-          <div className="mt-3 flex items-center gap-2 rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-3 py-2.5 text-sm text-emerald-200">
+          <div
+            className={cn(
+              "mt-3 flex items-center gap-2 rounded-2xl border px-3 py-2.5 text-sm",
+              p.gpsOff
+                ? "border-rose-400/30 bg-rose-500/10 text-rose-100"
+                : "border-emerald-400/25 bg-emerald-500/10 text-emerald-200",
+            )}
+          >
             <CheckCircle2 className="h-4 w-4 shrink-0" />
-            Tasdiqlandi — endi {p.hasIn ? "Ketdim" : "Keldim"} ni bosing
+            {p.gpsOff
+              ? "GPS yoqing, so‘ng qayta kiring"
+              : `Tasdiqlandi — endi ${p.hasIn ? "Ketdim" : "Keldim"} ni bosing`}
           </div>
         ) : null}
 
@@ -389,7 +405,12 @@ export function DavomatPremiumView(p: Props) {
               p.ctaTone === "done" && "dv-cta-done",
               p.ctaTone === "warn" && "dv-cta-warn",
             )}
-            disabled={p.ctaDisabled || p.busy || !p.methodsReady || Boolean(p.outsideZone)}
+            disabled={
+              p.ctaDisabled ||
+              p.busy ||
+              (!p.gpsOff && !p.methodsReady) ||
+              Boolean(p.outsideZone)
+            }
             onClick={p.onContinue}
           >
             <span

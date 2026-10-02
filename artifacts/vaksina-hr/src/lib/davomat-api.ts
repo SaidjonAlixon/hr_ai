@@ -315,6 +315,7 @@ export async function facePunchDavomat(payload: {
   checkOut: string;
   checkInAt?: string | null;
   checkOutAt?: string | null;
+  nextAction?: "in" | "out" | "done";
   workedHours: string;
   distanceMeters: number;
   location?: string | null;
@@ -403,6 +404,8 @@ export type WorkplaceInfo = {
     status: string;
     complete: boolean;
     nextAction: "in" | "out" | "done";
+    /** Koordinator: yopilgan ofis sessiyalari (cheklist hisobga kirmaydi) */
+    priorOfficeMs?: number;
   };
   shift?: {
     type: "one" | "two" | "office" | string;

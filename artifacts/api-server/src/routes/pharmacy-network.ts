@@ -23,8 +23,6 @@ import {
   fillVacantBranchSlot,
 } from "../lib/dismiss-pharmacy-staff";
 import { sweepDismissedUsers } from "../lib/dismiss-user";
-import { isHrRole } from "../lib/roles";
-
 const router: IRouter = Router();
 
 const STAFF_ROLES = ["mudir", "farmasevt", "stajyor"] as const;
@@ -451,19 +449,7 @@ async function canEditNetworkCreds(
   }
 
   if (actorRole === "koordinator") {
-    const actor = await actorEmployee(actorUserId, "coordinator");
-    if (!actor) return { ok: false, status: 403, error: "Koordinator kartasi yo‘q" };
-    if (target.orgRole === "manager" && target.reportsToId === actor.id) {
-      return { ok: true, userId: target.userId };
-    }
-    if (STAFF_ORG.has(target.orgRole || "") && target.reportsToId) {
-      const [mudir] = await db
-        .select({ id: employeesTable.id, reportsToId: employeesTable.reportsToId })
-        .from(employeesTable)
-        .where(eq(employeesTable.id, target.reportsToId));
-      if (mudir?.reportsToId === actor.id) return { ok: true, userId: target.userId };
-    }
-    return { ok: false, status: 403, error: "Faqat o‘z tarmog‘ingizdagi odamni tahrirlaysiz" };
+    return { ok: false, status: 403, error: "Koordinator loginni faqat ko‘radi" };
   }
 
   return { ok: false, status: 403, error: "Ruxsat yo‘q" };
@@ -568,20 +554,8 @@ router.post("/pharmacy-network/staff", requireAuth, async (req: AuthRequest, res
     return;
   }
 
-  if (actorRole === "koordinator") {
-    if (staffRole !== "mudir" && staffRole !== "farmasevt" && staffRole !== "stajyor") {
-      res.status(403).json({ error: "Koordinator mudir, farmasevt yoki stajyor qo‘sha oladi" });
-      return;
-    }
-  } else if (actorRole === "mudir") {
-    if (staffRole !== "farmasevt" && staffRole !== "stajyor") {
-      res.status(403).json({ error: "Mudir faqat farmasevt yoki stajyor qo‘sha oladi" });
-      return;
-    }
-  } else if (actorRole === "admin" || isHrRole(actorRole)) {
-    // HR/admin ham xuddi shu rollarni yaratishi mumkin
-  } else {
-    res.status(403).json({ error: "Ruxsat yo‘q" });
+  if (actorRole !== "admin" && actorRole !== "asoschi" && actorRole !== "hr_menejer") {
+    res.status(403).json({ error: "Mudir, farmasevt va filial qo‘shish faqat admin va HR menejer uchun" });
     return;
   }
 

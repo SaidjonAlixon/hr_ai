@@ -1363,8 +1363,11 @@ export default function DavomatFacePage() {
       day: "2-digit",
     }).format(new Date(nowTick));
 
+  const priorOfficeMs =
+    user?.role === "koordinator" ? Math.max(0, workplace?.today.priorOfficeMs ?? 0) : 0;
+
   const elapsedLabel = useMemo(() => {
-    if (!checkInAtIso) return "0:00:00";
+    if (!checkInAtIso) return formatElapsed(priorOfficeMs);
     const start = new Date(checkInAtIso).getTime();
     const shiftEnd =
       workplace?.shift?.end ||
@@ -1380,8 +1383,9 @@ export default function DavomatFacePage() {
     const rawEnd = checkOutAtIso
       ? new Date(checkOutAtIso).getTime()
       : Math.min(nowTick, deadlineCap);
-    return formatElapsed(Math.max(0, rawEnd - start));
+    return formatElapsed(Math.max(0, rawEnd - start) + priorOfficeMs);
   }, [
+    priorOfficeMs,
     checkInAtIso,
     checkOutAtIso,
     nowTick,
@@ -1970,14 +1974,20 @@ export default function DavomatFacePage() {
         ...(checklistBranchId ? { branchId: checklistBranchId } : {}),
         ...(earlyNotes ? { notes: earlyNotes } : {}),
       });
+      const resultNext =
+        result.nextAction === "in" || result.nextAction === "out" || result.nextAction === "done"
+          ? result.nextAction
+          : action === "in"
+            ? "out"
+            : "done";
       setVerified({
         ...verified,
         faceImage: snap,
-        nextAction: action === "in" ? "out" : "done",
+        nextAction: resultNext,
         checkIn: result.checkIn,
         checkOut: result.checkOut,
-        checkInAt: result.checkInAt ?? verified.checkInAt,
-        checkOutAt: result.checkOutAt ?? verified.checkOutAt,
+        checkInAt: result.checkInAt ?? (resultNext === "in" ? null : verified.checkInAt),
+        checkOutAt: result.checkOutAt ?? (resultNext === "in" ? null : verified.checkOutAt),
       });
       setMethodHint("FACE_ID");
       setScanOpen(false);
@@ -2273,20 +2283,35 @@ export default function DavomatFacePage() {
       : null;
   const needsPerms =
     !cameraGranted || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
-  /** GPS bor, lekin yashil zonadan tashqarida — usul/CTA bloklanadi (ko‘chma ruxsat bo‘lsa yo‘q) */
+  /** Ruxsat rad etilgan — GPS xizmati o‘chiqligidan ajraladi */
+  const gpsPermissionDenied =
+    Boolean(gpsError) &&
+    /ruxsat berilmadi|ruxsat bermadingiz|bloklagan|permission denied|доступ к локации не дан|заблокировал/i.test(
+      gpsError || "",
+    );
+  /** Nuqta bor, lekin 45 soniyadan eski — GPS o‘chiq yoki yangilanmayapti */
+  const gpsStale =
+    !adminQrAnywhere &&
+    !mobileAnywhere &&
+    Boolean(gps) &&
+    !gpsError &&
+    !gpsLive;
+  /** GPS o‘chiq / olinmadi. Hududdan tashqari deb yozilmaydi. */
+  const gpsTurnOff =
+    !done &&
+    !adminQrAnywhere &&
+    !mobileAnywhere &&
+    (gpsStale || (Boolean(gpsError) && !gpsPermissionDenied));
   const outsideZone =
     !adminQrAnywhere &&
     !mobileAnywhere &&
     Boolean(gps) &&
     !gpsError &&
+    gpsLive &&
     !done &&
     (!geoInside || workplaceGateBlocked);
   const mapNeedsGps = !adminQrAnywhere && (!gps || Boolean(gpsError));
-  const gpsDenied =
-    Boolean(gpsError) &&
-    /ruxsat|denied|sozlama|berilmadi|bermadingiz|ask again|joylashuv|локац|location|настройк/i.test(
-      gpsError || "",
-    );
+  const gpsDenied = gpsPermissionDenied;
   const addressHint =
     dayPlanLine ||
     workplace?.employee?.location ||
@@ -2302,7 +2327,7 @@ export default function DavomatFacePage() {
       : remain != null && remain > 0
         ? `Hududdan tashqaridasiz — yana ${formatMetersOrKm(Math.max(0, remain))}`
         : !geoInside
-          ? "Hududdan tashqaridasiz — yashil zonaga kiring"
+          ? "Hududdan tashqaridasiz — yashil hududga kiring"
           : null;
 
   const syncMobileRoute = (action: "in" | "out") => {
@@ -2340,6 +2365,14 @@ export default function DavomatFacePage() {
         tone: "done" as const,
       };
     }
+    if (gpsTurnOff) {
+      return {
+        label: "GPS yoqing",
+        sub: "So‘ng qayta kiring",
+        disabled: gpsSharing,
+        tone: "warn" as const,
+      };
+    }
     if (outsideZone) {
       if (workplaceGateBlocked) {
         return {
@@ -2358,7 +2391,7 @@ export default function DavomatFacePage() {
         sub:
           remain != null && remain > 0
             ? `Yana ${formatMetersOrKm(Math.max(0, remain))} yaqinlashin`
-            : "Avval yashil zona ichiga kiring",
+            : "Avval yashil hudud ichiga kiring",
         disabled: true,
         tone: "warn" as const,
       };
@@ -2376,7 +2409,13 @@ export default function DavomatFacePage() {
             : needCam
               ? "Kamera ruxsati"
               : "Ruxsat berish",
-        sub: needGps && needCam ? "Kamera va geolokatsiya" : needCam ? "Kamera" : "Geolokatsiya",
+        sub: needGps && needCam
+          ? "Kamera va geolokatsiya"
+          : needCam
+            ? "Kameraga ruxsat bering, so‘ng qayta kiring"
+            : gpsPermissionDenied
+              ? "Ruxsat bering, so‘ng qayta kiring"
+              : "Geolokatsiya",
         disabled: gpsSharing,
         tone: "perm" as const,
       };
@@ -2416,6 +2455,10 @@ export default function DavomatFacePage() {
 
   const handleContinue = () => {
     if (done || busy) return;
+    if (gpsTurnOff) {
+      void requestLocationPermission();
+      return;
+    }
     if (outsideZone) {
       toast({
         title: "Hududdan tashqaridasiz",
@@ -2558,7 +2601,9 @@ export default function DavomatFacePage() {
         workplaceTitle={workplaceTitle}
         addressHint={null}
         needsGps={mapNeedsGps}
-        gpsDenied={gpsDenied || Boolean(gpsError)}
+        gpsDenied={gpsDenied}
+        gpsOff={gpsTurnOff}
+        gpsFresh={!gpsStale && !gpsTurnOff}
         gpsSharing={gpsSharing}
         methodsReady={methodsReady}
         mobileAnywhere={mobileAnywhere}
@@ -2578,6 +2623,11 @@ export default function DavomatFacePage() {
         busy={busy}
         working={Boolean(working)}
         elapsedLabel={elapsedLabel}
+        workedCaption={
+          user?.role === "koordinator" && !working && !done && priorOfficeMs > 0
+            ? "Ofis vaqti"
+            : undefined
+        }
         ctaLabel={cta.label}
         ctaSub={cta.sub}
         ctaDisabled={cta.disabled}
@@ -2640,7 +2690,7 @@ export default function DavomatFacePage() {
       <DavomatCoachFinger
         enabled={Boolean(showDualMethods && !done && !methodReady)}
         needsGps={Boolean(mapNeedsGps)}
-        gpsDenied={gpsDenied || Boolean(gpsError)}
+        gpsDenied={gpsDenied}
         showMethods={Boolean(methodsReady && !done && !methodReady)}
         onEnableGps={() => void requestLocationPermission()}
       />

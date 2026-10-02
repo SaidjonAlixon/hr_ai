@@ -66,6 +66,7 @@ const ALLOWED_ROLES = [
   "kassir",
   "yurist",
   "komunalniy",
+  "farrosh",
   "direktor_yordamchisi",
 ] as const;
 
@@ -117,6 +118,7 @@ const ROLE_LABEL_UZ: Record<string, string> = {
   kassir: "Kassir",
   yurist: "Yurist",
   komunalniy: "Kommunal",
+  farrosh: "Farrosh",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

@@ -2316,7 +2316,12 @@ export function TaskFormDialog({
                   </span>
                 </div>
                 {editing.dueAt && editing.status !== "verified" && editing.status !== "cancelled" && (
-                  <DeadlineCountdown deadline={editing.dueAt} showDate className="!mt-1" />
+                  <DeadlineCountdown
+                    deadline={editing.dueAt}
+                    showDate
+                    lead="Topshiriq muddati tugashiga"
+                    className="!mt-1"
+                  />
                 )}
                 {editing.status === "todo" && !editing.acceptedAt ? (
                   <AcceptWindowCountdown task={editing} className="!mt-2" />
@@ -3734,7 +3739,12 @@ export function TaskFormDialog({
                   {formatStatusTime(editing.dueAt)}
                 </p>
                 {editing.status !== "verified" && editing.status !== "cancelled" && (
-                  <DeadlineCountdown deadline={editing.dueAt} showDate className="!mt-1" />
+                  <DeadlineCountdown
+                    deadline={editing.dueAt}
+                    showDate
+                    lead="Topshiriq muddati tugashiga"
+                    className="!mt-1"
+                  />
                 )}
                 {editing.status === "todo" && !editing.acceptedAt ? (
                   <AcceptWindowCountdown task={editing} className="!mt-1" />

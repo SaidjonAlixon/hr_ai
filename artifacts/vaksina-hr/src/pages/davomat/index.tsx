@@ -119,6 +119,9 @@ import {
   OFFICE_INNER_OPTIONS,
   staffFilterLabel,
   classifyDavomatStaff,
+  isDistribStaff,
+  isSecurityStaff,
+  isWarehouseStaff,
   smenaLabelShort,
   workHoursForEmployee,
   workHoursForStaffFilter,
@@ -127,8 +130,6 @@ import {
   matchesPharmacyShift,
   PHARMACY_SHIFT_OPTIONS,
   type PharmacyShiftFilter,
-  isSecurityStaff,
-  isWarehouseStaff,
 } from "../../lib/davomat-staff-filter";
 
 const SmenaFilialPage = lazy(() => import("../smena-filial"));
@@ -822,12 +823,13 @@ export default function DavomatPage() {
   }, [report, viewFilter, pharmacyShift]);
 
   const officeInnerCounts = useMemo(() => {
-    const counts = { all: 0, desk: 0, warehouse: 0, security: 0 };
+    const counts = { all: 0, desk: 0, distrib: 0, warehouse: 0, security: 0 };
     if (viewFilter !== "office" || !report) return counts;
     for (const emp of report.employees) {
       if (!matchesStaffFilter(emp, "office")) continue;
       counts.all += 1;
       if (isSecurityStaff(emp)) counts.security += 1;
+      else if (isDistribStaff(emp)) counts.distrib += 1;
       else if (isWarehouseStaff(emp)) counts.warehouse += 1;
       else counts.desk += 1;
     }
@@ -1837,11 +1839,18 @@ export default function DavomatPage() {
           <div className="mb-1.5 px-1">
             <Label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Ofis ichida</Label>
           </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
             {OFFICE_INNER_OPTIONS.map((opt) => {
               const on = officeInner === opt.key;
               const tone =
-                opt.key === "warehouse"
+                opt.key === "distrib"
+                  ? {
+                      on: "border-transparent bg-gradient-to-br from-orange-600 to-amber-500 text-white shadow-md shadow-orange-500/25",
+                      off: "border-orange-200 bg-orange-50 text-orange-950 hover:border-orange-300 hover:bg-orange-100 dark:border-orange-400/35 dark:bg-orange-400/10 dark:text-orange-100",
+                      badgeOn: "bg-white/25 text-white",
+                      badgeOff: "bg-orange-200/90 text-orange-900 dark:bg-orange-400/20 dark:text-orange-100",
+                    }
+                  : opt.key === "warehouse"
                   ? {
                       on: "border-transparent bg-gradient-to-br from-lime-600 to-green-500 text-white shadow-md shadow-lime-500/25",
                       off: "border-lime-300 bg-lime-50 text-lime-950 hover:border-lime-400 hover:bg-lime-100 dark:border-lime-400/35 dark:bg-lime-400/10 dark:text-lime-100",

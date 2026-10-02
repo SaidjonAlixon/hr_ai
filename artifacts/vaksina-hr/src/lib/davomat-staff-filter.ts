@@ -14,6 +14,7 @@ export type DavomatStaffFilter =
 
 const OMBOR_USER_ROLES = new Set(["ombor", "ombor_rahbar"]);
 const SECURITY_USER_ROLES = new Set(["sb", "sb_boshliq"]);
+const DISTRIB_USER_ROLES = new Set(["distrib", "distrib_hr", "distrib_rahbar"]);
 
 /** Xavfsizlik (SB) — 09:00 dan ertasi 09:00 gacha, 1 ish kuni; Ketdim ertasi 11:00 gacha */
 export const SECURITY_WORK_HOURS = { start: "09:00", end: "09:00" };
@@ -34,6 +35,18 @@ function normDeptName(s?: string | null): string {
     .trim()
     .toLocaleLowerCase("uz")
     .replace(/[\u2018\u2019\u02BB\u02BC'`´]/g, "");
+}
+
+/** Distribyutsiya — ofis doirasida, lekin «Ofis» chipiga kirmaydi */
+export function isDistribStaff(emp: {
+  userRole?: string | null;
+  departmentName?: string | null;
+  position?: string | null;
+}): boolean {
+  if (DISTRIB_USER_ROLES.has(String(emp.userRole || "").trim())) return true;
+  const d = normDeptName(emp.departmentName);
+  if (d === "distribyutsiya" || d === "дистрибуция" || d === "distribution") return true;
+  return normDeptName(emp.position).includes("distribyutsiya");
 }
 
 /** Omborxona xodimi — backend `warehouse` belgisi, ombor roli, `wh:` smena yoki bo‘lim nomi */
@@ -229,6 +242,7 @@ export function staffFilterLabel(filter: DavomatStaffFilter): string {
 export function smenaLabelShort(emp: DavomatEmployee): string {
   if (emp.userRole === "revizor" || emp.userRole === "reviziya_rahbar") return "Reviziya";
   if (emp.userRole === "texnik" || emp.userRole === "texnik_rahbar") return "Texnik";
+  if (isDistribStaff(emp)) return "Distribyutsiya";
   if (emp.userRole === "koordinator" || emp.orgRole === "coordinator") return "Koordinator";
   if (emp.userRole === "mudir" || emp.orgRole === "manager" || /mudir/i.test(emp.position || ""))
     return "Filial mudiri";
@@ -328,8 +342,8 @@ export function matchesPharmacyShift(emp: DavomatEmployee, shift: PharmacyShiftF
   return shift === "shift_two" ? isShiftTwo(emp) : !isShiftTwo(emp);
 }
 
-/** Ofis ichidagi bo‘lim — bir-biriga aralashmaydi */
-export type OfficeInnerFilter = "all" | "desk" | "warehouse" | "security";
+/** Ofis ichidagi bo‘lim — bir-biriga aralashmaydi. Hammasi = ofis doirasi. */
+export type OfficeInnerFilter = "all" | "desk" | "distrib" | "warehouse" | "security";
 
 export const OFFICE_INNER_OPTIONS: Array<{
   key: OfficeInnerFilter;
@@ -338,19 +352,24 @@ export const OFFICE_INNER_OPTIONS: Array<{
 }> = [
   { key: "all", label: "Hammasi", hint: "Ofis doirasida" },
   { key: "desk", label: "Ofis", hint: "09:00 – 18:00" },
+  { key: "distrib", label: "Distribyutsiya", hint: "Alohida bo‘lim" },
   { key: "warehouse", label: "Omborxona", hint: "Smenalar bo‘yicha" },
   { key: "security", label: "Xavfsizlik", hint: "09:00 – 09:00" },
 ];
 
 export function matchesOfficeInner(
-  emp: Parameters<typeof isSecurityStaff>[0] & Parameters<typeof isWarehouseStaff>[0],
+  emp: Parameters<typeof isSecurityStaff>[0] &
+    Parameters<typeof isWarehouseStaff>[0] &
+    Parameters<typeof isDistribStaff>[0],
   inner: OfficeInnerFilter,
 ): boolean {
   if (inner === "all") return true;
   const security = isSecurityStaff(emp);
+  const distrib = isDistribStaff(emp) && !security;
   if (inner === "security") return security;
-  if (inner === "warehouse") return isWarehouseStaff(emp) && !security;
-  return !security && !isWarehouseStaff(emp);
+  if (inner === "distrib") return distrib;
+  if (inner === "warehouse") return isWarehouseStaff(emp) && !security && !distrib;
+  return !security && !distrib && !isWarehouseStaff(emp);
 }
 
 export const STAFF_FILTER_OPTIONS: Array<{

@@ -259,7 +259,7 @@ export default function DavomatOfisdaPage() {
                 disabled={!withinOffice}
                 title={
                   withinOffice
-                    ? "Ofis zonasida Ketdim"
+                    ? "Ofis hududida Ketdim"
                     : `Ofisga ${DAVOMAT_OFFICE_GEOFENCE_METERS} m ichida kiring`
                 }
                 onClick={() => setFinishOpen(true)}
@@ -281,13 +281,13 @@ export default function DavomatOfisdaPage() {
                 {gpsError
                   ? gpsError
                   : distanceMeters != null
-                    ? `Ofis zonasidan tashqaridasiz (${distanceMeters} m). Ketdim uchun ${DAVOMAT_OFFICE_GEOFENCE_METERS} m ichida bo‘ling.`
+                    ? `Ofis hududidan tashqaridasiz (${distanceMeters} m). Ketdim uchun ${DAVOMAT_OFFICE_GEOFENCE_METERS} m ichida bo‘ling.`
                     : "GPS kutilmoqda…"}
               </p>
             ) : (
               <p className="flex items-center gap-1.5 text-xs text-emerald-800 dark:text-emerald-200">
                 <MapPin className="h-3.5 w-3.5" />
-                Ofis zonasidasiz ({distanceMeters} m)
+                Ofis hududidasiz ({distanceMeters} m)
               </p>
             )}
           </div>
@@ -295,7 +295,7 @@ export default function DavomatOfisdaPage() {
           <div className="space-y-3">
             <p className="text-sm font-semibold">Hozir ochiq ofis qolishi yo‘q</p>
             <p className="text-xs text-muted-foreground">
-              Asosiy ofis yashil zonasida ({DAVOMAT_OFFICE_GEOFENCE_METERS} m) Face ID
+              Asosiy ofis yashil hududida ({DAVOMAT_OFFICE_GEOFENCE_METERS} m) Face ID
               bilan «Keldim» qiling — kelgan soat va qolish vaqti shu yerda ko‘rinadi.
             </p>
             <div className="flex flex-col gap-2 sm:flex-row">
@@ -321,7 +321,7 @@ export default function DavomatOfisdaPage() {
                 )}
               >
                 Ofisgacha: {distanceMeters} m
-                {withinOffice ? " — zonadasiz" : ""}
+                {withinOffice ? " — hududdasisiz" : ""}
               </p>
             ) : null}
           </div>

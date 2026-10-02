@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { FileDown, FileSpreadsheet, Loader2, Phone, Search } from "lucide-react";
+import { ChevronLeft, ChevronRight, FileDown, FileSpreadsheet, Loader2, Phone, Search } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -86,10 +86,24 @@ function formatDur(mins: number | null) {
   return m ? `${h} soat ${m} daq` : `${h} soat`;
 }
 
+type OpenStatus = "ochiq" | "ochilmagan" | "yopilgan";
+
+function dayStatus(day: DayCell): OpenStatus {
+  if (day.openNow) return "ochiq";
+  if (day.systemOpen) return "yopilgan";
+  return "ochilmagan";
+}
+
+function periodStatus(days: DayCell[]): OpenStatus {
+  if (days.some((day) => day.openNow)) return "ochiq";
+  if (days.some((day) => day.systemOpen)) return "yopilgan";
+  return "ochilmagan";
+}
+
 function statusLabel(day: DayCell) {
-  if (day.sbOpen || day.sbClose) return "Fakt yozilgan";
-  if (day.openNow) return "Ochiq";
-  if (day.systemOpen) return "Yopilgan";
+  const status = dayStatus(day);
+  if (status === "ochiq") return "Ochiq";
+  if (status === "yopilgan") return "Yopilgan";
   return "Ochilmagan";
 }
 
@@ -127,6 +141,7 @@ export default function DorixonaOchilishiPage() {
   const [q, setQ] = useState("");
   const [filial, setFilial] = useState("all");
   const [coord, setCoord] = useState("all");
+  const [status, setStatus] = useState<"all" | OpenStatus>("all");
   const [edit, setEdit] = useState<{ row: BranchRow; day: DayCell } | null>(null);
   const [sbOpen, setSbOpen] = useState("");
   const [sbClose, setSbClose] = useState("");
@@ -156,7 +171,7 @@ export default function DorixonaOchilishiPage() {
     else setLoading(false);
   }, [allowed, from, to]);
 
-  const filtered = useMemo(() => {
+  const matched = useMemo(() => {
     const words = q.trim().split(/\s+/).map(foldScript).filter(Boolean);
     return rows.filter((row) => {
       if (filial !== "all" && String(row.id) !== filial) return false;
@@ -166,6 +181,17 @@ export default function DorixonaOchilishiPage() {
       return words.every((word) => hay.includes(word));
     });
   }, [rows, q, filial, coord]);
+
+  const statusCounts = useMemo(() => {
+    const counts = { all: matched.length, ochiq: 0, ochilmagan: 0, yopilgan: 0 };
+    for (const row of matched) counts[periodStatus(row.days)] += 1;
+    return counts;
+  }, [matched]);
+
+  const filtered = useMemo(
+    () => (status === "all" ? matched : matched.filter((row) => periodStatus(row.days) === status)),
+    [matched, status],
+  );
 
   const openEdit = (row: BranchRow, day: DayCell) => {
     setEdit({ row, day });
@@ -237,7 +263,7 @@ export default function DorixonaOchilishiPage() {
       grain,
       title: "Dorixona ochilishi",
       period: from === to ? from : `${from} — ${to}`,
-      filterLine: `${grain === "kun" ? "Kun" : grain === "hafta" ? "Hafta" : "Oy"} · ${filialName} · ${coordName}${q.trim() ? ` · qidiruv: ${q.trim()}` : ""}`,
+      filterLine: `${grain === "kun" ? "Kun" : grain === "hafta" ? "Hafta" : "Oy"} · ${status === "ochiq" ? "Ochiq" : status === "ochilmagan" ? "Ochilmagan" : status === "yopilgan" ? "Yopilgan" : "Barcha holat"} · ${filialName} · ${coordName}${q.trim() ? ` · qidiruv: ${q.trim()}` : ""}`,
       rows: exportRows,
     };
     setExporting(kind);
@@ -263,56 +289,122 @@ export default function DorixonaOchilishiPage() {
 
   const step = grain === "kun" ? 1 : grain === "hafta" ? 7 : 0;
 
+  const periodLabel = from === to ? from : `${from} — ${to}`;
+
   return (
     <div className="flex w-full flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Davomat</p>
-          <h1 className="text-xl font-semibold text-[#0f2744]">Dorixona ochilishi</h1>
-          <p className="mt-1 max-w-2xl text-sm text-slate-500">
-            Birinchi xodim «Keldim» qilgan vaqt — ochildi. Oxirgi xodim ketganda — yopildi. SB yozgan vaqt fakt hisoblanadi, izoh bilan.
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">Davomat</p>
+          <h1 className="text-2xl font-semibold tracking-tight text-[#0f2744]">Dorixona ochilishi</h1>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-slate-500">
+            Birinchi xodim «Keldim» qilgan vaqt — ochildi. Oxirgi xodim ketganda — yopildi. SB yozgan vaqt alohida fakt, izoh bilan.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Button type="button" variant="outline" disabled={exporting != null || loading} onClick={() => void exportNow("excel")}>
-            <FileSpreadsheet className="mr-1.5 h-4 w-4" />{exporting === "excel" ? "Excel…" : "Excel"}
-          </Button>
-          <Button type="button" variant="outline" disabled={exporting != null || loading} onClick={() => void exportNow("pdf")}>
-            <FileDown className="mr-1.5 h-4 w-4" />{exporting === "pdf" ? "PDF…" : "PDF"}
-          </Button>
-          <div className="flex rounded-xl bg-slate-100 p-1">
-          {(["kun", "hafta", "oy"] as Grain[]).map((key) => (
-            <button key={key} type="button" onClick={() => setGrain(key)} className={cn("h-9 rounded-lg px-4 text-sm font-semibold", grain === key ? "bg-[#0b3a5c] text-white" : "text-slate-600")}>
-              {key === "kun" ? "Kun" : key === "hafta" ? "Hafta" : "Oy"}
+          <div className="inline-flex rounded-2xl bg-slate-100 p-1">
+            {(["kun", "hafta", "oy"] as Grain[]).map((key) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setGrain(key)}
+                className={cn(
+                  "h-10 rounded-xl px-4 text-sm font-semibold transition",
+                  grain === key ? "bg-[#0b3a5c] text-white shadow-sm" : "text-slate-600 hover:bg-white",
+                )}
+              >
+                {key === "kun" ? "Kun" : key === "hafta" ? "Hafta" : "Oy"}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            disabled={exporting != null || loading}
+            onClick={() => void exportNow("excel")}
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-emerald-600 px-3.5 text-sm font-semibold text-white shadow-sm hover:bg-emerald-700 disabled:opacity-50"
+          >
+            <FileSpreadsheet className="h-4 w-4" />
+            {exporting === "excel" ? "Excel…" : "Excel"}
+          </button>
+          <button
+            type="button"
+            disabled={exporting != null || loading}
+            onClick={() => void exportNow("pdf")}
+            className="inline-flex h-10 items-center gap-2 rounded-xl bg-white px-3.5 text-sm font-semibold text-[#0b3a5c] ring-1 ring-slate-200 hover:bg-slate-50 disabled:opacity-50"
+          >
+            <FileDown className="h-4 w-4" />
+            {exporting === "pdf" ? "PDF…" : "PDF"}
+          </button>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
+        <div className="inline-flex items-center gap-1">
+          <button
+            type="button"
+            aria-label="Oldingi"
+            onClick={() => setAnchor((cur) => grain === "oy" ? shiftMonth(cur, -1) : addDays(cur, -step))}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100"
+          >
+            <ChevronLeft className="h-5 w-5" />
+          </button>
+          <span className="min-w-[11rem] text-center text-sm font-semibold tabular-nums text-[#0f2744]">{periodLabel}</span>
+          <button
+            type="button"
+            aria-label="Keyingi"
+            onClick={() => setAnchor((cur) => grain === "oy" ? shiftMonth(cur, 1) : addDays(cur, step))}
+            className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100"
+          >
+            <ChevronRight className="h-5 w-5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setAnchor(todayYmd())}
+            className="ml-1 h-10 rounded-xl bg-[#0b3a5c] px-4 text-sm font-semibold text-white hover:bg-[#082c46]"
+          >
+            Bugun
+          </button>
+        </div>
+        <p className="px-2 text-sm font-medium text-slate-500">{filtered.length} ta dorixona</p>
+      </div>
+
+      <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+        <div className="flex flex-wrap gap-2">
+          <div className="relative min-w-[240px] flex-1">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input value={q} onChange={(event) => setQ(event.target.value)} placeholder="Dorixona yoki koordinator nomi" className="h-10 pl-9" />
+          </div>
+          <select value={filial} onChange={(event) => setFilial(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
+            <option value="all">Barcha filiallar</option>
+            {rows.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+          </select>
+          <select value={coord} onChange={(event) => setCoord(event.target.value)} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-700">
+            <option value="all">Barcha koordinatorlar</option>
+            {coords.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {([
+            ["all", "Hammasi", statusCounts.all, "bg-[#0b3a5c] text-white"],
+            ["ochiq", "Ochiq", statusCounts.ochiq, "bg-emerald-600 text-white"],
+            ["ochilmagan", "Ochilmagan", statusCounts.ochilmagan, "bg-amber-500 text-white"],
+            ["yopilgan", "Yopilgan", statusCounts.yopilgan, "bg-slate-700 text-white"],
+          ] as const).map(([key, label, count, onClass]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setStatus(key)}
+              className={cn(
+                "inline-flex h-10 items-center gap-2 rounded-xl px-3.5 text-sm font-semibold ring-1 transition",
+                status === key ? onClass : "bg-slate-50 text-slate-600 ring-slate-200 hover:bg-white",
+                status === key ? "ring-transparent" : "",
+              )}
+            >
+              {label}
+              <span className={cn("rounded-md px-1.5 py-0.5 text-xs tabular-nums", status === key ? "bg-white/20" : "bg-white text-slate-500 ring-1 ring-slate-200")}>{count}</span>
             </button>
           ))}
-          </div>
         </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => setAnchor((cur) => grain === "oy" ? shiftMonth(cur, -1) : addDays(cur, -step))}>Oldingi</Button>
-          <span className="text-sm font-semibold text-[#0f2744]">{from === to ? from : `${from} — ${to}`}</span>
-          <Button type="button" variant="outline" onClick={() => setAnchor((cur) => grain === "oy" ? shiftMonth(cur, 1) : addDays(cur, step))}>Keyingi</Button>
-          <Button type="button" variant="outline" onClick={() => setAnchor(todayYmd())}>Bugun</Button>
-        </div>
-        <p className="text-xs text-slate-500">{filtered.length} dorixona</p>
-      </div>
-
-      <div className="flex flex-wrap gap-2 rounded-2xl border border-slate-200 bg-white p-3">
-        <div className="relative min-w-[220px] flex-1">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input value={q} onChange={(event) => setQ(event.target.value)} placeholder="Dorixona yoki koordinator nomi" className="h-9 pl-9" />
-        </div>
-        <select value={filial} onChange={(event) => setFilial(event.target.value)} className="h-9 rounded-lg border border-slate-200 px-3 text-sm">
-          <option value="all">Barcha filiallar</option>
-          {rows.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-        </select>
-        <select value={coord} onChange={(event) => setCoord(event.target.value)} className="h-9 rounded-lg border border-slate-200 px-3 text-sm">
-          <option value="all">Barcha koordinatorlar</option>
-          {coords.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
       </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -322,9 +414,9 @@ export default function DorixonaOchilishiPage() {
           <p className="px-4 py-10 text-sm text-slate-500">Dorixona topilmadi.</p>
         ) : grain === "kun" ? (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1280px] table-fixed border-collapse text-left text-[13px]">
+            <table className="w-full min-w-[1180px] table-fixed border-collapse text-left text-[13px]">
               <colgroup>
-                <col className="w-[4%]" />
+                <col className="w-[44px]" />
                 <col className="w-[18%]" />
                 <col className="w-[13%]" />
                 <col className="w-[8%]" />
@@ -333,8 +425,8 @@ export default function DorixonaOchilishiPage() {
                 <col className="w-[8%]" />
                 <col className="w-[8%]" />
                 <col className="w-[8%]" />
-                <col className="w-[11%]" />
-                <col className="w-[6%]" />
+                <col />
+                <col className="w-[168px]" />
               </colgroup>
               <thead className="bg-[#0b3a5c] text-[11px] font-semibold uppercase tracking-wide text-white">
                 <tr className="h-11">
@@ -397,8 +489,9 @@ export default function DorixonaOchilishiPage() {
                     </td>
                     {row.days.map((day) => (
                       <td key={day.date} className="border-t border-slate-100 px-1 py-1">
-                        <button type="button" onClick={() => openEdit(row, day)} className="w-full rounded-xl border border-slate-200 px-2 py-1.5 text-left hover:border-[#0b3a5c]">
-                          <p className="text-[10px] text-slate-400">Tizim</p>
+                        <button type="button" onClick={() => openEdit(row, day)} className="w-full rounded-xl border border-slate-200 bg-white px-2 py-1.5 text-left hover:border-[#0b3a5c]">
+                          <Status day={day} compact />
+                          <p className="mt-1.5 text-[10px] text-slate-400">Tizim</p>
                           <p className="tabular-nums">{day.systemOpen || "—"}{day.systemClose ? `–${day.systemClose}` : day.openNow ? " · ochiq" : ""}</p>
                           <p className="mt-1 text-[10px] text-slate-400">SB fakt</p>
                           <p className="font-semibold tabular-nums text-[#0b3a5c]">{day.sbOpen || "—"}{day.sbClose ? `–${day.sbClose}` : ""}</p>
@@ -447,16 +540,25 @@ export default function DorixonaOchilishiPage() {
   );
 }
 
-function Status({ day }: { day: DayCell }) {
-  const label = statusLabel(day);
-  const fact = label === "Fakt yozilgan";
+function Status({ day, compact = false }: { day: DayCell; compact?: boolean }) {
+  const kind = dayStatus(day);
+  const fact = Boolean(day.sbOpen || day.sbClose);
+  const tone =
+    kind === "ochiq"
+      ? "bg-emerald-50 text-emerald-800 ring-emerald-200"
+      : kind === "yopilgan"
+        ? "bg-slate-100 text-slate-700 ring-slate-200"
+        : "bg-amber-50 text-amber-800 ring-amber-200";
+  const dot = kind === "ochiq" ? "bg-emerald-500" : kind === "yopilgan" ? "bg-slate-400" : "bg-amber-500";
   return (
-    <span className={cn(
-      "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-      fact && "bg-sky-50 text-sky-800",
-      !fact && day.openNow && "bg-emerald-50 text-emerald-700",
-      !fact && !day.openNow && day.systemOpen && "bg-slate-100 text-slate-600",
-      !fact && !day.systemOpen && "bg-amber-50 text-amber-800",
-    )}>{label}</span>
+    <span className={cn("inline-flex items-center gap-1.5", compact && "flex-wrap")}>
+      <span className={cn("inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-semibold ring-1", tone)}>
+        <span className={cn("h-1.5 w-1.5 rounded-full", dot, kind === "ochiq" && "animate-pulse")} />
+        {statusLabel(day)}
+      </span>
+      {fact && !compact ? (
+        <span className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-semibold text-sky-800 ring-1 ring-sky-200">SB fakt</span>
+      ) : null}
+    </span>
   );
 }

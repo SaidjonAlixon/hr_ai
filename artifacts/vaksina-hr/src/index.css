@@ -532,6 +532,33 @@
   @apply px-3 py-2 align-middle;
 }
 
+/* sticky thead + border-collapse birinchi qator ustiga chiqib ketadi */
+.analytics-table--pin {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.analytics-table--pin thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: #f8fafc;
+  box-shadow: inset 0 -1px 0 rgb(226 232 240);
+}
+
+.dark .analytics-table--pin thead th {
+  background-color: #0f172a;
+  box-shadow: inset 0 -1px 0 rgb(51 65 85 / 0.8);
+}
+
+.analytics-table--pin tbody td {
+  border-bottom: 1px solid rgb(226 232 240 / 0.95);
+}
+
+.dark .analytics-table--pin tbody td {
+  border-bottom-color: rgb(51 65 85 / 0.7);
+}
+
 .analytics-table tbody tr {
   @apply border-b border-border/60 transition-colors hover:bg-muted/25;
 }

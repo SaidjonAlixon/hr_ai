@@ -151,6 +151,7 @@ export const ROLE_LABELS: Record<string, string> = {
   kassir: "Kassir",
   yurist: "Yurist",
   komunalniy: "Kommunal",
+  farrosh: "Farrosh",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 
@@ -1031,7 +1032,7 @@ export async function computePayrollList(
 
   if (month >= JARIMA_START.slice(0, 7)) {
     try {
-      const snap = await applyAttendanceJarima(month);
+      const snap = await applyAttendanceJarima(month, jarimaWorkDay(scopedCalendars));
       const byUser = new Map(snap.people.map((person) => [person.userId, person]));
       for (const item of items) {
         if (item.userId == null) continue;
@@ -1313,8 +1314,30 @@ export async function loadPayrollYear(userId: number, year: string) {
   return { year, months, approvedNet };
 }
 
+function jarimaWorkDay(calendars: Map<string, Map<string, boolean>>) {
+  return (person: {
+    role: string | null;
+    orgRole: string | null;
+    position: string | null;
+    location: string | null;
+    shiftType: string | null;
+    shiftLabel: string | null;
+  }, date: string) => {
+    const scope = payrollCalendarScope({
+      userRole: person.role,
+      orgRole: person.orgRole,
+      position: person.position,
+      location: person.location,
+      shiftType: person.shiftType,
+      shiftLabel: person.shiftLabel,
+    });
+    return isWorkDay(date, calendars.get(scope) ?? new Map());
+  };
+}
+
 export async function loadJarimaSummary(month: string, userId: number, manage: boolean) {
-  const snap = month >= JARIMA_START.slice(0, 7) ? await applyAttendanceJarima(month) : null;
+  const calendars = month >= JARIMA_START.slice(0, 7) ? await loadScopedCalendars() : new Map<string, Map<string, boolean>>();
+  const snap = month >= JARIMA_START.slice(0, 7) ? await applyAttendanceJarima(month, jarimaWorkDay(calendars)) : null;
   const self = snap?.people.find((person) => person.userId === userId) ?? null;
   const counted = (snap?.people ?? []).filter((person) => person.amount > 0);
   const total = counted.reduce((sum, person) => sum + person.amount, 0);
@@ -1375,7 +1398,8 @@ export async function loadJarimaSummary(month: string, userId: number, manage: b
 
 export async function loadMyPayrollCard(userId: number, monthKey: string) {
   const { month, from, to, monthLabel } = monthBounds(monthKey);
-  const snap = month >= JARIMA_START.slice(0, 7) ? await applyAttendanceJarima(month) : null;
+  const cardCalendars = month >= JARIMA_START.slice(0, 7) ? await loadScopedCalendars() : new Map<string, Map<string, boolean>>();
+  const snap = month >= JARIMA_START.slice(0, 7) ? await applyAttendanceJarima(month, jarimaWorkDay(cardCalendars)) : null;
   const self = snap?.people.find((person) => person.userId === userId) ?? null;
   const [pay] = await db
     .select({ salary: payrollMonthsTable.fixedSalary })

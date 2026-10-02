@@ -5,7 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useI18n } from '../../i18n/I18nProvider';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
-import { isHrManager, isHrRole, isSbRole, canChangeStaffStatus, isDirectorRole } from "../../lib/roles";
+import { canManagePharmacyOps, isHrRole, isSbRole, canChangeStaffStatus, isDirectorRole } from "../../lib/roles";
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import { isVacancyPlaceholder } from '../../lib/vacancy-slot';
 import {
@@ -271,19 +271,16 @@ export default function PharmacyNetworkPage() {
   const saveBranchGps = useSaveManagerLocation();
   const dupCleanupDone = useRef(false);
 
-  const canAddMudir = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
-  const canAddTeam = user?.role === 'mudir';
-  const canAddStaff = canAddMudir || canAddTeam;
-  const canHardDelete =
-    user?.role === 'admin' ||
-    user?.role === 'koordinator' ||
-    isHrRole(user?.role) ||
-    isDirectorRole(user?.role);
+  const canRunNetwork = canManagePharmacyOps(user?.role);
+  const canAddMudir = canRunNetwork;
+  const canAddTeam = false;
+  const canAddStaff = canRunNetwork;
+  const canHardDelete = canRunNetwork;
   const canPickFilialForStaff = canAddMudir;
 
   const isMudirOnly = user?.role === 'mudir';
   const isKoordinatorOnly = user?.role === 'koordinator';
-  const canDismissStaff = isKoordinatorOnly || isMudirOnly || canHardDelete;
+  const canDismissStaff = canRunNetwork;
 
   // Dublikat (mudirsiz) filiallarni bir marta tozalash
   useEffect(() => {
@@ -326,13 +323,7 @@ export default function PharmacyNetworkPage() {
   const [showPwdIds, setShowPwdIds] = useState<Record<number, boolean>>({});
   const [exportingMudirs, setExportingMudirs] = useState(false);
 
-  const canEditShift =
-    isHrRole(user?.role) ||
-    isDirectorRole(user?.role) ||
-    user?.role === 'admin' ||
-    user?.role === 'department_head' ||
-    user?.role === 'mudir' ||
-    user?.role === 'koordinator';
+  const canEditShift = canRunNetwork;
 
   const canEditStatus = canChangeStaffStatus(user?.role);
 
@@ -343,7 +334,7 @@ export default function PharmacyNetworkPage() {
     isDirectorRole(user?.role) ||
     user?.role === 'department_head';
 
-  const canSetBranchGps = user?.role === 'koordinator' || user?.role === 'admin' || isHrManager(user?.role);
+  const canSetBranchGps = canRunNetwork;
   const canSetNoManager = canChangeStaffStatus(user?.role);
 
   /** Filialni «Yopilgan» qilish — faqat Admin / Direktor */
@@ -1173,17 +1164,6 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
               {exportingMudirs ? t('ui.loading') : t('pharmacy.excelDownload')}
             </Button>
           )}
-          {isKoordinatorOnly && (
-            <Button
-              variant="outline"
-              className="h-11 w-full gap-2 sm:h-9 sm:w-auto"
-              onClick={() => openAddStaff('xodim')}
-              disabled={allManagers.length === 0}
-            >
-              <Plus className="h-4 w-4" />
-              {t('pharmacy.addStaff')}
-            </Button>
-          )}
           {canAddStaff && (
             <Button className="h-11 w-full gap-2 sm:h-9 sm:w-auto" onClick={() => openAddStaff(canAddMudir ? 'mudir' : 'xodim')}>
               <Plus className="h-4 w-4" />
@@ -1438,7 +1418,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                           </Button>
                         ) : null
                       ) : null}
-                      {(isKoordinatorOnly || canAddMudir || canAddTeam) && (
+                      {(canAddMudir || canAddTeam) && (
                         <Button
                           type="button"
                           size="sm"
@@ -1770,7 +1750,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                               <span className="hidden sm:inline">Mudir</span>
                             </button>
                           )}
-                          {(isKoordinatorOnly || (canAddMudir && !isKoordinatorOnly) || canAddTeam) && (
+                          {(canAddMudir || canAddTeam) && (
                             <button
                               type="button"
                               onClick={() => openAddStaff('xodim', manager.id)}
@@ -1902,7 +1882,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                         {open ? 'Yopish' : 'Batafsil'}
                       </button>
 
-                      {(noMudir && canAddMudir) || (!hasTeam && (isKoordinatorOnly || canAddMudir || canAddTeam)) ? (
+                      {(noMudir && canAddMudir) || (!hasTeam && (canAddMudir || canAddTeam)) ? (
                         <div className="mt-2 flex flex-wrap items-center gap-1.5">
                           {noMudir && canAddMudir ? (
                             <Button
@@ -1916,7 +1896,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                               Mudir qo‘shish
                             </Button>
                           ) : null}
-                          {(!hasTeam || noMudir) && (isKoordinatorOnly || canAddMudir || canAddTeam) ? (
+                          {(!hasTeam || noMudir) && (canAddMudir || canAddTeam) ? (
                             <Button
                               type="button"
                               size="sm"
@@ -1941,18 +1921,20 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                               <p className="text-center text-xs text-muted-foreground">
                                 Hali farmasevt yoki stajyor yo‘q.
                               </p>
-                              <div className="flex justify-center">
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  variant="outline"
-                                  className="h-8 gap-1 border-sky-300 bg-sky-50 px-2.5 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-300"
-                                  onClick={() => openAddStaff('xodim', manager.id)}
-                                >
-                                  <Plus className="h-3.5 w-3.5" />
-                                  Xodim qo‘shish
-                                </Button>
-                              </div>
+                              {canAddStaff ? (
+                                <div className="flex justify-center">
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 gap-1 border-sky-300 bg-sky-50 px-2.5 text-xs font-semibold text-sky-900 hover:bg-sky-100 dark:border-sky-500/40 dark:bg-sky-950/40 dark:text-sky-300"
+                                    onClick={() => openAddStaff('xodim', manager.id)}
+                                  >
+                                    <Plus className="h-3.5 w-3.5" />
+                                    Xodim qo‘shish
+                                  </Button>
+                                </div>
+                              ) : null}
                             </div>
                           ) : (
                             fullTeam.map((ph) => {
@@ -2110,29 +2092,22 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
         </div>
       </div>
 
-      {(canAddTeam || isKoordinatorOnly) && (
+      {canAddStaff && (
         <div className="pn-mobile-bar md:hidden">
-          {isKoordinatorOnly ? (
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                className="h-11 w-full gap-1.5 border-amber-300 bg-amber-50 text-amber-950"
-                onClick={() => openAddStaff('mudir')}
-              >
-                <Plus className="h-4 w-4" />
-                Mudir
-              </Button>
-              <Button className="h-11 w-full gap-1.5" onClick={() => openAddStaff('xodim')}>
-                <Plus className="h-4 w-4" />
-                Farmasevt
-              </Button>
-            </div>
-          ) : (
-            <Button className="h-11 w-full gap-2" onClick={() => openAddStaff('xodim')}>
+          <div className="grid grid-cols-2 gap-2">
+            <Button
+              variant="outline"
+              className="h-11 w-full gap-1.5 border-amber-300 bg-amber-50 text-amber-950"
+              onClick={() => openAddStaff('mudir')}
+            >
               <Plus className="h-4 w-4" />
-              Xodim qo‘shish
+              Mudir
             </Button>
-          )}
+            <Button className="h-11 w-full gap-1.5" onClick={() => openAddStaff('xodim')}>
+              <Plus className="h-4 w-4" />
+              Farmasevt
+            </Button>
+          </div>
         </div>
       )}
 

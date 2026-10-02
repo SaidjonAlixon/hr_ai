@@ -61,6 +61,7 @@ const LOGIN_UZ: Record<string, string> = {
   kassir: "Kassir",
   yurist: "Yurist",
   komunalniy: "Kommunal",
+  farrosh: "Farrosh",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

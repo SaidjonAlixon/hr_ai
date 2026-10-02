@@ -304,13 +304,22 @@ export function useReturnOylik() {
   });
 }
 
+export type JarimaEvent = {
+  date: string;
+  kind: "late" | "absent";
+  n: number;
+  amount: number;
+};
+
 export type JarimaSelf = {
   fullName: string;
+  position?: string | null;
   salary: number;
   strikes: number;
   late: number;
   absent: number;
   amount: number;
+  events?: JarimaEvent[];
   note: string | null;
   status: string;
 };

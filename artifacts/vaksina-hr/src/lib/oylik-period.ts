@@ -166,12 +166,12 @@ export function resolveDay(
   const share = salaryOnDates(row.salary ?? 0, month, [date]);
   const event = (row.jarimaEvents ?? []).find((item) => item.date === date);
   const sheet = (row.daySheets ?? []).find((item) => item.day === date);
-  const returnedUntouched = sheet?.status === "returned" && (sheet.jarima ?? 0) === 0 && (sheet.note || "").startsWith("Qaytarilgan");
+  const returnedUntouched = sheet?.status === "returned" && (sheet.jarima ?? 0) === 0 && ((sheet.note || "").startsWith("Qaytarilgan") || (sheet.note || "").startsWith("Bekor qilingan"));
   if (returnedUntouched && sheet) {
     return {
       salary: sheet.salary ?? share,
       jarima: 0,
-      note: sheet.note || "Qaytarilgan · jarima 0",
+      note: sheet.note || "Bekor qilingan · jarima 0",
       status: "returned" as const,
       dirty: false,
     };

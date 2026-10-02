@@ -60,72 +60,122 @@ export function DavomatJarimaCard({ month }: { month: string }) {
   );
 }
 
+const JARIMA_RULE_CARDS = [
+  { n: "1", title: "1-marta", body: "1 kunlik ish haqining 30%" },
+  { n: "2", title: "2-marta", body: "Yana 1 kunlikning 30%" },
+  { n: "3", title: "3-marta", body: "1 kunlik ish haqining 100%" },
+  { n: "4+", title: "4-marta va keyin", body: "Har safar 1 oylikning 50%" },
+];
+
 export function DavomatJarimaPanel({ month }: { month: string }) {
   const summary = useJarimaSummary(month);
   const data = summary.data;
   const rows = data?.rows ?? [];
   const self = data?.self;
+  const people = jarimaPeople(rows.length ? rows : self ? [self] : []);
+  const total = data?.own ? self?.amount ?? 0 : data?.total ?? 0;
   return (
-    <section className="mt-4 rounded-2xl border border-rose-200 bg-white p-4 shadow-sm dark:border-rose-400/30 dark:bg-[#2a1520]">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-700 dark:text-rose-200">Jarima · 01.10.2026 dan</p>
-          <h2 className="mt-1 text-lg font-semibold text-[#0f2744] dark:text-white">Kechikkan va kelmagan</h2>
+    <section className="mt-4 overflow-hidden rounded-3xl border border-rose-200/80 bg-white shadow-[0_18px_50px_-28px_rgba(159,18,57,0.55)] dark:border-rose-400/25 dark:bg-[#241018]">
+      <header className="bg-[#172033] px-5 py-5 text-white sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="min-w-0">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-rose-200">Jarima · 01.10.2026 dan</p>
+            <h2 className="mt-1 text-2xl font-semibold tracking-tight">Kechikkan va kelmagan</h2>
+            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-white/70">
+              Mudir, farmasevt va stajyor. Har bir qatorda kim, lavozimi, qaysi sana, nima sabab va izoh to‘liq yozilgan.
+            </p>
+          </div>
+          <div className="min-w-[180px] rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-100">Jami jarima</p>
+            <p className="mt-1 text-2xl font-bold tabular-nums leading-none">{summary.isLoading ? "…" : formatSom(total)}</p>
+            <p className="mt-1.5 text-xs text-white/60">{summary.isLoading ? "Hisoblanmoqda" : `${people.length} xodim`}</p>
+          </div>
         </div>
-        <p className="text-sm font-bold tabular-nums text-rose-700 dark:text-rose-200">
-          {summary.isLoading ? "…" : formatSom(data?.own ? self?.amount ?? 0 : data?.total ?? 0)}
-        </p>
-      </div>
-      <ul className="mt-3 grid gap-1 text-xs text-slate-600 dark:text-rose-100/80 sm:grid-cols-2">
-        {(data?.rule ?? [
-          "1-marta — 1 kunlik ish haqining 30%",
-          "2-marta — 1 kunlik ish haqining 30%",
-          "3-marta — 1 kunlik ish haqining 100%",
-          "4-marta va undan keyin — har safar 1 oylik ish haqining 50%",
-        ]).map((line) => (
-          <li key={line}>{line}</li>
-        ))}
-      </ul>
-      <p className="mt-2 text-xs text-muted-foreground">
-        Kunlik ish haqi = oylik / shu oyning kunlari. Mudir, farmasevt va stajyor. Qoralama — admin tasdiqlaguncha oylik yopilmaydi.
+        <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {JARIMA_RULE_CARDS.map((rule) => (
+            <div key={rule.n} className="rounded-2xl bg-white/10 px-3.5 py-3 ring-1 ring-white/10">
+              <div className="flex items-center gap-2">
+                <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-rose-400/25 text-xs font-bold text-rose-50">{rule.n}</span>
+                <p className="text-sm font-semibold">{rule.title}</p>
+              </div>
+              <p className="mt-2 text-xs leading-relaxed text-white/75">{rule.body}</p>
+            </div>
+          ))}
+        </div>
+      </header>
+      <p className="border-b border-rose-100 bg-rose-50/80 px-5 py-2.5 text-xs leading-relaxed text-slate-600 dark:border-rose-400/15 dark:bg-rose-500/10 dark:text-rose-100/80 sm:px-6">
+        Kunlik ish haqi = oylik ÷ shu oyning kunlari. Qoralama — admin tasdiqlaguncha oylik yopilmaydi.
       </p>
-      {self ? (
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-foreground">
-          <span>
-            {self.fullName}: {jarimaNoteParts(self.note || "").reason || "Jarima yo‘q"} · {formatSom(self.amount)}
-            {self.status === "approved" ? " · tasdiqlangan" : " · qoralama"}
-          </span>
-          {jarimaNoteParts(self.note || "").warning ? (
-            <span className="rounded-md bg-amber-100 px-2 py-1 text-[11px] font-semibold text-amber-900 dark:bg-amber-400/15 dark:text-amber-100">
-              {jarimaNoteParts(self.note || "").warning}
-            </span>
-          ) : null}
+      {summary.isLoading ? (
+        <div className="space-y-3 p-5">
+          <Skeleton className="h-24 rounded-2xl" />
+          <Skeleton className="h-24 rounded-2xl" />
         </div>
-      ) : null}
-      {rows.length ? (
-        <div className="mt-3 max-h-72 overflow-auto rounded-xl border border-rose-100 dark:border-rose-400/20">
-          <table className="w-full text-left text-xs">
-            <thead className="sticky top-0 bg-rose-50 text-rose-900 dark:bg-rose-500/10 dark:text-rose-100">
-              <tr>
-                <th className="px-3 py-2 font-semibold">Xodim</th>
-                <th className="px-2 py-2 font-semibold">Kech</th>
-                <th className="px-2 py-2 font-semibold">Kelmagan</th>
-                <th className="px-3 py-2 text-right font-semibold">Jarima</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row, index) => (
-                <tr key={`${row.fullName}-${index}`} className="border-t border-rose-100 dark:border-rose-400/10">
-                  <td className="px-3 py-1.5 font-medium">{row.fullName}</td>
-                  <td className="px-2 py-1.5 tabular-nums">{row.late}</td>
-                  <td className="px-2 py-1.5 tabular-nums">{row.absent}</td>
-                  <td className="px-3 py-1.5 text-right font-semibold tabular-nums">{formatSom(row.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      ) : people.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-slate-500 sm:px-6">Bu oyda jarima yo‘q. 01.10.2026 dan kechikkan va kelmagan xodimlar shu yerda chiqadi.</p>
+      ) : (
+        <div>
+          {people.map((person) => {
+            const warning = jarimaNoteParts(person.note).warning;
+            return (
+              <article key={person.key} className="border-b border-slate-100 last:border-b-0 dark:border-white/10">
+                <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4 sm:px-6">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#172033] text-sm font-bold text-white">{person.initials}</span>
+                    <div className="min-w-0">
+                      <p className="text-base font-semibold text-[#0f2744] dark:text-white">{person.fullName}</p>
+                      <p className="text-sm text-slate-500 dark:text-rose-100/70">{person.position || "Lavozim yozilmagan"}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900 dark:bg-amber-400/15 dark:text-amber-100">{person.late} kech</span>
+                    <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-800 dark:bg-rose-400/15 dark:text-rose-100">{person.absent} kelmagan</span>
+                    <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", person.status === "approved" ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-white/70")}>
+                      {person.status === "approved" ? "Tasdiqlangan" : "Qoralama"}
+                    </span>
+                    <span className="text-base font-bold tabular-nums text-rose-700 dark:text-rose-200">{formatSom(person.amount)}</span>
+                  </div>
+                </div>
+                {warning ? (
+                  <p className="mx-5 mb-3 rounded-xl bg-amber-50 px-3 py-2 text-sm leading-relaxed text-amber-950 dark:bg-amber-400/10 dark:text-amber-100 sm:mx-6">{warning}</p>
+                ) : null}
+                <div className="mx-5 mb-4 overflow-hidden rounded-2xl border border-slate-200 dark:border-white/10 sm:mx-6">
+                  <div className="hidden grid-cols-[9.5rem_11rem_minmax(0,1fr)_8.5rem] gap-3 bg-slate-50 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400 dark:bg-white/5 sm:grid">
+                    <span>Sana</span>
+                    <span>Sabab</span>
+                    <span>Izoh</span>
+                    <span className="text-right">Jarima</span>
+                  </div>
+                  {person.events.map((event) => (
+                    <div key={event.key} className="grid gap-2 border-t border-slate-100 px-4 py-3 first:border-t-0 dark:border-white/10 sm:grid-cols-[9.5rem_11rem_minmax(0,1fr)_8.5rem] sm:items-start sm:gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:hidden">Sana</p>
+                        <p className="text-sm font-semibold tabular-nums text-[#0f2744] dark:text-white">{event.date}</p>
+                        <p className="text-xs text-slate-500 dark:text-white/50">{event.weekday}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:hidden">Sabab</p>
+                        <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", event.kind === "late" ? "bg-amber-100 text-amber-900 dark:bg-amber-400/20 dark:text-amber-100" : event.kind === "absent" ? "bg-rose-100 text-rose-800 dark:bg-rose-400/20 dark:text-rose-100" : "bg-slate-100 text-slate-700")}>
+                          {event.reason}
+                        </span>
+                        <p className="mt-1 text-xs text-slate-500 dark:text-white/50">{event.strike}</p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:hidden">Izoh</p>
+                        <p className="text-sm leading-relaxed text-slate-600 dark:text-rose-50/80">{event.note}</p>
+                      </div>
+                      <div className="sm:text-right">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400 sm:hidden">Jarima</p>
+                        <p className="text-sm font-bold tabular-nums text-rose-700 dark:text-rose-200">{formatSom(event.amount)}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            );
+          })}
         </div>
-      ) : null}
+      )}
     </section>
   );
 }
@@ -213,6 +263,89 @@ function YearLedger({ year }: { year?: { year: string; months: Array<{ month: st
   );
 }
 
+const JARIMA_WEEKDAYS = ["Yakshanba", "Dushanba", "Seshanba", "Chorshanba", "Payshanba", "Juma", "Shanba"];
+
+function formatJarimaDate(ymd: string) {
+  const [year, month, day] = ymd.split("-");
+  if (!year || !month || !day) return ymd || "—";
+  return `${day}.${month}.${year}`;
+}
+
+function jarimaWeekday(ymd: string) {
+  const [year, month, day] = ymd.split("-").map(Number);
+  if (!year || !month || !day) return "";
+  return JARIMA_WEEKDAYS[new Date(Date.UTC(year, month - 1, day)).getUTCDay()] || "";
+}
+
+function jarimaInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] || "") + (parts[1]?.[0] || "")).toUpperCase() || "•";
+}
+
+function strikeLabel(n: number) {
+  if (n <= 1) return "1-marta";
+  if (n === 2) return "2-marta";
+  if (n === 3) return "3-marta";
+  return `${n}-marta`;
+}
+
+function strikeNote(n: number) {
+  if (n <= 1) return "Bu oyda birinchi marta. 1 kunlik ish haqining 30% jarima.";
+  if (n === 2) return "Bu oyda ikkinchi marta. Yana 1 kunlik ish haqining 30% jarima.";
+  if (n === 3) return "Bu oyda uchinchi marta. 1 kunlik ish haqining 100% jarima.";
+  return `Bu oyda ${n}-marta. 1 oylik ish haqining 50% jarima.`;
+}
+
+type JarimaPanelRow = {
+  fullName: string;
+  position?: string | null;
+  amount: number;
+  note: string | null;
+  late: number;
+  absent: number;
+  status?: string;
+  events?: Array<{ date: string; kind: "late" | "absent"; n: number; amount: number }>;
+};
+
+function jarimaPeople(rows: JarimaPanelRow[]) {
+  return rows.map((row, index) => {
+    const events = [...(row.events ?? [])].sort((a, b) => a.date.localeCompare(b.date) || a.n - b.n);
+    const built = events.length
+      ? events.map((event) => ({
+          key: `${row.fullName}-${event.date}-${event.n}`,
+          date: formatJarimaDate(event.date),
+          weekday: jarimaWeekday(event.date),
+          kind: event.kind as "late" | "absent" | "mix",
+          reason: event.kind === "late" ? "Kech keldi" : "Kelmagan",
+          strike: strikeLabel(event.n),
+          amount: event.amount,
+          note: strikeNote(event.n),
+        }))
+      : [{
+          key: `${row.fullName}-${index}-sum`,
+          date: "—",
+          weekday: "",
+          kind: "mix" as const,
+          reason: [row.late ? `${row.late} marta kech` : "", row.absent ? `${row.absent} marta kelmagan` : ""].filter(Boolean).join(", ") || "Jarima",
+          strike: `${row.late + row.absent} marta`,
+          amount: row.amount,
+          note: jarimaNoteParts(row.note || "").reason || row.note || "—",
+        }];
+    return {
+      key: `${row.fullName}-${index}`,
+      fullName: row.fullName,
+      position: row.position || "",
+      initials: jarimaInitials(row.fullName),
+      late: row.late,
+      absent: row.absent,
+      amount: row.amount,
+      status: row.status || "draft",
+      note: row.note || "",
+      events: built,
+    };
+  });
+}
+
 function jarimaNoteParts(note: string): { reason: string; warning: string } {
   const mark = "Ogohlantirish:";
   const idx = note.indexOf(mark);
@@ -232,6 +365,7 @@ function PayLine({
   save,
   onSaveDay,
   onApprove,
+  onCancel,
   selected,
   onToggle,
 }: {
@@ -243,6 +377,7 @@ function PayLine({
   save: ReturnType<typeof useSaveOylikLine>;
   onSaveDay?: (salary: number, jarima: number, note: string) => void;
   onApprove?: () => void;
+  onCancel?: () => void;
   selected: boolean;
   onToggle: () => void;
 }) {
@@ -368,7 +503,7 @@ function PayLine({
                 view.dayStatus === "draft" && "bg-amber-500",
               )}
             >
-              {view.dayStatus === "approved" ? "Tasdiqlangan" : view.dayStatus === "returned" ? "Qaytarilgan" : "Tasdiqlanmagan"}
+              {view.dayStatus === "approved" ? "Tasdiqlangan" : view.dayStatus === "returned" ? "Bekor qilingan" : "Tasdiqlanmagan"}
             </span>
             {canApprove && view.dayStatus !== "approved" && row.userId ? (
               <button
@@ -377,6 +512,15 @@ function PayLine({
                 className="h-7 rounded-lg bg-[#0b3a5c] px-2.5 text-[11px] font-semibold text-white hover:bg-[#0b3a5c]/90"
               >
                 Tasdiqlash
+              </button>
+            ) : null}
+            {canApprove && view.dayStatus === "approved" && row.userId ? (
+              <button
+                type="button"
+                onClick={onCancel}
+                className="h-7 rounded-lg border border-rose-300 px-2.5 text-[11px] font-semibold text-rose-700 hover:bg-rose-50"
+              >
+                Bekor qilish
               </button>
             ) : null}
             {view.dirty ? <span className="text-[10px] font-semibold text-amber-700">Yangilash kerak</span> : null}
@@ -396,6 +540,7 @@ export function PayTable({
   present,
   onSaveDay,
   onApprove,
+  onCancel,
   selected,
   onToggle,
   onTogglePage,
@@ -408,6 +553,7 @@ export function PayTable({
   present: (row: PayrollRow) => PayrollSlice;
   onSaveDay?: (row: PayrollRow, salary: number, jarima: number, note: string) => void;
   onApprove?: (row: PayrollRow) => void;
+  onCancel?: (row: PayrollRow) => void;
   selected: number[];
   onToggle: (userId: number) => void;
   onTogglePage: (userIds: number[], on: boolean) => void;
@@ -481,6 +627,7 @@ export function PayTable({
                 save={save}
                 onSaveDay={(salary, jarima, note) => onSaveDay?.(row, salary, jarima, note)}
                 onApprove={() => onApprove?.(row)}
+                onCancel={() => onCancel?.(row)}
                 selected={row.userId != null && selectedSet.has(row.userId)}
                 onToggle={() => row.userId && onToggle(row.userId)}
               />
@@ -502,7 +649,7 @@ function dayCellTone(status: string, jarima: number): string {
 
 function dayStatusWord(status: string): string {
   if (status === "approved") return "Tasdiq";
-  if (status === "returned") return "Qaytgan";
+  if (status === "returned") return "Bekor";
   return "Kutiladi";
 }
 

@@ -221,15 +221,15 @@ export function DavomatCoachFinger({
                 1-qadam
               </p>
               <p className="dv-coach-bubble-title">
-                {gpsDenied ? "Joylashuvga ruxsat bering" : "Avval joylashuvni yoqing"}
+                {gpsDenied ? "Joylashuvga ruxsat bering" : "GPS yoqing"}
               </p>
               <p className="dv-coach-bubble-sub">
                 {gpsDenied
-                  ? "Sozlamadan lokatsiyaga ruxsat bering, keyin «Yoqing» ni bosing"
-                  : "Davomat ishlashi uchun avval lokatsiyaga ruxsat bering"}
+                  ? "Ruxsat bering, so‘ng qayta kiring"
+                  : "GPS yoqing, so‘ng qayta kiring"}
               </p>
               <button type="button" className="dv-coach-primary" onClick={askGps}>
-                {gpsDenied ? "Ruxsat / Yoqing" : "Joylashuvni yoqing"}
+                {gpsDenied ? "Ruxsat bering" : "GPS yoqing"}
               </button>
             </div>
             {!gpsAnchor ? (

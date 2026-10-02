@@ -563,7 +563,7 @@ export default function AdminKochmaDavomatPage() {
         <Link href="/davomat-face" className="font-medium text-sky-600 underline-offset-2 hover:underline">
           Davomat
         </Link>{" "}
-        da yashil zonadan tashqarida ham ishlaydi; GPS avtomatik yoziladi.
+        da yashil hududdan tashqarida ham ishlaydi; GPS avtomatik yoziladi.
       </p>
 
       {/* Grant */}

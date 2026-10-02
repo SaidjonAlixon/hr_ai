@@ -176,8 +176,8 @@ export function FinishVisitDialog({
               <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0" />
               <span>
                 {withinGeofence
-                  ? `Yashil zonadasiz (${geofenceMeters} m) — Ketdim qabul qilinadi.`
-                  : `Yashil zonadan tashqaridasiz. Ketdim faqat filial ${geofenceMeters} m ichida ishlaydi.`}
+                  ? `Yashil hududdasisiz (${geofenceMeters} m) — Ketdim qabul qilinadi.`
+                  : `Yashil hududdan tashqaridasiz. Ketdim faqat filial ${geofenceMeters} m ichida ishlaydi.`}
               </span>
             </div>
           </div>

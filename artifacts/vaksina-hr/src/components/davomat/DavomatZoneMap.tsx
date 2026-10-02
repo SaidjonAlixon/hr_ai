@@ -22,6 +22,8 @@ type Props = {
   onEnableGps?: () => void;
   needsGps?: boolean;
   gpsDenied?: boolean;
+  /** So‘nggi nuqta eskirgan yoki GPS o‘chiq — «hududdasiz» deb yozilmasin */
+  gpsFresh?: boolean;
   baseTag?: string;
 };
 
@@ -116,6 +118,7 @@ export function DavomatZoneMap({
   onEnableGps,
   needsGps,
   gpsDenied,
+  gpsFresh = true,
   baseTag = "Asos",
 }: Props) {
   const shellRef = useRef<HTMLDivElement>(null);
@@ -470,9 +473,10 @@ export function DavomatZoneMap({
         <div
           className={cn(
             "dv-map-status",
-            inside ||
-              mobileAnywhere ||
-              (distanceMeters != null && Math.max(0, distanceMeters - allowedMeters) < 0.5)
+            mobileAnywhere ||
+              (gpsFresh &&
+                (inside ||
+                  (distanceMeters != null && Math.max(0, distanceMeters - allowedMeters) < 0.5)))
               ? "dv-map-status-ok"
               : "dv-map-status-far",
           )}
@@ -481,6 +485,11 @@ export function DavomatZoneMap({
             <>
               <CheckCircle2 className="h-3.5 w-3.5" />
               Ko‘chma ruxsat · istalgan joy
+            </>
+          ) : !gpsFresh ? (
+            <>
+              <Navigation className="h-3.5 w-3.5" />
+              GPS yoqing
             </>
           ) : inside ||
             (distanceMeters != null && Math.max(0, distanceMeters - allowedMeters) < 0.5) ? (
@@ -539,8 +548,8 @@ export function DavomatZoneMap({
           </button>
           <p className="dv-map-gps-warn">
             {gpsDenied
-              ? "Joylashuvga ruxsat bermadingiz — sozlamadan yoqing"
-              : "Davomat uchun joylashuvni yoqing"}
+              ? "Joylashuvga ruxsat bermadingiz — ruxsat bering, so‘ng qayta kiring"
+              : "GPS yoqing, so‘ng qayta kiring"}
           </p>
         </div>
       ) : null}

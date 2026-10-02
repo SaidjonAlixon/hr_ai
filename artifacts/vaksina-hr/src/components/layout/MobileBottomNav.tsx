@@ -43,6 +43,7 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   kassir: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   yurist: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   komunalniy: ['/vazifalar', '/eslatmalar', '/davomat-face'],
+  farrosh: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   direktor_yordamchisi: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   gpp: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   oshpaz: ['/vazifalar', '/eslatmalar', '/davomat-face'],

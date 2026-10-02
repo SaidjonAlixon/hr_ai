@@ -1793,7 +1793,7 @@ router.post("/branch-audits", requireAuth, async (req: AuthRequest, res): Promis
       const officeAllowed = 100 + 8;
       if (officeDist > officeAllowed) {
         res.status(403).json({
-          error: `Ofis yashil zonasidan tashqaridasiz: ${officeDist} m (ruxsat ~100 m). Asosiy ofisga boring.`,
+          error: `Ofis yashil hududidan tashqaridasiz: ${officeDist} m (ruxsat ~100 m). Asosiy ofisga boring.`,
           distanceMeters: officeDist,
           remainMeters: officeDist - 100,
           allowedMeters: 100,

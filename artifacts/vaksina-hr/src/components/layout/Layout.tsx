@@ -1501,6 +1501,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
     ],
+    farrosh: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
     direktor_yordamchisi: [
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -2486,6 +2491,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
               location === '/vazifalar' ||
                 location.startsWith('/vazifalar/tahlil') ||
                 location === '/davomat' ||
+                location.startsWith('/davomat/dorixona-ochilishi') ||
                 location.startsWith('/davomat/analytics') ||
                 location.startsWith('/davomat/xatoliklar') ||
                 (location === '/dashboard' && davomatDashHome) ||

@@ -82,6 +82,64 @@ export function isCoordinatorOfficeVisit(
   return Number(v.branchId) === COORD_OFFICE_BRANCH_ID;
 }
 
+/**
+ * Asosiy ofis kelish-ketishi. Cheklist (filial) tashriflari bu yerga kirmaydi.
+ * Ochiq ofis sessiyasi bo‘lsa «Ketdim», aks holda yangi «Keldim» ochiq — kun yopilmaydi.
+ */
+export async function coordinatorOfficeDay(
+  employeeId: number,
+  workDate: string,
+): Promise<{
+  open: boolean;
+  checkInAt: Date | null;
+  nextAction: "in" | "out";
+  /** Yopilgan ofis sessiyalari (joriy ochiq sessiya hisobga kirmaydi) */
+  priorOfficeMs: number;
+}> {
+  const rows = await db
+    .select({
+      checkInAt: coordinatorBranchVisitsTable.checkInAt,
+      checkOutAt: coordinatorBranchVisitsTable.checkOutAt,
+      status: coordinatorBranchVisitsTable.status,
+    })
+    .from(coordinatorBranchVisitsTable)
+    .where(
+      and(
+        eq(coordinatorBranchVisitsTable.coordinatorEmployeeId, employeeId),
+        eq(coordinatorBranchVisitsTable.workDate, workDate),
+        eq(coordinatorBranchVisitsTable.branchId, COORD_OFFICE_BRANCH_ID),
+      ),
+    );
+  const now = Date.now();
+  let priorOfficeMs = 0;
+  let openVisit: { checkInAt: Date } | null = null;
+  for (const v of rows) {
+    if (!v.checkInAt) continue;
+    const start = new Date(v.checkInAt).getTime();
+    if (!Number.isFinite(start)) continue;
+    const isOpen = v.status === "open" && !v.checkOutAt;
+    if (isOpen) {
+      if (!openVisit || start > openVisit.checkInAt.getTime()) {
+        openVisit = { checkInAt: new Date(v.checkInAt) };
+      }
+      continue;
+    }
+    if (v.checkOutAt) {
+      const end = new Date(v.checkOutAt).getTime();
+      if (Number.isFinite(end) && end > start) priorOfficeMs += end - start;
+    }
+  }
+  if (openVisit) {
+    return {
+      open: true,
+      checkInAt: openVisit.checkInAt,
+      nextAction: "out",
+      priorOfficeMs,
+    };
+  }
+  return { open: false, checkInAt: null, nextAction: "in", priorOfficeMs };
+}
+
 export function normalizeCoordinatorPunchBranchId(
   branchId: number | null | undefined,
 ): number {
@@ -130,7 +188,7 @@ export async function assertInBranchGeofence(opts: {
         status: 403,
         code: "outside_geofence",
         distanceMeters,
-        error: `Asosiy ofis zonasidan tashqaridasiz (${distanceMeters} m). Ofisga ${max} m ichida kiring.`,
+        error: `Asosiy ofis hududidan tashqaridasiz (${distanceMeters} m). Ofisga ${max} m ichida kiring.`,
       };
     }
     return { ok: true, distanceMeters, branchLabel: COORD_OFFICE_LABEL };
@@ -156,7 +214,7 @@ export async function assertInBranchGeofence(opts: {
       status: 403,
       code: "outside_geofence",
       distanceMeters,
-      error: `Yashil zonadan tashqaridasiz (${distanceMeters} m). Filialga ${max} m ichida kiring.`,
+      error: `Yashil hududdan tashqaridasiz (${distanceMeters} m). Filialga ${max} m ichida kiring.`,
     };
   }
   return { ok: true, distanceMeters, branchLabel: coords.label };
@@ -485,13 +543,15 @@ export async function finishCoordinatorVisitWithNote(opts: {
   return { ok: true, visit: updated };
 }
 
-/** Davomat yozuvi ochiq qolmasin — keyingi filialda yangi Keldim ochilsin */
+/** Ofis «Ketdim» davomat yozuvini yopadi. Filial cheklisti ofis kunini yopmaydi. */
 async function closeOpenAttendanceForVisit(
   visit: CoordVisitRow,
   checkOutAt: Date,
   source: string,
 ): Promise<void> {
   if (!visit.coordinatorEmployeeId) return;
+  // Filial cheklisti ofis davomatini yopmaydi — ofisga keyin «Keldim» ochiq qoladi
+  if (!isCoordinatorOfficeVisit(visit)) return;
   const conds = [
     eq(attendanceRecordsTable.employeeId, visit.coordinatorEmployeeId),
     eq(attendanceRecordsTable.workDate, visit.workDate),
@@ -836,7 +896,7 @@ export async function attachChecklistToOpenVisit(opts: {
     try {
       await notifyUser({
         userId: opts.coordinatorUserId,
-        text: `✅ Cheklist saqlandi («${branch}»). Endi yashil zonada «Ketdim» qiling — aks holda boshqa filialga tashrif qila olmaysiz.`,
+        text: `✅ Cheklist saqlandi («${branch}»). Endi yashil hududda «Ketdim» qiling — aks holda boshqa filialga tashrif qila olmaysiz.`,
         type: "coordinator_need_checkout",
         linkUrl: "/checklist",
         title: "Ketdim qiling",

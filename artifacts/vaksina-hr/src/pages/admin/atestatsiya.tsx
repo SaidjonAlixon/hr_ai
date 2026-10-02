@@ -206,8 +206,8 @@ function ExamEditor({ track, initial, onClose }: { track: AttestTrack; initial: 
       <div className="grid grid-cols-2 gap-2">
         {(
           [
-            ["branch", "O‘z filialida", "Xodim faqat biriktirilgan filial zonasida boshlaydi"],
-            ["office", "Asosiy ofisda", "Xodim faqat ofis zonasida boshlaydi"],
+            ["branch", "O‘z filialida", "Xodim faqat biriktirilgan filial hududida boshlaydi"],
+            ["office", "Asosiy ofisda", "Xodim faqat ofis hududida boshlaydi"],
           ] as const
         ).map(([key, label, hint]) => (
           <button

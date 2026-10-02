@@ -1974,9 +1974,9 @@ export function DavomatAnalyticsDashboard({
           </Panel>
 
           <Panel title={t("davomat.recentArrivals")} bodyClassName="p-0">
-            <div className="max-h-80 overflow-y-auto overflow-x-auto">
-              <table className="analytics-table w-full text-sm">
-                <thead className="sticky top-0 z-10">
+            <div className="max-h-80 overflow-auto">
+              <table className="analytics-table analytics-table--pin w-full text-sm">
+                <thead>
                   <tr>
                     <th>{t("ui.employee")}</th>
                     <th>{t("ui.department")}</th>

@@ -177,7 +177,7 @@ function buildFixPlan(item: DavomatXatolikItem) {
   if (item.code === "outside_geofence" || item.code === "outside_office_geofence") {
     return {
       title: "Yechim taklifi",
-      problem: `${name} GPS zonadan tashqarida edi.`,
+      problem: `${name} GPS hududdan tashqarida edi.`,
       facts: [
         `Belgilangan joy: ${assigned}`,
         item.liveLocation

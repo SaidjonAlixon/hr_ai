@@ -13,11 +13,13 @@ import {
   fetchDavomatMethodAccess,
   saveDavomatMethodAccess,
   saveDavomatMethodAccessBulk,
+  saveZonePresence,
+  unlockZonePresence,
   type DavomatMethodAccessRow,
 } from "@/lib/davomat-api";
 
 type PlaceFilter = "all" | "ofis" | "dorixona";
-type StateFilter = "all" | "open" | "limited" | "blocked" | "face_only" | "qr_only";
+type StateFilter = "all" | "open" | "limited" | "blocked" | "face_only" | "qr_only" | "zone";
 
 const PAGE = 40;
 
@@ -57,8 +59,17 @@ function stateOf(row: DavomatMethodAccessRow): Exclude<StateFilter, "all" | "lim
 
 function matchesState(row: DavomatMethodAccessRow, filter: StateFilter) {
   if (filter === "all") return true;
+  if (filter === "zone") return Boolean(row.zoneEnabled);
   if (filter === "limited") return !(row.face && row.qr);
   return stateOf(row) === filter;
+}
+
+function zoneLabel(row: DavomatMethodAccessRow) {
+  if (!row.zoneEnabled) return "O‘chiq";
+  const method = row.zoneMethod === "QR" ? "QR" : "Face ID";
+  if (row.zoneStatus === "blocked") return `Blok · ${method}`;
+  if (row.zoneStatus === "due") return `Kutilmoqda · ${method}`;
+  return `${row.zoneIntervalHours || 2} soat · ${method}`;
 }
 
 export default function DavomatBloklashPage() {
@@ -83,6 +94,31 @@ export default function DavomatBloklashPage() {
     run: () => Promise<void>;
   } | null>(null);
   const [askBusy, setAskBusy] = useState(false);
+  const [zoneRow, setZoneRow] = useState<DavomatMethodAccessRow | null>(null);
+  const [zoneOn, setZoneOn] = useState(false);
+  const [zoneHours, setZoneHours] = useState(2);
+  const [zoneWindow, setZoneWindow] = useState(15);
+  const [zoneMethod, setZoneMethod] = useState<"FACE_ID" | "QR">("FACE_ID");
+  const [zoneBusy, setZoneBusy] = useState(false);
+
+  const openZone = (row: DavomatMethodAccessRow) => {
+    setZoneRow(row);
+    setZoneOn(Boolean(row.zoneEnabled));
+    setZoneHours(row.zoneIntervalHours || 2);
+    setZoneWindow(row.zoneWindowMinutes || 15);
+    setZoneMethod(row.zoneMethod === "QR" ? "QR" : "FACE_ID");
+  };
+
+  const applyZone = (userId: number, zone: { enabled?: boolean; method?: "FACE_ID" | "QR" | null; intervalHours?: number | null; windowMinutes?: number | null; status?: DavomatMethodAccessRow["zoneStatus"] } | null | undefined) => {
+    setRows((cur) => cur.map((row) => row.userId === userId ? {
+      ...row,
+      zoneEnabled: Boolean(zone?.enabled),
+      zoneMethod: zone?.method === "QR" ? "QR" : "FACE_ID",
+      zoneIntervalHours: zone?.intervalHours || row.zoneIntervalHours || 2,
+      zoneWindowMinutes: zone?.windowMinutes || row.zoneWindowMinutes || 15,
+      zoneStatus: zone?.status || (zone?.enabled ? "idle" : "off"),
+    } : row));
+  };
 
   const load = async () => {
     setLoading(true);
@@ -249,7 +285,7 @@ export default function DavomatBloklashPage() {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Davomat</p>
           <h1 className="text-xl font-semibold text-[#0f2744]">Bloklash oynasi</h1>
           <p className="mt-1 max-w-xl text-sm text-slate-500">
-            Xodimga Face ID va QR ni alohida qoldirish yoki o‘chirish. Ruxsat berilmagan usulda «Aynan sizga ruxsat yo‘q» chiqadi.
+            Xodimga Face ID va QR ni alohida qoldirish yoki o‘chirish. Yashil hudud tasdiqi hammada o‘chiq — kerakli xodimga soat, oyna va usulni admin belgilaydi.
           </p>
         </div>
         <Button type="button" variant="outline" className="h-9" onClick={() => void load()} disabled={loading}>
@@ -289,6 +325,7 @@ export default function DavomatBloklashPage() {
           <Chip active={state === "blocked"} onClick={() => setState("blocked")}>To‘liq o‘chiq · {counts.blocked}</Chip>
           <Chip active={state === "face_only"} onClick={() => setState("face_only")}>Faqat Face ID · {counts.faceOnly}</Chip>
           <Chip active={state === "qr_only"} onClick={() => setState("qr_only")}>Faqat QR · {counts.qrOnly}</Chip>
+          <Chip active={state === "zone"} onClick={() => setState("zone")}>Hudud tasdiqi · {rows.filter((row) => row.zoneEnabled).length}</Chip>
         </div>
 
         <div className="mt-3">
@@ -344,6 +381,7 @@ export default function DavomatBloklashPage() {
                   <th className="px-3 py-2">Holat</th>
                   <th className="px-3 py-2">Face ID</th>
                   <th className="px-3 py-2">QR</th>
+                  <th className="px-3 py-2">Hudud</th>
                   <th className="px-3 py-2">Amal</th>
                 </tr>
               </thead>
@@ -388,6 +426,19 @@ export default function DavomatBloklashPage() {
                         </label>
                       </td>
                       <td className="px-3 py-2">
+                        <button type="button" className="text-left" onClick={() => openZone(row)}>
+                          <span className={cn(
+                            "rounded-full px-2 py-0.5 text-[11px] font-semibold",
+                            row.zoneStatus === "blocked" && "bg-rose-50 text-rose-700",
+                            row.zoneStatus === "due" && "bg-amber-50 text-amber-700",
+                            row.zoneEnabled && row.zoneStatus !== "blocked" && row.zoneStatus !== "due" && "bg-emerald-50 text-emerald-700",
+                            !row.zoneEnabled && "bg-slate-100 text-slate-500",
+                          )}>
+                            {zoneLabel(row)}
+                          </span>
+                        </button>
+                      </td>
+                      <td className="px-3 py-2">
                         <div className="flex gap-1">
                           <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" disabled={savingId === row.userId} onClick={() => askBoth(row, true)}>Qoldirish</Button>
                           <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px] text-rose-700" disabled={savingId === row.userId} onClick={() => askBoth(row, false)}>O‘chirish</Button>
@@ -423,6 +474,88 @@ export default function DavomatBloklashPage() {
             <Button type="button" variant={ask?.danger ? "destructive" : "default"} disabled={askBusy} onClick={() => void confirmAsk()}>
               {askBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {ask?.confirm}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      <Dialog open={zoneRow != null} onOpenChange={(open) => { if (!open && !zoneBusy) setZoneRow(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Yashil hudud tasdiqi</DialogTitle>
+            <DialogDescription>
+              {zoneRow?.fullName}. Rejim o‘chiq tursa, hech narsa so‘ralmaydi. Yoqilsa, Keldimdan keyin har belgilangan soatda yashil hudud ichida tasdiqlashi shart.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2">
+              <span>Shu xodimga yoqish</span>
+              <Switch checked={zoneOn} onCheckedChange={setZoneOn} />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-500">Har necha soatda</span>
+              <Input type="number" min={1} max={12} value={zoneHours} onChange={(event) => setZoneHours(Number(event.target.value))} className="mt-1" />
+            </label>
+            <label className="block">
+              <span className="text-xs text-slate-500">Tasdiqlash oynasi, daqiqa</span>
+              <Input type="number" min={5} max={120} value={zoneWindow} onChange={(event) => setZoneWindow(Number(event.target.value))} className="mt-1" />
+            </label>
+            <div className="flex gap-2">
+              <Button type="button" variant={zoneMethod === "FACE_ID" ? "default" : "outline"} className="flex-1" onClick={() => setZoneMethod("FACE_ID")}>Face ID</Button>
+              <Button type="button" variant={zoneMethod === "QR" ? "default" : "outline"} className="flex-1" onClick={() => setZoneMethod("QR")}>QR kod</Button>
+            </div>
+            {zoneRow?.zoneStatus === "blocked" ? (
+              <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-800">
+                Bugun bloklangan. Ruxsat bersangiz, shu kun ochiladi va tasdiq yangidan hisoblanadi.
+              </p>
+            ) : null}
+          </div>
+          <DialogFooter>
+            {zoneRow?.zoneStatus === "blocked" ? (
+              <Button
+                type="button"
+                variant="outline"
+                disabled={zoneBusy}
+                onClick={() => {
+                  if (!zoneRow) return;
+                  setZoneBusy(true);
+                  void unlockZonePresence(zoneRow.userId)
+                    .then((saved) => {
+                      applyZone(zoneRow.userId, saved.zone);
+                      toast({ title: "Ruxsat berildi", description: "Keldim va Ketdim yana ochiq." });
+                      setZoneRow(null);
+                    })
+                    .catch((err) => toast({ title: "Ruxsat berilmadi", description: (err as Error).message, variant: "destructive" }))
+                    .finally(() => setZoneBusy(false));
+                }}
+              >
+                Ruxsat berish
+              </Button>
+            ) : null}
+            <Button type="button" variant="outline" disabled={zoneBusy} onClick={() => setZoneRow(null)}>Bekor</Button>
+            <Button
+              type="button"
+              disabled={zoneBusy || !zoneRow}
+              onClick={() => {
+                if (!zoneRow) return;
+                setZoneBusy(true);
+                void saveZonePresence({
+                  userId: zoneRow.userId,
+                  enabled: zoneOn,
+                  intervalHours: zoneHours,
+                  windowMinutes: zoneWindow,
+                  method: zoneMethod,
+                })
+                  .then((saved) => {
+                    applyZone(zoneRow.userId, saved.zone);
+                    toast({ title: zoneOn ? "Hudud tasdiqi yoqildi" : "Hudud tasdiqi o‘chirildi" });
+                    setZoneRow(null);
+                  })
+                  .catch((err) => toast({ title: "Saqlanmadi", description: (err as Error).message, variant: "destructive" }))
+                  .finally(() => setZoneBusy(false));
+              }}
+            >
+              {zoneBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Saqlash
             </Button>
           </DialogFooter>
         </DialogContent>

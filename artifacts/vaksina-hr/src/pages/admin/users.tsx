@@ -85,6 +85,7 @@ const ROLES = [
   { value: 'yurist', label: 'Yurist' },
   { value: 'komunalniy', label: 'Kommunal' },
   { value: 'farrosh', label: 'Farrosh' },
+  { value: 'mexanik', label: 'Mexanik' },
   { value: 'direktor_yordamchisi', label: 'Direktor yordamchisi' },
 ] as const;
 
@@ -116,6 +117,7 @@ const ROLE_DEPARTMENT: Record<string, string> = {
   yurist: "Rahbariyat",
   komunalniy: "Ma’muriy-xo‘jalik",
   farrosh: "Farrosh",
+  mexanik: "Mexanik",
   direktor_yordamchisi: "Rahbariyat",
   hr: "HR",
   hr_direktor: "HR",
@@ -159,6 +161,7 @@ const DEPT_DEFAULT_ROLE: Record<string, string> = {
   xavfsizlik: "sb",
   distribyutsiya: "distrib",
   farrosh: "farrosh",
+  mexanik: "mexanik",
 };
 
 function normDept(name: string) {

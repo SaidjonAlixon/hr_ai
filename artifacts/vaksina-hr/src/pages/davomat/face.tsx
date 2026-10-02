@@ -50,6 +50,7 @@ import {
   DAVOMAT_SITE_LAT,
   DAVOMAT_SITE_LNG,
   DavomatApiError,
+  confirmZonePresence,
   facePunchDavomat,
   faceVerifyDavomat,
   fetchDavomatMethods,
@@ -934,6 +935,7 @@ export default function DavomatFacePage() {
   const tgBootRef = useRef(false);
   const tgScanRef = useRef(false);
   const pharmacyGateRef = useRef(false);
+  const zoneConfirmRef = useRef(false);
 
   const applyHistory = useCallback((emp?: DavomatEmployee | null) => {
     if (!emp?.days?.length) return;
@@ -972,6 +974,14 @@ export default function DavomatFacePage() {
       setWorkplace(null);
     }
   }, [isAuthenticated, user?.role]);
+
+  useEffect(() => {
+    if (!workplace?.zonePresence?.enabled) return;
+    const timer = window.setInterval(() => {
+      void loadWorkplace();
+    }, 20_000);
+    return () => window.clearInterval(timer);
+  }, [workplace?.zonePresence?.enabled, loadWorkplace]);
 
   const loadHistory = useCallback(async () => {
     if (!isAuthenticated) return;
@@ -1465,6 +1475,8 @@ export default function DavomatFacePage() {
   /** Admin ko‘chma ruxsat — yashil zonadan tashqarida ham davomat */
   const mobileAnywhere = Boolean(workplace?.mobileAnywhere);
   const geoOk = adminQrAnywhere || mobileAnywhere || geoInside;
+  /** Hudud tasdiqi — faqat o‘z yashil hududi. Ko‘chma ruxsat hisobga olinmaydi. */
+  const zoneGeoOk = gpsLive && geoInside && !workplaceGateBlocked;
   /** Xarita: geografik hudud yoki ko‘chma/admin — «hududda» */
   const mapInside = geoInside || mobileAnywhere || adminQrAnywhere;
 
@@ -1519,7 +1531,10 @@ export default function DavomatFacePage() {
    * faceRegistered === false kutish — status 401 bo‘lsa tugma abadiy yopiq qolardi.
    */
   /** Face ID: barcha xodimlar — enroll bo‘lmasa ham tugma ochilsin */
+  const zoneLocked = workplace?.zonePresence?.status === "blocked";
+  const zoneDue = workplace?.zonePresence?.status === "due";
   const canOpenFace =
+    !zoneLocked &&
     faceMethodAllowed &&
     methodsReady &&
     cameraGranted &&
@@ -1531,6 +1546,7 @@ export default function DavomatFacePage() {
 
   /** QR: koordinator uchun o‘chirilgan; boshqalar — GPS + zona */
   const canOpenQr =
+    !zoneLocked &&
     qrMethodAllowed &&
     methodsReady &&
     cameraGranted &&
@@ -1724,6 +1740,32 @@ export default function DavomatFacePage() {
     liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number },
   ) => {
     if (!gps) throw new Error(t("davomat.gpsMissing"));
+    if (zoneConfirmRef.current) {
+      if (!zoneGeoOk) throw new Error("Sizga belgilangan yashil hududda emassiz. Tashqaridan tasdiq qabul qilinmaydi.");
+      const list = (Array.isArray(descriptor[0]) ? descriptor : [descriptor]) as number[][];
+      const vec = list[0]!;
+      const photo =
+        snapshot?.startsWith("data:image/")
+          ? (await compressFaceSnapshotAsync(snapshot, 640, 0.82)) || snapshot
+          : snapshot;
+      await confirmZonePresence({
+        method: "FACE_ID",
+        descriptor: vec,
+        snapshot: photo,
+        latitude: gps.lat,
+        longitude: gps.lng,
+        accuracy: gps.accuracy,
+        gpsCapturedAt: gps.at,
+      });
+      zoneConfirmRef.current = false;
+      setScanOpen(false);
+      toast({
+        title: "Tasdiqlandi",
+        description: "Yashil hududda ekanligingiz qabul qilindi.",
+      });
+      void loadWorkplace();
+      return { fullName: user?.fullName || "" };
+    }
     if (!geoOk) {
       throw new Error(
         tr(t, "davomat.outsideThrow", {
@@ -1831,6 +1873,14 @@ export default function DavomatFacePage() {
   };
 
   const punch = async (action: "in" | "out", opts?: { notes?: string }) => {
+    if (workplace?.zonePresence?.status === "blocked") {
+      toast({
+        title: "Bugun bloklandi",
+        description: workplace.zonePresence.message || "Muammo bo‘lsa admin bilan bog‘laning. Ruxsat berguncha Keldim va Ketdim yopiq.",
+        variant: "destructive",
+      });
+      return;
+    }
     if (!verified) return;
     const usingQr = Boolean(verified.qrPayload) || methodHint === "QR";
     if (punchLockRef.current || busy) return;
@@ -2068,6 +2118,16 @@ export default function DavomatFacePage() {
         refreshQuiet();
         return;
       }
+      if (err instanceof DavomatApiError && err.code === "zone_blocked") {
+        toast({
+          title: "Bugun bloklandi",
+          description: err.message || "Muammo bo‘lsa admin bilan bog‘laning. Ruxsat berguncha Keldim va Ketdim yopiq.",
+          variant: "destructive",
+        });
+        unlock();
+        void loadWorkplace();
+        return;
+      }
       if (err instanceof DavomatApiError && err.code === "method_forbidden") {
         toast({ title: "Aynan sizga ruxsat yo‘q", variant: "destructive" });
         unlock();
@@ -2100,6 +2160,26 @@ export default function DavomatFacePage() {
 
   const onQrDetected = useCallback(
     async (payload: string) => {
+      if (zoneConfirmRef.current) {
+        if (!gps) throw new Error(t("davomat.gpsMissing"));
+        if (!zoneGeoOk) throw new Error("Sizga belgilangan yashil hududda emassiz. Tashqaridan tasdiq qabul qilinmaydi.");
+        await confirmZonePresence({
+          method: "QR",
+          qrPayload: payload.trim(),
+          latitude: gps.lat,
+          longitude: gps.lng,
+          accuracy: gps.accuracy,
+          gpsCapturedAt: gps.at,
+        });
+        zoneConfirmRef.current = false;
+        setQrOpen(false);
+        toast({
+          title: "Tasdiqlandi",
+          description: "Yashil hududda ekanligingiz qabul qilindi.",
+        });
+        void loadWorkplace();
+        return;
+      }
       if (!adminQrAnywhere) {
         if (!gps) throw new Error(t("davomat.gpsMissing"));
         if (!geoOk) throw new Error(t("davomat.outside"));
@@ -2129,7 +2209,7 @@ export default function DavomatFacePage() {
         description: action === "out" ? "Endi «Ketdim» ni bosing" : "Endi «Keldim» ni bosing",
       });
     },
-    [adminQrAnywhere, gps, geoOk, verified?.nextAction, workplace, user?.fullName, t, qrMethodAllowed],
+    [adminQrAnywhere, gps, geoOk, zoneGeoOk, verified?.nextAction, workplace, user?.fullName, t, qrMethodAllowed, loadWorkplace, toast],
   );
 
   const displayName = formatPersonName(
@@ -2356,7 +2436,38 @@ export default function DavomatFacePage() {
     }
   };
 
+  const zoneRemainSec = workplace?.zonePresence?.dueAt
+    ? Math.max(0, Math.ceil((Date.parse(workplace.zonePresence.dueAt) - nowTick) / 1000))
+    : workplace?.zonePresence?.remainSec ?? null;
+  const startZoneConfirm = () => {
+    const method = workplace?.zonePresence?.method;
+    if (!method || !gps || !zoneGeoOk) {
+      toast({
+        title: "Sizga belgilangan hududda emassiz",
+        description: "Tashqaridan tasdiq qabul qilinmaydi. O‘z yashil hududingizga kirib, GPS yoqilgan holda tasdiqlang.",
+        variant: "destructive",
+      });
+      return;
+    }
+    zoneConfirmRef.current = true;
+    if (method === "QR") {
+      setScanOpen(false);
+      setQrOpen(true);
+      return;
+    }
+    setQrOpen(false);
+    preloadFaceModels();
+    setScanOpen(true);
+  };
   const cta = (() => {
+    if (zoneLocked) {
+      return {
+        label: "Bugun bloklandi",
+        sub: "Admin bilan bog‘laning",
+        disabled: true,
+        tone: "warn" as const,
+      };
+    }
     if (done) {
       return {
         label: t("davomat.closedToday"),
@@ -2563,9 +2674,14 @@ export default function DavomatFacePage() {
                       ? d.workedHours
                       : `0 ${t("davomat.hourShort")}`}
                 </p>
-                <p className="text-[10px] text-white/45">
-                  {t(STATUS_KEYS[d.status] || d.status, d.status)}
+                <p className={cn("text-[10px]", d.excused ? "font-semibold text-teal-300" : "text-white/45")}>
+                  {d.excused ? "Sababli" : t(STATUS_KEYS[d.status] || d.status, d.status)}
                 </p>
+                {d.excused && d.excuseNote ? (
+                  <p className="max-w-[9rem] truncate text-[10px] text-teal-200/80" title={d.excuseNote}>
+                    {d.excuseNote}
+                  </p>
+                ) : null}
               </div>
             </li>
                       );
@@ -2575,6 +2691,46 @@ export default function DavomatFacePage() {
 
                       return (
     <>
+      {workplace?.today.excused ? (
+        <div className="mx-auto mb-3 max-w-lg rounded-2xl border border-teal-200 bg-teal-50 px-3 py-2.5 text-teal-950">
+          <p className="text-sm font-semibold">Bugun sababli</p>
+          {workplace.today.excuseNote ? (
+            <p className="mt-1 text-xs leading-relaxed">{workplace.today.excuseNote}</p>
+          ) : null}
+          <p className="mt-1 text-[11px] font-medium text-teal-800">Jarima tushmaydi</p>
+        </div>
+      ) : null}
+      {zoneLocked || zoneDue ? (
+        <div className="fixed inset-x-0 top-0 z-[80] px-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
+          <div
+            className={cn(
+              "mx-auto flex max-w-lg items-start gap-3 rounded-2xl border px-3 py-3 shadow-lg",
+              zoneLocked ? "border-rose-200 bg-rose-50 text-rose-950" : "border-emerald-200 bg-white text-[#0f2744]",
+            )}
+          >
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold">
+                {zoneLocked ? "Bugun bloklandi" : "Yashil hududda ekanligingizni tasdiqlang"}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-current/80">
+                {zoneLocked
+                  ? "Belgilangan vaqtda hudud tasdiqlanmadi. Muammo bo‘lsa admin bilan bog‘laning. Ruxsat berguncha Keldim va Ketdim yopiq — bu kun o‘zi ochilmaydi."
+                  : `${workplace?.zonePresence?.method === "QR" ? "QR kod" : "Face ID"} orqali yashil hudud ichida tasdiqlang.`}
+              </p>
+              {zoneDue && zoneRemainSec != null ? (
+                <p className="mt-1 font-mono text-xs font-semibold text-emerald-700">
+                  Qolgan vaqt {String(Math.floor(zoneRemainSec / 60)).padStart(2, "0")}:{String(zoneRemainSec % 60).padStart(2, "0")}
+                </p>
+              ) : null}
+            </div>
+            {zoneDue ? (
+              <Button type="button" className="h-9 shrink-0 bg-emerald-600 hover:bg-emerald-700" onClick={startZoneConfirm}>
+                Tasdiqlash
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
       <DavomatPremiumView
         personName={personName}
         roleLine={roleLine}
@@ -2661,7 +2817,10 @@ export default function DavomatFacePage() {
 
       <FaceScanDialog
         open={scanOpen && methodHint !== "QR" && !qrVerifiedReady}
-        onOpenChange={setScanOpen}
+        onOpenChange={(open) => {
+          if (!open) zoneConfirmRef.current = false;
+          setScanOpen(open);
+        }}
         mode="login"
         title={t("davomat.faceTitle")}
         description={t("davomat.frontCamHint")}
@@ -2671,7 +2830,10 @@ export default function DavomatFacePage() {
       <QrScanDialog
         open={qrOpen && methodHint !== "FACE_ID" && !faceVerifiedReady}
         stream={qrStream}
-        onOpenChange={setQrOpen}
+        onOpenChange={(open) => {
+          if (!open) zoneConfirmRef.current = false;
+          setQrOpen(open);
+        }}
         title={
           nextAction === "out"
             ? t("davomat.qrScanTitleOut")

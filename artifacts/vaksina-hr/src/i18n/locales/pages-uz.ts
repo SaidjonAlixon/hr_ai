@@ -2115,6 +2115,7 @@ export const pagesUz: Messages = {
   "javob.cancelled": "Bekor qilindi",
   "javob.statusPending": "Kutilmoqda",
   "javob.statusPendingCoord": "Koordinator kutmoqda",
+  "javob.statusPendingDept": "Bo‘lim boshlig‘i kutmoqda",
   "javob.statusPendingHr": "HR kutmoqda",
   "javob.statusApproved": "Tasdiqlangan (jarimasiz)",
   "javob.statusRejected": "Rad etilgan",

@@ -31,7 +31,9 @@ import {
   UserCheck,
   Users,
   Pencil,
+  BadgeCheck,
   RotateCcw,
+  Receipt,
   UserX,
   Timer,
   MessageSquareText,
@@ -44,6 +46,7 @@ import { DavomatJarimaCard, DavomatJarimaPanel } from "../oylik/pay-table";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
+import { Textarea } from "../../components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -91,7 +94,12 @@ import {
   fetchDavomat,
   resetDavomatManual,
   type DavomatResetPart,
+  saveDavomatExcuse,
   saveDavomatManual,
+  fetchEmployeeSchedule,
+  saveEmployeeSchedule,
+  clearEmployeeSchedule,
+  type ScheduleShiftOption,
   type DavomatDayMetrics,
   type DavomatEmployee,
   type DavomatReport,
@@ -103,7 +111,9 @@ import { useI18n } from "../../i18n/I18nProvider";
 import { displayBranchName } from "../../lib/pharmacy-staff-api";
 import {
   canEditDavomatManual,
+  canMarkDavomatExcuse,
   canResetDavomatManual,
+  canSetEmployeeSchedule,
   canViewChecklistStatus,
   canViewDavomat,
   canViewDavomatNotes,
@@ -260,6 +270,8 @@ const STATUS_STYLE: Record<string, string> = {
   absent: "border-rose-400 bg-rose-500/15 text-rose-800 dark:border-rose-500/50 dark:bg-rose-500/20 dark:text-rose-300",
   leave: "border-violet-400 bg-violet-500/15 text-violet-900 dark:border-violet-500/50 dark:bg-violet-500/20 dark:text-violet-300",
   rest: "border-slate-400 bg-slate-500/15 text-slate-700 dark:border-slate-500/50 dark:bg-slate-500/20 dark:text-slate-300",
+  prehire: "border-rose-500 bg-rose-600/20 text-rose-800 dark:border-rose-500/60 dark:bg-rose-500/25 dark:text-rose-200",
+  outside: "border-transparent bg-transparent text-transparent",
 };
 
 const STATUS_DOT: Record<string, string> = {
@@ -324,23 +336,52 @@ const STATUS_ROW: Record<string, string> = {
   leave: "bg-violet-50/40 dark:bg-violet-500/10",
 };
 
-function StatusPill({ status }: { status: string }) {
+const EXCUSED_ROW = "bg-teal-50/80 dark:bg-teal-500/10";
+const EXCUSED_STYLE =
+  "border-teal-400 bg-teal-500/15 text-teal-950 dark:border-teal-400/60 dark:bg-teal-500/20 dark:text-teal-200";
+
+function StatusPill({
+  status,
+  excused,
+  onClick,
+}: {
+  status: string;
+  excused?: boolean;
+  onClick?: () => void;
+}) {
   const { t } = useI18n();
-  const label = t(STATUS_KEYS[status] || status, status);
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-        STATUS_STYLE[status] || "border-border bg-muted text-muted-foreground",
-      )}
-    >
+  const label = excused
+    ? "Sababli"
+    : status === "prehire"
+      ? "Ishga qabul qilinmagan"
+      : status === "outside"
+        ? ""
+        : t(STATUS_KEYS[status] || status, status);
+  const className = cn(
+    "inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+    excused ? EXCUSED_STYLE : STATUS_STYLE[status] || "border-border bg-muted text-muted-foreground",
+    onClick && "cursor-pointer hover:brightness-95",
+  );
+  const inner = (
+    <>
       <span
-        className={cn("h-1.5 w-1.5 shrink-0 rounded-full", STATUS_DOT[status] || "bg-slate-400")}
+        className={cn(
+          "h-1.5 w-1.5 shrink-0 rounded-full",
+          excused ? "bg-teal-500" : STATUS_DOT[status] || "bg-slate-400",
+        )}
         aria-hidden
       />
       <span className="whitespace-nowrap">{label}</span>
-    </span>
+    </>
   );
+  if (onClick) {
+    return (
+      <button type="button" className={className} onClick={onClick} title="Sababli holatni ko‘rish">
+        {inner}
+      </button>
+    );
+  }
+  return <span className={className}>{inner}</span>;
 }
 
 type EditState = {
@@ -370,7 +411,7 @@ function dayHasPunch(day?: DavomatDayMetrics | null): boolean {
   );
 }
 
-type Section = "schedule" | "totals" | "analytics" | "smena" | "checklist";
+type Section = "schedule" | "totals" | "analytics" | "smena" | "checklist" | "jarima";
 
 function sectionFromLocation(path: string, search: string): Section | null {
   if (path.startsWith("/davomat/analytics")) return "analytics";
@@ -380,7 +421,8 @@ function sectionFromLocation(path: string, search: string): Section | null {
     view === "totals" ||
     view === "schedule" ||
     view === "smena" ||
-    view === "checklist"
+    view === "checklist" ||
+    view === "jarima"
   ) {
     return view;
   }
@@ -399,6 +441,7 @@ function matchesDayStatusFilter(
 ): boolean {
   if (filter === "all") return true;
   const st = day?.status || "absent";
+  if (st === "prehire" || st === "outside") return false;
   const came = dayHasCheckIn(day);
   if (filter === "absent") return !came && st !== "leave" && st !== "rest";
   if (filter === "late") return came && st === "late";
@@ -613,6 +656,8 @@ export default function DavomatPage() {
   const pharmacyScope = normalizeUserRole(user?.role) === "koordinator";
   const canEdit = canEditDavomatManual(user?.role);
   const canReset = canResetDavomatManual(user?.role);
+  const canExcuse = canMarkDavomatExcuse(user?.role);
+  const canSchedule = canSetEmployeeSchedule(user?.role);
   const canSeeNotes = canViewDavomatNotes(user?.role);
   const canChecklist = canViewChecklistStatus(user?.role);
 
@@ -672,6 +717,31 @@ export default function DavomatPage() {
     fullName: string;
     workDate: string;
     notes: string;
+    excused?: boolean;
+    status?: string;
+    excusedByName?: string | null;
+    excusedAt?: string | null;
+  } | null>(null);
+  const [excuse, setExcuse] = useState<{
+    employeeId: number;
+    fullName: string;
+    workDate: string;
+    status: string;
+    note: string;
+  } | null>(null);
+  const [schedule, setSchedule] = useState<{
+    employeeId: number;
+    fullName: string;
+    workDate: string;
+    mode: "permanent" | "period";
+    validFrom: string;
+    validTo: string;
+    shiftKey: string;
+    startHm: string;
+    endHm: string;
+    shifts: ScheduleShiftOption[];
+    currentId: number | null;
+    loading: boolean;
   } | null>(null);
   const [resetTarget, setResetTarget] = useState<ResetTarget | null>(null);
   const [saving, setSaving] = useState(false);
@@ -909,7 +979,7 @@ export default function DavomatPage() {
     const rows: Array<{ emp: (typeof filteredEmployees)[number]; day: (typeof filteredEmployees)[number]["days"][number] }> = [];
     for (const e of filteredEmployees) {
       const day = e.days.find((d) => d.date === date);
-      if (day) rows.push({ emp: e, day });
+      if (day && day.status !== "outside") rows.push({ emp: e, day });
     }
     rows.sort((a, b) => a.emp.fullName.localeCompare(b.emp.fullName, "uz"));
     return rows;
@@ -927,6 +997,11 @@ export default function DavomatPage() {
     for (const { emp, day } of employeesForDay) {
       if (!day) continue;
       const came = Boolean(day.checkIn && day.checkIn !== "—");
+      if (day.status === "prehire" || day.status === "outside") continue;
+      if (day.excused) {
+        if (came) present += 1;
+        continue;
+      }
       if (!came && day.status === "leave") {
         leave += 1;
         leaveNames.push(emp.fullName);
@@ -1277,6 +1352,147 @@ export default function DavomatPage() {
     });
   };
 
+  const openDayNote = (fullName: string, workDate: string, day: DavomatDayMetrics) => {
+    setNoteView({
+      fullName,
+      workDate,
+      notes: (day.excused ? day.excuseNote || day.notes : day.notes)?.trim() || "",
+      excused: Boolean(day.excused),
+      status: day.status,
+      excusedByName: day.excusedByName || null,
+      excusedAt: day.excusedAt || null,
+    });
+  };
+
+  const openExcuse = (emp: DavomatEmployee, workDate: string) => {
+    if (!canExcuse) return;
+    const day = emp.days.find((d) => d.date === workDate);
+    const current = day?.status && day.status !== "rest" ? day.status : day?.status || "present";
+    setExcuse({
+      employeeId: emp.id,
+      fullName: emp.fullName,
+      workDate,
+      status: ["present", "late", "absent", "incomplete", "leave", "rest"].includes(current)
+        ? current
+        : "present",
+      note: day?.excuseNote || "",
+    });
+  };
+
+  const saveExcuse = async () => {
+    if (!excuse || !canExcuse) return;
+    const note = excuse.note.trim();
+    if (note.length < 3) {
+      toast({ title: "Izoh majburiy", description: "Kamida 3 ta belgi yozing", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveDavomatExcuse({
+        employeeId: excuse.employeeId,
+        workDate: excuse.workDate,
+        status: excuse.status,
+        note,
+      });
+      toast({ title: "Sababli saqlandi", description: `${excuse.fullName} · jarima tushmaydi` });
+      setExcuse(null);
+      await load();
+    } catch (err) {
+      toast({
+        title: "Saqlanmadi",
+        description: (err as Error)?.message,
+        variant: "destructive",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const openSchedule = (emp: DavomatEmployee, workDate: string) => {
+    if (!canSchedule) return;
+    const day = emp.days.find((d) => d.date === workDate);
+    setSchedule({
+      employeeId: emp.id,
+      fullName: emp.fullName,
+      workDate,
+      mode: "permanent",
+      validFrom: workDate,
+      validTo: workDate,
+      shiftKey: day?.planShift || "office",
+      startHm: day?.planStart || emp.workStart || "09:00",
+      endHm: day?.planEnd || emp.workEnd || "18:00",
+      shifts: [],
+      currentId: null,
+      loading: true,
+    });
+    void fetchEmployeeSchedule(emp.id, workDate)
+      .then((data) => {
+        const current = data.current;
+        const selected = data.shifts.find((s) => s.key === (current?.shiftKey || day?.planShift || "office")) || data.shifts[0];
+        setSchedule((prev) =>
+          prev && prev.employeeId === emp.id
+            ? {
+                ...prev,
+                loading: false,
+                shifts: data.shifts,
+                currentId: current?.id ?? null,
+                mode: current?.mode || "permanent",
+                validFrom: current?.validFrom || workDate,
+                validTo: current?.validTo || workDate,
+                shiftKey: current?.shiftKey || selected?.key || "office",
+                startHm: current?.startHm || selected?.start || prev.startHm,
+                endHm: current?.endHm || selected?.end || prev.endHm,
+              }
+            : prev,
+        );
+      })
+      .catch((err) => {
+        setSchedule((prev) => (prev ? { ...prev, loading: false } : prev));
+        toast({ title: "Smena vaqti yuklanmadi", description: (err as Error)?.message, variant: "destructive" });
+      });
+  };
+
+  const saveSchedule = async () => {
+    if (!schedule || !canSchedule) return;
+    setSaving(true);
+    try {
+      await saveEmployeeSchedule({
+        employeeId: schedule.employeeId,
+        mode: schedule.mode,
+        validFrom: schedule.validFrom,
+        validTo: schedule.mode === "period" ? schedule.validTo : null,
+        shiftKey: schedule.shiftKey,
+        startHm: schedule.startHm,
+        endHm: schedule.endHm,
+      });
+      toast({
+        title: "Smena vaqti saqlandi",
+        description: `${schedule.fullName} · faqat shu xodim`,
+      });
+      setSchedule(null);
+      await load();
+    } catch (err) {
+      toast({ title: "Saqlanmadi", description: (err as Error)?.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const clearSchedule = async () => {
+    if (!schedule?.currentId || !canSchedule) return;
+    setSaving(true);
+    try {
+      await clearEmployeeSchedule(schedule.employeeId, schedule.currentId);
+      toast({ title: "Standart smenaga qaytdi", description: schedule.fullName });
+      setSchedule(null);
+      await load();
+    } catch (err) {
+      toast({ title: "Bekor qilinmadi", description: (err as Error)?.message, variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const openReset = (emp: DavomatEmployee, workDate: string) => {
     if (!canReset) return;
     const day = emp.days.find((d) => d.date === workDate);
@@ -1348,7 +1564,7 @@ export default function DavomatPage() {
     }
   };
 
-  const showRowActions = canEdit || canReset;
+  const showRowActions = canEdit || canReset || canExcuse || canSchedule;
 
   if (!allowed) {
     return (
@@ -2207,7 +2423,7 @@ export default function DavomatPage() {
             </button>
           );
         })}
-        <DavomatJarimaCard month={selectedDay.slice(0, 7)} />
+        <DavomatJarimaCard month={selectedDay.slice(0, 7)} onOpen={() => setSection("jarima")} />
       </div>
       ) : null}
 
@@ -2221,7 +2437,7 @@ export default function DavomatPage() {
         <div
           className={cn(
             "grid grid-cols-1 gap-2 rounded-2xl border border-slate-200/90 bg-slate-50/90 p-1.5 shadow-sm dark:border-white/10 dark:bg-[#101a2e]",
-            canChecklist ? "sm:grid-cols-2 xl:grid-cols-5" : "sm:grid-cols-2 xl:grid-cols-4",
+            canChecklist ? "sm:grid-cols-2 xl:grid-cols-6" : "sm:grid-cols-2 xl:grid-cols-5",
           )}
         >
           {(
@@ -2246,6 +2462,13 @@ export default function DavomatPage() {
                 icon: Users,
                 idle: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-100 dark:hover:bg-emerald-400/20",
                 active: "border-transparent bg-gradient-to-br from-emerald-700 to-teal-500 text-white shadow-md shadow-emerald-500/25",
+              },
+              {
+                id: "jarima" as const,
+                label: "Jarimalar",
+                icon: Receipt,
+                idle: "border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-300 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-100 dark:hover:bg-rose-400/20",
+                active: "border-transparent bg-gradient-to-br from-rose-800 to-rose-600 text-white shadow-md shadow-rose-500/25",
               },
               {
                 id: "smena" as const,
@@ -2442,7 +2665,7 @@ export default function DavomatPage() {
                           key={emp.id}
                           className={cn(
                             "border-b border-slate-100 dark:border-slate-700/60 hover:brightness-[0.98] dark:hover:bg-slate-800/40",
-                            STATUS_ROW[day!.status],
+                            day!.excused ? EXCUSED_ROW : STATUS_ROW[day!.status],
                           )}
                         >
                           <td className="px-2 py-2 text-center text-xs tabular-nums text-muted-foreground">
@@ -2453,22 +2676,55 @@ export default function DavomatPage() {
                             {userRoleLabel(emp.position) || "—"}
                           </td>
                           <td className="px-3 py-2">
-                            <StatusPill status={day!.status} />
+                            <StatusPill
+                              status={day!.status}
+                              excused={day!.excused}
+                              onClick={
+                                day!.excused
+                                  ? () => openDayNote(emp.fullName, selectedDay, day!)
+                                  : undefined
+                              }
+                            />
+                            {day!.excused && day!.excuseNote ? (
+                              <button
+                                type="button"
+                                className="mt-1 block max-w-[12rem] truncate text-left text-[11px] font-medium text-teal-800 dark:text-teal-200"
+                                title={day!.excuseNote}
+                                onClick={() => openDayNote(emp.fullName, selectedDay, day!)}
+                              >
+                                {day!.excuseNote}
+                              </button>
+                            ) : null}
                           </td>
                           {showShiftCol ? (
                             <td className="px-3 py-2 text-xs text-muted-foreground">
                               {(() => {
-                                const h = workHoursForEmployee(emp);
+                                const h = {
+                                  start: day!.planStart || workHoursForEmployee(emp).start,
+                                  end: day!.planEnd || workHoursForEmployee(emp).end,
+                                };
+                                const shiftName =
+                                  day!.planShift === "one"
+                                    ? "1-smena"
+                                    : day!.planShift === "two"
+                                      ? "2-smena"
+                                      : day!.planShift === "three"
+                                        ? "3-smena"
+                                        : day!.planShift === "office"
+                                          ? "Ofis"
+                                          : null;
                                 const kind = classifyDavomatStaff(emp);
-                                if (kind === "shift_one" || kind === "shift_two") {
-                                  return `${kind === "shift_two" ? "2-smena" : "1-smena"} · ${h.start}–${h.end}`;
-                                }
-                                if (kind === "warehouse" || kind === "security") {
-                                  return emp.shiftLabel
-                                    ? `${emp.shiftLabel} · ${h.start}–${h.end}`
-                                    : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`;
-                                }
-                                return `${h.start}–${h.end}`;
+                                const base =
+                                  shiftName && day!.planCustom
+                                    ? `${shiftName} · ${h.start}–${h.end}`
+                                    : kind === "shift_one" || kind === "shift_two"
+                                      ? `${kind === "shift_two" ? "2-smena" : "1-smena"} · ${h.start}–${h.end}`
+                                      : kind === "warehouse" || kind === "security"
+                                        ? emp.shiftLabel
+                                          ? `${emp.shiftLabel} · ${h.start}–${h.end}`
+                                          : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`
+                                        : `${h.start}–${h.end}`;
+                                return day!.planCustom ? `${base} · o‘zgartirilgan` : base;
                               })()}
                             </td>
                           ) : null}
@@ -2496,13 +2752,7 @@ export default function DavomatPage() {
                                   variant="ghost"
                                   className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
                                   title="Izohni o‘qish"
-                                  onClick={() =>
-                                    setNoteView({
-                                      fullName: emp.fullName,
-                                      workDate: selectedDay,
-                                      notes: day!.notes!.trim(),
-                                    })
-                                  }
+                                  onClick={() => openDayNote(emp.fullName, selectedDay, day!)}
                                 >
                                   <MessageSquareText className="h-3.5 w-3.5" />
                                 </Button>
@@ -2538,6 +2788,36 @@ export default function DavomatPage() {
                                     <RotateCcw className="h-3.5 w-3.5" />
                                   </Button>
                                 ) : null}
+                                {canExcuse ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className={cn(
+                                      "h-8 w-8 p-0 text-teal-700 hover:bg-teal-50 hover:text-teal-800 dark:text-teal-300 dark:hover:bg-teal-950/40",
+                                      day!.excused && "bg-teal-100 dark:bg-teal-950/50",
+                                    )}
+                                    title="Sababli qilish"
+                                    onClick={() => openExcuse(emp, selectedDay)}
+                                  >
+                                    <BadgeCheck className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : null}
+                                {canSchedule ? (
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    variant="ghost"
+                                    className={cn(
+                                      "h-8 w-8 p-0 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/40",
+                                      day!.planCustom && "bg-sky-100 dark:bg-sky-950/50",
+                                    )}
+                                    title="Smena va vaqt"
+                                    onClick={() => openSchedule(emp, selectedDay)}
+                                  >
+                                    <Clock3 className="h-3.5 w-3.5" />
+                                  </Button>
+                                ) : null}
                               </div>
                             </td>
                           ) : null}
@@ -2558,9 +2838,11 @@ export default function DavomatPage() {
                 staffFilter={viewFilter}
                 canEdit={canEdit}
                 canSeeNotes={canSeeNotes}
-                onViewNote={(fullName, workDate, notes) =>
-                  setNoteView({ fullName, workDate, notes })
-                }
+                canExcuse={canExcuse}
+                canSchedule={canSchedule}
+                onViewNote={(fullName, workDate, day) => openDayNote(fullName, workDate, day)}
+                onExcuse={openExcuse}
+                onSchedule={openSchedule}
                 onEdit={openEdit}
               />
             )
@@ -2688,10 +2970,34 @@ export default function DavomatPage() {
                       </thead>
                       <tbody>
                         {detailEmployee.days.map((d) => (
-                          <tr key={d.date} className="border-b border-slate-100 dark:border-slate-700/60">
+                          <tr
+                            key={d.date}
+                            className={cn(
+                              "border-b border-slate-100 dark:border-slate-700/60",
+                              d.excused && EXCUSED_ROW,
+                            )}
+                          >
                             <td className="px-3 py-2 tabular-nums">{d.date}</td>
                             <td className="px-3 py-2">
-                              <StatusPill status={d.status} />
+                              <StatusPill
+                                status={d.status}
+                                excused={d.excused}
+                                onClick={
+                                  d.excused
+                                    ? () => openDayNote(detailEmployee.fullName, d.date, d)
+                                    : undefined
+                                }
+                              />
+                              {d.excused && d.excuseNote ? (
+                                <button
+                                  type="button"
+                                  className="mt-1 block max-w-[12rem] truncate text-left text-[11px] font-medium text-teal-800 dark:text-teal-200"
+                                  title={d.excuseNote}
+                                  onClick={() => openDayNote(detailEmployee.fullName, d.date, d)}
+                                >
+                                  {d.excuseNote}
+                                </button>
+                              ) : null}
                             </td>
                             <td className="px-3 py-2 tabular-nums">{d.checkIn}</td>
                             <td className="px-3 py-2 tabular-nums">{d.checkOut}</td>
@@ -2717,13 +3023,7 @@ export default function DavomatPage() {
                                     variant="ghost"
                                     className="h-8 w-8 p-0 text-violet-700 hover:bg-violet-50 hover:text-violet-800 dark:text-violet-300 dark:hover:bg-violet-950/40"
                                     title="Izohni o‘qish"
-                                    onClick={() =>
-                                      setNoteView({
-                                        fullName: detailEmployee.fullName,
-                                        workDate: d.date,
-                                        notes: d.notes!.trim(),
-                                      })
-                                    }
+                                    onClick={() => openDayNote(detailEmployee.fullName, d.date, d)}
                                   >
                                     <MessageSquareText className="h-3.5 w-3.5" />
                                   </Button>
@@ -2759,6 +3059,36 @@ export default function DavomatPage() {
                                       <RotateCcw className="h-3.5 w-3.5" />
                                     </Button>
                                   ) : null}
+                                  {canExcuse ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className={cn(
+                                        "h-8 w-8 p-0 text-teal-700 hover:bg-teal-50 hover:text-teal-800 dark:text-teal-300 dark:hover:bg-teal-950/40",
+                                        d.excused && "bg-teal-100 dark:bg-teal-950/50",
+                                      )}
+                                      title="Sababli qilish"
+                                      onClick={() => openExcuse(detailEmployee, d.date)}
+                                    >
+                                      <BadgeCheck className="h-3.5 w-3.5" />
+                                    </Button>
+                                  ) : null}
+                                  {canSchedule ? (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant="ghost"
+                                      className={cn(
+                                        "h-8 w-8 p-0 text-sky-700 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/50",
+                                        d.planCustom && "bg-sky-100 dark:bg-sky-950/50",
+                                      )}
+                                      title="Smena va vaqt"
+                                      onClick={() => openSchedule(detailEmployee, d.date)}
+                                    >
+                                      <Clock3 className="h-3.5 w-3.5" />
+                                    </Button>
+                                  ) : null}
                                 </div>
                               </td>
                             ) : null}
@@ -2771,6 +3101,10 @@ export default function DavomatPage() {
               ) : null}
             </>
           ) : null}
+        </TabsContent>
+
+        <TabsContent value="jarima" className="mt-4">
+          <DavomatJarimaPanel month={selectedDay.slice(0, 7)} />
         </TabsContent>
 
         <TabsContent value="smena" className="mt-4">
@@ -2866,10 +3200,206 @@ export default function DavomatPage() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={Boolean(schedule) && canSchedule} onOpenChange={(o) => !o && !saving && setSchedule(null)}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Smena va vaqt</DialogTitle>
+          </DialogHeader>
+          {schedule ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{schedule.fullName}</span>
+                {" · "}
+                {schedule.workDate}
+              </p>
+              <p className="rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs leading-relaxed text-sky-950 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-100">
+                Faqat shu xodimga ta’sir qiladi. Smena tanlansa standart vaqt chiqadi. Kelish va ketishni shu xodim uchun o‘zgartirish mumkin. Davomat, jarima va Keldim/Ketdim shu vaqtga qarab hisoblanadi.
+              </p>
+              {schedule.loading ? (
+                <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Button
+                      type="button"
+                      variant={schedule.mode === "permanent" ? "default" : "outline"}
+                      className="rounded-xl"
+                      onClick={() => setSchedule({ ...schedule, mode: "permanent" })}
+                    >
+                      Doimiy
+                    </Button>
+                    <Button
+                      type="button"
+                      variant={schedule.mode === "period" ? "default" : "outline"}
+                      className="rounded-xl"
+                      onClick={() => setSchedule({ ...schedule, mode: "period" })}
+                    >
+                      Muddatli
+                    </Button>
+                  </div>
+                  <div className={schedule.mode === "period" ? "grid grid-cols-2 gap-3" : ""}>
+                    <div>
+                      <Label>{schedule.mode === "period" ? "Boshlanish" : "Shu sanadan"}</Label>
+                      <Input
+                        type="date"
+                        value={schedule.validFrom}
+                        onChange={(e) => setSchedule({ ...schedule, validFrom: e.target.value })}
+                      />
+                    </div>
+                    {schedule.mode === "period" ? (
+                      <div>
+                        <Label>Tugash</Label>
+                        <Input
+                          type="date"
+                          value={schedule.validTo}
+                          onChange={(e) => setSchedule({ ...schedule, validTo: e.target.value })}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
+                  <div>
+                    <Label>Smena</Label>
+                    <Select
+                      value={schedule.shiftKey}
+                      onValueChange={(key) => {
+                        const picked = schedule.shifts.find((item) => item.key === key);
+                        setSchedule({
+                          ...schedule,
+                          shiftKey: key,
+                          startHm: picked?.start || schedule.startHm,
+                          endHm: picked?.end || schedule.endHm,
+                        });
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(schedule.shifts.length
+                          ? schedule.shifts
+                          : [
+                              { key: "office", label: "Ofis", start: "09:00", end: "18:00" },
+                              { key: "one", label: "1-smena", start: "08:00", end: "17:00" },
+                              { key: "two", label: "2-smena", start: "17:00", end: "23:45" },
+                              { key: "three", label: "3-smena", start: "23:00", end: "07:00" },
+                            ]
+                        ).map((item) => (
+                          <SelectItem key={item.key} value={item.key}>
+                            {item.label} · {item.start}–{item.end}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label>Kelish</Label>
+                      <Input
+                        value={schedule.startHm}
+                        placeholder="09:00"
+                        onChange={(e) => setSchedule({ ...schedule, startHm: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <Label>Ketish</Label>
+                      <Input
+                        value={schedule.endHm}
+                        placeholder="18:00"
+                        onChange={(e) => setSchedule({ ...schedule, endHm: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+          ) : null}
+          <DialogFooter className="gap-2 sm:justify-between">
+            {schedule?.currentId ? (
+              <Button type="button" variant="outline" disabled={saving || schedule.loading} onClick={() => void clearSchedule()}>
+                Standartga qaytarish
+              </Button>
+            ) : (
+              <span />
+            )}
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" disabled={saving} onClick={() => setSchedule(null)}>
+                Bekor
+              </Button>
+              <Button type="button" disabled={saving || schedule?.loading} onClick={() => void saveSchedule()}>
+                {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+                Saqlash
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(excuse) && canExcuse} onOpenChange={(o) => !o && !saving && setExcuse(null)}>
+        <DialogContent className="max-w-md rounded-2xl">
+          <DialogHeader>
+            <DialogTitle>Sababli qilish</DialogTitle>
+          </DialogHeader>
+          {excuse ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                <span className="font-medium text-foreground">{excuse.fullName}</span>
+                {" · "}
+                {excuse.workDate}
+              </p>
+              <p className="rounded-xl border border-teal-200 bg-teal-50 px-3 py-2 text-xs leading-relaxed text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
+                Sababli kun jarimasiz. Davomatda holat «Sababli» bo‘lib turadi.
+              </p>
+              <div>
+                <Label>Holat</Label>
+                <Select value={excuse.status} onValueChange={(v) => setExcuse({ ...excuse, status: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="present">Kelgan</SelectItem>
+                    <SelectItem value="late">Kechikkan</SelectItem>
+                    <SelectItem value="incomplete">Ketish yo‘q</SelectItem>
+                    <SelectItem value="absent">Kelmagan</SelectItem>
+                    <SelectItem value="leave">Ta’til</SelectItem>
+                    <SelectItem value="rest">Dam</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Izoh</Label>
+                <Textarea
+                  value={excuse.note}
+                  onChange={(e) => setExcuse({ ...excuse, note: e.target.value })}
+                  placeholder="Sababni yozing — majburiy"
+                  className="min-h-24"
+                  maxLength={500}
+                />
+              </div>
+            </div>
+          ) : null}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setExcuse(null)} disabled={saving}>
+              Bekor
+            </Button>
+            <Button
+              type="button"
+              className="bg-teal-700 hover:bg-teal-800"
+              onClick={() => void saveExcuse()}
+              disabled={saving || (excuse?.note.trim().length ?? 0) < 3}
+            >
+              {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+              Sababli saqlash
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={Boolean(noteView)} onOpenChange={(o) => !o && setNoteView(null)}>
         <DialogContent className="max-w-sm rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-base">Izoh</DialogTitle>
+            <DialogTitle className="text-base">{noteView?.excused ? "Sababli" : "Izoh"}</DialogTitle>
           </DialogHeader>
           {noteView ? (
             <div className="space-y-2 text-sm">
@@ -2878,8 +3408,37 @@ export default function DavomatPage() {
                 {" · "}
                 {noteView.workDate}
               </p>
-              <p className="whitespace-pre-wrap rounded-xl border border-violet-200/80 bg-violet-50/60 px-3 py-2.5 leading-relaxed text-foreground dark:border-violet-800/50 dark:bg-violet-950/30">
-                {noteView.notes}
+              {noteView.excused ? (
+                <div className="space-y-1 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2.5 text-xs leading-relaxed text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
+                  <p>
+                    Holat:{" "}
+                    <span className="font-semibold">
+                      {t(STATUS_KEYS[noteView.status || ""] || noteView.status || "", noteView.status)}
+                    </span>
+                    {" · "}jarima qilinmaydi
+                  </p>
+                  <p>Kim: {noteView.excusedByName || "—"}</p>
+                  {noteView.excusedAt ? (
+                    <p>
+                      Qachon:{" "}
+                      {new Intl.DateTimeFormat("uz-UZ", {
+                        timeZone: "Asia/Tashkent",
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(noteView.excusedAt))}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+              <p
+                className={cn(
+                  "whitespace-pre-wrap rounded-xl border px-3 py-2.5 leading-relaxed text-foreground",
+                  noteView.excused
+                    ? "border-teal-200/80 bg-teal-50/60 dark:border-teal-800/50 dark:bg-teal-950/30"
+                    : "border-violet-200/80 bg-violet-50/60 dark:border-violet-800/50 dark:bg-violet-950/30",
+                )}
+              >
+                {noteView.notes || "—"}
               </p>
             </div>
           ) : null}
@@ -2977,7 +3536,6 @@ export default function DavomatPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-      <DavomatJarimaPanel month={selectedDay.slice(0, 7)} />
     </div>
   );
 }
@@ -3024,7 +3582,11 @@ function PeriodAttendanceGrid({
   staffFilter,
   canEdit,
   canSeeNotes = false,
+  canExcuse = false,
+  canSchedule = false,
   onViewNote,
+  onExcuse,
+  onSchedule,
   onEdit,
 }: {
   title: string;
@@ -3035,7 +3597,11 @@ function PeriodAttendanceGrid({
   staffFilter: DavomatStaffFilter;
   canEdit: boolean;
   canSeeNotes?: boolean;
-  onViewNote?: (fullName: string, workDate: string, notes: string) => void;
+  canExcuse?: boolean;
+  canSchedule?: boolean;
+  onViewNote?: (fullName: string, workDate: string, day: DavomatDayMetrics) => void;
+  onExcuse?: (emp: DavomatEmployee, date: string) => void;
+  onSchedule?: (emp: DavomatEmployee, date: string) => void;
   onEdit: (emp: DavomatEmployee, date: string) => void;
 }) {
   const { t } = useI18n();
@@ -3254,21 +3820,26 @@ function PeriodAttendanceGrid({
                       {dates.map((date) => {
                         const day = daysByDate.get(date);
                         const noteText = canSeeNotes ? day?.notes?.trim() : "";
+                        const canOpenNote = Boolean(day && (day.excused || noteText) && onViewNote);
                         return (
                           <td key={date} className="px-1 py-1 align-middle">
                             <WeekCell
                               day={day}
                               hours={
-                                emp.workStart && emp.workEnd
-                                  ? { start: emp.workStart, end: emp.workEnd }
-                                  : undefined
+                                day?.planStart && day?.planEnd
+                                  ? { start: day.planStart, end: day.planEnd }
+                                  : emp.workStart && emp.workEnd
+                                    ? { start: emp.workStart, end: emp.workEnd }
+                                    : undefined
                               }
                               canSeeNotes={canSeeNotes}
                               onNoteClick={
-                                noteText && onViewNote
-                                  ? () => onViewNote(emp.fullName, date, noteText)
+                                canOpenNote && day
+                                  ? () => onViewNote!(emp.fullName, date, day)
                                   : undefined
                               }
+                              onExcuse={canExcuse && onExcuse ? () => onExcuse(emp, date) : undefined}
+                              onSchedule={canSchedule && onSchedule ? () => onSchedule(emp, date) : undefined}
                               onClick={canEdit ? () => onEdit(emp, date) : undefined}
                             />
                           </td>
@@ -3297,7 +3868,9 @@ function dayCellTooltip(
   canSeeNotes = false,
 ) {
   const h = hours ?? { start: "09:00", end: "18:00" };
-  if (day.status === "rest") {
+  if (day.status === "prehire") return "Ishga qabul qilinmagan";
+  if (day.status === "outside") return "";
+  if (day.status === "rest" && !day.excused) {
     return `${t("davomat.rest")}\n${t("davomat.restExtra")}`;
   }
   const lines = [
@@ -3319,7 +3892,11 @@ function dayCellTooltip(
   if (!day.restDayWork && day.earlyLeaveLabel && day.earlyLeaveLabel !== "—") {
     lines.push(`${t("davomat.earlyOut")}: ${day.earlyLeaveLabel}`);
   }
-  if (canSeeNotes && day.notes?.trim()) {
+  if (day.excused) {
+    lines.unshift("Sababli (jarimasiz)");
+    if (day.excuseNote?.trim()) lines.push(`Izoh: ${day.excuseNote.trim()}`);
+    if (day.excusedByName) lines.push(`Belgiladi: ${day.excusedByName}`);
+  } else if (canSeeNotes && day.notes?.trim()) {
     lines.push(`Izoh: ${day.notes.trim()}`);
   }
   if (day.overtimeLabel && day.overtimeLabel !== "—") {
@@ -3334,39 +3911,53 @@ function WeekCell({
   hours,
   canSeeNotes = false,
   onNoteClick,
+  onExcuse,
+  onSchedule,
 }: {
   day?: DavomatDayMetrics;
   onClick?: () => void;
   hours?: { start: string; end: string };
   canSeeNotes?: boolean;
   onNoteClick?: () => void;
+  onExcuse?: () => void;
+  onSchedule?: () => void;
 }) {
   const { t } = useI18n();
   const status = day?.status || "absent";
+  const excused = Boolean(day?.excused);
   const hasIn = Boolean(day?.checkIn && day.checkIn !== "—");
   const hasOut = Boolean(day?.checkOut && day.checkOut !== "—");
-  const statusLabel = day?.restDayWork
-    ? t("davomat.restExtra")
-    : t(WEEK_CELL_STATUS_KEYS[status] || STATUS_KEYS[status] || status, status);
+  const statusLabel =
+    status === "prehire"
+      ? "Ishga qabul qilinmagan"
+      : status === "outside"
+        ? ""
+        : excused
+          ? "Sababli"
+          : day?.restDayWork
+            ? t("davomat.restExtra")
+            : t(WEEK_CELL_STATUS_KEYS[status] || STATUS_KEYS[status] || status, status);
   const showTimes =
     status !== "leave" &&
     status !== "rest" &&
     (hasIn || hasOut || status === "incomplete");
   const subline = day ? weekCellSublineParts(day) : null;
   const interactive = Boolean(onClick);
-  const hasNote = Boolean(canSeeNotes && day?.notes?.trim());
+  const hasNote = Boolean((excused && day?.excuseNote) || (canSeeNotes && day?.notes?.trim()));
+  const clickable = interactive || Boolean(onExcuse) || Boolean(onSchedule) || Boolean(onNoteClick);
 
   return (
     <button
       type="button"
-      onClick={onClick}
-      disabled={!interactive}
+      onClick={interactive ? onClick : undefined}
+      disabled={!clickable}
       className={cn(
-        "relative mx-auto flex h-[62px] w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium",
+        "relative mx-auto flex w-full min-w-[72px] flex-col items-center justify-center gap-0.5 rounded-lg border px-0.5 py-1 font-medium",
+        status === "prehire" ? "h-auto min-h-[62px]" : "h-[62px]",
         interactive
           ? "transition-colors hover:ring-2 hover:ring-[#0b3a5c]/20"
           : "cursor-default",
-        STATUS_STYLE[status] || "bg-muted",
+        excused ? EXCUSED_STYLE : STATUS_STYLE[status] || "bg-muted",
       )}
       title={day ? dayCellTooltip(day, hours, t, canSeeNotes) : interactive ? t("ui.edit") : undefined}
     >
@@ -3391,7 +3982,54 @@ function WeekCell({
           <MessageSquareText className="h-3 w-3" />
         </span>
       ) : null}
-      <span className="w-full whitespace-nowrap text-center text-[10px] font-bold leading-none">
+      {onExcuse && status !== "prehire" && status !== "outside" ? (
+        <span
+          role="button"
+          tabIndex={0}
+          className="absolute bottom-0.5 right-0.5 rounded p-0.5 text-teal-700 hover:bg-teal-50 dark:text-teal-300"
+          title="Sababli qilish"
+          onClick={(e) => {
+            e.stopPropagation();
+            onExcuse();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onExcuse();
+            }
+          }}
+        >
+          <BadgeCheck className="h-3 w-3" />
+        </span>
+      ) : null}
+      {onSchedule && status !== "prehire" && status !== "outside" ? (
+        <span
+          role="button"
+          tabIndex={0}
+          className="absolute bottom-0.5 left-0.5 rounded p-0.5 text-sky-700 hover:bg-sky-50 dark:text-sky-300"
+          title="Smena va vaqt"
+          onClick={(e) => {
+            e.stopPropagation();
+            onSchedule();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              e.stopPropagation();
+              onSchedule();
+            }
+          }}
+        >
+          <Clock3 className="h-3 w-3" />
+        </span>
+      ) : null}
+      <span
+        className={cn(
+          "w-full text-center font-bold leading-tight",
+          status === "prehire" ? "whitespace-normal text-[8px]" : "whitespace-nowrap text-[10px] leading-none",
+        )}
+      >
         {statusLabel}
       </span>
       {showTimes ? (

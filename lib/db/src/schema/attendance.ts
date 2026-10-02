@@ -21,6 +21,11 @@ export const attendanceRecordsTable = pgTable(
     checkLongitude: doublePrecision("check_longitude"),
     distanceMeters: integer("distance_meters"),
     notes: text("notes"),
+    /** Sababli kun — jarima hisoblanmaydi */
+    excused: boolean("excused").notNull().default(false),
+    excuseNote: text("excuse_note"),
+    excusedById: integer("excused_by_id"),
+    excusedAt: timestamp("excused_at", { withTimezone: true }),
     createdById: integer("created_by_id"),
     /** Snapshot: shu kunda ishlagan filial (mudir employee id) */
     resolvedBranchId: integer("resolved_branch_id"),
@@ -292,6 +297,38 @@ export const attendancePaySettingsTable = pgTable("attendance_pay_settings", {
   updatedById: integer("updated_by_id"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+/**
+ * Xodimga xos smena va kelish-ketish.
+ * Faqat shu xodimning davomati, jarimasi va Keldim/Ketdim hisobiga ta’sir qiladi.
+ * mode: permanent | period
+ * shiftKey: office | one | two | three
+ */
+export const employeeScheduleOverridesTable = pgTable(
+  "employee_schedule_overrides",
+  {
+    id: serial("id").primaryKey(),
+    employeeId: integer("employee_id").notNull(),
+    mode: text("mode").notNull().default("permanent"),
+    validFrom: text("valid_from").notNull(),
+    validTo: text("valid_to"),
+    shiftKey: text("shift_key").notNull(),
+    startHm: text("start_hm").notNull(),
+    endHm: text("end_hm").notNull(),
+    note: text("note"),
+    active: boolean("active").notNull().default(true),
+    createdById: integer("created_by_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index("employee_schedule_overrides_emp_idx").on(t.employeeId, t.active),
+    index("employee_schedule_overrides_range_idx").on(t.validFrom, t.validTo),
+  ],
+);
 
 /** Dorixona ochilish/yopilish — SB yozgan fakt. Tizim vaqti davomatdan hisoblanadi. */
 export const branchOpenLogsTable = pgTable(

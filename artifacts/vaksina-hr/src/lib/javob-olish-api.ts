@@ -235,5 +235,5 @@ export function ymdToLocalDate(ymd: string): Date {
 }
 
 export function isJavobOpenStatus(status: string) {
-  return status === "pending" || status === "pending_coord" || status === "pending_hr";
+  return status === "pending" || status === "pending_coord" || status === "pending_dept" || status === "pending_hr";
 }

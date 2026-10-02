@@ -16,7 +16,7 @@ function cleanBranch(raw: string | null | undefined): string {
   return name;
 }
 
-export function DavomatJarimaCard({ month }: { month: string }) {
+export function DavomatJarimaCard({ month, onOpen }: { month: string; onOpen?: () => void }) {
   const [, setLocation] = useLocation();
   const summary = useJarimaSummary(month);
   const own = Boolean(summary.data?.own);
@@ -27,7 +27,7 @@ export function DavomatJarimaCard({ month }: { month: string }) {
   return (
     <button
       type="button"
-      onClick={() => setLocation("/oylik")}
+      onClick={() => (onOpen ? onOpen() : setLocation("/oylik"))}
       className="rounded-2xl border-2 border-rose-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-rose-400/30 dark:bg-[#2a1520]"
     >
       <div className="flex items-start justify-between gap-3">
@@ -75,7 +75,7 @@ export function DavomatJarimaPanel({ month }: { month: string }) {
   const people = jarimaPeople(rows.length ? rows : self ? [self] : []);
   const total = data?.own ? self?.amount ?? 0 : data?.total ?? 0;
   return (
-    <section className="mt-4 overflow-hidden rounded-3xl border border-rose-200/80 bg-white shadow-[0_18px_50px_-28px_rgba(159,18,57,0.55)] dark:border-rose-400/25 dark:bg-[#241018]">
+    <section className="overflow-hidden rounded-3xl border border-rose-200/80 bg-white shadow-[0_18px_50px_-28px_rgba(159,18,57,0.55)] dark:border-rose-400/25 dark:bg-[#241018]">
       <header className="bg-[#172033] px-5 py-5 text-white sm:px-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">

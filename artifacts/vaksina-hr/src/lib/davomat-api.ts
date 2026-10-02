@@ -24,6 +24,17 @@ export type DavomatDayMetrics = {
   restDayWork?: boolean;
   /** Kelgan, lekin ketish hali yozilmagan */
   missingCheckout?: boolean;
+  /** Shu kundagi reja vaqti (xodimga xos bo‘lishi mumkin) */
+  planStart?: string;
+  planEnd?: string;
+  planShift?: string | null;
+  planCustom?: boolean;
+  /** Sababli kun — jarima tushmaydi */
+  excused?: boolean;
+  excuseNote?: string | null;
+  excusedById?: number | null;
+  excusedByName?: string | null;
+  excusedAt?: string | null;
 };
 
 export type DavomatEmployee = {
@@ -225,6 +236,69 @@ export async function saveDavomatManual(payload: {
 export type DavomatResetPart = "in" | "out" | "all";
 
 /** Davomatni bekor qilish: faqat Keldim, faqat Ketdim yoki butun kun */
+export type ScheduleShiftOption = {
+  key: string;
+  label: string;
+  start: string;
+  end: string;
+};
+
+export type EmployeeScheduleRule = {
+  id: number;
+  employeeId: number;
+  mode: "permanent" | "period";
+  validFrom: string;
+  validTo: string | null;
+  shiftKey: string;
+  startHm: string;
+  endHm: string;
+  note: string | null;
+};
+
+export async function fetchEmployeeSchedule(employeeId: number, workDate: string): Promise<{
+  shifts: ScheduleShiftOption[];
+  current: EmployeeScheduleRule | null;
+  rules: EmployeeScheduleRule[];
+}> {
+  const q = new URLSearchParams({ employeeId: String(employeeId), workDate });
+  return apiJson(`/davomat/schedule-override?${q}`);
+}
+
+export async function saveEmployeeSchedule(payload: {
+  employeeId: number;
+  mode: "permanent" | "period";
+  validFrom: string;
+  validTo?: string | null;
+  shiftKey: string;
+  startHm: string;
+  endHm: string;
+}): Promise<void> {
+  await apiJson("/davomat/schedule-override", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function clearEmployeeSchedule(employeeId: number, id?: number | null): Promise<void> {
+  await apiJson("/davomat/schedule-override/clear", {
+    method: "POST",
+    body: JSON.stringify({ employeeId, id: id || undefined }),
+  });
+}
+
+/** Kunni sababli qilish — faqat admin va HR menejer. Izoh majburiy. */
+export async function saveDavomatExcuse(payload: {
+  employeeId: number;
+  workDate: string;
+  status: string;
+  note: string;
+}): Promise<void> {
+  await apiJson("/davomat/excuse", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function resetDavomatManual(payload: {
   employeeId: number;
   workDate: string;
@@ -404,8 +478,21 @@ export type WorkplaceInfo = {
     status: string;
     complete: boolean;
     nextAction: "in" | "out" | "done";
+    excused?: boolean;
+    excuseNote?: string | null;
+    excusedAt?: string | null;
     /** Koordinator: yopilgan ofis sessiyalari (cheklist hisobga kirmaydi) */
     priorOfficeMs?: number;
+  };
+  zonePresence?: {
+    enabled: boolean;
+    method: "FACE_ID" | "QR" | null;
+    intervalHours: number | null;
+    windowMinutes: number | null;
+    status: "off" | "idle" | "waiting" | "due" | "blocked";
+    dueAt: string | null;
+    remainSec: number | null;
+    message: string | null;
   };
   shift?: {
     type: "one" | "two" | "office" | string;
@@ -528,6 +615,11 @@ export type DavomatMethodAccessRow = {
   status: string;
   face: boolean;
   qr: boolean;
+  zoneEnabled?: boolean;
+  zoneIntervalHours?: number;
+  zoneWindowMinutes?: number;
+  zoneMethod?: "FACE_ID" | "QR";
+  zoneStatus?: "off" | "idle" | "waiting" | "due" | "blocked";
 };
 
 export function fetchDavomatMethodAccess(q = ""): Promise<{ items: DavomatMethodAccessRow[]; total: number }> {
@@ -545,6 +637,42 @@ export function saveDavomatMethodAccess(body: { userId: number; face?: boolean; 
 
 export function saveDavomatMethodAccessBulk(body: { userIds: number[]; face?: boolean; qr?: boolean }) {
   return apiJson<{ ok: boolean; updated: number }>("/davomat/method-access/bulk", {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
+export function saveZonePresence(body: {
+  userId: number;
+  enabled: boolean;
+  intervalHours: number;
+  windowMinutes: number;
+  method: "FACE_ID" | "QR";
+}) {
+  return apiJson<{ ok: boolean; userId: number; zone: WorkplaceInfo["zonePresence"] }>("/davomat/zone-presence", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export function unlockZonePresence(userId: number) {
+  return apiJson<{ ok: boolean; userId: number; zone: WorkplaceInfo["zonePresence"] }>("/davomat/zone-presence/unlock", {
+    method: "POST",
+    body: JSON.stringify({ userId }),
+  });
+}
+
+export function confirmZonePresence(body: {
+  method: "FACE_ID" | "QR";
+  latitude: number;
+  longitude: number;
+  gpsCapturedAt: number;
+  accuracy?: number;
+  descriptor?: number[];
+  snapshot?: string;
+  qrPayload?: string;
+}) {
+  return apiJson<{ ok: boolean; message: string; zone: WorkplaceInfo["zonePresence"] }>("/davomat/zone-presence/confirm", {
     method: "POST",
     body: JSON.stringify(body),
   });

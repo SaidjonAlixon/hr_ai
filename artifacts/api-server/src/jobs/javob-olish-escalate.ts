@@ -27,7 +27,7 @@ export async function runJavobOlishEscalateCycle(): Promise<number> {
     .from(javobOlishRequestsTable)
     .where(
       and(
-        inArray(javobOlishRequestsTable.status, ["pending", "pending_coord"]),
+        inArray(javobOlishRequestsTable.status, ["pending", "pending_coord", "pending_dept"]),
         lt(javobOlishRequestsTable.createdAt, cutoff),
       ),
     )
@@ -38,7 +38,8 @@ export async function runJavobOlishEscalateCycle(): Promise<number> {
   const now = new Date();
   let n = 0;
   for (const row of rows) {
-    const note = `Koordinator 8 soat ichida javob bermadi. Yuborilgan: ${fmtDt(row.createdAt)}. HR ga o‘tkazilgan: ${fmtDt(now)}.`;
+    const who = row.status === "pending_dept" ? "Bo‘lim boshlig‘i" : "Koordinator";
+    const note = `${who} 8 soat ichida javob bermadi. Yuborilgan: ${fmtDt(row.createdAt)}. HR ga o‘tkazilgan: ${fmtDt(now)}.`;
     await db
       .update(javobOlishRequestsTable)
       .set({
@@ -57,7 +58,7 @@ export async function runJavobOlishEscalateCycle(): Promise<number> {
 
     await notifyByRoles({
       roles: ["hr_menejer", "hr_direktor", "admin"],
-      text: `${emp?.fullName || "Xodim"}: javob olish — koordinator javob bermadi. ${row.workDate} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. ${note}`,
+      text: `${emp?.fullName || "Xodim"}: javob olish — ${who.toLowerCase()} javob bermadi. ${row.workDate} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}. ${note}`,
       type: "javob_olish_escalated",
       linkUrl: "/javob-olish",
     });

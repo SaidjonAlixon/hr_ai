@@ -1,8 +1,8 @@
 /**
  * Tasdiqlangan javob olish — davomat jarimasidan ozod qilish.
  */
-import { and, eq, inArray } from "drizzle-orm";
-import { db, javobOlishRequestsTable } from "@workspace/db";
+import { and, eq, gte, inArray, lte } from "drizzle-orm";
+import { attendanceRecordsTable, db, javobOlishRequestsTable } from "@workspace/db";
 import { hmToMinutes } from "./shift-hours";
 
 export type JavobExemption = {
@@ -46,6 +46,130 @@ export async function loadApprovedJavobExemptions(
     });
   }
   return map;
+}
+
+export type ApprovedJavobExcuse = {
+  employeeId: number;
+  userId: number | null;
+  workDate: string;
+  fromHm: string;
+  toHm: string;
+  note: string;
+  decisionNote?: string | null;
+  decidedById: number | null;
+  decidedAt: Date | null;
+};
+
+export function javobExcuseNote(row: {
+  note: string;
+  fromHm: string;
+  toHm: string;
+  decisionNote?: string | null;
+}): string {
+  const reason = String(row.note || "").trim();
+  const extra = String(row.decisionNote || "").trim();
+  const time = `${row.fromHm}–${row.toHm}`;
+  const text = extra
+    ? `Javob olish: ${reason}. ${time}. Izoh: ${extra}`
+    : `Javob olish: ${reason}. ${time}`;
+  return text.slice(0, 500);
+}
+
+/** HR (yoki yakuniy) tasdiqlagan javob olish — davomatda Sababli. Qo‘lda belgilangan Sababli ustidan yozilmaydi. */
+export async function excuseAttendanceFromApprovedJavob(rows: ApprovedJavobExcuse[]): Promise<number> {
+  const list = rows.filter((row) => row.employeeId > 0 && /^\d{4}-\d{2}-\d{2}$/.test(row.workDate));
+  if (!list.length) return 0;
+  const employeeIds = [...new Set(list.map((row) => row.employeeId))];
+  const dates = [...new Set(list.map((row) => row.workDate))].sort();
+  const existing = await db
+    .select({
+      id: attendanceRecordsTable.id,
+      employeeId: attendanceRecordsTable.employeeId,
+      workDate: attendanceRecordsTable.workDate,
+      excused: attendanceRecordsTable.excused,
+    })
+    .from(attendanceRecordsTable)
+    .where(
+      and(
+        inArray(attendanceRecordsTable.employeeId, employeeIds),
+        gte(attendanceRecordsTable.workDate, dates[0]!),
+        lte(attendanceRecordsTable.workDate, dates[dates.length - 1]!),
+      ),
+    );
+  const byKey = new Map(existing.map((row) => [`${row.employeeId}|${row.workDate}`, row]));
+  let marked = 0;
+  for (const row of list) {
+    const key = `${row.employeeId}|${row.workDate}`;
+    const hit = byKey.get(key);
+    if (hit?.excused) continue;
+    const now = new Date();
+    const payload = {
+      excused: true,
+      excuseNote: javobExcuseNote(row),
+      excusedById: row.decidedById,
+      excusedAt: row.decidedAt ?? now,
+      updatedAt: now,
+    };
+    if (hit) {
+      await db.update(attendanceRecordsTable).set(payload).where(eq(attendanceRecordsTable.id, hit.id));
+      hit.excused = true;
+    } else {
+      const [inserted] = await db
+        .insert(attendanceRecordsTable)
+        .values({
+          employeeId: row.employeeId,
+          userId: row.userId,
+          workDate: row.workDate,
+          status: "absent",
+          source: "manual",
+          createdById: row.decidedById,
+          ...payload,
+        })
+        .returning({ id: attendanceRecordsTable.id });
+      if (inserted) {
+        byKey.set(key, {
+          id: inserted.id,
+          employeeId: row.employeeId,
+          workDate: row.workDate,
+          excused: true,
+        });
+      }
+    }
+    marked += 1;
+  }
+  return marked;
+}
+
+/** Hisobotdan oldin: shu oralikdagi tasdiqlangan javob olishlarni Sababli qiladi. */
+export async function syncApprovedJavobExcuses(
+  employeeIds: number[],
+  from: string,
+  to: string,
+): Promise<void> {
+  const ids = [...new Set(employeeIds.filter((id) => Number.isFinite(id) && id > 0))];
+  if (!ids.length || !/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return;
+  const rows = await db
+    .select({
+      employeeId: javobOlishRequestsTable.employeeId,
+      userId: javobOlishRequestsTable.userId,
+      workDate: javobOlishRequestsTable.workDate,
+      fromHm: javobOlishRequestsTable.fromHm,
+      toHm: javobOlishRequestsTable.toHm,
+      note: javobOlishRequestsTable.note,
+      decisionNote: javobOlishRequestsTable.decisionNote,
+      decidedById: javobOlishRequestsTable.decidedById,
+      decidedAt: javobOlishRequestsTable.decidedAt,
+    })
+    .from(javobOlishRequestsTable)
+    .where(
+      and(
+        inArray(javobOlishRequestsTable.employeeId, ids),
+        gte(javobOlishRequestsTable.workDate, from),
+        lte(javobOlishRequestsTable.workDate, to),
+        eq(javobOlishRequestsTable.status, "approved"),
+      ),
+    );
+  await excuseAttendanceFromApprovedJavob(rows);
 }
 
 function durationMin(fromHm: string, toHm: string) {

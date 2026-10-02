@@ -27,6 +27,10 @@ CREATE TABLE IF NOT EXISTS dismissed_staff (
   reason TEXT
 );
 CREATE INDEX IF NOT EXISTS dismissed_staff_dismissed_at_idx ON dismissed_staff (dismissed_at);
+ALTER TABLE dismissed_staff ADD COLUMN IF NOT EXISTS reports_to_id INTEGER;
+ALTER TABLE dismissed_staff ADD COLUMN IF NOT EXISTS org_role TEXT;
+ALTER TABLE dismissed_staff ADD COLUMN IF NOT EXISTS shift_type TEXT;
+ALTER TABLE dismissed_staff ADD COLUMN IF NOT EXISTS shift_label TEXT;
 
 -- Darsliklar (stajyor / farmasevt / mudir — alohida kurslar)
 CREATE TABLE IF NOT EXISTS darslik_lessons (
@@ -556,6 +560,28 @@ CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excuse_note TEXT;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused_by_id INTEGER;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS employee_schedule_overrides (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'permanent',
+  valid_from TEXT NOT NULL,
+  valid_to TEXT,
+  shift_key TEXT NOT NULL,
+  start_hm TEXT NOT NULL,
+  end_hm TEXT NOT NULL,
+  note TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS employee_schedule_overrides_emp_idx
+  ON employee_schedule_overrides (employee_id, active);
 
 -- Stajyor: intern xodimlar alohida akkaunt roli; Kirish faqat shu rolga
 DO $$
@@ -677,6 +703,28 @@ CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excuse_note TEXT;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused_by_id INTEGER;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused_at TIMESTAMPTZ;
+
+CREATE TABLE IF NOT EXISTS employee_schedule_overrides (
+  id SERIAL PRIMARY KEY,
+  employee_id INTEGER NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'permanent',
+  valid_from TEXT NOT NULL,
+  valid_to TEXT,
+  shift_key TEXT NOT NULL,
+  start_hm TEXT NOT NULL,
+  end_hm TEXT NOT NULL,
+  note TEXT,
+  active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_by_id INTEGER,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS employee_schedule_overrides_emp_idx
+  ON employee_schedule_overrides (employee_id, active);
 
 -- Stajyor: intern xodimlar alohida akkaunt roli; Kirish faqat shu rolga
 DO $$
@@ -1612,6 +1660,8 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
     client.release();
   }
 
+  await ensureZonePresenceSchema();
+
   try {
     const { syncAllRoleDepartmentAssignments } = await import("./role-departments");
     await syncAllRoleDepartmentAssignments();
@@ -1947,6 +1997,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS preboarding_progress_user_track_uidx ON preboa
 
 export async function ensurePreboardingSchema(): Promise<void> {
   await pool.query(PREBOARDING_SQL);
+}
+
+const ZONE_PRESENCE_SQL = `
+CREATE TABLE IF NOT EXISTS zone_presence_rules (
+  user_id INTEGER PRIMARY KEY,
+  employee_id INTEGER,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  interval_hours INTEGER NOT NULL DEFAULT 2,
+  window_minutes INTEGER NOT NULL DEFAULT 15,
+  method TEXT NOT NULL DEFAULT 'FACE_ID',
+  cycle_started_at TIMESTAMPTZ,
+  prompt_at TIMESTAMPTZ,
+  due_at TIMESTAMPTZ,
+  prompt_notified_at TIMESTAMPTZ,
+  blocked_on TEXT,
+  blocked_at TIMESTAMPTZ,
+  block_notified_on TEXT,
+  unlocked_on TEXT,
+  unlocked_at TIMESTAMPTZ,
+  unlocked_by INTEGER,
+  last_confirmed_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS zone_presence_enabled_idx ON zone_presence_rules (enabled);
+`;
+
+export async function ensureZonePresenceSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(ZONE_PRESENCE_SQL);
+    logger.info("Zone presence schema ensured");
+  } catch (err) {
+    logger.warn({ err }, "Zone presence schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 export async function ensureRevisionVisitsSchema(): Promise<void> {

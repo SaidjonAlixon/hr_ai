@@ -15,6 +15,8 @@ import {
   employeeWorkSlotsTable,
   attendanceShiftSegmentsTable,
   attendancePunchAuditTable,
+  employeeScheduleOverridesTable,
+  dismissedStaffTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { scriptIncludes } from "../lib/script-search";
@@ -24,6 +26,8 @@ import {
   canViewDavomat,
   canEditDavomatManual,
   canResetDavomatManual,
+  canMarkDavomatExcuse,
+  canManageUsers,
   canViewDavomatXatoliklar,
   canViewDavomatNotes,
   isDirectorRole,
@@ -41,10 +45,22 @@ import {
   staffFilterLabelUz,
   warehouseShiftKeyOf,
 } from "../lib/davomat-staff-filter";
-import { isScheduledRestDay } from "../lib/ofis-weekend";
+import { isScheduledRestDay, isWeekendYmd } from "../lib/ofis-weekend";
+import {
+  loadScheduleOverrides,
+  pickScheduleOverride,
+  resolveScheduleOverride,
+  scheduleShiftLabel,
+  staffHoursFromOverride,
+  workScheduleFromOverride,
+  isScheduleShiftKey,
+  normalizeHm,
+  type ScheduleOverride,
+} from "../lib/employee-schedule-override";
 import {
   applyJavobExemptionToMetrics,
   loadApprovedJavobExemptions,
+  syncApprovedJavobExcuses,
   type JavobExemption,
 } from "../lib/javob-exemptions";
 import { evaluateLiveness, matchFaceForAuthWithAi, matchFaceForOwnerWithAi, type LivenessProof } from "../lib/face-match";
@@ -60,6 +76,19 @@ import {
   coordinatorOfficeDay,
 } from "../lib/coordinator-visits";
 import {
+  ZONE_BLOCK_TEXT,
+  clampIntervalHours,
+  clampWindowMinutes,
+  loadZoneListFlags,
+  markZoneConfirmed,
+  parseZoneMethod,
+  saveZoneRule,
+  unlockZoneDay,
+  zonePunchBlock,
+  zoneViewForUser,
+  sweepZonePresenceSoon,
+} from "../lib/zone-presence";
+import {
   isTestOfficeCoordinatorName,
   resolveTestOfficeVisitBranch,
   TEST_OFFICE_LAT,
@@ -67,6 +96,7 @@ import {
 } from "../lib/test-office-coordinator";
 import { maybeBackfillFacePhoto } from "./face";
 import { displayBranchName, excelFilialLabel, gpsFromLocationField } from "../lib/geo-location";
+import { employmentOverlaps, employmentPhase, tashkentYmd } from "../lib/employment-span";
 import { dedupeBranchesWithGps } from "../lib/branch-dedupe";
 import {
   computeDayAttendance,
@@ -432,6 +462,35 @@ function davomatStatusLine(status: string, restDayWork?: boolean): string {
   return "Kelmagan";
 }
 
+function excuseFields(
+  rec:
+    | {
+        excused?: boolean | null;
+        excuseNote?: string | null;
+        excusedById?: number | null;
+        excusedAt?: Date | null;
+      }
+    | null
+    | undefined,
+) {
+  if (!rec?.excused) {
+    return {
+      excused: false,
+      excuseNote: null as string | null,
+      excusedById: null as number | null,
+      excusedAt: null as string | null,
+      excusedByName: null as string | null,
+    };
+  }
+  return {
+    excused: true,
+    excuseNote: String(rec.excuseNote || "").trim() || null,
+    excusedById: rec.excusedById ?? null,
+    excusedAt: rec.excusedAt ? new Date(rec.excusedAt).toISOString() : null,
+    excusedByName: null as string | null,
+  };
+}
+
 function emptyDayMetrics(
   date: string,
   status: "absent" | "leave" | "rest",
@@ -469,6 +528,11 @@ type DayCellMetrics = {
   earlyLeaveLabel: string;
   overtimeLabel: string;
   restDayWork?: boolean;
+  planStart?: string;
+  planEnd?: string;
+  excused?: boolean;
+  excuseNote?: string | null;
+  excusedByName?: string | null;
 };
 
 /** Har katakda: keldi, ketdi, kechikish, ishlagan — doim ko‘rinadi */
@@ -488,6 +552,20 @@ function applyDavomatDayCell(
   };
 
   const status = d?.status || "absent";
+  if (status === "outside") {
+    cell.value = "";
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF8FAFC" } };
+    cell.border = border;
+    return;
+  }
+  if (status === "prehire") {
+    cell.value = "Ishga qabul qilinmagan";
+    cell.font = { name: "Calibri", size: 9, bold: true, color: { argb: "FFB91C1C" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFEE2E2" } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = border;
+    return;
+  }
   cell.fill = {
     type: "pattern",
     pattern: "solid",
@@ -495,6 +573,47 @@ function applyDavomatDayCell(
   };
   cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true, indent: 1 };
   cell.border = border;
+
+  if (d?.excused) {
+    const cin = d.checkIn && d.checkIn !== "—" ? d.checkIn : "—";
+    const cout = d.checkOut && d.checkOut !== "—" ? d.checkOut : "—";
+    const worked = readableWorkedHours(d.workedHours);
+    const noteText = String(d.excuseNote || d.notes || "").trim();
+    const who = String(d.excusedByName || "").trim();
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFCCFBF1" },
+    };
+    const rich: ExcelJS.RichText[] = [
+      {
+        text: "Sababli (jarimasiz)\n",
+        font: { ...baseFont, bold: true, color: { argb: "FF0F766E" } },
+      },
+      {
+        text: `Holat: ${davomatStatusLine(status, d.restDayWork)}\n`,
+        font: { ...baseFont, color: { argb: "FF0F172A" } },
+      },
+      {
+        text: `Keldi: ${cin}\nKetdi: ${cout}\nIshlangan: ${worked}`,
+        font: { ...baseFont, color: { argb: "FF0F172A" } },
+      },
+    ];
+    if (noteText) {
+      rich.push({
+        text: `\nIzoh: ${noteText}`,
+        font: { ...baseFont, italic: true, color: { argb: "FF0F766E" } },
+      });
+    }
+    if (who) {
+      rich.push({
+        text: `\nBelgiladi: ${who}`,
+        font: { ...baseFont, color: { argb: "FF115E59" } },
+      });
+    }
+    cell.value = { richText: rich };
+    return;
+  }
 
   if (!d || (status === "absent" && (!d.checkIn || d.checkIn === "—"))) {
     cell.value = "Kelmagan\nKeldi: —\nKetdi: —\nKechikish: —\nIshlangan: —";
@@ -612,19 +731,74 @@ function smenaLabelForEmployee(e: {
   return w.label || "Asosiy ofis";
 }
 
-/** Excel Filial ustuni — GPS yo‘q; ofis → asosiy ofis */
-function excelFilialForEmployee(e: {
-  location?: string | null;
-  userRole?: string | null;
-  orgRole?: string | null;
-  shiftType?: string | null;
-  shiftLabel?: string | null;
-}): string {
-  if (EXTERNAL_USER_ROLES.has(e.userRole || "")) {
-    return excelFilialLabel(e.location) || "—";
+type FilialChainNode = {
+  id: number;
+  location: string | null;
+  reportsToId: number | null;
+  orgRole: string | null;
+  userRole: string | null;
+};
+
+function isDashFilial(value: string | null | undefined): boolean {
+  const name = String(value || "").trim();
+  return !name || name === "—" || name === "-" || name === "–" || name === "−" || /^filial$/i.test(name);
+}
+
+/** Excel Filial ustuni — GPS yo‘q; ofis → asosiy ofis; «-» yozilmaydi.
+ *  Bir filialdagilar mudir kartasidagi asl nom bilan bir xil chiqadi. */
+function excelFilialForEmployee(
+  e: {
+    id?: number;
+    location?: string | null;
+    reportsToId?: number | null;
+    userRole?: string | null;
+    orgRole?: string | null;
+    shiftType?: string | null;
+    shiftLabel?: string | null;
+  },
+  byId?: Map<number, FilialChainNode>,
+): string {
+  if (!EXTERNAL_USER_ROLES.has(e.userRole || "")) {
+    const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
+    if (w.key === "office") return "asosiy ofis";
   }
-  const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
-  return excelFilialLabel(e.location, { isOffice: w.key === "office" });
+
+  const seen = new Set<number>();
+  const chain: FilialChainNode[] = [];
+  let cursor: FilialChainNode | undefined =
+    e.id != null && byId?.get(e.id)
+      ? byId.get(e.id)
+      : {
+          id: e.id ?? 0,
+          location: e.location ?? null,
+          reportsToId: e.reportsToId ?? null,
+          orgRole: e.orgRole ?? null,
+          userRole: e.userRole ?? null,
+        };
+  for (let i = 0; i < 6 && cursor; i++) {
+    if (cursor.id && seen.has(cursor.id)) break;
+    if (cursor.id) seen.add(cursor.id);
+    chain.push(cursor);
+    cursor = cursor.reportsToId != null ? byId?.get(cursor.reportsToId) : undefined;
+  }
+
+  const labelOf = (node: FilialChainNode) => branchIdentity(node.location)?.label || "";
+  const isCoord = (node: FilialChainNode) =>
+    node.orgRole === "coordinator" || node.userRole === "koordinator";
+
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const node = chain[i]!;
+    if (node.orgRole !== "manager" || isCoord(node)) continue;
+    const name = labelOf(node);
+    if (name) return name;
+  }
+  for (const node of chain) {
+    if (isCoord(node)) continue;
+    const name = labelOf(node);
+    if (name) return name;
+  }
+  const own = excelFilialLabel(e.location);
+  return isDashFilial(own) ? "" : own;
 }
 
 /** Dorixona filiali — GPS siz, bir xil nom bitta kalit */
@@ -764,6 +938,9 @@ async function loadActiveEmployees(filters: {
     shiftType: s.shiftType,
     shiftLabel: s.shiftLabel,
     phone: s.phone ?? null,
+    hiredAt: s.hiredAt ? String(s.hiredAt).slice(0, 10) : null,
+    dismissedAt: null as string | null,
+    archived: false,
   }));
 
   const departmentFilter = filters.departmentId
@@ -800,6 +977,102 @@ async function loadActiveEmployees(filters: {
       coordinatorName: coordinator?.name ?? null,
     };
   });
+}
+
+async function loadArchivedDavomatEmployees(
+  from: string,
+  to: string,
+  filters: {
+    departmentId?: string;
+    location?: string;
+    search?: string;
+    employeeId?: string;
+    staffFilter?: string;
+    warehouseShift?: string;
+  },
+) {
+  const fromDate = new Date(`${from}T00:00:00+05:00`);
+  const rows = await db
+    .select()
+    .from(dismissedStaffTable)
+    .where(gte(dismissedStaffTable.dismissedAt, fromDate));
+  const departmentFilter = filters.departmentId
+    ? await resolveDepartmentFilter(filters.departmentId)
+    : null;
+  const staffSeg = parseDavomatStaffFilter(filters.staffFilter);
+  const whShift = staffSeg === "warehouse" ? parseWarehouseShiftFilter(filters.warehouseShift) : null;
+  const coordinatorById = await loadCoordinatorByEmployee();
+  const out = [];
+  for (const row of rows) {
+    const id = row.formerEmployeeId;
+    if (!id || id <= 0) continue;
+    const hiredAt = tashkentYmd(row.hiredAt) || tashkentYmd(row.registeredAt);
+    const dismissedAt = tashkentYmd(row.dismissedAt);
+    if (!employmentOverlaps(from, to, hiredAt, dismissedAt)) continue;
+    if (filters.employeeId && id !== Number(filters.employeeId)) continue;
+    const userRole = row.role || null;
+    const orgRole = row.orgRole || orgRoleFromUserRole(userRole || "") || null;
+    const emp = {
+      id,
+      fullName: row.fullName,
+      position: row.position || "Xodim",
+      departmentId: row.departmentId ?? 0,
+      departmentName: row.departmentName,
+      location: row.location,
+      employmentStatus: "dismissed",
+      userId: row.formerUserId,
+      userRole,
+      orgRole,
+      reportsToId: row.reportsToId ?? null,
+      shiftType: row.shiftType,
+      shiftLabel: row.shiftLabel,
+      phone: row.phone ?? null,
+      hiredAt,
+      dismissedAt,
+      archived: true,
+    };
+    if (departmentFilter) {
+      if (!matchesDepartmentFilter(emp, departmentFilter)) continue;
+    } else if (filters.departmentId && emp.departmentId !== Number(filters.departmentId)) {
+      continue;
+    }
+    if (filters.location && (emp.location || "") !== filters.location) continue;
+    if (filters.search) {
+      const hay = [emp.fullName, emp.position, emp.departmentName, emp.location, emp.phone]
+        .filter(Boolean)
+        .join(" ");
+      if (!scriptIncludes(hay, filters.search)) continue;
+    }
+    if (staffSeg !== "all" && staffSeg !== "external" && !matchesDavomatStaffFilter(emp, staffSeg)) {
+      continue;
+    }
+    if (whShift && !matchesWarehouseShift(emp, whShift)) continue;
+    const coordinator = coordinatorById.get(id);
+    out.push({
+      ...emp,
+      coordinatorId: coordinator?.id ?? null,
+      coordinatorName: coordinator?.name ?? null,
+    });
+  }
+  return out;
+}
+
+async function loadDavomatEmployees(
+  filters: {
+    departmentId?: string;
+    location?: string;
+    search?: string;
+    employeeId?: string;
+    staffFilter?: string;
+    warehouseShift?: string;
+  },
+  from: string,
+  to: string,
+) {
+  const active = await loadActiveEmployees(filters);
+  const archived = await loadArchivedDavomatEmployees(from, to, filters);
+  const seen = new Set(active.map((e) => e.id));
+  return [...active, ...archived.filter((e) => !seen.has(e.id))];
 }
 
 /** Bo‘lim boshlig‘i / Distribyutsiya HR — faqat o‘z bo‘limi xodimlari */
@@ -905,7 +1178,16 @@ async function scopeCoordinatorDavomatEmployees<T extends { id: number }>(
     }
   }
 
-  return employees.filter((e) => keep.has(e.id));
+  return employees.filter((e) => {
+    if (keep.has(e.id)) return true;
+    const extra = e as T & { archived?: boolean; reportsToId?: number | null };
+    if (!extra.archived || extra.reportsToId == null) return false;
+    return (
+      keep.has(extra.reportsToId) ||
+      branchIds.has(extra.reportsToId) ||
+      extra.reportsToId === me.id
+    );
+  });
 }
 
 async function scopeDavomatViewer<
@@ -944,6 +1226,7 @@ function writeDavomatAnalyticsCache(key: string, body: unknown) {
 
 async function loadRecords(from: string, to: string, employeeIds: number[]) {
   if (!employeeIds.length) return [];
+  await syncApprovedJavobExcuses(employeeIds, from, to);
   return db
     .select({
       id: attendanceRecordsTable.id,
@@ -956,6 +1239,10 @@ async function loadRecords(from: string, to: string, employeeIds: number[]) {
       checkLatitude: attendanceRecordsTable.checkLatitude,
       checkLongitude: attendanceRecordsTable.checkLongitude,
       notes: attendanceRecordsTable.notes,
+      excused: attendanceRecordsTable.excused,
+      excuseNote: attendanceRecordsTable.excuseNote,
+      excusedById: attendanceRecordsTable.excusedById,
+      excusedAt: attendanceRecordsTable.excusedAt,
     })
     .from(attendanceRecordsTable)
     .where(
@@ -974,6 +1261,7 @@ function buildReport(
   to: string,
   defs: Record<ShiftKey, ShiftDefinition> = DEFAULT_SHIFT_DEFS,
   exemptions: Map<string, JavobExemption> = new Map(),
+  scheduleOverrides: Map<number, ScheduleOverride[]> = new Map(),
 ) {
   const dates = eachDateInclusive(from, to);
   const byEmpDate = new Map<string, (typeof records)[0]>();
@@ -986,40 +1274,115 @@ function buildReport(
   // Bitta o'tishda employee kunlari — dayStats shundan (ikki marta computeMetrics yo'q)
   const employeeRows = employees
     .map((e) => {
-      const hours = staffHours(e);
+      const baseHours = staffHours(e);
+      const rules = scheduleOverrides.get(e.id) || [];
       const days = dates.map((date) => {
-        const restDay = isScheduledRestDay(date, {
-          userRole: e.userRole,
-          orgRole: e.orgRole,
-          position: e.position,
-          shiftType: e.shiftType,
-        });
+        const phase = employmentPhase(date, e.hiredAt, e.dismissedAt);
+        const ov = pickScheduleOverride(rules, date);
+        const hours = ov ? staffHoursFromOverride(ov, baseHours.graceMinutes) : baseHours;
+        const restDay = ov
+          ? ov.shiftKey === "office" && isWeekendYmd(date)
+          : isScheduledRestDay(date, {
+              userRole: e.userRole,
+              orgRole: e.orgRole,
+              position: e.position,
+              shiftType: e.shiftType,
+            });
+        const plan = {
+          planStart: hours.start,
+          planEnd: hours.end,
+          planShift: ov?.shiftKey || hours.shiftKey || null,
+          planCustom: Boolean(ov),
+        };
         const rec = byEmpDate.get(`${e.id}|${date}`);
         const ex = exemptions.get(`${e.id}|${date}`);
+        const excuse = excuseFields(rec);
+        if (phase === "prehire") {
+          return {
+            ...emptyDayMetrics(date, "absent", { notes: "Ishga qabul qilinmagan" }),
+            status: "prehire",
+            ...plan,
+            ...excuseFields(null),
+          };
+        }
+        if (phase === "outside") {
+          return {
+            ...emptyDayMetrics(date, "absent"),
+            status: "outside",
+            notes: null,
+            ...plan,
+            ...excuseFields(null),
+          };
+        }
+        if (rec?.excused) {
+          const chosen = ["present", "late", "absent", "incomplete", "leave", "rest"].includes(
+            String(rec.status),
+          )
+            ? String(rec.status)
+            : "absent";
+          if (rec.checkInAt) {
+            const raw = computeMetrics(date, rec.checkInAt, rec.checkOutAt, chosen, hours);
+            const m = applyJavobExemptionToMetrics(raw, ex, hours?.graceMinutes ?? 15);
+            return {
+              date,
+              ...m,
+              status: chosen,
+              source: rec.source,
+              notes: rec.excuseNote || rec.notes,
+              recordId: rec.id,
+              restDayWork: !!(restDay && rec.checkInAt),
+              ...plan,
+              ...excuse,
+            };
+          }
+          const shell = chosen === "leave" || chosen === "rest" ? chosen : "absent";
+          return {
+            ...emptyDayMetrics(date, shell, {
+              source: rec.source,
+              notes: rec.excuseNote || rec.notes,
+              recordId: rec.id,
+            }),
+            status: chosen,
+            ...plan,
+            ...excuse,
+          };
+        }
         if (!rec || (!rec.checkInAt && (rec.status === "absent" || !rec.status))) {
           if (restDay) {
-            return emptyDayMetrics(date, "rest");
+            return { ...emptyDayMetrics(date, "rest"), ...plan, ...excuse };
           }
           if (ex?.fullDay) {
-            return emptyDayMetrics(date, "leave", {
-              notes: "Javob olish (tasdiqlangan)",
-            });
+            return {
+              ...emptyDayMetrics(date, "leave", {
+                notes: "Javob olish (tasdiqlangan)",
+              }),
+              ...plan,
+              ...excuse,
+            };
           }
-          return emptyDayMetrics(date, "absent");
+          return { ...emptyDayMetrics(date, "absent"), ...plan, ...excuse };
         }
         if (rec.status === "leave") {
-          return emptyDayMetrics(date, "leave", {
-            source: rec.source,
+          return {
+            ...emptyDayMetrics(date, "leave", {
+              source: rec.source,
             notes: rec.notes,
             recordId: rec.id,
-          });
+            }),
+            ...plan,
+            ...excuse,
+          };
         }
         if (restDay && !rec.checkInAt) {
-          return emptyDayMetrics(date, "rest", {
-            source: rec.source,
-            notes: rec.notes || "Dam kuni",
-            recordId: rec.id,
-          });
+          return {
+            ...emptyDayMetrics(date, "rest", {
+              source: rec.source,
+              notes: rec.notes || "Dam kuni",
+              recordId: rec.id,
+            }),
+            ...plan,
+            ...excuse,
+          };
         }
         const raw = computeMetrics(date, rec.checkInAt, rec.checkOutAt, rec.status, hours);
         const m = applyJavobExemptionToMetrics(raw, ex, hours?.graceMinutes ?? 15);
@@ -1039,6 +1402,8 @@ function buildReport(
                 : rec.notes,
           recordId: rec.id,
           restDayWork: !!(restDay && rec.checkInAt),
+          ...plan,
+          ...excuse,
         };
       });
 
@@ -1057,6 +1422,12 @@ function buildReport(
         overtimeMin: 0,
       };
       for (const d of days) {
+        if (d.status === "prehire" || d.status === "outside") continue;
+        if (d.excused) {
+          if (d.checkIn && d.checkIn !== "—") totals.present += 1;
+          totals.workedMinutes += d.workedMinutes;
+          continue;
+        }
         if (d.status === "absent") totals.absent += 1;
         else if (d.status === "leave") totals.leave += 1;
         else if (d.status === "rest") totals.rest += 1;
@@ -1088,13 +1459,13 @@ function buildReport(
         shiftType: normalizeShiftType(e.shiftType, e.shiftLabel),
         shiftLabel: e.shiftLabel,
         warehouse: isWarehouseDavomatStaff(e),
-        security: Boolean(hours.security),
+        security: Boolean(baseHours.security),
         warehouseShiftKey: warehouseShiftKeyOf(e.shiftType),
         reportsToId: e.reportsToId ?? null,
         coordinatorId: e.coordinatorId ?? null,
         coordinatorName: e.coordinatorName ?? null,
-        workStart: hours.start,
-        workEnd: hours.end,
+        workStart: days[0]?.planStart || baseHours.start,
+        workEnd: days[0]?.planEnd || baseHours.end,
         days,
         totals: {
           ...totals,
@@ -1106,6 +1477,7 @@ function buildReport(
         },
       };
     })
+    .filter((e) => e.days.some((d) => d.status !== "outside"))
     .sort((a, b) => a.fullName.localeCompare(b.fullName, "uz"));
 
   const empById = new Map(employees.map((e) => [e.id, e]));
@@ -1158,7 +1530,11 @@ function buildReport(
     let absent = 0;
     for (const e of employeeRows) {
       const d = e.days[di];
-      if (!d || d.status === "rest") continue;
+      if (!d || d.status === "rest" || d.status === "prehire" || d.status === "outside") continue;
+      if (d.excused) {
+        if (d.checkIn && d.checkIn !== "—") present += 1;
+        continue;
+      }
       if (d.status === "absent") absent += 1;
       else if (d.status === "leave") leave += 1;
       else {
@@ -1198,7 +1574,7 @@ function buildReport(
   }
 
   const summary = {
-    employees: employees.length,
+    employees: employeeRows.length,
     days: dates.length,
     presentPersonDays,
     absentPersonDays,
@@ -1232,7 +1608,30 @@ async function buildReportWithJavob(
     employees.map((e) => e.id),
     dates,
   );
-  return buildReport(employees, records, from, to, defs, exemptions);
+  const scheduleOverrides = await loadScheduleOverrides(
+    employees.map((e) => e.id),
+    from,
+    to,
+  );
+  const report = buildReport(employees, records, from, to, defs, exemptions, scheduleOverrides);
+  const markerIds = new Set<number>();
+  for (const emp of report.employees) {
+    for (const day of emp.days) {
+      if (day.excusedById) markerIds.add(day.excusedById);
+    }
+  }
+  if (!markerIds.size) return report;
+  const markers = await db
+    .select({ id: usersTable.id, fullName: usersTable.fullName })
+    .from(usersTable)
+    .where(inArray(usersTable.id, [...markerIds]));
+  const markerNames = new Map(markers.map((row) => [row.id, row.fullName]));
+  for (const emp of report.employees) {
+    for (const day of emp.days) {
+      if (day.excusedById) day.excusedByName = markerNames.get(day.excusedById) || "—";
+    }
+  }
+  return report;
 }
 
 router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -1241,14 +1640,14 @@ router.get("/davomat", requireAuth, async (req: AuthRequest, res): Promise<void>
     const q = req.query as Record<string, string>;
     const to = q.to || todayTashkent();
     const from = q.from || addDays(to, -13);
-    let employees = await loadActiveEmployees({
+    let employees = await loadDavomatEmployees({
       departmentId: q.departmentId,
       location: q.location,
       search: q.search,
       employeeId: q.employeeId,
       staffFilter: q.staffFilter,
       warehouseShift: q.warehouseShift,
-    });
+    }, from, to);
     employees = await scopeDavomatViewer(req.userRole, req.userId, employees);
     const records = await loadRecords(
       from,
@@ -1288,7 +1687,7 @@ router.get("/davomat/analytics", requireAuth, async (req: AuthRequest, res): Pro
       }
     }
 
-    let employees = await loadActiveEmployees({});
+    let employees = await loadDavomatEmployees({}, from, to);
     employees = await scopeDavomatViewer(req.userRole, req.userId, employees);
 
     const employeeIds = employees.map((e) => e.id);
@@ -1344,7 +1743,7 @@ router.get("/davomat/today", requireAuth, async (req: AuthRequest, res): Promise
     const employees = await scopeDavomatViewer(
       req.userRole,
       req.userId,
-      await loadActiveEmployees({}),
+      await loadDavomatEmployees({}, date, date),
     );
     const records = await loadRecords(date, date, employees.map((e) => e.id));
     const defs = await getEffectiveShiftDefs();
@@ -1468,6 +1867,261 @@ router.post("/davomat/manual", requireAuth, async (req: AuthRequest, res): Promi
   } catch (err) {
     console.error("POST /davomat/manual error:", err);
     res.status(503).json({ error: "Saqlanmadi" });
+  }
+});
+
+const EXCUSE_STATUSES = new Set(["present", "late", "absent", "incomplete", "leave", "rest"]);
+
+/** Admin va HR menejer: kunni sababli qilish. Izoh majburiy, jarima tushmaydi. */
+router.post("/davomat/excuse", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireDavomat(req, res)) return;
+  if (!canMarkDavomatExcuse(req.userRole)) {
+    res.status(403).json({ error: "Sababli qilish faqat admin va HR menejer uchun" });
+    return;
+  }
+  try {
+    const { employeeId, workDate, status, note } = req.body as {
+      employeeId?: number;
+      workDate?: string;
+      status?: string;
+      note?: string;
+    };
+    if (!employeeId || !workDate || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+      res.status(400).json({ error: "employeeId va workDate (YYYY-MM-DD) majburiy" });
+      return;
+    }
+    const nextStatus = String(status || "").trim();
+    if (!EXCUSE_STATUSES.has(nextStatus)) {
+      res.status(400).json({ error: "Holatni tanlang" });
+      return;
+    }
+    const excuseNote = String(note || "").trim();
+    if (excuseNote.length < 3) {
+      res.status(400).json({ error: "Izoh majburiy — kamida 3 ta belgi" });
+      return;
+    }
+    if (excuseNote.length > 500) {
+      res.status(400).json({ error: "Izoh 500 belgidan oshmasin" });
+      return;
+    }
+
+    const [emp] = await db
+      .select({ id: employeesTable.id, userId: employeesTable.userId })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employeeId))
+      .limit(1);
+    if (!emp) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+
+    const [existing] = await db
+      .select({ id: attendanceRecordsTable.id })
+      .from(attendanceRecordsTable)
+      .where(
+        and(
+          eq(attendanceRecordsTable.employeeId, employeeId),
+          eq(attendanceRecordsTable.workDate, workDate),
+        ),
+      )
+      .limit(1);
+
+    const now = new Date();
+    const excusePayload = {
+      status: nextStatus,
+      excused: true,
+      excuseNote,
+      excusedById: req.userId!,
+      excusedAt: now,
+      updatedAt: now,
+    };
+    if (existing) {
+      await db
+        .update(attendanceRecordsTable)
+        .set(excusePayload)
+        .where(eq(attendanceRecordsTable.id, existing.id));
+    } else {
+      await db.insert(attendanceRecordsTable).values({
+        employeeId,
+        userId: emp.userId,
+        workDate,
+        ...excusePayload,
+        source: "manual",
+        createdById: req.userId!,
+      });
+    }
+
+    res.json({ ok: true, workDate, employeeId, status: nextStatus, excused: true });
+  } catch (err) {
+    console.error("POST /davomat/excuse error:", err);
+    res.status(503).json({ error: "Sababli saqlanmadi" });
+  }
+});
+
+function scheduleShiftCatalog(defs: Record<ShiftKey, ShiftDefinition>) {
+  return (["office", "one", "two", "three"] as const).map((key) => ({
+    key,
+    label: scheduleShiftLabel(key),
+    start: defs[key].startHm,
+    end: defs[key].endHm,
+  }));
+}
+
+/** Admin: xodimning joriy smena vaqti va standart smenalar */
+router.get("/davomat/schedule-override", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageUsers(req.userRole)) {
+    res.status(403).json({ error: "Smena vaqtini faqat admin belgilaydi" });
+    return;
+  }
+  const employeeId = Number(req.query.employeeId);
+  const workDate = String(req.query.workDate || todayTashkent());
+  if (!Number.isFinite(employeeId) || employeeId <= 0 || !/^\d{4}-\d{2}-\d{2}$/.test(workDate)) {
+    res.status(400).json({ error: "employeeId va workDate kerak" });
+    return;
+  }
+  try {
+    const defs = await getEffectiveShiftDefs();
+    const rules = await loadScheduleOverrides([employeeId], "2000-01-01", "2999-12-31");
+    const active = (rules.get(employeeId) || []).sort((a, b) => b.validFrom.localeCompare(a.validFrom));
+    res.json({
+      shifts: scheduleShiftCatalog(defs),
+      current: pickScheduleOverride(active, workDate),
+      rules: active,
+    });
+  } catch (err) {
+    console.error("GET /davomat/schedule-override error:", err);
+    res.status(503).json({ error: "Smena vaqti yuklanmadi" });
+  }
+});
+
+/** Admin: shu xodim uchun smena va kelish-ketish. Doimiy yoki muddatli. */
+router.post("/davomat/schedule-override", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageUsers(req.userRole)) {
+    res.status(403).json({ error: "Smena vaqtini faqat admin belgilaydi" });
+    return;
+  }
+  try {
+    const body = req.body as {
+      employeeId?: number;
+      mode?: string;
+      validFrom?: string;
+      validTo?: string | null;
+      shiftKey?: string;
+      startHm?: string;
+      endHm?: string;
+      note?: string;
+    };
+    const employeeId = Number(body.employeeId);
+    const mode = body.mode === "period" ? "period" : "permanent";
+    const validFrom = String(body.validFrom || "").trim();
+    const validTo = body.validTo ? String(body.validTo).trim() : null;
+    const shiftKey = String(body.shiftKey || "").trim();
+    const startHm = normalizeHm(String(body.startHm || ""));
+    const endHm = normalizeHm(String(body.endHm || ""));
+    if (!Number.isFinite(employeeId) || employeeId <= 0) {
+      res.status(400).json({ error: "Xodim tanlanmagan" });
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom)) {
+      res.status(400).json({ error: "Boshlanish sanasi YYYY-MM-DD bo‘lsin" });
+      return;
+    }
+    if (mode === "period") {
+      if (!validTo || !/^\d{4}-\d{2}-\d{2}$/.test(validTo)) {
+        res.status(400).json({ error: "Muddatli reja uchun tugash sanasi kerak" });
+        return;
+      }
+      if (validTo < validFrom) {
+        res.status(400).json({ error: "Tugash sanasi boshlanishdan oldin bo‘lmasin" });
+        return;
+      }
+    }
+    if (!isScheduleShiftKey(shiftKey)) {
+      res.status(400).json({ error: "Smenani tanlang" });
+      return;
+    }
+    if (!startHm || !endHm) {
+      res.status(400).json({ error: "Kelish va ketish vaqti HH:MM bo‘lsin" });
+      return;
+    }
+    if (startHm === endHm) {
+      res.status(400).json({ error: "Kelish va ketish bir xil bo‘lmasin" });
+      return;
+    }
+    const [emp] = await db
+      .select({ id: employeesTable.id })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, employeeId))
+      .limit(1);
+    if (!emp) {
+      res.status(404).json({ error: "Xodim topilmadi" });
+      return;
+    }
+    const [saved] = await db
+      .insert(employeeScheduleOverridesTable)
+      .values({
+        employeeId,
+        mode,
+        validFrom,
+        validTo: mode === "period" ? validTo : null,
+        shiftKey,
+        startHm,
+        endHm,
+        note: String(body.note || "").trim() || null,
+        active: true,
+        createdById: req.userId!,
+      })
+      .returning({ id: employeeScheduleOverridesTable.id });
+    res.json({
+      ok: true,
+      id: saved?.id,
+      employeeId,
+      mode,
+      validFrom,
+      validTo: mode === "period" ? validTo : null,
+      shiftKey,
+      startHm,
+      endHm,
+    });
+  } catch (err) {
+    console.error("POST /davomat/schedule-override error:", err);
+    res.status(503).json({ error: "Smena vaqti saqlanmadi" });
+  }
+});
+
+/** Admin: belgilangan smena vaqtini o‘chirib, standart jadvalga qaytarish */
+router.post("/davomat/schedule-override/clear", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManageUsers(req.userRole)) {
+    res.status(403).json({ error: "Smena vaqtini faqat admin bekor qiladi" });
+    return;
+  }
+  const employeeId = Number(req.body?.employeeId);
+  const id = Number(req.body?.id);
+  if (!Number.isFinite(employeeId) || employeeId <= 0) {
+    res.status(400).json({ error: "Xodim tanlanmagan" });
+    return;
+  }
+  try {
+    if (Number.isFinite(id) && id > 0) {
+      await db
+        .update(employeeScheduleOverridesTable)
+        .set({ active: false, updatedAt: new Date() })
+        .where(
+          and(
+            eq(employeeScheduleOverridesTable.id, id),
+            eq(employeeScheduleOverridesTable.employeeId, employeeId),
+          ),
+        );
+    } else {
+      await db
+        .update(employeeScheduleOverridesTable)
+        .set({ active: false, updatedAt: new Date() })
+        .where(eq(employeeScheduleOverridesTable.employeeId, employeeId));
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /davomat/schedule-override/clear error:", err);
+    res.status(503).json({ error: "Smena vaqti bekor qilinmadi" });
   }
 });
 
@@ -2550,6 +3204,8 @@ async function geoGate(
   action: "in" | "out" = "in",
   preferredBranchId?: number | null,
   strictPreferred = false,
+  /** Hudud tasdiqi: ko‘chma ruxsat hisobga olinmaydi, faqat o‘z yashil hududi */
+  requireOwnZone = false,
 ): Promise<GeoGateOk | { ok: false; status: number; body: Record<string, unknown> }> {
   // Admin bergan ko‘chma ruxsat — yashil zona (geofence) talab qilinmaydi
   let mobileAnywhere = false;
@@ -2558,6 +3214,7 @@ async function geoGate(
   } catch {
     mobileAnywhere = false;
   }
+  if (requireOwnZone) mobileAnywhere = false;
 
   if (!usesBranchDavomat(userRole, emp.orgRole)) {
     // Reviziya bo‘limi: ofis + istalgan filial zonasidan davomat
@@ -3001,9 +3658,13 @@ async function applyFacePunch(opts: {
   const planForWorkDate = await dayShiftTypeFor(emp.id, workDate);
   const punchShiftType = planForWorkDate || effectiveShiftType;
   const punchShiftLabel = planForWorkDate ? null : effectiveShiftLabel;
-  const punchHours = planForWorkDate
+  const basePunchHours = planForWorkDate
     ? hoursForStaff(emp.orgRole, punchShiftType, userRole, punchShiftLabel, defs)
     : hours;
+  const punchOverride = await resolveScheduleOverride(emp.id, workDate);
+  const punchHours = punchOverride
+    ? staffHoursFromOverride(punchOverride, basePunchHours.graceMinutes)
+    : basePunchHours;
   const now = new Date();
   const dateFilter = and(
     eq(attendanceRecordsTable.employeeId, emp.id),
@@ -3011,6 +3672,11 @@ async function applyFacePunch(opts: {
   );
 
   const source = verificationMethod === "QR" ? ("qr" as const) : ("face" as const);
+  await sweepZonePresenceSoon().catch(() => undefined);
+  const zoneBlock = await zonePunchBlock(emp.userId);
+  if (zoneBlock) {
+    return { ok: false, status: 403, body: zoneBlock };
+  }
   const coordinatorBranch =
     userRole === "koordinator" && resolvedBranchId != null && Number(resolvedBranchId) > 0;
   const coordinatorOffice = userRole === "koordinator" && !coordinatorBranch;
@@ -3878,6 +4544,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     const punchShiftType = planForWorkDate || shiftType;
     const punchShiftLabel = planForWorkDate ? null : shiftLabel;
 
+    await sweepZonePresenceSoon().catch(() => undefined);
+    const zonePresence = await zoneViewForUser(user.id);
     const shiftWindowOpen = allSlots.length === 0 ? true : activeNow.length > 0;
     let gpsError: string | null = resolved.ok ? null : String(resolved.body.error || "Filial GPS yo‘q");
     // Slot yo‘q kun — legacy o‘z filiali GPS bilan davomat ochiq (yolg‘on «Yana 0 m» emas)
@@ -3925,6 +4593,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
             priorOfficeMs: 0,
           }
         : null;
+
+    const scheduleOverride = await resolveScheduleOverride(emp.id, workDate);
 
     res.json({
       allowedMeters: geofenceMetersForKind(point.kind),
@@ -3977,13 +4647,16 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           dayShiftKeys && dayShiftKeys.length
             ? encodeShiftKeys(dayShiftKeys.filter((k) => k !== "office") as ShiftKey[])
             : punchShiftType;
-        const wFull = workScheduleForStaff(
+        const standardFull = workScheduleForStaff(
           user.role,
           emp.orgRole,
           deadlineShiftType,
           dayShiftKeys?.length ? null : punchShiftLabel,
           defs,
         );
+        const wFull = scheduleOverride
+          ? workScheduleFromOverride(scheduleOverride, standardFull.graceMinutes)
+          : standardFull;
         const activeKey = preferredSlot?.shiftKey || activeNow[0]?.shiftKey;
         const wActive = activeKey
           ? workScheduleForStaff(user.role, emp.orgRole, activeKey, null, defs)
@@ -3993,21 +4666,24 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
           shiftKeys: wFull.keys || dayShiftKeys || [wFull.key],
           overnight: Boolean(wFull.overnight),
           warehouse: Boolean(wFull.warehouse),
-          shiftType: deadlineShiftType,
+          shiftType: scheduleOverride ? scheduleOverride.shiftKey : deadlineShiftType,
           workDateYmd: workDate,
           endHm: wFull.end,
         };
         const deadlineAt = checkoutDeadlineAt(workDate, wFull.end, wFull.overnight, deadlineOpts);
         return {
-          type: deadlineShiftType || wFull.key,
-          keys: dayShiftKeys?.length ? dayShiftKeys : wFull.keys || [wFull.key],
-          label: daySlots.length
-            ? daySlots.map((s) => `${formatShiftKeyUz(s.shiftKey)}→${s.branchLabel || s.branchId}`).join(" · ")
-            : wFull.label,
+          type: scheduleOverride?.shiftKey || deadlineShiftType || wFull.key,
+          keys: scheduleOverride ? [scheduleOverride.shiftKey] : dayShiftKeys?.length ? dayShiftKeys : wFull.keys || [wFull.key],
+          label: scheduleOverride
+            ? `${scheduleShiftLabel(scheduleOverride.shiftKey)} · ${wFull.start}–${wFull.end}`
+            : daySlots.length
+              ? daySlots.map((s) => `${formatShiftKeyUz(s.shiftKey)}→${s.branchLabel || s.branchId}`).join(" · ")
+              : wFull.label,
           start: wFull.start,
           end: wFull.end,
-          activeStart: wActive.start,
-          activeEnd: wActive.end,
+          activeStart: scheduleOverride ? wFull.start : wActive.start,
+          activeEnd: scheduleOverride ? wFull.end : wActive.end,
+          custom: Boolean(scheduleOverride),
           overnight: Boolean(wFull.overnight),
           warehouse: Boolean(wFull.warehouse),
           warnHm: wFull.warnHm,
@@ -4053,6 +4729,10 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
               status: rec.status,
               complete,
               nextAction,
+              excused: Boolean(rec.excused),
+              excuseNote: rec.excuseNote || null,
+              excusedAt: rec.excusedAt ? rec.excusedAt.toISOString() : null,
+              excusedById: rec.excusedById ?? null,
             };
           })()
         : {
@@ -4065,7 +4745,12 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
             status: "absent",
             complete: false,
             nextAction: "in",
+            excused: false,
+            excuseNote: null,
+            excusedAt: null,
+            excusedById: null,
           },
+      zonePresence,
     });
   } catch (err) {
     console.error("GET /davomat/me/workplace error:", err);
@@ -4797,12 +5482,12 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
     const to = q.to || todayTashkent();
     const from = q.from || addDays(to, -13);
     const staffFilter = parseDavomatStaffFilter(q.staffFilter);
-    let employees = await loadActiveEmployees({
+    let employees = await loadDavomatEmployees({
       departmentId: q.departmentId,
       location: q.location,
       search: q.search,
       employeeId: q.employeeId,
-    });
+    }, from, to);
     const whShiftFilter =
       staffFilter === "warehouse" ? parseWarehouseShiftFilter(q.warehouseShift) : null;
     employees = employees.filter(
@@ -4830,6 +5515,18 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
 
     // Kelmaganlar Excel: koordinator (filtrlangan smenada ham to‘liq zanjir)
     const staffLinks = await loadStaffFromUsers("active");
+    const filialById = new Map<number, FilialChainNode>(
+      staffLinks.map((s) => [
+        s.id,
+        {
+          id: s.id,
+          location: s.location,
+          reportsToId: s.reportsToId ?? null,
+          orgRole: s.orgRole || null,
+          userRole: s.userRole || null,
+        },
+      ]),
+    );
     const coordById = new Map(
       staffLinks.map((s) => [
         s.id,
@@ -4966,6 +5663,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       ["Rang: ko'k fon", "Kelgan, lekin ketish yozilmagan"],
       ["Rang: kulrang fon", "Kelmagan"],
       ["Rang: binafsha fon", "Ta'tilda"],
+      ["Rang: moviy fon (Sababli)", "Admin yoki HR menejer sababli qilgan kun. Izoh va kim belgilagani katakda. Jarima hisoblanmaydi."],
       ["Rang: och kulrang (Dam kuni)", "Faqat ofis: shanba–yakshanba dam. Kelish majburiy emas"],
       ["Qo'shimcha ish (ixtiyoriy)", "Ofis dam kunida kelgan bo‘lsa — ish soati hisoblanadi, majburiy emas"],
       ["Varaqlar", "Davomat jadvali → Kunlik xulosa → Xodimlar jami → Kelganlar → Kelmaganlar (+ KOORDINATOR)"],
@@ -5060,6 +5758,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       let onTimeMin = 0;
       let lateOnlyMin = 0;
       for (const d of e.days) {
+        if (d.excused) continue;
         if (d.status === "present") onTimeMin += d.workedMinutes || 0;
         else if (d.status === "late") lateOnlyMin += d.lateArrivalMin || 0;
       }
@@ -5104,7 +5803,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       const vals: Array<string | number | ExcelJS.CellRichTextValue> = [
         e.fullName,
         e.position,
-        excelFilialForEmployee(e),
+        excelFilialForEmployee(e, filialById),
         smenaLabelForEmployee(e),
         `${empHours.start}–${empHours.end}`,
       ];
@@ -5145,9 +5844,11 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       dates.forEach((date, i) => {
         const d = e.days.find((x) => x.date === date);
         const cell = row.getCell(metaCols + 1 + i);
-        applyDavomatDayCell(cell, d, empHours, statusFont, statusFill);
+        const cellHours =
+          d?.planStart && d?.planEnd ? { start: d.planStart, end: d.planEnd } : empHours;
+        applyDavomatDayCell(cell, d, cellHours, statusFont, statusFill);
       });
-      row.height = 76;
+      row.height = e.days.some((day) => day.excused) ? 108 : 76;
     });
     if (lastCol >= 1) {
       sGrid.autoFilter = {
@@ -5252,7 +5953,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         e.fullName,
         e.position,
         e.departmentName || "—",
-        excelFilialForEmployee(e),
+        excelFilialForEmployee(e, filialById),
         smenaLabelForEmployee(e),
         empHours,
         e.totals.present,
@@ -5318,6 +6019,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
       smena: string;
       hours: string;
       status: string;
+      statusKey: string;
       cin: string;
       cout: string;
       kech: string;
@@ -5335,12 +6037,13 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         };
         arrivedRows.push({
           date: day.date,
-          filial: excelFilialForEmployee(e),
+          filial: excelFilialForEmployee(e, filialById),
           name: e.fullName,
           position: e.position || "—",
           smena: smenaLabelForEmployee(e),
           hours: `${empHours.start}–${empHours.end}`,
           status: davomatStatusLine(d.status, d.restDayWork),
+          statusKey: d.restDayWork ? "extra" : d.status,
           cin: d.checkIn,
           cout: d.checkOut && d.checkOut !== "—" ? d.checkOut : "—",
           kech: kechikishDisplay(d),
@@ -5374,6 +6077,17 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
         r.phone,
       ]);
       paintRow(row, i % 2 === 1, [1, 2, 8, 9, 10, 11, 12]);
+      const holatTone =
+        r.statusKey === "present"
+          ? { fill: "FF16A34A", font: "FFFFFFFF" }
+          : r.statusKey === "late" || r.statusKey === "incomplete"
+            ? { fill: "FFFACC15", font: "FF422006" }
+            : null;
+      if (holatTone) {
+        const holat = row.getCell(8);
+        holat.fill = { type: "pattern", pattern: "solid", fgColor: { argb: holatTone.fill } };
+        holat.font = { name: "Calibri", size: 10, bold: true, color: { argb: holatTone.font } };
+      }
       if (r.kech !== "Yo'q") {
         row.getCell(11).font = { name: "Calibri", size: 10, bold: true, color: { argb: "FFB91C1C" } };
       }
@@ -5440,7 +6154,7 @@ router.get("/davomat/export", requireAuth, async (req: AuthRequest, res): Promis
           e.fullName,
           e.position,
           smenaLabelForEmployee(e),
-          excelFilialForEmployee(e),
+          excelFilialForEmployee(e, filialById),
           e.departmentName || "—",
           e.phone || "—",
           coordinatorNameFromLinks(e.id, coordById),
@@ -6725,6 +7439,7 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
           .where(inArray(usersTable.id, ids))
       : [];
     const flagById = new Map(flags.map((row) => [row.id, row]));
+    const zoneById = await loadZoneListFlags(ids);
     const items = staff
       .filter((row) => row.userId != null)
       .map((row) => {
@@ -6740,6 +7455,11 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
           status: row.userStatus || "active",
           face: access.face,
           qr: access.qr,
+          zoneEnabled: zoneById.get(row.userId!)?.enabled ?? false,
+          zoneIntervalHours: zoneById.get(row.userId!)?.intervalHours ?? 2,
+          zoneWindowMinutes: zoneById.get(row.userId!)?.windowMinutes ?? 15,
+          zoneMethod: zoneById.get(row.userId!)?.method ?? "FACE_ID",
+          zoneStatus: zoneById.get(row.userId!)?.status ?? "off",
         };
       })
       .filter((row) => !q || scriptIncludes(`${row.fullName} ${row.role} ${row.position} ${row.location}`, q))
@@ -6822,6 +7542,196 @@ router.post("/davomat/method-access/bulk", requireAuth, async (req: AuthRequest,
   } catch (err) {
     console.error("POST /davomat/method-access/bulk", err);
     res.status(503).json({ error: "Ruxsat saqlanmadi" });
+  }
+});
+
+router.patch("/davomat/zone-presence", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin", code: "zone_admin" });
+    return;
+  }
+  const userId = Number(req.body?.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    res.status(400).json({ error: "Xodim tanlanmagan" });
+    return;
+  }
+  try {
+    const zone = await saveZoneRule({
+      userId,
+      enabled: Boolean(req.body?.enabled),
+      intervalHours: clampIntervalHours(req.body?.intervalHours),
+      windowMinutes: clampWindowMinutes(req.body?.windowMinutes),
+      method: parseZoneMethod(req.body?.method),
+    });
+    res.json({ ok: true, userId, zone });
+  } catch (err) {
+    console.error("PATCH /davomat/zone-presence", err);
+    res.status(503).json({ error: "Hudud tasdiqi saqlanmadi" });
+  }
+});
+
+router.post("/davomat/zone-presence/unlock", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin", code: "zone_admin" });
+    return;
+  }
+  const userId = Number(req.body?.userId);
+  if (!Number.isFinite(userId) || userId <= 0) {
+    res.status(400).json({ error: "Xodim tanlanmagan" });
+    return;
+  }
+  try {
+    const zone = await unlockZoneDay({ userId, adminUserId: req.userId! });
+    res.json({ ok: true, userId, zone });
+  } catch (err) {
+    console.error("POST /davomat/zone-presence/unlock", err);
+    res.status(503).json({ error: "Ruxsat berilmadi" });
+  }
+});
+
+router.post("/davomat/zone-presence/confirm", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+    if (staleGps) {
+      res.status(400).json(staleGps);
+      return;
+    }
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      res.status(400).json({ error: "Joylashuv yo‘q. GPS yoqing.", code: "gps_required" });
+      return;
+    }
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    if (!user) {
+      res.status(404).json({ error: "Foydalanuvchi topilmadi" });
+      return;
+    }
+    const current = await zoneViewForUser(user.id);
+    if (!current.enabled || !current.method) {
+      res.status(400).json({ error: "Sizga hudud tasdiqi yoqilmagan", code: "zone_off" });
+      return;
+    }
+    if (current.status === "blocked") {
+      res.status(403).json({ error: ZONE_BLOCK_TEXT, code: "zone_blocked" });
+      return;
+    }
+    if (current.status !== "due") {
+      res.status(400).json({ error: "Hozir tasdiqlash oynasi ochiq emas", code: "zone_not_due" });
+      return;
+    }
+    const method = parseZoneMethod(req.body?.method);
+    if (method !== current.method) {
+      res.status(403).json({
+        error: current.method === "QR"
+          ? "Tasdiq faqat QR kod orqali qabul qilinadi."
+          : "Tasdiq faqat Face ID orqali qabul qilinadi.",
+        code: "zone_method",
+      });
+      return;
+    }
+    let emp: WorkplaceEmp;
+    try {
+      emp = await ensureEmployeeForUser(user);
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) {
+        res.status(403).json({ error: err.message, code: err.code });
+        return;
+      }
+      throw err;
+    }
+    const gate = await geoGate(emp, user.role, latitude, longitude, Number(req.body?.accuracy), "in", null, false, true);
+    if (!gate.ok) {
+      const body = gate.body;
+      res.status(gate.status).json({
+        ...body,
+        error: "Sizga belgilangan yashil hududda emassiz. Tashqaridan tasdiq qabul qilinmaydi.",
+        code: body.code || "outside_geofence",
+      });
+      return;
+    }
+    const kind = gate.point.kind === "branch" ? "branch" : "office";
+    const radius = geofenceMetersForKind(kind);
+    if (gate.distanceMeters > radius + 8) {
+      res.status(403).json({
+        error: "Sizga belgilangan yashil hududda emassiz. Tashqaridan tasdiq qabul qilinmaydi.",
+        code: "outside_geofence",
+        distanceMeters: gate.distanceMeters,
+      });
+      return;
+    }
+    if (method === "FACE_ID") {
+      const descriptor = req.body?.descriptor;
+      if (!Array.isArray(descriptor) || descriptor.length < 8) {
+        res.status(400).json({ error: "Yuz ma’lumoti yo‘q", code: "face_required" });
+        return;
+      }
+      const matched = await matchFaceUserId(descriptor, req.body?.snapshot, {
+        userId: user.id,
+        fullName: user.fullName,
+      });
+      if (!matched.ok) {
+        res.status(403).json({ error: matched.error, code: matched.code, fullName: matched.fullName });
+        return;
+      }
+    } else {
+      const payload = String(req.body?.qrPayload || "").trim();
+      if (!payload) {
+        res.status(400).json({ error: "QR kod yo‘q", code: "qr_required" });
+        return;
+      }
+      const branchQr = await verifyBranchQrPayload(payload);
+      if (branchQr.ok) {
+        const adminAnywhere = hasFullPlatformAccess(user.role);
+        const reviziyaField = isReviziyaRole(user.role);
+        const effective = await effectiveBranchIdForDay(emp);
+        const allowed = new Set<number>();
+        const slotRows = await loadActiveWorkSlots(emp.id);
+        for (const slot of resolveSlotsForDay(todayTashkent(), slotRows)) allowed.add(slot.branchId);
+        if (effective.branchId) allowed.add(effective.branchId);
+        if (!adminAnywhere && !reviziyaField && !allowed.has(branchQr.row.branchId)) {
+          res.status(403).json({
+            error: "Bu QR sizning filialingizga mos emas. O‘z hududingiz QR ini skanerlang.",
+            code: "qr_wrong_branch",
+          });
+          return;
+        }
+      } else {
+        const deptQr = await verifyDepartmentQrPayload(payload);
+        if (!deptQr.ok) {
+          res.status(403).json({ error: deptQr.error || branchQr.error, code: deptQr.code || branchQr.code });
+          return;
+        }
+        const shared = isOfficeSharedQrDepartment(deptQr.row.departmentId);
+        if (!hasFullPlatformAccess(user.role) && !shared && user.departmentId !== deptQr.row.departmentId) {
+          res.status(403).json({
+            error: "Bu QR sizning bo‘limingizga mos emas.",
+            code: "qr_wrong_department",
+          });
+          return;
+        }
+      }
+    }
+    const zone = await markZoneConfirmed(user.id);
+    res.json({ ok: true, zone, message: "Yashil hududda ekanligingiz tasdiqlandi." });
+  } catch (err) {
+    const status = Number((err as { status?: number }).status) || 500;
+    const code = (err as { code?: string }).code;
+    if (status >= 400 && status < 500) {
+      res.status(status).json({ error: (err as Error).message, code });
+      return;
+    }
+    console.error("POST /davomat/zone-presence/confirm", err);
+    res.status(503).json({ error: "Tasdiq saqlanmadi" });
   }
 });
 

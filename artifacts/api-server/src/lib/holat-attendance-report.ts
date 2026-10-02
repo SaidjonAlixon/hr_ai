@@ -156,7 +156,7 @@ async function loadShiftMap(employeeIds: number[]): Promise<Map<number, { shiftT
 function buildPersonAttendance(
   p: HolatPerson,
   dates: string[],
-  byEmpDate: Map<string, { checkInAt: Date | null; status: string | null }>,
+  byEmpDate: Map<string, { checkInAt: Date | null; status: string | null; excused?: boolean }>,
   shifts: Map<number, { shiftType: string | null; shiftLabel: string | null }>,
 ): HisobotEmployeeRow | null {
   if (p.employeeId == null || isVacancyPlaceholder(p)) return null;
@@ -167,6 +167,10 @@ function buildPersonAttendance(
   const absentDates: string[] = [];
   for (const d of dates) {
     const rec = byEmpDate.get(`${p.employeeId}|${d}`);
+    if (rec?.excused) {
+      onTimeDates.push(d);
+      continue;
+    }
     const came = Boolean(rec?.checkInAt) && rec?.status !== "absent" && rec?.status !== "leave";
     if (!came) absentDates.push(d);
     else if (rec?.status === "late") lateDates.push(d);
@@ -260,6 +264,7 @@ export async function buildCoordinatorHisobot(opts: {
             workDate: attendanceRecordsTable.workDate,
             checkInAt: attendanceRecordsTable.checkInAt,
             status: attendanceRecordsTable.status,
+            excused: attendanceRecordsTable.excused,
           })
           .from(attendanceRecordsTable)
           .where(
@@ -271,11 +276,12 @@ export async function buildCoordinatorHisobot(opts: {
           )
           .orderBy(asc(attendanceRecordsTable.workDate));
 
-  const byEmpDate = new Map<string, { checkInAt: Date | null; status: string | null }>();
+  const byEmpDate = new Map<string, { checkInAt: Date | null; status: string | null; excused?: boolean }>();
   for (const r of records) {
     byEmpDate.set(`${r.employeeId}|${r.workDate}`, {
       checkInAt: r.checkInAt,
       status: r.status,
+      excused: Boolean(r.excused),
     });
   }
 
@@ -490,6 +496,7 @@ export async function buildFilialAttendance(opts: {
             workDate: attendanceRecordsTable.workDate,
             checkInAt: attendanceRecordsTable.checkInAt,
             status: attendanceRecordsTable.status,
+            excused: attendanceRecordsTable.excused,
           })
           .from(attendanceRecordsTable)
           .where(
@@ -499,9 +506,13 @@ export async function buildFilialAttendance(opts: {
               lte(attendanceRecordsTable.workDate, opts.to),
             ),
           );
-  const byEmpDate = new Map<string, { checkInAt: Date | null; status: string | null }>();
+  const byEmpDate = new Map<string, { checkInAt: Date | null; status: string | null; excused?: boolean }>();
   for (const r of records) {
-    byEmpDate.set(`${r.employeeId}|${r.workDate}`, { checkInAt: r.checkInAt, status: r.status });
+    byEmpDate.set(`${r.employeeId}|${r.workDate}`, {
+      checkInAt: r.checkInAt,
+      status: r.status,
+      excused: Boolean(r.excused),
+    });
   }
   const employees = wanted
     .map((p) => buildPersonAttendance(p, dates, byEmpDate, shifts))

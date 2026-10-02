@@ -50,10 +50,11 @@ type Props = {
   t: (k: string) => string;
   isHr: boolean;
   isCoord: boolean;
+  isDept?: boolean;
   userId: number | null;
 };
 
-export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
+export function JavobDecisionPanel({ t, isHr, isCoord, isDept = false, userId }: Props) {
   const { toast } = useToast();
   const qc = useQueryClient();
   const hrView = isHr && !isCoord;
@@ -80,7 +81,10 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
   const pending = pendingQ.data?.items ?? [];
   const hrItems = useMemo(() => pending.filter((i) => i.status === "pending_hr"), [pending]);
   const coordItems = useMemo(
-    () => pending.filter((i) => i.status === "pending_coord" || i.status === "pending"),
+    () =>
+      pending.filter(
+        (i) => i.status === "pending_coord" || i.status === "pending" || i.status === "pending_dept",
+      ),
     [pending],
   );
   const decided = decidedQ.data?.items ?? [];
@@ -163,13 +167,21 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
       return (
         <p className="flex items-center gap-1.5 rounded-xl bg-muted/60 px-3 py-2 text-[11px] text-muted-foreground">
           <Hourglass className="h-3.5 w-3.5 shrink-0" />
-          Avval koordinator javob beradi — faqat kuzatish
+          {item.status === "pending_dept"
+            ? "Avval bo‘lim boshlig‘i javob beradi — faqat kuzatish"
+            : "Avval koordinator javob beradi — faqat kuzatish"}
         </p>
       );
     }
     const state = busy[group.id];
     const approveLabel =
-      item.status === "pending_hr" ? t("javob.approveFinal") : isCoord ? t("javob.approve") : t("javob.approveFinal");
+      item.status === "pending_hr"
+        ? t("javob.approveFinal")
+        : item.status === "pending_dept" || isDept
+          ? "Tasdiqlash — HR ga"
+          : isCoord
+            ? t("javob.approve")
+            : t("javob.approveFinal");
     return (
       <div className="grid grid-cols-1 gap-2 min-[360px]:grid-cols-2">
         <Button
@@ -235,7 +247,7 @@ export function JavobDecisionPanel({ t, isHr, isCoord, userId }: Props) {
           <div className="min-w-0">
             <CardTitle className="flex items-center gap-2 text-base">
               <ShieldCheck className="h-4 w-4 shrink-0 text-primary" />
-              {hrView ? t("javob.hrTitle") : t("javob.coordTitle")}
+              {hrView ? t("javob.hrTitle") : isDept ? "Bo‘lim so‘rovlari" : t("javob.coordTitle")}
             </CardTitle>
             <p className="mt-1 text-xs text-muted-foreground">{hrView ? t("javob.hrHint") : t("javob.coordHint")}</p>
           </div>

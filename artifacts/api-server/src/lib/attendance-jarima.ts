@@ -200,6 +200,8 @@ export async function applyAttendanceJarima(
     const counted = days
       .filter((day) => {
         if (day.date < JARIMA_START) return false;
+        if (day.excused) return false;
+        if (day.status === "prehire" || day.status === "outside") return false;
         if (day.status === "rest" || day.status === "leave" || day.status === "planned") return false;
         if (isWorkDayFor && !isWorkDayFor(person, day.date)) return false;
         if (day.status === "late") return true;

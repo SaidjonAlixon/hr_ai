@@ -22,6 +22,7 @@ export * from "./attestatsiya";
 export * from "./webauthn";
 export * from "./face-profiles";
 export * from "./attendance";
+export * from "./zone-presence";
 export * from "./telegram";
 export * from "./payroll";
 export * from "./settlement";

@@ -2114,6 +2114,7 @@ export const pagesRu: Messages = {
   "javob.cancelled": "Отменено",
   "javob.statusPending": "Ожидает",
   "javob.statusPendingCoord": "Ждёт координатора",
+  "javob.statusPendingDept": "Ждёт руководителя отдела",
   "javob.statusPendingHr": "Ждёт HR",
   "javob.statusApproved": "Одобрено (без штрафа)",
   "javob.statusRejected": "Отклонена",

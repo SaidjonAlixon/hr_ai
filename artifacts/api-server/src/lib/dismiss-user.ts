@@ -38,6 +38,10 @@ export async function archiveAndDeleteUser(
       position: employeesTable.position,
       location: employeesTable.location,
       hiredAt: employeesTable.hiredAt,
+      reportsToId: employeesTable.reportsToId,
+      orgRole: employeesTable.orgRole,
+      shiftType: employeesTable.shiftType,
+      shiftLabel: employeesTable.shiftLabel,
       departmentId: employeesTable.departmentId,
     })
     .from(employeesTable)
@@ -74,6 +78,10 @@ export async function archiveAndDeleteUser(
     position: emp?.position ?? null,
     location: emp?.location ?? null,
     hiredAt: emp?.hiredAt ?? null,
+    reportsToId: emp?.reportsToId ?? null,
+    orgRole: emp?.orgRole ?? null,
+    shiftType: emp?.shiftType ?? null,
+    shiftLabel: emp?.shiftLabel ?? null,
     registeredAt: user.createdAt,
     dismissedAt: opts.dismissedAt ?? new Date(),
     dismissedById: opts.actorId ?? null,

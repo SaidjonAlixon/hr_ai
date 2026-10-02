@@ -284,14 +284,15 @@ function exportDayPdf(input: DavomatPdfExportInput): Promise<void> {
       ctx.fillRect(x0, y, contentW, rowH);
 
       const status = day.status || "absent";
-      const bg = STATUS_BG[status] || "#f1f5f9";
-      const fg = STATUS_FG[status] || "#334155";
+      const excused = Boolean(day.excused);
+      const bg = excused ? "#ccfbf1" : STATUS_BG[status] || "#f1f5f9";
+      const fg = excused ? "#0f766e" : STATUS_FG[status] || "#334155";
       const hours = workHoursForEmployee(emp);
       const cells: string[] = [
         String(rowIdx + 1),
         emp.fullName,
         emp.position || "—",
-        input.statusLabel(status),
+        excused ? "Sababli" : input.statusLabel(status),
       ];
       if (showShift) cells.push(`${hours.start}–${hours.end}`);
       cells.push(

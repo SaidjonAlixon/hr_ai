@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link } from 'wouter';
 import { cn } from '@/lib/utils';
+import { isDeptHeadRole, isLimitedOfficeStaffRole } from '@/lib/roles';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 
 export type MobileNavItem = {
@@ -44,6 +45,7 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   yurist: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   komunalniy: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   farrosh: ['/vazifalar', '/eslatmalar', '/davomat-face'],
+  mexanik: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   direktor_yordamchisi: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   gpp: ['/vazifalar', '/eslatmalar', '/davomat-face'],
   oshpaz: ['/vazifalar', '/eslatmalar', '/davomat-face'],
@@ -102,7 +104,14 @@ function pickMobileItems(role: string, navItems: MobileNavItem[]): MobileNavItem
       '/davomat-face',
       '/davomat',
     ];
-  const preferred = ensureVazifalar(base, byPath).filter((p) => p !== '/chat');
+  let preferred = ensureVazifalar(base, byPath).filter((p) => p !== '/chat');
+  if (
+    (isLimitedOfficeStaffRole(role) || isDeptHeadRole(role)) &&
+    byPath.has('/javob-olish') &&
+    !preferred.includes('/javob-olish')
+  ) {
+    preferred = ['/javob-olish', ...preferred];
+  }
   const maxItems = 6;
 
   const picked: MobileNavItem[] = [];

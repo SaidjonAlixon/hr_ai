@@ -46,6 +46,12 @@ const HELP: Record<string, Omit<PunchErrorHelp, "code">> = {
     fix: "O‘z filialingiz QR ini skanerlang.",
     severity: "medium",
   },
+  zone_blocked: {
+    title: "Bugun bloklandi",
+    meaning: "Yashil hudud tasdiqi vaqtida qilinmagan. Shu kun Keldim va Ketdim yopiq.",
+    fix: "Admin ruxsat berguncha ochilmaydi. Xodim admin bilan bog‘lansin.",
+    severity: "high",
+  },
   outside_geofence: {
     title: "Hududdan tashqarida",
     meaning: "GPS bo‘yicha xodim filialning ruxsat etilgan hududidan uzoqda.",
@@ -241,6 +247,7 @@ const TEXT_HINTS: Array<{ re: RegExp; code: string }> = [
   { re: /no[_\s-]?assignment|bugun\s*filial|biriktirilmagan|smena\s*topilmadi|filial\/smena/i, code: "no_assignment_today" },
   { re: /branch[_\s-]?unassigned|filial\s*belgilanmagan/i, code: "branch_unassigned" },
   { re: /outside[_\s-]?office|ofis\s*zona|ofis\s*hudud/i, code: "outside_office_geofence" },
+  { re: /zone_blocked|bugun\s*bloklandi/i, code: "zone_blocked" },
   { re: /outside[_\s-]?geofence|hududdan\s*tashqari|zonasidan\s*uzoq|70\s*m/i, code: "outside_geofence" },
   { re: /gps[_\s-]?required|gps\s*majburiy|lokatsiyaga\s*ruxsat|joylashuv/i, code: "gps_required" },
   { re: /branch[_\s-]?gps|filial\s*gps|koordinata\s*kiritilmagan/i, code: "branch_gps_missing" },

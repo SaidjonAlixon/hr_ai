@@ -243,6 +243,17 @@ export function canResetDavomatManual(role?: string | null): boolean {
   return normalizeUserRole(role) === "admin";
 }
 
+/** Davomatni sababli qilish (jarimasiz) — faqat admin va HR menejer */
+export function canMarkDavomatExcuse(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return r === "admin" || r === "hr_menejer";
+}
+
+/** Xodim smenasi va kelish-ketish vaqti — faqat admin */
+export function canSetEmployeeSchedule(role?: string | null): boolean {
+  return normalizeUserRole(role) === "admin";
+}
+
 /** Davomat xatoliklar bo‘limi — faqat admin */
 export function canViewDavomatXatoliklar(role?: string | null): boolean {
   return normalizeUserRole(role) === "admin";
@@ -343,6 +354,7 @@ export const LIMITED_OFFICE_STAFF_ROLES = [
   "yurist",
   "komunalniy",
   "farrosh",
+  "mexanik",
   "direktor_yordamchisi",
 ] as const;
 
@@ -593,6 +605,7 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   yurist: "Yurist",
   komunalniy: "Kommunal",
   farrosh: "Farrosh",
+  mexanik: "Mexanik",
   direktor_yordamchisi: "Direktor yordamchisi",
 };
 

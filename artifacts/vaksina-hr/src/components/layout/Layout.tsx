@@ -887,6 +887,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       const allowed =
         location.startsWith('/vazifalar') ||
         location.startsWith('/eslatmalar') ||
+        location.startsWith('/javob-olish') ||
         location.startsWith('/davomat-face') ||
         location.startsWith('/davomat-kochma') ||
         location.startsWith('/omborxona-ish') ||
@@ -969,11 +970,14 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       next = [...next, itNav];
     }
     if (isLimitedOfficeStaffRole(role)) {
-    if (canViewOmborxona(role) && !next.some((i) => i.path === '/omborxona-ish')) {
-      next = [...next, omborIshNav];
+      if (!next.some((i) => i.path === '/javob-olish')) {
+        next = [javobNav, ...next];
+      }
+      if (canViewOmborxona(role) && !next.some((i) => i.path === '/omborxona-ish')) {
+        next = [...next, omborIshNav];
+      }
+      return next;
     }
-    return next;
-  }
     // HR — Javob olish holatini kuzatish (Asosiy)
     if (hasHrOversightNav(role) && !next.some((i) => i.path === '/javob-olish/holat')) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
@@ -987,7 +991,9 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         role === 'stajyor' ||
         role === 'koordinator' ||
         role === 'admin' ||
-        isDirectorRole(role)) &&
+        isDirectorRole(role) ||
+        isDeptHeadRole(role) ||
+        isLimitedOfficeStaffRole(role)) &&
       !next.some((i) => i.path === '/javob-olish')
     ) {
       const dashIdx = next.findIndex((i) => i.path === '/dashboard');
@@ -1502,6 +1508,11 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       davomatFaceNav,
     ],
     farrosh: [
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    mexanik: [
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,

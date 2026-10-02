@@ -116,6 +116,12 @@ export function canResetDavomatManual(role?: string | null): boolean {
   return canManageUsers(role);
 }
 
+/** Davomatni sababli qilish (jarimasiz) — faqat admin va HR menejer */
+export function canMarkDavomatExcuse(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return r === "admin" || r === "hr_menejer";
+}
+
 /** Davomat xatoliklar — faqat admin */
 export function canViewDavomatXatoliklar(role?: string | null): boolean {
   return canManageUsers(role);

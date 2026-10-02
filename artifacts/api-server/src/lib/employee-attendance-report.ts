@@ -15,8 +15,15 @@ import { addDaysYmd, type ShiftKey } from "./attendance-engine";
 import { hmToMinutes, workScheduleForStaff, type WorkSchedule } from "./shift-hours";
 import { getEffectiveShiftDefs } from "./shift-schedule";
 import { isScheduledRestDay, isWeekendYmd } from "./ofis-weekend";
+import {
+  loadScheduleOverrides,
+  pickScheduleOverride,
+  workScheduleFromOverride,
+} from "./employee-schedule-override";
 import { scriptIncludes } from "./script-search";
 import { stripGpsSuffix } from "./geo-location";
+import { tashkentYmd } from "./employment-span";
+import { syncApprovedJavobExcuses } from "./javob-exemptions";
 
 export const APPROVER_NAME = "Saidmuhammadalixon";
 export const APPROVER_LINE = "Tasdiqlaydi platforma masʼuli Saidmuhammadalixon";
@@ -46,6 +53,8 @@ export type EmployeeDay = {
   checkOut: string | null;
   hours: string | null;
   branch: string | null;
+  excused?: boolean;
+  excuseNote?: string | null;
 };
 
 export type EmployeeTaskItem = {
@@ -255,7 +264,13 @@ function summarize(days: EmployeeDay[]) {
     total: days.length,
     presentRate: null as number | null,
   };
-  for (const d of days) summary[d.status] += 1;
+  for (const d of days) {
+    if (d.excused) {
+      summary.present += 1;
+      continue;
+    }
+    summary[d.status] += 1;
+  }
   summary.came = summary.present + summary.late + summary.incomplete;
   const base = summary.came + summary.absent;
   summary.presentRate = base > 0 ? Math.round((summary.came / base) * 1000) / 10 : null;
@@ -752,6 +767,7 @@ export async function buildEmployeeAttendanceReport(input: {
       photoUrl: employeesTable.photoUrl,
       candidateId: employeesTable.candidateId,
       employmentStatus: employeesTable.employmentStatus,
+      updatedAt: employeesTable.updatedAt,
       userId: employeesTable.userId,
       phone: usersTable.phone,
       login: usersTable.login,
@@ -808,6 +824,7 @@ export async function buildEmployeeAttendanceReport(input: {
   const who = employeeId
     ? eq(attendanceRecordsTable.employeeId, employeeId)
     : eq(attendanceRecordsTable.userId, userId!);
+  if (employeeId) await syncApprovedJavobExcuses([employeeId], input.from, input.to);
   const records = await db
     .select({
       workDate: attendanceRecordsTable.workDate,
@@ -815,6 +832,8 @@ export async function buildEmployeeAttendanceReport(input: {
       checkInAt: attendanceRecordsTable.checkInAt,
       checkOutAt: attendanceRecordsTable.checkOutAt,
       branch: attendanceRecordsTable.resolvedBranchLabel,
+      excused: attendanceRecordsTable.excused,
+      excuseNote: attendanceRecordsTable.excuseNote,
     })
     .from(attendanceRecordsTable)
     .where(and(who, gte(attendanceRecordsTable.workDate, input.from), lte(attendanceRecordsTable.workDate, input.to)));
@@ -828,6 +847,9 @@ export async function buildEmployeeAttendanceReport(input: {
   const today = todayTashkentYmd();
   const wanted = new Set(input.statuses);
   const shiftDefs = await getEffectiveShiftDefs();
+  const scheduleRules = emp
+    ? await loadScheduleOverrides([emp.id], input.from, input.to)
+    : new Map();
   const dayPlans = emp
     ? await db
         .select({
@@ -862,6 +884,11 @@ export async function buildEmployeeAttendanceReport(input: {
   else if (!hiredYmd && firstPunch && firstPunch > spanFrom) spanFrom = firstPunch;
   if (spanFrom < PLATFORM_START) spanFrom = PLATFORM_START;
   let spanTo = input.to > today ? today : input.to;
+  const dismissedYmd =
+    emp && (emp.employmentStatus === "dismissed" || emp.employmentStatus === "closed")
+      ? tashkentYmd(emp.updatedAt)
+      : null;
+  if (dismissedYmd && dismissedYmd < spanTo) spanTo = dismissedYmd;
   if (spanTo < PLATFORM_START) spanTo = PLATFORM_START;
   if (spanFrom > spanTo) spanFrom = spanTo;
   const attendanceTracked = Boolean(emp) || records.length > 0;
@@ -869,18 +896,30 @@ export async function buildEmployeeAttendanceReport(input: {
   if (attendanceTracked && (!(!hiredYmd && !firstPunch))) {
     for (const ymd of eachDateInclusive(spanFrom, spanTo)) {
       const rec = byDate.get(ymd);
-      const schedule = scheduleForDay(planByDate.get(ymd), staffShift, shiftDefs);
-      const status = classify(rec, ymd, today, schedule, staffShift);
+      const ov = pickScheduleOverride(scheduleRules.get(emp?.id || 0), ymd);
+      const schedule = ov
+        ? workScheduleFromOverride(ov, shiftDefs.office.graceMinutes)
+        : scheduleForDay(planByDate.get(ymd), staffShift, shiftDefs);
+      const status = classify(
+        rec,
+        ymd,
+        today,
+        schedule,
+        ov ? (ov.shiftKey === "office" ? { userRole: "hr_menejer", orgRole: null, position: null, shiftType: null } : null) : staffShift,
+      );
       if (!wanted.has(status)) continue;
+      const excused = Boolean(rec?.excused);
       days.push({
         date: ymd,
         weekday: weekdayOf(ymd),
         status,
-        statusLabel: STATUS_LABEL[status],
+        statusLabel: excused ? "Sababli" : STATUS_LABEL[status],
         checkIn: hm(rec?.checkInAt),
         checkOut: hm(rec?.checkOutAt),
         hours: hoursBetween(rec?.checkInAt, rec?.checkOutAt),
         branch: rec?.branch ? cleanBranch(String(rec.branch)) : null,
+        excused,
+        excuseNote: excused ? rec?.excuseNote || null : null,
       });
     }
   }
@@ -1004,6 +1043,7 @@ export async function buildStaffAttendanceDays(input: {
 > {
   const ids = [...new Set(input.employeeIds.filter((id) => Number.isFinite(id) && id > 0))];
   if (!ids.length) return [];
+  await syncApprovedJavobExcuses(ids, input.from, input.to);
   const emps = await db
     .select({
       id: employeesTable.id,
@@ -1013,6 +1053,8 @@ export async function buildStaffAttendanceDays(input: {
       shiftLabel: employeesTable.shiftLabel,
       position: employeesTable.position,
       hiredAt: employeesTable.hiredAt,
+      employmentStatus: employeesTable.employmentStatus,
+      updatedAt: employeesTable.updatedAt,
     })
     .from(employeesTable)
     .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
@@ -1025,6 +1067,8 @@ export async function buildStaffAttendanceDays(input: {
       checkInAt: attendanceRecordsTable.checkInAt,
       checkOutAt: attendanceRecordsTable.checkOutAt,
       branch: attendanceRecordsTable.resolvedBranchLabel,
+      excused: attendanceRecordsTable.excused,
+      excuseNote: attendanceRecordsTable.excuseNote,
     })
     .from(attendanceRecordsTable)
     .where(
@@ -1049,6 +1093,7 @@ export async function buildStaffAttendanceDays(input: {
       ),
     );
   const shiftDefs = await getEffectiveShiftDefs();
+  const overrides = await loadScheduleOverrides(ids, input.from, input.to);
   const today = todayTashkentYmd();
   const byEmpDate = new Map<string, (typeof records)[number]>();
   for (const rec of records) {
@@ -1074,21 +1119,42 @@ export async function buildStaffAttendanceDays(input: {
     let spanFrom = input.from < PLATFORM_START ? PLATFORM_START : input.from;
     if (hiredYmd && hiredYmd > spanFrom) spanFrom = hiredYmd;
     if (spanFrom > input.to) spanFrom = input.to;
+    const dismissedYmd =
+      emp.employmentStatus === "dismissed" || emp.employmentStatus === "closed"
+        ? tashkentYmd(emp.updatedAt)
+        : null;
     const planByDate = plansByEmp.get(emp.id) ?? new Map<string, string[]>();
     const days: EmployeeDay[] = [];
-    for (const ymd of eachDateInclusive(spanFrom, input.to > today ? today : input.to)) {
+    let spanTo = input.to > today ? today : input.to;
+    if (dismissedYmd && dismissedYmd < spanTo) spanTo = dismissedYmd;
+    if (spanFrom > spanTo) {
+      return { employeeId: emp.id, days };
+    }
+    for (const ymd of eachDateInclusive(spanFrom, spanTo)) {
       const rec = byEmpDate.get(`${emp.id}|${ymd}`);
-      const schedule = scheduleForDay(planByDate.get(ymd), staffShift, shiftDefs);
-      const status = classify(rec, ymd, today, schedule, staffShift);
+      const ov = pickScheduleOverride(overrides.get(emp.id), ymd);
+      const schedule = ov
+        ? workScheduleFromOverride(ov, shiftDefs.office.graceMinutes)
+        : scheduleForDay(planByDate.get(ymd), staffShift, shiftDefs);
+      const status = classify(
+        rec,
+        ymd,
+        today,
+        schedule,
+        ov ? (ov.shiftKey === "office" ? { userRole: "hr_menejer", orgRole: null, position: null, shiftType: null } : null) : staffShift,
+      );
+      const excused = Boolean(rec?.excused);
       days.push({
         date: ymd,
         weekday: weekdayOf(ymd),
         status,
-        statusLabel: STATUS_LABEL[status],
+        statusLabel: excused ? "Sababli" : STATUS_LABEL[status],
         checkIn: hm(rec?.checkInAt),
         checkOut: hm(rec?.checkOutAt),
         hours: hoursBetween(rec?.checkInAt, rec?.checkOutAt),
         branch: rec?.branch ? cleanBranch(String(rec.branch)) : null,
+        excused,
+        excuseNote: excused ? rec?.excuseNote || null : null,
       });
     }
     return { employeeId: emp.id, days };

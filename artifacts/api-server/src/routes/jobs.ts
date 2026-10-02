@@ -3,6 +3,7 @@ import { runDavomatReminderCycle } from "../jobs/davomat-reminders";
 import { sendVacancyReminders } from "../jobs/vacancy-reminders";
 import { sendTaskDueReminders } from "../jobs/task-reminders";
 import { sendCoordinatorPresenceReminders } from "../jobs/coordinator-presence";
+import { sweepZonePresence } from "../lib/zone-presence";
 
 const router: IRouter = Router();
 
@@ -59,6 +60,17 @@ router.get("/jobs/coordinator-presence", async (req, res): Promise<void> => {
   } catch (err) {
     req.log?.error({ err }, "Coordinator presence cron failed");
     res.status(500).json({ error: "Coordinator presence job failed" });
+  }
+});
+
+router.get("/jobs/zone-presence", async (req, res): Promise<void> => {
+  if (!authorizeCron(req, res)) return;
+  try {
+    const result = await sweepZonePresence();
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    req.log?.error({ err }, "Zone presence cron failed");
+    res.status(500).json({ error: "Zone presence job failed" });
   }
 });
 

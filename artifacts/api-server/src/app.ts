@@ -10,6 +10,7 @@ import {
   ensureCandidatePipelineColumns,
   ensureLokatsiyaBotSchema,
   ensureStaffNeedRequestsSchema,
+  ensureZonePresenceSchema,
 } from "./lib/ensure-schema";
 
 const app: Express = express();
@@ -27,6 +28,9 @@ if (process.env.VERCEL === "1" || process.env.VERCEL === "true") {
   });
   void ensureStaffNeedRequestsSchema().catch((err) => {
     logger.warn({ err }, "Staff need requests schema ensure failed (non-blocking)");
+  });
+  void ensureZonePresenceSchema().catch((err) => {
+    logger.warn({ err }, "Zone presence schema ensure failed (non-blocking)");
   });
   // Filial bot webhook — lokal polling o‘chirib yubormasin; Vercelda qayta o‘rnatiladi
   void import("./lib/telegram-filial")

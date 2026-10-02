@@ -3,7 +3,7 @@
  * Tasdiqlangan soat/kun davomat jarimasidan ozod.
  */
 import { Router, type IRouter } from "express";
-import { and, desc, eq, gte, inArray, isNotNull, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, lte, ne, or } from "drizzle-orm";
 import {
   db,
   employeesTable,
@@ -12,7 +12,8 @@ import {
   employeeDayShiftPlansTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { isHrRole, isDirectorRole } from "../lib/roles";
+import { isHrRole, isDirectorRole, isDeptHeadRole, DEPT_HEAD_ROLES } from "../lib/roles";
+import { departmentNameForRole, ROLE_DEPARTMENT_NAME } from "../lib/role-departments";
 import { notifyUser, notifyByRoles } from "../lib/notify";
 import {
   hoursForStaff,
@@ -22,12 +23,23 @@ import {
 } from "../lib/shift-hours";
 import { getEffectiveShiftDefs } from "../lib/shift-schedule";
 import { displayBranchName } from "../lib/geo-location";
+import { excuseAttendanceFromApprovedJavob } from "../lib/javob-exemptions";
 
 const router: IRouter = Router();
 
 const YMD = /^\d{4}-\d{2}-\d{2}$/;
 const HM = /^([01]\d|2[0-3]):[0-5]\d$/;
-const OPEN_STATUSES = ["pending", "pending_coord", "pending_hr"] as const;
+const OPEN_STATUSES = ["pending", "pending_coord", "pending_dept", "pending_hr"] as const;
+
+function usesCoordinatorChain(role: string) {
+  return (
+    role === "mudir" ||
+    role === "farmasevt" ||
+    role === "stajyor" ||
+    role === "stajor" ||
+    role === "koordinator"
+  );
+}
 
 function isCoordRole(role: string) {
   return role === "koordinator";
@@ -51,6 +63,7 @@ function isFinalOverrideRole(role: string) {
 
 function canActOn(role: string, status: string): boolean {
   if (status === "pending_coord") return isCoordRole(role) || isFinalOverrideRole(role);
+  if (status === "pending_dept") return isDeptHeadRole(role) || isFinalOverrideRole(role);
   if (status === "pending_hr") return isHrApprover(role);
   return false;
 }
@@ -146,6 +159,28 @@ async function resolveShiftForDate(
     overnight: Boolean(hours.overnight),
     durationLabel: formatDuration(durationMinutes(hours.start, hours.end)),
   };
+}
+
+/** Shu bo‘limning boshlig‘i. Lavozim yo‘q yoki o‘zi boshliq bo‘lsa — null, HR ga o‘tadi. */
+async function findOfficeDeptHeadUserId(role: string, userId: number): Promise<number | null> {
+  const deptName = departmentNameForRole(role);
+  if (!deptName) return null;
+  const headRoles = Object.entries(ROLE_DEPARTMENT_NAME)
+    .filter(([candidate, name]) => name === deptName && (DEPT_HEAD_ROLES as readonly string[]).includes(candidate))
+    .map(([candidate]) => candidate);
+  if (!headRoles.length) return null;
+  const [head] = await db
+    .select({ id: usersTable.id })
+    .from(usersTable)
+    .where(
+      and(
+        inArray(usersTable.role, headRoles),
+        eq(usersTable.status, "active"),
+        ne(usersTable.id, userId),
+      ),
+    )
+    .limit(1);
+  return head?.id ?? null;
 }
 
 async function findCoordinatorUserId(empId: number): Promise<number | null> {
@@ -252,6 +287,7 @@ function serializeRow(
     fullName?: string | null;
     branchLabel?: string | null;
     coordinatorName?: string | null;
+    deptStep?: boolean;
     coordDecidedByName?: string | null;
     decidedByName?: string | null;
   },
@@ -276,11 +312,12 @@ function serializeRow(
     note: null,
   });
 
+  const stepName = extra?.deptStep ? "Bo‘lim boshlig‘i" : "Koordinator";
   if (r.coordDecidedAt && !r.escalatedAt) {
     const coordRejected = status === "rejected" && !r.decidedAt;
     timeline.push({
       key: "coord",
-      label: coordRejected ? "Koordinator rad etdi" : "Koordinator tasdiqladi",
+      label: coordRejected ? `${stepName} rad etdi` : `${stepName} tasdiqladi`,
       at: new Date(r.coordDecidedAt).toISOString(),
       atLabel: fmtDt(r.coordDecidedAt),
       by: extra?.coordDecidedByName || extra?.coordinatorName || null,
@@ -291,7 +328,7 @@ function serializeRow(
   if (r.escalatedAt) {
     timeline.push({
       key: "escalated",
-      label: "Koordinator javob bermadi — HR ga o‘tdi",
+      label: extra?.deptStep ? "Bo‘lim boshlig‘i javob bermadi — HR ga o‘tdi" : "Koordinator javob bermadi — HR ga o‘tdi",
       at: new Date(r.escalatedAt).toISOString(),
       atLabel: fmtDt(r.escalatedAt),
       by: extra?.coordinatorName || null,
@@ -326,10 +363,10 @@ function serializeRow(
     }
   }
 
-  if (status === "pending_coord" && !r.coordDecidedAt && !r.escalatedAt) {
+  if ((status === "pending_coord" || status === "pending_dept") && !r.coordDecidedAt && !r.escalatedAt) {
     timeline.push({
       key: "waiting_coord",
-      label: "Koordinator javobi kutilmoqda",
+      label: status === "pending_dept" ? "Bo‘lim boshlig‘i javobi kutilmoqda" : "Koordinator javobi kutilmoqda",
       at: null,
       atLabel: "—",
       by: extra?.coordinatorName || null,
@@ -466,11 +503,12 @@ async function enrichRows(
   const users =
     userIds.size > 0
       ? await db
-          .select({ id: usersTable.id, fullName: usersTable.fullName })
+          .select({ id: usersTable.id, fullName: usersTable.fullName, role: usersTable.role })
           .from(usersTable)
           .where(inArray(usersTable.id, [...userIds]))
       : [];
   const nameByUserId = new Map(users.map((u) => [u.id, u.fullName]));
+  const roleByUserId = new Map(users.map((u) => [u.id, u.role]));
 
   return rows.map((r) => {
     const emp = empById.get(r.employeeId);
@@ -480,6 +518,9 @@ async function enrichRows(
       coordinatorName: r.coordinatorUserId
         ? nameByUserId.get(r.coordinatorUserId) || null
         : null,
+      deptStep:
+        r.status === "pending_dept" ||
+        (r.coordinatorUserId != null && isDeptHeadRole(roleByUserId.get(r.coordinatorUserId))),
       coordDecidedByName: r.coordDecidedById
         ? nameByUserId.get(r.coordDecidedById) || null
         : null,
@@ -531,7 +572,7 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       rows = await db
         .select()
         .from(javobOlishRequestsTable)
-        .where(inArray(javobOlishRequestsTable.status, ["pending", "pending_coord", "pending_hr"]))
+        .where(inArray(javobOlishRequestsTable.status, ["pending", "pending_coord", "pending_dept", "pending_hr"]))
         .orderBy(desc(javobOlishRequestsTable.createdAt));
       canDecide = true;
     } else if (isCoordRole(role) && me) {
@@ -547,7 +588,19 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
       rows = await db
         .select()
         .from(javobOlishRequestsTable)
-        .where(inArray(javobOlishRequestsTable.status, ["pending", "pending_coord", "pending_hr"]))
+        .where(inArray(javobOlishRequestsTable.status, ["pending", "pending_coord", "pending_dept", "pending_hr"]))
+        .orderBy(desc(javobOlishRequestsTable.createdAt));
+      canDecide = true;
+    } else if (isDeptHeadRole(role)) {
+      rows = await db
+        .select()
+        .from(javobOlishRequestsTable)
+        .where(
+          and(
+            eq(javobOlishRequestsTable.status, "pending_dept"),
+            eq(javobOlishRequestsTable.coordinatorUserId, req.userId!),
+          ),
+        )
         .orderBy(desc(javobOlishRequestsTable.createdAt));
       canDecide = true;
     } else {
@@ -556,9 +609,15 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
     }
     const items = await enrichRows(rows);
     res.json({
-      items: items.map((it) => ({ ...it, canAct: canActOn(role, it.status) })),
+      items: items.map((it) => ({
+        ...it,
+        canAct:
+          it.status === "pending_dept"
+            ? (isDeptHeadRole(role) && it.coordinatorUserId === req.userId) || isFinalOverrideRole(role)
+            : canActOn(role, it.status),
+      })),
       canDecide,
-      roleScope: isHrApprover(role) ? "hr" : isCoordRole(role) ? "coord" : "none",
+      roleScope: isHrApprover(role) ? "hr" : isCoordRole(role) ? "coord" : isDeptHeadRole(role) ? "dept" : "none",
     });
     return;
   } else if (scope === "decided") {
@@ -574,7 +633,7 @@ router.get("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<v
         )
         .orderBy(desc(javobOlishRequestsTable.decidedAt))
         .limit(300);
-    } else if (isCoordRole(role)) {
+    } else if (isCoordRole(role) || isDeptHeadRole(role)) {
       rows = await db
         .select()
         .from(javobOlishRequestsTable)
@@ -750,7 +809,10 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     return;
   }
 
-  const coordUserId = await findCoordinatorUserId(me.id);
+  const officeFlow = !usesCoordinatorChain(role);
+  const deptHeadUserId = officeFlow ? await findOfficeDeptHeadUserId(role, req.userId!) : null;
+  const coordUserId = officeFlow ? deptHeadUserId : await findCoordinatorUserId(me.id);
+  const initialStatus = officeFlow ? (deptHeadUserId ? "pending_dept" : "pending_hr") : "pending_coord";
   const created = [];
 
   for (const p of prepared) {
@@ -769,7 +831,7 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
         toHm: p.toHm,
         durationMinutes: p.durationMinutes,
         note: p.note,
-        status: "pending_coord",
+        status: initialStatus,
         coordinatorUserId: coordUserId,
       })
       .returning();
@@ -783,7 +845,21 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     .join("; ");
   const notifyText = `${me.fullName}: javob olish so‘rovi (${count} ta). ${timeTxt}. Sabab: ${batchNote}. Yuborilgan: ${fmtDt(new Date())}. 8 soat ichida javob bering.`;
 
-  if (coordUserId) {
+  if (officeFlow && deptHeadUserId) {
+    await notifyUser({
+      userId: deptHeadUserId,
+      text: notifyText,
+      type: "javob_olish",
+      linkUrl: "/javob-olish",
+    });
+  } else if (officeFlow) {
+    await notifyByRoles({
+      roles: ["hr_menejer", "hr_direktor", "admin"],
+      text: `${notifyText} Bo‘lim boshlig‘i lavozimi yo‘q — HR menejer va HR direktor tasdiqlaydi.`,
+      type: "javob_olish",
+      linkUrl: "/javob-olish",
+    });
+  } else if (coordUserId) {
     await notifyUser({
       userId: coordUserId,
       text: notifyText,
@@ -799,10 +875,15 @@ router.post("/javob-olish", requireAuth, async (req: AuthRequest, res): Promise<
     });
   }
 
+  const sentTo = officeFlow
+    ? deptHeadUserId
+      ? "bo‘lim boshlig‘iga"
+      : "HR menejer va HR direktorga"
+    : "1-koordinatorga";
   res.status(201).json({
     ok: true,
     count,
-    message: `${count} ta kun uchun so‘rov 1-koordinatorga yuborildi.`,
+    message: `${count} ta kun uchun so‘rov ${sentTo} yuborildi.`,
     items: await enrichRows(created),
   });
 });
@@ -881,7 +962,7 @@ router.post("/javob-olish/:id/cancel", requireAuth, async (req: AuthRequest, res
     return;
   }
   const st = normalizeStatus(row.status);
-  if (st !== "pending_coord" && st !== "pending_hr") {
+  if (st !== "pending_coord" && st !== "pending_dept" && st !== "pending_hr") {
     res.status(400).json({ error: "Faqat ochiq so‘rovni bekor qilish mumkin" });
     return;
   }
@@ -936,6 +1017,23 @@ async function decide(
   const batchIds = batch.map((r) => r.id);
   const when = spanLabel(batch.map((r) => r.workDate));
 
+  const markBatchSababli = async () => {
+    if (decision !== "approved") return;
+    await excuseAttendanceFromApprovedJavob(
+      batch.map((item) => ({
+        employeeId: item.employeeId,
+        userId: item.userId,
+        workDate: item.workDate,
+        fromHm: item.fromHm,
+        toHm: item.toHm,
+        note: item.note,
+        decisionNote,
+        decidedById: req.userId!,
+        decidedAt: now,
+      })),
+    );
+  };
+
   /** Ketma-ket kunlarning hammasi bir qaror. Holat o‘zgarmagan bo‘lsa yangilanadi. */
   const guardedUpdate = async (set: Partial<typeof javobOlishRequestsTable.$inferInsert>) => {
     const updatedRows = await db
@@ -977,12 +1075,13 @@ async function decide(
         updatedAt: now,
       });
       if (!updated) return;
+      await markBatchSababli();
       if (row.userId) {
         await notifyUser({
           userId: row.userId,
           text:
             decision === "approved"
-              ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (rahbariyat). Bu vaqt/kun jarima qilinmaydi.`
+              ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (rahbariyat). Davomatda Sababli. Jarima tushmaydi.`
               : `${when} javob olish so‘rovingiz rahbariyat tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
           type: "javob_olish_decision",
           linkUrl: "/javob-olish",
@@ -1039,6 +1138,80 @@ async function decide(
     return;
   }
 
+  /** Ofis: bo‘lim boshlig‘i, so‘ng HR. Admin yakuniy yopishi mumkin. */
+  if (status === "pending_dept") {
+    const assignedHead = isDeptHeadRole(role) && row.coordinatorUserId === req.userId;
+    const adminFinal = isFinalOverrideRole(role);
+    if (!assignedHead && !adminFinal) {
+      res.status(403).json({ error: "Avval bo‘lim boshlig‘i javob beradi" });
+      return;
+    }
+    if (adminFinal && !assignedHead) {
+      const updated = await guardedUpdate({
+        status: decision,
+        decidedById: req.userId!,
+        decidedAt: now,
+        decisionNote,
+        updatedAt: now,
+      });
+      if (!updated) return;
+      await markBatchSababli();
+      if (row.userId) {
+        await notifyUser({
+          userId: row.userId,
+          text:
+            decision === "approved"
+              ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (admin). Davomatda Sababli. Jarima tushmaydi.`
+              : `${when} javob olish so‘rovingiz admin tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+          type: "javob_olish_decision",
+          linkUrl: "/javob-olish",
+        });
+      }
+      res.json({ ok: true, item: await enrichOne(updated) });
+      return;
+    }
+    if (decision === "rejected") {
+      const updated = await guardedUpdate({
+        status: "rejected",
+        coordDecidedById: req.userId!,
+        coordDecidedAt: now,
+        coordDecisionNote: decisionNote,
+        decidedById: req.userId!,
+        decidedAt: now,
+        decisionNote,
+        updatedAt: now,
+      });
+      if (!updated) return;
+      if (row.userId) {
+        await notifyUser({
+          userId: row.userId,
+          text: `${when} javob olish so‘rovingiz bo‘lim boshlig‘i tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
+          type: "javob_olish_decision",
+          linkUrl: "/javob-olish",
+        });
+      }
+      res.json({ ok: true, item: await enrichOne(updated) });
+      return;
+    }
+    const updated = await guardedUpdate({
+      status: "pending_hr",
+      coordDecidedById: req.userId!,
+      coordDecidedAt: now,
+      coordDecisionNote: decisionNote,
+      updatedAt: now,
+    });
+    if (!updated) return;
+    const item = await enrichOne(updated);
+    await notifyByRoles({
+      roles: ["hr_menejer", "hr_direktor", "admin"],
+      text: `${item.fullName || "Xodim"}: bo‘lim boshlig‘i tasdiqladi — HR yakuniy ruxsat kerak. ${when} ${row.fromHm}–${row.toHm}. Sabab: ${row.note}.`,
+      type: "javob_olish",
+      linkUrl: "/javob-olish",
+    });
+    res.json({ ok: true, item });
+    return;
+  }
+
   /** 2-bosqich: HR */
   if (status === "pending_hr") {
     if (!isHrApprover(role)) {
@@ -1054,13 +1227,14 @@ async function decide(
       updatedAt: now,
     });
     if (!updated) return;
+    await markBatchSababli();
 
     if (row.userId) {
       await notifyUser({
         userId: row.userId,
         text:
           decision === "approved"
-            ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (HR). Bu vaqt/kun jarima qilinmaydi.`
+            ? `${when} ${row.fromHm}–${row.toHm} javob olish tasdiqlandi (HR). Davomatda Sababli. Jarima tushmaydi.`
             : `${when} javob olish so‘rovingiz HR tomonidan rad etildi.${decisionNote ? ` Sabab: ${decisionNote}` : ""}`,
         type: "javob_olish_decision",
         linkUrl: "/javob-olish",

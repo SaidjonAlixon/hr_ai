@@ -28,6 +28,9 @@ export function javobStatusBadge(status: string, t: (k: string) => string) {
   if (status === "pending" || status === "pending_coord") {
     return { label: t("javob.statusPendingCoord"), className: "bg-amber-100 text-amber-900" };
   }
+  if (status === "pending_dept") {
+    return { label: t("javob.statusPendingDept"), className: "bg-violet-100 text-violet-900" };
+  }
   if (status === "pending_hr") {
     return { label: t("javob.statusPendingHr"), className: "bg-sky-100 text-sky-900" };
   }

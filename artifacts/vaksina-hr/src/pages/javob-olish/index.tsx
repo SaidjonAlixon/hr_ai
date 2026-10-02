@@ -1,4 +1,4 @@
-import { isDirectorRole } from "../../lib/roles";
+import { isDeptHeadRole, isDirectorRole } from "../../lib/roles";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CalendarDays, Check, Clock, Clock3, Loader2, PhoneCall, Send, Trash2 } from "lucide-react";
@@ -45,7 +45,8 @@ export default function JavobOlishPage() {
     role === "hr_kadr_rahbar" ||
     role === "admin" ||
     isDirectorRole(role);
-  const canDecideQueue = isCoord || isHr;
+  const isDept = isDeptHeadRole(role) && !isHr && !isCoord;
+  const canDecideQueue = isCoord || isHr || isDeptHeadRole(role);
 
   const [mode, setMode] = useState<RequestMode>("day");
   const [selectedDates, setSelectedDates] = useState<Date[]>([]);
@@ -380,7 +381,7 @@ export default function JavobOlishPage() {
       ) : null}
 
       {canDecideQueue ? (
-        <JavobDecisionPanel t={t} isHr={isHr} isCoord={isCoord} userId={user?.id ?? null} />
+        <JavobDecisionPanel t={t} isHr={isHr} isCoord={isCoord} isDept={isDept} userId={user?.id ?? null} />
       ) : null}
 
       <Card>

@@ -7,6 +7,8 @@ import {
   snapRouteToRoads,
   type LatLng,
 } from "@/lib/osrm-route";
+import { DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG } from "@/lib/davomat-api";
+import { yandexNavigatorUrl, yandexPointUrl } from "@/lib/external-maps";
 
 export type RoutePoint = {
   lat: number;
@@ -15,6 +17,33 @@ export type RoutePoint = {
   kind: "start" | "end" | "track" | "live";
   time?: string | null;
   accuracy?: number | null;
+};
+
+/** Dorixona nuqtasi — saqlangan GPS, taxminiy joy emas */
+export type MapPlace = {
+  id: number;
+  lat: number;
+  lng: number;
+  name: string;
+  mudirName: string;
+  coordinatorName: string;
+  phone: string;
+  hours: string;
+  /** Dorixona qizil, asosiy ofis ko‘k */
+  tone?: "branch" | "office";
+};
+
+/** Asosiy ofis — davomatdagi belgilangan nuqta: 41°13'09.3"N 69°16'22.9"E */
+export const OFFICE_MAP_PLACE: MapPlace = {
+  id: -1,
+  lat: DAVOMAT_SITE_LAT,
+  lng: DAVOMAT_SITE_LNG,
+  name: "Asosiy ofis",
+  mudirName: "",
+  coordinatorName: "",
+  phone: "",
+  hours: "09:00–18:00",
+  tone: "office",
 };
 
 type Props = {
@@ -30,6 +59,13 @@ type Props = {
   followLive?: boolean;
   /** «Xodimni top» tugmasi matni */
   locateLabel?: string;
+  /** Dorixona filiallari — doim xaritada */
+  places?: MapPlace[];
+  /** Tashqaridan tanlangan filial (qidiruv) */
+  focusPlaceId?: number | null;
+  /** Har tanlovda oshadi — bir filialni qayta tanlasa ham nuqtaga boradi */
+  focusToken?: number;
+  onPlaceSelect?: (place: MapPlace) => void;
 };
 
 const OSM_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -98,6 +134,76 @@ function pinIcon(letter: string, color: string, subtitle: string) {
   });
 }
 
+function escHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (ch) => {
+    if (ch === "&") return "&amp;";
+    if (ch === "<") return "&lt;";
+    if (ch === ">") return "&gt;";
+    if (ch === '"') return "&quot;";
+    return "&#39;";
+  });
+}
+
+function pharmacyIcon(name: string, tone: "branch" | "office" = "branch") {
+  const office = tone === "office";
+  const pin = office ? "#1d4ed8" : "#E53935";
+  const labelBg = office ? "#1d4ed8" : "rgba(255,255,255,.94)";
+  const labelColor = office ? "#ffffff" : "#0f172a";
+  const labelBorder = office ? "#1e3a8a" : "rgba(15,23,42,.16)";
+  return L.divIcon({
+    className: "kochma-pin",
+    iconSize: [30, 42],
+    iconAnchor: [15, 40],
+    popupAnchor: [0, -38],
+    html: `<div style="position:relative;width:30px;height:42px;overflow:visible">
+      <div style="filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">
+        <svg width="30" height="42" viewBox="0 0 30 42" aria-hidden>
+          <path d="M15 1.5C7.6 1.5 1.6 7.5 1.6 14.9 1.6 25.2 15 40.5 15 40.5S28.4 25.2 28.4 14.9C28.4 7.5 22.4 1.5 15 1.5z" fill="${pin}" stroke="#fff" stroke-width="1.6"/>
+          <circle cx="15" cy="14.6" r="5.2" fill="#fff"/>
+        </svg>
+      </div>
+      <span style="position:absolute;left:32px;top:6px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:2px 7px;border-radius:6px;background:${labelBg};border:1px solid ${labelBorder};color:${labelColor};font:800 12px/1.3 system-ui,sans-serif;box-shadow:0 1px 4px rgba(0,0,0,.22)">${escHtml(name)}</span>
+    </div>`,
+  });
+}
+
+function placeNavHtml(p: MapPlace): string {
+  const yandex = escHtml(yandexPointUrl(p.lat, p.lng, p.name));
+  const navi = escHtml(yandexNavigatorUrl(p.lat, p.lng));
+  const btn = "display:inline-flex;align-items:center;justify-content:center;gap:4px;flex:1;min-width:0;padding:7px 8px;border-radius:10px;font:700 12px/1 system-ui,sans-serif;text-decoration:none";
+  return `<div style="display:flex;gap:6px;margin-top:10px">
+    <a href="${yandex}" target="_blank" rel="noopener noreferrer" style="${btn};background:#fc3f1d;color:#fff">Yandex</a>
+    <a href="${navi}" target="_blank" rel="noopener noreferrer" style="${btn};background:#1d4ed8;color:#fff">Navigator</a>
+  </div>`;
+}
+
+function placePopupHtml(p: MapPlace): string {
+  if (p.tone === "office") {
+    return `<div style="font-family:system-ui,sans-serif;min-width:220px;color:#0f172a">
+      <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#1d4ed8;font-weight:800">Asosiy ofis</div>
+      <div style="font-size:15px;font-weight:800;line-height:1.25;margin:2px 0 8px;color:#1e3a8a">${escHtml(p.name)}</div>
+      <div style="font-size:13px;line-height:1.5"><span style="color:#64748b">Ish vaqti:</span> <b>${escHtml(p.hours || "09:00–18:00")}</b></div>
+      ${placeNavHtml(p)}
+    </div>`;
+  }
+  const phone = escHtml(p.phone);
+  const dial = p.phone.replace(/[^\d+]/g, "");
+  const phoneHtml = dial.startsWith("+")
+    ? `<a href="tel:${escHtml(dial)}" style="color:#0f766e;font-weight:700;text-decoration:none">${phone}</a>`
+    : `<b>${phone}</b>`;
+  return `<div style="font-family:system-ui,sans-serif;min-width:220px;color:#0f172a">
+    <div style="font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:#0f766e;font-weight:700">Dorixona</div>
+    <div style="font-size:15px;font-weight:800;line-height:1.25;margin:2px 0 8px">${escHtml(p.name)}</div>
+    <div style="font-size:13px;line-height:1.5">
+      <div><span style="color:#64748b">Mudir:</span> <b>${escHtml(p.mudirName)}</b></div>
+      <div><span style="color:#64748b">Koordinator:</span> <b>${escHtml(p.coordinatorName)}</b></div>
+      <div><span style="color:#64748b">Dorixona raqami:</span> ${phoneHtml}</div>
+      <div><span style="color:#64748b">Ish vaqti:</span> <b>${escHtml(p.hours || "Belgilanmagan")}</b></div>
+    </div>
+    ${placeNavHtml(p)}
+  </div>`;
+}
+
 function liveIcon() {
   return L.divIcon({
     className: "",
@@ -146,12 +252,20 @@ export function MobileRouteMap({
   liveMode = false,
   followLive = true,
   locateLabel = "Xodimni top",
+  places = [],
+  focusPlaceId = null,
+  focusToken = 0,
+  onPlaceSelect,
 }: Props) {
   const ref = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const layerRef = useRef<L.LayerGroup | null>(null);
+  const placesLayerRef = useRef<L.LayerGroup | null>(null);
+  const placeMarkersRef = useRef<Map<number, L.Marker>>(new Map());
+  const onPlaceSelectRef = useRef(onPlaceSelect);
+  onPlaceSelectRef.current = onPlaceSelect;
   const userPanned = useRef(false);
-  const [roadPath, setRoadPath] = useState<LatLng[]>([]);
+  const [roadPath, setRoadPath] = useState<LatLng[][]>([]);
   const [snapped, setSnapped] = useState(false);
   const [routing, setRouting] = useState(false);
 
@@ -181,16 +295,22 @@ export function MobileRouteMap({
     map.setView([target.lat, target.lng], Math.max(map.getZoom(), 17), { animate: true });
   };
 
-  const distanceLabel = useMemo(() => {
-    const path = roadPath.length >= 2 ? roadPath : cleanPoints;
-    if (path.length < 2) return null;
-    return formatRouteDistance(routeDistanceMeters(path as RoutePoint[]));
-  }, [roadPath, cleanPoints]);
+  const hasWalkedTrack = cleanPoints.some((p) => p.kind === "track");
 
-  // Yo‘l bo‘ylab snap (OSRM)
+  const distanceLabel = useMemo(() => {
+    const path = roadPath.flat();
+    if (!hasWalkedTrack || path.length < 2) return null;
+    let meters = 0;
+    for (const seg of roadPath) {
+      if (seg.length >= 2) meters += routeDistanceMeters(seg as RoutePoint[]);
+    }
+    return formatRouteDistance(meters);
+  }, [roadPath, hasWalkedTrack]);
+
+  // Faqat yurilgan GPS izi. Ikki nuqta (keldi/ketdi) orasida yo‘l o‘ylab chizilmaydi.
   useEffect(() => {
-    if (cleanPoints.length < 2) {
-      setRoadPath(cleanPoints.map((p) => ({ lat: p.lat, lng: p.lng })));
+    if (!hasWalkedTrack || cleanPoints.length < 2) {
+      setRoadPath([]);
       setSnapped(false);
       setRouting(false);
       return;
@@ -203,13 +323,13 @@ export function MobileRouteMap({
       ac.signal,
     ).then((r) => {
       if (ac.signal.aborted) return;
-      setRoadPath(r.path);
+      setRoadPath(r.segments.filter((s) => s.length >= 2));
       setSnapped(r.snapped);
       setRouting(false);
     });
 
     return () => ac.abort();
-  }, [cleanPoints]);
+  }, [cleanPoints, hasWalkedTrack]);
 
   useEffect(() => {
     if (!ref.current || mapRef.current) return;
@@ -227,6 +347,7 @@ export function MobileRouteMap({
     }).addTo(map);
 
     layerRef.current = L.layerGroup().addTo(map);
+    placesLayerRef.current = L.layerGroup().addTo(map);
     map.setView(emptyCenter, emptyZoom);
 
     const markPanned = () => {
@@ -247,6 +368,8 @@ export function MobileRouteMap({
       map.remove();
       mapRef.current = null;
       layerRef.current = null;
+      placesLayerRef.current = null;
+      placeMarkersRef.current = new Map();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -259,31 +382,33 @@ export function MobileRouteMap({
     group.clearLayers();
 
     if (!cleanPoints.length) {
-      map.setView(emptyCenter, emptyZoom);
+      if (!places.length) map.setView(emptyCenter, emptyZoom);
       window.setTimeout(() => map.invalidateSize(), 40);
       return;
     }
 
-    const drawPath = roadPath.length >= 2 ? roadPath : cleanPoints;
-    const latLngs: L.LatLngExpression[] = drawPath.map((p) => [p.lat, p.lng]);
+    const drawSegments = roadPath.filter((s) => s.length >= 2);
+    const latLngs: L.LatLngExpression[] = (
+      drawSegments.length ? drawSegments.flat() : cleanPoints
+    ).map((p) => [p.lat, p.lng]);
 
-    if (latLngs.length >= 2) {
-      // Yo‘l uslubi: keng ochiq + ichki yo‘l + oq markaz chiziq
-      L.polyline(latLngs, {
+    for (const seg of drawSegments) {
+      const line = seg.map((p) => [p.lat, p.lng] as L.LatLngExpression);
+      L.polyline(line, {
         color: "#0ea5e9",
         weight: 14,
         opacity: 0.28,
         lineCap: "round",
         lineJoin: "round",
       }).addTo(group);
-      L.polyline(latLngs, {
+      L.polyline(line, {
         color: liveMode ? "#0284c7" : "#0369a1",
         weight: 7,
         opacity: 0.95,
         lineCap: "round",
         lineJoin: "round",
       }).addTo(group);
-      L.polyline(latLngs, {
+      L.polyline(line, {
         color: "#ffffff",
         weight: 1.8,
         opacity: 0.85,
@@ -292,8 +417,7 @@ export function MobileRouteMap({
         lineJoin: "round",
       }).addTo(group);
 
-      // Har ~15 m strelka
-      const arrows = sampleArrowPositions(drawPath, ARROW_EVERY_M);
+      const arrows = sampleArrowPositions(seg, ARROW_EVERY_M);
       for (const a of arrows) {
         L.marker([a.lat, a.lng], {
           icon: arrowIcon(a.bearing, liveMode),
@@ -343,12 +467,70 @@ export function MobileRouteMap({
           .addTo(group);
       }
 
-      if (latLngs.length === 1) map.setView(latLngs[0]!, 17);
+      if (latLngs.length === 1 && places.length > 1) {
+        const bounds = L.latLngBounds([
+          ...places.map((p) => [p.lat, p.lng] as L.LatLngTuple),
+          latLngs[0] as L.LatLngTuple,
+        ]);
+        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
+      } else if (latLngs.length === 1) map.setView(latLngs[0]!, 17);
       else map.fitBounds(L.latLngBounds(latLngs), { padding: [56, 56], maxZoom: 18 });
     }
 
     window.setTimeout(() => map.invalidateSize(), 40);
-  }, [cleanPoints, roadPath, emptyCenter, emptyZoom, liveMode, followLive]);
+  }, [cleanPoints, roadPath, emptyCenter, emptyZoom, liveMode, followLive, places]);
+
+  const cleanPlaces = useMemo(
+    () =>
+      places.filter(
+        (p) =>
+          validCoord(p.lat, p.lng) &&
+          p.lat >= 37.1 &&
+          p.lat <= 45.6 &&
+          p.lng >= 55.9 &&
+          p.lng <= 73.2,
+      ),
+    [places],
+  );
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const group = placesLayerRef.current;
+    if (!map || !group) return;
+    group.clearLayers();
+    const markers = new Map<number, L.Marker>();
+    for (const p of cleanPlaces) {
+      const marker = L.marker([p.lat, p.lng], {
+        icon: pharmacyIcon(p.name, p.tone),
+        zIndexOffset: p.tone === "office" ? 720 : 400,
+        title: p.name,
+      })
+        .bindPopup(placePopupHtml(p), { maxWidth: 300, closeButton: true })
+        .on("click", () => {
+          onPlaceSelectRef.current?.(p);
+        });
+      marker.addTo(group);
+      markers.set(p.id, marker);
+    }
+    placeMarkersRef.current = markers;
+
+    if (!cleanPoints.length && cleanPlaces.length && !userPanned.current) {
+      const bounds = L.latLngBounds(cleanPlaces.map((p) => [p.lat, p.lng] as L.LatLngTuple));
+      map.fitBounds(bounds, { padding: [48, 48], maxZoom: 13 });
+    }
+    window.setTimeout(() => map.invalidateSize(), 40);
+  }, [cleanPlaces, cleanPoints.length]);
+
+  useEffect(() => {
+    if (focusPlaceId == null) return;
+    const map = mapRef.current;
+    const marker = placeMarkersRef.current.get(focusPlaceId);
+    const place = cleanPlaces.find((p) => p.id === focusPlaceId);
+    if (!map || !place) return;
+    userPanned.current = true;
+    map.flyTo([place.lat, place.lng], 17, { duration: 0.55 });
+    marker?.openPopup();
+  }, [focusPlaceId, focusToken, cleanPlaces]);
 
   return (
     <div className={className} style={{ height, position: "relative", minHeight: 360 }}>
@@ -360,10 +542,20 @@ export function MobileRouteMap({
         <div className="pointer-events-none absolute left-3 top-3 z-[1000] rounded-xl border border-border/80 bg-background/95 px-3 py-1.5 text-xs font-semibold shadow-md backdrop-blur">
           A → {liveMode ? "●" : "B"}: {distanceLabel}
           {snapped ? (
-            <span className="ml-1.5 font-normal text-emerald-700 dark:text-emerald-400">· yo‘l bo‘ylab</span>
+            <span className="ml-1.5 font-normal text-emerald-700 dark:text-emerald-400">· yurgan iz</span>
+          ) : roadPath.length ? (
+            <span className="ml-1.5 font-normal text-emerald-700 dark:text-emerald-400">· GPS izi</span>
           ) : routing ? (
             <span className="ml-1.5 font-normal text-muted-foreground">· hisoblanmoqda…</span>
           ) : null}
+        </div>
+      ) : null}
+      {cleanPlaces.length > 0 ? (
+        <div className="pointer-events-none absolute bottom-4 left-3 z-[1000] inline-flex items-center gap-2 rounded-xl border border-teal-200 bg-background/95 px-3 py-1.5 text-[11px] font-semibold text-teal-800 shadow-md backdrop-blur dark:border-teal-800 dark:text-teal-100">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-600" aria-hidden />
+          Dorixona
+          <span className="ml-1 inline-block h-2.5 w-2.5 rounded-full bg-blue-700" aria-hidden />
+          Asosiy ofis
         </div>
       ) : null}
       {cleanPoints.length > 0 ? (

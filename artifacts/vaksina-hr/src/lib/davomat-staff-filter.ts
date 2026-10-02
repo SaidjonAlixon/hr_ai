@@ -184,16 +184,66 @@ export function isNonOfficeStaff(emp: {
   return positionHasWord(emp.position, NON_OFFICE_POSITION_WORDS);
 }
 
+type PharmacyShiftBucket = "shift_one" | "shift_two" | "shift_12" | "shift_23" | "shift_three";
+
+function pharmacyKeySet(shiftType?: string | null, shiftLabel?: string | null): Set<"one" | "two" | "three"> {
+  const keys = new Set<"one" | "two" | "three">();
+  const parts = String(shiftType || "")
+    .trim()
+    .toLowerCase()
+    .split(/[+|,/\s]+/)
+    .filter(Boolean);
+  for (const p of parts) {
+    if (p === "one" || p === "1" || p === "shift_one") keys.add("one");
+    else if (p === "two" || p === "2" || p === "shift_two") keys.add("two");
+    else if (p === "three" || p === "3" || p === "shift_three") keys.add("three");
+  }
+  const lab = String(shiftLabel || "")
+    .toLowerCase()
+    .replace(/\s+/g, "");
+  if (lab.includes("2+3") || lab.includes("2-3")) {
+    keys.add("two");
+    keys.add("three");
+  } else if (lab.includes("1+2") || lab.includes("1-2")) {
+    keys.add("one");
+    keys.add("two");
+  }
+  return keys;
+}
+
+/** 1, 2, 3, 1+2 (08:00–23:45), 2+3 (17:00–07:00). Juftlik bitta smenaga yig‘ilmaydi. */
+export function pharmacyShiftBucket(emp: {
+  shiftType?: string | null;
+  shiftLabel?: string | null;
+  workStart?: string;
+  workEnd?: string;
+}): PharmacyShiftBucket {
+  const keys = pharmacyKeySet(emp.shiftType, emp.shiftLabel);
+  if (keys.has("two") && keys.has("three")) return "shift_23";
+  if (keys.has("one") && keys.has("two")) return "shift_12";
+  if (keys.size === 1 && keys.has("three")) return "shift_three";
+  if (keys.size === 1 && keys.has("two")) return "shift_two";
+  if (keys.size === 1 && keys.has("one")) return "shift_one";
+  if (emp.workStart === "08:00" && emp.workEnd === "23:45") return "shift_12";
+  if ((emp.workStart === "17:00" || emp.workStart === "18:00") && emp.workEnd === "07:00") return "shift_23";
+  if (normalizeShiftType(emp.shiftType, emp.shiftLabel) === "two") return "shift_two";
+  if (
+    (emp.workStart === "17:00" || emp.workStart === "18:00") &&
+    emp.workEnd === "23:45"
+  ) {
+    return "shift_two";
+  }
+  if (normalizeShiftType(emp.shiftType, emp.shiftLabel) === "three") return "shift_three";
+  return "shift_one";
+}
+
 function isShiftTwo(emp: {
   shiftType?: string | null;
   shiftLabel?: string | null;
   workStart?: string;
   workEnd?: string;
 }): boolean {
-  if (normalizeShiftType(emp.shiftType, emp.shiftLabel) === "two") return true;
-  return (
-    (emp.workStart === "17:00" || emp.workStart === "18:00") && emp.workEnd === "23:45"
-  );
+  return pharmacyShiftBucket(emp) === "shift_two";
 }
 
 export function classifyDavomatStaff(emp: {
@@ -249,9 +299,13 @@ export function smenaLabelShort(emp: DavomatEmployee): string {
   const kind = classifyDavomatStaff(emp);
   switch (kind) {
     case "shift_one":
-      return "1-smena";
-    case "shift_two":
-      return "2-smena";
+    case "shift_two": {
+      const bucket = pharmacyShiftBucket(emp);
+      if (bucket === "shift_12") return "1+2";
+      if (bucket === "shift_23") return "2+3";
+      if (bucket === "shift_three") return "3-smena";
+      return bucket === "shift_two" ? "2-smena" : "1-smena";
+    }
     case "warehouse":
       return emp.shiftLabel?.trim() || (emp.warehouseShiftKey ? `Ombor ${emp.warehouseShiftKey}` : "Omborxona");
     case "security":
@@ -302,7 +356,6 @@ export function matchesStaffFilter(
   if (filter === "warehouse") return warehouse;
 
   const shiftPharmacy = isShiftPharmacyStaff(emp);
-  const shiftTwo = isShiftTwo(emp);
   const nonOffice = isNonOfficeStaff(emp);
 
   /**
@@ -318,13 +371,13 @@ export function matchesStaffFilter(
   if (security || isWarehouseStaff(emp)) return false;
 
   if (filter === "pharmacy") return shiftPharmacy;
-  if (filter === "shift_two") return shiftPharmacy && shiftTwo;
-  if (filter === "shift_one") return shiftPharmacy && !shiftTwo;
+  if (filter === "shift_two") return shiftPharmacy && pharmacyShiftBucket(emp) === "shift_two";
+  if (filter === "shift_one") return shiftPharmacy && pharmacyShiftBucket(emp) === "shift_one";
   return false;
 }
 
-/** Dorixona ichidagi smena: "all" | "shift_one" | "shift_two" */
-export type PharmacyShiftFilter = "all" | "shift_one" | "shift_two";
+/** Dorixona ichidagi smena. 1+2 va 2+3 alohida — to‘liq oyna bo‘yicha. */
+export type PharmacyShiftFilter = "all" | "shift_one" | "shift_two" | "shift_12" | "shift_23";
 
 export const PHARMACY_SHIFT_OPTIONS: Array<{
   key: Exclude<PharmacyShiftFilter, "all">;
@@ -335,11 +388,13 @@ export const PHARMACY_SHIFT_OPTIONS: Array<{
 }> = [
   { key: "shift_one", label: "1-smena", hours: "08:00 – 17:00", start: "08:00", end: "17:00" },
   { key: "shift_two", label: "2-smena", hours: "17:00 – 23:45", start: "17:00", end: "23:45" },
+  { key: "shift_12", label: "1+2", hours: "08:00 – 23:45", start: "08:00", end: "23:45" },
+  { key: "shift_23", label: "2+3", hours: "17:00 – 07:00", start: "17:00", end: "07:00" },
 ];
 
 export function matchesPharmacyShift(emp: DavomatEmployee, shift: PharmacyShiftFilter): boolean {
   if (shift === "all") return true;
-  return shift === "shift_two" ? isShiftTwo(emp) : !isShiftTwo(emp);
+  return pharmacyShiftBucket(emp) === shift;
 }
 
 /** Ofis ichidagi bo‘lim — bir-biriga aralashmaydi. Hammasi = ofis doirasi. */

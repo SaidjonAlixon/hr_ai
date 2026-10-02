@@ -31,6 +31,17 @@ export function googleMapsRouteUrl(points: RoutePoint[]): string | null {
   return `https://www.google.com/maps/dir/${path}`;
 }
 
+/** Bitta nuqta — Yandex xaritada belgi */
+export function yandexPointUrl(lat: number, lng: number, name?: string): string {
+  const text = encodeURIComponent(name?.trim() || `${lat},${lng}`);
+  return `https://yandex.uz/maps/?ll=${lng},${lat}&z=17&pt=${lng},${lat},pm2rdm&text=${text}`;
+}
+
+/** Shu nuqtaga avtomobil yo‘li — Yandex Navigator */
+export function yandexNavigatorUrl(lat: number, lng: number): string {
+  return `https://yandex.uz/maps/?rtext=~${lat},${lng}&rtt=auto`;
+}
+
 /** Yandex Maps — rtext marshrut (piyoda) */
 export function yandexMapsRouteUrlFixed(points: RoutePoint[]): string | null {
   const clean = points.filter(

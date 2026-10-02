@@ -1,7 +1,7 @@
 import { eq, inArray } from "drizzle-orm";
 import { db, employeesTable, usersTable, pool } from "@workspace/db";
 import { dedupeActiveBranches } from "./branch-dedupe";
-import { displayBranchName, gpsFromLocationField, stripGpsSuffix } from "./geo-location";
+import { coerceUzbekistanGps, displayBranchName, gpsFromLocationField, stripGpsSuffix } from "./geo-location";
 import { districtFromGps } from "./filial-districts";
 
 export type FilialBranchCard = {
@@ -211,4 +211,75 @@ export function findFilialBranch(items: FilialBranchCard[], id: number): FilialB
 
 export function invalidateFilialBranchCache() {
   cache = null;
+}
+
+export type PharmacyMapPin = {
+  id: number;
+  name: string;
+  lat: number;
+  lng: number;
+  mudirName: string;
+  coordinatorName: string;
+  phone: string;
+  hours: string;
+};
+
+const NO_MUDIR = new Set(["no_manager", "need_hire", "searching"]);
+
+function formatPharmacyPhone(raw: string | null | undefined): string {
+  const digits = String(raw || "").replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("998")) {
+    return `+${digits.slice(0, 3)} ${digits.slice(3, 5)} ${digits.slice(5, 8)} ${digits.slice(8, 10)} ${digits.slice(10, 12)}`;
+  }
+  const trimmed = String(raw || "").trim();
+  return trimmed;
+}
+
+/** Ko‘chma xarita: faqat haqiqiy O‘zbekiston GPS i bor dorixonalar. */
+export async function loadPharmacyMapPins(): Promise<{
+  pins: PharmacyMapPin[];
+  total: number;
+  withoutGps: number;
+}> {
+  const branches = await loadFilialBranches(true);
+  const ids = branches.map((b) => b.id);
+  const meta = ids.length
+    ? await db
+        .select({
+          id: employeesTable.id,
+          employmentStatus: employeesTable.employmentStatus,
+          userId: employeesTable.userId,
+        })
+        .from(employeesTable)
+        .where(inArray(employeesTable.id, ids))
+    : [];
+  const metaById = new Map(meta.map((m) => [m.id, m]));
+
+  const pins: PharmacyMapPin[] = [];
+  let withoutGps = 0;
+  for (const b of branches) {
+    const coord = coerceUzbekistanGps(b.lat, b.lng);
+    if (!coord) {
+      withoutGps += 1;
+      continue;
+    }
+    const row = metaById.get(b.id);
+    const status = String(row?.employmentStatus || "");
+    const assigned = row?.userId != null && !NO_MUDIR.has(status);
+    pins.push({
+      id: b.id,
+      name: b.name,
+      lat: coord.lat,
+      lng: coord.lng,
+      mudirName: assigned && b.mudirName.trim() ? b.mudirName.trim() : "Mudir tayinlanmagan",
+      coordinatorName: b.coordinatorName?.trim() || "Koordinator biriktirilmagan",
+      phone: formatPharmacyPhone(b.primaryPhone) || "Raqam kiritilmagan",
+      hours:
+        b.contactFromHm && b.contactToHm
+          ? `${b.contactFromHm}–${b.contactToHm}`
+          : "Belgilanmagan",
+    });
+  }
+  pins.sort((a, b) => a.name.localeCompare(b.name, "uz"));
+  return { pins, total: branches.length, withoutGps };
 }

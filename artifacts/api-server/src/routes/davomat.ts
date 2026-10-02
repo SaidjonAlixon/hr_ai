@@ -27,7 +27,6 @@ import {
   canEditDavomatManual,
   canResetDavomatManual,
   canMarkDavomatExcuse,
-  canManageUsers,
   canViewDavomatXatoliklar,
   canViewDavomatNotes,
   isDirectorRole,
@@ -1254,6 +1253,15 @@ async function loadRecords(from: string, to: string, employeeIds: number[]) {
     );
 }
 
+/** Juft smena (1+2, 2+3) yig‘ilmasin — filtr va jadval shu kalitni ko‘radi. */
+function clientShiftType(shiftType?: string | null, shiftLabel?: string | null): string {
+  const keys = parseShiftKeys(shiftType, shiftLabel).filter(
+    (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
+  );
+  if (keys.length > 1) return encodeShiftKeys(keys);
+  return normalizeShiftType(shiftType, shiftLabel);
+}
+
 function buildReport(
   employees: Awaited<ReturnType<typeof loadActiveEmployees>>,
   records: Awaited<ReturnType<typeof loadRecords>>,
@@ -1288,10 +1296,15 @@ function buildReport(
               position: e.position,
               shiftType: e.shiftType,
             });
+        const planKeys = (hours.shiftKeys || []).filter(
+          (k): k is "one" | "two" | "three" => k === "one" || k === "two" || k === "three",
+        );
         const plan = {
           planStart: hours.start,
           planEnd: hours.end,
-          planShift: ov?.shiftKey || hours.shiftKey || null,
+          planShift:
+            ov?.shiftKey ||
+            (planKeys.length > 1 ? encodeShiftKeys(planKeys) : hours.shiftKey || null),
           planCustom: Boolean(ov),
         };
         const rec = byEmpDate.get(`${e.id}|${date}`);
@@ -1456,7 +1469,7 @@ function buildReport(
         orgRole: e.orgRole,
         userRole: e.userRole,
         phone: e.phone ?? null,
-        shiftType: normalizeShiftType(e.shiftType, e.shiftLabel),
+        shiftType: clientShiftType(e.shiftType, e.shiftLabel),
         shiftLabel: e.shiftLabel,
         warehouse: isWarehouseDavomatStaff(e),
         security: Boolean(baseHours.security),
@@ -1969,8 +1982,8 @@ function scheduleShiftCatalog(defs: Record<ShiftKey, ShiftDefinition>) {
 
 /** Admin: xodimning joriy smena vaqti va standart smenalar */
 router.get("/davomat/schedule-override", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageUsers(req.userRole)) {
-    res.status(403).json({ error: "Smena vaqtini faqat admin belgilaydi" });
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Smena vaqtini faqat admin yoki direktor belgilaydi" });
     return;
   }
   const employeeId = Number(req.query.employeeId);
@@ -1996,8 +2009,8 @@ router.get("/davomat/schedule-override", requireAuth, async (req: AuthRequest, r
 
 /** Admin: shu xodim uchun smena va kelish-ketish. Doimiy yoki muddatli. */
 router.post("/davomat/schedule-override", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageUsers(req.userRole)) {
-    res.status(403).json({ error: "Smena vaqtini faqat admin belgilaydi" });
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Smena vaqtini faqat admin yoki direktor belgilaydi" });
     return;
   }
   try {
@@ -2091,8 +2104,8 @@ router.post("/davomat/schedule-override", requireAuth, async (req: AuthRequest, 
 
 /** Admin: belgilangan smena vaqtini o‘chirib, standart jadvalga qaytarish */
 router.post("/davomat/schedule-override/clear", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageUsers(req.userRole)) {
-    res.status(403).json({ error: "Smena vaqtini faqat admin bekor qiladi" });
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Smena vaqtini faqat admin yoki direktor bekor qiladi" });
     return;
   }
   const employeeId = Number(req.body?.employeeId);
@@ -3705,6 +3718,8 @@ async function applyFacePunch(opts: {
   const geoFields = {
     checkLatitude: latitude,
     checkLongitude: longitude,
+    checkInLatitude: latitude,
+    checkInLongitude: longitude,
     distanceMeters,
     source,
     userId: emp.userId,
@@ -3769,6 +3784,8 @@ async function applyFacePunch(opts: {
             checkInAt,
             checkOutAt: null,
             checkOutMethod: null,
+            checkOutLatitude: null,
+            checkOutLongitude: null,
             status,
             checkInMethod: verificationMethod,
             resolvedBranchId: null,
@@ -3904,9 +3921,18 @@ async function applyFacePunch(opts: {
           await tx
             .update(attendanceRecordsTable)
             .set({
-              ...geoFields,
+              checkLatitude: latitude,
+              checkLongitude: longitude,
+              ...(existing.checkInLatitude == null
+                ? { checkInLatitude: latitude, checkInLongitude: longitude }
+                : {}),
+              distanceMeters,
+              source,
+              userId: emp.userId,
               checkOutAt: null,
               checkOutMethod: null,
+              checkOutLatitude: null,
+              checkOutLongitude: null,
               status: computeMetrics(workDate, existing.checkInAt, null, null, punchHours).status,
               resolvedBranchId: resolvedBranchId ?? undefined,
               resolvedBranchLabel: resolvedBranchLabel ?? undefined,
@@ -4068,10 +4094,14 @@ async function applyFacePunch(opts: {
         await tx
           .update(attendanceRecordsTable)
           .set({
-            ...geoFields,
+            checkOutLatitude: latitude,
+            checkOutLongitude: longitude,
+            distanceMeters,
             checkOutAt,
             status,
             checkOutMethod: verificationMethod,
+            userId: emp.userId,
+            updatedAt: now,
             ...(isEarlyLeave ? { notes: nextNotes } : {}),
           })
           .where(eq(attendanceRecordsTable.id, existing!.id));
@@ -6276,7 +6306,7 @@ function canViewBranchQr(role: string | null | undefined) {
 
 /** Filial QR yaratish/yangilash/o‘chirish — faqat admin va koordinator */
 function canEditBranchQr(role: string | null | undefined) {
-  return role === "koordinator" || role === "admin";
+  return role === "koordinator" || hasFullPlatformAccess(role);
 }
 
 function isQrAdmin(role: string | null | undefined) {
@@ -7426,7 +7456,14 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
   }
   try {
     const q = String(req.query.q || "").trim();
+    const today = tashkentYmd(new Date()) || "";
     const staff = await loadStaffFromUsers("active");
+    const defs = await getEffectiveShiftDefs();
+    const scheduleRules = await loadScheduleOverrides(
+      staff.map((row) => row.id).filter((id) => id > 0),
+      today,
+      today,
+    );
     const ids = staff.map((row) => row.userId).filter((id): id is number => id != null);
     const flags = ids.length
       ? await db
@@ -7445,6 +7482,10 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
       .map((row) => {
         const flag = flagById.get(row.userId!);
         const access = effectiveDavomatAccess(row.userRole, flag?.face, flag?.qr);
+        const override = today ? pickScheduleOverride(scheduleRules.get(row.id), today) : null;
+        const schedule = override
+          ? workScheduleFromOverride(override)
+          : workScheduleForStaff(row.userRole, row.orgRole, row.shiftType, row.shiftLabel, defs);
         return {
           userId: row.userId!,
           fullName: row.fullName,
@@ -7452,6 +7493,8 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
           position: row.position || "",
           location: row.location || "",
           place: isPharmacyStaffRow(row) ? "dorixona" : "ofis",
+          scheduleLabel: schedule.label,
+          scheduleHours: `${schedule.start}–${schedule.end}`,
           status: row.userStatus || "active",
           face: access.face,
           qr: access.qr,

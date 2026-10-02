@@ -1,7 +1,7 @@
 import { ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { RoutePoint } from "@/components/davomat/MobileRouteMap";
-import { googleMapsRouteUrl, yandexMapsRouteUrlFixed } from "@/lib/external-maps";
+import { googleMapsRouteUrl, yandexMapsRouteUrlFixed, yandexNavigatorUrl, yandexPointUrl } from "@/lib/external-maps";
 import { cn } from "@/lib/utils";
 
 type Props = {
@@ -9,6 +9,30 @@ type Props = {
   className?: string;
   compact?: boolean;
 };
+
+/** Bitta filial yoki ofis nuqtasini Yandex / Navigator da ochish */
+export function PlaceNavLinks({ lat, lng, name }: { lat: number; lng: number; name: string }) {
+  return (
+    <div className="mt-3 flex gap-2">
+      <a
+        href={yandexPointUrl(lat, lng, name)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex h-8 flex-1 items-center justify-center rounded-lg bg-[#fc3f1d] text-xs font-bold text-white hover:bg-[#e13618]"
+      >
+        Yandex
+      </a>
+      <a
+        href={yandexNavigatorUrl(lat, lng)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex h-8 flex-1 items-center justify-center rounded-lg bg-blue-700 text-xs font-bold text-white hover:bg-blue-800"
+      >
+        Navigator
+      </a>
+    </div>
+  );
+}
 
 export function ExternalMapsLinks({ points, className, compact }: Props) {
   const google = googleMapsRouteUrl(points);

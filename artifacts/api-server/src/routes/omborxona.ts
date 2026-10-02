@@ -3,7 +3,7 @@ import { and, desc, eq, gte, lte } from "drizzle-orm";
 import { db, employeesTable, attendanceRecordsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
-import { canManageUsers, canViewLeadershipModules } from "../lib/roles";
+import { canViewLeadershipModules, hasFullPlatformAccess } from "../lib/roles";
 import {
   OMBORXONA_DEPARTMENT_NAME,
   ensureOmborxonaDepartmentId,
@@ -76,7 +76,7 @@ function dayKind(status?: string | null): "late" | "absent" | "ok" | "other" {
 const router: IRouter = Router();
 
 function canManageOmbor(role?: string | null): boolean {
-  return isOmborHeadRole(role) || canManageUsers(role);
+  return isOmborHeadRole(role) || hasFullPlatformAccess(role);
 }
 
 function canViewOmbor(role?: string | null): boolean {

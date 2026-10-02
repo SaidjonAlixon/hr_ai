@@ -7,7 +7,6 @@ import {
   isDeptHeadRole,
   hasFullPlatformAccess,
   isHrRole,
-  canManageUsers,
 } from "../../lib/roles";
 import {
   useApproveStaffNeed,
@@ -421,7 +420,7 @@ export default function XodimKerakPage() {
     hasFullPlatformAccess(user?.role) ||
     isDirectorRole(user?.role);
   const canCreate = isCoord || isMudir || isOfficeHead;
-  const isAdmin = canManageUsers(user?.role);
+  const isAdmin = hasFullPlatformAccess(user?.role);
   const canView =
     canCreate ||
     isHr ||

@@ -64,20 +64,20 @@ export function canSetPrivateTaskVisibility(role?: string | null): boolean {
   return r === "admin" || isDirectorRole(r) || r === "direktor_yordamchisi";
 }
 
-/** Admin yoki Asoschi — platformadagi barcha imkoniyatlar (100%). */
+/** Admin, asoschi yoki korxona direktori. Foydalanuvchilar bo‘limi — faqat admin. */
 export function hasFullPlatformAccess(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();
-  return r === "admin" || r === "asoschi";
+  return r === "admin" || r === "asoschi" || r === "director";
 }
 
 export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || hasFullPlatformAccess(role);
 }
 
-/** Filial, mudir, farmasevt qo‘shish va o‘chirish — faqat admin va HR menejer. */
+/** Filial, mudir, farmasevt qo‘shish va o‘chirish — admin, direktor va HR menejer. */
 export function canManagePharmacyOps(role?: string | null): boolean {
-  const r = String(role || "");
-  return r === "admin" || r === "asoschi" || r === "hr_menejer";
+  const r = (role ?? "").trim().toLowerCase();
+  return hasFullPlatformAccess(r) || r === "hr_menejer";
 }
 
 /** Sozlamalar: foydalanuvchilar, Face ID, kirish materiallari */
@@ -106,25 +106,26 @@ export function canDeleteUsers(role?: string | null): boolean {
   return canManageUsers(role);
 }
 
-/** Davomat qo‘lda tahrirlash (vaqt) — admin va HR direktor */
+/** Davomat qo‘lda tahrirlash (vaqt) — admin, direktor va HR direktor */
 export function canEditDavomatManual(role?: string | null): boolean {
-  return canManageUsers(role) || isHrDirektor(role);
+  return hasFullPlatformAccess(role) || isHrDirektor(role);
 }
 
-/** Davomatni bekor qilish (0) — faqat admin */
+/** Davomatni bekor qilish (0) — admin va korxona direktori */
 export function canResetDavomatManual(role?: string | null): boolean {
-  return canManageUsers(role);
+  return hasFullPlatformAccess(role);
 }
 
-/** Davomatni sababli qilish (jarimasiz) — faqat admin va HR menejer */
+/** Davomatni sababli qilish (jarimasiz) — admin, direktor va HR menejer */
 export function canMarkDavomatExcuse(role?: string | null): boolean {
   const r = (role ?? "").trim().toLowerCase();
-  return r === "admin" || r === "hr_menejer";
+  return hasFullPlatformAccess(r) || r === "hr_menejer";
 }
 
-/** Davomat xatoliklar — faqat admin */
+/** Davomat xatoliklar — faqat admin va asoschi. Korxona direktori ko‘rmaydi. */
 export function canViewDavomatXatoliklar(role?: string | null): boolean {
-  return canManageUsers(role);
+  const r = (role ?? "").trim().toLowerCase();
+  return r === "admin" || r === "asoschi";
 }
 
 export const DEPT_HEAD_ROLES = [
@@ -356,9 +357,9 @@ export function canViewKochmaAdmin(role?: string | null): boolean {
   return canViewLeadershipModules(role);
 }
 
-/** Qurilmalar + Ko‘chma — o‘zgartirish faqat admin */
+/** Qurilmalar + Ko‘chma — o‘zgartirish: admin va korxona direktori */
 export function canManageKochmaAdmin(role?: string | null): boolean {
-  return canManageUsers(role);
+  return hasFullPlatformAccess(role);
 }
 
 export function canAccessKirish(role?: string | null): boolean {

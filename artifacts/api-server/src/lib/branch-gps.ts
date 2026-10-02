@@ -20,7 +20,11 @@ export async function saveManagerBranchLocation(opts: {
   /** Filialning ko‘rinadigan nomi (masalan: Novza, Olmos 2) */
   branchName?: string | null;
 }): Promise<BranchGpsOk | BranchGpsErr> {
-  const canSet = opts.actorRole === "admin" || opts.actorRole === "asoschi" || opts.actorRole === "hr_menejer";
+  const canSet =
+    opts.actorRole === "admin" ||
+    opts.actorRole === "asoschi" ||
+    opts.actorRole === "director" ||
+    opts.actorRole === "hr_menejer";
   if (!canSet) {
     return { ok: false, status: 403, error: "Filial nomini admin yoki HR menejer yozadi" };
   }

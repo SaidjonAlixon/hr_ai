@@ -102,7 +102,7 @@ async function reassignBranchShell(fromManagerId: number, toManagerId: number) {
 }
 
 export function canHardDeletePharmacyNetwork(role?: string): boolean {
-  return role === "admin" || role === "asoschi" || role === "hr_menejer";
+  return role === "admin" || role === "asoschi" || role === "director" || role === "hr_menejer";
 }
 
 /** Koordinator faqat o‘z doirasidagi filial/xodimni o‘chira oladi */

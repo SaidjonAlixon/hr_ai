@@ -8,17 +8,25 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   MobileRouteMap,
+  OFFICE_MAP_PLACE,
   formatRouteDistance,
   formatRouteDuration,
   routeDistanceMeters,
+  type MapPlace,
   type RoutePoint,
 } from "@/components/davomat/MobileRouteMap";
-import { ExternalMapsLinks } from "@/components/davomat/ExternalMapsLinks";
+import { ExternalMapsLinks, PlaceNavLinks } from "@/components/davomat/ExternalMapsLinks";
+import { BranchPinSearch } from "@/components/davomat/BranchPinSearch";
 import {
+  fetchDayAttendancePlaces,
   fetchMobileLive,
   fetchMobileSessionDetail,
+  fetchPharmacyMapPins,
+  type DayAttendanceMark,
+  type PharmacyMapPin,
 } from "@/lib/mobile-attendance-api";
 import { useToast } from "@/hooks/use-toast";
+import { foldScript } from "@/lib/script-fold";
 import { cn } from "@/lib/utils";
 import {
   ArrowLeft,
@@ -99,14 +107,25 @@ export default function AdminKochmaLivePage() {
   const [showOfis, setShowOfis] = useState(true);
   const [showOnline, setShowOnline] = useState(true);
   const [showOffline, setShowOffline] = useState(true);
+  const [pins, setPins] = useState<PharmacyMapPin[]>([]);
+  const [dayMarks, setDayMarks] = useState<DayAttendanceMark[]>([]);
+  const [selectedPin, setSelectedPin] = useState<PharmacyMapPin | null>(null);
+  const [focusPinId, setFocusPinId] = useState<number | null>(null);
+  const [focusToken, setFocusToken] = useState(0);
 
   const selected = liveList.find((l) => rowKey(l) === selectedKey) || null;
   const selectedSessionId = selected?.sessionId ?? null;
+  const focusEmployeeId =
+    selected?.employeeId ??
+    (selectedKey?.startsWith("e:") ? Number(selectedKey.slice(2)) : null);
+  const selectedMark =
+    focusEmployeeId != null ? dayMarks.find((m) => m.employeeId === focusEmployeeId) ?? null : null;
 
   const filtered = useMemo(() => {
-    const needle = q.trim().toLowerCase();
+    const needle = foldScript(q.trim());
     return liveList.filter((l) => {
-      if (!String(l.fullName || "").trim()) return false;
+      const liveName = String(l.fullName || "").trim();
+      if (!liveName || /^Xodim #\d+$/.test(liveName)) return false;
       const wp = workplaceOf(l);
       if (wp === "pharmacy" && !showDorixona) return false;
       if (wp === "office" && !showOfis) return false;
@@ -114,9 +133,9 @@ export default function AdminKochmaLivePage() {
       if (l.presence === "offline" && !showOffline) return false;
       if (!needle) return true;
       return (
-        String(l.fullName || "").toLowerCase().includes(needle) ||
-        String(l.position || "").toLowerCase().includes(needle) ||
-        String(l.location || "").toLowerCase().includes(needle)
+        foldScript(String(l.fullName || "")).includes(needle) ||
+        foldScript(String(l.position || "")).includes(needle) ||
+        foldScript(String(l.location || "")).includes(needle)
       );
     });
   }, [liveList, q, showDorixona, showOfis, showOnline, showOffline]);
@@ -148,6 +167,40 @@ export default function AdminKochmaLivePage() {
 
   useEffect(() => {
     if (!allowed) return;
+    void fetchPharmacyMapPins()
+      .then((r) => setPins(r.pins))
+      .catch(() => undefined);
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+    const loadMarks = () => {
+      void fetchDayAttendancePlaces(today)
+        .then((r) => setDayMarks(r.marks))
+        .catch(() => undefined);
+    };
+    loadMarks();
+    const t = window.setInterval(loadMarks, 30_000);
+    return () => window.clearInterval(t);
+  }, [allowed]);
+
+  const places = useMemo<MapPlace[]>(
+    () => [
+      OFFICE_MAP_PLACE,
+      ...pins.map((p) => ({
+        id: p.id,
+        lat: p.lat,
+        lng: p.lng,
+        name: p.name,
+        mudirName: p.mudirName,
+        coordinatorName: p.coordinatorName,
+        phone: p.phone,
+        hours: p.hours || "Belgilanmagan",
+        tone: "branch" as const,
+      })),
+    ],
+    [pins],
+  );
+
+  useEffect(() => {
+    if (!allowed) return;
     void refreshList();
     const t = window.setInterval(() => void refreshList(), 8_000);
     return () => window.clearInterval(t);
@@ -155,7 +208,23 @@ export default function AdminKochmaLivePage() {
 
   useEffect(() => {
     if (!selectedSessionId) {
-      setPoints([]);
+      if (focusEmployeeId == null) {
+        setPoints([]);
+        return;
+      }
+      const m = dayMarks.find((x) => x.employeeId === focusEmployeeId);
+      if (!m) {
+        setPoints([]);
+        return;
+      }
+      const pts: RoutePoint[] = [];
+      if (m.checkInLat != null && m.checkInLng != null) {
+        pts.push({ lat: m.checkInLat, lng: m.checkInLng, kind: "start", time: fmtTime(m.checkInAt) });
+      }
+      if (m.checkOutLat != null && m.checkOutLng != null) {
+        pts.push({ lat: m.checkOutLat, lng: m.checkOutLng, kind: "end", time: fmtTime(m.checkOutAt) });
+      }
+      setPoints(pts);
       return;
     }
     let cancelled = false;
@@ -173,7 +242,7 @@ export default function AdminKochmaLivePage() {
       cancelled = true;
       window.clearInterval(t);
     };
-  }, [selectedSessionId]);
+  }, [selectedSessionId, focusEmployeeId, dayMarks]);
 
   const distanceM = points.length >= 2 ? routeDistanceMeters(points) : 0;
   const distanceLabel = formatRouteDistance(distanceM);
@@ -285,10 +354,18 @@ export default function AdminKochmaLivePage() {
             <Input
               value={q}
               onChange={(e) => setQ(e.target.value)}
-              placeholder="Ism…"
+              placeholder="Ism — krill yoki lotin"
               className="mt-1.5 rounded-xl"
             />
           </div>
+          <BranchPinSearch
+            pins={pins}
+            onPick={(p) => {
+              setSelectedPin(p);
+              setFocusPinId(p.id);
+              setFocusToken((n) => n + 1);
+            }}
+          />
 
           <div className="rounded-xl border border-border bg-muted/30 p-3">
             <div className="mb-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -429,6 +506,12 @@ export default function AdminKochmaLivePage() {
                 {workplaceOf(selected) === "pharmacy" ? "Dorixona" : "Ofis"}
                 {selected.location ? ` · ${selected.location}` : ""}
               </div>
+              {selectedMark ? (
+                <div className="mt-1 text-[11px] font-medium text-foreground">
+                  Davomat: {fmtTime(selectedMark.checkInAt)}
+                  {selectedMark.checkOutAt ? ` – ${fmtTime(selectedMark.checkOutAt)}` : " · hali ketmagan"}
+                </div>
+              ) : null}
               <div className="mt-2 space-y-1 text-muted-foreground">
                 <div className="flex justify-between gap-2">
                   <span>Boshlanish</span>
@@ -488,21 +571,93 @@ export default function AdminKochmaLivePage() {
               <span className="text-[11px] font-semibold text-slate-500">Offline</span>
             ) : null}
           </div>
-          <MobileRouteMap
-            points={mapPoints}
-            height="min(74vh, 720px)"
-            liveMode={selected?.presence === "online"}
-            followLive={selected?.presence === "online"}
-            locateLabel="Xodimni top"
-            className="min-h-[min(74vh,720px)] w-full"
-            emptyHint={
-              liveList.length === 0
-                ? "Xodimlar yuklanmagan"
-                : !selected
-                  ? "Chapdan xodimni tanlang"
-                  : "Bu xodim hali GPS bermagan yoki lokatsiya o‘chirilgan (offline)"
-            }
-          />
+          <div className="relative">
+            <MobileRouteMap
+              points={mapPoints}
+              places={places}
+              focusPlaceId={focusPinId}
+              focusToken={focusToken}
+              onPlaceSelect={(p) => {
+                setSelectedPin(
+                  p.id === OFFICE_MAP_PLACE.id
+                    ? {
+                        id: OFFICE_MAP_PLACE.id,
+                        name: OFFICE_MAP_PLACE.name,
+                        lat: OFFICE_MAP_PLACE.lat,
+                        lng: OFFICE_MAP_PLACE.lng,
+                        mudirName: "",
+                        coordinatorName: "",
+                        phone: "",
+                        hours: OFFICE_MAP_PLACE.hours,
+                      }
+                    : pins.find((x) => x.id === p.id) || null,
+                );
+                setFocusPinId(p.id);
+              }}
+              height="min(74vh, 720px)"
+              liveMode={selected?.presence === "online"}
+              followLive={selected?.presence === "online"}
+              locateLabel="Xodimni top"
+              className="min-h-[min(74vh,720px)] w-full"
+              emptyHint={
+                pins.length
+                  ? ""
+                  : liveList.length === 0
+                    ? "Xodimlar yuklanmagan"
+                    : !selected
+                      ? "Chapdan xodimni tanlang"
+                      : "Bu xodim hali GPS bermagan yoki lokatsiya o‘chirilgan (offline)"
+              }
+            />
+            {selectedPin ? (
+              <div className={cn(
+                "pointer-events-auto absolute bottom-4 left-1/2 z-[1000] w-[min(92%,380px)] -translate-x-1/2 rounded-2xl border bg-white/95 p-3 shadow-xl backdrop-blur dark:bg-slate-950/95",
+                selectedPin.id < 0 ? "border-blue-300 dark:border-blue-800" : "border-teal-200 dark:border-teal-800",
+              )}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className={cn(
+                      "text-[10px] font-bold uppercase tracking-wide",
+                      selectedPin.id < 0 ? "text-blue-700 dark:text-blue-300" : "text-teal-700 dark:text-teal-300",
+                    )}>
+                      {selectedPin.id < 0 ? "Asosiy ofis" : "Dorixona"}
+                    </p>
+                    <p className="text-base font-bold leading-tight">{selectedPin.name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                    onClick={() => setSelectedPin(null)}
+                  >
+                    Yopish
+                  </button>
+                </div>
+                <dl className="mt-2 space-y-1 text-sm">
+                  {selectedPin.id < 0 ? null : (
+                    <>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-muted-foreground">Mudir</dt>
+                        <dd className="font-medium">{selectedPin.mudirName}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-muted-foreground">Koordinator</dt>
+                        <dd className="font-medium">{selectedPin.coordinatorName}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-muted-foreground">Dorixona raqami</dt>
+                        <dd className="font-medium">{selectedPin.phone}</dd>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex gap-2">
+                    <dt className="w-28 shrink-0 text-muted-foreground">Ish vaqti</dt>
+                    <dd className="font-medium">{selectedPin.hours || "Belgilanmagan"}</dd>
+                  </div>
+                </dl>
+                <PlaceNavLinks lat={selectedPin.lat} lng={selectedPin.lng} name={selectedPin.name} />
+              </div>
+            ) : null}
+          </div>
         </section>
       </div>
     </div>

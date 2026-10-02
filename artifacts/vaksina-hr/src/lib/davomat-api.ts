@@ -612,6 +612,8 @@ export type DavomatMethodAccessRow = {
   position: string;
   location: string;
   place: "ofis" | "dorixona";
+  scheduleLabel?: string;
+  scheduleHours?: string;
   status: string;
   face: boolean;
   qr: boolean;
@@ -859,4 +861,30 @@ export async function downloadDavomatExcel(params: {
   }
   const { deliverFile } = await import("./tg-download");
   return deliverFile(blob, `davomat_${params.from}_${params.to}.xlsx`);
+}
+
+/** Kunlik hisobot: kelmaganlar, kechikkanlar, kelganlar va oylik sanoq. */
+export async function downloadDavomatDayPdf(params: {
+  date: string;
+  employeeIds: number[];
+  filterLine?: string;
+}): Promise<{ via: "telegram" | "browser" }> {
+  const res = await fetch("/api/davomat/day-report.pdf", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      date: params.date,
+      employeeIds: params.employeeIds,
+      filterLine: params.filterLine || null,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error((body as { error?: string }).error || `PDF yuklanmadi (${res.status})`);
+  }
+  const blob = await res.blob();
+  if (!blob.size) throw new Error("Server bo‘sh PDF qaytardi");
+  const { deliverFile } = await import("./tg-download");
+  return deliverFile(blob, `davomat_${params.date}.pdf`);
 }

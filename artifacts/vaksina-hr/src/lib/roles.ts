@@ -151,22 +151,22 @@ export function canSetPrivateTaskVisibility(role?: string | null): boolean {
 }
 
 /**
- * Admin yoki Asoschi — platformadagi barcha imkoniyatlar (100%).
- * Oddiy «foydalanuvchi» emas: sozlamalar, HR, IT, o‘chirish va hokazo.
+ * Admin, asoschi yoki korxona direktori — platformadagi amallar.
+ * Foydalanuvchilar bo‘limi alohida: faqat admin (canManageUsers).
  */
 export function hasFullPlatformAccess(role?: string | null): boolean {
   const r = normalizeUserRole(role);
-  return r === "admin" || r === "asoschi";
+  return r === "admin" || r === "asoschi" || r === "director";
 }
 
 export function isHrManager(role?: string | null): boolean {
   return isHrRole(role) || hasFullPlatformAccess(role);
 }
 
-/** Filial, mudir, farmasevt qo‘shish va o‘chirish — faqat admin va HR menejer. */
+/** Filial, mudir, farmasevt qo‘shish va o‘chirish — admin, direktor va HR menejer. */
 export function canManagePharmacyOps(role?: string | null): boolean {
-  const r = String(role || "");
-  return r === "admin" || r === "asoschi" || r === "hr_menejer";
+  const r = normalizeUserRole(role);
+  return hasFullPlatformAccess(r) || r === "hr_menejer";
 }
 
 /** Sozlamalar: foydalanuvchilar, Face ID, kirish materiallari */
@@ -232,31 +232,31 @@ export function canViewDavomatNotes(role?: string | null): boolean {
   return canViewLeadershipModules(role) || isSbRole(role);
 }
 
-/** Davomat qo‘lda tahrirlash (vaqt) — admin va HR direktor */
+/** Davomat qo‘lda tahrirlash (vaqt) — admin, direktor va HR direktor */
 export function canEditDavomatManual(role?: string | null): boolean {
-  const r = normalizeUserRole(role);
-  return r === "admin" || r === "hr_direktor";
+  return hasFullPlatformAccess(role) || normalizeUserRole(role) === "hr_direktor";
 }
 
-/** Davomatni bekor qilish (0) — faqat admin */
+/** Davomatni bekor qilish (0) — admin va korxona direktori */
 export function canResetDavomatManual(role?: string | null): boolean {
-  return normalizeUserRole(role) === "admin";
+  return hasFullPlatformAccess(role);
 }
 
-/** Davomatni sababli qilish (jarimasiz) — faqat admin va HR menejer */
+/** Davomatni sababli qilish (jarimasiz) — admin, direktor va HR menejer */
 export function canMarkDavomatExcuse(role?: string | null): boolean {
   const r = normalizeUserRole(role);
-  return r === "admin" || r === "hr_menejer";
+  return hasFullPlatformAccess(r) || r === "hr_menejer";
 }
 
-/** Xodim smenasi va kelish-ketish vaqti — faqat admin */
+/** Xodim smenasi va kelish-ketish vaqti — admin va korxona direktori */
 export function canSetEmployeeSchedule(role?: string | null): boolean {
-  return normalizeUserRole(role) === "admin";
+  return hasFullPlatformAccess(role);
 }
 
-/** Davomat xatoliklar bo‘limi — faqat admin */
+/** Davomat xatoliklar — faqat admin va asoschi. Korxona direktori ko‘rmaydi. */
 export function canViewDavomatXatoliklar(role?: string | null): boolean {
-  return normalizeUserRole(role) === "admin";
+  const r = normalizeUserRole(role);
+  return r === "admin" || r === "asoschi";
 }
 
 /** Xodimlar — to‘liq (barcha ofis bo‘limlari): admin, direktor, HR, SB, rekruter */
@@ -397,9 +397,9 @@ export function canViewKochmaAdmin(role?: string | null): boolean {
   return canViewLeadershipModules(role);
 }
 
-/** Qurilmalar + Ko‘chma — o‘zgartirish faqat admin */
+/** Qurilmalar + Ko‘chma — o‘zgartirish: admin va korxona direktori */
 export function canManageKochmaAdmin(role?: string | null): boolean {
-  return canManageUsers(role);
+  return hasFullPlatformAccess(role);
 }
 
 export function canManageDistribyutsiya(role?: string | null): boolean {
@@ -416,9 +416,9 @@ export function canViewOmborxona(role?: string | null): boolean {
   return isOmborxonaRole(role) || canViewLeadershipModules(role) || canManageSettings(role);
 }
 
-/** Smena yaratish / xodim ajratish — ombor boshliq + faqat admin (rahbariyat faqat ko‘radi) */
+/** Smena yaratish / xodim ajratish — ombor boshliq, admin va korxona direktori */
 export function canManageOmborxona(role?: string | null): boolean {
-  return role === "ombor_rahbar" || canManageUsers(role);
+  return role === "ombor_rahbar" || hasFullPlatformAccess(role);
 }
 
 export function isDeptHeadRole(role?: string | null): boolean {

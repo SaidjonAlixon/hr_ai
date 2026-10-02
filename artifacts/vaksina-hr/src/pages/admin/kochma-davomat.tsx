@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageUsers, canViewKochmaAdmin } from "@/lib/roles";
+import { canManageKochmaAdmin, canViewKochmaAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,10 +24,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { MobileRouteMap, type RoutePoint } from "@/components/davomat/MobileRouteMap";
+import { MobileRouteMap, OFFICE_MAP_PLACE, type MapPlace, type RoutePoint } from "@/components/davomat/MobileRouteMap";
 import {
   fetchMobileDashboard,
   fetchMobileEmployees,
+  fetchPharmacyMapPins,
   fetchMobilePermissions,
   fetchMobileSessionDetail,
   fetchMobileSettings,
@@ -36,9 +37,11 @@ import {
   revokeMobilePermission,
   saveMobileSettings,
   type MobilePermissionRow,
+  type PharmacyMapPin,
   type MobileSettings,
 } from "@/lib/mobile-attendance-api";
 import {
+  Ban,
   Loader2,
   MapPinned,
   Plus,
@@ -110,7 +113,7 @@ export default function AdminKochmaDavomatPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const allowed = canViewKochmaAdmin(user?.role);
-  const canEdit = canManageUsers(user?.role);
+  const canEdit = canManageKochmaAdmin(user?.role);
 
   const [loading, setLoading] = useState(true);
   const [dash, setDash] = useState<Awaited<ReturnType<typeof fetchMobileDashboard>> | null>(null);
@@ -121,6 +124,7 @@ export default function AdminKochmaDavomatPage() {
   const [mapOpen, setMapOpen] = useState(false);
   const [mapPoints, setMapPoints] = useState<RoutePoint[]>([]);
   const [mapTitle, setMapTitle] = useState("");
+  const [pins, setPins] = useState<PharmacyMapPin[]>([]);
   const [busy, setBusy] = useState(false);
 
   const [empQ, setEmpQ] = useState("");
@@ -163,6 +167,31 @@ export default function AdminKochmaDavomatPage() {
   useEffect(() => {
     if (allowed) void reload();
   }, [allowed, reload]);
+
+  useEffect(() => {
+    if (!allowed) return;
+    void fetchPharmacyMapPins()
+      .then((r) => setPins(r.pins))
+      .catch(() => undefined);
+  }, [allowed]);
+
+  const places = useMemo<MapPlace[]>(
+    () => [
+      OFFICE_MAP_PLACE,
+      ...pins.map((p) => ({
+        id: p.id,
+        lat: p.lat,
+        lng: p.lng,
+        name: p.name,
+        mudirName: p.mudirName,
+        coordinatorName: p.coordinatorName,
+        phone: p.phone,
+        hours: p.hours || "Belgilanmagan",
+        tone: "branch" as const,
+      })),
+    ],
+    [pins],
+  );
 
   useEffect(() => {
     if (!grantOpen) return;
@@ -522,30 +551,31 @@ export default function AdminKochmaDavomatPage() {
                         )}
                       </td>
                       <td className="px-4 py-3.5 sm:px-5">
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="flex flex-wrap items-center gap-2">
                           {p.todaySession ? (
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-8 rounded-lg"
+                              className="h-8 rounded-lg px-2.5"
                               onClick={() => void openMap(p.todaySession!.id, p.fullName || "Xodim")}
                             >
-                              <Route className="mr-1 h-3.5 w-3.5" />
+                              <Route className="mr-1.5 h-3.5 w-3.5" />
                               Xarita
                             </Button>
                           ) : null}
                           {canEdit ? (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-8 rounded-lg text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/40"
-                            onClick={() => {
-                              if (!window.confirm("Ruxsatni bekor qilasizmi?")) return;
-                              void revokeMobilePermission(p.id).then(reload);
-                            }}
-                          >
-                            Bekor
-                          </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="h-8 rounded-lg border-rose-200 bg-rose-50 px-2.5 text-rose-700 hover:bg-rose-100 hover:text-rose-800 dark:border-rose-900 dark:bg-rose-950/40 dark:text-rose-200 dark:hover:bg-rose-950/70"
+                              onClick={() => {
+                                if (!window.confirm(`${p.fullName || "Xodim"} uchun ko‘chma davomat ruxsatini bekor qilasizmi?`)) return;
+                                void revokeMobilePermission(p.id).then(reload);
+                              }}
+                            >
+                              <Ban className="mr-1.5 h-3.5 w-3.5" />
+                              Bekor qilish
+                            </Button>
                           ) : null}
                         </div>
                       </td>
@@ -568,21 +598,24 @@ export default function AdminKochmaDavomatPage() {
 
       {/* Grant */}
       <Dialog open={grantOpen} onOpenChange={setGrantOpen}>
-        <DialogContent className="max-h-[90vh] max-w-lg overflow-y-auto rounded-2xl">
-          <DialogHeader>
-            <DialogTitle>Ko‘chma davomatga ruxsat</DialogTitle>
+        <DialogContent className="flex max-h-[min(92vh,760px)] w-[min(28rem,calc(100vw-1.5rem))] max-w-none flex-col gap-0 overflow-hidden rounded-2xl p-0">
+          <DialogHeader className="shrink-0 space-y-1 border-b border-border px-5 py-4 pr-12 text-left">
+            <DialogTitle className="text-base">Ko‘chma davomatga ruxsat</DialogTitle>
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Tanlangan xodim ofis hududidan tashqarida ham davomat qila oladi.
+            </p>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="min-h-0 min-w-0 flex-1 space-y-4 overflow-x-hidden overflow-y-auto px-5 py-4">
             <div>
-              <Label>Bo‘lim</Label>
-              <div className="mt-1.5 grid grid-cols-2 gap-2">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Bo‘lim</Label>
+              <div className="mt-2 grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
                 <button
                   type="button"
                   className={cn(
-                    "rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors",
+                    "rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
                     staffGroup === "pharmacy"
-                      ? "border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                      : "border-border bg-card text-muted-foreground hover:bg-muted",
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                   onClick={() => {
                     setStaffGroup("pharmacy");
@@ -595,10 +628,10 @@ export default function AdminKochmaDavomatPage() {
                 <button
                   type="button"
                   className={cn(
-                    "rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors",
+                    "rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
                     staffGroup === "office"
-                      ? "border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-300"
-                      : "border-border bg-card text-muted-foreground hover:bg-muted",
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
                   onClick={() => {
                     setStaffGroup("office");
@@ -612,50 +645,59 @@ export default function AdminKochmaDavomatPage() {
             </div>
 
             {!staffGroup ? (
-              <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
+              <p className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
                 Avval Dorixona yoki Ofisni tanlang — keyin xodimlar chiqadi.
               </p>
             ) : (
-              <div>
-                <Label>Xodim qidirish ({staffGroup === "pharmacy" ? "Dorixona" : "Ofis"})</Label>
+              <div className="min-w-0">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Xodim · {staffGroup === "pharmacy" ? "Dorixona" : "Ofis"}
+                  </Label>
+                  {selectedIds.length > 0 ? (
+                    <span className="rounded-full bg-sky-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                      {selectedIds.length} tanlandi
+                    </span>
+                  ) : null}
+                </div>
                 <Input
                   value={empQ}
                   onChange={(e) => setEmpQ(e.target.value)}
-                  placeholder="Ism…"
-                  className="mt-1 rounded-xl"
+                  placeholder="Ism bo‘yicha qidirish"
+                  className="h-10 rounded-xl"
                 />
-                <div className="mt-2 max-h-48 space-y-0.5 overflow-y-auto rounded-xl border border-border p-1.5">
+                <div className="mt-2 max-h-52 space-y-1 overflow-y-auto overflow-x-hidden rounded-xl border border-border bg-muted/20 p-1.5">
                   {empOptions.length === 0 ? (
-                    <p className="px-2 py-4 text-center text-xs text-muted-foreground">
+                    <p className="px-2 py-6 text-center text-xs text-muted-foreground">
                       Xodim topilmadi
                     </p>
                   ) : (
-                    empOptions.map((e) => (
-                      <label
-                        key={e.id}
-                        className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted"
-                      >
-                        <Checkbox
-                          checked={selectedIds.includes(e.id)}
-                          onCheckedChange={() => toggleEmp(e.id)}
-                        />
-                        <span className="min-w-0 flex-1 truncate">
-                          {e.fullName}
-                          <span className="text-muted-foreground"> · {e.position || "—"}</span>
-                        </span>
-                      </label>
-                    ))
+                    empOptions.map((e) => {
+                      const on = selectedIds.includes(e.id);
+                      return (
+                        <label
+                          key={e.id}
+                          className={cn(
+                            "flex min-w-0 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-colors",
+                            on ? "bg-sky-500/10 ring-1 ring-sky-500/30" : "hover:bg-muted",
+                          )}
+                        >
+                          <Checkbox checked={on} onCheckedChange={() => toggleEmp(e.id)} />
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate font-medium text-foreground">{e.fullName}</span>
+                            <span className="block truncate text-[11px] text-muted-foreground">{e.position || "Lavozim yo‘q"}</span>
+                          </span>
+                        </label>
+                      );
+                    })
                   )}
                 </div>
-                {selectedIds.length > 0 ? (
-                  <p className="mt-1 text-xs text-muted-foreground">{selectedIds.length} tanlandi</p>
-                ) : null}
               </div>
             )}
-            <div>
-              <Label>Amal qilish turi</Label>
+            <div className="min-w-0">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Amal qilish turi</Label>
               <Select value={permType} onValueChange={setPermType}>
-                <SelectTrigger className="mt-1 rounded-xl">
+                <SelectTrigger className="mt-1.5 h-10 rounded-xl">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -668,20 +710,20 @@ export default function AdminKochmaDavomatPage() {
             </div>
             {permType === "temporary" ? (
               <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <Label>Boshlanish</Label>
+                <div className="min-w-0">
+                  <Label className="text-xs text-muted-foreground">Boshlanish</Label>
                   <Input
                     type="date"
-                    className="mt-1 rounded-xl"
+                    className="mt-1 h-10 rounded-xl"
                     value={startDate}
                     onChange={(e) => setStartDate(e.target.value)}
                   />
                 </div>
-                <div>
-                  <Label>Tugash</Label>
+                <div className="min-w-0">
+                  <Label className="text-xs text-muted-foreground">Tugash</Label>
                   <Input
                     type="date"
-                    className="mt-1 rounded-xl"
+                    className="mt-1 h-10 rounded-xl"
                     value={endDate}
                     onChange={(e) => setEndDate(e.target.value)}
                   />
@@ -689,25 +731,32 @@ export default function AdminKochmaDavomatPage() {
               </div>
             ) : null}
             {permType === "weekdays" ? (
-              <div className="flex flex-wrap gap-2">
-                {WEEKDAYS.map((d) => (
-                  <label key={d.n} className="flex items-center gap-1.5 text-sm">
-                    <Checkbox
-                      checked={weekdays.includes(d.n)}
-                      onCheckedChange={(v) =>
-                        setWeekdays((prev) =>
-                          v ? [...prev, d.n] : prev.filter((x) => x !== d.n),
-                        )
+              <div className="flex flex-wrap gap-1.5">
+                {WEEKDAYS.map((d) => {
+                  const on = weekdays.includes(d.n);
+                  return (
+                    <button
+                      key={d.n}
+                      type="button"
+                      onClick={() =>
+                        setWeekdays((prev) => (on ? prev.filter((x) => x !== d.n) : [...prev, d.n]))
                       }
-                    />
-                    {d.l}
-                  </label>
-                ))}
+                      className={cn(
+                        "h-9 min-w-9 rounded-lg px-2.5 text-xs font-semibold transition-colors",
+                        on
+                          ? "bg-sky-600 text-white"
+                          : "bg-muted text-muted-foreground hover:text-foreground",
+                      )}
+                    >
+                      {d.l}
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
             {permType === "shift" ? (
               <Select value={shiftKey || "one"} onValueChange={setShiftKey}>
-                <SelectTrigger className="rounded-xl">
+                <SelectTrigger className="h-10 rounded-xl">
                   <SelectValue placeholder="Smena" />
                 </SelectTrigger>
                 <SelectContent>
@@ -717,31 +766,30 @@ export default function AdminKochmaDavomatPage() {
                 </SelectContent>
               </Select>
             ) : null}
-            <div>
-              <Label>Izoh</Label>
+            <div className="min-w-0">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Izoh</Label>
               <Textarea
-                className="mt-1 rounded-xl"
+                className="mt-1.5 min-h-[72px] resize-none rounded-xl"
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 placeholder="Mijozlar bilan tashqi ish"
               />
             </div>
-            <label className="flex items-center justify-between gap-3 rounded-xl border border-border px-3 py-2.5 text-sm">
-              <span>Ish vaqtida GPS yo‘nalishini qayd etish</span>
+            <label className="flex min-w-0 items-center justify-between gap-3 rounded-xl border border-border bg-card px-3 py-3 text-sm">
+              <span className="min-w-0 leading-snug">Ish vaqtida GPS yo‘nalishini qayd etish</span>
               <Switch checked={routeOn} onCheckedChange={setRouteOn} />
             </label>
             {routeOn ? (
-              <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                Yo‘nalish faqat brauzer/sahifa ochiq bo‘lganda ishlaydi — 100% background tracking
-                kafolatlanmaydi.
+              <p className="rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+                Yo‘nalish faqat sahifa ochiq turganida yoziladi. Telefon yopiq bo‘lsa, to‘liq kuzatuv kafolatlanmaydi.
               </p>
             ) : null}
           </div>
-          <DialogFooter>
-            <Button variant="outline" className="rounded-xl" onClick={() => setGrantOpen(false)}>
+          <DialogFooter className="shrink-0 gap-2 border-t border-border bg-muted/30 px-5 py-3 sm:space-x-0">
+            <Button variant="outline" className="h-10 rounded-xl" onClick={() => setGrantOpen(false)}>
               Bekor
             </Button>
-            <Button className="rounded-xl" disabled={busy} onClick={() => void onGrant()}>
+            <Button className="h-10 rounded-xl" disabled={busy} onClick={() => void onGrant()}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : "Saqlash"}
             </Button>
           </DialogFooter>
@@ -847,13 +895,16 @@ export default function AdminKochmaDavomatPage() {
 
       {/* Map */}
       <Dialog open={mapOpen} onOpenChange={setMapOpen}>
-        <DialogContent className="max-w-2xl rounded-2xl">
+        <DialogContent className="max-w-3xl rounded-2xl">
           <DialogHeader>
             <DialogTitle>Xarita — {mapTitle}</DialogTitle>
+            <p className="text-xs text-muted-foreground">
+              {pins.length} ta dorixona va asosiy ofis. Xodim yo‘li shu xaritada.
+            </p>
           </DialogHeader>
-          <MobileRouteMap points={mapPoints} height={380} />
+          <MobileRouteMap points={mapPoints} places={places} height={460} />
           <p className="text-[11px] text-muted-foreground">
-            🟢 Boshlanish · ⚪ GPS nuqtalar · 🔴 Yakun. Yo‘l faqat haqiqiy GPS nuqtalardan.
+            Qizil — dorixona, ko‘k — asosiy ofis. Yashil A va qizil B — xodimning haqiqiy GPS izi.
           </p>
         </DialogContent>
       </Dialog>

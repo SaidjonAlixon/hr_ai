@@ -378,6 +378,7 @@ export default function DavomatBloklashPage() {
                   </th>
                   <th className="px-3 py-2">Xodim</th>
                   <th className="px-3 py-2">Joy</th>
+                  <th className="px-3 py-2">Ish soati</th>
                   <th className="px-3 py-2">Holat</th>
                   <th className="px-3 py-2">Face ID</th>
                   <th className="px-3 py-2">QR</th>
@@ -402,6 +403,10 @@ export default function DavomatBloklashPage() {
                         <p className="text-[11px] text-slate-500">{positionOf(row)}{row.location ? ` · ${row.location}` : ""}</p>
                       </td>
                       <td className="px-3 py-2 text-xs">{row.place === "dorixona" ? "Dorixona" : "Ofis"}</td>
+                      <td className="px-3 py-2">
+                        <p className="font-semibold tabular-nums text-[#0f2744]">{row.scheduleHours || "—"}</p>
+                        <p className="text-[11px] text-slate-500">{row.scheduleLabel || (row.place === "dorixona" ? "Smena" : "Ofis")}</p>
+                      </td>
                       <td className="px-3 py-2">
                         <span className={cn(
                           "rounded-full px-2 py-0.5 text-[11px] font-semibold",

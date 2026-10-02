@@ -891,6 +891,7 @@ export default function DavomatFacePage() {
   const [workplace, setWorkplace] = useState<WorkplaceInfo | null>(null);
   const [historyDays, setHistoryDays] = useState<DavomatDayMetrics[]>([]);
   const [historyRange, setHistoryRange] = useState<"day" | "week" | "month">("week");
+  const [excuseOpenDate, setExcuseOpenDate] = useState<string | null>(null);
   const [faceRegistered, setFaceRegistered] = useState<boolean | null>(null);
   const [enrollOpen, setEnrollOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
@@ -2640,15 +2641,61 @@ export default function DavomatFacePage() {
           ) : filteredHistoryDays.length === 0 ? (
       <p className="px-3 py-6 text-center text-xs text-white/45">{t("davomat.rangeEmpty")}</p>
     ) : (
-      <ul className="divide-y divide-white/5">
+      <ul className="space-y-1.5 px-1.5 py-1.5">
         {filteredHistoryDays.slice(0, historyRange === "day" ? 1 : historyRange === "week" ? 7 : 14).map((d) => {
                       const isToday = d.date === todayStamp;
           const dayParts = splitDay(d.date, t);
+          const hoursLabel =
+            d.workedMinutes > 0
+              ? formatHours(d.workedMinutes, t)
+              : d.workedHours && d.workedHours !== "0:00" && d.workedHours !== "0"
+                ? d.workedHours
+                : `0 ${t("davomat.hourShort")}`;
+          if (d.excused) {
+            const noteOpen = excuseOpenDate === d.date;
+            return (
+              <li
+                key={d.date}
+                className="overflow-hidden rounded-2xl border border-emerald-300/35 bg-gradient-to-br from-emerald-500/30 via-teal-600/25 to-cyan-700/20 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]"
+              >
+                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-3 py-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-white">
+                      {dayParts.date}
+                      {isToday ? (
+                        <span className="ml-1.5 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-50">
+                          {t("davomat.todayTag")}
+                        </span>
+                      ) : null}
+                    </p>
+                    <p className="text-[11px] capitalize text-emerald-50/70">{dayParts.weekday}</p>
+                  </div>
+                  <p className="rounded-full border border-white/25 bg-white/15 px-3 py-1 text-center text-[13px] font-bold tracking-wide text-white">
+                    Sababli
+                  </p>
+                  <p className="text-right font-mono text-xs font-semibold tabular-nums text-emerald-50">{hoursLabel}</p>
+                </div>
+                {d.excuseNote ? (
+                  <button
+                    type="button"
+                    className="w-full border-t border-white/15 px-3 py-2 text-left"
+                    onClick={() => setExcuseOpenDate(noteOpen ? null : d.date)}
+                  >
+                    {noteOpen ? (
+                      <p className="text-[13px] leading-relaxed text-white">{d.excuseNote}</p>
+                    ) : (
+                      <p className="truncate text-[11px] font-medium text-emerald-50/85">{d.excuseNote}</p>
+                    )}
+                  </button>
+                ) : null}
+              </li>
+            );
+          }
                       return (
             <li
                           key={d.date}
                           className={cn(
-                "flex items-center justify-between gap-2 px-3 py-2.5",
+                "flex items-center justify-between gap-2 rounded-xl px-3 py-2.5",
                 isToday && "bg-sky-500/10",
               )}
             >
@@ -2667,21 +2714,8 @@ export default function DavomatFacePage() {
                   <span className="text-white/30"> · </span>
                   <span className="text-rose-300">{d.checkOut}</span>
                 </p>
-                <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-sky-300/95">
-                  {d.workedMinutes > 0
-                    ? formatHours(d.workedMinutes, t)
-                    : d.workedHours && d.workedHours !== "0:00" && d.workedHours !== "0"
-                      ? d.workedHours
-                      : `0 ${t("davomat.hourShort")}`}
-                </p>
-                <p className={cn("text-[10px]", d.excused ? "font-semibold text-teal-300" : "text-white/45")}>
-                  {d.excused ? "Sababli" : t(STATUS_KEYS[d.status] || d.status, d.status)}
-                </p>
-                {d.excused && d.excuseNote ? (
-                  <p className="max-w-[9rem] truncate text-[10px] text-teal-200/80" title={d.excuseNote}>
-                    {d.excuseNote}
-                  </p>
-                ) : null}
+                <p className="mt-0.5 text-[11px] font-semibold tabular-nums text-sky-300/95">{hoursLabel}</p>
+                <p className="text-[10px] text-white/45">{t(STATUS_KEYS[d.status] || d.status, d.status)}</p>
               </div>
             </li>
                       );

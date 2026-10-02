@@ -44,6 +44,7 @@ import {
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasFullPlatformAccess } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import {
   createEmptyAuditTemplate,
@@ -363,7 +364,7 @@ export default function ChecklistPage() {
   const watchRef = useRef<number | null>(null);
   const saveLockRef = useRef(false);
 
-  const canWrite = user?.role === "koordinator" || user?.role === "admin";
+  const canWrite = user?.role === "koordinator" || hasFullPlatformAccess(user?.role);
 
   // Ochiq tashrif bo‘lsa — faqat shu filial
   useEffect(() => {
@@ -455,7 +456,7 @@ export default function ChecklistPage() {
     !monthFull &&
     !visitedToday &&
     !(isCoord && openVisit?.presenceBlocked) &&
-    (user?.role === "admin" ||
+    (hasFullPlatformAccess(user?.role) ||
       (Boolean(selectedBranch) &&
         withinGeofence &&
         (!isCoord || (openVisit != null && String(openVisit.branchId) === managerId))));
@@ -996,7 +997,7 @@ export default function ChecklistPage() {
     }
   }
 
-  if (user?.role !== "koordinator" && user?.role !== "admin") {
+  if (user?.role !== "koordinator" && !hasFullPlatformAccess(user?.role)) {
     return (
       <div className="rounded-2xl border bg-card p-8 text-center shadow-sm">
         <Info className="mx-auto h-10 w-10 text-muted-foreground" />

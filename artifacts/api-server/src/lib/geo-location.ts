@@ -88,6 +88,21 @@ export function excelFilialLabel(
   return name;
 }
 
+/**
+ * O‘zbekiston ichidagi nuqta. Kenglik va uzunlik aniq almashtirilgan bo‘lsa tuzatiladi.
+ * Chegaradan tashqari yoki bo‘sh koordinata qaytmaydi — xaritaga taxminiy nuqta qo‘yilmaydi.
+ */
+export function coerceUzbekistanGps(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+): { lat: number; lng: number } | null {
+  if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  const inside = (a: number, b: number) => a >= 37.1 && a <= 45.6 && b >= 55.9 && b <= 73.2;
+  if (inside(lat, lng)) return { lat, lng };
+  if (inside(lng, lat)) return { lat: lng, lng: lat };
+  return null;
+}
+
 export function gpsFromLocationField(
   location: string | null | undefined,
 ): { lat: number; lng: number } | null {

@@ -622,7 +622,7 @@ router.post("/reviziya/documents/:id/advance", requireAuth, async (req: AuthRequ
 });
 
 function isReviziyaLike(role?: string | null) {
-  return role === "revizor" || role === "reviziya_rahbar" || role === "admin";
+  return role === "revizor" || role === "reviziya_rahbar" || role === "admin" || role === "director" || role === "asoschi";
 }
 
 router.post("/reviziya/documents/:id/otp", requireAuth, async (req: AuthRequest, res): Promise<void> => {

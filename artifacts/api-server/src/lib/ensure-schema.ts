@@ -559,6 +559,10 @@ CREATE INDEX IF NOT EXISTS attendance_records_date_idx ON attendance_records (wo
 CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records (employee_id);
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_latitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_longitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_latitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_longitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excuse_note TEXT;
@@ -702,6 +706,10 @@ CREATE INDEX IF NOT EXISTS attendance_records_date_idx ON attendance_records (wo
 CREATE INDEX IF NOT EXISTS attendance_records_employee_idx ON attendance_records (employee_id);
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_latitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_longitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_latitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_in_longitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_latitude DOUBLE PRECISION;
+ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS check_out_longitude DOUBLE PRECISION;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS distance_meters INTEGER;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excused BOOLEAN NOT NULL DEFAULT FALSE;
 ALTER TABLE attendance_records ADD COLUMN IF NOT EXISTS excuse_note TEXT;

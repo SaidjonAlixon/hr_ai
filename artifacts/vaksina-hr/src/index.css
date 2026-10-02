@@ -2708,3 +2708,9 @@ body.tg-mini-app #root {
 .ds-tab {
   @apply rounded-xl px-3.5 py-2 text-sm font-medium text-muted-foreground transition-all data-[state=active]:bg-slate-900 data-[state=active]:text-white data-[state=active]:shadow-md dark:data-[state=active]:bg-white dark:data-[state=active]:text-slate-900;
 }
+
+.leaflet-div-icon.kochma-pin {
+  background: transparent;
+  border: none;
+  overflow: visible;
+}

@@ -232,7 +232,7 @@ function groupNavItems(
   for (const sec of NAV_SECTIONS) {
     let paths =
       role === 'director' && sec.id === 'attendance'
-        ? ['/davomat', '/davomat/analytics', '/davomat/xatoliklar', '/smena-filial', '/checklist-holati', '/davomat-face']
+        ? ['/davomat/bloklash', '/davomat/dorixona-ochilishi', '/davomat-face', '/davomat', '/smena-filial', '/checklist-holati']
         : sec.paths;
     if (role === 'koordinator' && sec.id === 'main') {
       paths = ['/dashboard', '/admin/holat', '/admin/holat/xodim', ...paths.filter((p) => p !== '/dashboard')];
@@ -1723,12 +1723,13 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
 
   const userRole = normalizeUserRole(user.role);
   const oversightNav = hasHrOversightNav(userRole);
-  // Rolga mos menyu birinchi — Asoschi admin menyusini meros qilmasin (Foydalanuvchilar faqat admin)
+  // Korxona direktori admin menyusini oladi. Foydalanuvchilar keyinroq filtrlanadi.
   const resolvedBase = oversightNav
     ? hrOversightNav
-    : roleNavigation[userRole] ??
-      (hasFullPlatformAccess(userRole) ? roleNavigation.admin : null) ??
-      (userRole === 'director' ? roleNavigation.director : null) ?? [
+    : userRole === 'director'
+      ? roleNavigation.admin
+      : roleNavigation[userRole] ??
+      (hasFullPlatformAccess(userRole) ? roleNavigation.admin : null) ?? [
         { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       ];
   const roleNav = injectCommonNav(resolvedBase, userRole);
@@ -2109,7 +2110,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         <button
           type="button"
           aria-label={t('common.closeMenu')}
-          className="fixed inset-0 z-40 bg-[#06101c]/55 backdrop-blur-[2px] md:hidden"
+          className="fixed inset-0 z-[70] bg-[#06101c]/55 backdrop-blur-[2px] md:hidden"
           onClick={() => setMobileOpen(false)}
         />
       ) : null}
@@ -2118,7 +2119,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       <aside
         className={cn(
           'app-sidebar flex flex-col transition-[transform,width] duration-300 ease-out',
-          'fixed inset-y-0 left-0 z-50 w-[min(19.5rem,92vw)]',
+          'fixed inset-y-0 left-0 z-[80] w-[min(19.5rem,92vw)]',
           mobileOpen ? 'translate-x-0' : '-translate-x-full',
           'md:static md:z-auto md:translate-x-0',
           desktopCollapsed ? 'md:w-[4.75rem]' : 'md:w-[17rem]',

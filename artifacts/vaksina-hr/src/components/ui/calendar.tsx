@@ -40,7 +40,7 @@ function Calendar({
       showOutsideDays={showOutsideDays}
       weekStartsOn={weekStartsOn}
       className={cn(
-        'bg-background group/calendar p-4 [--cell-size:2.75rem] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent',
+        'bg-background group/calendar w-full max-w-full p-2 [--cell-size:2.15rem] sm:p-4 sm:[--cell-size:2.75rem] [[data-slot=card-content]_&]:bg-transparent [[data-slot=popover-content]_&]:bg-transparent',
         String.raw`rtl:**:[.rdp-button\_next>svg]:rotate-180`,
         String.raw`rtl:**:[.rdp-button\_previous>svg]:rotate-180`,
         className,
@@ -59,7 +59,7 @@ function Calendar({
         ...formatters,
       }}
       classNames={{
-        root: cn('w-fit min-w-[20rem]', defaultClassNames.root),
+        root: cn('w-full min-w-0 max-w-full', defaultClassNames.root),
         months: cn(
           'relative flex flex-col gap-4 md:flex-row',
           defaultClassNames.months,

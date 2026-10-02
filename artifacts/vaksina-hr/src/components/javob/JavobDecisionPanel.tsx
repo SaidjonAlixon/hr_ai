@@ -266,18 +266,18 @@ export function JavobDecisionPanel({ t, isHr, isCoord, isDept = false, userId }:
           </Button>
         </div>
 
-        <div className={cn("grid gap-1 rounded-xl bg-muted p-1", tabs.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        <div className="flex gap-1 overflow-x-auto rounded-xl bg-muted p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {tabs.map((x) => (
             <button
               key={x.key}
               type="button"
               onClick={() => setTab(x.key)}
               className={cn(
-                "flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-2 text-[11px] font-semibold transition sm:flex-row sm:gap-1.5 sm:text-sm",
+                "flex min-w-0 flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-2 py-2 text-[11px] font-semibold transition sm:flex-row sm:gap-1.5 sm:text-sm",
                 tab === x.key ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
               )}
             >
-              <span className="flex items-center gap-1">
+              <span className="flex max-w-full items-center gap-1">
                 <x.icon className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
                 <span className="truncate">{x.label}</span>
               </span>

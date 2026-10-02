@@ -17,7 +17,7 @@ import {
   branchNeedsTable,
 } from "@workspace/db";
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
-import { isHrDirektor, isHrOversight } from "../lib/roles";
+import { hasFullPlatformAccess, isHrDirektor, isHrOversight } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -696,7 +696,7 @@ async function loadCoordinatorOps(
 
 /** Barcha faol foydalanuvchilar — ism + lavozim bo‘yicha tanlash */
 router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!isHrOversight(req.userRole) && req.userRole !== "admin") {
+  if (!isHrOversight(req.userRole) && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat HR Direktor yoki HR Auditor ko‘ra oladi" });
     return;
   }
@@ -777,12 +777,12 @@ router.get("/kuzatuv/people", requireAuth, async (req: AuthRequest, res): Promis
 });
 
 router.get("/kuzatuv", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!isHrOversight(req.userRole) && req.userRole !== "admin") {
+  if (!isHrOversight(req.userRole) && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat HR Direktor yoki HR Auditor ko‘ra oladi" });
     return;
   }
 
-  const full = isHrDirektor(req.userRole) || req.userRole === "admin";
+  const full = isHrDirektor(req.userRole) || hasFullPlatformAccess(req.userRole);
 
   const recruiters = await db
     .select({
@@ -1124,12 +1124,12 @@ const PHONE_STATUS: Record<string, string> = {
 
 router.get("/kuzatuv/person/:id", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
-  if (!isHrOversight(req.userRole) && req.userRole !== "admin") {
+  if (!isHrOversight(req.userRole) && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat HR Direktor yoki HR Auditor ko‘ra oladi" });
     return;
   }
 
-  const full = isHrDirektor(req.userRole) || req.userRole === "admin";
+  const full = isHrDirektor(req.userRole) || hasFullPlatformAccess(req.userRole);
   const personId = parseInt(Array.isArray(req.params.id) ? req.params.id[0] : req.params.id, 10);
   if (!personId || Number.isNaN(personId)) {
     res.status(400).json({ error: "Noto‘g‘ri ID" });

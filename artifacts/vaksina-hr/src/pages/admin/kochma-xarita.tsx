@@ -7,18 +7,26 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import {
   MobileRouteMap,
+  OFFICE_MAP_PLACE,
   formatRouteDistance,
   formatRouteDuration,
   routeDistanceMeters,
+  type MapPlace,
   type RoutePoint,
 } from "@/components/davomat/MobileRouteMap";
-import { ExternalMapsLinks } from "@/components/davomat/ExternalMapsLinks";
+import { ExternalMapsLinks, PlaceNavLinks } from "@/components/davomat/ExternalMapsLinks";
+import { BranchPinSearch } from "@/components/davomat/BranchPinSearch";
 import {
   fetchMobilePermissions,
   fetchMobileSessionDetail,
+  fetchDayAttendancePlaces,
   fetchMobileSessions,
+  fetchPharmacyMapPins,
+  type DayAttendanceMark,
   type MobilePermissionRow,
+  type PharmacyMapPin,
 } from "@/lib/mobile-attendance-api";
+import { foldScript } from "@/lib/script-fold";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
@@ -57,6 +65,8 @@ type PermEmp = {
   tracking: boolean;
   hasSession: boolean;
   sessionStatus: string | null;
+  checkInAt?: string | null;
+  checkOutAt?: string | null;
 };
 
 function todayYmdLocal(): string {
@@ -148,6 +158,7 @@ export default function AdminKochmaXaritaPage() {
   const [date, setDate] = useState(todayYmdLocal);
   const [empId, setEmpId] = useState<number | "">("");
   const [perms, setPerms] = useState<MobilePermissionRow[]>([]);
+  const [dayMarks, setDayMarks] = useState<DayAttendanceMark[]>([]);
   const [daySessions, setDaySessions] = useState<SessionRow[]>([]);
   const [empSessions, setEmpSessions] = useState<SessionRow[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
@@ -155,6 +166,11 @@ export default function AdminKochmaXaritaPage() {
   const [loadingList, setLoadingList] = useState(false);
   const [loadingMap, setLoadingMap] = useState(false);
   const [empQ, setEmpQ] = useState("");
+  const [pins, setPins] = useState<PharmacyMapPin[]>([]);
+  const [pinsWithoutGps, setPinsWithoutGps] = useState(0);
+  const [selectedPin, setSelectedPin] = useState<PharmacyMapPin | null>(null);
+  const [focusPinId, setFocusPinId] = useState<number | null>(null);
+  const [focusToken, setFocusToken] = useState(0);
 
   const employees = useMemo((): PermEmp[] => {
     const sessByEmp = new Map<number, SessionRow>();
@@ -164,7 +180,32 @@ export default function AdminKochmaXaritaPage() {
         sessByEmp.set(s.employeeId, s);
       }
     }
-    const q = empQ.trim().toLowerCase();
+    const q = foldScript(empQ.trim());
+    if (dayMarks.length > 0) {
+      return dayMarks
+        .map((m) => ({
+          id: m.employeeId,
+          name: m.fullName,
+          position: m.position,
+          location: m.location,
+          tracking: Boolean(m.sessionId),
+          hasSession: true,
+          sessionStatus: m.sessionStatus ?? (m.checkOutAt ? "closed" : "open"),
+          checkInAt: m.checkInAt,
+          checkOutAt: m.checkOutAt,
+        }))
+        .filter((e) => {
+          const name = e.name.trim();
+          if (!name || /^Xodim #\d+$/.test(name)) return false;
+          return (
+            !q ||
+            foldScript(name).includes(q) ||
+            foldScript(String(e.position || "")).includes(q) ||
+            foldScript(String(e.location || "")).includes(q)
+          );
+        })
+        .sort((a, b) => String(b.checkInAt || "").localeCompare(String(a.checkInAt || "")));
+    }
     return perms
       .map((p) => {
         const sess = sessByEmp.get(p.employeeId);
@@ -178,18 +219,21 @@ export default function AdminKochmaXaritaPage() {
           sessionStatus: sess?.status ?? null,
         };
       })
-      .filter(
-        (e) =>
+      .filter((e) => {
+        const name = e.name.trim();
+        if (!name || /^Xodim #\d+$/.test(name)) return false;
+        return (
           !q ||
-          e.name.toLowerCase().includes(q) ||
-          String(e.position || "").toLowerCase().includes(q) ||
-          String(e.location || "").toLowerCase().includes(q),
-      )
+          foldScript(name).includes(q) ||
+          foldScript(String(e.position || "")).includes(q) ||
+          foldScript(String(e.location || "")).includes(q)
+        );
+      })
       .sort((a, b) => {
         if (a.hasSession !== b.hasSession) return a.hasSession ? -1 : 1;
         return a.name.localeCompare(b.name, "uz");
       });
-  }, [perms, daySessions, empQ]);
+  }, [perms, daySessions, dayMarks, empQ]);
 
   const selectedEmp = employees.find((e) => e.id === empId);
   const selectedSession =
@@ -204,6 +248,11 @@ export default function AdminKochmaXaritaPage() {
       ]);
       setPerms(p.permissions);
       setDaySessions(s.sessions as SessionRow[]);
+      const day = await fetchDayAttendancePlaces(date);
+      setDayMarks(day.marks);
+      const branches = await fetchPharmacyMapPins();
+      setPins(branches.pins);
+      setPinsWithoutGps(branches.withoutGps);
     } catch (e) {
       toast({
         title: "Yuklanmadi",
@@ -226,9 +275,28 @@ export default function AdminKochmaXaritaPage() {
       setPoints([]);
       return;
     }
-    // Ruxsat yo‘q xodim tanlanmasin
-    if (!perms.some((p) => p.employeeId === empId)) {
-      setEmpId("");
+    const mark = dayMarks.find((m) => m.employeeId === empId);
+    if (mark && !mark.sessionId) {
+      setEmpSessions([]);
+      setSessionId(null);
+      const pts: RoutePoint[] = [];
+      if (mark.checkInLat != null && mark.checkInLng != null) {
+        pts.push({
+          lat: mark.checkInLat,
+          lng: mark.checkInLng,
+          kind: "start",
+          time: fmtTime(mark.checkInAt),
+        });
+      }
+      if (mark.checkOutLat != null && mark.checkOutLng != null) {
+        pts.push({
+          lat: mark.checkOutLat,
+          lng: mark.checkOutLng,
+          kind: "end",
+          time: fmtTime(mark.checkOutAt),
+        });
+      }
+      setPoints(pts);
       return;
     }
     void (async () => {
@@ -249,13 +317,14 @@ export default function AdminKochmaXaritaPage() {
         setLoadingList(false);
       }
     })();
-  }, [empId, date, perms, toast]);
+  }, [empId, date, dayMarks, toast]);
 
   useEffect(() => {
-    if (!sessionId) {
-      setPoints([]);
-      return;
-    }
+    if (!empId) return;
+    const mark = dayMarks.find((m) => m.employeeId === Number(empId));
+    if (mark && !mark.sessionId) return;
+    if (mark?.sessionId && sessionId !== mark.sessionId) return;
+    if (!sessionId) return;
     const row =
       empSessions.find((s) => s.id === sessionId) || daySessions.find((s) => s.id === sessionId);
     if (row) setPoints(pointsFromSessionRow(row));
@@ -280,7 +349,31 @@ export default function AdminKochmaXaritaPage() {
     return () => {
       cancelled = true;
     };
-  }, [sessionId, empSessions, daySessions, toast]);
+  }, [sessionId, empSessions, daySessions, toast, empId, dayMarks]);
+
+  const pickBranch = (p: PharmacyMapPin) => {
+    setSelectedPin(p);
+    setFocusPinId(p.id);
+    setFocusToken((n) => n + 1);
+  };
+
+  const places = useMemo<MapPlace[]>(
+    () => [
+      OFFICE_MAP_PLACE,
+      ...pins.map((p) => ({
+        id: p.id,
+        lat: p.lat,
+        lng: p.lng,
+        name: p.name,
+        mudirName: p.mudirName,
+        coordinatorName: p.coordinatorName,
+        phone: p.phone,
+        hours: p.hours || "Belgilanmagan",
+        tone: "branch" as const,
+      })),
+    ],
+    [pins],
+  );
 
   const distanceM = points.length >= 2 ? routeDistanceMeters(points) : 0;
   const distanceLabel = formatRouteDistance(distanceM);
@@ -310,8 +403,8 @@ export default function AdminKochmaXaritaPage() {
               Ko‘chma xarita
             </h1>
             <p className="mt-1 max-w-xl text-sm text-muted-foreground">
-              Faqat Ko‘chma davomatga ruxsat berilgan xodimlar — tanlang, qayerdan kelgani / ketgani
-              to‘liq GPS yo‘li (A → B).
+              Barcha dorixonalar saqlangan GPS nuqtada. Nuqtani bosing — filial nomi, mudir,
+              koordinator va dorixona raqami chiqadi. Xodim tanlansa, uning A → B yo‘li ham shu xaritada.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -351,7 +444,7 @@ export default function AdminKochmaXaritaPage() {
           </div>
           <div>
             <label className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-              Xodim qidirish
+              Xodim qidirish (krill / lotin)
             </label>
             <Input
               value={empQ}
@@ -360,10 +453,11 @@ export default function AdminKochmaXaritaPage() {
               className="mt-1.5 rounded-xl"
             />
           </div>
+          <BranchPinSearch pins={pins} onPick={pickBranch} />
           <div>
             <div className="mb-1.5 flex items-center justify-between gap-2">
               <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Ruxsat berilganlar
+                {dayMarks.length > 0 ? "Shu kuni davomat" : "Ruxsat berilganlar"}
               </span>
               <Badge variant="secondary" className="rounded-full text-[10px] font-normal">
                 {employees.length}
@@ -414,8 +508,12 @@ export default function AdminKochmaXaritaPage() {
                     </span>
                     <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
                       <MapPin className="h-3 w-3" />
-                      Tracking {e.tracking ? "ON" : "OFF"}
-                      {e.hasSession ? " · bugun yo‘l bor" : " · bugun sessiyasi yo‘q"}
+                      {e.checkInAt
+                        ? `${fmtTime(e.checkInAt)} – ${fmtTime(e.checkOutAt)}`
+                        : e.hasSession
+                          ? "bugun yo‘l bor"
+                          : "GPS yo‘q"}
+                      {e.tracking ? " · yo‘l yozilgan" : ""}
                     </span>
                   </button>
                 ))
@@ -522,23 +620,101 @@ export default function AdminKochmaXaritaPage() {
           ) : null}
         </aside>
 
-        <section className="overflow-hidden rounded-2xl border border-border bg-card shadow-sm">
-          <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-2.5">
-            <div className="text-sm font-semibold">{selectedEmp?.name || "Xarita"}</div>
+        <section className="rounded-2xl border border-border bg-card shadow-sm">
+          <div className="flex flex-col gap-2 border-b border-border px-4 py-2.5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="min-w-0">
+              <div className="text-sm font-semibold">{selectedEmp?.name || "Xarita"}</div>
+              <p className="text-[11px] text-muted-foreground">
+                {pins.length} ta dorixona nuqtada
+                {pinsWithoutGps > 0 ? ` · ${pinsWithoutGps} tasida joylashuv yo‘q, qo‘yilmadi` : ""}
+              </p>
+            </div>
             {loadingMap ? <Loader2 className="h-4 w-4 animate-spin text-sky-600" /> : null}
           </div>
-          <MobileRouteMap
-            points={points}
-            height="min(74vh, 720px)"
-            className="min-h-[min(74vh,720px)] w-full"
-            emptyHint={
-              !empId
-                ? "Chapdan ruxsat berilgan xodimni tanlang — A→B yo‘nalish chiqadi"
-                : !sessionId
-                  ? "Shu kuni GPS sessiyasi yo‘q — xodim Davomatda Keldim bosganida chiqadi"
-                  : "Bu sessiyada GPS nuqtalari hali yo‘q"
-            }
-          />
+          <div className="relative overflow-hidden rounded-b-2xl">
+            <MobileRouteMap
+              points={points}
+              places={places}
+              focusPlaceId={focusPinId}
+              focusToken={focusToken}
+              onPlaceSelect={(p) => {
+                const row =
+                  p.id === OFFICE_MAP_PLACE.id
+                    ? {
+                        id: OFFICE_MAP_PLACE.id,
+                        name: OFFICE_MAP_PLACE.name,
+                        lat: OFFICE_MAP_PLACE.lat,
+                        lng: OFFICE_MAP_PLACE.lng,
+                        mudirName: "",
+                        coordinatorName: "",
+                        phone: "",
+                        hours: OFFICE_MAP_PLACE.hours,
+                      }
+                    : pins.find((x) => x.id === p.id) || null;
+                setSelectedPin(row);
+                setFocusPinId(p.id);
+              }}
+              height="min(74vh, 720px)"
+              className="min-h-[min(74vh,720px)] w-full"
+              emptyHint={
+                pins.length
+                  ? ""
+                  : !empId
+                    ? "Chapdan ruxsat berilgan xodimni tanlang — A→B yo‘nalish chiqadi"
+                    : !sessionId
+                      ? "Shu kuni GPS sessiyasi yo‘q — xodim Davomatda Keldim bosganida chiqadi"
+                      : "Bu sessiyada GPS nuqtalari hali yo‘q"
+              }
+            />
+            {selectedPin ? (
+              <div className={cn(
+                "pointer-events-auto absolute bottom-4 left-1/2 z-[1000] w-[min(92%,380px)] -translate-x-1/2 rounded-2xl border bg-white/95 p-3 shadow-xl backdrop-blur dark:bg-slate-950/95",
+                selectedPin.id < 0 ? "border-blue-300 dark:border-blue-800" : "border-teal-200 dark:border-teal-800",
+              )}>
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className={cn(
+                      "text-[10px] font-bold uppercase tracking-wide",
+                      selectedPin.id < 0 ? "text-blue-700 dark:text-blue-300" : "text-teal-700 dark:text-teal-300",
+                    )}>
+                      {selectedPin.id < 0 ? "Asosiy ofis" : "Dorixona"}
+                    </p>
+                    <p className="text-base font-bold leading-tight">{selectedPin.name}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-lg px-2 py-1 text-xs text-muted-foreground hover:bg-muted"
+                    onClick={() => setSelectedPin(null)}
+                  >
+                    Yopish
+                  </button>
+                </div>
+                <dl className="mt-2 space-y-1 text-sm">
+                  {selectedPin.id < 0 ? null : (
+                    <>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-muted-foreground">Mudir</dt>
+                        <dd className="font-medium">{selectedPin.mudirName}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-muted-foreground">Koordinator</dt>
+                        <dd className="font-medium">{selectedPin.coordinatorName}</dd>
+                      </div>
+                      <div className="flex gap-2">
+                        <dt className="w-28 shrink-0 text-muted-foreground">Dorixona raqami</dt>
+                        <dd className="font-medium">{selectedPin.phone}</dd>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex gap-2">
+                    <dt className="w-28 shrink-0 text-muted-foreground">Ish vaqti</dt>
+                    <dd className="font-medium">{selectedPin.hours || "Belgilanmagan"}</dd>
+                  </div>
+                </dl>
+                <PlaceNavLinks lat={selectedPin.lat} lng={selectedPin.lng} name={selectedPin.name} />
+              </div>
+            ) : null}
+          </div>
         </section>
       </div>
     </div>

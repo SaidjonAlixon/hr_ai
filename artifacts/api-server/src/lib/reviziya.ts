@@ -44,7 +44,7 @@ export function canAssignReviziya(role?: string | null): boolean {
 
 /** Faqat koordinator filial uchun reviziya arizasi qoldiradi */
 export function canCreateReviziyaVisit(role?: string | null): boolean {
-  return role === "koordinator" || role === "admin";
+  return role === "koordinator" || role === "admin" || isDirectorRole(role);
 }
 
 /** Arizani qabul qilib kun/revizor belgilash — reviziya rahbari + rahbariyat */
@@ -65,11 +65,11 @@ export function canCorrectReviziyaAmounts(role?: string | null): boolean {
 }
 
 export function canCreateReviziyaDoc(role?: string | null): boolean {
-  return isReviziyaRole(role) || role === "admin";
+  return isReviziyaRole(role) || role === "admin" || isDirectorRole(role);
 }
 
 export function canApproveReviziyaHead(role?: string | null): boolean {
-  return role === "reviziya_rahbar" || role === "admin";
+  return role === "reviziya_rahbar" || role === "admin" || isDirectorRole(role);
 }
 
 export function canApproveAccountant(role?: string | null): boolean {

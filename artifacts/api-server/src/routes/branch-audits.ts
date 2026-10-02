@@ -1202,7 +1202,7 @@ router.get("/branch-audits/my-visit", requireAuth, async (req: AuthRequest, res)
     res.status(401).json({ error: "Avtorizatsiya kerak" });
     return;
   }
-  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+  if (req.userRole !== "koordinator" && !hasFullPlatformAccess(req.userRole)) {
     res.json({ visit: null });
     return;
   }
@@ -1229,7 +1229,7 @@ router.get("/branch-audits/my-office-stays", requireAuth, async (req: AuthReques
     res.status(401).json({ error: "Avtorizatsiya kerak" });
     return;
   }
-  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+  if (req.userRole !== "koordinator" && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat koordinator" });
     return;
   }
@@ -1285,7 +1285,7 @@ router.post("/branch-audits/my-visit/start", requireAuth, async (req: AuthReques
     res.status(401).json({ error: "Avtorizatsiya kerak" });
     return;
   }
-  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+  if (req.userRole !== "koordinator" && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat koordinator" });
     return;
   }
@@ -1374,7 +1374,7 @@ router.post("/branch-audits/my-visit/confirm-presence", requireAuth, async (req:
     res.status(401).json({ error: "Avtorizatsiya kerak" });
     return;
   }
-  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+  if (req.userRole !== "koordinator" && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat koordinator" });
     return;
   }
@@ -1421,7 +1421,7 @@ router.post("/branch-audits/my-visit/request-unlock", requireAuth, async (req: A
     res.status(401).json({ error: "Avtorizatsiya kerak" });
     return;
   }
-  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+  if (req.userRole !== "koordinator" && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat koordinator" });
     return;
   }
@@ -1544,7 +1544,7 @@ router.post("/branch-audits/my-visit/finish", requireAuth, async (req: AuthReque
     res.status(401).json({ error: "Avtorizatsiya kerak" });
     return;
   }
-  if (req.userRole !== "koordinator" && req.userRole !== "admin") {
+  if (req.userRole !== "koordinator" && !hasFullPlatformAccess(req.userRole)) {
     res.status(403).json({ error: "Faqat koordinator" });
     return;
   }

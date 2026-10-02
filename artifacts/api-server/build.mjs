@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { rm } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 
 const artifactDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(artifactDir, "../..");
@@ -161,6 +161,11 @@ async function buildAll() {
     plugins: [workspaceResolvePlugin(), esbuildPluginPino({ transports: ["pino-pretty"] })],
     banner,
   });
+
+  const fontSrc = path.join(artifactDir, "assets", "fonts");
+  const fontDest = path.join(distDir, "fonts");
+  await mkdir(fontDest, { recursive: true });
+  await cp(fontSrc, fontDest, { recursive: true });
 }
 
 buildAll().catch((err) => {

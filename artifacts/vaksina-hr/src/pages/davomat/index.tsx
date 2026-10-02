@@ -91,6 +91,7 @@ import { cn } from "../../lib/utils";
 import { scriptIncludes } from "../../lib/script-search";
 import {
   downloadDavomatExcel,
+  downloadDavomatDayPdf,
   fetchDavomat,
   resetDavomatManual,
   type DavomatResetPart,
@@ -138,6 +139,7 @@ import {
   matchesWarehouseShift,
   warehouseShiftOptions,
   matchesPharmacyShift,
+  pharmacyShiftBucket,
   PHARMACY_SHIFT_OPTIONS,
   type PharmacyShiftFilter,
 } from "../../lib/davomat-staff-filter";
@@ -193,6 +195,29 @@ function formatLongDate(ymd: string, locale: "uz" | "ru"): string {
   const month = (locale === "ru" ? MONTHS_RU : MONTHS_UZ)[d.getMonth()];
   const weekday = (locale === "ru" ? WEEKDAYS_RU : WEEKDAYS_UZ)[d.getDay()];
   return `${day} ${month} ${d.getFullYear()}, ${weekday}`;
+}
+
+/** ISO vaqt → «2-oktabr 2026-yil, juma, soat 12:34» (Toshkent) */
+function formatExcuseStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(d);
+  const pick = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)?.value ?? "";
+  const year = Number(pick("year"));
+  const month = Number(pick("month"));
+  const day = Number(pick("day"));
+  if (!year || !month || !day) return iso;
+  const monthName = MONTHS_UZ[month - 1] ?? String(month);
+  const weekday = WEEKDAYS_UZ[new Date(Date.UTC(year, month - 1, day, 12)).getUTCDay()] ?? "";
+  return `${day}-${monthName} ${year}-yil, ${weekday}, soat ${pick("hour")}:${pick("minute")}`;
 }
 
 /** 2026-09-07 → 07.09.2026 */
@@ -843,14 +868,17 @@ export default function DavomatPage() {
   }, [report, viewFilter, officeInner, warehouseShift, pharmacyShift, pharmacyCoordinator, pharmacyBranch, pharmacyBranchById, farOfficeIds]);
 
   const pharmacyShiftCounts = useMemo(() => {
-    const counts = { shift_one: 0, shift_two: 0 };
+    const counts = { all: 0, shift_one: 0, shift_two: 0, shift_12: 0, shift_23: 0 };
     if (viewFilter !== "pharmacy" || !report) return counts;
     for (const emp of report.employees) {
       if (!matchesStaffFilter(emp, "pharmacy")) continue;
       if (pharmacyCoordinator !== "all" && String(emp.coordinatorId ?? "none") !== pharmacyCoordinator) continue;
       if (pharmacyBranch !== "all" && (pharmacyBranchById.get(emp.id)?.key ?? "none") !== pharmacyBranch) continue;
+      counts.all += 1;
       if (matchesPharmacyShift(emp, "shift_two")) counts.shift_two += 1;
-      else counts.shift_one += 1;
+      else if (matchesPharmacyShift(emp, "shift_12")) counts.shift_12 += 1;
+      else if (matchesPharmacyShift(emp, "shift_23")) counts.shift_23 += 1;
+      else if (matchesPharmacyShift(emp, "shift_one")) counts.shift_one += 1;
     }
     return counts;
   }, [report, viewFilter, pharmacyCoordinator, pharmacyBranch, pharmacyBranchById]);
@@ -1275,31 +1303,13 @@ export default function DavomatPage() {
         (section === "totals" && periodFrom === periodTo);
 
       if (isSingleDay) {
-        const dayRows =
-          section === "schedule" && calMode === "day"
-            ? visibleEmployeesForDay.map(({ emp, day }) => ({ emp, day: day! }))
-            : filteredEmployees
-                .map((emp) => {
-                  const day = emp.days.find((d) => d.date === periodFrom);
-                  return day ? { emp, day } : null;
-                })
-                .filter((x): x is { emp: DavomatEmployee; day: DavomatDayMetrics } => !!x);
         const dayYmd = section === "schedule" ? selectedDay : periodFrom;
-        await downloadDavomatPdf({
-          mode: "day",
-          title: `${t("davomat.title")} · ${t("davomat.dayReport")}`,
-          subtitle: showShiftCol
-            ? `${dayYmd} · ${staffGroupLabel}`
-            : `${dayYmd} · ${activeWorkHours.start}–${activeWorkHours.end}`,
+        const ids = filteredEmployees.map((emp) => emp.id);
+        if (!ids.length) throw new Error("PDF uchun xodim yo‘q");
+        await downloadDavomatDayPdf({
+          date: dayYmd,
+          employeeIds: ids,
           filterLine,
-          statsLine: `${t("davomat.peopleCount")}: ${dayRows.length} · ${t("davomat.arrived")}: ${filteredDayStats.present} · ${t("davomat.lateShort")}: ${filteredDayStats.late} · ${t("davomat.absent")}: ${filteredDayStats.absent}`,
-          fileBase: `davomat_${dayYmd}`,
-          statusLabel,
-          statusShort,
-          dayRows,
-          showShiftCol,
-          workStart: activeWorkHours.start,
-          workEnd: activeWorkHours.end,
         });
       } else {
         const dates = section === "totals" ? report.dates : periodDates;
@@ -2129,7 +2139,7 @@ export default function DavomatPage() {
               </SelectTrigger>
               <SelectContent position="popper" className="z-[90]">
                 <SelectItem value="all">
-                  Barcha smenalar ({pharmacyShiftCounts.shift_one + pharmacyShiftCounts.shift_two})
+                  Barcha smenalar ({pharmacyShiftCounts.all})
                 </SelectItem>
                 {PHARMACY_SHIFT_OPTIONS.map((opt) => (
                   <SelectItem key={opt.key} value={opt.key}>
@@ -2703,27 +2713,47 @@ export default function DavomatPage() {
                                   start: day!.planStart || workHoursForEmployee(emp).start,
                                   end: day!.planEnd || workHoursForEmployee(emp).end,
                                 };
+                                const plan = String(day!.planShift || "");
                                 const shiftName =
-                                  day!.planShift === "one"
-                                    ? "1-smena"
-                                    : day!.planShift === "two"
-                                      ? "2-smena"
-                                      : day!.planShift === "three"
-                                        ? "3-smena"
-                                        : day!.planShift === "office"
-                                          ? "Ofis"
-                                          : null;
+                                  plan === "one+two"
+                                    ? "1+2"
+                                    : plan === "two+three"
+                                      ? "2+3"
+                                      : plan === "one+three"
+                                        ? "1+3"
+                                        : plan === "one"
+                                          ? "1-smena"
+                                          : plan === "two"
+                                            ? "2-smena"
+                                            : plan === "three"
+                                              ? "3-smena"
+                                              : plan === "office"
+                                                ? "Ofis"
+                                                : null;
                                 const kind = classifyDavomatStaff(emp);
+                                const bucket = pharmacyShiftBucket(emp);
+                                const assigned =
+                                  bucket === "shift_12"
+                                    ? "1+2"
+                                    : bucket === "shift_23"
+                                      ? "2+3"
+                                      : bucket === "shift_three"
+                                        ? "3-smena"
+                                        : bucket === "shift_two"
+                                          ? "2-smena"
+                                          : "1-smena";
                                 const base =
-                                  shiftName && day!.planCustom
+                                  day!.planCustom && shiftName
                                     ? `${shiftName} · ${h.start}–${h.end}`
-                                    : kind === "shift_one" || kind === "shift_two"
-                                      ? `${kind === "shift_two" ? "2-smena" : "1-smena"} · ${h.start}–${h.end}`
-                                      : kind === "warehouse" || kind === "security"
-                                        ? emp.shiftLabel
-                                          ? `${emp.shiftLabel} · ${h.start}–${h.end}`
-                                          : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`
-                                        : `${h.start}–${h.end}`;
+                                    : shiftName === "1+2" || shiftName === "2+3" || shiftName === "1+3"
+                                      ? `${shiftName} · ${h.start}–${h.end}`
+                                      : kind === "shift_one" || kind === "shift_two"
+                                        ? `${assigned} · ${h.start}–${h.end}`
+                                        : kind === "warehouse" || kind === "security"
+                                          ? emp.shiftLabel
+                                            ? `${emp.shiftLabel} · ${h.start}–${h.end}`
+                                            : `${smenaLabelShort(emp)} · ${h.start}–${h.end}`
+                                          : `${h.start}–${h.end}`;
                                 return day!.planCustom ? `${base} · o‘zgartirilgan` : base;
                               })()}
                             </td>
@@ -3406,28 +3436,21 @@ export default function DavomatPage() {
               <p className="text-xs text-muted-foreground">
                 <span className="font-semibold text-foreground">{noteView.fullName}</span>
                 {" · "}
-                {noteView.workDate}
+                {formatLongDate(noteView.workDate, "uz")}
               </p>
               {noteView.excused ? (
-                <div className="space-y-1 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2.5 text-xs leading-relaxed text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
+                <div className="space-y-1.5 rounded-xl border border-teal-200 bg-teal-50 px-3 py-2.5 text-sm leading-relaxed text-teal-950 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-100">
                   <p>
-                    Holat:{" "}
-                    <span className="font-semibold">
-                      {t(STATUS_KEYS[noteView.status || ""] || noteView.status || "", noteView.status)}
-                    </span>
-                    {" · "}jarima qilinmaydi
+                    <span className="font-semibold">Kim belgilagan:</span>{" "}
+                    {noteView.excusedByName || "noma’lum"}
                   </p>
-                  <p>Kim: {noteView.excusedByName || "—"}</p>
                   {noteView.excusedAt ? (
                     <p>
-                      Qachon:{" "}
-                      {new Intl.DateTimeFormat("uz-UZ", {
-                        timeZone: "Asia/Tashkent",
-                        dateStyle: "medium",
-                        timeStyle: "short",
-                      }).format(new Date(noteView.excusedAt))}
+                      <span className="font-semibold">Qachon belgilangan:</span>{" "}
+                      {formatExcuseStamp(noteView.excusedAt)}
                     </p>
                   ) : null}
+                  <p>Bu kun jarimasiz hisoblanadi.</p>
                 </div>
               ) : null}
               <p
@@ -3895,7 +3918,8 @@ function dayCellTooltip(
   if (day.excused) {
     lines.unshift("Sababli (jarimasiz)");
     if (day.excuseNote?.trim()) lines.push(`Izoh: ${day.excuseNote.trim()}`);
-    if (day.excusedByName) lines.push(`Belgiladi: ${day.excusedByName}`);
+    if (day.excusedByName) lines.push(`Kim belgilagan: ${day.excusedByName}`);
+    if (day.excusedAt) lines.push(`Qachon belgilangan: ${formatExcuseStamp(day.excusedAt)}`);
   } else if (canSeeNotes && day.notes?.trim()) {
     lines.push(`Izoh: ${day.notes.trim()}`);
   }

@@ -205,6 +205,27 @@ export async function fetchMobileLive(employeeId?: number) {
   }>(`/mobile-attendance/live${qs}`);
 }
 
+export type DayAttendanceMark = {
+  employeeId: number;
+  fullName: string;
+  position: string | null;
+  location: string | null;
+  checkInAt: string | null;
+  checkOutAt: string | null;
+  checkInLat: number | null;
+  checkInLng: number | null;
+  checkOutLat: number | null;
+  checkOutLng: number | null;
+  sessionId: number | null;
+  sessionStatus: string | null;
+};
+
+export async function fetchDayAttendancePlaces(date: string) {
+  return api<{ date: string; marks: DayAttendanceMark[] }>(
+    `/mobile-attendance/day-places?date=${encodeURIComponent(date)}`,
+  );
+}
+
 export async function fetchMobileSessionDetail(id: number) {
   return api<MobileSessionDetail>(`/mobile-attendance/sessions/${id}`);
 }
@@ -351,6 +372,23 @@ export async function ensureMobileTrack(gps?: {
     method: "POST",
     body: JSON.stringify(gps || {}),
   });
+}
+
+export type PharmacyMapPin = {
+  id: number;
+  name: string;
+  lat: number;
+  lng: number;
+  mudirName: string;
+  coordinatorName: string;
+  phone: string;
+  hours: string;
+};
+
+export async function fetchPharmacyMapPins() {
+  return api<{ pins: PharmacyMapPin[]; total: number; withoutGps: number }>(
+    "/mobile-attendance/branches",
+  );
 }
 
 export function getCurrentPosition(timeoutMs = 12_000): Promise<GeolocationPosition> {

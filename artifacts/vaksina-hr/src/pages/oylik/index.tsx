@@ -83,7 +83,7 @@ function FilterChip({
     rose: "border-rose-600 bg-rose-600 text-white shadow-sm",
     slate: "border-slate-700 bg-slate-700 text-white shadow-sm",
   }[tone];
-  return (
+    return (
     <button
       type="button"
       onClick={onClick}
@@ -517,42 +517,42 @@ export default function OylikPage() {
                       >
                         <Lock className="mr-1 h-4 w-4" /> Tasdiqlash
                       </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
+                <Button
+                  type="button"
+                  variant="outline"
                         className="h-9 rounded-lg border-rose-300 text-rose-700 hover:bg-rose-50"
                         disabled={grain !== "kun" || ret.isPending || !actionIds.length}
-                        onClick={() => {
+                  onClick={() => {
                           if (!actionIds.length) return;
                           if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodimning jarimasi 0 bo‘lsinmi? Xodimda ham 0 ko‘rinadi. Keyin tahrirlab yana tasdiqlash mumkin.`)) return;
                           ret.mutate({ month, userIds: actionIds, day: anchor }, { onSuccess: () => { setSelected([]); toast({ title: "Bekor qilindi", description: `${formatDayUz(anchor)} · jarima 0` }); } });
                         }}
                       >
                         Bekor qilish
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-9 rounded-lg"
+                </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="h-9 rounded-lg"
                         disabled={grain !== "kun" || refreshDay.isPending || !actionIds.length}
-                        onClick={() => {
+                    onClick={() => {
                           if (!actionIds.length) return;
                           if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodim tizim hisobi bilan yangilansinmi? Dam kunida jarima yo‘q.`)) return;
                           refreshDay.mutate({ month, day: anchor, userIds: actionIds }, { onSuccess: (res) => { setSelected([]); toast({ title: "Yangilandi", description: `${formatDayUz(anchor)} · ${(res as { count?: number }).count ?? actionIds.length} xodim` }); } });
                         }}
                       >
                         Yangilash{dirtyIds.length ? ` · ${dirtyIds.length}` : ""}
-                      </Button>
+                  </Button>
                     </div>
                   </div>
                 ) : null}
                 <div>
                   <p className="mb-1 text-[11px] font-medium text-muted-foreground">Ekrandagi filtr · {place ? filteredRows.length : 0}</p>
-                  <Button
-                    type="button"
-                    className="h-9 rounded-lg"
+                <Button
+                  type="button"
+                  className="h-9 rounded-lg"
                     disabled={exporting || !place}
-                    onClick={async () => {
+                  onClick={async () => {
                       if (!filteredRows.length) {
                         toast({ title: "Bu filtrda xodim yo‘q" });
                         return;
@@ -575,8 +575,8 @@ export default function OylikPage() {
                         `${filteredRows.length} xodim`,
                       ].filter(Boolean).join(" · ");
                       const rows = filteredRows;
-                      setExporting(true);
-                      try {
+                    setExporting(true);
+                    try {
                         await downloadOylikViewExcel({
                           month,
                           filterLine,
@@ -587,15 +587,15 @@ export default function OylikPage() {
                           fileName: grain === "oy" ? `oylik-${month}.xls` : `oylik-${month}-${grain}-${periodFrom}.xls`,
                         });
                         toast({ title: "Excel yuklandi", description: `${filteredRows.length} xodim · ${periodLabel}` });
-                      } catch (e) {
+                    } catch (e) {
                         toast({ title: "Excel", description: (e as Error).message, variant: "destructive" });
-                      } finally {
-                        setExporting(false);
-                      }
-                    }}
-                  >
+                    } finally {
+                      setExporting(false);
+                    }
+                  }}
+                >
                     <Download className="mr-1 h-4 w-4" /> Excel
-                  </Button>
+                </Button>
                 </div>
             </div>
           </div>
@@ -610,8 +610,8 @@ export default function OylikPage() {
               return (
                 <button
                   key={opt.key}
-                  type="button"
-                  onClick={() => {
+                      type="button"
+                      onClick={() => {
                     setPlace(on ? "" : opt.key);
                     setShift("");
                     setStatusFilter("");
@@ -636,7 +636,7 @@ export default function OylikPage() {
                 </button>
               );
             })}
-          </div>
+              </div>
             {list.isLoading ? (
               <Skeleton className="h-72 rounded-xl" />
             ) : list.error ? (
@@ -737,7 +737,7 @@ export default function OylikPage() {
                 ) : place ? (
                   <div className="dept-empty">
                     Ish kunini qo‘yish uchun smenani tanlang. Ofisda oddiy xodimlar bir kalendarda, xavfsizlik alohida, dorixonada har smena alohida.
-                  </div>
+              </div>
                 ) : null}
                 {!place ? (
                   <div className="dept-empty">
@@ -781,9 +781,9 @@ export default function OylikPage() {
                           <span className="mt-1 text-[10px] leading-none text-slate-400">1 oylik summa</span>
                         </button>
                       ) : null}
-                    </div>
+                </div>
                     <p className="text-sm font-semibold text-[#0f2744] dark:text-white">{periodLabel}</p>
-                  </div>
+                </div>
                   {grain !== "oy" ? (
                     <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                       {weeks.map((week, index) => {
@@ -809,7 +809,7 @@ export default function OylikPage() {
                           </button>
                         );
                       })}
-                    </div>
+                </div>
                   ) : null}
                   {grain === "kun" && activeWeek ? (
                     <div className="mt-3 flex flex-wrap gap-2">
@@ -834,7 +834,7 @@ export default function OylikPage() {
                           </button>
                         );
                       })}
-                    </div>
+              </div>
                   ) : null}
                   <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
                     Kun jadvalida uchta tugma: Tasdiqlash — xodim ko‘radi. Bekor qilish — shu kun jarimasi 0, xodimda ham 0. Yangilash — tizim hisobini qayta yozadi. Belgilamasangiz ekrandagi hamma xodim olinadi. Yashil kun — ish, kulrang — dam. Dam kuniga jarima yozilmaydi.
@@ -885,8 +885,8 @@ export default function OylikPage() {
                   />
                 )}
                 </>
-                )}
-              </div>
+              )}
+            </div>
             )}
         </div>
       ) : (

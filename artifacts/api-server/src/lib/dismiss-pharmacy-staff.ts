@@ -10,7 +10,7 @@ const DISMISS_ORG = new Set(["manager", ...BRANCH_STAFF_ORG]);
 import { isHrRole, isDirectorRole } from "./roles";
 
 export function canDismissPharmacyNetwork(role?: string): boolean {
-  return role === "admin" || role === "asoschi" || role === "hr_menejer";
+  return role === "admin" || role === "asoschi" || role === "director" || role === "hr_menejer";
 }
 
 async function assertDismissScope(

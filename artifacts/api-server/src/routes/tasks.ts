@@ -85,9 +85,9 @@ function canApproveTask(row: typeof tasksTable.$inferSelect, userId?: number, ro
   return isCreator(row, userId) || isAdminRole(role) || isDirectorRole(role);
 }
 
-/** To‘liq boshqaruv (o‘chirish va h.k.) — faqat sof admin */
+/** To‘liq boshqaruv (o‘chirish va h.k.) — admin, asoschi va korxona direktori */
 function canAdminTaskOps(role?: string | null) {
-  return isStrictAdminRole(role);
+  return hasFullPlatformAccess(role);
 }
 
 const ACCEPT_DEADLINE_MS: Record<string, number> = {

@@ -19,6 +19,12 @@ export const attendanceRecordsTable = pgTable(
     source: text("source").notNull().default("manual"),
     checkLatitude: doublePrecision("check_latitude"),
     checkLongitude: doublePrecision("check_longitude"),
+    /** Keldim nuqtasi — ketish uni ustidan yozmaydi */
+    checkInLatitude: doublePrecision("check_in_latitude"),
+    checkInLongitude: doublePrecision("check_in_longitude"),
+    /** Ketdim nuqtasi */
+    checkOutLatitude: doublePrecision("check_out_latitude"),
+    checkOutLongitude: doublePrecision("check_out_longitude"),
     distanceMeters: integer("distance_meters"),
     notes: text("notes"),
     /** Sababli kun — jarima hisoblanmaydi */

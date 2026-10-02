@@ -191,7 +191,7 @@ export default function JavobOlishPage() {
       }));
 
   return (
-    <div className={cn("mx-auto space-y-5 p-4 pb-28 sm:p-6", canDecideQueue ? "max-w-5xl" : "max-w-3xl")}>
+    <div className={cn("mx-auto min-w-0 max-w-full space-y-4 overflow-x-hidden pb-6 sm:space-y-5 sm:p-2", canDecideQueue ? "max-w-5xl" : "max-w-3xl")}>
       <div>
         <h1 className="flex items-center gap-2 text-xl font-semibold tracking-tight text-foreground">
           <PhoneCall className="h-5 w-5 text-primary" />
@@ -242,7 +242,7 @@ export default function JavobOlishPage() {
             {mode === "day" ? t("javob.calendarHintDay") : t("javob.calendarHintHour")}
           </p>
         </CardHeader>
-        <CardContent className="flex flex-col items-center gap-4 pt-4 sm:flex-row sm:items-start sm:justify-center">
+        <CardContent className="flex flex-col items-stretch gap-4 px-3 pt-4 sm:flex-row sm:items-start sm:justify-center sm:px-6">
           <Calendar
             mode="multiple"
             selected={selectedDates}

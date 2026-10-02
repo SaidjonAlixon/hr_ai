@@ -375,6 +375,8 @@ export async function runDavomatReminderCycle(): Promise<void> {
   await remindShiftStart15Min();
   await remindCheckoutOneHourBefore();
   await autoCloseMissedCheckoutSilent();
+  const { sendCoordinatorShiftReports } = await import("./davomat-coordinator-reports");
+  await sendCoordinatorShiftReports();
 }
 
 export function startDavomatReminderJob(): void {

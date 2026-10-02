@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
+import { hasFullPlatformAccess } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import {
   finishCoordinatorVisit,
@@ -80,7 +81,7 @@ export default function DavomatOfisdaPage() {
   const qc = useQueryClient();
   const from = daysAgoYmd(30);
   const to = todayYmd();
-  const isCoord = user?.role === "koordinator" || user?.role === "admin";
+  const isCoord = user?.role === "koordinator" || hasFullPlatformAccess(user?.role);
   const { data, isLoading, refetch, isFetching } = useMyOfficeStays({
     from,
     to,

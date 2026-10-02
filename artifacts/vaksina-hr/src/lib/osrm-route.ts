@@ -110,69 +110,145 @@ function pathKey(points: LatLng[]): string {
 
 const cache = new Map<string, LatLng[]>();
 
+function validPoint(p: LatLng): boolean {
+  return (
+    Number.isFinite(p.lat) &&
+    Number.isFinite(p.lng) &&
+    Math.abs(p.lat) <= 90 &&
+    Math.abs(p.lng) <= 180 &&
+    !(p.lat === 0 && p.lng === 0)
+  );
+}
+
+/** Nuqtadan kesmagacha masofa, metr. */
+function pointToSegmentMeters(p: LatLng, a: LatLng, b: LatLng): number {
+  const latM = 111_320;
+  const lngM = 111_320 * Math.cos(toRad((a.lat + b.lat) / 2));
+  const bx = (b.lng - a.lng) * lngM;
+  const by = (b.lat - a.lat) * latM;
+  const px = (p.lng - a.lng) * lngM;
+  const py = (p.lat - a.lat) * latM;
+  const ab2 = bx * bx + by * by;
+  if (ab2 < 1) return Math.hypot(px, py);
+  const t = Math.max(0, Math.min(1, (px * bx + py * by) / ab2));
+  return Math.hypot(px - bx * t, py - by * t);
+}
+
+function pathLengthMeters(points: LatLng[]): number {
+  let n = 0;
+  for (let i = 1; i < points.length; i++) n += haversineMeters(points[i - 1]!, points[i]!);
+  return n;
+}
+
+/** GPS sakrashini tashlaydi — borib qaytmagan nuqta chiziqqa kirmaydi. */
+export function cleanWalkedPoints(raw: LatLng[]): LatLng[] {
+  const collapsed: LatLng[] = [];
+  for (const p of raw) {
+    if (!validPoint(p)) continue;
+    const prev = collapsed[collapsed.length - 1];
+    if (!prev || haversineMeters(prev, p) >= 8) collapsed.push(p);
+  }
+  let guard = 0;
+  let changed = true;
+  while (changed && collapsed.length >= 3 && guard++ < 8) {
+    changed = false;
+    for (let i = 1; i < collapsed.length - 1; i++) {
+      const a = collapsed[i - 1]!;
+      const b = collapsed[i]!;
+      const c = collapsed[i + 1]!;
+      const ac = haversineMeters(a, c);
+      const ab = haversineMeters(a, b);
+      const bc = haversineMeters(b, c);
+      const off = pointToSegmentMeters(b, a, c);
+      const spike = off > 28 && ac + 20 < ab + bc && ac < Math.max(ab, bc) * 0.7;
+      if (spike) {
+        collapsed.splice(i, 1);
+        changed = true;
+        break;
+      }
+    }
+  }
+  return collapsed;
+}
+
+/** Uzoq uzilishni ulamaydi — oradagi joy yurilgan deb chizilmaydi. */
+export function splitWalkGaps(points: LatLng[], gapM = 120): LatLng[][] {
+  if (!points.length) return [];
+  const segs: LatLng[][] = [[points[0]!]];
+  for (let i = 1; i < points.length; i++) {
+    const prev = points[i - 1]!;
+    const cur = points[i]!;
+    if (haversineMeters(prev, cur) > gapM) segs.push([cur]);
+    else segs[segs.length - 1]!.push(cur);
+  }
+  return segs.filter((s) => s.length >= 2);
+}
+
+function maxOffTrace(snapped: LatLng[], raw: LatLng[]): number {
+  let max = 0;
+  for (const p of snapped) {
+    let best = Infinity;
+    if (raw.length < 2) {
+      best = raw[0] ? haversineMeters(p, raw[0]) : Infinity;
+    } else {
+      for (let i = 1; i < raw.length; i++) {
+        best = Math.min(best, pointToSegmentMeters(p, raw[i - 1]!, raw[i]!));
+      }
+    }
+    if (best > max) max = best;
+  }
+  return max;
+}
+
 /**
- * GPS breadcrumb → yo‘l bo‘ylab polyline.
- * Avval match, keyin route; muvaffaqiyatsiz bo‘lsa asl nuqtalar.
+ * Faqat yurilgan GPS izi.
+ * Yo‘lga yopishtirish faqat izdan chiqmasa qabul qilinadi.
+ * Ikki nuqta orasida yangi marshrut o‘ylab chizilmaydi.
  */
 export async function snapRouteToRoads(
   raw: LatLng[],
   signal?: AbortSignal,
-): Promise<{ path: LatLng[]; snapped: boolean }> {
-  const valid = raw.filter(
-    (p) =>
-      Number.isFinite(p.lat) &&
-      Number.isFinite(p.lng) &&
-      Math.abs(p.lat) <= 90 &&
-      Math.abs(p.lng) <= 180 &&
-      !(p.lat === 0 && p.lng === 0),
-  );
-  if (valid.length < 2) return { path: valid, snapped: false };
+): Promise<{ path: LatLng[]; segments: LatLng[][]; snapped: boolean }> {
+  const cleaned = cleanWalkedPoints(raw);
+  const segments = splitWalkGaps(cleaned);
+  const walked = segments.flat();
+  if (walked.length < 2) return { path: cleaned, segments, snapped: false };
 
-  const pts = decimateRoutePoints(valid);
+  const pts = decimateRoutePoints(walked, 18, 80);
   const key = pathKey(pts);
   const hit = cache.get(key);
-  if (hit) return { path: hit, snapped: true };
+  if (hit) return { path: hit, segments: splitWalkGaps(hit), snapped: true };
 
   const coordStr = pts.map((p) => `${p.lng},${p.lat}`).join(";");
-
-  // 1) Match — GPS izini yo‘lga yopishtirish
   const matchUrl =
-    `${OSRM_BASE}/match/v1/driving/${coordStr}` +
-    `?geometries=geojson&overview=full&tidy=true&gaps=ignore`;
+    `${OSRM_BASE}/match/v1/foot/${coordStr}` +
+    `?geometries=geojson&overview=full&tidy=true&gaps=split`;
   const matchJson = (await fetchOsrmJson(matchUrl, signal)) as {
     code?: string;
-    matchings?: Array<{ geometry?: OsrmGeometry }>;
+    matchings?: Array<{ geometry?: OsrmGeometry; confidence?: number }>;
   } | null;
 
   if (matchJson?.code === "Ok" && matchJson.matchings?.length) {
-    const merged: LatLng[] = [];
+    const pieces: LatLng[][] = [];
     for (const m of matchJson.matchings) {
+      if ((m.confidence ?? 1) < 0.45) continue;
       const coords = m.geometry?.coordinates;
-      if (coords?.length) merged.push(...coordsToLatLng(coords));
+      if (!coords?.length) continue;
+      const piece = coordsToLatLng(coords);
+      if (piece.length < 2) continue;
+      const off = maxOffTrace(piece, pts);
+      const rawLen = pathLengthMeters(pts);
+      const snapLen = pathLengthMeters(piece);
+      if (off > 30) continue;
+      if (rawLen > 20 && snapLen > rawLen * 1.2) continue;
+      pieces.push(piece);
     }
-    if (merged.length >= 2) {
-      cache.set(key, merged);
-      return { path: merged, snapped: true };
-    }
-  }
-
-  // 2) Route — ketma-ket yo‘nalish (A→…→B)
-  const routeUrl =
-    `${OSRM_BASE}/route/v1/driving/${coordStr}` +
-    `?geometries=geojson&overview=full&continue_straight=false`;
-  const routeJson = (await fetchOsrmJson(routeUrl, signal)) as {
-    code?: string;
-    routes?: Array<{ geometry?: OsrmGeometry }>;
-  } | null;
-
-  if (routeJson?.code === "Ok" && routeJson.routes?.[0]?.geometry?.coordinates?.length) {
-    const path = coordsToLatLng(routeJson.routes[0].geometry.coordinates);
-    if (path.length >= 2) {
+    if (pieces.length) {
+      const path = pieces.flat();
       cache.set(key, path);
-      return { path, snapped: true };
+      return { path, segments: pieces, snapped: true };
     }
   }
 
-  // 3) Fallback — asl GPS chiziq
-  return { path: pts, snapped: false };
+  return { path: walked, segments, snapped: false };
 }

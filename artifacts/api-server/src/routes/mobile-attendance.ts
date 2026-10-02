@@ -31,6 +31,8 @@ import {
 } from "../lib/mobile-attendance";
 import { formatPersonName } from "../lib/person-name";
 import { normalizePersonName } from "../lib/dedupe-employees";
+import { loadPharmacyMapPins } from "../lib/filial-bot-data";
+import { coerceUzbekistanGps } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -150,6 +152,17 @@ router.get("/mobile-attendance/dashboard", requireAuth, async (req: AuthRequest,
   } catch (err) {
     console.error("GET mobile dashboard", err);
     res.status(503).json({ error: "Dashboard yuklanmadi" });
+  }
+});
+
+/** GET /mobile-attendance/branches — dorixona nuqtalari (aniq GPS) */
+router.get("/mobile-attendance/branches", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireView(req, res)) return;
+  try {
+    res.json(await loadPharmacyMapPins());
+  } catch (err) {
+    console.error("GET mobile branches", err);
+    res.status(503).json({ error: "Filial nuqtalari yuklanmadi" });
   }
 });
 
@@ -693,6 +706,138 @@ router.get("/mobile-attendance/live", requireAuth, async (req: AuthRequest, res)
   }
 });
 
+/** GET /mobile-attendance/day-places — shu kundagi davomat joylari (kelish, ketish, sessiya) */
+router.get("/mobile-attendance/day-places", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!requireView(req, res)) return;
+  try {
+    const date = String((req.query as { date?: string }).date || mobileTodayYmd());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      res.status(400).json({ error: "Sana noto‘g‘ri" });
+      return;
+    }
+    const rows = await db
+      .select({
+        employeeId: attendanceRecordsTable.employeeId,
+        fullName: employeesTable.fullName,
+        position: employeesTable.position,
+        location: employeesTable.location,
+        checkInAt: attendanceRecordsTable.checkInAt,
+        checkOutAt: attendanceRecordsTable.checkOutAt,
+        checkLatitude: attendanceRecordsTable.checkLatitude,
+        checkLongitude: attendanceRecordsTable.checkLongitude,
+        checkInLatitude: attendanceRecordsTable.checkInLatitude,
+        checkInLongitude: attendanceRecordsTable.checkInLongitude,
+        checkOutLatitude: attendanceRecordsTable.checkOutLatitude,
+        checkOutLongitude: attendanceRecordsTable.checkOutLongitude,
+      })
+      .from(attendanceRecordsTable)
+      .leftJoin(employeesTable, eq(employeesTable.id, attendanceRecordsTable.employeeId))
+      .where(eq(attendanceRecordsTable.workDate, date));
+
+    const sessions = await db
+      .select({
+        id: mobileAttendanceSessionsTable.id,
+        employeeId: mobileAttendanceSessionsTable.employeeId,
+        status: mobileAttendanceSessionsTable.status,
+        startTime: mobileAttendanceSessionsTable.startTime,
+        startLatitude: mobileAttendanceSessionsTable.startLatitude,
+        startLongitude: mobileAttendanceSessionsTable.startLongitude,
+        endTime: mobileAttendanceSessionsTable.endTime,
+        endLatitude: mobileAttendanceSessionsTable.endLatitude,
+        endLongitude: mobileAttendanceSessionsTable.endLongitude,
+      })
+      .from(mobileAttendanceSessionsTable)
+      .where(eq(mobileAttendanceSessionsTable.workDate, date))
+      .orderBy(desc(mobileAttendanceSessionsTable.startTime));
+
+    const sessionByEmp = new Map<number, (typeof sessions)[0]>();
+    for (const s of sessions) {
+      const prev = sessionByEmp.get(s.employeeId);
+      if (!prev || (s.status === "open" && prev.status !== "open")) sessionByEmp.set(s.employeeId, s);
+    }
+
+    const marks = rows
+      .map((r) => {
+        const hasOut = Boolean(r.checkOutAt);
+        const start =
+          coerceUzbekistanGps(r.checkInLatitude, r.checkInLongitude) ||
+          (!hasOut ? coerceUzbekistanGps(r.checkLatitude, r.checkLongitude) : null);
+        const end =
+          coerceUzbekistanGps(r.checkOutLatitude, r.checkOutLongitude) ||
+          (hasOut ? coerceUzbekistanGps(r.checkLatitude, r.checkLongitude) : null);
+        const session = sessionByEmp.get(r.employeeId);
+        const sessStart = session ? coerceUzbekistanGps(session.startLatitude, session.startLongitude) : null;
+        const sessEnd = session ? coerceUzbekistanGps(session.endLatitude, session.endLongitude) : null;
+        if (!start && !end && !sessStart) return null;
+        const name = formatPersonName(r.fullName || "") || r.fullName || `Xodim #${r.employeeId}`;
+        return {
+          employeeId: r.employeeId,
+          fullName: name,
+          position: r.position,
+          location: r.location,
+          checkInAt: r.checkInAt ? r.checkInAt.toISOString() : session?.startTime?.toISOString() ?? null,
+          checkOutAt: r.checkOutAt ? r.checkOutAt.toISOString() : session?.endTime?.toISOString() ?? null,
+          checkInLat: start?.lat ?? sessStart?.lat ?? null,
+          checkInLng: start?.lng ?? sessStart?.lng ?? null,
+          checkOutLat: end?.lat ?? sessEnd?.lat ?? null,
+          checkOutLng: end?.lng ?? sessEnd?.lng ?? null,
+          sessionId: session?.id ?? null,
+          sessionStatus: session?.status ?? null,
+        };
+      })
+      .filter((m): m is NonNullable<typeof m> => m != null);
+
+    const seen = new Set(marks.map((m) => m.employeeId));
+    for (const s of sessions) {
+      if (seen.has(s.employeeId)) continue;
+      const start = coerceUzbekistanGps(s.startLatitude, s.startLongitude);
+      if (!start) continue;
+      const end = coerceUzbekistanGps(s.endLatitude, s.endLongitude);
+      seen.add(s.employeeId);
+      marks.push({
+        employeeId: s.employeeId,
+        fullName: `Xodim #${s.employeeId}`,
+        position: null,
+        location: null,
+        checkInAt: s.startTime?.toISOString() ?? null,
+        checkOutAt: s.endTime?.toISOString() ?? null,
+        checkInLat: start.lat,
+        checkInLng: start.lng,
+        checkOutLat: end?.lat ?? null,
+        checkOutLng: end?.lng ?? null,
+        sessionId: s.id,
+        sessionStatus: s.status,
+      });
+    }
+
+    const nameIds = marks.filter((m) => m.fullName.startsWith("Xodim #")).map((m) => m.employeeId);
+    if (nameIds.length) {
+      const emps = await db
+        .select({ id: employeesTable.id, fullName: employeesTable.fullName, position: employeesTable.position, location: employeesTable.location })
+        .from(employeesTable)
+        .where(inArray(employeesTable.id, nameIds));
+      const byId = new Map(emps.map((e) => [e.id, e]));
+      for (const m of marks) {
+        const e = byId.get(m.employeeId);
+        if (!e) continue;
+        m.fullName = formatPersonName(e.fullName) || e.fullName;
+        m.position = e.position;
+        m.location = e.location;
+      }
+    }
+
+    const named = marks.filter((m) => {
+      const n = String(m.fullName || "").trim();
+      return n.length > 0 && !/^Xodim #\d+$/.test(n);
+    });
+    named.sort((a, b) => String(b.checkInAt || "").localeCompare(String(a.checkInAt || "")));
+    res.json({ date, marks: named });
+  } catch (err) {
+    console.error("GET day-places", err);
+    res.status(503).json({ error: "Davomat joylari yuklanmadi" });
+  }
+});
+
 /** GET /mobile-attendance/sessions — admin history */
 router.get("/mobile-attendance/sessions", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   if (!requireView(req, res)) return;
@@ -1054,6 +1199,8 @@ router.post("/mobile-attendance/start", requireAuth, async (req: AuthRequest, re
             source: "mobile_gps",
             checkLatitude: gps.lat,
             checkLongitude: gps.lng,
+            checkInLatitude: gps.lat,
+            checkInLongitude: gps.lng,
             checkInMethod: "MOBILE_GPS",
             createdById: emp.userId,
           })
@@ -1073,6 +1220,8 @@ router.post("/mobile-attendance/start", requireAuth, async (req: AuthRequest, re
             source: "mobile_gps",
             checkLatitude: gps.lat,
             checkLongitude: gps.lng,
+            checkInLatitude: gps.lat,
+            checkInLongitude: gps.lng,
             checkInMethod: "MOBILE_GPS",
             updatedAt: now,
           })
@@ -1244,6 +1393,8 @@ router.post("/mobile-attendance/end", requireAuth, async (req: AuthRequest, res)
           .set({
             checkOutAt: now,
             checkOutMethod: "MOBILE_GPS",
+            checkOutLatitude: gps.lat,
+            checkOutLongitude: gps.lng,
             checkLatitude: gps.lat,
             checkLongitude: gps.lng,
             status: securityStatus === "suspicious" ? "present" : "present",

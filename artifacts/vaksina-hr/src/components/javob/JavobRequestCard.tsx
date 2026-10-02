@@ -193,7 +193,7 @@ export function JavobRequestCard({ item, t, hideName, datesLabel, dayCount = 1, 
           <p className="flex items-center gap-1 text-muted-foreground">
             <CalendarDays className="h-3 w-3" /> {t("javob.date")}
           </p>
-          <p className="mt-0.5 font-semibold text-foreground">
+          <p className="mt-0.5 break-words font-semibold text-foreground">
             {datesLabel || formatYmdDisplay(item.workDate)}
             {dayCount > 1 ? (
               <span className="ml-1 font-medium text-muted-foreground">· {dayCount} kun</span>
@@ -204,7 +204,7 @@ export function JavobRequestCard({ item, t, hideName, datesLabel, dayCount = 1, 
           <p className="flex items-center gap-1 text-muted-foreground">
             {hourly ? <Clock className="h-3 w-3" /> : <CalendarDays className="h-3 w-3" />} {kindLabel}
           </p>
-          <p className="mt-0.5 font-semibold tabular-nums text-foreground">
+          <p className="mt-0.5 break-words font-semibold tabular-nums text-foreground">
             {item.fromHm}–{item.toHm}
             {item.durationLabel ? <span className="font-normal text-muted-foreground"> · {item.durationLabel}</span> : null}
           </p>

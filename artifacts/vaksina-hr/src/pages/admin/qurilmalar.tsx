@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { canManageUsers, canViewKochmaAdmin } from "@/lib/roles";
+import { canManageKochmaAdmin, canViewKochmaAdmin } from "@/lib/roles";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -128,7 +128,7 @@ export default function AdminQurilmalarPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const allowed = canViewKochmaAdmin(user?.role);
-  const canEdit = canManageUsers(user?.role);
+  const canEdit = canManageKochmaAdmin(user?.role);
 
   const [loading, setLoading] = useState(true);
   const [q, setQ] = useState("");

@@ -13,6 +13,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { formatPersonName } from "../lib/person-name";
 import { ensureEmployeeForNewUser } from "../lib/user-employee-sync";
+import { notifyUser } from "../lib/notify";
 import {
   DISTRIBYUTSIYA_DEPARTMENT_NAME,
   ensureDistribyutsiyaSetup,
@@ -23,6 +24,9 @@ import {
   canManageTamojni,
   ensureTamojniSkladDepartmentId,
   getTamojniSite,
+  isTamojniOrDistribRole,
+  normalizeDavomatSite,
+  resolveDistribDavomatSite,
   syncTamojniEmployeesWithSite,
   tamojniCreatableRoles,
   TAMOJNI_DEFAULT_RADIUS_M,
@@ -54,6 +58,13 @@ function canManageDistrib(role?: string | null): boolean {
 
 function canViewDistrib(role?: string | null): boolean {
   return !!role && (DISTRIB_VIEW_ROLES.has(role) || canManageDistrib(role));
+}
+
+/** Davomat joyini (Asosiy ofis / Tamojni sklad) faqat Distribyutsiya HR va Admin o‘zgartiradi */
+const DAVOMAT_SITE_EDIT_ROLES = new Set(["admin", "director", "asoschi", "distrib_hr"]);
+
+function canChangeDavomatSite(role?: string | null): boolean {
+  return !!role && (DAVOMAT_SITE_EDIT_ROLES.has(role) || hasFullPlatformAccess(role));
 }
 
 function latinSlug(input: string): string {
@@ -290,6 +301,10 @@ router.get("/distribyutsiya/staff", requireAuth, async (req: AuthRequest, res): 
         employeeId: employeesTable.id,
         position: employeesTable.position,
         hiredAt: employeesTable.hiredAt,
+        davomatSite: employeesTable.davomatSite,
+        location: employeesTable.location,
+        orgRole: employeesTable.orgRole,
+        employeeDepartmentId: employeesTable.departmentId,
       })
       .from(usersTable)
       .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
@@ -299,13 +314,120 @@ router.get("/distribyutsiya/staff", requireAuth, async (req: AuthRequest, res): 
     res.json({
       departmentId,
       departmentName: DISTRIBYUTSIYA_DEPARTMENT_NAME,
-      staff: rows,
+      canChangeSite: canChangeDavomatSite(req.userRole),
+      staff: rows.map(({ location, orgRole, employeeDepartmentId, ...r }) => ({
+        ...r,
+        davomatSite:
+          resolveDistribDavomatSite({
+            davomatSite: r.davomatSite,
+            userRole: r.role,
+            orgRole,
+            departmentId: employeeDepartmentId,
+            departmentName: location,
+            location,
+          }) ?? "office",
+      })),
     });
   } catch (err) {
     console.error("GET /distribyutsiya/staff error:", err);
     res.status(500).json({ error: "Yuklanmadi" });
   }
 });
+
+/** Xodim davomat joyi: Asosiy ofis yoki Tamojni sklad (GPS shu joydan olinadi) */
+router.patch(
+  "/distribyutsiya/staff/:userId/davomat-site",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    if (!canChangeDavomatSite(req.userRole)) {
+      res.status(403).json({ error: "Davomat joyini faqat Distribyutsiya HR va Admin o‘zgartiradi" });
+      return;
+    }
+    const userId = Number(req.params.userId);
+    const site = normalizeDavomatSite(req.body?.site);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      res.status(400).json({ error: "Xodim noto‘g‘ri" });
+      return;
+    }
+    if (!site) {
+      res.status(400).json({ error: "Asosiy ofis yoki Tamojni skladni tanlang" });
+      return;
+    }
+    try {
+      const [user] = await db
+        .select({
+          id: usersTable.id,
+          fullName: usersTable.fullName,
+          role: usersTable.role,
+          departmentId: usersTable.departmentId,
+        })
+        .from(usersTable)
+        .where(eq(usersTable.id, userId))
+        .limit(1);
+      if (!user) {
+        res.status(404).json({ error: "Xodim topilmadi" });
+        return;
+      }
+      const distribDeptId = await ensureDistribyutsiyaSetup();
+      const tamojniDeptId = await ensureTamojniSkladDepartmentId();
+      const member =
+        user.departmentId === distribDeptId ||
+        user.departmentId === tamojniDeptId ||
+        isTamojniOrDistribRole(user.role);
+      if (!member) {
+        res.status(400).json({ error: "Faqat Distribyutsiya va Tamojni sklad xodimlarining joyi o‘zgartiriladi" });
+        return;
+      }
+
+      const tamojniSite = site === "tamojni" ? await getTamojniSite() : null;
+      if (site === "tamojni" && !tamojniSite) {
+        res.status(400).json({
+          error: "Avval «Tamojni sklad» bo‘limida sklad lokatsiyasini kiriting, keyin xodimni biriktiring.",
+        });
+        return;
+      }
+
+      const [emp] = await db
+        .select({ id: employeesTable.id })
+        .from(employeesTable)
+        .where(eq(employeesTable.userId, user.id))
+        .limit(1);
+      if (!emp) {
+        await ensureEmployeeForNewUser({
+          id: user.id,
+          fullName: user.fullName,
+          role: user.role,
+          departmentId: user.departmentId,
+        });
+      }
+
+      const label = site === "tamojni" ? tamojniSite!.name || TAMOJNI_SKLAD_DEPARTMENT_NAME : "Asosiy ofis";
+      await db
+        .update(employeesTable)
+        .set({
+          davomatSite: site,
+          location: label,
+          latitude: site === "tamojni" ? tamojniSite!.latitude : null,
+          longitude: site === "tamojni" ? tamojniSite!.longitude : null,
+          assignedBranchId: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(employeesTable.userId, user.id));
+
+      await notifyUser({
+        userId: user.id,
+        text: `Davomat joyingiz o‘zgardi: ${label}. Endi Keldim / Ketdim faqat shu joy hududidan qabul qilinadi.`,
+        type: "davomat_site",
+        linkUrl: "/davomat-face",
+      }).catch(() => undefined);
+
+      res.json({ ok: true, userId: user.id, davomatSite: site, label });
+    } catch (err) {
+      console.error("PATCH /distribyutsiya/staff/:userId/davomat-site error:", err);
+      res.status(500).json({ error: "Davomat joyi saqlanmadi" });
+    }
+  },
+);
 
 /** Distribyutsiya HR / rahbar — xodimlar login/parol Excel */
 router.get("/distribyutsiya/staff/export", requireAuth, async (req: AuthRequest, res): Promise<void> => {
@@ -495,6 +617,7 @@ router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res)
         position: employeesTable.position,
         shiftType: employeesTable.shiftType,
         shiftLabel: employeesTable.shiftLabel,
+        davomatSiteRaw: employeesTable.davomatSite,
       })
       .from(usersTable)
       .leftJoin(employeesTable, eq(employeesTable.userId, usersTable.id))
@@ -537,13 +660,15 @@ router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res)
       departmentId,
       departmentName: TAMOJNI_SKLAD_DEPARTMENT_NAME,
       canManage: canManageTamojni(req.userRole),
+      canChangeSite: canChangeDavomatSite(req.userRole),
       creatableRoles: tamojniCreatableRoles(req.userRole),
       site,
-      staff: rows.map((r) => {
+      staff: rows.map(({ davomatSiteRaw, ...r }) => {
         const active = r.employeeId ? pickScheduleOverride(rules.get(r.employeeId) || [], today) : null;
         const preset = active ? TAMOJNI_SHIFT_PRESETS[active.shiftKey] : TAMOJNI_SHIFT_PRESETS.office;
         return {
           ...r,
+          davomatSite: normalizeDavomatSite(davomatSiteRaw) ?? "tamojni",
           shiftKey: active?.shiftKey || "office",
           startHm: active?.startHm || preset?.startHm || "09:00",
           endHm: active?.endHm || preset?.endHm || "18:00",

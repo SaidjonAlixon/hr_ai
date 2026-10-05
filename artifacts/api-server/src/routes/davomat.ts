@@ -44,6 +44,9 @@ import {
   isTamojniOrDistribMember,
   TAMOJNI_DEFAULT_RADIUS_M,
   TAMOJNI_SKLAD_DEPARTMENT_NAME,
+  davomatSiteForEmployee,
+  resolveDistribDavomatSite,
+  type DavomatSiteChoice,
 } from "../lib/tamojni-sklad";
 import {
   isWarehouseDavomatStaff,
@@ -725,8 +728,11 @@ function smenaLabelForEmployee(e: {
   orgRole?: string | null;
   shiftType?: string | null;
   shiftLabel?: string | null;
+  location?: string | null;
 }): string {
-  if (isTamojniRole(e.userRole) || isTamojniRole(e.orgRole)) return "Tamojni sklad";
+  if (isTamojniRole(e.userRole) || isTamojniRole(e.orgRole)) {
+    return /asosiy ofis/i.test(e.location || "") ? "Asosiy ofis" : "Tamojni sklad";
+  }
   if (EXTERNAL_USER_ROLES.has(e.userRole || "")) return "Tashqi xodimlar";
   const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
   if (w.key === "office") return "Asosiy ofis";
@@ -2433,22 +2439,37 @@ function coordsFromEmp(row: {
   return gpsFromLocationField(row.location);
 }
 
+/** Distribyutsiya / Tamojni xodimi: «office» | «tamojni»; boshqalar — null */
+async function distribSiteFor(emp: WorkplaceEmp, userRole: string): Promise<DavomatSiteChoice | null> {
+  return resolveDistribDavomatSite({
+    davomatSite: await davomatSiteForEmployee(emp.id),
+    userRole,
+    orgRole: emp.orgRole,
+    departmentId: emp.departmentId,
+    departmentName: emp.location,
+    location: emp.location,
+  });
+}
+
 async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise<
   | { ok: true; point: DavomatPoint }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
-  const isTamojniOrDistrib =
-    isTamojniRole(userRole) ||
-    isTamojniRole(emp.orgRole) ||
-    isTamojniOrDistribMember({
-      userRole,
-      orgRole: emp.orgRole,
-      departmentId: emp.departmentId,
-      departmentName: emp.location,
-      location: emp.location,
-    });
+  const distribSite = await distribSiteFor(emp, userRole);
 
-  if (isTamojniOrDistrib) {
+  if (distribSite === "office") {
+    return {
+      ok: true,
+      point: {
+        latitude: DAVOMAT_SITE_LAT,
+        longitude: DAVOMAT_SITE_LNG,
+        label: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
+        kind: "office",
+      },
+    };
+  }
+
+  if (distribSite === "tamojni") {
     const site = await getTamojniSite();
     if (!site) {
       return {
@@ -4558,22 +4579,75 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     } else if (user.role === "koordinator") {
       coordinatorFieldPunch = true;
     }
-    const isTamojniOrDistrib =
-      isTamojniRole(user.role) ||
-      isTamojniRole(emp.orgRole) ||
-      isTamojniOrDistribMember({
-        userRole: user.role,
-        departmentId: user.departmentId ?? emp.departmentId,
-        departmentName: emp.location,
-        orgRole: emp.orgRole,
-        location: emp.location,
-      });
+    const distribSite = await distribSiteFor(
+      { ...emp, departmentId: user.departmentId ?? emp.departmentId },
+      user.role,
+    );
+    const isTamojniOrDistrib = distribSite != null;
 
-    const tamojniSite = isTamojniOrDistrib ? await getTamojniSite() : null;
+    // Filial smena sloti — faqat dorixona xodimlari (koordinator/reviziya/tamojni/distribyutsiya o‘z joyiga ega)
+    if (
+      preferredSlot &&
+      user.role !== "koordinator" &&
+      !isReviziyaRole(user.role) &&
+      !isTamojniOrDistrib
+    ) {
+      const coords = await branchCoordsById(preferredSlot.branchId);
+      if (coords) {
+        resolved = {
+          ok: true,
+          point: {
+            latitude: coords.lat,
+            longitude: coords.lng,
+            label: preferredSlot.branchLabel || coords.label,
+            kind: "branch",
+          },
+        };
+      }
+    } else if (
+      activeNow[0] &&
+      user.role !== "koordinator" &&
+      !isReviziyaRole(user.role) &&
+      !isTamojniOrDistrib
+    ) {
+      const coords = await branchCoordsById(activeNow[0].branchId);
+      if (coords) {
+        resolved = {
+          ok: true,
+          point: {
+            latitude: coords.lat,
+            longitude: coords.lng,
+            label: activeNow[0].branchLabel || coords.label,
+            kind: "branch",
+          },
+        };
+      }
+    } else if (
+      allSlots.length > 0 &&
+      daySlots[0] &&
+      user.role !== "koordinator" &&
+      !isReviziyaRole(user.role) &&
+      !isTamojniOrDistrib
+    ) {
+      const coords = await branchCoordsById(daySlots[0].branchId);
+      if (coords) {
+        resolved = {
+          ok: true,
+          point: {
+            latitude: coords.lat,
+            longitude: coords.lng,
+            label: daySlots[0].branchLabel || coords.label,
+            kind: "branch",
+          },
+        };
+      }
+    }
+
+    const tamojniSite = distribSite === "tamojni" ? await getTamojniSite() : null;
 
     const point = resolved.ok
       ? resolved.point
-      : isTamojniOrDistrib
+      : distribSite === "tamojni"
         ? {
             latitude: tamojniSite?.latitude ?? 0,
             longitude: tamojniSite?.longitude ?? 0,
@@ -4786,7 +4860,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         location: point.label,
         latitude: point.latitude,
         longitude: point.longitude,
-        hasGps: resolved.ok || (isTamojniOrDistrib && Boolean(tamojniSite)),
+        hasGps: resolved.ok || (distribSite === "tamojni" && Boolean(tamojniSite)),
       },
       today: coordinatorToday
         ? coordinatorToday
@@ -7353,15 +7427,8 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     let fenceLabel = `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`;
     let fenceRadius = DAVOMAT_OFFICE_GEOFENCE_METERS;
     const tamojniPunch =
-      isTamojniRole(user.role) ||
-      isTamojniRole(emp.orgRole) ||
-      isTamojniOrDistribMember({
-        userRole: user.role,
-        departmentId: user.departmentId ?? emp.departmentId,
-        departmentName: emp.location,
-        orgRole: emp.orgRole,
-        location: emp.location,
-      });
+      (await distribSiteFor({ ...emp, departmentId: user.departmentId ?? emp.departmentId }, user.role)) ===
+      "tamojni";
     if (tamojniPunch) {
       const site = await getTamojniSite();
       if (!site) {

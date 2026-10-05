@@ -25,6 +25,7 @@ import { isOptionalUzPhoneValid, normalizeUzPhone, UZ_PHONE_HINT } from "@/lib/p
 import { canManageTamojni, isHrRole, userRoleLabel } from "@/lib/roles";
 import { gpsInputError, parseGpsText } from "@/lib/pharmacy-staff-api";
 import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib/distribyutsiya-api";
+import { DavomatSitePicker } from "./DavomatSitePicker";
 
 const TAMOJNI_RADIUS_M = 150;
 
@@ -351,7 +352,12 @@ export function TamojniSkladPanel() {
                   return a.fullName.localeCompare(b.fullName, "uz");
                 })
                 .map((row) => (
-                  <StaffShiftRow key={row.userId} row={row} canManage={canManage} />
+                  <StaffShiftRow
+                    key={row.userId}
+                    row={row}
+                    canManage={canManage}
+                    canChangeSite={Boolean(desk.data?.canChangeSite)}
+                  />
                 ))}
             </div>
           </>
@@ -430,7 +436,15 @@ export function TamojniSkladPanel() {
   );
 }
 
-function StaffShiftRow({ row, canManage }: { row: TamojniStaffRow; canManage: boolean }) {
+function StaffShiftRow({
+  row,
+  canManage,
+  canChangeSite,
+}: {
+  row: TamojniStaffRow;
+  canManage: boolean;
+  canChangeSite: boolean;
+}) {
   const { toast } = useToast();
   const mut = useTamojniMutations();
   const [shiftKey, setShiftKey] = useState(row.shiftKey || "office");
@@ -476,9 +490,13 @@ function StaffShiftRow({ row, canManage }: { row: TamojniStaffRow; canManage: bo
           </p>
           <div className="mt-1 flex flex-wrap items-center gap-2">
             <span className="text-xs font-medium text-sky-700">{row.shiftTitle}</span>
-            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 border border-emerald-200">
-              Davomat joyi: Faqat Tamojni sklad (150 m)
-            </span>
+            <span className="text-[11px] text-muted-foreground">Davomat joyi:</span>
+            <DavomatSitePicker
+              userId={row.userId}
+              fullName={row.fullName}
+              value={row.davomatSite}
+              canChange={canChangeSite}
+            />
           </div>
           <p className="mt-1 text-xs text-muted-foreground">{ketdimRule(shiftKey)}</p>
         </div>

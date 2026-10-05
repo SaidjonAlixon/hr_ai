@@ -17,7 +17,30 @@ export type DistribStaffRow = {
   employeeId: number | null;
   position: string | null;
   hiredAt: string | null;
+  davomatSite: DavomatSite;
 };
+
+export type DavomatSite = "office" | "tamojni";
+
+export const DAVOMAT_SITE_LABEL: Record<DavomatSite, string> = {
+  office: "Asosiy ofis",
+  tamojni: "Tamojni sklad",
+};
+
+/** Davomat joyini o‘zgartirish — Distribyutsiya va Tamojni ro‘yxatlari birga yangilanadi */
+export function useDavomatSiteMutation() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: { userId: number; site: DavomatSite }) =>
+      apiFetch<{ ok: boolean; davomatSite: DavomatSite; label: string }>(
+        `/distribyutsiya/staff/${body.userId}/davomat-site`,
+        { method: "PATCH", body: JSON.stringify({ site: body.site }) },
+      ),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["distribyutsiya"] });
+    },
+  });
+}
 
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -52,6 +75,7 @@ export function useDistribStaff(enabled = true) {
       apiFetch<{
         departmentId: number;
         departmentName: string;
+        canChangeSite?: boolean;
         staff: DistribStaffRow[];
       }>("/distribyutsiya/staff"),
     enabled,
@@ -149,6 +173,7 @@ export type TamojniStaffRow = {
   startHm: string;
   endHm: string;
   shiftTitle: string;
+  davomatSite: DavomatSite;
 };
 
 export function useTamojniDesk(enabled = true) {
@@ -159,6 +184,7 @@ export function useTamojniDesk(enabled = true) {
         departmentId: number;
         departmentName: string;
         canManage: boolean;
+        canChangeSite?: boolean;
         creatableRoles: string[];
         site: TamojniSite | null;
         staff: TamojniStaffRow[];

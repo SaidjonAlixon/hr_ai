@@ -48,6 +48,7 @@ import {
   useDistribStaff,
 } from "@/lib/distribyutsiya-api";
 import { TamojniSkladPanel } from "./TamojniSkladPanel";
+import { DavomatSitePicker } from "./DavomatSitePicker";
 
 type Tab = "hr" | "lavozimlar" | "tamojni";
 
@@ -267,6 +268,13 @@ export default function DistribyutsiyaPage() {
               {staffQ.data?.staff?.length ?? 0} ta
             </span>
           </div>
+          <p className="mb-3 rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+            <strong className="text-foreground">Davomat joyi</strong> — xodim Keldim / Ketdimni qaysi hududdan qila
+            olishi: <strong className="text-foreground">Asosiy ofis</strong> yoki{" "}
+            <strong className="text-foreground">Tamojni sklad</strong> (150 m). Tanlangan joy darhol kuchga kiradi,
+            xodimga bildirishnoma boradi.
+            {staffQ.data?.canChangeSite ? "" : " O‘zgartirish faqat Distribyutsiya HR va Admin uchun."}
+          </p>
           {staffQ.isLoading ? (
             <div className="flex items-center justify-center gap-2 py-12 text-sm text-muted-foreground">
               <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
@@ -277,7 +285,7 @@ export default function DistribyutsiyaPage() {
             </p>
           ) : (
             <div className="overflow-x-auto rounded-xl border border-border">
-              <table className="w-full min-w-[640px] text-left text-sm">
+              <table className="w-full min-w-[860px] text-left text-sm">
                 <thead className="bg-muted/50 text-[11px] uppercase tracking-wide text-muted-foreground">
                   <tr>
                     <th className="px-3 py-2.5 font-semibold">#</th>
@@ -285,6 +293,7 @@ export default function DistribyutsiyaPage() {
                     <th className="px-3 py-2.5 font-semibold">Lavozim</th>
                     <th className="px-3 py-2.5 font-semibold">Rol</th>
                     <th className="px-3 py-2.5 font-semibold">Login</th>
+                    <th className="px-3 py-2.5 font-semibold">Davomat joyi</th>
                     <th className="px-3 py-2.5 font-semibold">Holat</th>
                   </tr>
                 </thead>
@@ -296,6 +305,14 @@ export default function DistribyutsiyaPage() {
                       <td className="px-3 py-2.5">{row.position || "—"}</td>
                       <td className="px-3 py-2.5 text-muted-foreground">{userRoleLabel(row.role)}</td>
                       <td className="px-3 py-2.5 font-mono text-xs">{row.login}</td>
+                      <td className="px-3 py-2.5">
+                        <DavomatSitePicker
+                          userId={row.userId}
+                          fullName={row.fullName}
+                          value={row.davomatSite}
+                          canChange={Boolean(staffQ.data?.canChangeSite)}
+                        />
+                      </td>
                       <td className="px-3 py-2.5">
                         <span
                           className={cn(

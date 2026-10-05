@@ -49,6 +49,47 @@ export function isTamojniOrDistribMember(
   );
 }
 
+export type DavomatSiteChoice = "office" | "tamojni";
+
+export function normalizeDavomatSite(raw: unknown): DavomatSiteChoice | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (s === "office" || s === "ofis" || s === "asosiy_ofis") return "office";
+  if (s === "tamojni" || s === "tamojni_sklad") return "tamojni";
+  return null;
+}
+
+/**
+ * Distribyutsiya / Tamojni xodimining davomat joyi.
+ * HR yoki Admin tanlagan joy (employees.davomat_site) ustun; tanlanmagan bo‘lsa — Tamojni sklad.
+ * null — xodim bu guruhga kirmaydi (oddiy davomat qoidalari).
+ */
+export function resolveDistribDavomatSite(
+  row: {
+    davomatSite?: string | null;
+    departmentId?: number | null;
+    userRole?: string | null;
+    departmentName?: string | null;
+    orgRole?: string | null;
+    location?: string | null;
+  },
+  tamojniDeptId?: number | null,
+): DavomatSiteChoice | null {
+  const member =
+    isTamojniRole(row.userRole) || isTamojniRole(row.orgRole) || isTamojniOrDistribMember(row, tamojniDeptId);
+  if (!member) return null;
+  return normalizeDavomatSite(row.davomatSite) ?? "tamojni";
+}
+
+export async function davomatSiteForEmployee(employeeId: number): Promise<string | null> {
+  const [row] = await db
+    .select({ davomatSite: employeesTable.davomatSite })
+    .from(employeesTable)
+    .where(eq(employeesTable.id, employeeId))
+    .limit(1)
+    .catch(() => [] as Array<{ davomatSite: string | null }>);
+  return row?.davomatSite ?? null;
+}
+
 /** Tamojni sklad xodimi faqat shu bo‘limni ko‘radi */
 export function isTamojniDepartmentMember(
   row: {
@@ -174,7 +215,12 @@ export async function syncTamojniEmployeesWithSite(site?: TamojniSite | null): P
           assignedBranchId: null,
           updatedAt: new Date(),
         })
-        .where(inArray(employeesTable.userId, userIds))
+        .where(
+          and(
+            inArray(employeesTable.userId, userIds),
+            or(isNull(employeesTable.davomatSite), sql`${employeesTable.davomatSite} <> 'office'`),
+          ),
+        )
         .catch(() => undefined);
     }
   } catch (err) {

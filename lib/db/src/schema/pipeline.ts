@@ -56,6 +56,8 @@ export const employeesTable = pgTable("employees", {
   shiftType: text("shift_type").default("one"),
   /** Davomat GPS olinadigan filial mudiri (employees.id) */
   assignedBranchId: integer("assigned_branch_id"),
+  /** Distribyutsiya / Tamojni xodimi davomat joyi: office | tamojni (null — rol bo‘yicha) */
+  davomatSite: text("davomat_site"),
   /** Mudir belgilagan maxsus holat matni */
   shiftLabel: text("shift_label"),
   /** true — shu filial xodimlari QR ishlata olmaydi, faqat Face ID */

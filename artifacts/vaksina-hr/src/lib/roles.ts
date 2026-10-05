@@ -376,6 +376,8 @@ export function canViewDistribyutsiya(role?: string | null): boolean {
   const r = normalizeUserRole(role);
   return (
     hasFullPlatformAccess(r) ||
+    isDirectorRole(r) ||
+    isHrRole(r) ||
     r === "distrib_rahbar" ||
     r === "distrib_hr" ||
     r === "tamojni_rahbar"
@@ -414,7 +416,18 @@ export function canManageKochmaAdmin(role?: string | null): boolean {
 }
 
 export function canManageDistribyutsiya(role?: string | null): boolean {
-  return canManageSettings(role) || role === "distrib_rahbar" || role === "distrib_hr";
+  const r = normalizeUserRole(role);
+  return (
+    canManageSettings(r) ||
+    isHrRole(r) ||
+    r === "distrib_rahbar" ||
+    r === "distrib_hr" ||
+    r === "tamojni_rahbar"
+  );
+}
+
+export function canManageTamojni(role?: string | null): boolean {
+  return canManageDistribyutsiya(role);
 }
 
 /** Omborxona bo‘limi — xodim yoki boshliq */
@@ -626,3 +639,10 @@ export function userRoleLabel(role?: string | null): string {
   if (!role) return "";
   return USER_ROLE_LABELS[role] || role;
 }
+
+/** Smena va filial rotatsiyasi boshqaruvi — faqat HR menejer va Admin */
+export function canManageSmenaFilial(role?: string | null): boolean {
+  const r = normalizeUserRole(role);
+  return hasFullPlatformAccess(r) || isHrRole(r);
+}
+

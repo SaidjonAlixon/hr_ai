@@ -80,7 +80,7 @@ import { OperatorHeadsetIcon } from '@/components/OperatorHeadsetIcon';
 import { LanguageSwitcher } from '@/components/language-switcher';
 import { useI18n, navLabelForPath } from '@/i18n/I18nProvider';
 import { updateMyProfile } from '@/lib/face-id';
-import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole } from "@/lib/roles";
+import { isHrManager, isHrRole, isHrOversight, hasHrOversightNav, normalizeUserRole, isStajyor, canSeeHrRecruitment, isHrRecruitmentPath, canViewReviziya, canViewEmployees, canViewDavomat, canViewDavomatXatoliklar, canManageSettings, canManageUsers, canViewDistribyutsiya, canViewOmborxona, canViewLogistika, canViewKochmaAdmin, canViewHolat, canViewChecklistStatus, isDeptHeadRole, isLimitedOfficeStaffRole, isReviziyaRole, userRoleLabel, isDirectorRole, hasFullPlatformAccess, usesDavomatDashboardHome, isSbRole, canManageSmenaFilial } from "@/lib/roles";
 import { useTelegramMiniAppChrome } from '@/pages/tg-entry';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -821,7 +821,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         location.startsWith('/reyting') ||
         location.startsWith('/davomat-face') ||
         location.startsWith('/davomat-kochma') ||
-        location.startsWith('/smena-filial') ||
         location.startsWith('/tashkiliy-tuzilma') ||
         location.startsWith('/vazifalar') ||
         location === '/notifications' ||
@@ -868,7 +867,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
     if (location.startsWith('/admin/holat') && !canViewHolat(user.role)) {
       setLocation('/dashboard');
     }
-    if (location.startsWith('/smena-filial') && normalizeUserRole(user.role) === 'mudir') {
+    if (location.startsWith('/smena-filial') && !canManageSmenaFilial(user.role)) {
       setLocation('/dashboard');
     }
     if (location.startsWith('/logistika') && !canViewLogistika(user.role)) {
@@ -1335,7 +1334,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       davomatAnalyticsNav,
     davomatXatoliklarNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
@@ -1383,7 +1381,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
-      smenaNav,
       { name: "Ish o'rinlari", path: '/vacancies', icon: Briefcase },
       { name: 'Nomzodlar', path: '/candidates', icon: Users },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
@@ -1421,7 +1418,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       davomatFaceNav,
       davomatOfisdaNav,
       davomatQrNav,
-      smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
@@ -1437,7 +1433,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     it_dasturchi: [
@@ -1447,7 +1442,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
     ],
     it_tarmoq: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -1456,7 +1450,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
     ],
     it_rahbar: [
       { name: 'AyTi', path: '/it', icon: Cpu },
@@ -1464,7 +1457,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
@@ -1546,7 +1538,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     moliya_rahbar: [
@@ -1557,7 +1548,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     taminot_rahbar: [
@@ -1566,7 +1556,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     rivojlantirish_rahbar: [
@@ -1575,7 +1564,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     mamuriy_rahbar: [
@@ -1584,7 +1572,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     gpp_rahbar: [
@@ -1593,7 +1580,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     oshpaz_rahbar: [
@@ -1602,7 +1588,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     marketing_rahbar: [
@@ -1611,7 +1596,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
     ],
     sb: [
@@ -1622,7 +1606,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
@@ -1634,7 +1617,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Arizalar', path: '/requests', icon: FileText },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
@@ -1650,7 +1632,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       davomatFaceNav,
-      smenaNav,
     ],
     moliya: [
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
@@ -1660,7 +1641,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       orgNav,
       { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
-      smenaNav,
       { name: 'Cheklist holati', path: '/checklist-holati', icon: ClipboardList },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
@@ -1672,7 +1652,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       javobNav,
       reytingNav,
       davomatFaceNav,
-      smenaNav,
     ],
     revizor: [
       { name: 'Reviziya', path: '/reviziya', icon: ClipboardCheck },
@@ -1680,7 +1659,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],
     reviziya_rahbar: [
@@ -1689,7 +1667,6 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
       orgNav,
       davomatFaceNav,
-      smenaNav,
       { name: 'Xodimlar', path: '/employees', icon: Users },
       { name: "Aptekalar tarmog'i", path: '/pharmacy-network', icon: Store },
     ],

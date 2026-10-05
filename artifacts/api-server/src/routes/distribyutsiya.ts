@@ -469,7 +469,12 @@ function parseCoord(value: unknown): number | null {
 }
 
 router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageTamojni(req.userRole) && req.userRole !== "tamojni_rahbar") {
+  if (
+    !canManageTamojni(req.userRole) &&
+    req.userRole !== "tamojni_rahbar" &&
+    req.userRole !== "distrib_rahbar" &&
+    req.userRole !== "distrib_hr"
+  ) {
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }
@@ -553,7 +558,12 @@ router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res)
 });
 
 router.put("/distribyutsiya/tamojni/site", requireAuth, async (req: AuthRequest, res): Promise<void> => {
-  if (!canManageTamojni(req.userRole)) {
+  if (
+    !canManageTamojni(req.userRole) &&
+    req.userRole !== "tamojni_rahbar" &&
+    req.userRole !== "distrib_rahbar" &&
+    req.userRole !== "distrib_hr"
+  ) {
     res.status(403).json({ error: "Ruxsat yo‘q" });
     return;
   }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, MapPin, Plus, UserPlus, Warehouse } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Loader2, MapPin, Plus, UserPlus, Warehouse } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,8 +20,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/contexts/AuthContext";
 import { isOptionalUzPhoneValid, normalizeUzPhone, UZ_PHONE_HINT } from "@/lib/phone";
-import { userRoleLabel } from "@/lib/roles";
+import { canManageTamojni, isHrRole, userRoleLabel } from "@/lib/roles";
 import { gpsInputError, parseGpsText } from "@/lib/pharmacy-staff-api";
 import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib/distribyutsiya-api";
 
@@ -49,9 +50,20 @@ function ketdimRule(shiftKey: string): string {
 
 export function TamojniSkladPanel() {
   const { toast } = useToast();
+  const { user } = useAuth();
   const desk = useTamojniDesk(true);
   const mut = useTamojniMutations();
-  const canManage = !!desk.data?.canManage;
+  const canManage = Boolean(
+    desk.data?.canManage ||
+      user?.role === "admin" ||
+      user?.role === "director" ||
+      user?.role === "asoschi" ||
+      user?.role === "distrib_hr" ||
+      user?.role === "distrib_rahbar" ||
+      user?.role === "tamojni_rahbar" ||
+      isHrRole(user?.role) ||
+      canManageTamojni(user?.role),
+  );
 
   const [name, setName] = useState("");
   const [gps, setGps] = useState("");
@@ -113,8 +125,9 @@ export function TamojniSkladPanel() {
       {
         onSuccess: () =>
           toast({
-            title: "Joy saqlandi",
-            description: "Davomat shu nuqtadan 10 metr ichida ishlaydi",
+            title: "🟢 Kiritildi!",
+            description: `Tamojni sklad lokatsiyasi muvaffaqiyatli saqlandi. Davomat shu nuqtadan ${TAMOJNI_RADIUS_M} metr ichida ishlaydi.`,
+            className: "border-emerald-500 bg-emerald-50 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100",
           }),
         onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
       },
@@ -168,8 +181,21 @@ export function TamojniSkladPanel() {
           <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-sky-500/10 text-sky-700">
             <MapPin className="h-5 w-5" />
           </span>
-          <div>
-            <h2 className="text-base font-semibold">Davomat joyi</h2>
+          <div className="flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold">Davomat joyi</h2>
+              {site ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-100 px-2.5 py-0.5 text-xs font-semibold text-emerald-800 dark:border-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                  <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                  Kiritildi
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 dark:border-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400" />
+                  Hali kiritilmagan
+                </span>
+              )}
+            </div>
             <p className="text-sm text-muted-foreground">
               Google Mapsdan koordinatani nusxa qilib qo‘ying. Saqlangach davomat shu nuqtadan 10 metr ichida ishlaydi.
             </p>
@@ -207,13 +233,43 @@ export function TamojniSkladPanel() {
             </Button>
           </div>
         ) : null}
-        <p className="mt-3 text-xs text-muted-foreground">
-          {site
-            ? site.radiusM === TAMOJNI_RADIUS_M
-              ? `Hozir: ${site.name}. Davomat shu nuqtadan ${TAMOJNI_RADIUS_M} metr ichida.`
-              : `Hozir: ${site.name}. Qayta saqlang — radius ${TAMOJNI_RADIUS_M} metr bo‘ladi.`
-            : "Joy saqlanmaguncha xodim davomat qila olmaydi."}
-        </p>
+        {site ? (
+          <div className="mt-4 rounded-xl border border-emerald-300 bg-emerald-50/90 p-4 text-sm text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-100">
+            <div className="flex items-start gap-3">
+              <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
+                    ✓ Kiritildi
+                  </span>
+                  <span className="font-semibold text-emerald-900 dark:text-emerald-200">
+                    Davomat joyi faol: {site.name}
+                  </span>
+                </div>
+                <p className="text-xs leading-relaxed text-emerald-800 dark:text-emerald-300">
+                  Koordinata: <span className="font-mono font-bold text-emerald-950 dark:text-emerald-100">{site.latitude}, {site.longitude}</span> · Radius: <strong>{site.radiusM || TAMOJNI_RADIUS_M} metr</strong>.
+                </p>
+                <p className="text-xs text-emerald-700 dark:text-emerald-400">
+                  Bo‘lim boshlig‘i va xodimlar aynan shu joydan bemalol davomat qila oladi. Davomatda ularga filial/joy nomi sifatida faqat <strong>«{site.name}»</strong> ko‘rinadi.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50/90 p-4 text-sm text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" />
+              <div className="space-y-1">
+                <span className="inline-flex items-center gap-1 rounded-md bg-amber-600 px-2 py-0.5 text-xs font-bold text-white shadow-sm">
+                  ! Kiritilmagan
+                </span>
+                <p className="text-xs text-amber-800 dark:text-amber-300">
+                  Joy kiritilmaguncha bo‘lim boshlig‘i va xodimlar davomat qila olmaydi. Yuqoriga koordinatani kiritib <strong>«Joyni saqlash»</strong> tugmasini bosing.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4 text-sm leading-relaxed text-sky-950 shadow-sm sm:p-5">

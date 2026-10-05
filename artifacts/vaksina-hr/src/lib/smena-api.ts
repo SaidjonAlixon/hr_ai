@@ -70,6 +70,21 @@ export type SmenaRotationItem = {
   createdAt?: string;
 };
 
+export type StaffMonitoringItem = {
+  employeeId: number;
+  fullName: string;
+  orgRole: string | null;
+  primaryBranchId: number | null;
+  primaryBranchName: string | null;
+  todayBranchId: number | null;
+  todayBranchLabel: string | null;
+  todayShiftKey: string;
+  todayShiftLabel: string;
+  todayMode: string;
+  todayModeLabel: string;
+  slotsCount: number;
+};
+
 export type WorkSlotItem = {
   id: number;
   employeeId: number;
@@ -87,6 +102,11 @@ export type WorkSlotItem = {
   shiftLabel?: string;
   fullName?: string;
   orgRole?: string | null;
+  primaryBranchId?: number | null;
+  primaryBranchName?: string | null;
+  createdAt?: string;
+  createdByName?: string;
+  isExpired?: boolean;
 };
 
 async function apiJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -211,7 +231,7 @@ export function deleteDayRotation(id: number) {
 }
 
 export function fetchAllWorkSlots() {
-  return apiJson<{ items: WorkSlotItem[] }>("/smena/slots/all");
+  return apiJson<{ items: WorkSlotItem[]; staffMonitoring?: StaffMonitoringItem[] }>("/smena/slots/all");
 }
 
 export function fetchEmployeeSlots(employeeId: number, date?: string) {

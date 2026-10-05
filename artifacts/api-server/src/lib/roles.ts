@@ -390,3 +390,10 @@ export const HR_ROLE_LABELS: Record<string, string> = {
   hr_menejer: "HR Menejer",
   hr_kadr_rahbar: "HR kadr b/m",
 };
+
+/** Smena va filial rotatsiyasi boshqaruvi — faqat HR menejer va Admin */
+export function canManageSmenaFilial(role?: string | null): boolean {
+  const r = (role ?? "").trim().toLowerCase();
+  return hasFullPlatformAccess(r) || isHrRole(r);
+}
+

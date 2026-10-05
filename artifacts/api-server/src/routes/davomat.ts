@@ -35,7 +35,15 @@ import {
   isReviziyaRole,
 } from "../lib/roles";
 import { getActorDepartmentId, resolveDeptHeadContext, isDeptHeadRole } from "../lib/dept-staff";
-import { ensureTamojniSkladDepartmentId, getTamojniSite, isTamojniDepartmentMember, isTamojniRole } from "../lib/tamojni-sklad";
+import {
+  ensureTamojniSkladDepartmentId,
+  getTamojniSite,
+  isTamojniDepartmentMember,
+  isTamojniRole,
+  isTamojniOrDistribRole,
+  isTamojniOrDistribMember,
+  TAMOJNI_DEFAULT_RADIUS_M,
+} from "../lib/tamojni-sklad";
 import {
   isWarehouseDavomatStaff,
   matchesDavomatStaffFilter,
@@ -2381,6 +2389,7 @@ type WorkplaceEmp = {
   assignedBranchId: number | null;
   shiftType: string | null;
   shiftLabel: string | null;
+  departmentId?: number | null;
 };
 
 const BRANCH_USER_ROLES = new Set(["mudir", "farmasevt", "stajyor"]);
@@ -2426,7 +2435,15 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
   | { ok: true; point: DavomatPoint }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
-  if (isTamojniRole(userRole)) {
+  const isTamojniOrDistrib = isTamojniOrDistribMember({
+    userRole,
+    orgRole: emp.orgRole,
+    departmentId: emp.departmentId,
+    departmentName: emp.location,
+    location: emp.location,
+  });
+
+  if (isTamojniOrDistrib) {
     const site = await getTamojniSite();
     if (!site) {
       return {
@@ -2434,7 +2451,7 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
         status: 403,
         body: {
           error:
-            "Tamojni sklad joyi hali kiritilmagan. Bo‘lim boshlig‘i yoki Distribyutsiya HR joy nomini va lokatsiyani saqlasin.",
+            "Tamojni sklad joyi hali kiritilmagan. Bo‘lim boshlig‘i, HR yoki Admin joy nomini va koordinatani saqlasin.",
           code: "tamojni_site_missing",
           fullName: emp.fullName,
         },
@@ -2445,9 +2462,9 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
       point: {
         latitude: site.latitude,
         longitude: site.longitude,
-        label: site.name,
+        label: site.name || "Tamojni sklad",
         kind: "office",
-        radiusMeters: site.radiusM,
+        radiusMeters: site.radiusM || TAMOJNI_DEFAULT_RADIUS_M,
       },
     };
   }
@@ -2601,6 +2618,7 @@ async function ensureEmployeeForUser(user: {
       assignedBranchId: employeesTable.assignedBranchId,
       shiftType: employeesTable.shiftType,
       shiftLabel: employeesTable.shiftLabel,
+      departmentId: employeesTable.departmentId,
       employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable)
@@ -2633,6 +2651,7 @@ async function ensureEmployeeForUser(user: {
       assignedBranchId: employeesTable.assignedBranchId,
       shiftType: employeesTable.shiftType,
       shiftLabel: employeesTable.shiftLabel,
+      departmentId: employeesTable.departmentId,
       employmentStatus: employeesTable.employmentStatus,
     })
     .from(employeesTable);
@@ -2668,6 +2687,7 @@ async function ensureEmployeeForUser(user: {
       assignedBranchId: byName.assignedBranchId,
       shiftType: byName.shiftType,
       shiftLabel: byName.shiftLabel,
+      departmentId: byName.departmentId ?? departmentId,
     };
   }
 
@@ -2709,6 +2729,7 @@ async function ensureEmployeeForUser(user: {
       assignedBranchId: employeesTable.assignedBranchId,
       shiftType: employeesTable.shiftType,
       shiftLabel: employeesTable.shiftLabel,
+      departmentId: employeesTable.departmentId,
     });
 
   if (!created) throw new Error("Xodim yaratilmadi");
@@ -3375,7 +3396,7 @@ async function geoGate(
       effectiveRadius: mobileAnywhere ? Math.max(effectiveRadius, Math.ceil(distanceMeters) || effectiveRadius) : effectiveRadius,
       point,
       resolvedBranchId: null,
-      resolvedBranchLabel: null,
+      resolvedBranchLabel: point.label,
       activeShiftKey: null,
       daySlots: [],
     };
@@ -4511,11 +4532,20 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     } else if (user.role === "koordinator") {
       coordinatorFieldPunch = true;
     }
-    // Filial smena sloti — faqat dorixona xodimlari (koordinator/reviziya GPS maydoni ustun)
+    const isTamojniOrDistrib = isTamojniOrDistribMember({
+      userRole: user.role,
+      departmentId: user.departmentId ?? emp.departmentId,
+      departmentName: emp.location,
+      orgRole: emp.orgRole,
+      location: emp.location,
+    });
+
+    // Filial smena sloti — faqat dorixona xodimlari (koordinator/reviziya/tamojni/distribyutsiya o‘z joyiga ega)
     if (
       preferredSlot &&
       user.role !== "koordinator" &&
-      !isReviziyaRole(user.role)
+      !isReviziyaRole(user.role) &&
+      !isTamojniOrDistrib
     ) {
       const coords = await branchCoordsById(preferredSlot.branchId);
       if (coords) {
@@ -4532,7 +4562,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     } else if (
       activeNow[0] &&
       user.role !== "koordinator" &&
-      !isReviziyaRole(user.role)
+      !isReviziyaRole(user.role) &&
+      !isTamojniOrDistrib
     ) {
       const coords = await branchCoordsById(activeNow[0].branchId);
       if (coords) {
@@ -4550,7 +4581,8 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
       allSlots.length > 0 &&
       daySlots[0] &&
       user.role !== "koordinator" &&
-      !isReviziyaRole(user.role)
+      !isReviziyaRole(user.role) &&
+      !isTamojniOrDistrib
     ) {
       const coords = await branchCoordsById(daySlots[0].branchId);
       if (coords) {
@@ -4671,7 +4703,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     const scheduleOverride = await resolveScheduleOverride(emp.id, workDate);
 
     res.json({
-      allowedMeters: geofenceMetersForKind(point.kind),
+      allowedMeters: point.radiusMeters != null ? point.radiusMeters : geofenceMetersForKind(point.kind),
       mobileAnywhere,
       fieldBranchPunch: fieldBranchPunch || undefined,
       coordinatorFieldPunch: coordinatorFieldPunch || undefined,
@@ -7339,13 +7371,19 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     let fenceLng = DAVOMAT_SITE_LNG;
     let fenceLabel = `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`;
     let fenceRadius = DAVOMAT_OFFICE_GEOFENCE_METERS;
-    const tamojniPunch = isTamojniRole(user.role);
+    const tamojniPunch = isTamojniOrDistribMember({
+      userRole: user.role,
+      departmentId: user.departmentId ?? emp.departmentId,
+      departmentName: emp.location,
+      orgRole: emp.orgRole,
+      location: emp.location,
+    });
     if (tamojniPunch) {
       const site = await getTamojniSite();
       if (!site) {
         res.status(403).json({
           error:
-            "Tamojni sklad joyi hali kiritilmagan. Bo‘lim boshlig‘i yoki Distribyutsiya HR joy nomini va lokatsiyani saqlasin.",
+            "Tamojni sklad joyi hali kiritilmagan. Bo‘lim boshlig‘i, HR yoki Admin joy nomini va lokatsiyani saqlasin.",
           code: "tamojni_site_missing",
           fullName: emp.fullName,
         });
@@ -7353,8 +7391,8 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       }
       fenceLat = site.latitude;
       fenceLng = site.longitude;
-      fenceLabel = site.name;
-      fenceRadius = site.radiusM;
+      fenceLabel = site.name || "Tamojni sklad";
+      fenceRadius = site.radiusM || TAMOJNI_DEFAULT_RADIUS_M;
     }
 
     let mobileAnywhere = false;

@@ -13,6 +13,42 @@ export function isTamojniRole(role?: string | null): boolean {
   return r === TAMOJNI_STAFF_ROLE || r === TAMOJNI_HEAD_ROLE;
 }
 
+export function isTamojniOrDistribRole(role?: string | null): boolean {
+  const r = String(role || "").trim();
+  return (
+    r === TAMOJNI_STAFF_ROLE ||
+    r === TAMOJNI_HEAD_ROLE ||
+    r === "distrib" ||
+    r === "distrib_hr" ||
+    r === "distrib_rahbar"
+  );
+}
+
+/** Tamojni sklad yoki Distribyutsiya a'zosi/rahbari ekanligini aniqlash */
+export function isTamojniOrDistribMember(
+  row: {
+    departmentId?: number | null;
+    userRole?: string | null;
+    departmentName?: string | null;
+    orgRole?: string | null;
+    location?: string | null;
+  },
+  tamojniDeptId?: number | null,
+): boolean {
+  if (isTamojniOrDistribRole(row.userRole) || isTamojniOrDistribRole(row.orgRole)) return true;
+  if (tamojniDeptId != null && row.departmentId === tamojniDeptId) return true;
+  const name = String(row.departmentName || row.location || "")
+    .trim()
+    .toLocaleLowerCase("uz");
+  return (
+    name === TAMOJNI_SKLAD_DEPARTMENT_NAME.toLocaleLowerCase("uz") ||
+    name === "tamojni sklad" ||
+    name === "distribyutsiya" ||
+    name.includes("tamojni") ||
+    name.includes("дистриб")
+  );
+}
+
 /** Tamojni sklad xodimi faqat shu bo‘limni ko‘radi */
 export function isTamojniDepartmentMember(
   row: {
@@ -36,6 +72,10 @@ export function canManageTamojni(role?: string | null): boolean {
     r === "admin" ||
     r === "director" ||
     r === "asoschi" ||
+    r === "hr" ||
+    r === "hr_menejer" ||
+    r === "hr_direktor" ||
+    r === "hr_kadr_rahbar" ||
     r === "distrib_hr" ||
     r === "distrib_rahbar" ||
     r === TAMOJNI_HEAD_ROLE

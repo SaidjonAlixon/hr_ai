@@ -179,7 +179,7 @@ export function validateSlotInput(input: {
   validTo?: string | null;
   weekdays?: unknown;
   workDates?: unknown;
-}): { ok: true; mode: WorkSlotMode; shiftKey: ShiftKey; validFrom: string; validTo: string | null; weekdays: number[] | null; workDates: string[] | null } | { ok: false; error: string } {
+}): { ok: true; mode: WorkSlotMode; shiftKey: WorkSlotShiftKey; validFrom: string; validTo: string | null; weekdays: number[] | null; workDates: string[] | null } | { ok: false; error: string } {
   const mode = String(input.mode || "").trim() as WorkSlotMode;
   if (!["permanent", "period", "weekly", "days"].includes(mode)) {
     return { ok: false, error: "mode: permanent | period | weekly | days" };
@@ -202,14 +202,19 @@ export function validateSlotInput(input: {
     };
   }
 
-  const validFrom = String(input.validFrom || "").trim();
+  let validFrom = String(input.validFrom || "").trim();
+  if (mode === "permanent" && !validFrom) {
+    validFrom = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Tashkent" }).format(new Date());
+  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(validFrom)) {
     return { ok: false, error: "validFrom YYYY-MM-DD" };
   }
   let validTo: string | null =
-    input.validTo == null || input.validTo === ""
+    mode === "permanent"
       ? null
-      : String(input.validTo).trim();
+      : input.validTo == null || input.validTo === ""
+        ? null
+        : String(input.validTo).trim();
   if (validTo && !/^\d{4}-\d{2}-\d{2}$/.test(validTo)) {
     return { ok: false, error: "validTo YYYY-MM-DD" };
   }
@@ -218,7 +223,7 @@ export function validateSlotInput(input: {
     if (validTo < validFrom) return { ok: false, error: "Tugash sanasi boshlanishdan oldin bo‘lmasin" };
   }
   if (mode === "permanent" && !validTo) {
-    // ochiq muddat
+    // ochiq muddat (cheksiz)
   }
   let weekdays: number[] | null = null;
   if (mode === "weekly") {

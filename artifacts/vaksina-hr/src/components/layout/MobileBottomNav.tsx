@@ -30,7 +30,7 @@ const ROLE_MOBILE_PATHS: Record<string, string[]> = {
   mudir: ['/dashboard', '/vazifalar', '/atestatsiya', '/davomat-face', '/xodim-kerak'],
   koordinator: ['/dashboard', '/vazifalar', '/davomat/ofisda', '/davomat-face', '/checklist'],
   farmasevt: ['/dashboard', '/vazifalar', '/atestatsiya', '/davomat-face', '/ehtiyoj'],
-  stajyor: ['/kirish', '/atestatsiya', '/javob-olish', '/davomat-face', '/smena-filial'],
+  stajyor: ['/kirish', '/atestatsiya', '/javob-olish', '/davomat-face', '/reyting'],
   moliya: ['/dashboard', '/vazifalar', '/oylik', '/davomat'],
   sb: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/davomat'],
   sb_boshliq: ['/dashboard', '/vazifalar', '/davomat-face', '/employees', '/davomat'],

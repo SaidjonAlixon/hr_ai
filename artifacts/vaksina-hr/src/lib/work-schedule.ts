@@ -103,12 +103,37 @@ export function workplaceDisplayTitle(
   employeeLocation?: string | null,
   labels?: { mainOffice?: string; branchUnset?: string },
 ): string {
+  const siteLabel = site?.label?.trim() || "";
+  const r = String(userRole || "").trim();
+
+  // Tamojni sklad yoki Distribyutsiya: faqat Tamojni sklad nomi chiqib turadi
+  if (
+    r === "tamojni" ||
+    r === "tamojni_rahbar" ||
+    r === "distrib" ||
+    r === "distrib_hr" ||
+    r === "distrib_rahbar" ||
+    siteLabel.toLowerCase().includes("tamojni") ||
+    String(employeeLocation || "").toLowerCase().includes("tamojni")
+  ) {
+    const cleaned = siteLabel.split("·")[0].split("|")[0].trim();
+    if (cleaned) return cleaned;
+    const locCleaned = String(employeeLocation || "").split("·")[0].split("|")[0].trim();
+    return locCleaned || "Tamojni sklad";
+  }
+
   // Reviziya / maydon: hozir turgan filial yoki ofis nomi
   if (site?.kind === "branch" && site.label) {
     const cleaned = site.label.split("·")[0].split("|")[0].trim();
     if (cleaned) return cleaned;
   }
-  if (!isPharmacyShiftRole(userRole)) return labels?.mainOffice || "Asosiy Ofis";
+  if (!isPharmacyShiftRole(userRole)) {
+    if (siteLabel && !siteLabel.toLowerCase().includes("asosiy")) {
+      const cleaned = siteLabel.split("·")[0].split("|")[0].trim();
+      if (cleaned) return cleaned;
+    }
+    return labels?.mainOffice || "Asosiy Ofis";
+  }
   const raw =
     (site?.kind === "branch" ? site.label : null) || employeeLocation || site?.label || "";
   const cleaned = raw.split("·")[0].split("|")[0].trim();

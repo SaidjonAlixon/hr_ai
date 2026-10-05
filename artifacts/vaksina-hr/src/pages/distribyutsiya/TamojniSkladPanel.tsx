@@ -26,7 +26,7 @@ import { canManageTamojni, isHrRole, userRoleLabel } from "@/lib/roles";
 import { gpsInputError, parseGpsText } from "@/lib/pharmacy-staff-api";
 import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib/distribyutsiya-api";
 
-const TAMOJNI_RADIUS_M = 10;
+const TAMOJNI_RADIUS_M = 150;
 
 const SHIFTS = [
   { key: "office", label: "Ofis", start: "09:00", end: "18:00" },
@@ -197,7 +197,7 @@ export function TamojniSkladPanel() {
               )}
             </div>
             <p className="text-sm text-muted-foreground">
-              Google Mapsdan koordinatani nusxa qilib qo‘ying. Saqlangach davomat shu nuqtadan 10 metr ichida ishlaydi.
+              Google Mapsdan koordinatani nusxa qilib qo‘ying. Saqlangach davomat shu nuqtadan 150 metr ichida ishlaydi.
             </p>
           </div>
         </div>
@@ -217,7 +217,7 @@ export function TamojniSkladPanel() {
               className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 font-mono text-sm leading-snug disabled:opacity-60"
             />
             <p className="text-[11px] leading-snug text-muted-foreground">
-              Google Maps dan nusxa. 41.311081, 69.279737 yoki 41°18'23.3"N 69°18'28.0"E. Saqlangach radius 10 metr.
+              Google Maps dan nusxa. 41.311081, 69.279737 yoki 41°18'23.3"N 69°18'28.0"E. Saqlangach radius 150 metr.
             </p>
           </div>
         </div>

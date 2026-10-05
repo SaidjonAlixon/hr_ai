@@ -6,7 +6,7 @@ import { ensureDepartmentSitesSchema } from "./ensure-schema";
 export const TAMOJNI_SKLAD_DEPARTMENT_NAME = "Tamojni sklad";
 export const TAMOJNI_STAFF_ROLE = "tamojni";
 export const TAMOJNI_HEAD_ROLE = "tamojni_rahbar";
-export const TAMOJNI_DEFAULT_RADIUS_M = 10;
+export const TAMOJNI_DEFAULT_RADIUS_M = 150;
 
 export function isTamojniRole(role?: string | null): boolean {
   const r = String(role || "").trim();
@@ -111,11 +111,21 @@ export async function getTamojniSite(): Promise<TamojniSite | null> {
     .limit(1);
   if (!row) return null;
   if (!Number.isFinite(row.latitude) || !Number.isFinite(row.longitude)) return null;
+
+  const effectiveRadius = Math.max(row.radiusM || 0, TAMOJNI_DEFAULT_RADIUS_M);
+  if (row.radiusM !== effectiveRadius) {
+    await db
+      .update(departmentSitesTable)
+      .set({ radiusM: effectiveRadius, updatedAt: new Date() })
+      .where(eq(departmentSitesTable.id, row.id))
+      .catch(() => undefined);
+  }
+
   return {
     departmentId,
     name: row.name.trim() || TAMOJNI_SKLAD_DEPARTMENT_NAME,
     latitude: row.latitude,
     longitude: row.longitude,
-    radiusM: row.radiusM > 0 ? row.radiusM : TAMOJNI_DEFAULT_RADIUS_M,
+    radiusM: effectiveRadius,
   };
 }

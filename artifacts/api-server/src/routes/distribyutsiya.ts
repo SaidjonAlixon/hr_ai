@@ -570,7 +570,7 @@ router.put("/distribyutsiya/tamojni/site", requireAuth, async (req: AuthRequest,
   const name = String(req.body?.name || "").trim();
   const latitude = parseCoord(req.body?.latitude);
   const longitude = parseCoord(req.body?.longitude);
-  const radiusM = TAMOJNI_DEFAULT_RADIUS_M;
+  const radiusM = Math.max(TAMOJNI_DEFAULT_RADIUS_M, Number(req.body?.radiusM) || TAMOJNI_DEFAULT_RADIUS_M);
   if (name.length < 2) {
     res.status(400).json({ error: "Joy nomini kiriting" });
     return;

@@ -298,6 +298,89 @@ export function useSaveManagerLocation() {
   });
 }
 
+export type BranchAccount = {
+  role: "mudir" | "farmasevt" | "stajyor";
+  fullName: string;
+  login: string;
+  temporaryPassword: string;
+  employeeId: number;
+};
+
+export function useCreatePharmacyBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: {
+      coordinatorEmployeeId: number;
+      branchName: string;
+      branchNo: number;
+      coordinates: string;
+      mudir: { firstName: string; lastName: string; phone: string };
+      staff: Array<{ role: "farmasevt" | "stajyor"; firstName: string; lastName: string; phone: string }>;
+    }) =>
+      apiFetch<{
+        ok: true;
+        branchName: string;
+        coordinatorName: string;
+        employeeId: number;
+        accounts: BranchAccount[];
+      }>("/pharmacy-network/branches", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({
+        predicate: (q) => JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
+}
+
+export function useTransferPharmacyBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: { employeeId: number; coordinatorEmployeeId: number }) =>
+      apiFetch<{
+        ok: true;
+        branchName: string;
+        fromCoordinator: string;
+        toCoordinator: string;
+        message: string;
+      }>("/pharmacy-network/branches/transfer", {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["davomat"] });
+      qc.invalidateQueries({
+        predicate: (q) => JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
+}
+
+export function useRemovePharmacyBranch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (employeeId: number) =>
+      apiFetch<{ ok: true; branchName: string; dismissed: string[]; message: string }>(
+        "/pharmacy-network/branches/remove",
+        { method: "POST", body: JSON.stringify({ employeeId }) },
+      ),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["davomat"] });
+      qc.invalidateQueries({
+        predicate: (q) => JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
+}
+
 export function useCreatePharmacyStaff() {
   const qc = useQueryClient();
   return useMutation({

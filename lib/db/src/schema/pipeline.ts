@@ -1,4 +1,4 @@
-import { pgTable, text, serial, timestamp, integer, jsonb, doublePrecision } from "drizzle-orm/pg-core";
+import { boolean, pgTable, text, serial, timestamp, integer, jsonb, doublePrecision } from "drizzle-orm/pg-core";
 
 export const preboardingsTable = pgTable("preboarding", {
   id: serial("id").primaryKey(),
@@ -58,6 +58,10 @@ export const employeesTable = pgTable("employees", {
   assignedBranchId: integer("assigned_branch_id"),
   /** Mudir belgilagan maxsus holat matni */
   shiftLabel: text("shift_label"),
+  /** true — shu filial xodimlari QR ishlata olmaydi, faqat Face ID */
+  qrFaceOnly: boolean("qr_face_only").notNull().default(false),
+  /** Filial tartib raqami. 0 — Asosiy. Faqat mudir (filial) qatorida. */
+  branchNo: integer("branch_no"),
   /** working | new | dismissed | need_hire | searching | no_manager */
   employmentStatus: text("employment_status").notNull().default("working"),
   /** Login foydalanuvchisi (users.id) — mudir/koordinator bog‘lash */

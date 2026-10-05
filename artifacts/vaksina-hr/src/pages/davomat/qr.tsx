@@ -8,12 +8,15 @@ import {
   Loader2,
   QrCode,
   RefreshCw,
+  ScanFace,
   ScanLine,
+  Search,
   Trash2,
   XCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 import { Button } from "../../components/ui/button";
+import { Input } from "../../components/ui/input";
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { QrScanDialog, primeQrCamera } from "../../components/QrScanDialog";
@@ -28,7 +31,9 @@ import {
   qrPunchDavomat,
   revokeBranchQr,
   revokeDepartmentQr,
+  setBranchQrFaceOnly,
 } from "../../lib/davomat-api";
+import { foldScript } from "../../lib/script-fold";
 import { downloadAllQrPdf, downloadQrPdf, downloadQrPng, renderQrToCanvas } from "../../lib/qr-render";
 import { canManageSettings, isDeptHeadRole, isDirectorRole, hasFullPlatformAccess } from "../../lib/roles";
 import { cn } from "../../lib/utils";
@@ -83,6 +88,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
   const qc = useQueryClient();
   const [scope, setScope] = useState<Scope>("branches");
   const [selectedId, setSelectedId] = useState<number | null>(null);
+  const [branchQuery, setBranchQuery] = useState("");
   const [needsReissue, setNeedsReissue] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
   const [qrStream, setQrStream] = useState<MediaStream | null>(null);
@@ -172,6 +178,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     hasActiveQr: boolean;
     version: number | null;
     managerName?: string;
+    qrFaceOnly?: boolean;
   }> = useMemo(() => {
     if (scope === "branches") {
       return (branches ?? []).map((b) => ({
@@ -180,6 +187,7 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
         hasActiveQr: b.hasActiveQr,
         version: b.version,
         managerName: b.managerName,
+        qrFaceOnly: Boolean(b.qrFaceOnly),
       }));
     }
     return (departments ?? []).map((d) => ({
@@ -194,6 +202,20 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
     () => items.find((b) => b.id === selectedId) ?? null,
     [items, selectedId],
   );
+  const canToggleFaceOnly = hasFullPlatformAccess(user?.role) && scope === "branches";
+  const visibleItems = useMemo(() => {
+    if (scope !== "branches") return items;
+    const words = branchQuery
+      .trim()
+      .split(/\s+/)
+      .map((w) => foldScript(w))
+      .filter(Boolean);
+    if (words.length === 0) return items;
+    return items.filter((b) => {
+      const hay = foldScript(`${b.name} ${b.managerName ?? ""}`);
+      return words.every((w) => hay.includes(w));
+    });
+  }, [items, branchQuery, scope]);
 
   const activeCount = useMemo(() => items.filter((b) => b.hasActiveQr).length, [items]);
 
@@ -325,6 +347,15 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
       });
     },
     onError: (e: Error) => toast({ title: "Xato", description: e.message, variant: "destructive" }),
+  });
+
+  const faceOnly = useMutation({
+    mutationFn: ({ id, enabled }: { id: number; enabled: boolean }) => setBranchQrFaceOnly(id, enabled),
+    onSuccess: (data) => {
+      toast({ title: data.message });
+      void qc.invalidateQueries({ queryKey: ["davomat-qr-branches"] });
+    },
+    onError: (e: Error) => toast({ title: "Saqlanmadi", description: e.message, variant: "destructive" }),
   });
 
   const revoke = useMutation({
@@ -689,6 +720,59 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
           ) : null}
         </div>
 
+        {scope === "branches" ? (
+          <div className="relative mb-3">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={branchQuery}
+              onChange={(e) => setBranchQuery(e.target.value)}
+              placeholder="Filial nomi — krill yoki lotin"
+              className="h-10 rounded-xl pl-9"
+              autoComplete="off"
+            />
+          </div>
+        ) : null}
+
+        {canToggleFaceOnly && selected ? (
+          <div
+            className={cn(
+              "mb-3 flex flex-col gap-3 rounded-2xl border px-3 py-3 sm:flex-row sm:items-center sm:justify-between",
+              selected.qrFaceOnly
+                ? "border-amber-300 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30"
+                : "border-border bg-muted/30",
+            )}
+          >
+            <div className="min-w-0">
+              <p className="flex items-center gap-2 text-sm font-semibold text-foreground">
+                <ScanFace className="h-4 w-4 shrink-0" />
+                {selected.qrFaceOnly ? "Faqat Face ID" : "QR va Face ID"}
+              </p>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                {selected.qrFaceOnly
+                  ? `${selected.name} xodimlari qayerda bo‘lsa ham QR ishlamaydi. Davomat faqat Face ID.`
+                  : `${selected.name} xodimlari QR va Face ID bilan davomat qiladi.`}
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant={selected.qrFaceOnly ? "outline" : "destructive"}
+              className="h-10 shrink-0 rounded-xl"
+              disabled={faceOnly.isPending}
+              onClick={() => {
+                const next = !selected.qrFaceOnly;
+                const ask = next
+                  ? `«${selected.name}» xodimlari uchun QR o‘chirilsinmi? Ular boshqa filialga borsa ham faqat Face ID ishlaydi.`
+                  : `«${selected.name}» uchun QR yana yoqilsinmi?`;
+                if (!window.confirm(ask)) return;
+                faceOnly.mutate({ id: selected.id, enabled: next });
+              }}
+            >
+              {faceOnly.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {selected.qrFaceOnly ? "QR ni qayta yoqish" : "QR ni bekor qilish"}
+            </Button>
+          </div>
+        ) : null}
+
         {listLoading ? (
           <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…
@@ -699,9 +783,14 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
               ? "Filial topilmadi (GPS bo‘lishi shart)."
               : "Ofis QR yuklanmadi."}
           </p>
+        ) : visibleItems.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-border px-3 py-8 text-center text-sm text-muted-foreground">
+            «{branchQuery.trim()}» bo‘yicha filial topilmadi. Krill va lotin bir xil qidiriladi.
+          </p>
         ) : (
           <div className="grid max-h-[16rem] gap-1.5 overflow-y-auto rounded-2xl border border-border/70 bg-muted/20 p-1.5 sm:max-h-none sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {items.map((b, idx) => {
+            {visibleItems.map((b) => {
+              const idx = items.findIndex((x) => x.id === b.id);
               const on = selectedId === b.id;
               const sharedOffice =
                 b.id === 0 || Boolean((b as { sharedOffice?: boolean }).sharedOffice);
@@ -752,9 +841,11 @@ export default function DavomatQrPage({ adminMode = false }: Props) {
                         ? b.hasActiveQr
                           ? `Umumiy ofis · Faol v${b.version}`
                           : "Umumiy ofis · QR yo‘q"
-                        : b.hasActiveQr
-                          ? `Faol · v${b.version}`
-                          : "QR yo‘q"}
+                        : b.qrFaceOnly
+                          ? "Faqat Face ID"
+                          : b.hasActiveQr
+                            ? `Faol · v${b.version}`
+                            : "QR yo‘q"}
                     </span>
                   </span>
                   <span

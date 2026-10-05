@@ -30,6 +30,7 @@ import { Skeleton } from '../../components/ui/skeleton';
 import { useToast } from '../../hooks/use-toast';
 import { cn } from '../../lib/utils';
 import { useI18n } from '../../i18n/I18nProvider';
+import { stripGpsSuffix } from '../../lib/pharmacy-staff-api';
 
 const TYPE_ICONS: Record<string, { icon: typeof Bell; color: string; soft: string; key: string }> = {
   new_request: {
@@ -311,7 +312,7 @@ export default function NotificationsPage() {
                             !n.isRead && 'font-medium',
                           )}
                         >
-                          {n.text}
+                          {stripGpsSuffix(n.text) || n.text}
                         </p>
                         {n.linkUrl && (
                           <p className="mt-1 inline-flex items-center gap-0.5 text-[11px] font-medium text-sky-700">

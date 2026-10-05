@@ -1,4 +1,5 @@
 export * from "./departments";
+export * from "./department-sites";
 export * from "./users";
 export * from "./requests";
 export * from "./vacancies";

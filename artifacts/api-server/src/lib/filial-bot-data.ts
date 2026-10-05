@@ -22,6 +22,7 @@ export type FilialBranchCard = {
   lng: number | null;
   hasGps: boolean;
   hasPrimaryPhone: boolean;
+  branchNo: number | null;
 };
 
 type ContactRow = {
@@ -119,6 +120,7 @@ export async function loadFilialBranches(force = false): Promise<FilialBranchCar
       employmentStatus: employeesTable.employmentStatus,
       latitude: employeesTable.latitude,
       longitude: employeesTable.longitude,
+      branchNo: employeesTable.branchNo,
     })
     .from(employeesTable)
     .where(eq(employeesTable.orgRole, "manager"));
@@ -197,6 +199,7 @@ export async function loadFilialBranches(force = false): Promise<FilialBranchCar
         lng: gps?.lng ?? null,
         hasGps: !!gps,
         hasPrimaryPhone: !!(primary && primary.length >= 12),
+        branchNo: m.branchNo ?? null,
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name, "uz"));

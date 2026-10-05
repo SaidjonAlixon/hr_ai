@@ -34,6 +34,8 @@ const ROLE_POSITION: Record<string, string> = {
   distrib: "Distribyutsiya xodimi",
   distrib_hr: "Distribyutsiya HR",
   distrib_rahbar: "Distribyutsiya rahbari",
+  tamojni: "Tamojni sklad xodimi",
+  tamojni_rahbar: "Tamojni sklad bo‘lim boshlig‘i",
   moliya: "Moliyachi",
   moliya_rahbar: "Moliya bo‘lim boshlig‘i",
   moliya_xodim: "Moliya xodimi",

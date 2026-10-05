@@ -18,6 +18,7 @@ import {
   isPharmacyBranchRole,
 } from "@/lib/roles";
 import { useBranchAuditsList, type BranchAudit } from "@/lib/branch-audits-api";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { CoordinatorRankingBoard } from "@/pages/checklist-holati/ranking-panel";
 
 function scoreTone(pct: number) {
@@ -63,7 +64,7 @@ export default function ReytingPage() {
     return {
       visits: audits.length,
       avg,
-      branch: audits[0]?.branchLocation || audits[0]?.managerName || "Filial",
+      branch: displayBranchName(audits[0]?.branchLocation) || audits[0]?.managerName || "Filial",
     };
   }, [audits]);
 
@@ -167,7 +168,7 @@ export default function ReytingPage() {
                 <Badge variant="outline">{formatWhen(viewing.visitDate, viewing.createdAt)}</Badge>
               </div>
               <p className="text-muted-foreground">
-                {viewing.branchLocation || viewing.managerName}
+                {displayBranchName(viewing.branchLocation) || viewing.managerName}
                 {viewing.coordinatorName ? ` · ${viewing.coordinatorName}` : ""}
               </p>
               {viewing.checkLatitude != null && viewing.checkLongitude != null ? (

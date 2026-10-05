@@ -3,6 +3,7 @@ import { eq, and, inArray } from "drizzle-orm";
 import { db, notificationsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
+import { stripGpsSuffix } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -19,7 +20,12 @@ router.get("/notifications", requireAuth, async (req: AuthRequest, res): Promise
     .where(and(...conditions))
     .orderBy(notificationsTable.createdAt);
 
-  res.json(rows.reverse()); // newest first
+  res.json(
+    rows.reverse().map((row) => ({
+      ...row,
+      text: stripGpsSuffix(row.text) || row.text,
+    })),
+  );
 });
 
 router.patch("/notifications/:id/read", requireAuth, async (req: AuthRequest, res): Promise<void> => {

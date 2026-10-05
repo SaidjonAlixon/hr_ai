@@ -221,7 +221,8 @@ export function canViewDavomat(role?: string | null): boolean {
     hasHrOversightNav(r) ||
     isSbRole(r) ||
     isDeptHeadRole(r) ||
-    r === "koordinator"
+    r === "koordinator" ||
+    r === "tamojni"
   );
 }
 
@@ -278,6 +279,7 @@ export function canViewEmployees(role?: string | null): boolean {
     return false;
   }
   if (role === "moliya") return false;
+  if (role === "tamojni") return true;
   if (isLimitedOfficeStaffRole(role)) return false;
   return isDeptHeadRole(role);
 }
@@ -300,6 +302,8 @@ export const EMPLOYEE_VIEW_ONLY_ROLES = [
   "marketing_rahbar",
   "distrib_rahbar",
   "distrib_hr",
+  "tamojni_rahbar",
+  "tamojni",
 ] as const;
 
 export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {
@@ -330,6 +334,7 @@ export const DEPT_HEAD_ROLES = [
   "hr_menejer",
   "distrib_rahbar",
   "distrib_hr",
+  "tamojni_rahbar",
   "moliya_rahbar",
   "taminot_rahbar",
   "rivojlantirish_rahbar",
@@ -366,9 +371,15 @@ export function isDistribyutsiyaRole(role?: string | null): boolean {
   return role === "distrib" || role === "distrib_hr" || role === "distrib_rahbar";
 }
 
-/** Distribyutsiya bo‘limi menyusi — faqat Distribyutsiya HR / rahbar */
+/** Distribyutsiya sahifasi — HR/rahbar va admin (direktor, asoschi ham). */
 export function canViewDistribyutsiya(role?: string | null): boolean {
-  return role === "distrib_rahbar" || role === "distrib_hr";
+  const r = normalizeUserRole(role);
+  return (
+    hasFullPlatformAccess(r) ||
+    r === "distrib_rahbar" ||
+    r === "distrib_hr" ||
+    r === "tamojni_rahbar"
+  );
 }
 
 /**
@@ -601,6 +612,8 @@ export const USER_ROLE_LABELS: Record<string, string> = {
   distrib: "Distribyutsiya xodimi",
   distrib_hr: "Distribyutsiya HR",
   distrib_rahbar: "Distribyutsiya rahbari",
+  tamojni: "Tamojni sklad xodimi",
+  tamojni_rahbar: "Tamojni sklad bo‘lim boshlig‘i",
   kassir: "Kassir",
   yurist: "Yurist",
   komunalniy: "Kommunal",

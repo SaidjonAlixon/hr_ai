@@ -30,6 +30,7 @@ import {
   workdaysBetween,
 } from "../lib/kpi-payroll";
 import { loadStaffFromUsers } from "../lib/staff-directory";
+import { isSbRole } from "../lib/roles";
 
 const router: IRouter = Router();
 
@@ -579,7 +580,8 @@ router.get("/oylik/year", requireAuth, async (req: AuthRequest, res): Promise<vo
 router.get("/oylik/jarima-summary", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   try {
     const month = String(req.query.month || currentMonthKey()).slice(0, 7);
-    res.json(await loadJarimaSummary(month, req.userId!, canManagePayroll(req.userRole)));
+    const seeAll = canManagePayroll(req.userRole) || isSbRole(req.userRole);
+    res.json(await loadJarimaSummary(month, req.userId!, seeAll));
   } catch (err) {
     console.error("GET /oylik/jarima-summary", err);
     res.status(503).json({ error: "Jarima yuklanmadi" });

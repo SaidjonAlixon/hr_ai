@@ -5,6 +5,7 @@ import { type Employee } from '@workspace/api-client-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useToast } from '../../hooks/use-toast';
 import { isHrManager } from '../../lib/roles';
+import { displayBranchName } from '../../lib/pharmacy-staff-api';
 import { useI18n } from '../../i18n/I18nProvider';
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import {
@@ -394,7 +395,7 @@ export default function EhtiyojPage() {
                     <SelectItem value="none">Tanlanmagan</SelectItem>
                     {managers.map((m) => (
                       <SelectItem key={m.id} value={String(m.id)}>
-                        {(m.location || 'Filial') + ' — ' + m.fullName}
+                        {(displayBranchName(m.location) || 'Filial') + ' — ' + m.fullName}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -549,7 +550,7 @@ export default function EhtiyojPage() {
                           {statusBadge(n.status)}
                         </div>
                         <p className="mt-1 truncate text-sm font-semibold text-foreground">
-                          {n.branchLocation || 'Filial'}
+                          {displayBranchName(n.branchLocation) || 'Filial'}
                           {n.managerName ? ` — ${n.managerName}` : ''}
                         </p>
                         {n.note && <p className="mt-0.5 text-xs text-muted-foreground">{n.note}</p>}
@@ -670,7 +671,7 @@ export default function EhtiyojPage() {
                       {statusBadge(n.status)}
                     </div>
                     <p className="mt-1 text-sm font-medium text-foreground">
-                      {n.branchLocation || 'Filial'}
+                      {displayBranchName(n.branchLocation) || 'Filial'}
                       {n.managerName ? ` — ${n.managerName}` : ''}
                     </p>
                     <NeedTimeline n={n} />
@@ -700,7 +701,7 @@ export default function EhtiyojPage() {
               <span className="font-semibold">
                 {confirmTarget ? needLabel(confirmTarget.needType) : ''}
               </span>
-              {confirmTarget?.branchLocation ? ` — ${confirmTarget.branchLocation}` : ''}
+              {confirmTarget?.branchLocation ? ` — ${displayBranchName(confirmTarget.branchLocation)}` : ''}
             </p>
             <p className="text-xs text-muted-foreground">
               Ijrochini tanlang (texnik, ombor yoki boshqa). Topshiriqlar bo‘limiga tushadi.

@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   useAuditCoverage,
@@ -159,7 +160,7 @@ export function ChecklistDashboard({
     for (const a of audits) {
       if (coordinatorId !== "all" && String(a.coordinatorId) !== coordinatorId) continue;
       const id = String(a.managerEmployeeId);
-      if (!map.has(id)) map.set(id, a.branchLocation || a.managerName || t("ui.branch"));
+      if (!map.has(id)) map.set(id, displayBranchName(a.branchLocation) || a.managerName || t("ui.branch"));
     }
     if (coverageAll && coordinatorId !== "all") {
       const coord = coverageAll.coordinators.find(
@@ -167,7 +168,7 @@ export function ChecklistDashboard({
       );
       for (const b of coord?.branches ?? []) {
         const id = String(b.managerEmployeeId);
-        if (!map.has(id)) map.set(id, b.branchLocation);
+        if (!map.has(id)) map.set(id, displayBranchName(b.branchLocation) || "Filial");
       }
     }
     return [...map.entries()].sort((a, b) => a[1].localeCompare(b[1], "uz"));
@@ -639,7 +640,7 @@ export function ChecklistDashboard({
                     className="flex w-full items-start justify-between gap-2 px-4 py-2.5 text-left hover:bg-muted"
                   >
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-medium">{a.branchLocation || t("ui.branch")}</p>
+                      <p className="truncate text-sm font-medium">{displayBranchName(a.branchLocation) || t("ui.branch")}</p>
                       <p className="truncate text-[11px] text-muted-foreground">
                         {a.coordinatorName || t("checklist.coord")} · {formatShort(a.visitDate)} · {a.visitName}
                       </p>
@@ -711,7 +712,7 @@ function computeDashboard(
     const bk = String(a.managerEmployeeId);
     const b = branchMap.get(bk) ?? {
       id: bk,
-      name: a.branchLocation || "Filial",
+      name: displayBranchName(a.branchLocation) || "Filial",
       manager: a.managerName || "—",
       visits: 0,
       scores: [],

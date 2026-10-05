@@ -59,10 +59,12 @@ import mobileAttendanceRouter from "./mobile-attendance";
 import boglanishRouter from "./boglanish";
 import telegramFilialRouter from "./telegram-filial";
 import vaksinamedRouter from "./vaksinamed";
+import publicFilialMapRouter from "./public-filial-map";
 
 const router: IRouter = Router();
 
 router.use(healthRouter);
+router.use(publicFilialMapRouter);
 router.use(uploadsRouter);
 router.use(pharmacyNetworkRouter);
 router.use(boglanishRouter);

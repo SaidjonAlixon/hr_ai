@@ -1,6 +1,7 @@
 import React from "react";
 import { useLocation } from "wouter";
-import { Receipt } from "lucide-react";
+import { Download, FileText, Receipt } from "lucide-react";
+import { exportJarimaExcel, exportJarimaPdf, type JarimaExportLine } from "@/lib/jarima-export";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
@@ -67,13 +68,31 @@ const JARIMA_RULE_CARDS = [
   { n: "4+", title: "4-marta va keyin", body: "Har safar 1 oylikning 50%" },
 ];
 
+type JarimaKindFilter = "all" | "absent" | "late";
+
 export function DavomatJarimaPanel({ month }: { month: string }) {
   const summary = useJarimaSummary(month);
   const data = summary.data;
   const rows = data?.rows ?? [];
   const self = data?.self;
   const people = jarimaPeople(rows.length ? rows : self ? [self] : []);
-  const total = data?.own ? self?.amount ?? 0 : data?.total ?? 0;
+  const [kind, setKind] = React.useState<JarimaKindFilter>("all");
+  const [exporting, setExporting] = React.useState<"excel" | "pdf" | null>(null);
+  const shown = React.useMemo(() => filterJarimaPeople(people, kind), [people, kind]);
+  const total = data?.own && kind === "all" ? self?.amount ?? 0 : shown.reduce((sum, person) => sum + person.amount, 0);
+  const filterLabel = kind === "absent" ? "Kelmagan" : kind === "late" ? "Kechikkan" : "Kechikkan va kelmagan";
+  const exportLines = React.useMemo(() => jarimaExportLines(shown), [shown]);
+  const download = async (format: "excel" | "pdf") => {
+    if (!exportLines.length || exporting) return;
+    setExporting(format);
+    try {
+      const payload = { month, filterLabel, lines: exportLines };
+      if (format === "excel") await exportJarimaExcel(payload);
+      else await exportJarimaPdf(payload);
+    } finally {
+      setExporting(null);
+    }
+  };
   return (
     <section className="overflow-hidden rounded-3xl border border-rose-200/80 bg-white shadow-[0_18px_50px_-28px_rgba(159,18,57,0.55)] dark:border-rose-400/25 dark:bg-[#241018]">
       <header className="bg-[#172033] px-5 py-5 text-white sm:px-6">
@@ -88,7 +107,7 @@ export function DavomatJarimaPanel({ month }: { month: string }) {
           <div className="min-w-[180px] rounded-2xl bg-white/10 px-4 py-3 ring-1 ring-white/15">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-rose-100">Jami jarima</p>
             <p className="mt-1 text-2xl font-bold tabular-nums leading-none">{summary.isLoading ? "…" : formatSom(total)}</p>
-            <p className="mt-1.5 text-xs text-white/60">{summary.isLoading ? "Hisoblanmoqda" : `${people.length} xodim`}</p>
+            <p className="mt-1.5 text-xs text-white/60">{summary.isLoading ? "Hisoblanmoqda" : `${shown.length} xodim · ${filterLabel}`}</p>
           </div>
         </div>
         <div className="mt-5 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -103,19 +122,68 @@ export function DavomatJarimaPanel({ month }: { month: string }) {
           ))}
         </div>
       </header>
-      <p className="border-b border-rose-100 bg-rose-50/80 px-5 py-2.5 text-xs leading-relaxed text-slate-600 dark:border-rose-400/15 dark:bg-rose-500/10 dark:text-rose-100/80 sm:px-6">
-        Kunlik ish haqi = oylik ÷ shu oyning kunlari. Qoralama — admin tasdiqlaguncha oylik yopilmaydi.
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-rose-100 bg-rose-50/80 px-5 py-2.5 dark:border-rose-400/15 dark:bg-rose-500/10 sm:px-6">
+        <p className="text-xs leading-relaxed text-slate-600 dark:text-rose-100/80">
+          Kunlik ish haqi = oylik ÷ shu oyning kunlari. Tanlangan holat PDF va Excelga tushadi.
+        </p>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {([
+            ["all", "Hammasi"],
+            ["absent", "Kelmagan"],
+            ["late", "Kechikkan"],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setKind(key)}
+              className={cn(
+                "rounded-full px-3 py-1 text-xs font-semibold",
+                kind === key
+                  ? key === "absent"
+                    ? "bg-rose-700 text-white"
+                    : key === "late"
+                      ? "bg-amber-600 text-white"
+                      : "bg-[#172033] text-white"
+                  : "bg-white text-slate-600 ring-1 ring-slate-200 dark:bg-white/10 dark:text-white/80 dark:ring-white/10",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+          <button
+            type="button"
+            disabled={!exportLines.length || exporting != null}
+            onClick={() => void download("excel")}
+            className="inline-flex items-center gap-1 rounded-full bg-emerald-700 px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+          >
+            <Download className="h-3.5 w-3.5" />
+            {exporting === "excel" ? "Excel…" : "Excel"}
+          </button>
+          <button
+            type="button"
+            disabled={!exportLines.length || exporting != null}
+            onClick={() => void download("pdf")}
+            className="inline-flex items-center gap-1 rounded-full bg-[#172033] px-3 py-1 text-xs font-semibold text-white disabled:opacity-40"
+          >
+            <FileText className="h-3.5 w-3.5" />
+            {exporting === "pdf" ? "PDF…" : "PDF"}
+          </button>
+        </div>
+      </div>
       {summary.isLoading ? (
         <div className="space-y-3 p-5">
           <Skeleton className="h-24 rounded-2xl" />
           <Skeleton className="h-24 rounded-2xl" />
         </div>
-      ) : people.length === 0 ? (
-        <p className="px-5 py-8 text-sm text-slate-500 sm:px-6">Bu oyda jarima yo‘q. 01.10.2026 dan kechikkan va kelmagan xodimlar shu yerda chiqadi.</p>
+      ) : shown.length === 0 ? (
+        <p className="px-5 py-8 text-sm text-slate-500 sm:px-6">
+          {people.length === 0
+            ? "Bu oyda jarima yo‘q. 01.10.2026 dan kechikkan va kelmagan xodimlar shu yerda chiqadi."
+            : `${filterLabel} bo‘yicha yozuv yo‘q.`}
+        </p>
       ) : (
         <div>
-          {people.map((person) => {
+          {shown.map((person) => {
             const warning = jarimaNoteParts(person.note).warning;
             return (
               <article key={person.key} className="border-b border-slate-100 last:border-b-0 dark:border-white/10">
@@ -125,6 +193,7 @@ export function DavomatJarimaPanel({ month }: { month: string }) {
                     <div className="min-w-0">
                       <p className="text-base font-semibold text-[#0f2744] dark:text-white">{person.fullName}</p>
                       <p className="text-sm text-slate-500 dark:text-rose-100/70">{person.position || "Lavozim yozilmagan"}</p>
+                      <p className="text-xs text-slate-400 dark:text-white/45">{[person.branch, person.shift].filter(Boolean).join(" · ") || "Filial va smena yozilmagan"}</p>
                     </div>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
@@ -299,6 +368,8 @@ function strikeNote(n: number) {
 type JarimaPanelRow = {
   fullName: string;
   position?: string | null;
+  branch?: string | null;
+  shift?: string | null;
   amount: number;
   note: string | null;
   late: number;
@@ -335,6 +406,8 @@ function jarimaPeople(rows: JarimaPanelRow[]) {
       key: `${row.fullName}-${index}`,
       fullName: row.fullName,
       position: row.position || "",
+      branch: String(row.branch || "").trim(),
+      shift: String(row.shift || "").trim(),
       initials: jarimaInitials(row.fullName),
       late: row.late,
       absent: row.absent,
@@ -344,6 +417,43 @@ function jarimaPeople(rows: JarimaPanelRow[]) {
       events: built,
     };
   });
+}
+
+function filterJarimaPeople<T extends { events: Array<{ kind: string; amount: number }>; late: number; absent: number; amount: number }>(
+  people: T[],
+  kind: "all" | "absent" | "late",
+): T[] {
+  if (kind === "all") return people;
+  return people.flatMap((person) => {
+    const events = person.events.filter((event) => event.kind === kind);
+    if (!events.length) return [];
+    return [{
+      ...person,
+      events,
+      late: kind === "late" ? events.length : 0,
+      absent: kind === "absent" ? events.length : 0,
+      amount: events.reduce((sum, event) => sum + event.amount, 0),
+    }];
+  });
+}
+
+function jarimaExportLines(people: Array<{
+  fullName: string;
+  branch: string;
+  shift: string;
+  events: Array<{ date: string; weekday: string; reason: string; amount: number }>;
+}>): JarimaExportLine[] {
+  return people.flatMap((person) =>
+    person.events.map((event) => ({
+      fullName: person.fullName,
+      branch: person.branch || "—",
+      shift: person.shift || "—",
+      date: event.date,
+      weekday: event.weekday,
+      status: event.reason,
+      amount: event.amount,
+    })),
+  );
 }
 
 function jarimaNoteParts(note: string): { reason: string; warning: string } {

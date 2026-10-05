@@ -1,6 +1,7 @@
 import { and, eq, inArray } from "drizzle-orm";
 import { db, employeesTable, payrollMonthsTable, usersTable } from "@workspace/db";
 import { buildStaffAttendanceDays } from "./employee-attendance-report";
+import { displayBranchName } from "./geo-location";
 
 /** Jarima shu kundan boshlanadi. Undan oldingi kechikish va kelmaslik hisobga kirmaydi. */
 export const JARIMA_START = "2026-10-01";
@@ -30,11 +31,28 @@ export type JarimaEvent = {
   amount: number;
 };
 
+function shiftTitle(shiftType?: string | null, shiftLabel?: string | null): string {
+  const raw = String(shiftType || "").trim().toLowerCase();
+  if (raw === "one+two") return "1+2";
+  if (raw === "two+three") return "2+3";
+  if (raw === "one+three") return "1+3";
+  if (raw === "three" || raw === "3") return "3-smena";
+  if (raw === "two" || raw === "2") return "2-smena";
+  if (raw === "one" || raw === "1") return "1-smena";
+  const label = String(shiftLabel || "").trim();
+  if (/1\s*\+\s*2/.test(label)) return "1+2";
+  if (/2\s*\+\s*3/.test(label)) return "2+3";
+  if (label) return label;
+  return "1-smena";
+}
+
 export type JarimaPerson = {
   userId: number;
   employeeId: number;
   fullName: string;
   position: string;
+  branch: string;
+  shift: string;
   salary: number;
   strikes: number;
   late: number;
@@ -232,6 +250,8 @@ export async function applyAttendanceJarima(
       employeeId: person.employeeId,
       fullName: person.fullName,
       position: person.position || roleTitle(person.role),
+      branch: displayBranchName(person.location).trim() || "—",
+      shift: shiftTitle(person.shiftType, person.shiftLabel),
       salary,
       strikes,
       late,

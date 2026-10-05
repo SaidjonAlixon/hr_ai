@@ -190,11 +190,23 @@ const HELP: Record<string, Omit<PunchErrorHelp, "code">> = {
     fix: "QR ni qayta skanerlang.",
     severity: "medium",
   },
+  qr_face_only: {
+    title: "QR o‘chirilgan",
+    meaning: "Bu filial xodimlari uchun QR bekor qilingan.",
+    fix: "Davomatni faqat Face ID bilan qiling. Boshqa filial QR i ham ishlamaydi.",
+    severity: "high",
+  },
   qr_forbidden: {
     title: "QR ruxsati yo‘q",
     meaning: "Bu QR ni ko‘rish/ishlatishga ruxsat yo‘q.",
     fix: "O‘z filial/bo‘limingiz QR idan foydalaning.",
     severity: "medium",
+  },
+  tamojni_site_missing: {
+    title: "Tamojni sklad joyi yo‘q",
+    meaning: "Bo‘lim lokatsiyasi hali saqlanmagan.",
+    fix: "Distribyutsiya HR yoki bo‘lim boshlig‘i joy nomini va koordinatani kiritsin.",
+    severity: "high",
   },
   dept_qr_disabled: {
     title: "Bo‘lim QR o‘chiq",

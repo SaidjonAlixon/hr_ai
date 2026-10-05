@@ -25,6 +25,7 @@ import {
 import { archiveAndDeleteUser } from "../lib/dismiss-user";
 import { formatPersonName } from "../lib/person-name";
 import { getActorDepartmentId, isDeptHeadRole, resolveDeptHeadContext } from "../lib/dept-staff";
+import { ensureTamojniSkladDepartmentId, isTamojniDepartmentMember } from "../lib/tamojni-sklad";
 import { displayBranchName } from "../lib/geo-location";
 import { scriptIncludes } from "../lib/script-search";
 
@@ -559,7 +560,13 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
       res.json(scoped);
       return;
     }
-    res.json(await enrichMany(filtered));
+    const enriched = await enrichMany(filtered);
+    if (role === "tamojni") {
+      const tamojniDeptId = await ensureTamojniSkladDepartmentId();
+      res.json(enriched.filter((e) => isTamojniDepartmentMember(e, tamojniDeptId)));
+      return;
+    }
+    res.json(enriched);
   } catch (err) {
     console.error("GET /employees error:", err);
     res.status(503).json({ error: "Xodimlar ro‘yxati yuklanmadi — birozdan keyin qayta urinib ko‘ring" });
@@ -627,6 +634,10 @@ router.get("/employees/export", requireAuth, async (req: AuthRequest, res): Prom
       if (e.userRole && allowedRoles.has(e.userRole)) return true;
       return false;
     });
+  }
+  if (role === "tamojni") {
+    const tamojniDeptId = await ensureTamojniSkladDepartmentId();
+    enriched = enriched.filter((e) => isTamojniDepartmentMember(e, tamojniDeptId));
   }
 
   const userIds = [...new Set(enriched.map((e) => e.userId).filter((id): id is number => id != null))];

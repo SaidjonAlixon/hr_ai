@@ -97,6 +97,12 @@ export function useDistribMutations() {
     onSuccess: invalidate,
   });
 
+  const deleteTitle = useMutation({
+    mutationFn: (id: number) =>
+      apiFetch<{ ok: boolean }>(`/distribyutsiya/job-titles/${id}?permanent=1`, { method: "DELETE" }),
+    onSuccess: invalidate,
+  });
+
   const createStaff = useMutation({
     mutationFn: (payload: {
       firstName: string;
@@ -119,7 +125,85 @@ export function useDistribMutations() {
     onSuccess: invalidate,
   });
 
-  return { createTitle, updateTitle, deactivateTitle, createStaff };
+  return { createTitle, updateTitle, deactivateTitle, deleteTitle, createStaff };
+}
+
+export type TamojniSite = {
+  departmentId: number;
+  name: string;
+  latitude: number;
+  longitude: number;
+  radiusM: number;
+};
+
+export type TamojniStaffRow = {
+  userId: number;
+  fullName: string;
+  role: string;
+  login: string;
+  phone: string | null;
+  status: string | null;
+  employeeId: number | null;
+  position: string | null;
+  shiftKey: string;
+  startHm: string;
+  endHm: string;
+  shiftTitle: string;
+};
+
+export function useTamojniDesk(enabled = true) {
+  return useQuery({
+    queryKey: ["distribyutsiya", "tamojni"],
+    queryFn: () =>
+      apiFetch<{
+        departmentId: number;
+        departmentName: string;
+        canManage: boolean;
+        creatableRoles: string[];
+        site: TamojniSite | null;
+        staff: TamojniStaffRow[];
+      }>("/distribyutsiya/tamojni"),
+    enabled,
+  });
+}
+
+export function useTamojniMutations() {
+  const qc = useQueryClient();
+  const invalidate = () => {
+    void qc.invalidateQueries({ queryKey: ["distribyutsiya", "tamojni"] });
+  };
+  const saveSite = useMutation({
+    mutationFn: (body: { name: string; latitude: number; longitude: number; radiusM: number }) =>
+      apiFetch<{ ok: boolean; site: TamojniSite | null }>("/distribyutsiya/tamojni/site", {
+        method: "PUT",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: invalidate,
+  });
+  const createStaff = useMutation({
+    mutationFn: (body: { firstName: string; lastName: string; phone?: string; position?: string; role: string }) =>
+      apiFetch<{
+        ok: boolean;
+        login: string;
+        temporaryPassword: string;
+        fullName: string;
+        position: string;
+        message: string;
+      }>("/distribyutsiya/tamojni/staff", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: invalidate,
+  });
+  const saveShift = useMutation({
+    mutationFn: (body: { employeeId: number; shiftKey: string; startHm: string; endHm: string }) =>
+      apiFetch<{ ok: boolean; shiftTitle: string }>("/distribyutsiya/tamojni/shift", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    onSuccess: invalidate,
+  });
+  return { saveSite, createStaff, saveShift };
 }
 
 export async function downloadDistribStaffExcel() {

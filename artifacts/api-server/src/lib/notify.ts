@@ -11,6 +11,13 @@ import {
 } from "./telegram";
 import { logger } from "./logger";
 import { sendWebPushToUser } from "./web-push";
+import { stripGpsSuffix } from "./geo-location";
+
+/** Foydalanuvchiga ko‘rinadigan matndan `gps:lat,lng` qoldig‘ini oladi. */
+function visibleText(text: string): string {
+  const clean = stripGpsSuffix(text);
+  return clean || String(text || "").replace(/\s*[|·｜│]?\s*gps:\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?/gi, "").trim();
+}
 
 /** Faol HR (va ixtiyoriy admin) ga bildirishnoma */
 export async function notifyActiveHrs(opts: {
@@ -97,23 +104,24 @@ export async function notifyUser(opts: {
   title?: string;
 }): Promise<void> {
   if (!opts.userId) return;
+  const text = visibleText(opts.text);
   if (opts.system !== false) {
     await db.insert(notificationsTable).values({
       userId: opts.userId,
-      text: opts.text,
+      text,
       type: opts.type,
       linkUrl: opts.linkUrl,
     });
   }
   // Default: botga ham yuborish
   if (opts.telegram !== false) {
-    await pushTelegramToUser(opts.userId, opts.text, opts.linkUrl);
+    await pushTelegramToUser(opts.userId, text, opts.linkUrl);
   }
   if (opts.webPush !== false) {
     try {
       await sendWebPushToUser(opts.userId, {
         title: opts.title || "VAKSINA HR",
-        body: opts.text,
+        body: text,
         url: opts.linkUrl || "/",
         tag: opts.type,
       });

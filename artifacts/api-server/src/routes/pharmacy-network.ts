@@ -23,6 +23,8 @@ import {
   fillVacantBranchSlot,
 } from "../lib/dismiss-pharmacy-staff";
 import { sweepDismissedUsers } from "../lib/dismiss-user";
+import { canManagePharmacyOps } from "../lib/roles";
+import { createPharmacyBranch, removePharmacyBranch, transferPharmacyBranch } from "../lib/pharmacy-branch-admin";
 const router: IRouter = Router();
 
 const STAFF_ROLES = ["mudir", "farmasevt", "stajyor"] as const;
@@ -943,6 +945,109 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
 
 router.post("/pharmacy-network/hard-delete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   await handleHardDelete(req, res);
+});
+
+/** Admin / HR menejer: koordinatorga yangi filial + zavedushi + ixtiyoriy jamoa. */
+router.post("/pharmacy-network/branches", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManagePharmacyOps(req.userRole)) {
+    res.status(403).json({ error: "Filial qo‘shish faqat admin va HR menejer uchun" });
+    return;
+  }
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    return;
+  }
+  const body = (req.body ?? {}) as {
+    coordinatorEmployeeId?: number;
+    branchName?: string;
+    branchNo?: number;
+    coordinates?: string;
+    mudir?: { firstName?: string; lastName?: string; phone?: string };
+    staff?: Array<{ role?: string; firstName?: string; lastName?: string; phone?: string }>;
+  };
+  try {
+    const result = await createPharmacyBranch({
+      coordinatorEmployeeId: Number(body.coordinatorEmployeeId),
+      branchName: String(body.branchName || ""),
+      branchNo: Number(body.branchNo),
+      coordinates: String(body.coordinates || ""),
+      mudir: {
+        firstName: String(body.mudir?.firstName || ""),
+        lastName: String(body.mudir?.lastName || ""),
+        phone: String(body.mudir?.phone || ""),
+      },
+      staff: (body.staff || []).map((s) => ({
+        role: s.role === "stajyor" ? "stajyor" : "farmasevt",
+        firstName: String(s.firstName || ""),
+        lastName: String(s.lastName || ""),
+        phone: String(s.phone || ""),
+      })),
+      actorId: req.userId,
+    });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result);
+  } catch (err) {
+    console.error("POST /pharmacy-network/branches", err);
+    res.status(503).json({ error: "Filial qo‘shilmadi" });
+  }
+});
+
+/** Filialni boshqa koordinatorga o‘tkazish. Boshqa ma’lumot o‘zgarmaydi. */
+router.post("/pharmacy-network/branches/transfer", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManagePharmacyOps(req.userRole)) {
+    res.status(403).json({ error: "Koordinatorni o‘zgartirish faqat admin va HR menejer uchun" });
+    return;
+  }
+  const employeeId = Number(req.body?.employeeId);
+  const coordinatorEmployeeId = Number(req.body?.coordinatorEmployeeId);
+  try {
+    const result = await transferPharmacyBranch(employeeId, coordinatorEmployeeId);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("POST /pharmacy-network/branches/transfer", err);
+    res.status(503).json({ error: "Filial o‘tkazilmadi" });
+  }
+});
+
+/** Filialni hamma joydan o‘chirish. Shu oy kelganlar bo‘shatilganlarda qoladi. */
+router.post("/pharmacy-network/branches/remove", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManagePharmacyOps(req.userRole)) {
+    res.status(403).json({ error: "Filialni o‘chirish faqat admin va HR menejer uchun" });
+    return;
+  }
+  if (!req.userId) {
+    res.status(401).json({ error: "Avtorizatsiya talab etiladi" });
+    return;
+  }
+  const employeeId = Number(req.body?.employeeId);
+  if (!Number.isFinite(employeeId) || employeeId <= 0) {
+    res.status(400).json({ error: "Filial tanlanmagan" });
+    return;
+  }
+  try {
+    const result = await removePharmacyBranch(employeeId, req.userId);
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    const kept = result.dismissed.length
+      ? ` Shu oy kelganlar bo‘shatilganlarga o‘tdi: ${result.dismissed.join(", ")}.`
+      : "";
+    res.json({
+      ...result,
+      message: `«${result.branchName}» hamma joydan o‘chirildi.${kept}`,
+    });
+  } catch (err) {
+    console.error("POST /pharmacy-network/branches/remove", err);
+    res.status(503).json({ error: "Filial o‘chirilmadi" });
+  }
 });
 
 /**

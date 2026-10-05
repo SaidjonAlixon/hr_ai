@@ -8,9 +8,11 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Trash2,
   Truck,
   UserPlus,
   Users,
+  Warehouse,
   XCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -36,7 +38,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { isOptionalUzPhoneValid, normalizeUzPhone, UZ_PHONE_HINT } from "@/lib/phone";
-import { canManageDistribyutsiya, canViewDistribyutsiya, userRoleLabel } from "@/lib/roles";
+import { canManageDistribyutsiya, canViewDistribyutsiya, hasFullPlatformAccess, userRoleLabel } from "@/lib/roles";
 import { StaffLoginCredsPanel } from "@/components/dept/StaffLoginCredsPanel";
 import {
   downloadDistribStaffExcel,
@@ -45,19 +47,23 @@ import {
   useDistribMutations,
   useDistribStaff,
 } from "@/lib/distribyutsiya-api";
+import { TamojniSkladPanel } from "./TamojniSkladPanel";
 
-type Tab = "hr" | "lavozimlar";
+type Tab = "hr" | "lavozimlar" | "tamojni";
 
 export default function DistribyutsiyaPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const canView = canViewDistribyutsiya(user?.role) || canManageDistribyutsiya(user?.role);
   const canManage = canManageDistribyutsiya(user?.role);
+  const canDeleteTitle = hasFullPlatformAccess(user?.role);
+  const tamojniOnly = user?.role === "tamojni_rahbar";
   const [tab, setTab] = useState<Tab>("hr");
+  const activeTab: Tab = tamojniOnly ? "tamojni" : tab;
 
   const meta = useDistribMeta(canView);
-  const staffQ = useDistribStaff(canView && tab === "hr");
-  const titlesQ = useDistribJobTitles(canView && (tab === "lavozimlar" || canManage));
+  const staffQ = useDistribStaff(canView && !tamojniOnly && activeTab === "hr");
+  const titlesQ = useDistribJobTitles(canView && !tamojniOnly && (activeTab === "lavozimlar" || canManage));
   const mut = useDistribMutations();
 
   const [addOpen, setAddOpen] = useState(false);
@@ -167,13 +173,15 @@ export default function DistribyutsiyaPage() {
           </span>
           <div className="min-w-0 flex-1">
             <h1 className="text-xl font-semibold tracking-tight text-foreground sm:text-2xl">
-              Distribyutsiya · HR
+              {tamojniOnly ? "Tamojni sklad" : "Distribyutsiya · HR"}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Alohida bo‘lim — o‘z xodimlari va lavozimlari
+              {tamojniOnly
+                ? "Bo‘lim xodimlari, joyi va smenasi"
+                : "Alohida bo‘lim — o‘z xodimlari va lavozimlari"}
             </p>
           </div>
-          {canManage ? (
+          {canManage && activeTab !== "tamojni" ? (
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 type="button"
@@ -206,33 +214,52 @@ export default function DistribyutsiyaPage() {
       </header>
 
       <div className="flex gap-1 rounded-2xl border border-border bg-muted/30 p-1">
+        {tamojniOnly ? null : (
+          <button
+            type="button"
+            onClick={() => setTab("hr")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+              activeTab === "hr" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            <Users className="h-4 w-4" />
+            HR · Xodimlar
+          </button>
+        )}
+        {tamojniOnly ? null : (
+          <button
+            type="button"
+            onClick={() => setTab("lavozimlar")}
+            className={cn(
+              "flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
+              activeTab === "lavozimlar"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:bg-muted",
+            )}
+          >
+            <Briefcase className="h-4 w-4" />
+            Lavozimlar
+          </button>
+        )}
         <button
           type="button"
-          onClick={() => setTab("hr")}
+          onClick={() => setTab("tamojni")}
           className={cn(
             "flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-            tab === "hr" ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:bg-muted",
-          )}
-        >
-          <Users className="h-4 w-4" />
-          HR · Xodimlar
-        </button>
-        <button
-          type="button"
-          onClick={() => setTab("lavozimlar")}
-          className={cn(
-            "flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2.5 text-sm font-semibold transition",
-            tab === "lavozimlar"
+            activeTab === "tamojni"
               ? "bg-primary text-primary-foreground shadow-sm"
               : "text-muted-foreground hover:bg-muted",
           )}
         >
-          <Briefcase className="h-4 w-4" />
-          Lavozimlar
+          <Warehouse className="h-4 w-4" />
+          Tamojni sklad
         </button>
       </div>
 
-      {tab === "hr" ? (
+      {activeTab === "tamojni" ? <TamojniSkladPanel /> : null}
+
+      {activeTab === "hr" ? (
         <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
           <div className="mb-3 flex items-center justify-between gap-2">
             <h2 className="text-base font-semibold">Xodimlar ro‘yxati</h2>
@@ -288,7 +315,7 @@ export default function DistribyutsiyaPage() {
             </div>
           )}
         </section>
-      ) : (
+      ) : activeTab === "lavozimlar" ? (
         <section className="rounded-2xl border border-border bg-card p-4 shadow-sm sm:p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
             <div>
@@ -421,7 +448,7 @@ export default function DistribyutsiyaPage() {
                             size="icon"
                             variant="ghost"
                             className="h-8 w-8"
-                            disabled={mut.updateTitle.isPending || mut.deactivateTitle.isPending}
+                            disabled={mut.updateTitle.isPending || mut.deactivateTitle.isPending || mut.deleteTitle.isPending}
                             onClick={() => {
                               if (t.active) {
                                 mut.deactivateTitle.mutate(t.id, {
@@ -441,6 +468,26 @@ export default function DistribyutsiyaPage() {
                               <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
                             )}
                           </Button>
+                          {canDeleteTitle ? (
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              title="Butunlay o‘chirish"
+                              disabled={mut.deleteTitle.isPending}
+                              onClick={() => {
+                                if (!window.confirm(`«${t.title}» lavozimi butunlay o‘chirilsinmi?`)) return;
+                                mut.deleteTitle.mutate(t.id, {
+                                  onSuccess: () => toast({ title: "Lavozim o‘chirildi" }),
+                                  onError: (e: Error) =>
+                                    toast({ title: "O‘chirilmadi", description: e.message, variant: "destructive" }),
+                                });
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                            </Button>
+                          ) : null}
                         </>
                       )}
                     </div>
@@ -450,7 +497,7 @@ export default function DistribyutsiyaPage() {
             </ul>
           )}
         </section>
-      )}
+      ) : null}
 
       <Dialog
         open={addOpen}

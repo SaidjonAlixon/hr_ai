@@ -602,7 +602,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         shownOsDavomatRef.current.add(n.id);
         try {
           new Notification("VAKSINA HR — Davomat", {
-            body: n.text,
+            body: String(n.text || "").replace(/(?:\s*[|·｜│]\s*)?gps:\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?/gi, "").trim(),
             tag: `davomat-${n.id}`,
             requireInteraction: true,
           });
@@ -1023,7 +1023,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
         const at = orgIdx >= 0 ? orgIdx + 1 : next.length;
         next = [...next.slice(0, at), reviziyaNav, ...next.slice(at)];
       }
-      if (canViewDavomat(role) && role !== 'koordinator' && !next.some((i) => i.path === '/davomat/analytics')) {
+      if (canViewDavomat(role) && role !== 'koordinator' && role !== 'tamojni' && !next.some((i) => i.path === '/davomat/analytics')) {
         const davIdx = next.findIndex((i) => i.path === '/davomat');
         const at = davIdx >= 0 ? davIdx : next.length;
         next = [...next.slice(0, at), davomatAnalyticsNav, ...next.slice(at)];
@@ -1268,6 +1268,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Xodim kerak', path: '/xodim-kerak', icon: UserPlus },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      distribNav,
       omborIshNav,
       { name: 'Foydalanuvchilar', path: '/admin/users', icon: Users },
       { name: 'Bo‘shatilganlar', path: '/admin/boshatilganlar', icon: UserX },
@@ -1311,6 +1312,7 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: "Bog'lanish", path: '/boglanish', icon: Phone },
       { name: 'Ehtiyoj', path: '/ehtiyoj', icon: ClipboardList },
       { name: 'Stajirovkalar', path: '/internships', icon: GraduationCap },
+      distribNav,
       omborIshNav,
       { name: 'Face ID', path: '/admin/faces', icon: ScanFace },
       { name: 'Smena sozlamalari', path: '/admin/smena-sozlamalar', icon: AlarmClock },
@@ -1717,6 +1719,23 @@ export const Layout = ({ children }: { children: React.ReactNode }) => {
       { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
       { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
       { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      davomatFaceNav,
+    ],
+    tamojni_rahbar: [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Tamojni sklad', path: '/distribyutsiya', icon: Truck },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
+      davomatFaceNav,
+    ],
+    tamojni: [
+      { name: 'Dashboard', path: '/dashboard', icon: LayoutDashboard },
+      { name: 'Topshiriqlar', path: '/vazifalar', icon: ListTodo },
+      { name: 'Eslatmalarim', path: '/eslatmalar', icon: AlarmClock },
+      { name: 'Xodimlar', path: '/employees', icon: Users },
+      { name: 'Davomat hisobot', path: '/davomat', icon: ClipboardCheck },
       davomatFaceNav,
     ],
   };

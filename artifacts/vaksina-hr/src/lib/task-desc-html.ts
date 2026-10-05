@@ -38,10 +38,18 @@ export function looksLikeDescHtml(value: string): boolean {
   return /<\/?(?:b|strong|i|em|u|ul|ol|li|a|code|p|div|br|span)\b/i.test(value);
 }
 
+function hideGps(text: string): string {
+  return text
+    .replace(/(?:\s*[|·｜│]\s*)?gps:\s*-?\d+(?:\.\d+)?(?:\s*,\s*-?\d+(?:\.\d+)?)?/gi, "")
+    .replace(/\s*[|·｜│]\s*$/g, "")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
 export function htmlDescToPlain(html: string): string {
   if (!html) return "";
   if (typeof document === "undefined") {
-    return html
+    return hideGps(html
       .replace(/<br\s*\/?>/gi, "\n")
       .replace(/<\/p>/gi, "\n")
       .replace(/<\/li>/gi, "\n")
@@ -51,11 +59,11 @@ export function htmlDescToPlain(html: string): string {
       .replace(/&lt;/g, "<")
       .replace(/&gt;/g, ">")
       .replace(/&quot;/g, '"')
-      .trim();
+      .trim())
   }
   const el = document.createElement("div");
   el.innerHTML = html;
-  return (el.innerText || el.textContent || "").replace(/\u00a0/g, " ").trim();
+  return hideGps((el.innerText || el.textContent || "").replace(/\u00a0/g, " ").trim());
 }
 
 /** Strip scripts/styles and unknown tags; keep formatting subset. */

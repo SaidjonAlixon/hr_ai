@@ -81,6 +81,8 @@ const ROLES = [
   { value: 'distrib_rahbar', label: 'Distribyutsiya rahbari' },
   { value: 'distrib_hr', label: 'Distribyutsiya HR' },
   { value: 'distrib', label: 'Distribyutsiya xodimi' },
+  { value: 'tamojni_rahbar', label: 'Tamojni sklad bo‘lim boshlig‘i' },
+  { value: 'tamojni', label: 'Tamojni sklad xodimi' },
   { value: 'kassir', label: 'Kassir' },
   { value: 'yurist', label: 'Yurist' },
   { value: 'komunalniy', label: 'Kommunal' },
@@ -139,6 +141,8 @@ const ROLE_DEPARTMENT: Record<string, string> = {
   distrib_rahbar: "Distribyutsiya",
   distrib_hr: "Distribyutsiya",
   distrib: "Distribyutsiya",
+  tamojni_rahbar: "Tamojni sklad",
+  tamojni: "Tamojni sklad",
 };
 
 const DEPT_DEFAULT_ROLE: Record<string, string> = {

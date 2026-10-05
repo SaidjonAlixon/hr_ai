@@ -314,6 +314,8 @@ export type JarimaEvent = {
 export type JarimaSelf = {
   fullName: string;
   position?: string | null;
+  branch?: string | null;
+  shift?: string | null;
   salary: number;
   strikes: number;
   late: number;

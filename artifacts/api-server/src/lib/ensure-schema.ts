@@ -491,6 +491,8 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_type TEXT;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS shift_label TEXT;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS created_by_id INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS qr_face_only BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS branch_no INTEGER;
   END IF;
 END $$;
 
@@ -630,6 +632,8 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS created_by_id INTEGER;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS fixed_salary INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS bonus_percent DOUBLE PRECISION NOT NULL DEFAULT 30;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS qr_face_only BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS branch_no INTEGER;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
     UPDATE employees
     SET location = regexp_replace(location, '^(Азия|АЗИЯ)', 'ТАШСЕЛМАШ')
@@ -1661,6 +1665,7 @@ CREATE INDEX IF NOT EXISTS mobile_att_audit_action_idx ON mobile_attendance_audi
     await ensureRevisionVisitsSchema();
     await ensureWarehouseShiftsSchema();
     await ensureAttendanceSealsSchema();
+    await ensureDepartmentSitesSchema();
   } catch (err) {
     logger.error({ err }, "Failed to ensure DB schema");
     throw err;
@@ -1959,6 +1964,32 @@ CREATE TABLE IF NOT EXISTS employee_attendance_seals (
 );
 CREATE INDEX IF NOT EXISTS employee_attendance_seals_token_idx ON employee_attendance_seals (token);
 `;
+
+const DEPARTMENT_SITES_SQL = `
+CREATE TABLE IF NOT EXISTS department_sites (
+  id SERIAL PRIMARY KEY,
+  department_id INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  latitude DOUBLE PRECISION NOT NULL,
+  longitude DOUBLE PRECISION NOT NULL,
+  radius_m INTEGER NOT NULL DEFAULT 100,
+  updated_by_id INTEGER,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS department_sites_dept_uidx ON department_sites (department_id);
+`;
+
+export async function ensureDepartmentSitesSchema(): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query(DEPARTMENT_SITES_SQL);
+  } catch (err) {
+    logger.warn({ err }, "Department sites schema ensure failed");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 export async function ensureAttendanceSealsSchema(): Promise<void> {
   const client = await pool.connect();

@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { useAuth } from "@/contexts/AuthContext";
 import { canExportChecklistStatus } from "@/lib/roles";
 import {
@@ -350,7 +351,7 @@ function BranchColumn({
             <li key={b.managerEmployeeId} className="px-4 py-2.5">
               <p className="flex items-center gap-1.5 text-sm font-medium">
                 <Store className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                {b.branchLocation}
+                {displayBranchName(b.branchLocation) || "Filial"}
               </p>
               <p className="mt-0.5 text-[11px] text-muted-foreground">Mudir: {b.managerName}</p>
               {b.filled ? (

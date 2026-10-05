@@ -35,6 +35,7 @@ import {
   isReviziyaRole,
 } from "../lib/roles";
 import { getActorDepartmentId, resolveDeptHeadContext, isDeptHeadRole } from "../lib/dept-staff";
+import { ensureTamojniSkladDepartmentId, getTamojniSite, isTamojniDepartmentMember, isTamojniRole } from "../lib/tamojni-sklad";
 import {
   isWarehouseDavomatStaff,
   matchesDavomatStaffFilter,
@@ -1084,6 +1085,10 @@ async function scopeDeptHeadDavomatEmployees<
 >(role: string | undefined, userId: number | undefined, employees: T[]): Promise<T[]> {
   if (!role || !userId) return employees;
   if (canViewFullDavomatDashboard(role)) return employees;
+  if (role === "tamojni") {
+    const tamojniDeptId = await ensureTamojniSkladDepartmentId();
+    return employees.filter((e) => isTamojniDepartmentMember(e, tamojniDeptId));
+  }
   if (!isDeptHeadRole(role)) return employees;
 
   const ctx = await resolveDeptHeadContext(userId, role);
@@ -1094,9 +1099,20 @@ async function scopeDeptHeadDavomatEmployees<
     .replace(/[\u2018\u2019\u02BB\u02BC'\u0060\u00B4']/g, "'");
   const allowedRoles = new Set(ctx?.creatableRoles ?? []);
   allowedRoles.add(role);
+  let tamojniDeptId: number | null = null;
+  if (role === "distrib_hr" || role === "distrib_rahbar") {
+    try {
+      tamojniDeptId = await ensureTamojniSkladDepartmentId();
+      allowedRoles.add("tamojni");
+      allowedRoles.add("tamojni_rahbar");
+    } catch {
+      tamojniDeptId = null;
+    }
+  }
 
   return employees.filter((e) => {
     if (actorDeptId && e.departmentId === actorDeptId) return true;
+    if (tamojniDeptId && e.departmentId === tamojniDeptId) return true;
     const eName = (e.departmentName || "")
       .trim()
       .toLocaleLowerCase("uz")
@@ -2387,6 +2403,7 @@ type DavomatPoint = {
   longitude: number;
   label: string;
   kind: "branch" | "office";
+  radiusMeters?: number;
 };
 
 function coordsFromEmp(row: {
@@ -2409,6 +2426,32 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
   | { ok: true; point: DavomatPoint }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
+  if (isTamojniRole(userRole)) {
+    const site = await getTamojniSite();
+    if (!site) {
+      return {
+        ok: false,
+        status: 403,
+        body: {
+          error:
+            "Tamojni sklad joyi hali kiritilmagan. Bo‘lim boshlig‘i yoki Distribyutsiya HR joy nomini va lokatsiyani saqlasin.",
+          code: "tamojni_site_missing",
+          fullName: emp.fullName,
+        },
+      };
+    }
+    return {
+      ok: true,
+      point: {
+        latitude: site.latitude,
+        longitude: site.longitude,
+        label: site.name,
+        kind: "office",
+        radiusMeters: site.radiusM,
+      },
+    };
+  }
+
   if (!usesBranchDavomat(userRole, emp.orgRole)) {
     return {
       ok: true,
@@ -3302,15 +3345,16 @@ async function geoGate(
     if (!resolved.ok) return resolved;
     const point = resolved.point;
     const distanceMeters = haversineMeters(latitude, longitude, point.latitude, point.longitude);
-    const effectiveRadius = geofenceMetersForKind(point.kind);
-    const GEOFENCE_SLACK_M = 8;
+    const effectiveRadius = point.radiusMeters ?? geofenceMetersForKind(point.kind);
+    const GEOFENCE_SLACK_M = point.radiusMeters != null ? 0 : 8;
+    const placeName = point.label.startsWith("Asosiy ofis") ? "asosiy ofis" : point.label;
     if (!mobileAnywhere && distanceMeters > effectiveRadius + GEOFENCE_SLACK_M) {
       const remainMeters = Math.max(0, distanceMeters - effectiveRadius);
       return {
         ok: false,
         status: 403,
         body: {
-          error: `Hududdan tashqaridasiz (asosiy ofis): ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
+          error: `Hududdan tashqaridasiz (${placeName}): ${distanceMeters} m. Ruxsat faqat ${effectiveRadius} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
           code: "outside_geofence",
           distanceMeters,
           remainMeters,
@@ -6218,6 +6262,18 @@ function assignedBranchIdForEmp(emp: WorkplaceEmp): number | null {
   return emp.reportsToId ?? null;
 }
 
+/** Doimiy filialda QR o‘chirilgan bo‘lsa — rotatsiyada ham QR ishlamaydi. */
+async function branchRequiresFaceOnly(emp: WorkplaceEmp): Promise<boolean> {
+  const homeId = assignedBranchIdForEmp(emp);
+  if (!homeId) return false;
+  const [row] = await db
+    .select({ qrFaceOnly: employeesTable.qrFaceOnly })
+    .from(employeesTable)
+    .where(eq(employeesTable.id, homeId))
+    .limit(1);
+  return Boolean(row?.qrFaceOnly);
+}
+
 /** Doimiy + kunlik rotatsiya + work slots */
 async function effectiveBranchIdForDay(
   emp: WorkplaceEmp,
@@ -6452,6 +6508,7 @@ router.get("/davomat/qr/branches", requireAuth, async (req: AuthRequest, res): P
         id: employeesTable.id,
         fullName: employeesTable.fullName,
         location: employeesTable.location,
+        qrFaceOnly: employeesTable.qrFaceOnly,
         latitude: employeesTable.latitude,
         longitude: employeesTable.longitude,
         reportsToId: employeesTable.reportsToId,
@@ -6478,6 +6535,7 @@ router.get("/davomat/qr/branches", requireAuth, async (req: AuthRequest, res): P
           id: m.id,
           name: displayBranchName(m.location) || m.location || m.fullName,
           managerName: m.fullName,
+          qrFaceOnly: Boolean(m.qrFaceOnly),
           hasActiveQr: Boolean(active),
           hasPayload: Boolean(active?.tokenPayload),
           qrId: active?.qrId ?? null,
@@ -6491,6 +6549,53 @@ router.get("/davomat/qr/branches", requireAuth, async (req: AuthRequest, res): P
   } catch (err) {
     console.error("GET /davomat/qr/branches error:", err);
     res.status(503).json({ error: "Filiallar yuklanmadi" });
+  }
+});
+
+/** Admin: filial xodimlari uchun QR ni o‘chirish yoki qayta yoqish. Doimiy filial hisoblanadi. */
+router.post("/davomat/qr/face-only", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "QR ni faqat admin yoki direktor o‘chiradi" });
+    return;
+  }
+  const branchId = Number(req.body?.branchId);
+  const enabled = Boolean(req.body?.enabled);
+  if (!Number.isFinite(branchId) || branchId <= 0) {
+    res.status(400).json({ error: "Filial tanlanmagan" });
+    return;
+  }
+  try {
+    const [branch] = await db
+      .select({
+        id: employeesTable.id,
+        fullName: employeesTable.fullName,
+        location: employeesTable.location,
+        orgRole: employeesTable.orgRole,
+      })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, branchId))
+      .limit(1);
+    if (!branch || branch.orgRole !== "manager") {
+      res.status(404).json({ error: "Filial topilmadi" });
+      return;
+    }
+    await db
+      .update(employeesTable)
+      .set({ qrFaceOnly: enabled, updatedAt: new Date() })
+      .where(eq(employeesTable.id, branchId));
+    const name = displayBranchName(branch.location) || branch.location || branch.fullName;
+    res.json({
+      ok: true,
+      branchId,
+      name,
+      qrFaceOnly: enabled,
+      message: enabled
+        ? `${name}: QR o‘chirildi. Xodimlar faqat Face ID bilan davomat qiladi.`
+        : `${name}: QR yana yoqildi.`,
+    });
+  } catch (err) {
+    console.error("POST /davomat/qr/face-only error:", err);
+    res.status(503).json({ error: "Saqlanmadi" });
   }
 });
 
@@ -6885,6 +6990,25 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     }
     const pharmacy = usesBranchDavomat(user.role, emp.orgRole);
     const reviziyaField = isReviziyaRole(user.role);
+    if (!adminAnywhere && (await branchRequiresFaceOnly(emp))) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        verificationMethod: "QR",
+        action,
+        qrResult: "qr_face_only",
+        finalResult: "denied",
+        failureReason: "qr_face_only",
+        ipAddress: ip,
+        deviceId,
+      });
+      res.status(403).json({
+        error:
+          "Sizning filialingizda QR o‘chirilgan. Davomat faqat Face ID orqali. Boshqa filialga borsangiz ham QR ishlamaydi.",
+        code: "qr_face_only",
+      });
+      return;
+    }
     const effective = await effectiveBranchIdForDay(emp);
     const myBranchId = effective.branchId;
     const myDeptId = user.departmentId;
@@ -7210,7 +7334,29 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       return;
     }
 
-    // Ofis QR: asosiy ofis yashil zonasi (100 m) — ko‘chma ruxsat bo‘lsa istalgan joy
+    // Ofis QR: asosiy ofis yashil zonasi. Tamojni sklad xodimi shu QR bilan o‘z joyidan belgilaydi.
+    let fenceLat = DAVOMAT_SITE_LAT;
+    let fenceLng = DAVOMAT_SITE_LNG;
+    let fenceLabel = `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`;
+    let fenceRadius = DAVOMAT_OFFICE_GEOFENCE_METERS;
+    const tamojniPunch = isTamojniRole(user.role);
+    if (tamojniPunch) {
+      const site = await getTamojniSite();
+      if (!site) {
+        res.status(403).json({
+          error:
+            "Tamojni sklad joyi hali kiritilmagan. Bo‘lim boshlig‘i yoki Distribyutsiya HR joy nomini va lokatsiyani saqlasin.",
+          code: "tamojni_site_missing",
+          fullName: emp.fullName,
+        });
+        return;
+      }
+      fenceLat = site.latitude;
+      fenceLng = site.longitude;
+      fenceLabel = site.name;
+      fenceRadius = site.radiusM;
+    }
+
     let mobileAnywhere = false;
     try {
       mobileAnywhere = await employeeHasMobileAnywhere(emp.id, emp.userId ?? user.id);
@@ -7219,23 +7365,26 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     }
     const skipOfficeGeofence = adminAnywhere || mobileAnywhere;
 
-    let latitude = hasGps ? latitudeRaw : DAVOMAT_SITE_LAT;
-    let longitude = hasGps ? longitudeRaw : DAVOMAT_SITE_LNG;
+    let latitude = hasGps ? latitudeRaw : fenceLat;
+    let longitude = hasGps ? longitudeRaw : fenceLng;
     let distanceMeters = 0;
-    let allowedMeters = DAVOMAT_OFFICE_GEOFENCE_METERS;
+    let allowedMeters = fenceRadius;
     let gpsResult: string = skipOfficeGeofence ? (adminAnywhere ? "admin_bypass" : "mobile_anywhere") : "ok";
 
     if (!skipOfficeGeofence) {
       if (!hasGps) {
         res.status(400).json({
-          error: "Lokatsiya yoqilishi shart — ofis yashil hududida bo‘ling",
+          error: tamojniPunch
+            ? `Lokatsiya yoqilishi shart — ${fenceLabel} hududida bo‘ling`
+            : "Lokatsiya yoqilishi shart — ofis yashil hududida bo‘ling",
           code: "gps_required",
         });
         return;
       }
-      distanceMeters = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+      distanceMeters = haversineMeters(latitude, longitude, fenceLat, fenceLng);
       if (distanceMeters > allowedMeters) {
         const remainMeters = distanceMeters - allowedMeters;
+        const placeName = tamojniPunch ? fenceLabel : "asosiy ofis";
         await writePunchAudit({
           employeeId: emp.id,
           userId: user.id,
@@ -7245,21 +7394,21 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
           gpsDistance: distanceMeters,
           qrResult: "ok",
           finalResult: "denied",
-          failureReason: "outside_office_geofence",
+          failureReason: tamojniPunch ? "outside_tamojni_geofence" : "outside_office_geofence",
           ipAddress: ip,
           deviceId,
-          meta: { qrKind: "office_shared" },
+          meta: { qrKind: tamojniPunch ? "tamojni_office_qr" : "office_shared" },
         });
         res.status(403).json({
-          error: `Hududdan tashqaridasiz (asosiy ofis): ${distanceMeters} m. Ruxsat faqat ${allowedMeters} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
+          error: `Hududdan tashqaridasiz (${placeName}): ${distanceMeters} m. Ruxsat faqat ${allowedMeters} m. Yana ${remainMeters} m yaqinlashishingiz kerak.`,
           code: "outside_geofence",
           distanceMeters,
           remainMeters,
           allowedMeters,
           workplace: {
-            location: `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`,
-            latitude: DAVOMAT_SITE_LAT,
-            longitude: DAVOMAT_SITE_LNG,
+            location: fenceLabel,
+            latitude: fenceLat,
+            longitude: fenceLng,
             kind: "office",
           },
           fullName: emp.fullName,
@@ -7268,7 +7417,6 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       }
       gpsResult = "ok";
     } else {
-      // Ko‘chma / admin: GPS bo‘lsa masofani yozamiz, radius tekshirmaymiz
       if (!hasGps && mobileAnywhere && !adminAnywhere) {
         res.status(400).json({
           error: "Lokatsiya yoqilishi shart — ko‘chma davomat uchun GPS kerak",
@@ -7277,7 +7425,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
         return;
       }
       if (hasGps) {
-        distanceMeters = haversineMeters(latitude, longitude, DAVOMAT_SITE_LAT, DAVOMAT_SITE_LNG);
+        distanceMeters = haversineMeters(latitude, longitude, fenceLat, fenceLng);
         if (mobileAnywhere) {
           allowedMeters = Math.max(allowedMeters, Math.ceil(distanceMeters) || allowedMeters);
         }
@@ -7295,7 +7443,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       action,
       verificationMethod: "QR",
       resolvedBranchId: null,
-      resolvedBranchLabel: OFFICE_SHARED_QR_LABEL,
+      resolvedBranchLabel: tamojniPunch ? fenceLabel : OFFICE_SHARED_QR_LABEL,
       notes: typeof req.body?.notes === "string" ? req.body.notes : null,
     });
     if (!punched.ok) {
@@ -7691,6 +7839,13 @@ router.post("/davomat/zone-presence/confirm", requireAuth, async (req: AuthReque
         return;
       }
       throw err;
+    }
+    if (method === "QR" && (await branchRequiresFaceOnly(emp))) {
+      res.status(403).json({
+        error: "Sizning filialingizda QR o‘chirilgan. Hududni faqat Face ID bilan tasdiqlang.",
+        code: "qr_face_only",
+      });
+      return;
     }
     const gate = await geoGate(emp, user.role, latitude, longitude, Number(req.body?.accuracy), "in", null, false, true);
     if (!gate.ok) {

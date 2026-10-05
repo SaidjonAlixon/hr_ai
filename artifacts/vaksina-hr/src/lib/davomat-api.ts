@@ -684,6 +684,8 @@ export type QrBranchRow = {
   id: number;
   name: string;
   managerName: string;
+  /** true — shu filial xodimlari faqat Face ID */
+  qrFaceOnly?: boolean;
   hasActiveQr: boolean;
   hasPayload?: boolean;
   qrId: string | null;
@@ -693,6 +695,13 @@ export type QrBranchRow = {
 
 export function fetchQrBranches(): Promise<{ branches: QrBranchRow[] }> {
   return apiJson("/davomat/qr/branches");
+}
+
+export function setBranchQrFaceOnly(branchId: number, enabled: boolean) {
+  return apiJson<{ ok: boolean; branchId: number; name: string; qrFaceOnly: boolean; message: string }>(
+    "/davomat/qr/face-only",
+    { method: "POST", body: JSON.stringify({ branchId, enabled }) },
+  );
 }
 
 export type QrDepartmentRow = {

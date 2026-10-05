@@ -12,6 +12,7 @@ import {
   type KuzatuvPersonListItem,
 } from "@/lib/kuzatuv-api";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -647,7 +648,7 @@ function PersonDossier({
             >
               <div>
                 <p className="font-medium text-foreground">
-                  {a.branchLocation || t("ui.branch")} · {a.managerName || t("admin.holatDash.mudir")}
+                  {displayBranchName(a.branchLocation) || t("ui.branch")} · {a.managerName || t("admin.holatDash.mudir")}
                 </p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
                   {a.visitDate} · {a.visitName}
@@ -684,7 +685,7 @@ function PersonDossier({
               <div>
                 <p className="font-medium text-foreground">{n.needType}</p>
                 <p className="mt-0.5 text-xs text-muted-foreground">
-                  {n.branchLocation || "—"}
+                  {displayBranchName(n.branchLocation) || "—"}
                   {n.managerName ? ` · ${n.managerName}` : ""}
                 </p>
                 {n.note ? <p className="mt-1 text-sm text-muted-foreground">{n.note}</p> : null}

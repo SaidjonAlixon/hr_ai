@@ -47,6 +47,7 @@ import { DeadlineCountdown } from '../components/DeadlineCountdown';
 import { sortByDeadlineAsc } from '../lib/deadline-countdown';
 import { useStaffingAlerts } from '../lib/staffing-api';
 import { useBranchNeeds } from '../lib/branch-needs-api';
+import { displayBranchName } from '../lib/pharmacy-staff-api';
 import { useGetTasks } from '../lib/vazifalar-api';
 import { useGetReminders } from '../lib/eslatmalar-api';
 import { FaceIdEnroll } from '../components/FaceIdEnroll';
@@ -1616,7 +1617,7 @@ function NeedsPreview({ needs, loading }: { needs?: any[]; loading: boolean }) {
               <div className="rounded-lg border px-3 py-2.5 hover:bg-muted/40 cursor-pointer">
                 <p className="text-sm font-medium truncate">{n.needType}</p>
                 <p className="text-xs text-muted-foreground mt-0.5">
-                  {n.branchLocation || 'Filial'} · {n.status}
+                  {displayBranchName(n.branchLocation) || 'Filial'} · {n.status}
                 </p>
               </div>
             </Link>

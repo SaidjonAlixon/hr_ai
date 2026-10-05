@@ -137,6 +137,7 @@ export const DEPT_HEAD_ROLES = [
   "hr_menejer",
   "distrib_rahbar",
   "distrib_hr",
+  "tamojni_rahbar",
   "moliya_rahbar",
   "taminot_rahbar",
   "rivojlantirish_rahbar",
@@ -195,7 +196,8 @@ export function canViewDavomat(role?: string | null): boolean {
     canViewFullDavomatDashboard(r) ||
     isSbRole(r) ||
     isDeptHeadRole(r) ||
-    r === "koordinator"
+    r === "koordinator" ||
+    r === "tamojni"
   );
 }
 
@@ -230,7 +232,9 @@ export function canViewEmployees(role?: string | null): boolean {
     role === "oshpaz_rahbar" ||
     role === "marketing_rahbar" ||
     role === "distrib_rahbar" ||
-    role === "distrib_hr"
+    role === "distrib_hr" ||
+    role === "tamojni_rahbar" ||
+    role === "tamojni"
   );
 }
 
@@ -251,6 +255,8 @@ export const EMPLOYEE_VIEW_ONLY_ROLES = [
   "marketing_rahbar",
   "distrib_rahbar",
   "distrib_hr",
+  "tamojni_rahbar",
+  "tamojni",
 ] as const;
 
 export function isEmployeeDirectoryViewOnly(role?: string | null): boolean {

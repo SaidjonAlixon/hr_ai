@@ -62,6 +62,7 @@ const AdminQurilmalarPage = lazy(() => import('./pages/admin/qurilmalar'));
 const AdminKochmaDavomatPage = lazy(() => import('./pages/admin/kochma-davomat'));
 const AdminKochmaXaritaPage = lazy(() => import('./pages/admin/kochma-xarita'));
 const AdminKochmaLivePage = lazy(() => import('./pages/admin/kochma-live'));
+const PublicFilialMapPage = lazy(() => import('./pages/filiallar/index'));
 const DavomatKochmaPage = lazy(() => import('./pages/davomat/kochma'));
 const LogistikaPage = lazy(() => import('./pages/logistika/index'));
 const DistribyutsiyaPage = lazy(() => import('./pages/distribyutsiya/index'));
@@ -141,6 +142,11 @@ function Router() {
   return (
     <Switch>
       <Route path="/login" component={Login} />
+      <Route path="/filiallar">
+        <Suspense fallback={<PageFallback />}>
+          <PublicFilialMapPage />
+        </Suspense>
+      </Route>
       <Route path="/hisobot/tasdiq/:token">
         <Suspense fallback={<PageFallback />}>
           <HisobotTasdiqPage />

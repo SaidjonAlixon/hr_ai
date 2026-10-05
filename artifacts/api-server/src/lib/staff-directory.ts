@@ -37,6 +37,7 @@ export type StaffRow = {
   userRole: string | null;
   fixedSalary: number;
   bonusPercent: number;
+  branchNo: number | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -99,6 +100,7 @@ const EMP_LIST_SELECT = {
   photoUrl: employeesTable.photoUrl,
   fixedSalary: employeesTable.fixedSalary,
   bonusPercent: employeesTable.bonusPercent,
+  branchNo: employeesTable.branchNo,
   createdAt: employeesTable.createdAt,
   updatedAt: employeesTable.updatedAt,
 };
@@ -271,6 +273,7 @@ export async function loadStaffFromUsers(
       userRole: null,
       fixedSalary: 0,
       bonusPercent: 30,
+      branchNo: null,
     }));
   }
 
@@ -364,6 +367,7 @@ export async function loadStaffFromUsers(
       userRole: u.role,
       fixedSalary: 0,
       bonusPercent: 30,
+      branchNo: null,
       createdAt: u.createdAt,
       updatedAt: u.createdAt,
     };

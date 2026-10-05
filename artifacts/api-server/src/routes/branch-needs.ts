@@ -11,6 +11,11 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyByRoles, notifyUser } from "../lib/notify";
 import { HR_ROLES, isDirectorRole } from "../lib/roles";
+import { displayBranchName } from "../lib/geo-location";
+
+function branchTitle(raw: string | null | undefined): string {
+  return displayBranchName(raw) || "Filial";
+}
 
 const router: IRouter = Router();
 
@@ -112,6 +117,7 @@ async function enrichNeed(row: typeof branchNeedsTable.$inferSelect) {
     acceptedAt: row.acceptedAt?.toISOString() ?? null,
     completedAt: row.completedAt?.toISOString() ?? null,
     verifiedAt: row.verifiedAt?.toISOString() ?? null,
+    branchLocation: displayBranchName(row.branchLocation) || null,
     managerName,
     createdByName,
     createdByRole,
@@ -337,7 +343,7 @@ router.post("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise
 
     await notifyUser({
       userId: aid,
-      text: `Sizga ehtiyoj topshirigʻi: «${title}» — ${branch || "Filial"}`,
+      text: `Sizga ehtiyoj topshirigʻi: «${title}» — ${branchTitle(branch)}`,
       type: "expired_task",
       linkUrl: "/vazifalar",
     });
@@ -361,7 +367,7 @@ router.post("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise
 
   await notifyByRoles({
     roles: ["koordinator", "admin"],
-    text: `Yangi ehtiyoj (tasdiq kutilmoqda): ${title} — ${branch || "Filial"}`,
+    text: `Yangi ehtiyoj (tasdiq kutilmoqda): ${title} — ${branchTitle(branch)}`,
     type: "stage_change",
     linkUrl: "/ehtiyoj",
   });
@@ -405,7 +411,7 @@ router.post("/branch-needs/:id/confirm", requireAuth, async (req: AuthRequest, r
   }
 
   const descParts = [
-    `Filial: ${row.branchLocation || "—"}`,
+    `Filial: ${branchTitle(row.branchLocation)}`,
     row.note ? `Izoh: ${row.note}` : null,
   ].filter(Boolean);
 
@@ -439,7 +445,7 @@ router.post("/branch-needs/:id/confirm", requireAuth, async (req: AuthRequest, r
 
   await notifyUser({
     userId: aid,
-    text: `Sizga ehtiyoj topshirigʻi: «${row.needType}» — ${row.branchLocation || "Filial"}`,
+    text: `Sizga ehtiyoj topshirigʻi: «${row.needType}» — ${branchTitle(row.branchLocation)}`,
     type: "expired_task",
     linkUrl: "/vazifalar",
   });

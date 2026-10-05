@@ -55,6 +55,8 @@ export const ROLE_DEPARTMENT_NAME: Record<string, string> = {
   distrib_rahbar: "Distribyutsiya",
   distrib_hr: "Distribyutsiya",
   distrib: "Distribyutsiya",
+  tamojni_rahbar: "Tamojni sklad",
+  tamojni: "Tamojni sklad",
 };
 
 export function departmentNameForRole(role?: string | null): string | null {

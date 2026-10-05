@@ -39,7 +39,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2, UserPlus } from 'lucide-react';
+import { Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2, UserPlus, ArrowRightLeft } from 'lucide-react';
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
@@ -48,6 +48,9 @@ import {
   useChangePharmacyOrgRole,
   useCleanupDuplicateBranches,
   useSaveManagerLocation,
+  useCreatePharmacyBranch,
+  useRemovePharmacyBranch,
+  useTransferPharmacyBranch,
   useOwnMudirCredentials,
   useOwnStaffLogins,
   usePatchNetworkCredentials,
@@ -59,15 +62,31 @@ import {
   displayBranchName,
   type PharmacyStaffRole,
   type PharmacyStaffResult,
+  type BranchAccount,
 } from '../../lib/pharmacy-staff-api';
 import { Label } from '../../components/ui/label';
+import { PhoneInput } from '../../components/ui/phone-input';
+import { isCompleteUzPhone, normalizeUzPhone, UZ_PHONE_HINT } from '../../lib/phone';
+import { AddBranchDialog } from './AddBranchDialog';
+import { filialNumberLabel } from '../../lib/filial-number';
 
 type ShiftType = 'one' | 'two' | 'custom';
 type BranchEmployee = Employee & {
   latitude?: number | null;
   longitude?: number | null;
   assignedBranchId?: number | null;
+  branchNo?: number | null;
 };
+
+function FilialNoMark({ no }: { no: number | null | undefined }) {
+  const label = filialNumberLabel(no);
+  if (!label) return null;
+  return (
+    <span className="mr-1.5 inline-flex shrink-0 items-center rounded-md bg-rose-600 px-1.5 py-0.5 align-middle text-[10px] font-bold leading-none text-white">
+      {label}
+    </span>
+  );
+}
 
 function initials(name: string) {
   return name
@@ -266,6 +285,22 @@ export default function PharmacyNetworkPage() {
   const createStaff = useCreatePharmacyStaff();
   const dismissStaff = useDismissPharmacyEmployee();
   const hardDeleteStaff = useHardDeletePharmacyEmployee();
+  const createBranch = useCreatePharmacyBranch();
+  const removeBranch = useRemovePharmacyBranch();
+  const transferBranch = useTransferPharmacyBranch();
+  const [transferTarget, setTransferTarget] = useState<{
+    id: number;
+    name: string;
+    reportsToId: number | null;
+  } | null>(null);
+  const [transferCoordId, setTransferCoordId] = useState("");
+  const [addBranchOpen, setAddBranchOpen] = useState(false);
+  const [createdBranch, setCreatedBranch] = useState<{
+    branchName: string;
+    coordinatorName: string;
+    accounts: BranchAccount[];
+  } | null>(null);
+  const [removeBranchTarget, setRemoveBranchTarget] = useState<{ id: number; name: string } | null>(null);
   const changeOrgRole = useChangePharmacyOrgRole();
   const cleanupDupBranches = useCleanupDuplicateBranches();
   const saveBranchGps = useSaveManagerLocation();
@@ -833,8 +868,8 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
       toast({ title: 'Ism va familiya kiriting', variant: 'destructive' });
       return;
     }
-    if (!phone.trim()) {
-      toast({ title: 'Telefon raqam kiriting', variant: 'destructive' });
+    if (!isCompleteUzPhone(phone)) {
+      toast({ title: UZ_PHONE_HINT, variant: 'destructive' });
       return;
     }
     if (addKind === 'xodim' && canPickFilialForStaff && !addManagerId && !canAddTeam) {
@@ -845,7 +880,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
       {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
-        phone: phone.trim(),
+        phone: normalizeUzPhone(phone),
         role: staffRole,
         location: staffRole === 'mudir' ? branchLocation.trim() || undefined : undefined,
         managerEmployeeId:
@@ -928,6 +963,10 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
       toast({ title: 'Ism kiriting', variant: 'destructive' });
       return;
     }
+    if (editPhone.trim() && !isCompleteUzPhone(editPhone)) {
+      toast({ title: UZ_PHONE_HINT, variant: 'destructive' });
+      return;
+    }
 
     const currentRole =
       editTarget.orgRole === 'manager'
@@ -963,7 +1002,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
           firstName: editFirstName.trim(),
           lastName: editLastName.trim(),
           fullName,
-          phone: editPhone.trim(),
+          phone: normalizeUzPhone(editPhone),
           shiftType,
           shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : null,
           ...(canEditStatus ? { employmentStatus } : {}),
@@ -985,7 +1024,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
           firstName: editFirstName.trim(),
           lastName: editLastName.trim(),
           fullName,
-          phone: editPhone.trim(),
+          phone: normalizeUzPhone(editPhone),
           shiftType,
           shiftLabel: shiftType === 'custom' ? shiftLabel.trim() || 'Maxsus holat' : null,
           ...(canEditStatus ? { employmentStatus } : {}),
@@ -1164,8 +1203,29 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
               {exportingMudirs ? t('ui.loading') : t('pharmacy.excelDownload')}
             </Button>
           )}
+          <a
+            href="/filiallar"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-3 text-sm font-medium hover:bg-muted sm:h-9 sm:w-auto"
+          >
+            <MapPin className="h-4 w-4" />
+            Ommaviy xarita
+          </a>
+          {canRunNetwork && (
+            <Button
+              className="h-11 w-full gap-2 sm:h-9 sm:w-auto"
+              onClick={() => {
+                setCreatedBranch(null);
+                setAddBranchOpen(true);
+              }}
+            >
+              <Plus className="h-4 w-4" />
+              Filial qo‘shish
+            </Button>
+          )}
           {canAddStaff && (
-            <Button className="h-11 w-full gap-2 sm:h-9 sm:w-auto" onClick={() => openAddStaff(canAddMudir ? 'mudir' : 'xodim')}>
+            <Button className="h-11 w-full gap-2 sm:h-9 sm:w-auto" variant="outline" onClick={() => openAddStaff(canAddMudir ? 'mudir' : 'xodim')}>
               <Plus className="h-4 w-4" />
               {canAddMudir ? t('pharmacy.addMudir') : t('pharmacy.addStaff')}
             </Button>
@@ -1692,6 +1752,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                                 >
                                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
                                   <span className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug">
+                                    <FilialNoMark no={(manager as BranchEmployee).branchNo} />
                                     {locationLabel}
                                   </span>
                                 </a>
@@ -1701,6 +1762,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                                 >
                                   <MapPin className="mt-0.5 h-4 w-4 shrink-0 opacity-80" />
                                   <span className="min-w-0 flex-1 whitespace-normal break-words text-sm font-semibold leading-snug">
+                                    <FilialNoMark no={(manager as BranchEmployee).branchNo} />
                                     {locationLabel}
                                   </span>
                                 </div>
@@ -1816,7 +1878,10 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                           </p>
                           <p className="mt-1 flex items-start gap-1 text-xs font-semibold leading-snug text-sky-900 dark:text-sky-300">
                             <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-sky-700 dark:text-sky-400" />
-                            <span className="min-w-0 break-words">{locationLabel}</span>
+                            <span className="min-w-0 break-words">
+                              <FilialNoMark no={(manager as BranchEmployee).branchNo} />
+                              {locationLabel}
+                            </span>
                           </p>
                           <div className="mt-1.5 flex flex-wrap gap-1.5 text-[11px]">
                             <span
@@ -1868,6 +1933,42 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                         </div>
                       </div>
 
+                      {canRunNetwork ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 w-full gap-1.5 border-sky-200 text-sky-800 hover:bg-sky-50"
+                          onClick={() => {
+                            setTransferCoordId("");
+                            setTransferTarget({
+                              id: manager.id,
+                              name: locationLabel || manager.fullName,
+                              reportsToId: manager.reportsToId ?? null,
+                            });
+                          }}
+                        >
+                          <ArrowRightLeft className="h-3.5 w-3.5" />
+                          Koordinatorga o‘tkazish
+                        </Button>
+                      ) : null}
+                      {canHardDelete ? (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-9 w-full gap-1.5 border-rose-200 text-rose-700 hover:bg-rose-50"
+                          onClick={() =>
+                            setRemoveBranchTarget({
+                              id: manager.id,
+                              name: locationLabel || manager.fullName,
+                            })
+                          }
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                          Filialni o‘chirish
+                        </Button>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => toggleBranch(manager.id)}
@@ -2028,7 +2129,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                       <div className="inline-flex min-w-0 items-start gap-1.5 rounded-lg bg-amber-100 px-2 py-1 text-amber-900 dark:bg-amber-950/50 dark:text-amber-300">
                         <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-80" />
                         <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] font-semibold leading-snug">
-                          {displayBranchName(group.location) || group.location || t('pharmacy.branchFallback')}
+                          {displayBranchName(group.location) || t('pharmacy.branchFallback')}
                         </span>
                       </div>
                       <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-amber-800 dark:bg-amber-950/50 dark:text-amber-300">
@@ -2166,11 +2267,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
             </div>
             <div className="space-y-1.5">
               <Label>Telefon</Label>
-              <Input
-                value={editPhone}
-                onChange={(e) => setEditPhone(e.target.value)}
-                placeholder="+998 90 123 45 67"
-              />
+              <PhoneInput value={editPhone} onChange={setEditPhone} />
             </div>
             {canHardDelete &&
               editTarget &&
@@ -2344,11 +2441,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
             </div>
             <div className="space-y-1.5">
               <Label>Telefon raqam</Label>
-              <Input
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="+998 90 123 45 67"
-              />
+              <PhoneInput value={phone} onChange={setPhone} />
             </div>
             {addKind === 'mudir' ? (
               <>
@@ -2672,6 +2765,149 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                   : deleteTarget?.mode === 'pick' && deleteTarget.pickKey === 'branch'
                     ? 'Ha, butun filial'
                     : 'Ha, o‘chirish'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AddBranchDialog
+        open={addBranchOpen}
+        onOpenChange={(next) => {
+          setAddBranchOpen(next);
+          if (!next) setCreatedBranch(null);
+        }}
+        coordinators={coordinators.map((c) => ({ id: c.id, fullName: c.fullName }))}
+        pending={createBranch.isPending}
+        created={createdBranch}
+        onSubmit={(payload) => {
+          createBranch.mutate(payload, {
+            onSuccess: (data) => {
+              setCreatedBranch({
+                branchName: data.branchName,
+                coordinatorName: data.coordinatorName,
+                accounts: data.accounts,
+              });
+              void refetch();
+              toast({ title: "Filial qo‘shildi", description: data.branchName });
+            },
+            onError: (err: Error) => {
+              toast({ title: "Qo‘shilmadi", description: err.message, variant: "destructive" });
+            },
+          });
+        }}
+      />
+
+      <Dialog
+        open={!!transferTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setTransferTarget(null);
+            setTransferCoordId("");
+          }
+        }}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowRightLeft className="h-4 w-4 text-sky-700" />
+              Koordinatorga o‘tkazish
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 text-sm">
+            <p>
+              <span className="font-semibold">{transferTarget?.name}</span> boshqa koordinatorga o‘tadi.
+              Filial nomi, raqami, GPS, xodimlar, smena, login va davomat o‘zgarmaydi.
+            </p>
+            <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Hozirgi koordinator:{" "}
+              <span className="font-semibold text-slate-900">
+                {coordinators.find((c) => c.id === transferTarget?.reportsToId)?.fullName || "Koordinatorsiz"}
+              </span>
+            </p>
+            <div className="space-y-1.5">
+              <Label>Yangi koordinator</Label>
+              <Select value={transferCoordId} onValueChange={setTransferCoordId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Koordinatorni tanlang" />
+                </SelectTrigger>
+                <SelectContent>
+                  {coordinators
+                    .filter((c) => c.id !== transferTarget?.reportsToId)
+                    .map((c) => (
+                      <SelectItem key={c.id} value={String(c.id)}>
+                        {c.fullName}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setTransferTarget(null)}>
+              Bekor
+            </Button>
+            <Button
+              type="button"
+              disabled={!transferCoordId || transferBranch.isPending}
+              onClick={() => {
+                if (!transferTarget || !transferCoordId) return;
+                transferBranch.mutate(
+                  {
+                    employeeId: transferTarget.id,
+                    coordinatorEmployeeId: Number(transferCoordId),
+                  },
+                  {
+                    onSuccess: (data) => {
+                      setTransferTarget(null);
+                      setTransferCoordId("");
+                      setExpandedId(null);
+                      void refetch();
+                      toast({ title: "Koordinator o‘zgardi", description: data.message });
+                    },
+                    onError: (err: Error) => {
+                      toast({ title: "O‘tkazilmadi", description: err.message, variant: "destructive" });
+                    },
+                  },
+                );
+              }}
+            >
+              {transferBranch.isPending ? "O‘tkazilmoqda…" : "O‘tkazish"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <AlertDialog open={!!removeBranchTarget} onOpenChange={(open) => !open && setRemoveBranchTarget(null)}>
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Filial o‘chirilsinmi?</AlertDialogTitle>
+            <AlertDialogDescription>
+              «{removeBranchTarget?.name}» xarita, davomat, bot va bazadan ketadi. Ichidagi xodimlar ham o‘chadi.
+              Shu oyda kelganlar bo‘shatilganlarga o‘tadi va davomat hisobotida shu oygacha qoladi.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Bekor</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-rose-600 text-white hover:bg-rose-700"
+              disabled={removeBranch.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (!removeBranchTarget) return;
+                removeBranch.mutate(removeBranchTarget.id, {
+                  onSuccess: (data) => {
+                    setRemoveBranchTarget(null);
+                    setExpandedId(null);
+                    void refetch();
+                    toast({ title: "Filial o‘chirildi", description: data.message });
+                  },
+                  onError: (err: Error) => {
+                    toast({ title: "O‘chirilmadi", description: err.message, variant: "destructive" });
+                  },
+                });
+              }}
+            >
+              {removeBranch.isPending ? "O‘chirilmoqda…" : "Filialni o‘chirish"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

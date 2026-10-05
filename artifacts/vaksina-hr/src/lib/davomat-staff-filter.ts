@@ -292,6 +292,9 @@ export function staffFilterLabel(filter: DavomatStaffFilter): string {
 export function smenaLabelShort(emp: DavomatEmployee): string {
   if (emp.userRole === "revizor" || emp.userRole === "reviziya_rahbar") return "Reviziya";
   if (emp.userRole === "texnik" || emp.userRole === "texnik_rahbar") return "Texnik";
+  if (emp.userRole === "tamojni" || emp.userRole === "tamojni_rahbar") {
+    return emp.shiftLabel?.trim() || "Tamojni sklad";
+  }
   if (isDistribStaff(emp)) return "Distribyutsiya";
   if (emp.userRole === "koordinator" || emp.orgRole === "coordinator") return "Koordinator";
   if (emp.userRole === "mudir" || emp.orgRole === "manager" || /mudir/i.test(emp.position || ""))

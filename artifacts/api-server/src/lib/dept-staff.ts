@@ -18,6 +18,7 @@ export const DEPT_HEAD_ROLES = [
   "hr_menejer",
   "distrib_rahbar",
   "distrib_hr",
+  "tamojni_rahbar",
   "moliya_rahbar",
   "taminot_rahbar",
   "rivojlantirish_rahbar",
@@ -37,6 +38,7 @@ const NAMED_HEAD_CREATABLE: Record<string, readonly string[]> = {
   hr_menejer: ["hr", "recruiter", "trainer"],
   distrib_rahbar: ["distrib", "distrib_hr"],
   distrib_hr: ["distrib"],
+  tamojni_rahbar: ["tamojni"],
   moliya_rahbar: ["moliya_xodim", "kassir"],
   taminot_rahbar: ["taminot"],
   rivojlantirish_rahbar: ["rivojlantirish"],
@@ -80,6 +82,8 @@ export const ROLE_LABEL_UZ: Record<string, string> = {
   distrib: "Distribyutsiya xodimi",
   distrib_hr: "Distribyutsiya HR",
   distrib_rahbar: "Distribyutsiya rahbari",
+  tamojni: "Tamojni sklad xodimi",
+  tamojni_rahbar: "Tamojni sklad bo‘lim boshlig‘i",
   moliya_rahbar: "Moliya bo‘lim boshlig‘i",
   moliya_xodim: "Moliya xodimi",
   taminot_rahbar: "Ta’minot bo‘lim boshlig‘i",
@@ -161,6 +165,14 @@ export async function resolveDeptHeadContext(userId: number, role: string): Prom
     } = await import("./distribyutsiya-department");
     departmentId = await ensureDistribyutsiyaSetup();
     departmentName = DISTRIBYUTSIYA_DEPARTMENT_NAME;
+  }
+
+  if (role === "tamojni_rahbar" || departmentName === "Tamojni sklad") {
+    const { ensureTamojniSkladDepartmentId, TAMOJNI_SKLAD_DEPARTMENT_NAME } = await import(
+      "./tamojni-sklad"
+    );
+    departmentId = await ensureTamojniSkladDepartmentId();
+    departmentName = TAMOJNI_SKLAD_DEPARTMENT_NAME;
   }
 
   if (!departmentId) {

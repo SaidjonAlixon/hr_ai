@@ -388,6 +388,33 @@ function weekdayIndex(y: number, m: number, d: number): number {
   return new Date(Date.UTC(y, m - 1, d, 12)).getUTCDay();
 }
 
+function dayShiftCaption(day: DavomatDayMetrics): string | null {
+  const plan = String(day.planShift || "").trim();
+  const name =
+    plan === "one+two"
+      ? "1+2"
+      : plan === "two+three"
+        ? "2+3"
+        : plan === "one+three"
+          ? "1+3"
+          : plan === "one"
+            ? "1-smena"
+            : plan === "two"
+              ? "2-smena"
+              : plan === "three"
+                ? "3-smena"
+                : plan === "office"
+                  ? "Ofis"
+                  : "";
+  const start = String(day.planStart || "").trim();
+  const end = String(day.planEnd || "").trim();
+  const hours = start && end ? `${start}–${end}` : "";
+  if (name && hours) return `${name} · ${hours}`;
+  if (name) return name;
+  if (hours) return hours;
+  return null;
+}
+
 function splitDay(ymd: string, t: Translate): { date: string; weekday: string } {
   const p = parseYmd(ymd);
   if (!p) return { date: ymd, weekday: "" };
@@ -2645,6 +2672,7 @@ export default function DavomatFacePage() {
         {filteredHistoryDays.slice(0, historyRange === "day" ? 1 : historyRange === "week" ? 7 : 14).map((d) => {
                       const isToday = d.date === todayStamp;
           const dayParts = splitDay(d.date, t);
+          const shiftLine = dayShiftCaption(d);
           const hoursLabel =
             d.workedMinutes > 0
               ? formatHours(d.workedMinutes, t)
@@ -2669,6 +2697,9 @@ export default function DavomatFacePage() {
                       ) : null}
                     </p>
                     <p className="text-[11px] capitalize text-emerald-50/70">{dayParts.weekday}</p>
+                    {shiftLine ? (
+                      <p className="mt-0.5 text-[11px] font-medium text-emerald-50/90">{shiftLine}</p>
+                    ) : null}
                   </div>
                   <p className="rounded-full border border-white/25 bg-white/15 px-3 py-1 text-center text-[13px] font-bold tracking-wide text-white">
                     Sababli
@@ -2707,6 +2738,9 @@ export default function DavomatFacePage() {
                               ) : null}
                 </p>
                 <p className="text-[11px] capitalize text-white/45">{dayParts.weekday}</p>
+                {shiftLine ? (
+                  <p className="mt-0.5 text-[11px] font-medium text-sky-200/90">{shiftLine}</p>
+                ) : null}
                             </div>
               <div className="shrink-0 text-right">
                 <p className="font-mono text-xs tabular-nums">

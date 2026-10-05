@@ -15,6 +15,7 @@ import {
 } from '../ui/dialog';
 import type { HolatMudirNode, HolatPerson, HolatReport } from '../../lib/holat-api';
 import type { StaffingAlert } from '../../lib/staffing-api';
+import { displayBranchName } from '../../lib/pharmacy-staff-api';
 
 export function flattenHolatTree(holat?: HolatReport) {
   const mudirs: HolatMudirNode[] = [];
@@ -361,7 +362,7 @@ export function StaffingAlertRows({ alerts }: { alerts: StaffingAlert[] }) {
       {alerts.map((a) => (
         <DashListRow
           key={a.id}
-          title={`${a.branchLocation || 'Filial'} · ${a.employmentStatusLabel}`}
+          title={`${displayBranchName(a.branchLocation) || 'Filial'} · ${a.employmentStatusLabel}`}
           subtitle={[a.shiftLabel || a.shiftType, a.employeeName].filter(Boolean).join(' · ')}
           badge={<Badge className="bg-red-100 text-red-800 hover:bg-red-100 text-[10px]">Kutilmoqda</Badge>}
         />
@@ -378,7 +379,7 @@ export function NeedListRows({ needs }: { needs: any[] }) {
         <DashListRow
           key={n.id}
           title={n.needType || n.title || 'Ehtiyoj'}
-          subtitle={[n.branchLocation || n.branch, n.status].filter(Boolean).join(' · ')}
+          subtitle={[displayBranchName(n.branchLocation || n.branch) || null, n.status].filter(Boolean).join(' · ')}
         />
       ))}
     </>

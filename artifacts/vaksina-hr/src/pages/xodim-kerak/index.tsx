@@ -8,6 +8,7 @@ import {
   hasFullPlatformAccess,
   isHrRole,
 } from "../../lib/roles";
+import { displayBranchName } from "../../lib/pharmacy-staff-api";
 import {
   useApproveStaffNeed,
   useCancelStaffNeed,
@@ -766,7 +767,7 @@ export default function XodimKerakPage() {
                       <SelectContent>
                         {branches.map((b) => (
                           <SelectItem key={b.id} value={String(b.id)}>
-                            {b.branchLocation}
+                            {displayBranchName(b.branchLocation) || "Filial"}
                           </SelectItem>
                         ))}
                       </SelectContent>

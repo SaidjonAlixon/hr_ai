@@ -14,6 +14,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { notifyByRoles } from "../lib/notify";
 import { HR_ROLES, isHrManager } from "../lib/roles";
+import { displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -237,7 +238,7 @@ router.post("/staffing-alerts/:id/confirm", requireAuth, async (req: AuthRequest
   }
 
   const statusLabel = EMP_STATUS_LABEL[alert.employmentStatus] ?? alert.employmentStatus;
-  const branch = alert.branchLocation || employee.location || "Filial";
+  const branch = displayBranchName(alert.branchLocation || employee.location) || "Filial";
   const shiftLabel =
     alert.shiftType === "two"
       ? "2-smena"

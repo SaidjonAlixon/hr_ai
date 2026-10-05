@@ -169,6 +169,7 @@ export default function PublicFilialMapPage() {
   const [error, setError] = useState("");
   const [q, setQ] = useState("");
   const [district, setDistrict] = useState("all");
+  const [coordinator, setCoordinator] = useState("all");
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const [showRegions, setShowRegions] = useState(true);
@@ -345,25 +346,62 @@ export default function PublicFilialMapPage() {
     paintBordersRef.current();
   }, [district, showRegions, showDistricts]);
 
+  const coordinators = useMemo(() => {
+    const map = new Map<string, number>();
+    let unassigned = 0;
+    for (const p of places) {
+      const name = p.coordinatorName?.trim();
+      if (!name || name === "Tayinlanmagan") {
+        unassigned++;
+        continue;
+      }
+      map.set(name, (map.get(name) || 0) + 1);
+    }
+    const list = Array.from(map.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => a.name.localeCompare(b.name, "uz"));
+    if (unassigned > 0) {
+      list.push({ name: "Tayinlanmagan", count: unassigned });
+    }
+    return list;
+  }, [places]);
+
   const visible = useMemo(() => {
     const query = foldScript(q.trim());
     const numberQuery = q.replace(/\D/g, "");
     return places.filter((p) => {
       if (district !== "all" && p.district !== district) return false;
+      if (coordinator !== "all" && p.coordinatorName !== coordinator) return false;
       if (boundaryGeom.current && p.lat != null && p.lng != null) {
         if (!geometryContains(boundaryGeom.current, p.lat, p.lng)) return false;
       } else if (boundaryGeom.current && (p.lat == null || p.lng == null)) {
         return false;
       }
       if (!query && !numberQuery) return true;
-      const hay = foldScript(`${p.name} ${p.officialName || ""} ${p.district} ${p.mudirName}`);
+      const hay = foldScript(`${p.name} ${p.officialName || ""} ${p.district} ${p.coordinatorName} ${p.mudirName}`);
       if (query && hay.includes(query)) return true;
       if (numberQuery && p.branchNo != null && String(p.branchNo) === numberQuery) return true;
       return false;
     });
-  }, [places, q, district, boundaryName]);
+  }, [places, q, district, coordinator, boundaryName]);
 
   const selected = places.find((p) => p.id === selectedId) ?? null;
+
+  useEffect(() => {
+    if (selectedId && !visible.some((p) => p.id === selectedId)) {
+      setSelectedId(null);
+    }
+  }, [visible, selectedId]);
+
+  useEffect(() => {
+    if (coordinator === "all" || !mapObj.current) return;
+    const withGps = visible.filter((p): p is Place & { lat: number; lng: number } => p.lat != null && p.lng != null);
+    if (!withGps.length) return;
+    const bounds = L.latLngBounds(withGps.map((p) => [p.lat, p.lng]));
+    if (bounds.isValid()) {
+      mapObj.current.fitBounds(bounds, { padding: [36, 36], maxZoom: 13 });
+    }
+  }, [coordinator]);
 
   useEffect(() => {
     const map = mapObj.current;
@@ -454,6 +492,30 @@ export default function PublicFilialMapPage() {
               {visible.length}
             </span>
           </div>
+          <div className="mt-2 flex gap-2">
+            <select
+              value={coordinator}
+              onChange={(e) => setCoordinator(e.target.value)}
+              className="h-9 min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-2 text-xs text-slate-800 outline-none focus:border-rose-400"
+            >
+              <option value="all">Barcha koordinatorlar</option>
+              {coordinators.map((c) => (
+                <option key={c.name} value={c.name}>
+                  {c.name} ({c.count})
+                </option>
+              ))}
+            </select>
+            {coordinator !== "all" ? (
+              <button
+                type="button"
+                onClick={() => setCoordinator("all")}
+                title="Koordinator filtrini tozalash"
+                className="inline-flex h-9 items-center justify-center rounded-lg bg-slate-100 px-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             <button
               type="button"
@@ -469,6 +531,16 @@ export default function PublicFilialMapPage() {
             >
               Tuman chegarasi
             </button>
+            {coordinator !== "all" ? (
+              <button
+                type="button"
+                onClick={() => setCoordinator("all")}
+                className="inline-flex items-center gap-1 rounded-full bg-rose-700 px-2.5 py-1 text-[11px] font-semibold text-white"
+              >
+                {coordinator}
+                <X className="h-3 w-3" />
+              </button>
+            ) : null}
             {boundaryName ? (
               <button
                 type="button"
@@ -516,6 +588,7 @@ export default function PublicFilialMapPage() {
                     <span className="block text-sm font-semibold leading-snug">{p.name}</span>
                     <span className="mt-0.5 block text-[11px] text-slate-500">
                       {p.district}
+                      {p.coordinatorName && p.coordinatorName !== "Tayinlanmagan" ? ` · ${p.coordinatorName}` : ""}
                       {p.lat == null ? " · GPS yo‘q" : ""}
                     </span>
                   </span>
@@ -570,7 +643,18 @@ export default function PublicFilialMapPage() {
               <div className="flex gap-2">
                 <dt className="w-[5.6rem] shrink-0 text-slate-400">Koordinator</dt>
                 <dd className="min-w-0">
-                  <p>{selected.coordinatorName || "Tayinlanmagan"}</p>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <p className="font-semibold text-slate-900">{selected.coordinatorName || "Tayinlanmagan"}</p>
+                    {selected.coordinatorName && selected.coordinatorName !== "Tayinlanmagan" && coordinator !== selected.coordinatorName ? (
+                      <button
+                        type="button"
+                        onClick={() => setCoordinator(selected.coordinatorName)}
+                        className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-medium text-rose-700 hover:bg-rose-100"
+                      >
+                        Filiallarini ko‘rish
+                      </button>
+                    ) : null}
+                  </div>
                   {selected.coordinatorPhone && selected.coordinatorPhone !== "Raqam kiritilmagan" ? (
                     <a href={`tel:${selected.coordinatorPhone.replace(/\s/g, "")}`} className="mt-0.5 inline-flex items-center gap-1 font-medium text-slate-900">
                       <Phone className="h-3 w-3" />

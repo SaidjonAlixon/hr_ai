@@ -493,6 +493,7 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS created_by_id INTEGER;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS qr_face_only BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS branch_no INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS davomat_site TEXT;
   END IF;
 END $$;
 
@@ -634,6 +635,7 @@ BEGIN
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS bonus_percent DOUBLE PRECISION NOT NULL DEFAULT 30;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS qr_face_only BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE employees ADD COLUMN IF NOT EXISTS branch_no INTEGER;
+    ALTER TABLE employees ADD COLUMN IF NOT EXISTS davomat_site TEXT;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
     UPDATE employees
     SET location = regexp_replace(location, '^(Азия|АЗИЯ)', 'ТАШСЕЛМАШ')
@@ -647,6 +649,12 @@ BEGIN
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS pipeline_stage TEXT;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS accepted_at TIMESTAMPTZ;
     ALTER TABLE tasks ADD COLUMN IF NOT EXISTS meta JSONB NOT NULL DEFAULT '{}'::jsonb;
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'employee_work_slots'
+  ) THEN
+    ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS override_base BOOLEAN NOT NULL DEFAULT FALSE;
   END IF;
 END $$;
 

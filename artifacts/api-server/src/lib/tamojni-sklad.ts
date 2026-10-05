@@ -1,5 +1,5 @@
-import { eq } from "drizzle-orm";
-import { db, departmentSitesTable } from "@workspace/db";
+import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { db, departmentSitesTable, employeesTable, usersTable } from "@workspace/db";
 import { ensureDepartmentByName } from "./role-departments";
 import { ensureDepartmentSitesSchema } from "./ensure-schema";
 
@@ -128,4 +128,56 @@ export async function getTamojniSite(): Promise<TamojniSite | null> {
     longitude: row.longitude,
     radiusM: effectiveRadius,
   };
+}
+
+/**
+ * Barcha Tamojni sklad xodimlarini bazadagi Asosiy ofisdan to'liq ajratib,
+ * faqat Tamojni sklad joyiga va uning GPS koordinatasiga bog'laydi.
+ */
+export async function syncTamojniEmployeesWithSite(site?: TamojniSite | null): Promise<void> {
+  try {
+    const departmentId = await ensureTamojniSkladDepartmentId();
+    const actualSite = site || (await getTamojniSite());
+
+    // 1. usersTable da tamojni / tamojni_rahbar bo'lganlarning departmentId sini tekshirish va to'g'rilash
+    await db
+      .update(usersTable)
+      .set({ departmentId, updatedAt: new Date() })
+      .where(
+        and(
+          inArray(usersTable.role, [TAMOJNI_STAFF_ROLE, TAMOJNI_HEAD_ROLE]),
+          or(isNull(usersTable.departmentId), sql`${usersTable.departmentId} != ${departmentId}`),
+        ),
+      )
+      .catch(() => undefined);
+
+    // 2. employeesTable da shu xodimlarning location, latitude, longitude sini Tamojni sklad qilib qo'yish
+    const tamojniUsers = await db
+      .select({ id: usersTable.id })
+      .from(usersTable)
+      .where(
+        or(
+          inArray(usersTable.role, [TAMOJNI_STAFF_ROLE, TAMOJNI_HEAD_ROLE]),
+          eq(usersTable.departmentId, departmentId),
+        ),
+      );
+
+    const userIds = tamojniUsers.map((u) => u.id).filter(Boolean);
+    if (userIds.length > 0) {
+      await db
+        .update(employeesTable)
+        .set({
+          departmentId,
+          location: actualSite?.name || TAMOJNI_SKLAD_DEPARTMENT_NAME,
+          latitude: actualSite?.latitude ?? null,
+          longitude: actualSite?.longitude ?? null,
+          assignedBranchId: null,
+          updatedAt: new Date(),
+        })
+        .where(inArray(employeesTable.userId, userIds))
+        .catch(() => undefined);
+    }
+  } catch (err) {
+    console.error("syncTamojniEmployeesWithSite error:", err);
+  }
 }

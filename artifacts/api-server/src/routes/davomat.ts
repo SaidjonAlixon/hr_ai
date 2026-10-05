@@ -725,6 +725,7 @@ function smenaLabelForEmployee(e: {
   shiftType?: string | null;
   shiftLabel?: string | null;
 }): string {
+  if (isTamojniRole(e.userRole) || isTamojniRole(e.orgRole)) return "Tamojni sklad";
   if (EXTERNAL_USER_ROLES.has(e.userRole || "")) return "Tashqi xodimlar";
   const w = workScheduleForStaff(e.userRole, e.orgRole, e.shiftType, e.shiftLabel);
   if (w.key === "office") return "Asosiy ofis";
@@ -2435,13 +2436,16 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
   | { ok: true; point: DavomatPoint }
   | { ok: false; status: number; body: Record<string, unknown> }
 > {
-  const isTamojniOrDistrib = isTamojniOrDistribMember({
-    userRole,
-    orgRole: emp.orgRole,
-    departmentId: emp.departmentId,
-    departmentName: emp.location,
-    location: emp.location,
-  });
+  const isTamojniOrDistrib =
+    isTamojniRole(userRole) ||
+    isTamojniRole(emp.orgRole) ||
+    isTamojniOrDistribMember({
+      userRole,
+      orgRole: emp.orgRole,
+      departmentId: emp.departmentId,
+      departmentName: emp.location,
+      location: emp.location,
+    });
 
   if (isTamojniOrDistrib) {
     const site = await getTamojniSite();
@@ -2462,7 +2466,7 @@ async function resolveDavomatPoint(emp: WorkplaceEmp, userRole: string): Promise
       point: {
         latitude: site.latitude,
         longitude: site.longitude,
-        label: site.name || "Tamojni sklad",
+        label: site.name || TAMOJNI_SKLAD_DEPARTMENT_NAME,
         kind: "office",
         radiusMeters: site.radiusM || TAMOJNI_DEFAULT_RADIUS_M,
       },
@@ -2702,6 +2706,25 @@ async function ensureEmployeeForUser(user: {
 
   const orgRole = orgRoleFromUserRole(user.role);
   const branchStaff = usesBranchDavomat(user.role, orgRole);
+  const isTamojni = isTamojniRole(user.role);
+  const tamojniSite = isTamojni ? await getTamojniSite() : null;
+
+  const initialLocation = isTamojni
+    ? tamojniSite?.name || TAMOJNI_SKLAD_DEPARTMENT_NAME
+    : branchStaff
+      ? null
+      : DAVOMAT_SITE_LABEL;
+  const initialLat = isTamojni
+    ? tamojniSite?.latitude ?? null
+    : branchStaff
+      ? null
+      : DAVOMAT_SITE_LAT;
+  const initialLng = isTamojni
+    ? tamojniSite?.longitude ?? null
+    : branchStaff
+      ? null
+      : DAVOMAT_SITE_LNG;
+
   const [created] = await db
     .insert(employeesTable)
     .values({
@@ -2712,10 +2735,11 @@ async function ensureEmployeeForUser(user: {
       userId: user.id,
       employmentStatus: "working",
       orgRole,
-      location: branchStaff ? null : DAVOMAT_SITE_LABEL,
-      latitude: branchStaff ? null : DAVOMAT_SITE_LAT,
-      longitude: branchStaff ? null : DAVOMAT_SITE_LNG,
-      shiftType: "one",
+      location: initialLocation,
+      latitude: initialLat,
+      longitude: initialLng,
+      shiftType: isTamojni ? "office" : "one",
+      shiftLabel: isTamojni ? "Ofis · 09:00–18:00" : null,
     })
     .returning({
       id: employeesTable.id,
@@ -4532,80 +4556,35 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
     } else if (user.role === "koordinator") {
       coordinatorFieldPunch = true;
     }
-    const isTamojniOrDistrib = isTamojniOrDistribMember({
-      userRole: user.role,
-      departmentId: user.departmentId ?? emp.departmentId,
-      departmentName: emp.location,
-      orgRole: emp.orgRole,
-      location: emp.location,
-    });
+    const isTamojniOrDistrib =
+      isTamojniRole(user.role) ||
+      isTamojniRole(emp.orgRole) ||
+      isTamojniOrDistribMember({
+        userRole: user.role,
+        departmentId: user.departmentId ?? emp.departmentId,
+        departmentName: emp.location,
+        orgRole: emp.orgRole,
+        location: emp.location,
+      });
 
-    // Filial smena sloti — faqat dorixona xodimlari (koordinator/reviziya/tamojni/distribyutsiya o‘z joyiga ega)
-    if (
-      preferredSlot &&
-      user.role !== "koordinator" &&
-      !isReviziyaRole(user.role) &&
-      !isTamojniOrDistrib
-    ) {
-      const coords = await branchCoordsById(preferredSlot.branchId);
-      if (coords) {
-        resolved = {
-          ok: true,
-          point: {
-            latitude: coords.lat,
-            longitude: coords.lng,
-            label: preferredSlot.branchLabel || coords.label,
-            kind: "branch",
-          },
-        };
-      }
-    } else if (
-      activeNow[0] &&
-      user.role !== "koordinator" &&
-      !isReviziyaRole(user.role) &&
-      !isTamojniOrDistrib
-    ) {
-      const coords = await branchCoordsById(activeNow[0].branchId);
-      if (coords) {
-        resolved = {
-          ok: true,
-          point: {
-            latitude: coords.lat,
-            longitude: coords.lng,
-            label: activeNow[0].branchLabel || coords.label,
-            kind: "branch",
-          },
-        };
-      }
-    } else if (
-      allSlots.length > 0 &&
-      daySlots[0] &&
-      user.role !== "koordinator" &&
-      !isReviziyaRole(user.role) &&
-      !isTamojniOrDistrib
-    ) {
-      const coords = await branchCoordsById(daySlots[0].branchId);
-      if (coords) {
-        resolved = {
-          ok: true,
-          point: {
-            latitude: coords.lat,
-            longitude: coords.lng,
-            label: daySlots[0].branchLabel || coords.label,
-            kind: "branch",
-          },
-        };
-      }
-    }
+    const tamojniSite = isTamojniOrDistrib ? await getTamojniSite() : null;
 
     const point = resolved.ok
       ? resolved.point
-      : {
-          latitude: DAVOMAT_SITE_LAT,
-          longitude: DAVOMAT_SITE_LNG,
-          label: DAVOMAT_SITE_LABEL,
-          kind: "office" as const,
-        };
+      : isTamojniOrDistrib
+        ? {
+            latitude: tamojniSite?.latitude ?? 0,
+            longitude: tamojniSite?.longitude ?? 0,
+            label: tamojniSite?.name || TAMOJNI_SKLAD_DEPARTMENT_NAME,
+            kind: "office" as const,
+            radiusMeters: tamojniSite?.radiusM || TAMOJNI_DEFAULT_RADIUS_M,
+          }
+        : {
+            latitude: DAVOMAT_SITE_LAT,
+            longitude: DAVOMAT_SITE_LNG,
+            label: DAVOMAT_SITE_LABEL,
+            kind: "office" as const,
+          };
     const todayRec = todayRecEarly;
     const [yesterdayRec] = await db
       .select()
@@ -4805,7 +4784,7 @@ router.get("/davomat/me/workplace", requireAuth, async (req: AuthRequest, res): 
         location: point.label,
         latitude: point.latitude,
         longitude: point.longitude,
-        hasGps: resolved.ok,
+        hasGps: resolved.ok || (isTamojniOrDistrib && Boolean(tamojniSite)),
       },
       today: coordinatorToday
         ? coordinatorToday
@@ -7371,13 +7350,16 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
     let fenceLng = DAVOMAT_SITE_LNG;
     let fenceLabel = `Asosiy ofis · ${DAVOMAT_SITE_LABEL}`;
     let fenceRadius = DAVOMAT_OFFICE_GEOFENCE_METERS;
-    const tamojniPunch = isTamojniOrDistribMember({
-      userRole: user.role,
-      departmentId: user.departmentId ?? emp.departmentId,
-      departmentName: emp.location,
-      orgRole: emp.orgRole,
-      location: emp.location,
-    });
+    const tamojniPunch =
+      isTamojniRole(user.role) ||
+      isTamojniRole(emp.orgRole) ||
+      isTamojniOrDistribMember({
+        userRole: user.role,
+        departmentId: user.departmentId ?? emp.departmentId,
+        departmentName: emp.location,
+        orgRole: emp.orgRole,
+        location: emp.location,
+      });
     if (tamojniPunch) {
       const site = await getTamojniSite();
       if (!site) {
@@ -7391,7 +7373,7 @@ router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Pro
       }
       fenceLat = site.latitude;
       fenceLng = site.longitude;
-      fenceLabel = site.name || "Tamojni sklad";
+      fenceLabel = site.name || TAMOJNI_SKLAD_DEPARTMENT_NAME;
       fenceRadius = site.radiusM || TAMOJNI_DEFAULT_RADIUS_M;
     }
 

@@ -23,6 +23,7 @@ import {
   canManageTamojni,
   ensureTamojniSkladDepartmentId,
   getTamojniSite,
+  syncTamojniEmployeesWithSite,
   tamojniCreatableRoles,
   TAMOJNI_DEFAULT_RADIUS_M,
   TAMOJNI_HEAD_ROLE,
@@ -457,7 +458,7 @@ router.post("/distribyutsiya/staff", requireAuth, async (req: AuthRequest, res):
 });
 
 const TAMOJNI_SHIFT_PRESETS: Record<string, { startHm: string; endHm: string; label: string }> = {
-  office: { startHm: "09:00", endHm: "18:00", label: "Ofis" },
+  office: { startHm: "09:00", endHm: "18:00", label: "Kunduzgi (09:00-18:00)" },
   one: { startHm: "08:00", endHm: "17:00", label: "1-smena" },
   two: { startHm: "17:00", endHm: "23:45", label: "2-smena" },
   three: { startHm: "23:00", endHm: "07:00", label: "3-smena" },
@@ -481,6 +482,7 @@ router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res)
   try {
     const departmentId = await ensureTamojniSkladDepartmentId();
     const site = await getTamojniSite();
+    await syncTamojniEmployeesWithSite(site);
     const rows = await db
       .select({
         userId: usersTable.id,
@@ -547,7 +549,9 @@ router.get("/distribyutsiya/tamojni", requireAuth, async (req: AuthRequest, res)
           endHm: active?.endHm || preset?.endHm || "18:00",
           shiftTitle: active
             ? `${TAMOJNI_SHIFT_PRESETS[active.shiftKey]?.label || active.shiftKey} · ${active.startHm}–${active.endHm}`
-            : r.shiftLabel || "Ofis · 09:00–18:00",
+            : (r.shiftLabel && !r.shiftLabel.toLowerCase().includes("ofis")
+                ? r.shiftLabel
+                : "Kunduzgi · 09:00–18:00"),
         };
       }),
     });
@@ -608,7 +612,9 @@ router.put("/distribyutsiya/tamojni/site", requireAuth, async (req: AuthRequest,
         updatedById: req.userId ?? null,
       });
     }
-    res.json({ ok: true, site: await getTamojniSite() });
+    const updatedSite = await getTamojniSite();
+    await syncTamojniEmployeesWithSite(updatedSite);
+    res.json({ ok: true, site: updatedSite });
   } catch (err) {
     console.error("PUT /distribyutsiya/tamojni/site error:", err);
     res.status(500).json({ error: "Joy saqlanmadi" });
@@ -686,6 +692,7 @@ router.post("/distribyutsiya/tamojni/staff", requireAuth, async (req: AuthReques
           reportsToId = headEmp?.id ?? null;
         }
       }
+      const site = await getTamojniSite();
       await db
         .update(employeesTable)
         .set({
@@ -694,7 +701,10 @@ router.post("/distribyutsiya/tamojni/staff", requireAuth, async (req: AuthReques
           shiftType: "office",
           shiftLabel: "Ofis · 09:00–18:00",
           reportsToId,
-          location: TAMOJNI_SKLAD_DEPARTMENT_NAME,
+          location: site?.name || TAMOJNI_SKLAD_DEPARTMENT_NAME,
+          latitude: site?.latitude ?? null,
+          longitude: site?.longitude ?? null,
+          assignedBranchId: null,
           updatedAt: new Date(),
         })
         .where(eq(employeesTable.id, emp.id));

@@ -29,7 +29,7 @@ import { useTamojniDesk, useTamojniMutations, type TamojniStaffRow } from "@/lib
 const TAMOJNI_RADIUS_M = 150;
 
 const SHIFTS = [
-  { key: "office", label: "Ofis", start: "09:00", end: "18:00" },
+  { key: "office", label: "Kunduzgi", start: "09:00", end: "18:00" },
   { key: "one", label: "1-smena", start: "08:00", end: "17:00" },
   { key: "two", label: "2-smena", start: "17:00", end: "23:45" },
   { key: "three", label: "3-smena", start: "23:00", end: "07:00" },
@@ -474,7 +474,12 @@ function StaffShiftRow({ row, canManage }: { row: TamojniStaffRow; canManage: bo
           <p className="text-xs text-muted-foreground">
             {row.position || "—"} · {userRoleLabel(row.role)} · {row.login}
           </p>
-          <p className="mt-1 text-xs font-medium text-sky-700">{row.shiftTitle}</p>
+          <div className="mt-1 flex flex-wrap items-center gap-2">
+            <span className="text-xs font-medium text-sky-700">{row.shiftTitle}</span>
+            <span className="inline-flex items-center gap-1 rounded-md bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-800 border border-emerald-200">
+              Davomat joyi: Faqat Tamojni sklad (150 m)
+            </span>
+          </div>
           <p className="mt-1 text-xs text-muted-foreground">{ketdimRule(shiftKey)}</p>
         </div>
       </div>

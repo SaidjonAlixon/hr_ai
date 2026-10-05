@@ -104,6 +104,7 @@ const SHAPE_BY_PLACE: Record<string, string> = {
   shayxontohur: "Shaykhantokhur",
   yakkasaroy: "Yakkasaray",
   yunusobod: "Yunusabad",
+  yangihayot: "Yangihayot",
   toshkentviloyati: "Tashkent Region",
   samarqand: "Samarqand Region",
   buxoro: "Bukhara Region",

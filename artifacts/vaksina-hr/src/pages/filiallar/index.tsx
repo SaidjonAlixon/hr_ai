@@ -184,28 +184,29 @@ export default function PublicFilialMapPage() {
   showDistrictsRef.current = showDistricts;
   districtRef.current = district;
 
-  useEffect(() => {
-    document.title = "Vaksina filiallari";
-    let cancelled = false;
+  const loadData = () => {
+    setLoading(true);
+    setError("");
     fetch("/api/public/filiallar")
       .then(async (res) => {
         if (!res.ok) throw new Error("Xarita yuklanmadi");
         return res.json() as Promise<{ places: Place[]; districts: string[] }>;
       })
       .then((data) => {
-        if (cancelled) return;
         setPlaces(data.places || []);
         setDistricts(data.districts || []);
       })
       .catch(() => {
-        if (!cancelled) setError("Filiallar yuklanmadi. Sahifani yangilang.");
+        setError("Filiallar yuklanmadi. Sahifani yangilang.");
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
+        setLoading(false);
       });
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  useEffect(() => {
+    document.title = "Vaksina filiallari";
+    loadData();
   }, []);
 
   useEffect(() => {
@@ -484,7 +485,18 @@ export default function PublicFilialMapPage() {
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
           {loading ? <p className="px-4 py-6 text-sm text-slate-500">Yuklanmoqda…</p> : null}
-          {error ? <p className="px-4 py-6 text-sm text-rose-700">{error}</p> : null}
+          {error ? (
+            <div className="px-4 py-6 text-sm text-rose-700">
+              <p>{error}</p>
+              <button
+                type="button"
+                onClick={loadData}
+                className="mt-2.5 inline-flex items-center rounded-lg bg-rose-100 px-3 py-1.5 text-xs font-semibold text-rose-800 transition hover:bg-rose-200"
+              >
+                Qayta urinish
+              </button>
+            </div>
+          ) : null}
           {!loading && !error && visible.length === 0 ? (
             <p className="px-4 py-6 text-sm text-slate-500">Filial topilmadi.</p>
           ) : null}

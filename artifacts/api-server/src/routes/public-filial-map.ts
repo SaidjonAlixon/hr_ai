@@ -1,24 +1,11 @@
 import { Router, type IRouter } from "express";
 import { loadFilialBranches } from "../lib/filial-bot-data";
 import {
-  ensureCatalogBranchNumbers,
   filialNumberLabel,
   matchFilialCatalog,
 } from "../lib/filial-catalog";
 import { coerceUzbekistanGps } from "../lib/geo-location";
 import { sortDistrictNames } from "../lib/filial-districts";
-import { ensureEmployeesOrgColumns } from "../lib/ensure-schema";
-
-let schemaReady: Promise<void> | null = null;
-function readySchema(): Promise<void> {
-  if (!schemaReady) {
-    schemaReady = ensureEmployeesOrgColumns().catch((err) => {
-      schemaReady = null;
-      throw err;
-    });
-  }
-  return schemaReady;
-}
 
 const router: IRouter = Router();
 
@@ -33,9 +20,7 @@ function formatPhone(raw: string | null | undefined): string {
 /** Kirishsiz: barcha dorixona filiallari, raqami va joyi. */
 router.get("/public/filiallar", async (_req, res): Promise<void> => {
   try {
-    await readySchema();
-    await ensureCatalogBranchNumbers();
-    const branches = await loadFilialBranches(true);
+    const branches = await loadFilialBranches();
     const places = branches.map((b) => {
       const catalog = matchFilialCatalog(b.name);
       const branchNo = b.branchNo ?? catalog?.no ?? null;
@@ -65,11 +50,11 @@ router.get("/public/filiallar", async (_req, res): Promise<void> => {
       return a.name.localeCompare(b.name, "uz");
     });
     const districts = sortDistrictNames([...new Set(places.map((p) => p.district).filter(Boolean))]);
-    res.setHeader("Cache-Control", "public, max-age=60");
+    res.setHeader("Cache-Control", "public, max-age=60, stale-while-revalidate=300");
     res.json({ places, districts, total: places.length });
   } catch (err) {
     console.error("GET /public/filiallar", err);
-    res.status(503).json({ error: "Filial xaritasi yuklanmadi" });
+    res.status(503).json({ error: "Filial xaritasi yuklanmadi", detail: (err as Error)?.message });
   }
 });
 

@@ -21,7 +21,9 @@ import {
   Clock,
   Briefcase,
   Layers,
+  SlidersHorizontal,
 } from "lucide-react";
+import ShiftChangeBoard from "./ShiftChangeBoard";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { Button } from "../../components/ui/button";
 import { Input } from "../../components/ui/input";
@@ -140,8 +142,8 @@ export default function SmenaFilialPage() {
 
   const isAllowed = canManageSmenaFilial(user?.role);
 
-  // Asosiy yorliq: "create" (Yangi rotatsiya) yoki "monitoring" (Baza va tarix)
-  const [activeMainTab, setActiveMainTab] = useState<"create" | "monitoring">("create");
+  // Asosiy yorliq: "create" (Yangi rotatsiya), "shift" (Smena o‘zgartirish) yoki "monitoring" (Baza va tarix)
+  const [activeMainTab, setActiveMainTab] = useState<"create" | "shift" | "monitoring">("create");
 
   // Rotatsiya rejimi: doimiy, muddatli, haftalik, kunlik
   const [mode, setMode] = useState<SlotMode>("permanent");
@@ -398,6 +400,19 @@ export default function SmenaFilialPage() {
           </button>
           <button
             type="button"
+            onClick={() => setActiveMainTab("shift")}
+            className={cn(
+              "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition",
+              activeMainTab === "shift"
+                ? "bg-primary text-primary-foreground shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            Smena o‘zgartirish
+          </button>
+          <button
+            type="button"
             onClick={() => setActiveMainTab("monitoring")}
             className={cn(
               "flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition",
@@ -417,8 +432,10 @@ export default function SmenaFilialPage() {
         </div>
       </div>
 
+      {activeMainTab === "shift" && <ShiftChangeBoard />}
+
       {/* Tushuntirish / Yo'riqnoma bloki */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className={cn("grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4", activeMainTab === "shift" && "hidden")}>
         {/* 1. Doimiy */}
         <div
           onClick={() => {
@@ -1295,7 +1312,7 @@ export default function SmenaFilialPage() {
 
                             <td className="py-3 px-3">
                               <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] font-semibold text-foreground">
-                                {modeLabelUz(slot.mode)}
+                                {slot.overrideBase ? "Haftalik (smena almashtirish)" : modeLabelUz(slot.mode)}
                               </span>
                             </td>
 

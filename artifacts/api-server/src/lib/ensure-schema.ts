@@ -1321,6 +1321,7 @@ ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS work_dates JSONB;
 ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS note TEXT;
 ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE employee_work_slots ADD COLUMN IF NOT EXISTS override_base BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Javob olish so‘rovlari (har sana = alohida yozuv)
 CREATE TABLE IF NOT EXISTS javob_olish_requests (

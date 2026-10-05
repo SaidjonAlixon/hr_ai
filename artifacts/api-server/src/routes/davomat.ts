@@ -43,6 +43,7 @@ import {
   isTamojniOrDistribRole,
   isTamojniOrDistribMember,
   TAMOJNI_DEFAULT_RADIUS_M,
+  TAMOJNI_SKLAD_DEPARTMENT_NAME,
 } from "../lib/tamojni-sklad";
 import {
   isWarehouseDavomatStaff,
@@ -2691,7 +2692,7 @@ async function ensureEmployeeForUser(user: {
       assignedBranchId: byName.assignedBranchId,
       shiftType: byName.shiftType,
       shiftLabel: byName.shiftLabel,
-      departmentId: byName.departmentId ?? departmentId,
+      departmentId: byName.departmentId ?? user.departmentId ?? null,
     };
   }
 
@@ -2838,6 +2839,7 @@ function mapWorkSlotRow(r: typeof employeeWorkSlotsTable.$inferSelect): WorkSlot
     validTo: r.validTo,
     weekdays: (r.weekdays as number[] | null) || null,
     workDates: (r.workDates as string[] | null) || null,
+    overrideBase: Boolean(r.overrideBase),
     note: r.note,
     active: r.active,
   };

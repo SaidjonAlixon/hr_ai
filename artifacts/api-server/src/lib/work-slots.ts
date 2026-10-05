@@ -29,6 +29,8 @@ export type WorkSlotRow = {
   validTo?: string | null;
   weekdays?: number[] | null;
   workDates?: string[] | null;
+  /** Shu kunlarda shu filialdagi doimiy/muddatli smena o‘rniga ishlaydi */
+  overrideBase?: boolean | null;
   note?: string | null;
   active?: boolean;
 };
@@ -141,8 +143,17 @@ export function resolveSlotsForDay(
   workDate: string,
   slots: WorkSlotRow[],
 ): ResolvedDaySlot[] {
-  const covering = slots
-    .filter((s) => slotCoversDate(s, workDate))
+  const coveringRaw = slots.filter((s) => slotCoversDate(s, workDate));
+  const overriddenBranches = new Set(
+    coveringRaw.filter((s) => s.overrideBase).map((s) => s.branchId),
+  );
+  const covering = coveringRaw
+    .filter(
+      (s) =>
+        s.overrideBase ||
+        !overriddenBranches.has(s.branchId) ||
+        (s.mode !== "permanent" && s.mode !== "period"),
+    )
     .sort((a, b) => {
       const pa = MODE_PRIORITY[a.mode] - MODE_PRIORITY[b.mode];
       if (pa !== 0) return pa;

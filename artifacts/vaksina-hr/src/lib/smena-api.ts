@@ -96,6 +96,7 @@ export type WorkSlotItem = {
   validTo: string | null;
   weekdays: number[] | null;
   workDates: string[] | null;
+  overrideBase?: boolean;
   note: string | null;
   active?: boolean;
   modeLabel?: string;
@@ -168,6 +169,46 @@ export function changeShiftOnly(employeeId: number, shiftKey: SlotShiftKey | str
   }>(`/smena/shift-only/${employeeId}`, {
     method: "PATCH",
     body: JSON.stringify({ shiftKey }),
+  });
+}
+
+export type ShiftBoardOption = {
+  key: SlotShiftKey;
+  label: string;
+  start: string;
+  end: string;
+  overnight: boolean;
+};
+
+export type ShiftBoardStaff = {
+  employeeId: number;
+  fullName: string;
+  orgRole: string | null;
+  branchId: number | null;
+  branchName: string | null;
+  baseShiftKey: SlotShiftKey;
+  todayShiftKey: SlotShiftKey;
+  overrides: Array<{ id: number; shiftKey: SlotShiftKey; weekdays: number[] }>;
+  week: Array<{ weekday: number; shiftKey: SlotShiftKey; override: boolean }>;
+  otherRotations: number;
+};
+
+export type ShiftBoard = {
+  today: string;
+  todayWeekday: number;
+  shiftOptions: ShiftBoardOption[];
+  staff: ShiftBoardStaff[];
+};
+
+export function fetchShiftBoard() {
+  return apiJson<ShiftBoard>("/smena/shift-board");
+}
+
+/** shiftKey = null — tanlangan kunlar asosiy smenaga qaytadi */
+export function saveShiftOverride(body: { employeeId: number; weekdays: number[]; shiftKey: SlotShiftKey | null }) {
+  return apiJson<{ ok: boolean; message: string; cleared: boolean }>("/smena/shift-override", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 

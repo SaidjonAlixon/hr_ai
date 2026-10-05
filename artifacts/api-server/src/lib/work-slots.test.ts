@@ -79,6 +79,50 @@ describe("work-slots resolve + punch window", () => {
     assert.equal(resolveSlotsForDay(thu, [s]).length, 0);
   });
 
+  it("haftalik almashtirish: tanlangan kunda asosiy smena o‘rniga, qolgan kunlar asosiy", () => {
+    // 2026-09-19 = Saturday = 6
+    const sat = "2026-09-19";
+    const mon = "2026-09-21";
+    const base = slot({
+      branchId: 10,
+      shiftKey: "one",
+      mode: "permanent",
+      validFrom: "2026-01-01",
+    });
+    const override = slot({
+      branchId: 10,
+      shiftKey: "two",
+      mode: "weekly",
+      validFrom: "2026-01-01",
+      weekdays: [6],
+      overrideBase: true,
+    });
+    const otherBranch = slot({
+      branchId: 20,
+      shiftKey: "three",
+      mode: "permanent",
+      validFrom: "2026-01-01",
+    });
+
+    const satSlots = resolveSlotsForDay(sat, [base, override]);
+    assert.equal(satSlots.length, 1);
+    assert.equal(satSlots[0]?.shiftKey, "two");
+
+    const monSlots = resolveSlotsForDay(mon, [base, override]);
+    assert.equal(monSlots.length, 1);
+    assert.equal(monSlots[0]?.shiftKey, "one");
+
+    const satMulti = resolveSlotsForDay(sat, [base, override, otherBranch]);
+    assert.deepEqual(
+      satMulti.map((s) => `${s.branchId}:${s.shiftKey}`),
+      ["10:two", "20:three"],
+      "boshqa filial sloti tegilmaydi",
+    );
+
+    const additive = resolveSlotsForDay(sat, [base, { ...override, overrideBase: false }]);
+    assert.equal(additive.length, 2, "oddiy haftalik slot avvalgidek qo‘shiladi");
+  });
+
   it("kunlik: faqat workDates ichida", () => {
     const s = slot({
       branchId: 7,

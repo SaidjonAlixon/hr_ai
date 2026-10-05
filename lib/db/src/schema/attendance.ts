@@ -258,6 +258,8 @@ export const employeeWorkSlotsTable = pgTable(
     validTo: text("valid_to"),
     weekdays: jsonb("weekdays").$type<number[]>(),
     workDates: jsonb("work_dates").$type<string[]>(),
+    /** true — shu kunlarda shu filialdagi doimiy/muddatli smenani qo‘shmaydi, almashtiradi */
+    overrideBase: boolean("override_base").notNull().default(false),
     note: text("note"),
     active: boolean("active").notNull().default(true),
     createdById: integer("created_by_id"),

@@ -13,7 +13,13 @@ if [[ ! -f .env ]]; then
 fi
 
 echo "==> Git: $BRANCH"
-git fetch --prune origin
+# GitHub’ga ulanish ba’zan uziladi — 3 marta urinamiz
+for i in 1 2 3; do
+  timeout 90 git fetch --prune origin && break
+  [[ $i == 3 ]] && { echo "XATO: GitHub’dan kod olinmadi" >&2; exit 1; }
+  echo "    qayta urinish ($i)..."
+  sleep 5
+done
 git checkout "$BRANCH"
 git reset --hard "origin/$BRANCH"
 echo "    commit: $(git log --oneline -1)"

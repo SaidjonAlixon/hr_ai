@@ -7,13 +7,28 @@ Brauzer / Telegram ──HTTPS──► nginx ──► dist/public (frontend)
                                   └──► /api → Node (pm2, 1 nusxa, :8080) ──► PostgreSQL (localhost)
 ```
 
+## Hozirgi holat (2026-10-06 dan)
+
+| Nima | Qayerda |
+|------|---------|
+| Platforma | **https://vaksinahr.uz** (va `www`) — VPS `189.74.99.250`, DNS eskiz’da |
+| Baza | VPS’dagi PostgreSQL 18 (`hr`), Neon ishlatilmaydi |
+| Fayllar | `/opt/hr_ai/artifacts/api-server/uploads/` (Vercel Blob’dagilar `uploads/blob/` ga ko‘chirilgan) |
+| Telegram | HR bot va «Vaksina lokatsiya» bot webhook’lari → `https://vaksinahr.uz/api/...` |
+| Eski manzil | `hr-ai-gamma.vercel.app` → `vaksinahr.uz` ga 308 yo‘naltiradi (Vercel o‘chirilsa — shunchaki ishlamaydi) |
+| Zaxira | `/var/backups/hr/` har 6 soatda (14 kun), `weekly/` (90 kun), `archive/` — Neon va Blob’ning yakuniy nusxasi (doimiy) |
+| Nazorat | pm2 (yiqilsa ko‘taradi), `watchdog.sh` har 2 daqiqada (qotsa qayta ishga tushiradi), server qayta yonsa hammasi o‘zi turadi |
+
 Fayllar `deploy/` papkasida:
 
 | Fayl | Nima qiladi |
 |------|-------------|
-| `setup-server.sh` | Toza serverni bir marta tayyorlaydi: Node 24, pnpm, pm2, PostgreSQL, nginx, firewall, swap, kunlik backup |
+| `setup-server.sh` | Toza serverni bir marta tayyorlaydi: Node 24, pnpm, pm2, PostgreSQL, nginx, firewall, swap, backup, watchdog |
 | `deploy.sh` | Yangi kodni chiqaradi: git pull → build → frontend almashtirish → API qayta ishga tushirish → tekshiruv |
-| `backup-db.sh` | Kunlik `pg_dump` + `uploads/` arxivi, 14 kun saqlaydi |
+| `backup-db.sh` | Har 6 soatda `pg_dump` + `uploads/` + `.env`, 14 kun; yakshanba nusxasi 90 kun |
+| `watchdog.sh` | `/api/healthz` javob bermasa API’ni qayta ishga tushiradi |
+| `migrate-from-neon.sh` | Neon → lokal baza nusxa (endi faqat tarix uchun) |
+| `mirror-vercel-blob.mjs` | Vercel Blob → `uploads/blob/` (bajarilgan) |
 | `ecosystem.config.cjs` | pm2 sozlamasi (faqat 1 nusxa) |
 | `nginx/hr.conf` | nginx: statik frontend, `/api` proxy, SSE, kesh sarlavhalari |
 | `vps.env.example` | `.env` namunasi |

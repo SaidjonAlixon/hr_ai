@@ -22,6 +22,15 @@ import {
 import { requireAuth, type AuthRequest } from "../middlewares/auth";
 import { scriptIncludes } from "../lib/script-search";
 import { METHOD_FORBIDDEN, effectiveDavomatAccess, readDavomatAccess } from "../lib/davomat-method-access";
+import {
+  fingerprintInfoByUser,
+  fingerprintPunchOptions,
+  fingerprintPunchVerify,
+  fingerprintRegisterOptions,
+  fingerprintRegisterVerify,
+  fingerprintStatusFor,
+  resetFingerprint,
+} from "../lib/davomat-fingerprint";
 import { isVacancyPlaceholder } from "../lib/vacancy-slot";
 import {
   canViewDavomat,
@@ -3713,6 +3722,14 @@ function nextActionForRecord(
   return "out";
 }
 
+function punchSourceOf(method: "FACE_ID" | "QR" | "FINGERPRINT") {
+  return method === "QR" ? ("qr" as const) : method === "FINGERPRINT" ? ("finger" as const) : ("face" as const);
+}
+
+function punchMethodLabel(method: "FACE_ID" | "QR" | "FINGERPRINT") {
+  return method === "QR" ? "QR" : method === "FINGERPRINT" ? "Barmoq izi" : "Face ID";
+}
+
 async function applyFacePunch(opts: {
   emp: WorkplaceEmp;
   userRole: string;
@@ -3722,7 +3739,7 @@ async function applyFacePunch(opts: {
   allowedMeters: number;
   faceProfileId?: number | null;
   action: "in" | "out";
-  verificationMethod?: "FACE_ID" | "QR";
+  verificationMethod?: "FACE_ID" | "QR" | "FINGERPRINT";
   resolvedBranchId?: number | null;
   resolvedBranchLabel?: string | null;
   activeShiftKey?: string | null;
@@ -3802,7 +3819,7 @@ async function applyFacePunch(opts: {
     eq(attendanceRecordsTable.workDate, workDate),
   );
 
-  const source = verificationMethod === "QR" ? ("qr" as const) : ("face" as const);
+  const source = punchSourceOf(verificationMethod);
   await sweepZonePresenceSoon().catch(() => undefined);
   const zoneBlock = await zonePunchBlock(emp.userId);
   if (zoneBlock) {
@@ -3985,7 +4002,7 @@ async function applyFacePunch(opts: {
                   branchId: existing.resolvedBranchId ?? morningSlot.branchId,
                   branchLabel: existing.resolvedBranchLabel ?? morningSlot.branchLabel ?? null,
                   status: "closed",
-                  source: verificationMethod === "QR" ? "qr" : "face",
+                  source: punchSourceOf(verificationMethod),
                 });
               } else if (!morningSeg.checkOutAt) {
                 await tx
@@ -4020,7 +4037,7 @@ async function applyFacePunch(opts: {
                 branchId: resolvedBranchId,
                 branchLabel: resolvedBranchLabel,
                 status: "open",
-                source: verificationMethod === "QR" ? "qr" : "face",
+                source: punchSourceOf(verificationMethod),
                 updatedAt: now,
               })
               .where(eq(attendanceShiftSegmentsTable.id, seg.id));
@@ -4033,7 +4050,7 @@ async function applyFacePunch(opts: {
               branchId: resolvedBranchId,
               branchLabel: resolvedBranchLabel,
               status: "open",
-              source: verificationMethod === "QR" ? "qr" : "face",
+              source: punchSourceOf(verificationMethod),
             });
           }
           await tx
@@ -4252,8 +4269,8 @@ async function applyFacePunch(opts: {
               : coordinatorOffice && action === "out"
                 ? `${emp.fullName}: ofisdan Ketdim (${metrics.checkOut}). Ofis soati alohida — cheklist kunni yopmaydi.`
                 : action === "in"
-                  ? `${emp.fullName}: Keldim (${metrics.checkIn}) · ${verificationMethod === "QR" ? "QR" : "Face ID"}`
-                  : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours} · ${verificationMethod === "QR" ? "QR" : "Face ID"}`,
+                  ? `${emp.fullName}: Keldim (${metrics.checkIn}) · ${punchMethodLabel(verificationMethod)}`
+                  : `${emp.fullName}: Ketdi (${metrics.checkOut}). Ishlangan ${metrics.workedHours} · ${punchMethodLabel(verificationMethod)}`,
           ...metrics,
           ...(coordinatorOffice && action === "in" ? { nextAction: "out" as const } : {}),
           ...(coordinatorOffice && action === "out"
@@ -4389,6 +4406,24 @@ async function resolveFaceAtSite(opts: {
 /** Face ID tanilgan user — to‘liq profil + sessiya shu akkauntga */
 async function adoptFaceSession(res: import("express").Response, userId: number) {
   await setSessionCookie(res, userId, { userAgent: "face-id" });
+  return sessionProfile(userId);
+}
+
+type SitePunchResolved = {
+  emp: WorkplaceEmp;
+  faceId: number | null;
+  user: { id: number; fullName: string; role: string };
+  gate: {
+    distanceMeters: number;
+    effectiveRadius: number;
+    resolvedBranchId: number | null;
+    resolvedBranchLabel: string | null;
+    activeShiftKey: string | null;
+    daySlots: ResolvedDaySlot[];
+  };
+};
+
+async function sessionProfile(userId: number) {
   const [row] = await db
     .select({
       id: usersTable.id,
@@ -5285,6 +5320,244 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
   }
 });
 
+/** Joy (GPS) va shaxs tasdiqlangach — Face ID va barmoq izi uchun umumiy yakun. */
+async function completeSitePunch(
+  req: import("express").Request,
+  res: import("express").Response,
+  ctx: {
+    resolved: SitePunchResolved;
+    action: "in" | "out";
+    latitude: number;
+    longitude: number;
+    expectedUserId?: number;
+    method: "FACE_ID" | "FINGERPRINT";
+  },
+): Promise<void> {
+  const { resolved, action, latitude, longitude, expectedUserId, method } = ctx;
+  // Koordinator: ochiq filial tashrifi (Ketdim yo‘q) bo‘lsa boshqa filialga o‘tishni bloklash
+  if (resolved.user.role === "koordinator" && resolved.user.id) {
+    const gateVisit = await assertCoordinatorPunchAllowed({
+      userId: resolved.user.id,
+      action,
+      branchId: resolved.gate.resolvedBranchId,
+      branchLabel: resolved.gate.resolvedBranchLabel,
+    });
+    if (!gateVisit.ok) {
+      // Shu filialda allaqachon Keldim — cheklistga qaytaramiz
+      if (gateVisit.code === "already_in_branch" && action === "in") {
+        const open = await getOpenCoordinatorVisit(resolved.user.id);
+        const own = await ownEmployeeReport(resolved.emp.id);
+        const day = own.employee?.days?.[0];
+        const isOffice = open ? isCoordinatorOfficeVisit(open) : false;
+        res.json({
+          ok: true,
+          action: "in",
+          fullName: resolved.user.fullName || resolved.emp.fullName,
+          message: gateVisit.error,
+          checkIn: day?.checkIn || "—",
+          checkOut: day?.checkOut || "—",
+          checkInAt: null,
+          checkOutAt: null,
+          workedHours: day?.workedHours || "0:00",
+          distanceMeters: resolved.gate.distanceMeters,
+          employee: own.employee,
+          coordinatorVisit: open ? serializeVisit(open) : null,
+          checklistRedirect: !isOffice,
+          ofisdaRedirect: isOffice,
+          attendanceAlreadyMarked: true,
+          checklistHint: isOffice
+            ? "Ofisda ochiq «Keldim» bor — «Asosiy ofisda qolish» bo‘limiga o‘ting."
+            : "Tashrif ochiq — Cheklist bo‘limida to‘ldiring.",
+        });
+        return;
+      }
+      await writePunchAudit({
+        employeeId: resolved.emp.id,
+        userId: resolved.user.id,
+        verificationMethod: method,
+        action,
+        gpsResult: "ok",
+        gpsDistance: resolved.gate.distanceMeters,
+        faceResult: "ok",
+        finalResult: "denied",
+        failureReason: gateVisit.code,
+        ipAddress: clientIp(req),
+      });
+      res.status(gateVisit.status).json({
+        error: gateVisit.error,
+        code: gateVisit.code,
+      });
+      return;
+    }
+  }
+
+  const punched = await applyFacePunch({
+    emp: resolved.emp,
+    userRole: resolved.user.role,
+    latitude,
+    longitude,
+    distanceMeters: resolved.gate.distanceMeters,
+    allowedMeters: resolved.gate.effectiveRadius,
+    faceProfileId: resolved.faceId,
+    action,
+    verificationMethod: method,
+    resolvedBranchId: resolved.gate.resolvedBranchId,
+    resolvedBranchLabel: resolved.gate.resolvedBranchLabel,
+    activeShiftKey: resolved.gate.activeShiftKey,
+    daySlots: resolved.gate.daySlots,
+    notes: typeof req.body?.notes === "string" ? req.body.notes : null,
+  });
+  if (!punched.ok) {
+    // Kunlik davomat allaqachon bor — lekkin filial tashrifini ochish mumkin
+    const punchCode = String(punched.body?.code || "");
+    if (
+      resolved.user.role === "koordinator" &&
+      resolved.user.id &&
+      action === "in" &&
+      (punchCode === "already_in" || punchCode === "already_complete")
+    ) {
+      try {
+        const workDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+        const punchBranchId = normalizeCoordinatorPunchBranchId(
+          resolved.gate.resolvedBranchId,
+        );
+        const synced = await syncCoordinatorVisitOnPunch({
+          userId: resolved.user.id,
+          employeeId: resolved.emp.id,
+          fullName: resolved.user.fullName || resolved.emp.fullName,
+          action: "in",
+          branchId: resolved.gate.resolvedBranchId,
+          branchLabel: resolved.gate.resolvedBranchLabel,
+          workDate,
+          latitude,
+          longitude,
+        });
+        const open = synced || (await getOpenCoordinatorVisit(resolved.user.id));
+        if (open && open.branchId === punchBranchId) {
+          const own = await ownEmployeeReport(resolved.emp.id);
+          const day = own.employee?.days?.[0];
+          const isOffice = isCoordinatorOfficeVisit(open);
+          res.json({
+            ok: true,
+            action: "in",
+            fullName: resolved.user.fullName || resolved.emp.fullName,
+            message: isOffice
+              ? "Davomat allaqachon belgilangan. Ofisda qolish ochildi — «Asosiy ofisda qolish» bo‘limida kuzating."
+              : "Davomat allaqachon belgilangan. Filial tashrifi ochildi — endi Cheklistni to‘ldiring.",
+            checkIn: String(punched.body.checkIn || day?.checkIn || "—"),
+            checkOut: String(punched.body.checkOut || day?.checkOut || "—"),
+            checkInAt: (punched.body.checkInAt as string | null) || null,
+            checkOutAt: (punched.body.checkOutAt as string | null) || null,
+            workedHours: day?.workedHours || "0:00",
+            distanceMeters: resolved.gate.distanceMeters,
+            employee: own.employee,
+            coordinatorVisit: serializeVisit(open),
+            checklistRedirect: !isOffice,
+            ofisdaRedirect: isOffice,
+            attendanceAlreadyMarked: true,
+            checklistHint: isOffice
+              ? "Ofisda qolish ochiq. Ketdimni «Asosiy ofisda qolish» yoki Davomatdan qiling."
+              : "Keldim qabul qilindi. Endi Cheklist bo‘limida to‘ldiring.",
+          });
+          return;
+        }
+      } catch (e) {
+        console.error("coordinator visit sync on already_in error:", e);
+      }
+    }
+    await writePunchAudit({
+      employeeId: resolved.emp.id,
+      userId: resolved.user.id,
+      verificationMethod: method,
+      action,
+      gpsResult: "ok",
+      gpsDistance: resolved.gate.distanceMeters,
+      faceResult: "ok",
+      finalResult: "denied",
+      failureReason: String(punched.body.error || punched.body.code || "denied"),
+      ipAddress: clientIp(req),
+    });
+    res.status(punched.status).json(punched.body);
+    return;
+  }
+
+  let coordinatorVisit = null;
+  if (resolved.user.role === "koordinator" && resolved.user.id) {
+    try {
+      const workDate =
+        typeof punched.payload.workDate === "string"
+          ? punched.payload.workDate
+          : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+      const synced = await syncCoordinatorVisitOnPunch({
+        userId: resolved.user.id,
+        employeeId: resolved.emp.id,
+        fullName: resolved.user.fullName || resolved.emp.fullName,
+        action,
+        branchId: resolved.gate.resolvedBranchId,
+        branchLabel: resolved.gate.resolvedBranchLabel,
+        workDate,
+        latitude,
+        longitude,
+        checkoutNote:
+          action === "out" ? String(req.body?.checkoutNote || "").trim() || null : null,
+      });
+      coordinatorVisit = synced ? serializeVisit(synced) : null;
+    } catch (e) {
+      console.error("coordinator visit sync error:", e);
+    }
+  }
+
+  await writePunchAudit({
+    employeeId: resolved.emp.id,
+    userId: resolved.user.id,
+    verificationMethod: method,
+    action,
+    gpsResult: "ok",
+    gpsDistance: resolved.gate.distanceMeters,
+    faceResult: "ok",
+    finalResult: "success",
+    ipAddress: clientIp(req),
+  });
+  const own = await ownEmployeeReport(resolved.emp.id);
+  const sessionUser =
+    method === "FACE_ID" ? await adoptFaceSession(res, resolved.user.id) : await sessionProfile(resolved.user.id);
+  const visitIsOffice = Boolean(
+    coordinatorVisit &&
+      (coordinatorVisit.isOffice ||
+        Number(coordinatorVisit.branchId) === COORD_OFFICE_BRANCH_ID),
+  );
+  res.json({
+    ...punched.payload,
+    employee: own.employee,
+    user: sessionUser,
+    sessionSwitched: !expectedUserId || expectedUserId !== resolved.user.id,
+    ownerVerified: Boolean(expectedUserId),
+    coordinatorVisit,
+    checklistRedirect: Boolean(
+      action === "in" &&
+        resolved.user.role === "koordinator" &&
+        coordinatorVisit &&
+        !visitIsOffice,
+    ),
+    ofisdaRedirect: Boolean(
+      action === "in" &&
+        resolved.user.role === "koordinator" &&
+        coordinatorVisit &&
+        visitIsOffice,
+    ),
+    checklistHint:
+      action === "in" && resolved.user.role === "koordinator"
+        ? visitIsOffice
+          ? "Ofisda «Keldim» qabul qilindi. «Asosiy ofisda qolish» bo‘limida vaqtni kuzating; ketganda «Ketdim» qiling."
+          : "Keldim qabul qilindi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling."
+        : action === "out" && resolved.user.role === "koordinator"
+          ? visitIsOffice
+            ? "Ofisdan «Ketdim» qabul qilindi — qolgan vaqt yozildi. Keyin filialga yoki qayta ofisga o‘tishingiz mumkin."
+            : "Ketdim qabul qilindi — vaqt yozildi. Keyingi filialga o‘tishingiz mumkin."
+          : undefined,
+  });
+}
+
 /**
  * Face ID davomat punch.
  * Sessiya bo‘lsa — faqat shu akkaunt yuzi (boshqa odam ochilmaydi).
@@ -5362,230 +5635,229 @@ router.post("/davomat/face-punch", async (req, res): Promise<void> => {
     }
     await maybeBackfillFacePhoto(resolved.faceId, req.body?.snapshot ?? req.body?.photo);
 
-    // Koordinator: ochiq filial tashrifi (Ketdim yo‘q) bo‘lsa boshqa filialga o‘tishni bloklash
-    if (resolved.user.role === "koordinator" && resolved.user.id) {
-      const gateVisit = await assertCoordinatorPunchAllowed({
-        userId: resolved.user.id,
-        action,
-        branchId: resolved.gate.resolvedBranchId,
-        branchLabel: resolved.gate.resolvedBranchLabel,
-      });
-      if (!gateVisit.ok) {
-        // Shu filialda allaqachon Keldim — cheklistga qaytaramiz
-        if (gateVisit.code === "already_in_branch" && action === "in") {
-          const open = await getOpenCoordinatorVisit(resolved.user.id);
-          const own = await ownEmployeeReport(resolved.emp.id);
-          const day = own.employee?.days?.[0];
-          const isOffice = open ? isCoordinatorOfficeVisit(open) : false;
-          res.json({
-            ok: true,
-            action: "in",
-            fullName: resolved.user.fullName || resolved.emp.fullName,
-            message: gateVisit.error,
-            checkIn: day?.checkIn || "—",
-            checkOut: day?.checkOut || "—",
-            checkInAt: null,
-            checkOutAt: null,
-            workedHours: day?.workedHours || "0:00",
-            distanceMeters: resolved.gate.distanceMeters,
-            employee: own.employee,
-            coordinatorVisit: open ? serializeVisit(open) : null,
-            checklistRedirect: !isOffice,
-            ofisdaRedirect: isOffice,
-            attendanceAlreadyMarked: true,
-            checklistHint: isOffice
-              ? "Ofisda ochiq «Keldim» bor — «Asosiy ofisda qolish» bo‘limiga o‘ting."
-              : "Tashrif ochiq — Cheklist bo‘limida to‘ldiring.",
-          });
-          return;
-        }
-        await writePunchAudit({
-          employeeId: resolved.emp.id,
-          userId: resolved.user.id,
-          verificationMethod: "FACE_ID",
-          action,
-          gpsResult: "ok",
-          gpsDistance: resolved.gate.distanceMeters,
-          faceResult: "ok",
-          finalResult: "denied",
-          failureReason: gateVisit.code,
-          ipAddress: clientIp(req),
-        });
-        res.status(gateVisit.status).json({
-          error: gateVisit.error,
-          code: gateVisit.code,
-        });
-        return;
-      }
-    }
-
-    const punched = await applyFacePunch({
-      emp: resolved.emp,
-      userRole: resolved.user.role,
-      latitude,
-      longitude,
-      distanceMeters: resolved.gate.distanceMeters,
-      allowedMeters: resolved.gate.effectiveRadius,
-      faceProfileId: resolved.faceId,
-      action,
-      verificationMethod: "FACE_ID",
-      resolvedBranchId: resolved.gate.resolvedBranchId,
-      resolvedBranchLabel: resolved.gate.resolvedBranchLabel,
-      activeShiftKey: resolved.gate.activeShiftKey,
-      daySlots: resolved.gate.daySlots,
-      notes: typeof req.body?.notes === "string" ? req.body.notes : null,
-    });
-    if (!punched.ok) {
-      // Kunlik davomat allaqachon bor — lekkin filial tashrifini ochish mumkin
-      const punchCode = String(punched.body?.code || "");
-      if (
-        resolved.user.role === "koordinator" &&
-        resolved.user.id &&
-        action === "in" &&
-        (punchCode === "already_in" || punchCode === "already_complete")
-      ) {
-        try {
-          const workDate = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
-          const punchBranchId = normalizeCoordinatorPunchBranchId(
-            resolved.gate.resolvedBranchId,
-          );
-          const synced = await syncCoordinatorVisitOnPunch({
-            userId: resolved.user.id,
-            employeeId: resolved.emp.id,
-            fullName: resolved.user.fullName || resolved.emp.fullName,
-            action: "in",
-            branchId: resolved.gate.resolvedBranchId,
-            branchLabel: resolved.gate.resolvedBranchLabel,
-            workDate,
-            latitude,
-            longitude,
-          });
-          const open = synced || (await getOpenCoordinatorVisit(resolved.user.id));
-          if (open && open.branchId === punchBranchId) {
-            const own = await ownEmployeeReport(resolved.emp.id);
-            const day = own.employee?.days?.[0];
-            const isOffice = isCoordinatorOfficeVisit(open);
-            res.json({
-              ok: true,
-              action: "in",
-              fullName: resolved.user.fullName || resolved.emp.fullName,
-              message: isOffice
-                ? "Davomat allaqachon belgilangan. Ofisda qolish ochildi — «Asosiy ofisda qolish» bo‘limida kuzating."
-                : "Davomat allaqachon belgilangan. Filial tashrifi ochildi — endi Cheklistni to‘ldiring.",
-              checkIn: String(punched.body.checkIn || day?.checkIn || "—"),
-              checkOut: String(punched.body.checkOut || day?.checkOut || "—"),
-              checkInAt: (punched.body.checkInAt as string | null) || null,
-              checkOutAt: (punched.body.checkOutAt as string | null) || null,
-              workedHours: day?.workedHours || "0:00",
-              distanceMeters: resolved.gate.distanceMeters,
-              employee: own.employee,
-              coordinatorVisit: serializeVisit(open),
-              checklistRedirect: !isOffice,
-              ofisdaRedirect: isOffice,
-              attendanceAlreadyMarked: true,
-              checklistHint: isOffice
-                ? "Ofisda qolish ochiq. Ketdimni «Asosiy ofisda qolish» yoki Davomatdan qiling."
-                : "Keldim qabul qilindi. Endi Cheklist bo‘limida to‘ldiring.",
-            });
-            return;
-          }
-        } catch (e) {
-          console.error("coordinator visit sync on already_in error:", e);
-        }
-      }
-      await writePunchAudit({
-        employeeId: resolved.emp.id,
-        userId: resolved.user.id,
-        verificationMethod: "FACE_ID",
-        action,
-        gpsResult: "ok",
-        gpsDistance: resolved.gate.distanceMeters,
-        faceResult: "ok",
-        finalResult: "denied",
-        failureReason: String(punched.body.error || punched.body.code || "denied"),
-        ipAddress: clientIp(req),
-      });
-      res.status(punched.status).json(punched.body);
-      return;
-    }
-
-    let coordinatorVisit = null;
-    if (resolved.user.role === "koordinator" && resolved.user.id) {
-      try {
-        const workDate =
-          typeof punched.payload.workDate === "string"
-            ? punched.payload.workDate
-            : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
-        const synced = await syncCoordinatorVisitOnPunch({
-          userId: resolved.user.id,
-          employeeId: resolved.emp.id,
-          fullName: resolved.user.fullName || resolved.emp.fullName,
-          action,
-          branchId: resolved.gate.resolvedBranchId,
-          branchLabel: resolved.gate.resolvedBranchLabel,
-          workDate,
-          latitude,
-          longitude,
-          checkoutNote:
-            action === "out" ? String(req.body?.checkoutNote || "").trim() || null : null,
-        });
-        coordinatorVisit = synced ? serializeVisit(synced) : null;
-      } catch (e) {
-        console.error("coordinator visit sync error:", e);
-      }
-    }
-
-    await writePunchAudit({
-      employeeId: resolved.emp.id,
-      userId: resolved.user.id,
-      verificationMethod: "FACE_ID",
-      action,
-      gpsResult: "ok",
-      gpsDistance: resolved.gate.distanceMeters,
-      faceResult: "ok",
-      finalResult: "success",
-      ipAddress: clientIp(req),
-    });
-    const own = await ownEmployeeReport(resolved.emp.id);
-    const sessionUser = await adoptFaceSession(res, resolved.user.id);
-    const visitIsOffice = Boolean(
-      coordinatorVisit &&
-        (coordinatorVisit.isOffice ||
-          Number(coordinatorVisit.branchId) === COORD_OFFICE_BRANCH_ID),
-    );
-    res.json({
-      ...punched.payload,
-      employee: own.employee,
-      user: sessionUser,
-      sessionSwitched: !expectedUserId || expectedUserId !== resolved.user.id,
-      ownerVerified: Boolean(expectedUserId),
-      coordinatorVisit,
-      checklistRedirect: Boolean(
-        action === "in" &&
-          resolved.user.role === "koordinator" &&
-          coordinatorVisit &&
-          !visitIsOffice,
-      ),
-      ofisdaRedirect: Boolean(
-        action === "in" &&
-          resolved.user.role === "koordinator" &&
-          coordinatorVisit &&
-          visitIsOffice,
-      ),
-      checklistHint:
-        action === "in" && resolved.user.role === "koordinator"
-          ? visitIsOffice
-            ? "Ofisda «Keldim» qabul qilindi. «Asosiy ofisda qolish» bo‘limida vaqtni kuzating; ketganda «Ketdim» qiling."
-            : "Keldim qabul qilindi. Endi cheklistni to‘ldiring. Har 30 daqiqada hududni tasdiqlang yoki ish tugasa Ketdim qiling."
-          : action === "out" && resolved.user.role === "koordinator"
-            ? visitIsOffice
-              ? "Ofisdan «Ketdim» qabul qilindi — qolgan vaqt yozildi. Keyin filialga yoki qayta ofisga o‘tishingiz mumkin."
-              : "Ketdim qabul qilindi — vaqt yozildi. Keyingi filialga o‘tishingiz mumkin."
-            : undefined,
-    });
+    await completeSitePunch(req, res, { resolved, action, latitude, longitude, expectedUserId, method: "FACE_ID" });
   } catch (err) {
     console.error("POST /davomat/face-punch error:", err);
     res.status(503).json({ error: "Face ID davomat yozilmadi" });
+  }
+});
+
+/**
+ * Barmoq izi davomati. Admin yoqmaguncha xodimga hech narsa qaytarilmaydi (enabled:false).
+ * 1 akkaunt = 1 barmoq izi = 1 qurilma; boshqa akkaunt yoki qurilmada ochilmaydi.
+ */
+router.get("/davomat/fingerprint/status", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    const access = await readDavomatAccess(req.userId!);
+    if (!access.finger) {
+      res.json({ enabled: false });
+      return;
+    }
+    res.json({ enabled: true, ...(await fingerprintStatusFor(req, req.userId!)) });
+  } catch (err) {
+    console.error("GET /davomat/fingerprint/status", err);
+    res.json({ enabled: false });
+  }
+});
+
+async function denyUnlessFinger(req: AuthRequest, res: import("express").Response): Promise<boolean> {
+  const access = await readDavomatAccess(req.userId!);
+  if (access.finger) return false;
+  res.status(403).json({ error: METHOD_FORBIDDEN, code: "method_forbidden" });
+  return true;
+}
+
+router.post("/davomat/fingerprint/register/options", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    if (await denyUnlessFinger(req, res)) return;
+    const out = await fingerprintRegisterOptions(req, req.userId!);
+    if (!out.ok) {
+      res.status(out.status).json(out.body);
+      return;
+    }
+    res.json(out.options);
+  } catch (err) {
+    console.error("POST /davomat/fingerprint/register/options", err);
+    res.status(503).json({ error: "Barmoq izi ro‘yxati ochilmadi" });
+  }
+});
+
+router.post("/davomat/fingerprint/register/verify", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    if (await denyUnlessFinger(req, res)) return;
+    const out = await fingerprintRegisterVerify(req, res, req.userId!);
+    if (!out.ok) {
+      res.status(out.status).json(out.body);
+      return;
+    }
+    await recordAccessChanges(
+      [{ targetUserId: req.userId!, action: "finger_enroll", before: { enrolled: false }, after: { enrolled: true, device: out.deviceLabel } }],
+      { actorUserId: req.userId, ipAddress: clientIp(req) },
+    );
+    res.json({ ok: true, ...(await fingerprintStatusFor(req, req.userId!)), thisDevice: true });
+  } catch (err) {
+    console.error("POST /davomat/fingerprint/register/verify", err);
+    res.status(503).json({ error: "Barmoq izi saqlanmadi" });
+  }
+});
+
+router.post("/davomat/fingerprint/punch/options", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  try {
+    if (await denyUnlessFinger(req, res)) return;
+    const out = await fingerprintPunchOptions(req, req.userId!);
+    if (!out.ok) {
+      res.status(out.status).json(out.body);
+      return;
+    }
+    res.json(out.options);
+  } catch (err) {
+    console.error("POST /davomat/fingerprint/punch/options", err);
+    res.status(503).json({ error: "Barmoq izi so‘rovi ochilmadi" });
+  }
+});
+
+router.post("/davomat/fingerprint/punch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  res.on("finish", () => {
+    if (res.statusCode < 300) kickDisciplineScan();
+  });
+  try {
+    const latitude = Number(req.body?.latitude);
+    const longitude = Number(req.body?.longitude);
+    const accuracy = Number(req.body?.accuracy);
+    const actionRaw = String(req.body?.action || "");
+    const action = actionRaw === "out" ? "out" : actionRaw === "in" ? "in" : null;
+    if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      res.status(400).json({ error: "GPS majburiy — lokatsiyaga ruxsat bering", code: "gps_required" });
+      return;
+    }
+    const staleGps = stalePunchGps(req.body?.gpsCapturedAt);
+    if (staleGps) {
+      res.status(403).json(staleGps);
+      return;
+    }
+    if (!action) {
+      res.status(400).json({ error: "action: in | out", code: "action_required" });
+      return;
+    }
+    if (await denyUnlessFinger(req, res)) return;
+
+    const [user] = await db
+      .select({
+        id: usersTable.id,
+        fullName: usersTable.fullName,
+        status: usersTable.status,
+        role: usersTable.role,
+        departmentId: usersTable.departmentId,
+      })
+      .from(usersTable)
+      .where(eq(usersTable.id, req.userId!))
+      .limit(1);
+    if (!user || (user.status !== "active" && user.status !== "on_leave")) {
+      res.status(403).json({ error: "Profil faol emas", code: "user_inactive" });
+      return;
+    }
+    let emp: WorkplaceEmp;
+    try {
+      emp = await ensureEmployeeForUser(user);
+    } catch (err) {
+      if (err instanceof DismissedEmployeeError) {
+        res.status(403).json({ error: err.message, code: err.code });
+        return;
+      }
+      throw err;
+    }
+
+    const verified = await fingerprintPunchVerify(req, user.id);
+    if (!verified.ok) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        verificationMethod: "FINGERPRINT",
+        action,
+        faceResult: verified.body.code,
+        finalResult: "denied",
+        failureReason: verified.body.code,
+        ipAddress: clientIp(req),
+      });
+      res.status(verified.status).json(verified.body);
+      return;
+    }
+
+    const preferredBranchId = Number(req.body?.branchId);
+    const gate = await geoGate(
+      emp,
+      user.role,
+      latitude,
+      longitude,
+      Number.isFinite(accuracy) ? accuracy : undefined,
+      action,
+      Number.isFinite(preferredBranchId) && preferredBranchId > 0 ? preferredBranchId : null,
+    );
+    if (!gate.ok) {
+      await writePunchAudit({
+        employeeId: emp.id,
+        userId: user.id,
+        verificationMethod: "FINGERPRINT",
+        action,
+        gpsResult: String(gate.body?.code || "gps_denied"),
+        faceResult: "finger_ok",
+        finalResult: "denied",
+        failureReason: String(gate.body?.code || "gps_denied"),
+        ipAddress: clientIp(req),
+      });
+      res.status(gate.status).json(gate.body);
+      return;
+    }
+
+    await completeSitePunch(req, res, {
+      resolved: {
+        emp,
+        faceId: null,
+        user: { id: user.id, fullName: user.fullName, role: user.role },
+        gate: {
+          distanceMeters: gate.distanceMeters,
+          effectiveRadius: gate.effectiveRadius,
+          resolvedBranchId: gate.resolvedBranchId,
+          resolvedBranchLabel: gate.resolvedBranchLabel,
+          activeShiftKey: gate.activeShiftKey,
+          daySlots: gate.daySlots,
+        },
+      },
+      action,
+      latitude,
+      longitude,
+      expectedUserId: user.id,
+      method: "FINGERPRINT",
+    });
+  } catch (err) {
+    console.error("POST /davomat/fingerprint/punch error:", err);
+    res.status(503).json({ error: "Barmoq izi bilan davomat yozilmadi" });
+  }
+});
+
+/** Admin: xodimning barmoq izini o‘chirish (telefon almashganda qayta ro‘yxatdan o‘tishi uchun). */
+router.delete("/davomat/fingerprint/:userId", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!hasFullPlatformAccess(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin, direktor yoki asoschi", code: "method_admin" });
+    return;
+  }
+  try {
+    const userId = Number(req.params.userId);
+    if (!Number.isFinite(userId) || userId <= 0) {
+      res.status(400).json({ error: "Xodim tanlanmagan" });
+      return;
+    }
+    const removed = await resetFingerprint(userId);
+    if (removed) {
+      await recordAccessChanges(
+        [{ targetUserId: userId, action: "finger_reset", before: { enrolled: true, device: removed.deviceLabel }, after: { enrolled: false } }],
+        { actorUserId: req.userId, ipAddress: clientIp(req) },
+      );
+    }
+    res.json({ ok: true, removed: Boolean(removed) });
+  } catch (err) {
+    console.error("DELETE /davomat/fingerprint/:userId", err);
+    res.status(503).json({ error: "Barmoq izi o‘chirilmadi" });
   }
 });
 
@@ -7679,7 +7951,9 @@ router.get("/davomat/methods", requireAuth, async (req: AuthRequest, res): Promi
       .limit(1);
     const allowed = effectiveDavomatAccess(user.role, flags?.face, flags?.qr);
     const methods = allowed.methods;
+    const fingerOn = (await readDavomatAccess(user.id)).finger;
     res.json({
+      ...(fingerOn ? { finger: true } : {}),
       pharmacyStaff: pharmacy,
       officeStaff,
       adminQrAnywhere,
@@ -7724,17 +7998,20 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
             id: usersTable.id,
             face: usersTable.davomatFaceAllowed,
             qr: usersTable.davomatQrAllowed,
+            finger: usersTable.davomatFingerAllowed,
           })
           .from(usersTable)
           .where(inArray(usersTable.id, ids))
       : [];
     const flagById = new Map(flags.map((row) => [row.id, row]));
     const zoneById = await loadZoneListFlags(ids);
+    const fingerById = await fingerprintInfoByUser(ids);
     const items = staff
       .filter((row) => row.userId != null)
       .map((row) => {
         const flag = flagById.get(row.userId!);
-        const access = effectiveDavomatAccess(row.userRole, flag?.face, flag?.qr);
+        const access = effectiveDavomatAccess(row.userRole, flag?.face, flag?.qr, flag?.finger);
+        const fp = fingerById.get(row.userId!);
         const override = today ? pickScheduleOverride(scheduleRules.get(row.id), today) : null;
         const schedule = override
           ? workScheduleFromOverride(override)
@@ -7751,6 +8028,12 @@ router.get("/davomat/method-access", requireAuth, async (req: AuthRequest, res):
           status: row.userStatus || "active",
           face: access.face,
           qr: access.qr,
+          finger: access.finger,
+          fingerEnrolled: Boolean(fp?.enrolled),
+          fingerDevice: fp?.deviceLabel ?? null,
+          fingerEnrolledAt: fp?.enrolledAt ?? null,
+          fingerLastUsedAt: fp?.lastUsedAt ?? null,
+          fingerUseCount: fp?.useCount ?? 0,
           zoneEnabled: zoneById.get(row.userId!)?.enabled ?? false,
           zoneIntervalHours: zoneById.get(row.userId!)?.intervalHours ?? 2,
           zoneWindowMinutes: zoneById.get(row.userId!)?.windowMinutes ?? 15,
@@ -7780,8 +8063,9 @@ router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res
     }
     const face = req.body?.face;
     const qr = req.body?.qr;
-    if (typeof face !== "boolean" && typeof qr !== "boolean") {
-      res.status(400).json({ error: "Face ID yoki QR holati kerak" });
+    const finger = req.body?.finger;
+    if (typeof face !== "boolean" && typeof qr !== "boolean" && typeof finger !== "boolean") {
+      res.status(400).json({ error: "Face ID, QR yoki barmoq izi holati kerak" });
       return;
     }
     const [user] = await db
@@ -7799,6 +8083,7 @@ router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res
       .set({
         ...(typeof face === "boolean" ? { davomatFaceAllowed: face } : {}),
         ...(typeof qr === "boolean" ? { davomatQrAllowed: qr } : {}),
+        ...(typeof finger === "boolean" ? { davomatFingerAllowed: finger } : {}),
       })
       .where(eq(usersTable.id, userId));
     const saved = await readDavomatAccess(userId);
@@ -7806,12 +8091,12 @@ router.patch("/davomat/method-access", requireAuth, async (req: AuthRequest, res
       [{
         targetUserId: userId,
         action: "method",
-        before: { face: before.face, qr: before.qr },
-        after: { face: saved.face, qr: saved.qr },
+        before: { face: before.face, qr: before.qr, finger: before.finger },
+        after: { face: saved.face, qr: saved.qr, finger: saved.finger },
       }],
       { actorUserId: req.userId, ipAddress: clientIp(req) },
     );
-    res.json({ ok: true, userId, face: saved.face, qr: saved.qr });
+    res.json({ ok: true, userId, face: saved.face, qr: saved.qr, finger: saved.finger });
   } catch (err) {
     console.error("PATCH /davomat/method-access", err);
     res.status(503).json({ error: "Ruxsat saqlanmadi" });
@@ -7833,8 +8118,9 @@ router.post("/davomat/method-access/bulk", requireAuth, async (req: AuthRequest,
     }
     const face = req.body?.face;
     const qr = req.body?.qr;
-    if (typeof face !== "boolean" && typeof qr !== "boolean") {
-      res.status(400).json({ error: "Face ID yoki QR holati kerak" });
+    const finger = req.body?.finger;
+    if (typeof face !== "boolean" && typeof qr !== "boolean" && typeof finger !== "boolean") {
+      res.status(400).json({ error: "Face ID, QR yoki barmoq izi holati kerak" });
       return;
     }
     const beforeById = await methodStatesOf(userIds as number[]);
@@ -7843,6 +8129,7 @@ router.post("/davomat/method-access/bulk", requireAuth, async (req: AuthRequest,
       .set({
         ...(typeof face === "boolean" ? { davomatFaceAllowed: face } : {}),
         ...(typeof qr === "boolean" ? { davomatQrAllowed: qr } : {}),
+        ...(typeof finger === "boolean" ? { davomatFingerAllowed: finger } : {}),
       })
       .where(inArray(usersTable.id, userIds as number[]));
     const afterById = await methodStatesOf(userIds as number[]);
@@ -7947,7 +8234,13 @@ router.get("/davomat/access-audit", requireAuth, async (req: AuthRequest, res): 
       return Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined;
     };
     const actionRaw = String(req.query.action || "");
-    const action = actionRaw === "method" || actionRaw === "zone" || actionRaw === "zone_unlock" ? actionRaw : undefined;
+    const action = actionRaw === "method" ||
+      actionRaw === "zone" ||
+      actionRaw === "zone_unlock" ||
+      actionRaw === "finger_enroll" ||
+      actionRaw === "finger_reset"
+        ? actionRaw
+        : undefined;
     const limit = Math.min(200, num(req.query.limit) ?? 50);
     const offset = Math.max(0, Number(req.query.offset) || 0);
     const [list, actorStats, editors] = await Promise.all([

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { History, Loader2, MapPin, ScanFace, Search, ShieldCheck, Unlock, Users, X } from "lucide-react";
+import { Fingerprint, History, Loader2, MapPin, ScanFace, Search, ShieldCheck, Unlock, Users, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,9 @@ type Tone = "good" | "bad" | "neutral";
 const FIELDS: Record<string, { label: string; fmt: (v: unknown) => string; tone: (v: unknown) => Tone }> = {
   face: { label: "Face ID", fmt: (v) => (v ? "Ruxsat bor" : "Yopiq"), tone: (v) => (v ? "good" : "bad") },
   qr: { label: "QR kod", fmt: (v) => (v ? "Ruxsat bor" : "Yopiq"), tone: (v) => (v ? "good" : "bad") },
+  finger: { label: "Barmoq izi", fmt: (v) => (v ? "Yoqilgan" : "Yopiq"), tone: (v) => (v ? "good" : "neutral") },
+  enrolled: { label: "Barmoq izi ro‘yxati", fmt: (v) => (v ? "Ro‘yxatda" : "Yo‘q"), tone: (v) => (v ? "good" : "bad") },
+  device: { label: "Qurilma", fmt: (v) => String(v || "—"), tone: () => "neutral" },
   enabled: { label: "Yashil hudud tasdiqi", fmt: (v) => (v ? "Yoqilgan" : "O‘chiq"), tone: () => "neutral" },
   intervalHours: { label: "Har necha soatda", fmt: (v) => `${v} soat`, tone: () => "neutral" },
   windowMinutes: { label: "Tasdiqlash oynasi", fmt: (v) => `${v} daqiqa`, tone: () => "neutral" },
@@ -29,12 +32,14 @@ const FIELDS: Record<string, { label: string; fmt: (v: unknown) => string; tone:
   blocked: { label: "Bugungi blok", fmt: (v) => (v ? "Bloklangan" : "Ochildi"), tone: (v) => (v ? "bad" : "good") },
 };
 
-const FIELD_ORDER = ["face", "qr", "enabled", "method", "intervalHours", "windowMinutes", "blocked"];
+const FIELD_ORDER = ["face", "qr", "finger", "enrolled", "device", "enabled", "method", "intervalHours", "windowMinutes", "blocked"];
 
 const ACTION_META: Record<AccessAuditAction, { label: string; icon: React.ElementType; cls: string }> = {
   method: { label: "Davomat usuli", icon: ScanFace, cls: "bg-sky-50 text-sky-700 ring-sky-100" },
   zone: { label: "Hudud tasdiqi", icon: MapPin, cls: "bg-emerald-50 text-emerald-700 ring-emerald-100" },
   zone_unlock: { label: "Blokdan chiqarildi", icon: Unlock, cls: "bg-amber-50 text-amber-700 ring-amber-100" },
+  finger_enroll: { label: "Barmoq izi ro‘yxatdan o‘tdi", icon: Fingerprint, cls: "bg-emerald-50 text-emerald-700 ring-emerald-100" },
+  finger_reset: { label: "Barmoq izi o‘chirildi", icon: Fingerprint, cls: "bg-rose-50 text-rose-700 ring-rose-100" },
 };
 
 function dayKey(iso: string) {
@@ -76,8 +81,24 @@ function changesOf(item: AccessAuditItem) {
 
 function outcomeOf(item: AccessAuditItem): { text: string; tone: Tone } | null {
   const after = item.after ?? {};
+  if (item.action === "finger_enroll") {
+    return { text: "Natija: faqat shu qurilmada barmoq izi bilan davomat qiladi", tone: "good" };
+  }
+  if (item.action === "finger_reset") {
+    return { text: "Natija: xodim yangi qurilmadan qayta ro‘yxatdan o‘tkazadi", tone: "neutral" };
+  }
   if (item.action === "method") {
-    if (after.face === false && after.qr === false) return { text: "Natija: davomat qila olmaydi", tone: "bad" };
+    const before = item.before ?? {};
+    if ("finger" in after && before.finger !== after.finger && before.face === after.face && before.qr === after.qr) {
+      return after.finger
+        ? { text: "Natija: davomat oynasida «Barmoq izi» paydo bo‘ladi", tone: "good" }
+        : { text: "Natija: «Barmoq izi» xodimga ko‘rinmaydi", tone: "neutral" };
+    }
+    if (after.face === false && after.qr === false) {
+      return after.finger
+        ? { text: "Natija: faqat barmoq izi bilan davomat qiladi", tone: "neutral" }
+        : { text: "Natija: davomat qila olmaydi", tone: "bad" };
+    }
     if (after.face && after.qr) return { text: "Natija: Face ID va QR bilan davomat qila oladi", tone: "good" };
     if (after.face) return { text: "Natija: faqat Face ID bilan davomat qiladi", tone: "neutral" };
     return { text: "Natija: faqat QR bilan davomat qiladi", tone: "neutral" };
@@ -209,6 +230,8 @@ export default function BloklashTarix() {
             <option value="method">Face ID / QR</option>
             <option value="zone">Hudud tasdiqi</option>
             <option value="zone_unlock">Blokdan chiqarish</option>
+            <option value="finger_enroll">Barmoq izi ro‘yxati</option>
+            <option value="finger_reset">Barmoq izi o‘chirilishi</option>
           </select>
         </div>
         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">

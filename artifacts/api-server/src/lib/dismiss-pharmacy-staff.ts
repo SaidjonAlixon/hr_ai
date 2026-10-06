@@ -1,8 +1,9 @@
-import { and, eq, inArray, isNull } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { db, employeesTable, usersTable } from "@workspace/db";
-import { displayBranchName } from "./geo-location";
 import { userStatusFromEmployment } from "./staff-directory";
 import { syncStaffingAlertForEmployee } from "./staffing-alert";
+import { detachMudirFromBranch } from "./branch-shell";
+import { invalidateFilialBranchCache } from "./filial-bot-data";
 
 const BRANCH_STAFF_ORG = new Set(["pharmacist", "intern", "supervisor"]);
 const DISMISS_ORG = new Set(["manager", ...BRANCH_STAFF_ORG]);
@@ -93,32 +94,6 @@ async function dismissEmployeeRecord(
   return updated;
 }
 
-async function createVacantBranchSlot(
-  mudir: typeof employeesTable.$inferSelect,
-): Promise<number> {
-  const label = displayBranchName(mudir.location) || mudir.location || "Filial";
-  const [slot] = await db
-    .insert(employeesTable)
-    .values({
-      fullName: label,
-      position: "Filial mudiri",
-      departmentId: mudir.departmentId,
-      hiredAt: new Date().toISOString().slice(0, 10),
-      orgRole: "manager",
-      reportsToId: mudir.reportsToId,
-      location: mudir.location,
-      latitude: mudir.latitude,
-      longitude: mudir.longitude,
-      shiftType: mudir.shiftType,
-      shiftLabel: mudir.shiftLabel,
-      userId: null,
-      employmentStatus: "no_manager",
-      createdById: mudir.createdById,
-    })
-    .returning({ id: employeesTable.id });
-  return slot!.id;
-}
-
 export async function dismissPharmacyEmployee(
   employeeId: number,
   actorUserId: number,
@@ -155,37 +130,16 @@ export async function dismissPharmacyEmployee(
   if (scopeErr) return { ok: false, status: 403, error: scopeErr };
 
   if (target.orgRole === "manager") {
-    const team = await db
-      .select({ id: employeesTable.id })
-      .from(employeesTable)
-      .where(
-        and(
-          eq(employeesTable.reportsToId, target.id),
-          inArray(employeesTable.orgRole, [...BRANCH_STAFF_ORG]),
-        ),
-      );
-
-    const placeholderId = await createVacantBranchSlot(target);
-    if (team.length) {
-      await db
-        .update(employeesTable)
-        .set({ reportsToId: placeholderId })
-        .where(
-          inArray(
-            employeesTable.id,
-            team.map((t) => t.id),
-          ),
-        );
-    }
-
+    const placeholderId = await db.transaction((tx) => detachMudirFromBranch(tx, target));
     await dismissEmployeeRecord(target, actorUserId);
+    invalidateFilialBranchCache();
 
     return {
       ok: true,
       kind: "mudir",
       fullName: target.fullName,
       placeholderId,
-      message: `«${target.fullName}» bo‘shatildi. Filial saqlandi — yangi mudir qo‘shishingiz mumkin.`,
+      message: `«${target.fullName}» bo‘shatildi. Filial koordinatorda qoldi — yangi mudir qo‘yishingiz mumkin.`,
     };
   }
 

@@ -306,6 +306,45 @@ export type BranchAccount = {
   employeeId: number;
 };
 
+export type ActiveBranchInfo = {
+  employeeId: number;
+  branchNo: number | null;
+  branchName: string;
+  coordinatorName: string | null;
+  mudirName: string | null;
+};
+
+export type BranchInputCheck = {
+  no: {
+    value: number;
+    label: string;
+    free: boolean;
+    holder: ActiveBranchInfo | null;
+    catalogName: string | null;
+  } | null;
+  sameName: ActiveBranchInfo[];
+  catalogNoForName: number | null;
+  nextFreeNo: number;
+};
+
+/** Filial raqami/nomi bandligini jonli tekshirish. */
+export function useBranchInputCheck(branchNo: string, branchName: string, enabled: boolean) {
+  const no = branchNo.trim();
+  const name = branchName.trim();
+  return useQuery({
+    queryKey: ["pharmacy-branch-check", no, name],
+    queryFn: () => {
+      const qs = new URLSearchParams();
+      if (no) qs.set("no", no);
+      if (name.length >= 2) qs.set("name", name);
+      return apiFetch<BranchInputCheck>(`/pharmacy-network/branches/check?${qs.toString()}`);
+    },
+    enabled,
+    staleTime: 10_000,
+    placeholderData: (prev) => prev,
+  });
+}
+
 export function useCreatePharmacyBranch() {
   const qc = useQueryClient();
   return useMutation({
@@ -328,6 +367,8 @@ export function useCreatePharmacyBranch() {
         body: JSON.stringify(data),
       }),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-branch-check"] });
       qc.invalidateQueries({ queryKey: ["/api/employees"] });
       qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
       qc.invalidateQueries({
@@ -371,6 +412,8 @@ export function useRemovePharmacyBranch() {
         { method: "POST", body: JSON.stringify({ employeeId }) },
       ),
     onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["staff"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-branch-check"] });
       qc.invalidateQueries({ queryKey: ["/api/employees"] });
       qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
       qc.invalidateQueries({ queryKey: ["davomat"] });
@@ -541,6 +584,43 @@ export function useChangePharmacyOrgRole() {
       qc.invalidateQueries({
         predicate: (q) =>
           JSON.stringify(q.queryKey).toLowerCase().includes("employee"),
+      });
+    },
+  });
+}
+
+export type PharmacyOrgRole = "manager" | "pharmacist" | "intern";
+
+export type MovePharmacyStaffInput = {
+  employeeId: number;
+  targetBranchId: number;
+  newOrgRole: PharmacyOrgRole;
+  displaced?: { targetBranchId: number; newOrgRole: PharmacyOrgRole } | null;
+};
+
+export type MovePharmacyStaffResult = { ok: true; message: string; steps: string[] };
+
+export function useMovePharmacyStaff() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (data: MovePharmacyStaffInput) =>
+      apiFetch<MovePharmacyStaffResult>(`/pharmacy-network/move-staff`, {
+        method: "POST",
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/employees"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-mudirs"] });
+      qc.invalidateQueries({ queryKey: ["pharmacy-staff-logins"] });
+      qc.invalidateQueries({ queryKey: ["/api/staffing/alerts"] });
+      qc.invalidateQueries({ queryKey: ["davomat"] });
+      qc.invalidateQueries({ queryKey: ["smena-me"] });
+      qc.invalidateQueries({ queryKey: ["smena-slots-all"] });
+      qc.invalidateQueries({
+        predicate: (q) => {
+          const key = JSON.stringify(q.queryKey).toLowerCase();
+          return key.includes("employee") || key.includes("staff") || key.includes("pharmacy");
+        },
       });
     },
   });

@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq, and, inArray } from "drizzle-orm";
+import { desc, eq, and, inArray, isNull } from "drizzle-orm";
 import ExcelJS from "exceljs";
 import {
   db,
@@ -24,6 +24,7 @@ import {
 } from "../lib/roles";
 import { gpsFromLocationField, displayBranchName } from "../lib/geo-location";
 import { dedupeActiveBranches } from "../lib/branch-dedupe";
+import { checklistFrom, isOnOrAfterChecklistEpoch, CHECKLIST_EPOCH } from "../lib/checklist-epoch";
 import {
   assertChecklistAllowedForCoordinator,
   assertInBranchGeofence,
@@ -41,6 +42,8 @@ import {
   requestPresenceUnlock,
   serializeVisit,
   startCoordinatorVisit,
+  formatDurationMinutes,
+  isVisitPresenceBlocked,
 } from "../lib/coordinator-visits";
 import {
   isTestOfficeCoordinatorUserId,
@@ -162,6 +165,7 @@ async function enrichMany(rows: Array<typeof branchAuditsTable.$inferSelect>) {
       workDate: coordinatorBranchVisitsTable.workDate,
       checkoutNote: coordinatorBranchVisitsTable.checkoutNote,
       checkOutAt: coordinatorBranchVisitsTable.checkOutAt,
+      checkInAt: coordinatorBranchVisitsTable.checkInAt,
     })
     .from(coordinatorBranchVisitsTable)
     .where(inArray(coordinatorBranchVisitsTable.checklistAuditId, ids));
@@ -185,6 +189,7 @@ async function enrichMany(rows: Array<typeof branchAuditsTable.$inferSelect>) {
         workDate: coordinatorBranchVisitsTable.workDate,
         checkoutNote: coordinatorBranchVisitsTable.checkoutNote,
         checkOutAt: coordinatorBranchVisitsTable.checkOutAt,
+        checkInAt: coordinatorBranchVisitsTable.checkInAt,
       })
       .from(coordinatorBranchVisitsTable)
       .where(inArray(coordinatorBranchVisitsTable.coordinatorUserId, coordIds));
@@ -205,6 +210,7 @@ async function enrichMany(rows: Array<typeof branchAuditsTable.$inferSelect>) {
       updatedAt: row.updatedAt.toISOString(),
       checkoutNote: v?.checkoutNote ?? null,
       visitCheckOutAt: v?.checkOutAt ? v.checkOutAt.toISOString() : null,
+      visitCheckInAt: v?.checkInAt ? v.checkInAt.toISOString() : null,
     };
   });
 }
@@ -264,7 +270,7 @@ function toCoverageBranch(
 }
 
 async function loadCoverage(req: AuthRequest) {
-  const from = String(req.query.from || "").trim();
+  const from = checklistFrom(String(req.query.from || ""));
   const to = String(req.query.to || "").trim();
 
   const [people, coordUsers, auditRows] = await Promise.all([
@@ -474,9 +480,9 @@ async function loadFilteredAudits(req: AuthRequest) {
     rows = rows.filter((r) => r.coordinatorId === coordinatorId);
   }
 
-  const from = String(req.query.from || "").trim();
+  const from = checklistFrom(String(req.query.from || ""));
   const to = String(req.query.to || "").trim();
-  if (from) rows = rows.filter((r) => r.visitDate >= from);
+  rows = rows.filter((r) => r.visitDate >= from);
   if (to) rows = rows.filter((r) => r.visitDate <= to);
 
   const q = String(req.query.q || "").trim().toLowerCase();
@@ -1111,6 +1117,7 @@ async function loadCoordinatorRanking(periodRaw: string) {
 
   for (const a of auditRows) {
     if (a.visitDate < range.from || a.visitDate > range.to) continue;
+    if (!isOnOrAfterChecklistEpoch(a.visitDate)) continue;
     if (!byUser.has(a.coordinatorId)) continue;
     const meta = byUser.get(a.coordinatorId)!;
     const row = ensure(a.coordinatorId, meta.name);
@@ -1492,6 +1499,56 @@ router.post(
 );
 
 /**
+ * Admin: barcha bloklangan ochiq tashriflarga bir bosishda ruxsat.
+ */
+router.post(
+  "/branch-audits/visits/approve-unlock-all",
+  requireAuth,
+  async (req: AuthRequest, res): Promise<void> => {
+    if (!req.userId) {
+      res.status(401).json({ error: "Avtorizatsiya kerak" });
+      return;
+    }
+    if (
+      req.userRole !== "admin" &&
+      !hasFullPlatformAccess(req.userRole) &&
+      !isDirectorRole(req.userRole)
+    ) {
+      res.status(403).json({ error: "Faqat admin / rahbariyat" });
+      return;
+    }
+    try {
+      const open = await db
+        .select()
+        .from(coordinatorBranchVisitsTable)
+        .where(
+          and(
+            eq(coordinatorBranchVisitsTable.status, "open"),
+            isNull(coordinatorBranchVisitsTable.checkOutAt),
+          ),
+        );
+      const blocked = open.filter((v) => isVisitPresenceBlocked(v));
+      const names: string[] = [];
+      for (const v of blocked) {
+        const r = await approvePresenceUnlock({ visitId: v.id, adminUserId: req.userId });
+        if (r.ok) names.push(v.coordinatorName || `#${v.coordinatorUserId}`);
+      }
+      res.json({
+        ok: true,
+        approved: names.length,
+        names,
+        message: names.length
+          ? `${names.length} ta koordinatorga ruxsat berildi: ${names.join(", ")}`
+          : "Bloklangan tashrif yo‘q",
+      });
+    } catch (err) {
+      console.error("POST /branch-audits/visits/approve-unlock-all error:", err);
+      res.status(503).json({ error: "Ruxsat berilmadi" });
+    }
+  },
+);
+
+/**
  * Admin: hudud bloki ruxsatini berish.
  */
 router.post(
@@ -1598,7 +1655,7 @@ router.get("/branch-audits/visit-monitor", requireAuth, async (req: AuthRequest,
     return;
   }
   try {
-    const from = String(req.query.from || "").trim() || undefined;
+    const from = checklistFrom(String(req.query.from || ""));
     const to = String(req.query.to || "").trim() || undefined;
     const coordinatorUserId = req.query.coordinatorId
       ? parseInt(String(req.query.coordinatorId), 10)
@@ -1612,25 +1669,47 @@ router.get("/branch-audits/visit-monitor", requireAuth, async (req: AuthRequest,
       limit: 800,
     });
 
-    const openCount = items.filter((i) => i.stillOpen).length;
-    const withChecklist = items.filter((i) => i.checklistAt).length;
-    const closedWithDur = items.filter((i) => i.durationMinutes != null && !i.stillOpen);
-    const avgStay =
-      closedWithDur.length > 0
-        ? Math.round(closedWithDur.reduce((s, i) => s + (i.durationMinutes || 0), 0) / closedWithDur.length)
-        : null;
+    const avg = (nums: Array<number | null | undefined>) => {
+      const ok = nums.filter((n): n is number => n != null && Number.isFinite(n) && n >= 0);
+      return ok.length ? Math.round(ok.reduce((s, n) => s + n, 0) / ok.length) : null;
+    };
+    const sum = (nums: Array<number | null | undefined>) =>
+      nums.filter((n): n is number => n != null && Number.isFinite(n) && n >= 0).reduce((s, n) => s + n, 0);
+
+    const branchItems = items.filter((i) => !i.isOffice);
+    const officeItems = items.filter((i) => i.isOffice);
+    const openCount = branchItems.filter((i) => i.stillOpen).length;
+    const withChecklist = branchItems.filter((i) => i.checklistAt).length;
+    const avgStay = avg(branchItems.filter((i) => !i.stillOpen).map((i) => i.durationMinutes));
+    const avgChecklistLag = avg(branchItems.map((i) => i.checklistAfterCheckInMinutes));
+    const avgAfterChecklist = avg(
+      branchItems.filter((i) => !i.stillOpen).map((i) => i.checklistToCheckoutMinutes),
+    );
+    const officeTotal = sum(officeItems.map((i) => i.durationMinutes));
+    const officeAvg = avg(officeItems.filter((i) => !i.stillOpen).map((i) => i.durationMinutes));
 
     res.json({
       items,
+      epoch: CHECKLIST_EPOCH,
       summary: {
-        total: items.length,
+        total: branchItems.length,
         openCount,
         withChecklist,
+        noChecklist: branchItems.filter((i) => !i.stillOpen && !i.checklistAt).length,
+        blockedCount: branchItems.filter((i) => i.presenceBlocked).length,
+        unlockPendingCount: branchItems.filter((i) => i.unlockPending).length,
         avgStayMinutes: avgStay,
-        avgStayLabel:
-          avgStay != null
-            ? `${Math.floor(avgStay / 60)} soat ${avgStay % 60} daq`
-            : "—",
+        avgStayLabel: formatDurationMinutes(avgStay),
+        avgChecklistLagMinutes: avgChecklistLag,
+        avgChecklistLagLabel: formatDurationMinutes(avgChecklistLag),
+        avgAfterChecklistMinutes: avgAfterChecklist,
+        avgAfterChecklistLabel: formatDurationMinutes(avgAfterChecklist),
+        officeCount: officeItems.length,
+        officeOpenCount: officeItems.filter((i) => i.stillOpen).length,
+        officeTotalMinutes: officeTotal,
+        officeTotalLabel: formatDurationMinutes(officeItems.length ? officeTotal : null),
+        officeAvgMinutes: officeAvg,
+        officeAvgLabel: formatDurationMinutes(officeAvg),
       },
     });
   } catch (err) {

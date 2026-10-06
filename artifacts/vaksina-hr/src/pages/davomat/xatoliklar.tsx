@@ -613,7 +613,11 @@ export default function DavomatXatoliklarPage() {
                               {formatWhen(item.createdAt)}
                             </p>
                             <p className="mt-0.5 text-[10px] text-muted-foreground">
-                              {item.method || "—"}
+                              {item.method === "FINGERPRINT"
+                                ? "Barmoq izi"
+                                : item.method === "FACE_ID"
+                                  ? "Face ID"
+                                  : item.method || "—"}
                               {item.action
                                 ? ` · ${item.action === "in" ? "Keldim" : "Ketdim"}`
                                 : ""}

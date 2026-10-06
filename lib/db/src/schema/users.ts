@@ -17,5 +17,7 @@ export const usersTable = pgTable("users", {
   davomatFaceAllowed: boolean("davomat_face_allowed"),
   /** null = standart (koordinator uchun yopiq, qolganlar ochiq) */
   davomatQrAllowed: boolean("davomat_qr_allowed"),
+  /** null/false = yopiq va xodimga umuman ko‘rinmaydi. true = faqat admin Bloklash oynasidan yoqqanda */
+  davomatFingerAllowed: boolean("davomat_finger_allowed"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });

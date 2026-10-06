@@ -35,10 +35,17 @@ function ratingTone(n: number) {
   return "text-rose-600";
 }
 
-function Factor({ label, value }: { label: string; value: string }) {
+function ratingWord(n: number) {
+  if (n >= 80) return "A’lo";
+  if (n >= 60) return "Yaxshi";
+  if (n > 0) return "Past";
+  return "Tashrif yo‘q";
+}
+
+function Factor({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg bg-muted px-2 py-1.5">
-      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+    <div className="rounded-lg bg-muted px-2 py-1.5" title={hint}>
+      <p className="truncate text-[10px] font-medium text-muted-foreground">{label}</p>
       <p className="text-xs font-semibold tabular-nums text-foreground">{value}</p>
     </div>
   );
@@ -77,22 +84,31 @@ function RankRow({
                 </span>
               ) : null}
             </p>
-            <p className={cn("shrink-0 text-lg font-bold tabular-nums", ratingTone(row.rating))}>
-              {row.rating}
-            </p>
+            <div className="shrink-0 text-right leading-tight">
+              <p className={cn("text-lg font-bold tabular-nums", ratingTone(row.rating))}>
+                {row.rating}
+                <span className="text-[11px] font-medium text-muted-foreground">/100</span>
+              </p>
+              <p className={cn("text-[10px] font-semibold", ratingTone(row.rating))}>{ratingWord(row.rating)}</p>
+            </div>
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            {row.visits} tashrif · {row.uniqueBranches} filial · ball {row.avgScore}%
-            {row.lastVisit ? ` · ${formatDate(row.lastVisit)}` : ""}
+            {row.visits} ta cheklist · {row.uniqueBranches} ta filialga borgan · o‘rtacha ball {row.avgScore}%
+            {row.lastVisit ? ` · oxirgi: ${formatDate(row.lastVisit)}` : ""}
           </p>
           {!compact ? (
             <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-6">
-              <Factor label="Tashrif" value={String(row.visits)} />
-              <Factor label="Ball" value={`${row.avgScore}%`} />
-              <Factor label={t("checklist.coverage")} value={`${row.coveragePct}%`} />
-              <Factor label="GPS" value={`${row.gpsPct}%`} />
-              <Factor label="A’lo" value={`${row.excellentPct}%`} />
+              <Factor label="Cheklistlar" value={String(row.visits)} hint="Davrdagi to‘ldirilgan cheklistlar soni" />
+              <Factor label="O‘rtacha ball" value={`${row.avgScore}%`} hint="Cheklist savollaridagi «Ha» ulushi" />
               <Factor
+                label={t("checklist.coverage")}
+                value={`${row.coveragePct}%`}
+                hint="Biriktirilgan filiallarning necha foiziga borilgan"
+              />
+              <Factor label="GPS bilan" value={`${row.gpsPct}%`} hint="Joylashuv tasdiqlangan cheklistlar ulushi" />
+              <Factor label="A’lo natija" value={`${row.excellentPct}%`} hint="85% va undan yuqori ball olgan cheklistlar" />
+              <Factor
+                hint="Borilgan / biriktirilgan filiallar"
                 label={t("ui.branch")}
                 value={
                   row.assignedBranches > 0
@@ -163,8 +179,8 @@ export function CoordinatorRankingBoard({
             <h3 className="text-sm font-semibold">Koordinatorlar reytingi</h3>
           </div>
           <p className="mt-0.5 text-[11px] text-muted-foreground">
-            Tashrif soni, o‘rtacha ball, filial qamrovi, GPS va a’lo natijalar asosida.
-            {data ? ` ${formatDate(data.from)} — ${formatDate(data.to)}` : ""}
+            100 ballik baho: kim ko‘p, sifatli va GPS bilan cheklist qilgan bo‘lsa — yuqorida.
+            {data ? ` Davr: ${formatDate(data.from)} — ${formatDate(data.to)}` : ""}
           </p>
         </div>
         <div className="grid grid-cols-3 gap-1 rounded-xl border border-border bg-muted p-1">
@@ -206,9 +222,17 @@ export function CoordinatorRankingBoard({
       )}
 
       {!compact ? (
-        <div className="border-t bg-muted/80 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
-          Ball: tashrif hajmi 25% · cheklist balli 25% · qamrov 20% · GPS 15% · a’lo tashriflar 10% · filial
-          xilma-xilligi 5%. Tashrifi yo‘q koordinatorlar 0 ball.
+        <div className="space-y-2 border-t bg-muted/80 px-4 py-3 text-[11px] leading-relaxed text-muted-foreground">
+          <p className="flex flex-wrap gap-x-3 gap-y-1">
+            <span className="font-semibold text-emerald-600">80–100 · A’lo</span>
+            <span className="font-semibold text-amber-600">60–79 · Yaxshi</span>
+            <span className="font-semibold text-rose-600">1–59 · Past</span>
+            <span>0 · davrda cheklist yo‘q</span>
+          </p>
+          <p>
+            Ball qanday hisoblanadi: cheklistlar soni 25% · o‘rtacha ball 25% · filial qamrovi 20% · GPS 15% · a’lo
+            natijalar 10% · turli filiallarga borish 5%. Hisob 1-oktyabr 2026 dan boshlab.
+          </p>
         </div>
       ) : null}
     </div>

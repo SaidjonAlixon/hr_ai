@@ -2,7 +2,7 @@
  * Faol xodimlar — foydalanuvchilar (users) asosida, employee kartasi bilan.
  * Xodimlar, Oylik va Hisob-kitob sahifalari shu yuklovchidan foydalanadi.
  */
-import { asc, eq, inArray, ne } from "drizzle-orm";
+import { and, asc, eq, inArray, isNull, ne, notInArray, or } from "drizzle-orm";
 import {
   db,
   departmentsTable,
@@ -457,6 +457,42 @@ export async function loadPharmacyNetworkEmployees(): Promise<StaffRow[]> {
       bonusPercent: Math.max(0, Number(r.bonusPercent ?? 30)),
     };
   });
+}
+
+/**
+ * Mudiri (user) yo‘q filial qatorlari — `loadStaffFromUsers` ularni bermaydi.
+ * Yopilgan/bo‘shatilgan qatorlar kirmaydi.
+ */
+export async function loadVacantBranchRows(): Promise<StaffRow[]> {
+  try {
+    const rows = (await db
+      .select(EMP_LIST_SELECT)
+      .from(employeesTable)
+      .where(
+        and(
+          eq(employeesTable.orgRole, "manager"),
+          isNull(employeesTable.userId),
+          or(
+            isNull(employeesTable.employmentStatus),
+            notInArray(employeesTable.employmentStatus, ["dismissed", "closed"]),
+          ),
+        ),
+      )
+      .orderBy(asc(employeesTable.fullName))) as StaffRow[];
+    return rows.map((r) => ({
+      ...r,
+      login: null,
+      phone: null,
+      userStatus: null,
+      userRole: null,
+      employmentStatus: r.employmentStatus || "no_manager",
+      fixedSalary: Math.max(0, Math.round(Number(r.fixedSalary ?? 0))),
+      bonusPercent: Math.max(0, Number(r.bonusPercent ?? 30)),
+    }));
+  } catch (err) {
+    console.error("loadVacantBranchRows:", err);
+    return [];
+  }
 }
 
 /** Users + apteka tarmog‘i xodimlarini birlashtirish (id bo‘yicha). */

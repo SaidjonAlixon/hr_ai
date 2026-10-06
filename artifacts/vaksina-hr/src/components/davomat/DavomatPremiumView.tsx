@@ -4,6 +4,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Clock3,
+  Fingerprint,
   History,
   Loader2,
   LogIn,
@@ -20,7 +21,7 @@ import { cn } from "@/lib/utils";
 import { formatShortUz } from "@/lib/oylik-period";
 import type { DavomatDayMetrics } from "@/lib/davomat-api";
 
-export type PremiumMethod = "FACE_ID" | "QR";
+export type PremiumMethod = "FACE_ID" | "QR" | "FINGERPRINT";
 
 type Props = {
   /** To‘liq ism familiya (birinchi so‘z emas) */
@@ -67,6 +68,10 @@ type Props = {
   canOpenQr: boolean;
   faceDenied?: boolean;
   qrDenied?: boolean;
+  /** Faqat admin yoqqan xodimda true — aks holda karta umuman chizilmaydi */
+  showFinger?: boolean;
+  canOpenFinger?: boolean;
+  fingerHint?: string;
   /** GPS bor, lekin zona tashqarisida */
   outsideZone?: boolean;
   outsideWarn?: string | null;
@@ -290,7 +295,9 @@ export function DavomatPremiumView(p: Props) {
               <div className="min-w-0">
                 <h2 className="text-base font-semibold text-white">Davomat usulini tanlang</h2>
                 <p className="mt-0.5 text-xs text-white/50">
-                  Istaganingizni tanlang — Face ID yoki QR
+                  {p.showFinger
+                    ? "Istaganingizni tanlang — Face ID, QR yoki barmoq izi"
+                    : "Istaganingizni tanlang — Face ID yoki QR"}
                 </p>
               </div>
               {p.onDismissMethods ? (
@@ -309,7 +316,7 @@ export function DavomatPremiumView(p: Props) {
                 {p.outsideWarn || "Hududdan tashqaridasiz — Face ID / QR ochilmaydi"}
               </p>
             ) : null}
-            <div className="mt-3 grid grid-cols-2 gap-2.5">
+            <div className={cn("mt-3 grid gap-2.5", p.showFinger ? "grid-cols-3 gap-2" : "grid-cols-2")}>
               <button
                 type="button"
                 id="dv-coach-face"
@@ -374,6 +381,37 @@ export function DavomatPremiumView(p: Props) {
                   {p.qrDenied ? "Aynan sizga ruxsat yo‘q" : p.outsideZone ? "Hududga kiring" : "QR kodni skaner qiling"}
                 </p>
               </button>
+              {p.showFinger ? (
+                <button
+                  type="button"
+                  id="dv-coach-finger"
+                  disabled={p.outsideZone || p.busy || !p.canOpenFinger}
+                  onClick={() => p.onPickMethod("FINGERPRINT")}
+                  className={cn(
+                    "dv-method-card relative px-3 py-2.5 text-left",
+                    p.selectedMethod === "FINGERPRINT" && !p.outsideZone && "dv-method-card-on",
+                    (p.outsideZone || !p.canOpenFinger) && "dv-method-card-locked",
+                  )}
+                >
+                  {p.selectedMethod === "FINGERPRINT" && !p.outsideZone ? (
+                    <span className="absolute right-2 top-2 text-sky-300">
+                      <CheckCircle2 className="h-4 w-4" />
+                    </span>
+                  ) : null}
+                  <span className="mb-2 flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300">
+                    <Fingerprint className="h-5 w-5" />
+                  </span>
+                  <p className="text-sm font-semibold leading-tight text-white">Barmoq izi</p>
+                  <p
+                    className={cn(
+                      "mt-0.5 text-[10px] leading-snug",
+                      p.outsideZone ? "font-semibold text-rose-400" : "text-white/50",
+                    )}
+                  >
+                    {p.outsideZone ? "Hududga kiring" : p.fingerHint || "Barmoqni skanerga qo‘ying"}
+                  </p>
+                </button>
+              ) : null}
             </div>
           </section>
         ) : null}

@@ -29,6 +29,7 @@ export type BranchAudit = {
   /** Ketdimda yozilgan: «bugun bu yerda nima qildingiz» — Cheklist holati uchun */
   checkoutNote?: string | null;
   visitCheckOutAt?: string | null;
+  visitCheckInAt?: string | null;
   categories: AuditCategory[];
   scorePercent: number;
   answeredCount: number;
@@ -352,7 +353,43 @@ export type CoordinatorVisitSession = {
   durationLabel: string;
   checklistAfterCheckInMinutes: number | null;
   checklistAfterCheckInLabel: string;
+  checklistToCheckoutMinutes?: number | null;
+  checklistToCheckoutLabel?: string;
+  phase?: VisitPhase;
   stillOpen: boolean;
+};
+
+export type VisitPhase =
+  | "office_open"
+  | "office_closed"
+  | "unlock_requested"
+  | "blocked"
+  | "presence_due"
+  | "need_checklist"
+  | "need_checkout"
+  | "closed_ok"
+  | "closed_no_checklist"
+  | "auto_closed";
+
+export type VisitMonitorSummary = {
+  total: number;
+  openCount: number;
+  withChecklist: number;
+  noChecklist?: number;
+  blockedCount?: number;
+  unlockPendingCount?: number;
+  avgStayMinutes: number | null;
+  avgStayLabel: string;
+  avgChecklistLagMinutes?: number | null;
+  avgChecklistLagLabel?: string;
+  avgAfterChecklistMinutes?: number | null;
+  avgAfterChecklistLabel?: string;
+  officeCount?: number;
+  officeOpenCount?: number;
+  officeTotalMinutes?: number;
+  officeTotalLabel?: string;
+  officeAvgMinutes?: number | null;
+  officeAvgLabel?: string;
 };
 
 export function useMyCoordinatorVisit(enabled = true) {
@@ -471,6 +508,13 @@ export async function approvePresenceUnlock(visitId: number) {
 }
 
 /** Admin: ochiq tashrifni Ketdim bilan majburiy yopish */
+export async function approveAllPresenceUnlocks() {
+  return apiFetch<{ ok: boolean; approved: number; names: string[]; message: string }>(
+    `/branch-audits/visits/approve-unlock-all`,
+    { method: "POST", body: JSON.stringify({}) },
+  );
+}
+
 export async function forceCheckoutVisit(visitId: number, note?: string) {
   return apiFetch<{
     ok: boolean;
@@ -501,16 +545,12 @@ export function useVisitMonitor(
       const qs = sp.toString();
       return apiFetch<{
         items: CoordinatorVisitSession[];
-        summary: {
-          total: number;
-          openCount: number;
-          withChecklist: number;
-          avgStayMinutes: number | null;
-          avgStayLabel: string;
-        };
+        epoch?: string;
+        summary: VisitMonitorSummary;
       }>(`/branch-audits/visit-monitor${qs ? `?${qs}` : ""}`);
     },
     enabled,
+    refetchInterval: 60_000,
   });
 }
 

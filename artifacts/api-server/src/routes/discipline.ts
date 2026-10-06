@@ -8,6 +8,7 @@ import {
   clearLock,
   listTodayLocks,
   LOCK_MESSAGE,
+  lockDetailsFor,
   runDisciplineScan,
   todayTashkent,
 } from "../lib/discipline";
@@ -33,6 +34,15 @@ router.get("/discipline/my-lock", optionalAuth, async (req: AuthRequest, res): P
   }
   const lock = await activeLockFor(req.userId);
   res.json(lock ? { locked: true, message: LOCK_MESSAGE, day: lock.lockDay } : { locked: false });
+});
+
+router.get("/discipline/my-lock/details", optionalAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!req.userId) {
+    res.json({ locked: false });
+    return;
+  }
+  const details = await lockDetailsFor(req.userId);
+  res.json(details ? { locked: true, ...details } : { locked: false });
 });
 
 router.get("/discipline/locks", requireAuth, async (req: AuthRequest, res): Promise<void> => {

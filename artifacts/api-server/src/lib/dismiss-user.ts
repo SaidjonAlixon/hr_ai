@@ -9,6 +9,7 @@ import {
   userDevicesTable,
   faceProfilesTable,
   webauthnCredentialsTable,
+  davomatFingerprintsTable,
   telegramAuthTokensTable,
   pushSubscriptionsTable,
 } from "@workspace/db";
@@ -98,6 +99,7 @@ export async function archiveAndDeleteUser(
         .where(and(eq(userSessionsTable.userId, userId), isNull(userSessionsTable.revokedAt))),
     () => db.delete(faceProfilesTable).where(eq(faceProfilesTable.userId, userId)),
     () => db.delete(webauthnCredentialsTable).where(eq(webauthnCredentialsTable.userId, userId)),
+    () => db.delete(davomatFingerprintsTable).where(eq(davomatFingerprintsTable.userId, userId)),
     () => db.delete(telegramAuthTokensTable).where(eq(telegramAuthTokensTable.userId, userId)),
     () => db.delete(pushSubscriptionsTable).where(eq(pushSubscriptionsTable.userId, userId)),
     () => db.delete(userDevicesTable).where(eq(userDevicesTable.userId, userId)),

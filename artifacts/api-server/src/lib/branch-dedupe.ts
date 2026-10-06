@@ -65,10 +65,12 @@ export function scoreBranchRow(row: BranchDedupeRow): number {
 }
 
 /**
- * Bir xil nomdagi dublikat filiallardan (mudirsiz / zaif) o‘chiriladigan ID lar.
- * Faqat aniq zaif nusxalar: userId yo‘q yoki no_manager — asosiy (loginli) filial saqlanadi.
+ * Bir xil nomdagi dublikat filiallar: mudirsiz (login yo‘q) nusxa → asosiy filialga qo‘shiladi.
+ * Mudiri bor filial hech qachon tushib qolmaydi.
  */
-export function weakerDuplicateBranchIds<T extends BranchDedupeRow>(rows: T[]): number[] {
+export function weakerDuplicateBranchPairs<T extends BranchDedupeRow>(
+  rows: T[],
+): Array<{ dropId: number; keepId: number }> {
   const groups = new Map<string, T[]>();
   for (const row of rows) {
     if (!isActiveBranchStatus(row.employmentStatus)) continue;
@@ -78,7 +80,7 @@ export function weakerDuplicateBranchIds<T extends BranchDedupeRow>(rows: T[]): 
     list.push(row);
     groups.set(key, list);
   }
-  const drop: number[] = [];
+  const pairs: Array<{ dropId: number; keepId: number }> = [];
   for (const list of groups.values()) {
     if (list.length < 2) continue;
     list.sort((a, b) => {
@@ -89,16 +91,10 @@ export function weakerDuplicateBranchIds<T extends BranchDedupeRow>(rows: T[]): 
     const keep = list[0]!;
     for (let i = 1; i < list.length; i++) {
       const weak = list[i]!;
-      const clearlyWeak =
-        weak.userId == null ||
-        weak.employmentStatus === "no_manager" ||
-        weak.employmentStatus === "need_hire" ||
-        (keep.userId != null && weak.userId == null) ||
-        (branchScore(keep) - branchScore(weak) >= 25);
-      if (clearlyWeak) drop.push(weak.id);
+      if (weak.userId == null) pairs.push({ dropId: weak.id, keepId: keep.id });
     }
   }
-  return drop;
+  return pairs;
 }
 
 export function isActiveBranchStatus(status: string | null | undefined): boolean {

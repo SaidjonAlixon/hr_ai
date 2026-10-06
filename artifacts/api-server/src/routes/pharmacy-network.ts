@@ -1,11 +1,14 @@
 import { Router, type IRouter } from "express";
 import { and, eq, inArray, isNull, ne } from "drizzle-orm";
 import ExcelJS from "exceljs";
-import { db, usersTable, employeesTable } from "@workspace/db";
+import { db, usersTable, employeesTable, staffingAlertsTable } from "@workspace/db";
 import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { parseGpsText, displayBranchName } from "../lib/geo-location";
-import { dedupeActiveBranches, weakerDuplicateBranchIds } from "../lib/branch-dedupe";
+import { dedupeActiveBranches, weakerDuplicateBranchPairs } from "../lib/branch-dedupe";
+import { moveBranchRefs } from "../lib/branch-shell";
+import { movePharmacyStaff } from "../lib/move-pharmacy-staff";
+import { invalidateFilialBranchCache } from "../lib/filial-bot-data";
 import { isVacancyPlaceholder } from "../lib/vacancy-slot";
 import { saveManagerBranchLocation } from "../lib/branch-gps";
 import { ensureFarmasevtDepartmentId } from "../lib/farmasevt-department";
@@ -24,7 +27,12 @@ import {
 } from "../lib/dismiss-pharmacy-staff";
 import { sweepDismissedUsers } from "../lib/dismiss-user";
 import { canManagePharmacyOps } from "../lib/roles";
-import { createPharmacyBranch, removePharmacyBranch, transferPharmacyBranch } from "../lib/pharmacy-branch-admin";
+import {
+  checkBranchInput,
+  createPharmacyBranch,
+  removePharmacyBranch,
+  transferPharmacyBranch,
+} from "../lib/pharmacy-branch-admin";
 const router: IRouter = Router();
 
 const STAFF_ROLES = ["mudir", "farmasevt", "stajyor"] as const;
@@ -880,10 +888,14 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
       : null;
   const fullName = String(body.fullName ?? req.query.fullName ?? "").trim() || null;
   const scopeRaw = String(body.scope ?? req.query.scope ?? "").trim().toLowerCase();
-  const scope: "person" | "branch" =
-    scopeRaw === "branch" || body.keepBranch === false
-      ? "branch"
-      : "person";
+  if (scopeRaw === "branch" || body.keepBranch === false) {
+    res.status(400).json({
+      error:
+        "Mudir yoki xodim o‘chirilganda filial o‘chmaydi. Filialni butunlay olib tashlash uchun kartadagi «Filialni o‘chirish» tugmasidan foydalaning.",
+    });
+    return;
+  }
+  const scope = "person" as const;
 
   if (!Number.isFinite(employeeId) && !userId && !fullName) {
     res.status(400).json({ error: "Noto‘g‘ri xodim" });
@@ -945,6 +957,27 @@ async function handleHardDelete(req: AuthRequest, res: import("express").Respons
 
 router.post("/pharmacy-network/hard-delete", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   await handleHardDelete(req, res);
+});
+
+/** Filial qo‘shishdan oldin: raqam bo‘shmi, kimda band, shu nomli filial bormi. */
+router.get("/pharmacy-network/branches/check", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  if (!canManagePharmacyOps(req.userRole)) {
+    res.status(403).json({ error: "Faqat admin va HR menejer uchun" });
+    return;
+  }
+  const rawNo = String(req.query.no ?? "").trim();
+  const branchNo = rawNo === "" ? null : Number(rawNo);
+  try {
+    res.json(
+      await checkBranchInput({
+        branchNo: branchNo != null && Number.isInteger(branchNo) ? branchNo : null,
+        branchName: String(req.query.name ?? ""),
+      }),
+    );
+  } catch (err) {
+    console.error("GET /pharmacy-network/branches/check", err);
+    res.status(503).json({ error: "Tekshirib bo‘lmadi" });
+  }
 });
 
 /** Admin / HR menejer: koordinatorga yangi filial + zavedushi + ixtiyoriy jamoa. */
@@ -1103,6 +1136,63 @@ router.post("/pharmacy-network/change-role", requireAuth, async (req: AuthReques
 });
 
 /**
+ * Xodimni boshqa filialga / boshqa rolga ko‘chirish.
+ * Maqsad filialda mudir bo‘lsa — displaced: eski mudir qayerga, kim bo‘lib o‘tadi.
+ */
+router.post("/pharmacy-network/move-staff", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole ?? "";
+  if (!canChangePharmacyOrgRole(role)) {
+    res.status(403).json({ error: "Xodimni ko‘chirish uchun ruxsat yo‘q" });
+    return;
+  }
+  const body = (req.body ?? {}) as {
+    employeeId?: number | string;
+    targetBranchId?: number | string;
+    newOrgRole?: string;
+    displaced?: { targetBranchId?: number | string; newOrgRole?: string } | null;
+  };
+  const roleMap: Record<string, PharmacyOrgRoleChange> = {
+    manager: "manager",
+    mudir: "manager",
+    pharmacist: "pharmacist",
+    farmasevt: "pharmacist",
+    intern: "intern",
+    stajyor: "intern",
+  };
+  const newOrgRole = roleMap[String(body.newOrgRole ?? "").trim().toLowerCase()];
+  if (!newOrgRole) {
+    res.status(400).json({ error: "Yangi rol: mudir, farmasevt yoki stajyor" });
+    return;
+  }
+  let displaced: { targetBranchId: number; newOrgRole: PharmacyOrgRoleChange } | null = null;
+  if (body.displaced) {
+    const dRole = roleMap[String(body.displaced.newOrgRole ?? "").trim().toLowerCase()];
+    const dBranch = parseInt(String(body.displaced.targetBranchId ?? ""), 10);
+    if (!dRole || !Number.isFinite(dBranch)) {
+      res.status(400).json({ error: "Joriy mudir uchun filial va rolni tanlang" });
+      return;
+    }
+    displaced = { targetBranchId: dBranch, newOrgRole: dRole };
+  }
+  try {
+    const result = await movePharmacyStaff({
+      employeeId: parseInt(String(body.employeeId ?? ""), 10),
+      targetBranchId: parseInt(String(body.targetBranchId ?? ""), 10),
+      newOrgRole,
+      displaced,
+    });
+    if (!result.ok) {
+      res.status(result.status).json({ error: result.error, occupiedBy: result.occupiedBy });
+      return;
+    }
+    res.json(result);
+  } catch (err) {
+    console.error("pharmacy-network move-staff error:", err);
+    res.status(503).json({ error: "Ko‘chirish amalga oshmadi — hech narsa o‘zgarmadi" });
+  }
+});
+
+/**
  * Bir xil nomdagi dublikat filiallardan zaiflarini (mudirsiz) o‘chiradi.
  * Admin / HR / koordinator.
  */
@@ -1145,7 +1235,6 @@ router.post(
       }
 
       const onlyName = String((req.body ?? {}).name ?? "").trim().toLowerCase();
-      const purgeEmpty = Boolean((req.body ?? {}).purgeEmptyBranches);
       const candidates = onlyName
         ? scoped.filter((m) => {
             const key = `${displayBranchName(m.location) || m.fullName}`.toLowerCase();
@@ -1153,43 +1242,27 @@ router.post(
           })
         : scoped;
 
-      const dropIds = new Set(weakerDuplicateBranchIds(candidates));
-
-      // GPS yo‘q + mudirsiz (login yo‘q) bo‘sh filial kartalarini ham o‘chirish
-      // Masalan: «16-йиллик · filial yo‘q» — smena xodim ro‘yxatida kerak emas
-      if (purgeEmpty || onlyName) {
-        for (const m of candidates) {
-          const noGps =
-            m.latitude == null ||
-            m.longitude == null ||
-            !Number.isFinite(m.latitude) ||
-            !Number.isFinite(m.longitude);
-          const emptyMudir =
-            m.userId == null ||
-            m.employmentStatus === "no_manager" ||
-            m.employmentStatus === "need_hire";
-          if (noGps && emptyMudir) dropIds.add(m.id);
-        }
-      }
-
+      // Mudirsiz dublikat asosiy filialga qo‘shiladi: jamoa, QR, smena va tarix ko‘chadi, hech kim o‘chmaydi
       const removed: Array<{ id: number; fullName: string; deletedEmployees: number }> = [];
-      for (const id of dropIds) {
-        const result = await hardDeletePharmacyEmployee(id, { scope: "branch" });
-        if (result.ok) {
-          removed.push({
-            id,
-            fullName: result.fullName,
-            deletedEmployees: result.deletedEmployees,
-          });
-        }
+      for (const { dropId, keepId } of weakerDuplicateBranchPairs(candidates)) {
+        const merged = await db.transaction(async (tx) => {
+          await moveBranchRefs(tx, dropId, keepId);
+          await tx.delete(staffingAlertsTable).where(eq(staffingAlertsTable.employeeId, dropId));
+          return tx
+            .delete(employeesTable)
+            .where(and(eq(employeesTable.id, dropId), isNull(employeesTable.userId)))
+            .returning({ id: employeesTable.id, fullName: employeesTable.fullName });
+        });
+        if (merged[0]) removed.push({ ...merged[0], deletedEmployees: 0 });
       }
+      if (removed.length) invalidateFilialBranchCache();
       res.json({
         ok: true,
         removedCount: removed.length,
         removed,
         message:
           removed.length > 0
-            ? `${removed.length} ta dublikat filial o‘chirildi`
+            ? `${removed.length} ta dublikat filial asosiy filialga qo‘shildi`
             : "Dublikat filial topilmadi",
       });
     } catch (err) {

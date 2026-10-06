@@ -1,7 +1,7 @@
 import { pool } from "@workspace/db";
 
 export const DISCIPLINE_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
-export const LOCK_MESSAGE = "Sizga bugun tizimga kirishga ruxsat yo‘q. Admin va HR lar bilan bog‘laning";
+export const LOCK_MESSAGE = "Intizom qoidalari buzilgani sababli bugun platformadan foydalana olmaysiz. Admin yoki HR bilan bog‘laning.";
 
 export function todayTashkent(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });

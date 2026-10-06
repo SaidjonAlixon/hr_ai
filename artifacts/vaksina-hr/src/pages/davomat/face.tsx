@@ -35,6 +35,7 @@ import {
 import { FaceScanDialog } from "@/components/FaceScanDialog";
 import { QrScanDialog } from "@/components/QrScanDialog";
 import { DavomatPremiumView, type PremiumMethod } from "@/components/davomat/DavomatPremiumView";
+import { FingerprintEnrollDialog } from "@/components/davomat/FingerprintEnrollDialog";
 import {
   DavomatCoachFinger,
   signalDavomatCoachDone,
@@ -52,6 +53,11 @@ import {
   DavomatApiError,
   confirmZonePresence,
   facePunchDavomat,
+  captureFingerprintAssertion,
+  fetchFingerprintStatus,
+  fingerprintPunchDavomat,
+  fingerprintSupported,
+  type FingerprintStatus,
   faceVerifyDavomat,
   fetchDavomatMethods,
   fetchDavomatSite,
@@ -164,6 +170,8 @@ type Verified = {
   liveness?: { blinked?: boolean; poses?: string[]; motion?: number; score?: number };
   /** QR skan tasdiqlangan — Keldim/Ketdim bosilganda punch */
   qrPayload?: string;
+  /** Barmoq izi tasdig‘i (bir martalik, ~2 daqiqa amal qiladi) */
+  fingerAssertion?: unknown;
 };
 
 type GuideStep = "enroll" | "permission" | "zone" | "face" | "keldim" | "ketdim" | "done";
@@ -937,8 +945,12 @@ export default function DavomatFacePage() {
   const [qrOpen, setQrOpen] = useState(false);
   const [methodsHidden, setMethodsHidden] = useState(false);
   const [qrStream, setQrStream] = useState<MediaStream | null>(null);
-  const [methodHint, setMethodHint] = useState<"FACE_ID" | "QR" | null>(null);
+  const [methodHint, setMethodHint] = useState<"FACE_ID" | "QR" | "FINGERPRINT" | null>(null);
   const [selectedMethod, setSelectedMethod] = useState<PremiumMethod>("FACE_ID");
+  const [fingerStatus, setFingerStatus] = useState<FingerprintStatus | null>(null);
+  const [fingerEnrollOpen, setFingerEnrollOpen] = useState(false);
+  const [fingerScanning, setFingerScanning] = useState(false);
+  const fingerAllowed = fingerStatus?.enabled === true;
 
   useEffect(() => {
     if (qrOpen) return;
@@ -1116,6 +1128,16 @@ export default function DavomatFacePage() {
         setFaceMethodAllowed(m.face !== false && m.methods.includes("FACE_ID"));
         if (m.face === false && m.methods.includes("QR")) setSelectedMethod("QR");
         else if (!m.methods.includes("QR")) setSelectedMethod("FACE_ID");
+        if (m.finger) {
+          void fetchFingerprintStatus()
+            .then((s) => {
+              setFingerStatus(s);
+              if (s.enabled && m.face === false && !m.methods.includes("QR")) setSelectedMethod("FINGERPRINT");
+            })
+            .catch(() => setFingerStatus(null));
+        } else {
+          setFingerStatus(null);
+        }
       })
       .catch(() => {
         setPharmacyStaff(false);
@@ -1602,22 +1624,115 @@ export default function DavomatFacePage() {
     !done &&
     (adminQrAnywhere || mobileAnywhere || (Boolean(gps) && !gpsError && inside));
 
+  /** Barmoq izi: kamera kerak emas — GPS + hudud yetarli */
+  const canOpenFinger =
+    !zoneLocked &&
+    fingerAllowed &&
+    methodsReady &&
+    !done &&
+    (adminQrAnywhere || mobileAnywhere || (Boolean(gps) && !gpsError && geoOk));
+
   /** Face ID | QR — QR yo‘q bo‘lsa faqat Face */
-  const showDualMethods = methodsReady && qrMethodAllowed;
+  const showDualMethods = methodsReady && (qrMethodAllowed || fingerAllowed);
 
   const faceVerifiedReady = Boolean(verified?.descriptor && verified.descriptor.length > 0);
   const qrVerifiedReady = Boolean(verified?.qrPayload);
-  const methodReady = faceVerifiedReady || qrVerifiedReady;
+  const fingerVerifiedReady = Boolean(verified?.fingerAssertion);
+  const methodReady = faceVerifiedReady || qrVerifiedReady || fingerVerifiedReady;
+
+  const fingerHint = !fingerAllowed || fingerStatus?.enabled !== true
+    ? undefined
+    : !fingerprintSupported()
+      ? "Brauzerda oching"
+      : !fingerStatus.enrolled
+        ? "Avval ro‘yxatdan o‘tkazing"
+        : !fingerStatus.thisDevice
+          ? "Boshqa qurilmaga biriktirilgan"
+          : "Barmoqni skanerga qo‘ying";
+
+  const openFingerMethod = useCallback(async () => {
+    if (busy || fingerScanning || faceVerifiedReady || qrVerifiedReady) return;
+    if (!canOpenFinger || fingerStatus?.enabled !== true) return;
+    if (!fingerprintSupported()) {
+      toast({
+        title: "Barmoq izi ishlamaydi",
+        description: isTgMiniApp
+          ? "Telegram ichida barmoq izi ishlamaydi. Saytni Chrome yoki Safari brauzerida oching."
+          : "Bu brauzer barmoq izini qo‘llamaydi. Chrome yoki Safari brauzerida oching.",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!fingerStatus.enrolled) {
+      setFingerEnrollOpen(true);
+      return;
+    }
+    if (!fingerStatus.thisDevice) {
+      toast({
+        title: "Boshqa qurilma",
+        description: `Barmoq izingiz ${fingerStatus.deviceLabel ? `«${fingerStatus.deviceLabel}»` : "boshqa qurilma"}ga biriktirilgan. Faqat o‘sha qurilmadan davomat qila olasiz. Telefon almashgan bo‘lsa — admin bilan bog‘laning.`,
+        variant: "destructive",
+      });
+      return;
+    }
+    setMethodHint(null);
+    setScanOpen(false);
+    setQrOpen(false);
+    setFingerScanning(true);
+    try {
+      const assertion = await captureFingerprintAssertion();
+      const action = (verified?.nextAction || workplace?.today.nextAction || "in") as "in" | "out" | "done";
+      setMethodHint("FINGERPRINT");
+      setVerified({
+        descriptor: [],
+        fingerAssertion: assertion,
+        fullName: workplace?.employee.fullName || user?.fullName || t("davomat.employee"),
+        nextAction: action === "out" ? "out" : action === "done" ? "done" : "in",
+        checkIn: workplace?.today.checkIn || "—",
+        checkOut: workplace?.today.checkOut || "—",
+        checkInAt: workplace?.today.checkInAt || null,
+        checkOutAt: workplace?.today.checkOutAt || null,
+      });
+      toast({
+        title: "✓ Barmoq izi tasdiqlandi",
+        description: action === "out" ? "Endi «Ketdim» ni bosing" : "Endi «Keldim» ni bosing",
+      });
+    } catch (err) {
+      toast({
+        title: "Barmoq izi",
+        description: (err as Error)?.message || "Tasdiqlanmadi — qayta urinib ko‘ring",
+        variant: "destructive",
+      });
+      if (err instanceof DavomatApiError && (err.code === "finger_not_enrolled" || err.code === "finger_wrong_device")) {
+        void fetchFingerprintStatus().then(setFingerStatus).catch(() => undefined);
+      }
+    } finally {
+      setFingerScanning(false);
+    }
+  }, [
+    busy,
+    fingerScanning,
+    faceVerifiedReady,
+    qrVerifiedReady,
+    canOpenFinger,
+    fingerStatus,
+    isTgMiniApp,
+    toast,
+    verified?.nextAction,
+    workplace,
+    user?.fullName,
+    t,
+  ]);
 
   const openFaceMethod = useCallback(() => {
-    if (busy || qrVerifiedReady) return;
+    if (busy || qrVerifiedReady || fingerVerifiedReady) return;
     if (!canOpenFace) return;
     preloadFaceModels();
     setMethodHint(null);
     setQrOpen(false);
     if (faceRegistered === false) setEnrollOpen(true);
     else setScanOpen(true);
-  }, [canOpenFace, busy, faceRegistered, qrVerifiedReady]);
+  }, [canOpenFace, busy, faceRegistered, qrVerifiedReady, fingerVerifiedReady]);
 
   const openQrMethod = useCallback(() => {
     if (busy || faceVerifiedReady) {
@@ -1997,6 +2112,83 @@ export default function DavomatFacePage() {
       }));
     }
     try {
+      if (verified.fingerAssertion) {
+        if (!live) {
+          toast({
+            title: "Joylashuv qabul qilinmadi",
+            description: "GPS o‘chiq yoki eskirgan. Hududda turib, joylashuv yoqilgan holda qayta bosing.",
+            variant: "destructive",
+          });
+          unlock();
+          return;
+        }
+        const assertion = verified.fingerAssertion;
+        // Bir martalik tasdiq — natijadan qat'i nazar qayta ishlatilmaydi
+        setVerified({ ...verified, fingerAssertion: undefined });
+        let result: Awaited<ReturnType<typeof fingerprintPunchDavomat>>;
+        try {
+          result = await fingerprintPunchDavomat({
+            assertion,
+            latitude: live.lat,
+            longitude: live.lng,
+            accuracy: live.accuracy,
+            gpsCapturedAt: live.capturedAt,
+            action,
+            ...(checklistBranchId ? { branchId: checklistBranchId } : {}),
+            ...(earlyNotes ? { notes: earlyNotes } : {}),
+          });
+        } catch (err) {
+          if (err instanceof DavomatApiError && err.code?.startsWith("finger_")) {
+            setMethodHint(null);
+            toast({ title: "Barmoq izi", description: err.message, variant: "destructive" });
+            if (err.code === "finger_wrong_device" || err.code === "finger_not_enrolled") {
+              void fetchFingerprintStatus().then(setFingerStatus).catch(() => undefined);
+            }
+            unlock();
+            return;
+          }
+          throw err;
+        }
+        const resultNext =
+          result.nextAction === "in" || result.nextAction === "out" || result.nextAction === "done"
+            ? result.nextAction
+            : action === "in"
+              ? "out"
+              : "done";
+        setMethodHint(null);
+        setVerified({
+          ...verified,
+          fingerAssertion: undefined,
+          nextAction: resultNext,
+          checkIn: result.checkIn,
+          checkOut: result.checkOut,
+          checkInAt: result.checkInAt ?? (resultNext === "in" ? null : verified.checkInAt),
+          checkOutAt: result.checkOutAt ?? (resultNext === "in" ? null : verified.checkOutAt),
+        });
+        toast({
+          title: action === "in" ? "✓ Keldim (barmoq izi)" : "✓ Ketdim (barmoq izi)",
+          description: result.checklistHint || result.message || "Davomat qayd etildi",
+        });
+        applyHistory(result.employee);
+        syncMobileRoute(action);
+        unlock();
+        refreshQuiet();
+        if (action === "in") {
+          const visit = result.coordinatorVisit as
+            | { isOffice?: boolean; visitKind?: string; branchId?: number }
+            | null
+            | undefined;
+          const toOffice =
+            result.ofisdaRedirect || visit?.isOffice || visit?.visitKind === "office" || Number(visit?.branchId) === 0;
+          if (toOffice) {
+            window.setTimeout(() => setLocation("/davomat/ofisda"), 450);
+          } else if (checklistBranchId || result.checklistRedirect || result.coordinatorVisit) {
+            window.setTimeout(() => setLocation("/checklist"), 450);
+          }
+        }
+        return;
+      }
+
       if (usingQr && verified.qrPayload) {
         const result = await qrPunchDavomat({
           payload: verified.qrPayload,
@@ -2382,7 +2574,7 @@ export default function DavomatFacePage() {
     Boolean(verified) &&
     !done &&
     !dayComplete &&
-    (faceVerifiedReady || qrVerifiedReady || methodHint === "QR");
+    (faceVerifiedReady || qrVerifiedReady || fingerVerifiedReady || methodHint === "QR");
 
   /** Usul tanlangach Face/QR tugmalari yashirinadi — faqat Keldim/Ketdim */
   const showMethodPicker = showDualMethods && !done && !methodReady;
@@ -2410,8 +2602,9 @@ export default function DavomatFacePage() {
           .map((s) => `${s.shiftLabel} → ${s.branchLabel || `#${s.branchId}`}${s.activeNow ? " ●" : ""}`)
           .join(" · ")
       : null;
+  const cameraNeeded = faceMethodAllowed || qrMethodAllowed || !fingerAllowed;
   const needsPerms =
-    !cameraGranted || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
+    (cameraNeeded && !cameraGranted) || (!adminQrAnywhere && (!gps || Boolean(gpsError)));
   /** Ruxsat rad etilgan — GPS xizmati o‘chiqligidan ajraladi */
   const gpsPermissionDenied =
     Boolean(gpsError) &&
@@ -2582,14 +2775,19 @@ export default function DavomatFacePage() {
     }
     if (!methodReady) {
       const face = selectedMethod === "FACE_ID";
+      const finger = selectedMethod === "FINGERPRINT" && fingerAllowed;
       return {
-        label: "Davom etish",
-        sub: face
-          ? faceRegistered === false
-            ? "Face ID ro‘yxatdan o‘tkazish"
-            : "Face ID orqali tasdiqlash"
-          : "QR kodni skaner qilish",
-        disabled: false,
+        label: fingerScanning ? "Barmoq izi kutilmoqda…" : "Davom etish",
+        sub: finger
+          ? fingerStatus?.enabled && !fingerStatus.enrolled
+            ? "Barmoq izini ro‘yxatdan o‘tkazish"
+            : "Barmoq izi orqali tasdiqlash"
+          : face
+            ? faceRegistered === false
+              ? "Face ID ro‘yxatdan o‘tkazish"
+              : "Face ID orqali tasdiqlash"
+            : "QR kodni skaner qilish",
+        disabled: fingerScanning,
         tone: "go" as const,
       };
     }
@@ -2648,6 +2846,10 @@ export default function DavomatFacePage() {
         toast({ title: "Aynan sizga ruxsat yo‘q", description: "Face ID siz uchun o‘chirilgan." });
         return;
       }
+      if (selectedMethod === "FINGERPRINT") {
+        if (fingerAllowed) void openFingerMethod();
+        return;
+      }
       if (selectedMethod === "QR") openQrMethod();
       else openFaceMethod();
       return;
@@ -2668,12 +2870,23 @@ export default function DavomatFacePage() {
       toast({ title: "Aynan sizga ruxsat yo‘q", description: "QR siz uchun o‘chirilgan." });
       return;
     }
+    if (m === "FINGERPRINT" && !fingerAllowed) return;
     if (done || busy || outsideZone) return;
     if (m === "FACE_ID" && !canOpenFace) return;
     if (m === "QR" && !canOpenQr) return;
+    if (m === "FINGERPRINT" && !canOpenFinger) return;
     setSelectedMethod(m);
     signalDavomatCoachDone();
     if (!methodReady) setMethodHint(null);
+    if (m === "FINGERPRINT") {
+      if (methodReady) return;
+      if (!adminQrAnywhere && (!gps || Boolean(gpsError))) {
+        void requestLocationPermission();
+        return;
+      }
+      void openFingerMethod();
+      return;
+    }
     if (needsPerms) {
       void requestLocationPermission();
       return;
@@ -2861,6 +3074,9 @@ export default function DavomatFacePage() {
         canOpenQr={canOpenQr}
         faceDenied={methodsReady && !faceMethodAllowed}
         qrDenied={methodsReady && !qrMethodAllowed}
+        showFinger={fingerAllowed}
+        canOpenFinger={canOpenFinger && !fingerScanning}
+        fingerHint={fingerScanning ? "Barmoqni qo‘ying…" : fingerHint}
         outsideZone={outsideZone}
         outsideWarn={outsideWarn}
         methodReady={methodReady}
@@ -2915,6 +3131,23 @@ export default function DavomatFacePage() {
         description={t("davomat.frontCamHint")}
         onCaptured={onCaptured}
       />
+
+      {fingerAllowed ? (
+        <FingerprintEnrollDialog
+          open={fingerEnrollOpen}
+          onOpenChange={setFingerEnrollOpen}
+          isTgMiniApp={isTgMiniApp}
+          onEnrolled={(status) => {
+            setFingerStatus(status);
+            setFingerEnrollOpen(false);
+            setSelectedMethod("FINGERPRINT");
+            toast({
+              title: "✓ Barmoq izi ro‘yxatdan o‘tdi",
+              description: "Endi «Barmoq izi»ni tanlab, barmog‘ingizni qo‘ying va Keldim/Ketdimni bosing.",
+            });
+          }}
+        />
+      ) : null}
 
       <QrScanDialog
         open={qrOpen && methodHint !== "FACE_ID" && !faceVerifiedReady}

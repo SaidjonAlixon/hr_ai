@@ -18,6 +18,7 @@ import { listDuplicateGroups, dedupeSimilarEmployees, removeDuplicatePair } from
 import {
   isPharmacyStaffRow,
   loadStaffFromUsers,
+  loadVacantBranchRows,
   userStatusFromEmployment,
   normalizeUserStatus,
   type StaffRow,
@@ -514,7 +515,17 @@ router.get("/employees", requireAuth, async (req: AuthRequest, res): Promise<voi
       else workplaceMode = "ofis";
     }
 
-    const rows = await loadStaffFromUsers(staffGroup);
+    let rows = await loadStaffFromUsers(staffGroup);
+    const wantVacantBranches =
+      String(req.query.includeVacantBranches || "") === "1" &&
+      staffGroup === "active" &&
+      workplaceMode !== "ofis" &&
+      !deptHeadScoped &&
+      (role === "koordinator" || fullAccess);
+    if (wantVacantBranches) {
+      const known = new Set(rows.map((r) => r.id));
+      rows = [...rows, ...(await loadVacantBranchRows()).filter((r) => !known.has(r.id))];
+    }
     // Bo‘lim boshlig‘i uchun query departmentId qo‘llanmaydi — server o‘zi scope qiladi
     let filtered = scopeEmployees(rows, role, userId, {
       departmentId: deptHeadScoped ? undefined : departmentId,

@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNotNull, lte, or } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, lte, ne, or } from "drizzle-orm";
 import {
   db,
   usersTable,
@@ -11,7 +11,8 @@ import { ensureFarmasevtDepartmentId } from "./farmasevt-department";
 import { purgeEmployeeSideEffects, purgeUserSideEffects } from "./delete-pharmacy-staff";
 import { archiveAndDeleteUser } from "./dismiss-user";
 import { invalidateFilialBranchCache } from "./filial-bot-data";
-import { filialNumberLabel } from "./filial-catalog";
+import { FILIAL_CATALOG, filialNumberLabel, matchFilialCatalog } from "./filial-catalog";
+import { foldScript } from "./script-search";
 import { ymdInTashkent } from "./shift-hours";
 import { sql } from "drizzle-orm";
 
@@ -129,6 +130,118 @@ async function insertPerson(opts: {
   };
 }
 
+export type ActiveBranchInfo = {
+  employeeId: number;
+  branchNo: number | null;
+  branchName: string;
+  coordinatorName: string | null;
+  mudirName: string | null;
+};
+
+/**
+ * Hozir ishlayotgan filiallar (mudirli yoki mudirsiz).
+ * Bo‘shatilgan/yopilgan qatorlar va o‘chirilgan (terminated) mudirlar raqamni band qilmaydi.
+ */
+export async function loadActiveBranches(): Promise<ActiveBranchInfo[]> {
+  const rows = await db
+    .select({
+      id: employeesTable.id,
+      fullName: employeesTable.fullName,
+      location: employeesTable.location,
+      branchNo: employeesTable.branchNo,
+      reportsToId: employeesTable.reportsToId,
+      userId: employeesTable.userId,
+      employmentStatus: employeesTable.employmentStatus,
+      userStatus: usersTable.status,
+    })
+    .from(employeesTable)
+    .leftJoin(usersTable, eq(usersTable.id, employeesTable.userId))
+    .where(eq(employeesTable.orgRole, "manager"));
+
+  const alive = rows.filter((r) => {
+    const st = r.employmentStatus || "working";
+    if (st === "dismissed" || st === "closed") return false;
+    if (r.userId != null && (r.userStatus == null || r.userStatus === "terminated")) return false;
+    return true;
+  });
+
+  const coordIds = [...new Set(alive.map((r) => r.reportsToId).filter((id): id is number => id != null))];
+  const coordName = new Map<number, string>();
+  if (coordIds.length) {
+    const coords = await db
+      .select({ id: employeesTable.id, fullName: employeesTable.fullName })
+      .from(employeesTable)
+      .where(inArray(employeesTable.id, coordIds));
+    for (const c of coords) coordName.set(c.id, c.fullName);
+  }
+
+  return alive.map((r) => {
+    const vacant = r.userId == null || r.employmentStatus === "no_manager";
+    return {
+      employeeId: r.id,
+      branchNo: r.branchNo ?? null,
+      branchName: displayBranchName(r.location) || (r.location || "").split("|")[0].trim() || r.fullName,
+      coordinatorName: r.reportsToId != null ? coordName.get(r.reportsToId) ?? null : null,
+      mudirName: vacant ? null : r.fullName,
+    };
+  });
+}
+
+function nextFreeNo(branches: ActiveBranchInfo[]): number {
+  const used = new Set(branches.map((b) => b.branchNo).filter((n): n is number => n != null));
+  let max = 0;
+  for (const n of used) if (n > max) max = n;
+  return Math.min(999, max + 1);
+}
+
+function sameBranchName(a: string, b: string): boolean {
+  const fa = foldScript(a);
+  return fa.length > 0 && fa === foldScript(b);
+}
+
+export type BranchInputCheck = {
+  no: {
+    value: number;
+    label: string;
+    free: boolean;
+    holder: ActiveBranchInfo | null;
+    /** Rasmiy katalogda shu raqamdagi filial nomi */
+    catalogName: string | null;
+  } | null;
+  sameName: ActiveBranchInfo[];
+  /** Kiritilgan nom katalogdagi qaysi raqamga to‘g‘ri keladi */
+  catalogNoForName: number | null;
+  nextFreeNo: number;
+};
+
+/** Filial kiritishda raqam va nom bandligini oldindan tekshirish. */
+export async function checkBranchInput(input: { branchNo?: number | null; branchName?: string | null }): Promise<BranchInputCheck> {
+  const branches = await loadActiveBranches();
+  let no: BranchInputCheck["no"] = null;
+  const n = input.branchNo;
+  if (n != null && Number.isInteger(n) && n >= 0 && n <= 999) {
+    const holder = branches.find((b) => b.branchNo === n) ?? null;
+    const cat = FILIAL_CATALOG.find((e) => e.no === n);
+    no = {
+      value: n,
+      label: filialNumberLabel(n) || String(n),
+      free: !holder,
+      holder,
+      catalogName: cat ? cat.short || cat.official : null,
+    };
+  }
+  const name = (input.branchName || "").trim();
+  const sameName = name.length >= 2 ? branches.filter((b) => sameBranchName(b.branchName, name)) : [];
+  const catalogNoForName = name.length >= 2 ? matchFilialCatalog(name)?.no ?? null : null;
+  return { no, sameName, catalogNoForName, nextFreeNo: nextFreeNo(branches) };
+}
+
+function describeHolder(h: ActiveBranchInfo): string {
+  const who = h.mudirName ? `mudir: ${h.mudirName}` : "mudiri yo‘q";
+  const coord = h.coordinatorName ? `, koordinator: ${h.coordinatorName}` : "";
+  return `«${h.branchName}» (${who}${coord})`;
+}
+
 export async function createPharmacyBranch(input: {
   coordinatorEmployeeId: number;
   branchName: string;
@@ -147,14 +260,13 @@ export async function createPharmacyBranch(input: {
   if (!Number.isInteger(branchNo) || branchNo < 0 || branchNo > 999) {
     return { ok: false, status: 400, error: "Filial raqamini kiriting. Asosiy uchun 0" };
   }
-  const [taken] = await db
-    .select({ id: employeesTable.id })
-    .from(employeesTable)
-    .where(and(eq(employeesTable.orgRole, "manager"), eq(employeesTable.branchNo, branchNo)))
-    .limit(1);
-  if (taken) {
-    const label = filialNumberLabel(branchNo) || String(branchNo);
-    return { ok: false, status: 409, error: `${label} band. Boshqa filial raqamini yozing` };
+  const check = await checkBranchInput({ branchNo });
+  if (check.no?.holder) {
+    return {
+      ok: false,
+      status: 409,
+      error: `${check.no.label} band — ${describeHolder(check.no.holder)}. Bo‘sh raqam: ${check.nextFreeNo}`,
+    };
   }
   const gps = parseGpsText(input.coordinates);
   if (!gps) {
@@ -204,6 +316,17 @@ export async function createPharmacyBranch(input: {
     actorId: input.actorId,
   });
   accounts.push(mudir);
+  // Faol egasi yo‘q — qolgan qatorlardagi shu raqam eski (o‘chirilgan/bo‘shatilgan filial) izi
+  await db
+    .update(employeesTable)
+    .set({ branchNo: null })
+    .where(
+      and(
+        eq(employeesTable.orgRole, "manager"),
+        eq(employeesTable.branchNo, branchNo),
+        ne(employeesTable.id, mudir.employeeId),
+      ),
+    );
   await db.update(employeesTable).set({ branchNo }).where(eq(employeesTable.id, mudir.employeeId));
 
   for (const s of input.staff) {
@@ -291,6 +414,9 @@ export async function removePharmacyBranch(
   } catch {
     /* kontakt jadvali bo‘lmasa ham davom */
   }
+
+  // Raqam darhol bo‘shasin — yangi filialga qayta berish mumkin bo‘lsin
+  await db.update(employeesTable).set({ branchNo: null }).where(eq(employeesTable.id, manager.id));
 
   const wipe = people.filter((p) => !p.userId || !worked.has(p.id));
   const keep = people.filter((p) => p.userId && worked.has(p.id));

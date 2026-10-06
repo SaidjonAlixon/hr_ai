@@ -591,6 +591,8 @@ export type DavomatMethods = {
   /** Admin o‘chirgan bo‘lsa false */
   face?: boolean;
   qr?: boolean;
+  /** Faqat admin yoqqan xodimga keladi; aks holda maydon umuman yo‘q */
+  finger?: boolean;
   canManageQr: boolean;
   canManageBranchQr?: boolean;
   canViewBranchQr?: boolean;
@@ -617,6 +619,12 @@ export type DavomatMethodAccessRow = {
   status: string;
   face: boolean;
   qr: boolean;
+  finger?: boolean;
+  fingerEnrolled?: boolean;
+  fingerDevice?: string | null;
+  fingerEnrolledAt?: string | null;
+  fingerLastUsedAt?: string | null;
+  fingerUseCount?: number;
   zoneEnabled?: boolean;
   zoneIntervalHours?: number;
   zoneWindowMinutes?: number;
@@ -624,20 +632,115 @@ export type DavomatMethodAccessRow = {
   zoneStatus?: "off" | "idle" | "waiting" | "due" | "blocked";
 };
 
+export type FingerprintStatus =
+  | { enabled: false }
+  | {
+      enabled: true;
+      enrolled: boolean;
+      thisDevice: boolean;
+      deviceLabel: string | null;
+      enrolledAt: string | null;
+      lastUsedAt: string | null;
+    };
+
+export function fetchFingerprintStatus(): Promise<FingerprintStatus> {
+  return apiJson<FingerprintStatus>("/davomat/fingerprint/status");
+}
+
+/** WebAuthn xatolarini xodimga tushunarli matnga aylantiradi. */
+function fingerprintClientError(err: unknown, phase: "register" | "punch"): DavomatApiError {
+  if (err instanceof DavomatApiError) return err;
+  const name = (err as { name?: string })?.name || "";
+  const code = (err as { code?: string })?.code || "";
+  if (name === "InvalidStateError" || code === "ERROR_AUTHENTICATOR_PREVIOUSLY_REGISTERED") {
+    return new DavomatApiError({
+      error: "Bu qurilmadagi barmoq izi boshqa akkauntga biriktirilgan. Har bir xodim faqat o‘z telefonidan ro‘yxatdan o‘tadi.",
+      code: "finger_device_taken",
+    });
+  }
+  if (name === "NotAllowedError" || name === "AbortError") {
+    return new DavomatApiError({
+      error:
+        phase === "register"
+          ? "Ro‘yxatdan o‘tkazish bekor qilindi yoki vaqt tugadi. Qayta urinib, barmog‘ingizni skanerga qo‘ying."
+          : "Barmoq izi tasdiqlanmadi yoki bekor qilindi. Qayta urinib ko‘ring.",
+      code: "finger_cancelled",
+    });
+  }
+  if (name === "NotSupportedError" || name === "SecurityError") {
+    return new DavomatApiError({
+      error: "Bu brauzer barmoq izini qo‘llamaydi. Saytni Chrome yoki Safari brauzerida oching.",
+      code: "finger_unsupported",
+    });
+  }
+  return new DavomatApiError({
+    error: (err as Error)?.message || "Barmoq izi bilan bog‘liq xato — qayta urinib ko‘ring",
+    code: "finger_error",
+  });
+}
+
+export async function enrollFingerprint(): Promise<FingerprintStatus> {
+  const { startRegistration } = await import("@simplewebauthn/browser");
+  try {
+    const optionsJSON = await apiJson<Parameters<typeof startRegistration>[0]["optionsJSON"]>(
+      "/davomat/fingerprint/register/options",
+      { method: "POST", body: "{}" },
+    );
+    const credential = await startRegistration({ optionsJSON });
+    return await apiJson<FingerprintStatus>("/davomat/fingerprint/register/verify", {
+      method: "POST",
+      body: JSON.stringify({ credential }),
+    });
+  } catch (err) {
+    throw fingerprintClientError(err, "register");
+  }
+}
+
+/** Barmoq izini so‘raydi; natijani davomat yuborish uchun qaytaradi. */
+export async function captureFingerprintAssertion(): Promise<unknown> {
+  const { startAuthentication } = await import("@simplewebauthn/browser");
+  try {
+    const optionsJSON = await apiJson<Parameters<typeof startAuthentication>[0]["optionsJSON"]>(
+      "/davomat/fingerprint/punch/options",
+      { method: "POST", body: "{}" },
+    );
+    return await startAuthentication({ optionsJSON });
+  } catch (err) {
+    throw fingerprintClientError(err, "punch");
+  }
+}
+
+export function fingerprintPunchDavomat(
+  payload: Omit<Parameters<typeof facePunchDavomat>[0], "descriptor" | "snapshot" | "liveness"> & {
+    assertion: unknown;
+    checkoutNote?: string;
+  },
+): ReturnType<typeof facePunchDavomat> {
+  return apiJson("/davomat/fingerprint/punch", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function resetEmployeeFingerprint(userId: number) {
+  return apiJson<{ ok: boolean; removed: boolean }>(`/davomat/fingerprint/${userId}`, { method: "DELETE" });
+}
+
+export function fingerprintSupported(): boolean {
+  return typeof window !== "undefined" && typeof window.PublicKeyCredential === "function";
+}
+
 export function fetchDavomatMethodAccess(q = ""): Promise<{ items: DavomatMethodAccessRow[]; total: number }> {
   const qs = new URLSearchParams();
   if (q.trim()) qs.set("q", q.trim());
   return apiJson(`/davomat/method-access?${qs}`);
 }
 
-export function saveDavomatMethodAccess(body: { userId: number; face?: boolean; qr?: boolean }) {
-  return apiJson<{ ok: boolean; userId: number; face: boolean; qr: boolean }>("/davomat/method-access", {
+export function saveDavomatMethodAccess(body: { userId: number; face?: boolean; qr?: boolean; finger?: boolean }) {
+  return apiJson<{ ok: boolean; userId: number; face: boolean; qr: boolean; finger?: boolean }>("/davomat/method-access", {
     method: "PATCH",
     body: JSON.stringify(body),
   });
 }
 
-export function saveDavomatMethodAccessBulk(body: { userIds: number[]; face?: boolean; qr?: boolean }) {
+export function saveDavomatMethodAccessBulk(body: { userIds: number[]; face?: boolean; qr?: boolean; finger?: boolean }) {
   return apiJson<{ ok: boolean; updated: number }>("/davomat/method-access/bulk", {
     method: "POST",
     body: JSON.stringify(body),
@@ -657,7 +760,7 @@ export function saveZonePresence(body: {
   });
 }
 
-export type AccessAuditAction = "method" | "zone" | "zone_unlock";
+export type AccessAuditAction = "method" | "zone" | "zone_unlock" | "finger_enroll" | "finger_reset";
 
 export type AccessAuditItem = {
   id: number;

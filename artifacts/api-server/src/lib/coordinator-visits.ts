@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNotNull, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lt, lte } from "drizzle-orm";
 import {
   db,
   attendanceRecordsTable,
@@ -994,11 +994,88 @@ async function openVisitFromTodayAttendance(
   });
 }
 
+/**
+ * Kecha yoki undan oldin ochiq qolgan tashriflarni yopadi — ertasi kuni koordinator bemalol Keldim qila olsin.
+ * Ketdim vaqti = oxirgi ma’lum harakat (hudud tasdiqlash / cheklist / Keldim), shunda qolish vaqti shishmaydi.
+ */
+export async function autoCloseStaleCoordinatorVisits(now = new Date()): Promise<number> {
+  const today = now.toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+  const stale = await db
+    .select()
+    .from(coordinatorBranchVisitsTable)
+    .where(
+      and(
+        eq(coordinatorBranchVisitsTable.status, "open"),
+        isNull(coordinatorBranchVisitsTable.checkOutAt),
+        lt(coordinatorBranchVisitsTable.workDate, today),
+      ),
+    );
+  let closed = 0;
+  for (const v of stale) {
+    const candidates = [v.lastPresenceAt, v.checklistAt, v.checkInAt]
+      .filter((d): d is Date => d != null)
+      .map((d) => new Date(d).getTime())
+      .filter((ms) => Number.isFinite(ms));
+    const lastMs = candidates.length ? Math.max(...candidates) : now.getTime();
+    const note = v.checkoutNote?.trim()
+      ? v.checkoutNote
+      : "Avtomatik yopildi — Ketdim qilinmagan, kun tugadi.";
+    await db
+      .update(coordinatorBranchVisitsTable)
+      .set({
+        status: "closed",
+        checkOutAt: new Date(lastMs),
+        checkoutNote: note,
+        presenceBlockedAt: null,
+        presenceUnlockRequestAt: null,
+        updatedAt: now,
+      })
+      .where(eq(coordinatorBranchVisitsTable.id, v.id));
+    closed += 1;
+  }
+  return closed;
+}
+
+/** Monitoring uchun bitta tushunarli holat */
+export type VisitPhase =
+  | "office_open"
+  | "office_closed"
+  | "unlock_requested"
+  | "blocked"
+  | "presence_due"
+  | "need_checklist"
+  | "need_checkout"
+  | "closed_ok"
+  | "closed_no_checklist"
+  | "auto_closed";
+
+function visitPhase(v: CoordVisitRow, flags: { blocked: boolean; overdue: boolean; unlockPending: boolean }): VisitPhase {
+  const open = v.status === "open" && !v.checkOutAt;
+  if (isCoordinatorOfficeVisit(v)) return open ? "office_open" : "office_closed";
+  if (open) {
+    if (flags.blocked) return flags.unlockPending ? "unlock_requested" : "blocked";
+    if (!v.checklistAt) return flags.overdue ? "presence_due" : "need_checklist";
+    return flags.overdue ? "presence_due" : "need_checkout";
+  }
+  if (String(v.checkoutNote || "").startsWith("Avtomatik yopildi")) return "auto_closed";
+  return v.checklistAt ? "closed_ok" : "closed_no_checklist";
+}
+
 export function serializeVisit(v: CoordVisitRow) {
   const durationMin = visitDurationMinutes(v);
   const checklistLagMin =
     v.checklistAt && v.checkInAt
       ? Math.round((new Date(v.checklistAt).getTime() - new Date(v.checkInAt).getTime()) / 60_000)
+      : null;
+  const afterChecklistMin =
+    v.checklistAt
+      ? Math.max(
+          0,
+          Math.round(
+            ((v.checkOutAt ? new Date(v.checkOutAt).getTime() : Date.now()) - new Date(v.checklistAt).getTime()) /
+              60_000,
+          ),
+        )
       : null;
   const lastPresenceMs = visitPresenceBaseMs(v);
   const presenceDueAt =
@@ -1052,6 +1129,9 @@ export function serializeVisit(v: CoordVisitRow) {
     durationLabel: formatDurationMinutes(durationMin),
     checklistAfterCheckInMinutes: checklistLagMin,
     checklistAfterCheckInLabel: formatDurationMinutes(checklistLagMin),
+    checklistToCheckoutMinutes: afterChecklistMin,
+    checklistToCheckoutLabel: formatDurationMinutes(afterChecklistMin),
+    phase: visitPhase(v, { blocked: presenceBlocked, overdue: presenceOverdue, unlockPending }),
     stillOpen: v.status === "open" && !v.checkOutAt,
   };
 }

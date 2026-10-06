@@ -5,9 +5,9 @@ import { effectiveDavomatAccess } from "./davomat-method-access";
 import { displayBranchName } from "./geo-location";
 import { logger } from "./logger";
 
-export type AuditAction = "method" | "zone" | "zone_unlock";
+export type AuditAction = "method" | "zone" | "zone_unlock" | "finger_enroll" | "finger_reset";
 
-export type MethodState = { face: boolean; qr: boolean };
+export type MethodState = { face: boolean; qr: boolean; finger: boolean };
 export type ZoneState = {
   enabled: boolean;
   intervalHours: number;
@@ -35,12 +35,13 @@ export async function methodStatesOf(userIds: number[]): Promise<Map<number, Met
       role: usersTable.role,
       face: usersTable.davomatFaceAllowed,
       qr: usersTable.davomatQrAllowed,
+      finger: usersTable.davomatFingerAllowed,
     })
     .from(usersTable)
     .where(inArray(usersTable.id, userIds));
   for (const r of rows) {
-    const eff = effectiveDavomatAccess(r.role, r.face, r.qr);
-    map.set(r.id, { face: eff.face, qr: eff.qr });
+    const eff = effectiveDavomatAccess(r.role, r.face, r.qr, r.finger);
+    map.set(r.id, { face: eff.face, qr: eff.qr, finger: eff.finger });
   }
   return map;
 }

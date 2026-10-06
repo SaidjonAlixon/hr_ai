@@ -3,6 +3,7 @@ import { db, coordinatorBranchVisitsTable } from "@workspace/db";
 import { notifyUser } from "../lib/notify";
 import { logger } from "../lib/logger";
 import {
+  autoCloseStaleCoordinatorVisits,
   COORD_PRESENCE_INTERVAL_MS,
   isCoordinatorOfficeVisit,
   isVisitPresenceBlocked,
@@ -22,6 +23,12 @@ export async function sendCoordinatorPresenceReminders(): Promise<{
   blocked: number;
 }> {
   const now = Date.now();
+  try {
+    const autoClosed = await autoCloseStaleCoordinatorVisits(new Date(now));
+    if (autoClosed > 0) logger.info({ autoClosed }, "Stale coordinator visits auto-closed");
+  } catch (err) {
+    logger.error({ err }, "Stale coordinator visit auto-close failed");
+  }
   const openVisits = await db
     .select()
     .from(coordinatorBranchVisitsTable)

@@ -5,6 +5,32 @@
 import { pool } from "@workspace/db";
 import { logger } from "./logger";
 
+/** Davomat barmoq izi — 1 akkaunt = 1 barmoq izi = 1 qurilma */
+const FINGERPRINT_SQL = `
+ALTER TABLE users ADD COLUMN IF NOT EXISTS davomat_finger_allowed BOOLEAN;
+CREATE TABLE IF NOT EXISTS davomat_fingerprints (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  credential_id TEXT NOT NULL,
+  public_key TEXT NOT NULL,
+  counter BIGINT NOT NULL DEFAULT 0,
+  device_key_hash TEXT NOT NULL,
+  device_type TEXT,
+  backed_up BOOLEAN NOT NULL DEFAULT FALSE,
+  transports TEXT,
+  aaguid TEXT,
+  device_label TEXT,
+  user_agent TEXT,
+  ip_address TEXT,
+  use_count INTEGER NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  last_used_at TIMESTAMPTZ
+);
+CREATE UNIQUE INDEX IF NOT EXISTS davomat_fingerprints_user_uidx ON davomat_fingerprints (user_id);
+CREATE UNIQUE INDEX IF NOT EXISTS davomat_fingerprints_cred_uidx ON davomat_fingerprints (credential_id);
+CREATE UNIQUE INDEX IF NOT EXISTS davomat_fingerprints_device_uidx ON davomat_fingerprints (device_key_hash);
+`;
+
 const ENSURE_SQL = `
 -- Bo‘shatilganlar arxivi (Foydalanuvchilardan o‘chirilganlar)
 CREATE TABLE IF NOT EXISTS dismissed_staff (
@@ -526,6 +552,7 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS webauthn_challenges_challenge_idx ON webauthn_challenges (challenge);
+${FINGERPRINT_SQL}
 
 CREATE TABLE IF NOT EXISTS face_profiles (
   id SERIAL PRIMARY KEY,
@@ -682,6 +709,7 @@ CREATE TABLE IF NOT EXISTS webauthn_challenges (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS webauthn_challenges_challenge_idx ON webauthn_challenges (challenge);
+${FINGERPRINT_SQL}
 
 CREATE TABLE IF NOT EXISTS face_profiles (
   id SERIAL PRIMARY KEY,

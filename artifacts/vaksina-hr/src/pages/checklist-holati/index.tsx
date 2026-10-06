@@ -46,6 +46,7 @@ import {
   downloadBranchAuditsExcel,
   useBranchAuditsList,
   useDeleteBranchAudit,
+  useVisitMonitor,
   type BranchAudit,
 } from "@/lib/branch-audits-api";
 import { CoveragePanel } from "./coverage-panel";
@@ -65,6 +66,45 @@ function scoreBadge(pct: number) {
   if (pct >= 85) return "bg-emerald-100 text-emerald-800";
   if (pct >= 70) return "bg-amber-100 text-amber-900";
   return "bg-rose-100 text-rose-800";
+}
+
+function scoreWord(pct: number) {
+  if (pct >= 85) return "A’lo";
+  if (pct >= 70) return "O‘rtacha";
+  return "Past";
+}
+
+function hm(iso?: string | null) {
+  if (!iso) return null;
+  return new Date(iso).toLocaleTimeString("uz-UZ", {
+    timeZone: "Asia/Tashkent",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function VisitTimeLine({ a }: { a: BranchAudit }) {
+  const keldim = hm(a.visitCheckInAt);
+  const cheklist = hm(a.createdAt);
+  const ketdim = hm(a.visitCheckOutAt);
+  const stay =
+    a.visitCheckInAt && a.visitCheckOutAt
+      ? Math.round((new Date(a.visitCheckOutAt).getTime() - new Date(a.visitCheckInAt).getTime()) / 60_000)
+      : null;
+  const stayLabel =
+    stay == null || stay < 0 ? null : stay < 60 ? `${stay} daq` : `${Math.floor(stay / 60)} soat ${stay % 60} daq`;
+  return (
+    <p className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] tabular-nums">
+      <span className="font-semibold text-emerald-700 dark:text-emerald-400">Keldim {keldim ?? "—"}</span>
+      <span className="text-muted-foreground">→</span>
+      <span className="font-semibold text-sky-700 dark:text-sky-300">Cheklist {cheklist ?? "—"}</span>
+      <span className="text-muted-foreground">→</span>
+      <span className={cn("font-semibold", ketdim ? "text-rose-700 dark:text-rose-400" : "text-amber-600")}>
+        Ketdim {ketdim ?? "hali yo‘q"}
+      </span>
+      {stayLabel ? <span className="text-muted-foreground">· filialda {stayLabel}</span> : null}
+    </p>
+  );
 }
 
 function formatWhen(visitDate: string, createdAt?: string) {
@@ -166,6 +206,11 @@ export default function ChecklistHolatiPage() {
       to: to || undefined,
     },
     allowedFull && !isCoordOnly,
+  );
+  const { data: monitor } = useVisitMonitor({}, allowedFull && canApproveUnlock);
+  const unlockCount = useMemo(
+    () => (monitor?.items ?? []).filter((v) => v.stillOpen && v.presenceBlocked).length,
+    [monitor],
   );
   const deleteAudit = useDeleteBranchAudit();
   const canAdminDelete = hasFullPlatformAccess(user?.role);
@@ -403,7 +448,12 @@ export default function ChecklistHolatiPage() {
             </div>
             <h1 className="text-xl font-bold tracking-tight text-white sm:text-3xl">{t("checklist.statusTitle")}</h1>
             <p className="mt-1.5 max-w-xl text-xs text-white/80 sm:text-sm">
-              Dashboard, tashriflar, reyting va har bir koordinatorning filial qamrovi.
+              Koordinatorlar filialga qachon kelgani, cheklistni qanday to‘ldirgani va qancha vaqt qolgani —
+              bitta joyda.
+            </p>
+            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-white/10 px-2.5 py-1 text-[11px] text-cyan-100 ring-1 ring-white/15">
+              <CalendarDays className="h-3.5 w-3.5" />
+              Hisob 1-oktyabr 2026 dan boshlab · har filialga oyiga 4 tagacha tashrif
             </p>
           </div>
           {tab === "tashriflar" && canExportChecklistStatus(user?.role) && (
@@ -440,6 +490,11 @@ export default function ChecklistHolatiPage() {
             >
               <Unlock className="h-3.5 w-3.5 shrink-0" />
               Ruxsat berish
+              {unlockCount > 0 ? (
+                <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-amber-500 px-1.5 text-[10px] font-bold text-white">
+                  {unlockCount}
+                </span>
+              ) : null}
             </TabsTrigger>
           ) : null}
           <TabsTrigger value="vaqt" className="h-11 px-2 text-xs sm:h-10 sm:text-sm">
@@ -548,10 +603,10 @@ export default function ChecklistHolatiPage() {
             </Select>
           </FilterField>
           <FilterField label={t("checklist.from")}>
-            <Input type="date" className="h-11" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <Input type="date" min="2026-10-01" className="h-11" value={from} onChange={(e) => setFrom(e.target.value)} />
           </FilterField>
           <FilterField label={t("checklist.to")}>
-            <Input type="date" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
+            <Input type="date" min="2026-10-01" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
           </FilterField>
           <FilterField label={t("checklist.score")}>
             <Select value={scoreBand} onValueChange={(v) => setScoreBand(v as typeof scoreBand)}>
@@ -677,7 +732,13 @@ export default function ChecklistHolatiPage() {
         {isLoading ? (
           <p className="px-4 py-10 text-center text-sm text-muted-foreground">Yuklanmoqda…</p>
         ) : filtered.length === 0 ? (
-          <p className="px-4 py-10 text-center text-sm text-muted-foreground">Hali cheklist yo‘q</p>
+          <div className="px-4 py-10 text-center">
+            <ClipboardCheck className="mx-auto h-8 w-8 text-muted-foreground/40" />
+            <p className="mt-2 text-sm font-medium text-foreground">Hali cheklist yo‘q</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Koordinator filialda «Keldim» qilib cheklistni saqlaganda shu yerda paydo bo‘ladi.
+            </p>
+          </div>
         ) : (
           <ul className="divide-y">
             {filtered.map((a) => {
@@ -698,7 +759,7 @@ export default function ChecklistHolatiPage() {
                               {a.branchLocation || t("ui.branch")}
                             </p>
                             <Badge className={cn("font-bold", scoreBadge(a.scorePercent))}>
-                              {a.scorePercent}%
+                              {a.scorePercent}% · {scoreWord(a.scorePercent)}
                             </Badge>
                             <Badge variant="secondary" className="font-normal">
                               {a.visitName}
@@ -718,6 +779,7 @@ export default function ChecklistHolatiPage() {
                               {a.coordinatorName || t("checklist.coord")}
                             </span>
                           </p>
+                          <VisitTimeLine a={a} />
                           <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                             <span className="text-emerald-700">Ha {a.yesCount}</span>
                             <span className="text-rose-700">Yo‘q {a.noCount}</span>

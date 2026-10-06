@@ -62,6 +62,96 @@ export async function listTodayLocks() {
   }));
 }
 
+const UZ_MONTHS = ["yanvar", "fevral", "mart", "aprel", "may", "iyun", "iyul", "avgust", "sentabr", "oktabr", "noyabr", "dekabr"];
+const UZ_WEEKDAYS = ["yakshanba", "dushanba", "seshanba", "chorshanba", "payshanba", "juma", "shanba"];
+
+function weekdayOf(ymd: string): string {
+  const d = new Date(`${ymd}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? "" : UZ_WEEKDAYS[d.getUTCDay()]!;
+}
+
+function penaltyOf(n: number): string {
+  if (n <= 2) return "1 kunlik ish haqining 30% jarima";
+  if (n === 3) return "1 kunlik ish haqining 100% jarima";
+  return `1 oylik ish haqining 50% jarima${n >= LOCK_FROM ? " · shu kuni platforma yopiladi" : ""}`;
+}
+
+export type LockDetailsEvent = {
+  n: number;
+  date: string;
+  weekday: string;
+  kind: "late" | "absent";
+  kindLabel: string;
+  checkIn: string | null;
+  branch: string;
+  shift: string;
+  penalty: string;
+  trigger: boolean;
+};
+
+/** Bloklangan xodimning o‘ziga — nega bloklangani: shu oydagi har bir buzilish va qoida */
+export async function lockDetailsFor(userId: number) {
+  const lock = await activeLockFor(userId);
+  if (!lock) return null;
+  const month = (lock.eventDate || lock.lockDay).slice(0, 7);
+  const { rows } = await pool.query(
+    `SELECT employee_id, n, event_date, kind, branch, shift
+       FROM discipline_events
+      WHERE user_id = $1 AND month = $2
+      ORDER BY n`,
+    [userId, month],
+  );
+
+  const checkIns = new Map<string, string>();
+  const employeeId = rows.find((r) => r.employee_id != null)?.employee_id as number | undefined;
+  const lateDates = rows.filter((r) => r.kind === "late").map((r) => r.event_date as string);
+  if (employeeId && lateDates.length) {
+    const { rows: recs } = await pool.query(
+      `SELECT work_date, to_char(check_in_at AT TIME ZONE 'Asia/Tashkent', 'HH24:MI') AS hm
+         FROM attendance_records
+        WHERE employee_id = $1 AND work_date = ANY($2::text[]) AND check_in_at IS NOT NULL
+        ORDER BY check_in_at`,
+      [employeeId, lateDates],
+    );
+    for (const r of recs) if (!checkIns.has(r.work_date)) checkIns.set(r.work_date, r.hm);
+  }
+
+  const events: LockDetailsEvent[] = rows.map((r) => {
+    const kind = r.kind === "late" ? "late" : "absent";
+    return {
+      n: r.n as number,
+      date: r.event_date as string,
+      weekday: weekdayOf(r.event_date),
+      kind,
+      kindLabel: kindLabel(kind),
+      checkIn: kind === "late" ? checkIns.get(r.event_date) ?? null : null,
+      branch: (r.branch as string) || "",
+      shift: (r.shift as string) || "",
+      penalty: penaltyOf(r.n),
+      trigger: r.n === lock.strikeN,
+    };
+  });
+  const [y, m] = month.split("-");
+  return {
+    day: lock.lockDay,
+    month,
+    monthLabel: `${y}-yil ${UZ_MONTHS[Number(m) - 1] ?? m}`,
+    strikeN: lock.strikeN,
+    lockFrom: LOCK_FROM,
+    triggerDate: lock.eventDate,
+    triggerKind: lock.kind === "late" ? "late" : "absent",
+    late: events.filter((e) => e.kind === "late").length,
+    absent: events.filter((e) => e.kind === "absent").length,
+    events,
+    rules: [
+      "1–2-marta — har safar 1 kunlik ish haqining 30% jarima",
+      "3-marta — 1 kunlik ish haqining 100% jarima",
+      "4-marta va undan keyin — har safar 1 oylik ish haqining 50% jarima",
+      `${LOCK_FROM}-marta va undan keyin — buzilish qayd etilgan kuni platforma to‘liq yopiladi`,
+    ],
+  };
+}
+
 export async function clearLock(lockId: number, actorId: number): Promise<boolean> {
   const [actor] = await db.select({ fullName: usersTable.fullName }).from(usersTable).where(eq(usersTable.id, actorId));
   const { rows } = await pool.query(

@@ -10,6 +10,8 @@ export async function fetchStaff(
     workplace?: string;
     role?: string;
     status?: string;
+    /** Mudiri (user) yo‘q bo‘sh filial qatorlari ham kelsin — filiallar tarmog‘i uchun */
+    includeVacantBranches?: boolean;
   },
 ): Promise<Employee[]> {
   const qs = new URLSearchParams();
@@ -27,6 +29,7 @@ export async function fetchStaff(
   if (params?.status && params.status !== "all") {
     qs.set("status", params.status);
   }
+  if (params?.includeVacantBranches) qs.set("includeVacantBranches", "1");
   const res = await fetch(`/api/employees?${qs.toString()}`, { credentials: "include" });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

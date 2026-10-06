@@ -44,9 +44,29 @@ export function CoveragePanel({
   const canExport = canExportChecklistStatus(user?.role);
   const [q, setQ] = useState("");
   const [coordKey, setCoordKey] = useState("all");
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
+  const todayYmd = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" });
+  const [period, setPeriod] = useState<"month" | "week" | "today" | "all" | "custom">("month");
+  const [from, setFrom] = useState(`${todayYmd.slice(0, 7)}-01`);
+  const [to, setTo] = useState(todayYmd);
   const [exporting, setExporting] = useState(false);
+
+  const applyPeriod = (p: "month" | "week" | "today" | "all") => {
+    setPeriod(p);
+    if (p === "all") {
+      setFrom("");
+      setTo("");
+    } else if (p === "today") {
+      setFrom(todayYmd);
+      setTo(todayYmd);
+    } else if (p === "week") {
+      const dow = (new Date(`${todayYmd}T12:00:00`).getDay() + 6) % 7;
+      setFrom(new Date(Date.now() - dow * 86_400_000).toLocaleDateString("en-CA", { timeZone: "Asia/Tashkent" }));
+      setTo(todayYmd);
+    } else {
+      setFrom(`${todayYmd.slice(0, 7)}-01`);
+      setTo(todayYmd);
+    }
+  };
 
   // Server coverage: ofis /employees emas — koordinator + mudirlar DB dan (rekruter/moliya ham ko‘radi)
   const { data, isLoading } = useAuditCoverage(
@@ -116,9 +136,13 @@ export function CoveragePanel({
   return (
     <div className="space-y-4">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <p className="text-sm text-muted-foreground">
-          Har bir koordinatorning barcha filiallari: cheklist kiritilgan va kiritilmagan.
-        </p>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-foreground">Filial qamrovi</p>
+          <p className="text-xs text-muted-foreground">
+            Tanlangan davrda har bir koordinator o‘z filiallarining nechtasida cheklist o‘tkazgani. Yashil —
+            borilgan, qizil — hali borilmagan.
+          </p>
+        </div>
         {canExport ? (
         <Button
           variant="outline"
@@ -136,18 +160,42 @@ export function CoveragePanel({
         <MiniStat label={t("checklist.stat.coords")} value={String(totals?.coordinators ?? "—")} />
         <MiniStat label="Jami filial" value={String(totals?.branches ?? "—")} />
         <MiniStat
-          label="Kiritilgan"
+          label="Cheklist bor"
           value={String(totals?.filled ?? "—")}
           valueClass="text-emerald-600"
         />
         <MiniStat
-          label="Kiritilmagan"
+          label="Hali borilmagan"
           value={String(totals?.missing ?? "—")}
           valueClass="text-rose-600"
         />
       </div>
 
       <div className="rounded-2xl border bg-card p-3 shadow-sm sm:p-4">
+        <div className="mb-3 flex flex-wrap gap-1.5">
+          {(
+            [
+              ["month", "Shu oy"],
+              ["week", "Shu hafta"],
+              ["today", "Bugun"],
+              ["all", "1-oktyabrdan beri"],
+            ] as const
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => applyPeriod(key)}
+              className={cn(
+                "rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset",
+                period === key
+                  ? "bg-primary text-primary-foreground ring-primary"
+                  : "bg-card text-muted-foreground ring-border hover:bg-muted",
+              )}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="grid grid-cols-1 items-end gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <div className="flex min-w-0 flex-col gap-1">
             <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -189,15 +237,33 @@ export function CoveragePanel({
           </div>
           <div className="flex min-w-0 flex-col gap-1">
             <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Dan</Label>
-            <Input type="date" className="h-11" value={from} onChange={(e) => setFrom(e.target.value)} />
+            <Input
+              type="date"
+              min="2026-10-01"
+              className="h-11"
+              value={from}
+              onChange={(e) => {
+                setFrom(e.target.value);
+                setPeriod("custom");
+              }}
+            />
           </div>
           <div className="flex min-w-0 flex-col gap-1">
             <Label className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">Gacha</Label>
-            <Input type="date" className="h-11" value={to} onChange={(e) => setTo(e.target.value)} />
+            <Input
+              type="date"
+              min="2026-10-01"
+              className="h-11"
+              value={to}
+              onChange={(e) => {
+                setTo(e.target.value);
+                setPeriod("custom");
+              }}
+            />
           </div>
         </div>
         <p className="mt-2 text-[11px] text-muted-foreground">
-          Sana bo‘sh — barcha vaqt. Sana qo‘ysangiz, shu davrdagi cheklist hisoblanadi.
+          Filial «cheklist bor» hisoblanadi — agar shu davrda kamida 1 marta cheklist o‘tkazilgan bo‘lsa.
         </p>
       </div>
 
@@ -218,7 +284,7 @@ export function CoveragePanel({
                   <div className="min-w-0">
                     <p className="truncate font-semibold text-foreground">{c.name}</p>
                     <p className="text-[11px] text-muted-foreground">
-                      {c.total} filial · kiritilgan {c.filled} · kiritilmagan {c.missing}
+                      {c.total} filial · cheklist bor {c.filled} · borilmagan {c.missing}
                     </p>
                   </div>
                   <div className="flex w-full items-center gap-3 sm:w-56">
@@ -259,8 +325,8 @@ export function CoveragePanel({
               <div>
                 <h3 className="text-lg font-bold">{selected.name}</h3>
                 <p className="text-sm text-muted-foreground">
-                  {selected.total} filialdan {selected.filled} tasiga kiritilgan, {selected.missing} tasiga
-                  kiritilmagan
+                  {selected.total} filialdan {selected.filled} tasida cheklist bor, {selected.missing} tasiga
+                  hali borilmagan
                 </p>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setCoordKey("all")}>
@@ -271,13 +337,13 @@ export function CoveragePanel({
           </div>
           <div className="grid gap-4 lg:grid-cols-2">
             <BranchColumn
-              title="Kiritilgan"
+              title="Cheklist bor"
               count={filledList.length}
               tone="ok"
               items={filledList}
             />
             <BranchColumn
-              title="Kiritilmagan"
+              title="Hali borilmagan"
               count={missingList.length}
               tone="miss"
               items={missingList}

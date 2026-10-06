@@ -5,7 +5,7 @@ export type PunchAuditInput = {
   employeeId?: number | null;
   userId?: number | null;
   branchId?: number | null;
-  verificationMethod?: "FACE_ID" | "QR" | null;
+  verificationMethod?: "FACE_ID" | "QR" | "FINGERPRINT" | null;
   action?: "in" | "out" | null;
   gpsResult?: string | null;
   gpsDistance?: number | null;

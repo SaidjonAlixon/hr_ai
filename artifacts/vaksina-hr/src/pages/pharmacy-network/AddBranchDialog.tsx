@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Loader2, Plus, Trash2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { AlertTriangle, CheckCircle2, Loader2, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -20,7 +20,21 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { gpsInputError, parseGpsText, type BranchAccount } from "@/lib/pharmacy-staff-api";
+import {
+  gpsInputError,
+  parseGpsText,
+  useBranchInputCheck,
+  type ActiveBranchInfo,
+  type BranchAccount,
+  type BranchInputCheck,
+} from "@/lib/pharmacy-staff-api";
+import { cn } from "@/lib/utils";
+
+function holderText(h: ActiveBranchInfo): string {
+  const parts = [h.mudirName ? `mudir: ${h.mudirName}` : "mudiri yo‘q"];
+  if (h.coordinatorName) parts.push(`koordinator: ${h.coordinatorName}`);
+  return parts.join(" · ");
+}
 
 type Person = { firstName: string; lastName: string; phone: string };
 type Extra = Person & { key: string; role: "farmasevt" | "stajyor" };
@@ -43,6 +57,118 @@ type Props = {
 
 const emptyPerson = (): Person => ({ firstName: "", lastName: "", phone: "" });
 
+function BranchInputHints({
+  branchNo,
+  branchName,
+  data,
+  noInfo,
+  loading,
+  onPickNo,
+  onPickName,
+}: {
+  branchNo: string;
+  branchName: string;
+  data: BranchInputCheck | null;
+  noInfo: BranchInputCheck["no"];
+  loading: boolean;
+  onPickNo: (n: number) => void;
+  onPickName: (name: string) => void;
+}) {
+  const typedNo = branchNo.trim();
+  const sameName = (data?.sameName ?? []).filter((b) => b.employeeId !== noInfo?.holder?.employeeId);
+  const catalogNo = data?.catalogNoForName ?? null;
+  const showCatalogNo =
+    catalogNo != null &&
+    (typedNo === "" || Number(typedNo) !== catalogNo) &&
+    !(data?.sameName ?? []).some((b) => b.branchNo === catalogNo);
+
+  const pickBtn = (label: string, onClick: () => void) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="ml-1 rounded-md bg-background px-1.5 py-0.5 text-[11px] font-semibold text-primary ring-1 ring-inset ring-primary/30 hover:bg-primary/10"
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <div className="space-y-1.5 text-[11px] leading-snug">
+      {loading ? (
+        <p className="flex items-center gap-1 text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" /> Tekshirilmoqda…
+        </p>
+      ) : null}
+
+      {typedNo === "" ? (
+        <p className="text-muted-foreground">
+          Raqam nomdan oldin turadi. Asosiy filial uchun 0.
+          {data ? (
+            <>
+              {" "}Keyingi bo‘sh raqam: <b>№{data.nextFreeNo}</b>
+              {pickBtn("Qo‘yish", () => onPickNo(data.nextFreeNo))}
+            </>
+          ) : null}
+        </p>
+      ) : noInfo?.holder ? (
+        <div className="rounded-lg border border-rose-300 bg-rose-50 px-2.5 py-2 text-rose-900 dark:border-rose-500/40 dark:bg-rose-950/40 dark:text-rose-200">
+          <p className="flex items-start gap-1.5 font-semibold">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            {noInfo.label} band — «{noInfo.holder.branchName}»
+          </p>
+          <p className="mt-0.5 pl-5">{holderText(noInfo.holder)}</p>
+          <p className="mt-1 pl-5">
+            Bu filial allaqachon bor. Yangi filial uchun boshqa raqam yozing
+            {data ? (
+              <>
+                {" "}— bo‘sh: <b>№{data.nextFreeNo}</b>
+                {pickBtn(`№${data.nextFreeNo} qo‘yish`, () => onPickNo(data.nextFreeNo))}
+              </>
+            ) : null}
+          </p>
+        </div>
+      ) : noInfo ? (
+        <div className="rounded-lg border border-emerald-300 bg-emerald-50 px-2.5 py-2 text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/40 dark:text-emerald-200">
+          <p className="flex items-start gap-1.5 font-semibold">
+            <CheckCircle2 className="mt-px h-3.5 w-3.5 shrink-0" />
+            {noInfo.label} bo‘sh — shu raqam bilan yangi filial ochiladi
+          </p>
+          {noInfo.catalogName ? (
+            <p className="mt-0.5 pl-5">
+              Rasmiy ro‘yxatda {noInfo.label}: «{noInfo.catalogName}»
+              {branchName.trim() === "" ? pickBtn("Nomini qo‘yish", () => onPickName(noInfo.catalogName!)) : null}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {sameName.length ? (
+        <div className="rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-amber-900 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200">
+          <p className="flex items-start gap-1.5 font-semibold">
+            <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+            Bu nomli filial allaqachon bor
+          </p>
+          <ul className="mt-0.5 space-y-0.5 pl-5">
+            {sameName.slice(0, 3).map((b) => (
+              <li key={b.employeeId}>
+                «{b.branchName}»{b.branchNo != null ? ` №${b.branchNo}` : " (raqamsiz)"} · {holderText(b)}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 pl-5">Ikkinchi nusxa ochmang — mavjud filialga mudir yoki xodim qo‘shing.</p>
+        </div>
+      ) : null}
+
+      {showCatalogNo ? (
+        <p className="text-muted-foreground">
+          Rasmiy ro‘yxat bo‘yicha bu filial raqami: <b>№{catalogNo}</b>
+          {pickBtn(`№${catalogNo} qo‘yish`, () => onPickNo(catalogNo!))}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 export function AddBranchDialog({ open, onOpenChange, coordinators, pending, onSubmit, created }: Props) {
   const [coordinatorId, setCoordinatorId] = useState("");
   const [branchNo, setBranchNo] = useState("");
@@ -51,6 +177,22 @@ export function AddBranchDialog({ open, onOpenChange, coordinators, pending, onS
   const [mudir, setMudir] = useState<Person>(emptyPerson);
   const [staff, setStaff] = useState<Extra[]>([]);
   const [error, setError] = useState("");
+  const [debouncedNo, setDebouncedNo] = useState("");
+  const [debouncedName, setDebouncedName] = useState("");
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      setDebouncedNo(branchNo.trim());
+      setDebouncedName(branchName.trim());
+    }, 350);
+    return () => window.clearTimeout(t);
+  }, [branchNo, branchName]);
+
+  const check = useBranchInputCheck(debouncedNo, debouncedName, open && !created);
+  const checkData = check.data;
+  const checkFresh = debouncedNo === branchNo.trim() && debouncedName === branchName.trim() && !check.isFetching;
+  const noInfo = checkData?.no && String(checkData.no.value) === String(Number(branchNo.trim())) ? checkData.no : null;
+  const noTaken = !!noInfo?.holder;
 
   const reset = () => {
     setCoordinatorId("");
@@ -70,6 +212,12 @@ export function AddBranchDialog({ open, onOpenChange, coordinators, pending, onS
     const no = Number(branchNo.trim());
     if (!Number.isInteger(no) || no < 0 || no > 999) {
       setError("Filial raqamini kiriting. Asosiy filial uchun 0");
+      return;
+    }
+    if (noTaken && noInfo?.holder) {
+      setError(
+        `${noInfo.label} band — «${noInfo.holder.branchName}». Boshqa raqam yozing (bo‘sh: ${checkData?.nextFreeNo ?? "—"})`,
+      );
       return;
     }
     if (branchName.trim().length < 2) {
@@ -186,11 +334,19 @@ export function AddBranchDialog({ open, onOpenChange, coordinators, pending, onS
                 </span>
                 <Input
                   value={branchNo}
-                  onChange={(e) => setBranchNo(e.target.value.replace(/[^\d]/g, "").slice(0, 3))}
+                  onChange={(e) => {
+                    setBranchNo(e.target.value.replace(/[^\d]/g, "").slice(0, 3));
+                    setError("");
+                  }}
                   inputMode="numeric"
-                  placeholder="12"
-                  className="w-20 shrink-0 text-center font-semibold"
+                  placeholder={checkData ? String(checkData.nextFreeNo) : "12"}
+                  className={cn(
+                    "w-20 shrink-0 text-center font-semibold",
+                    noTaken && "border-rose-500 focus-visible:ring-rose-500",
+                    noInfo && !noTaken && "border-emerald-500 focus-visible:ring-emerald-500",
+                  )}
                   aria-label="Filial raqami"
+                  aria-invalid={noTaken}
                 />
                 <Input
                   value={branchName}
@@ -199,7 +355,18 @@ export function AddBranchDialog({ open, onOpenChange, coordinators, pending, onS
                   className="min-w-0 flex-1"
                 />
               </div>
-              <p className="text-[11px] text-muted-foreground">Raqam nomdan oldin turadi. Asosiy filial uchun 0.</p>
+              <BranchInputHints
+                branchNo={branchNo}
+                branchName={branchName}
+                data={checkData ?? null}
+                noInfo={noInfo}
+                loading={!checkFresh && (branchNo.trim() !== "" || branchName.trim().length >= 2)}
+                onPickNo={(n) => {
+                  setBranchNo(String(n));
+                  setError("");
+                }}
+                onPickName={(name) => setBranchName(name)}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Koordinata (GPS)</Label>
@@ -300,7 +467,7 @@ export function AddBranchDialog({ open, onOpenChange, coordinators, pending, onS
               Yopish
             </Button>
           ) : (
-            <Button type="button" onClick={submit} disabled={pending}>
+            <Button type="button" onClick={submit} disabled={pending || noTaken}>
               {pending ? <Loader2 className="mr-1.5 h-4 w-4 animate-spin" /> : null}
               Saqlash
             </Button>

@@ -1,6 +1,30 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Building2, History, Loader2, QrCode, ScanFace, Search, ShieldOff, Store, Users } from "lucide-react";
+import {
+  Building2,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  EyeOff,
+  Fingerprint,
+  History,
+  Layers,
+  Loader2,
+  MapPin,
+  QrCode,
+  RefreshCw,
+  RotateCcw,
+  ScanFace,
+  Search,
+  ShieldAlert,
+  ShieldCheck,
+  ShieldOff,
+  SlidersHorizontal,
+  Store,
+  Users,
+  X,
+} from "lucide-react";
 import BloklashTarix from "@/components/davomat/BloklashTarix";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,13 +42,15 @@ import {
   saveDavomatMethodAccessBulk,
   saveZonePresence,
   unlockZonePresence,
+  resetEmployeeFingerprint,
   type DavomatMethodAccessRow,
 } from "@/lib/davomat-api";
 
 type PlaceFilter = "all" | "ofis" | "dorixona";
-type StateFilter = "all" | "open" | "limited" | "blocked" | "face_only" | "qr_only" | "zone";
+type StateFilter = "all" | "open" | "limited" | "blocked" | "face_only" | "qr_only" | "zone" | "finger";
+type Mode = Exclude<StateFilter, "all" | "limited" | "zone" | "finger">;
 
-const PAGE = 40;
+const PAGE = 24;
 
 function foldScript(input: string): string {
   const cyr: Record<string, string> = {
@@ -53,7 +79,7 @@ function positionOf(row: DavomatMethodAccessRow) {
   return userRoleLabel(row.role) || raw || "—";
 }
 
-function stateOf(row: DavomatMethodAccessRow): Exclude<StateFilter, "all" | "limited"> {
+function stateOf(row: DavomatMethodAccessRow): Mode {
   if (row.face && row.qr) return "open";
   if (!row.face && !row.qr) return "blocked";
   if (row.face && !row.qr) return "face_only";
@@ -63,6 +89,7 @@ function stateOf(row: DavomatMethodAccessRow): Exclude<StateFilter, "all" | "lim
 function matchesState(row: DavomatMethodAccessRow, filter: StateFilter) {
   if (filter === "all") return true;
   if (filter === "zone") return Boolean(row.zoneEnabled);
+  if (filter === "finger") return Boolean(row.finger);
   if (filter === "limited") return !(row.face && row.qr);
   return stateOf(row) === filter;
 }
@@ -70,9 +97,21 @@ function matchesState(row: DavomatMethodAccessRow, filter: StateFilter) {
 function zoneLabel(row: DavomatMethodAccessRow) {
   if (!row.zoneEnabled) return "O‘chiq";
   const method = row.zoneMethod === "QR" ? "QR" : "Face ID";
-  if (row.zoneStatus === "blocked") return `Blok · ${method}`;
+  if (row.zoneStatus === "blocked") return `Bloklangan · ${method}`;
   if (row.zoneStatus === "due") return `Kutilmoqda · ${method}`;
-  return `${row.zoneIntervalHours || 2} soat · ${method}`;
+  return `Har ${row.zoneIntervalHours || 2} soat · ${method}`;
+}
+
+const MODE_META: Record<Mode, { label: string; pill: string; bar: string; avatar: string }> = {
+  open: { label: "To‘liq ochiq", pill: "bg-emerald-50 text-emerald-700 ring-emerald-200", bar: "bg-emerald-400", avatar: "from-emerald-500 to-teal-600" },
+  face_only: { label: "Faqat Face ID", pill: "bg-sky-50 text-sky-700 ring-sky-200", bar: "bg-sky-400", avatar: "from-sky-500 to-blue-600" },
+  qr_only: { label: "Faqat QR", pill: "bg-violet-50 text-violet-700 ring-violet-200", bar: "bg-violet-400", avatar: "from-violet-500 to-purple-600" },
+  blocked: { label: "To‘liq yopiq", pill: "bg-rose-50 text-rose-700 ring-rose-200", bar: "bg-rose-500", avatar: "from-rose-500 to-red-600" },
+};
+
+function initialsOf(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  return ((parts[0]?.[0] ?? "") + (parts[1]?.[0] ?? "")).toUpperCase() || "?";
 }
 
 export default function DavomatBloklashPage() {
@@ -174,34 +213,53 @@ export default function DavomatBloklashPage() {
   const view = filtered.slice((page - 1) * PAGE, page * PAGE);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const allViewSelected = view.length > 0 && view.every((row) => selectedSet.has(row.userId));
+  const filtersActive = q.trim() !== "" || place !== "all" || state !== "all" || position !== "all";
 
   const counts = useMemo(() => {
     const base = rows.filter((row) => (place === "all" || row.place === place) && matchesQuery(row, q) && (position === "all" || positionOf(row) === position));
     return {
       all: base.length,
-      ofis: rows.filter((row) => row.place === "ofis").length,
-      dorixona: rows.filter((row) => row.place === "dorixona").length,
       open: base.filter((row) => row.face && row.qr).length,
       limited: base.filter((row) => !(row.face && row.qr)).length,
       blocked: base.filter((row) => !row.face && !row.qr).length,
       faceOnly: base.filter((row) => row.face && !row.qr).length,
       qrOnly: base.filter((row) => !row.face && row.qr).length,
+      zone: base.filter((row) => row.zoneEnabled).length,
+      finger: base.filter((row) => row.finger).length,
     };
   }, [rows, place, q, position]);
 
-  const applyLocal = (userIds: number[], patch: { face?: boolean; qr?: boolean }) => {
+  const totals = useMemo(() => ({
+    all: rows.length,
+    ofis: rows.filter((row) => row.place === "ofis").length,
+    dorixona: rows.filter((row) => row.place === "dorixona").length,
+    limited: rows.filter((row) => !(row.face && row.qr)).length,
+    finger: rows.filter((row) => row.finger).length,
+    fingerEnrolled: rows.filter((row) => row.fingerEnrolled).length,
+    zone: rows.filter((row) => row.zoneEnabled).length,
+  }), [rows]);
+
+  const applyLocal = (userIds: number[], patch: Partial<Pick<DavomatMethodAccessRow, "face" | "qr" | "finger" | "fingerEnrolled" | "fingerDevice" | "fingerEnrolledAt" | "fingerLastUsedAt">>) => {
     const set = new Set(userIds);
     setRows((cur) => cur.map((row) => (set.has(row.userId) ? { ...row, ...patch } : row)));
   };
 
-  const toggle = async (row: DavomatMethodAccessRow, key: "face" | "qr", next: boolean) => {
+  const toggle = async (row: DavomatMethodAccessRow, key: "face" | "qr" | "finger", next: boolean) => {
     setSavingId(row.userId);
     applyLocal([row.userId], { [key]: next });
     try {
       const saved = await saveDavomatMethodAccess({ userId: row.userId, [key]: next });
-      applyLocal([row.userId], { face: saved.face, qr: saved.qr });
+      applyLocal([row.userId], { face: saved.face, qr: saved.qr, finger: Boolean(saved.finger) });
+      if (key === "finger") {
+        toast({
+          title: next ? "Barmoq izi yoqildi" : "Barmoq izi o‘chirildi",
+          description: next
+            ? `${row.fullName}: davomat oynasida «Barmoq izi» paydo bo‘ladi. Birinchi marta o‘z telefonidan ro‘yxatdan o‘tkazadi.`
+            : `${row.fullName}: «Barmoq izi» xodimga endi ko‘rinmaydi.`,
+        });
+      }
     } catch (err) {
-      applyLocal([row.userId], { face: row.face, qr: row.qr });
+      applyLocal([row.userId], { face: row.face, qr: row.qr, finger: row.finger });
       toast({ title: "Saqlanmadi", description: (err as Error).message, variant: "destructive" });
     } finally {
       setSavingId(null);
@@ -230,7 +288,7 @@ export default function DavomatBloklashPage() {
 
   const askBoth = (row: DavomatMethodAccessRow, on: boolean) => {
     setAsk({
-      title: on ? "Qoldirish" : "O‘chirish",
+      title: on ? "Ikkalasini qoldirish" : "To‘liq o‘chirish",
       confirm: on ? "Ha, qoldirish" : "Ha, o‘chirish",
       danger: !on,
       text: on
@@ -240,7 +298,7 @@ export default function DavomatBloklashPage() {
     });
   };
 
-  const bulk = async (patch: { face?: boolean; qr?: boolean }, label: string) => {
+  const bulk = async (patch: { face?: boolean; qr?: boolean; finger?: boolean }, label: string) => {
     const ids = selected.filter((id) => filtered.some((row) => row.userId === id));
     if (!ids.length) return;
     const snapshot = rows.filter((row) => ids.includes(row.userId));
@@ -258,15 +316,36 @@ export default function DavomatBloklashPage() {
     }
   };
 
-  const askBulk = (patch: { face?: boolean; qr?: boolean }, title: string, text: string, confirm: string) => {
+  const askBulk = (patch: { face?: boolean; qr?: boolean; finger?: boolean }, title: string, text: string, confirm: string) => {
     const count = selected.filter((id) => filtered.some((row) => row.userId === id)).length;
     if (!count) return;
     setAsk({
       title,
       text: `${count} xodim. ${text}`,
       confirm,
-      danger: patch.face === false,
+      danger: patch.face === false || patch.finger === false,
       run: () => bulk(patch, title),
+    });
+  };
+
+  const askResetFinger = (row: DavomatMethodAccessRow) => {
+    setAsk({
+      title: "Barmoq izini qayta tiklash",
+      confirm: "Ha, o‘chirish",
+      danger: true,
+      text: `${row.fullName}ning ro‘yxatdagi barmoq izi${row.fingerDevice ? ` (${row.fingerDevice})` : ""} o‘chiriladi. Xodim yangi telefonidan qayta ro‘yxatdan o‘tkazadi. Eski qurilmada barmoq izi bilan davomat endi ishlamaydi.`,
+      run: async () => {
+        setSavingId(row.userId);
+        try {
+          await resetEmployeeFingerprint(row.userId);
+          applyLocal([row.userId], { fingerEnrolled: false, fingerDevice: null, fingerEnrolledAt: null, fingerLastUsedAt: null });
+          toast({ title: "Barmoq izi o‘chirildi", description: `${row.fullName} qayta ro‘yxatdan o‘tkaza oladi.` });
+        } catch (err) {
+          toast({ title: "O‘chirilmadi", description: (err as Error).message, variant: "destructive" });
+        } finally {
+          setSavingId(null);
+        }
+      },
     });
   };
 
@@ -281,10 +360,28 @@ export default function DavomatBloklashPage() {
     }
   };
 
+  const toggleSelect = (userId: number) =>
+    setSelected((cur) => (cur.includes(userId) ? cur.filter((id) => id !== userId) : [...cur, userId]));
+
+  const toggleViewSelection = () => {
+    if (allViewSelected) setSelected((cur) => cur.filter((id) => !view.some((row) => row.userId === id)));
+    else setSelected((cur) => [...new Set([...cur, ...view.map((row) => row.userId)])]);
+  };
+
+  const resetFilters = () => {
+    setQ("");
+    setPlace("all");
+    setState("all");
+    setPosition("all");
+  };
+
   if (!allowed) {
     return (
       <div className="mx-auto max-w-lg px-4 py-16 text-center">
-        <p className="text-sm font-medium text-rose-700">Bloklash oynasi faqat admin, direktor va asoschi uchun.</p>
+        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-rose-600">
+          <ShieldAlert className="h-7 w-7" />
+        </div>
+        <p className="text-sm font-semibold text-rose-700">Bloklash oynasi faqat admin, direktor va asoschi uchun.</p>
         <Link href="/davomat" className="mt-3 inline-block text-sm font-semibold text-[#0b3a5c] underline">
           Davomat hisobotga qaytish
         </Link>
@@ -292,266 +389,358 @@ export default function DavomatBloklashPage() {
     );
   }
 
-  return (
-    <div className="mx-auto flex w-full max-w-[1200px] flex-col gap-4">
-      <div className="flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Davomat</p>
-          <h1 className="text-xl font-semibold text-[#0f2744]">Bloklash oynasi</h1>
-          <p className="mt-1 max-w-xl text-sm text-slate-500">
-            Xodimga Face ID va QR ni alohida qoldirish yoki o‘chirish. Yashil hudud tasdiqi hammada o‘chiq — kerakli xodimga soat, oyna va usulni admin belgilaydi.
-          </p>
-        </div>
-        {tab === "xodimlar" ? (
-          <Button type="button" variant="outline" className="h-9" onClick={() => void load()} disabled={loading}>
-            {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
-            Yangilash
-          </Button>
-        ) : null}
-      </div>
+  const stateItems: { id: StateFilter; label: string; count: number; icon: React.ReactNode; dot: string }[] = [
+    { id: "all", label: "Barcha xodimlar", count: counts.all, icon: <Layers className="h-4 w-4" />, dot: "bg-slate-400" },
+    { id: "open", label: "To‘liq ochiq", count: counts.open, icon: <ShieldCheck className="h-4 w-4" />, dot: "bg-emerald-500" },
+    { id: "limited", label: "Cheklangan", count: counts.limited, icon: <ShieldAlert className="h-4 w-4" />, dot: "bg-amber-500" },
+    { id: "blocked", label: "To‘liq yopiq", count: counts.blocked, icon: <ShieldOff className="h-4 w-4" />, dot: "bg-rose-500" },
+    { id: "face_only", label: "Faqat Face ID", count: counts.faceOnly, icon: <ScanFace className="h-4 w-4" />, dot: "bg-sky-500" },
+    { id: "qr_only", label: "Faqat QR", count: counts.qrOnly, icon: <QrCode className="h-4 w-4" />, dot: "bg-violet-500" },
+    { id: "finger", label: "Barmoq izi yoqilgan", count: counts.finger, icon: <Fingerprint className="h-4 w-4" />, dot: "bg-teal-500" },
+    { id: "zone", label: "Hudud tasdiqi", count: counts.zone, icon: <MapPin className="h-4 w-4" />, dot: "bg-lime-500" },
+  ];
 
-      {canAudit ? (
-        <div className="inline-flex w-fit rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-          <TabButton active={tab === "xodimlar"} onClick={() => setTab("xodimlar")}>
-            <Users className="h-4 w-4" /> Xodimlar
-          </TabButton>
-          <TabButton active={tab === "tarix"} onClick={() => setTab("tarix")}>
-            <History className="h-4 w-4" /> Tarix
-          </TabButton>
+  return (
+    <div className="mx-auto flex w-full max-w-[1600px] flex-col gap-5 pb-24">
+      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#081f36] via-[#0d3456] to-[#0a5560] px-5 py-6 text-white shadow-[0_20px_60px_-25px_rgba(8,31,54,0.65)] sm:px-8 sm:py-8">
+        <div className="pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full bg-teal-400/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-32 left-1/3 h-72 w-72 rounded-full bg-sky-400/10 blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_1px_1px,rgba(255,255,255,0.06)_1px,transparent_0)] [background-size:22px_22px]" />
+
+        <div className="relative flex flex-wrap items-start justify-between gap-5">
+          <div className="min-w-0 max-w-2xl">
+            <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-teal-100 ring-1 ring-white/15">
+              <ShieldCheck className="h-3.5 w-3.5" /> Davomat · Kirish nazorati
+            </div>
+            <h1 className="mt-3 text-2xl font-bold tracking-tight sm:text-[32px]">Bloklash oynasi</h1>
+            <p className="mt-2 text-sm leading-relaxed text-slate-200/90">
+              Har bir xodim uchun davomat usullarini alohida boshqaring: Face ID, QR va barmoq izi.
+              Barmoq izi hammada yashirin — faqat shu yerda yoqilgan xodimga ko‘rinadi.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {canAudit ? (
+              <div className="inline-flex rounded-2xl bg-white/10 p-1 ring-1 ring-white/15 backdrop-blur">
+                <HeroTab active={tab === "xodimlar"} onClick={() => setTab("xodimlar")}>
+                  <Users className="h-4 w-4" /> Xodimlar
+                </HeroTab>
+                <HeroTab active={tab === "tarix"} onClick={() => setTab("tarix")}>
+                  <History className="h-4 w-4" /> Tarix
+                </HeroTab>
+              </div>
+            ) : null}
+            {tab === "xodimlar" ? (
+              <button
+                type="button"
+                onClick={() => void load()}
+                disabled={loading}
+                className="inline-flex h-10 items-center gap-2 rounded-2xl bg-white px-4 text-sm font-semibold text-[#0b2a46] shadow-sm transition hover:bg-teal-50 disabled:opacity-70"
+              >
+                <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+                Yangilash
+              </button>
+            ) : null}
+          </div>
         </div>
-      ) : null}
+
+        <div className="relative mt-7 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+          <HeroStat icon={<Users className="h-4 w-4" />} label="Jami xodim" value={totals.all} />
+          <HeroStat icon={<Building2 className="h-4 w-4" />} label="Ofis" value={totals.ofis} />
+          <HeroStat icon={<Store className="h-4 w-4" />} label="Dorixona" value={totals.dorixona} />
+          <HeroStat icon={<ShieldAlert className="h-4 w-4" />} label="Cheklangan" value={totals.limited} tone="rose" />
+          <HeroStat icon={<Fingerprint className="h-4 w-4" />} label="Barmoq izi" value={totals.finger} sub={`${totals.fingerEnrolled} ro‘yxatda`} tone="teal" />
+          <HeroStat icon={<MapPin className="h-4 w-4" />} label="Hudud tasdiqi" value={totals.zone} tone="lime" />
+        </div>
+      </section>
 
       {tab === "tarix" && canAudit ? (
-        <BloklashTarix />
+        <div className="rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm sm:p-6">
+          <BloklashTarix />
+        </div>
       ) : (
-      <>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Stat label="Jami xodim" value={rows.length} />
-        <Stat label="Ofis" value={counts.ofis} />
-        <Stat label="Dorixona" value={counts.dorixona} />
-        <Stat label="Cheklangan" value={rows.filter((row) => !(row.face && row.qr)).length} tone="rose" />
-      </div>
+        <div className="flex flex-col gap-5 xl:flex-row xl:items-start">
+          <aside className="w-full shrink-0 xl:sticky xl:top-4 xl:w-[300px]">
+            <div className="rounded-[24px] border border-slate-200/80 bg-white p-4 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="flex items-center gap-2 text-sm font-bold text-[#0f2744]">
+                  <SlidersHorizontal className="h-4 w-4 text-teal-600" /> Filtrlar
+                </p>
+                {filtersActive ? (
+                  <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-slate-500 hover:bg-slate-100">
+                    <X className="h-3 w-3" /> Tozalash
+                  </button>
+                ) : null}
+              </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <Input
-            value={q}
-            onChange={(event) => setQ(event.target.value)}
-            placeholder="Ism, familiya, lavozim — lotin yoki kirill"
-            className="h-10 pl-9"
-          />
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                <Input
+                  value={q}
+                  onChange={(event) => setQ(event.target.value)}
+                  placeholder="Ism, lavozim, filial…"
+                  className="h-11 rounded-2xl border-slate-200 bg-slate-50 pl-10 focus-visible:bg-white"
+                />
+              </div>
+
+              <p className="mb-2 mt-5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Joy</p>
+              <div className="grid grid-cols-3 gap-1 rounded-2xl bg-slate-100 p-1">
+                <Segment active={place === "all"} onClick={() => setPlace("all")}>Hammasi</Segment>
+                <Segment active={place === "ofis"} onClick={() => setPlace("ofis")}><Building2 className="h-3.5 w-3.5" /> Ofis</Segment>
+                <Segment active={place === "dorixona"} onClick={() => setPlace("dorixona")}><Store className="h-3.5 w-3.5" /> Dorixona</Segment>
+              </div>
+
+              <p className="mb-2 mt-5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Holat</p>
+              <div className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-1">
+                {stateItems.map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => setState(item.id)}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2 text-left text-sm transition",
+                      state === item.id
+                        ? "bg-[#0b2a46] text-white shadow-md shadow-[#0b2a46]/20"
+                        : "text-slate-600 hover:bg-slate-50",
+                    )}
+                  >
+                    <span className={cn(
+                      "flex h-7 w-7 items-center justify-center rounded-lg",
+                      state === item.id ? "bg-white/15 text-white" : "bg-slate-100 text-slate-500 group-hover:bg-white",
+                    )}>
+                      {item.icon}
+                    </span>
+                    <span className="flex-1 truncate font-medium">{item.label}</span>
+                    <span className={cn(
+                      "min-w-[2rem] rounded-full px-2 py-0.5 text-center text-[11px] font-bold tabular-nums",
+                      state === item.id ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600",
+                    )}>
+                      {item.count}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <p className="mb-2 mt-5 text-[11px] font-bold uppercase tracking-[0.12em] text-slate-400">Lavozim</p>
+              <select
+                value={position}
+                onChange={(event) => setPosition(event.target.value)}
+                className="h-11 w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 text-sm font-medium text-slate-700 outline-none focus:border-teal-500 focus:bg-white"
+              >
+                <option value="all">Barcha lavozimlar</option>
+                {positions.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="mt-4 hidden rounded-[24px] border border-teal-100 bg-gradient-to-br from-teal-50 to-white p-4 text-xs leading-relaxed text-slate-600 xl:block">
+              <p className="mb-2 flex items-center gap-2 text-sm font-bold text-teal-800">
+                <Fingerprint className="h-4 w-4" /> Qoidalar
+              </p>
+              <ul className="space-y-1.5">
+                <li>• Face ID va QR ikkalasi o‘chsa (barmoq izi yoqilmagan bo‘lsa), xodim davomat qila olmaydi.</li>
+                <li>• Koordinator uchun QR standart holatda yopiq.</li>
+                <li>• Barmoq izi: 1 xodim = 1 barmoq izi = 1 qurilma.</li>
+                <li>• Telefon almashsa — <RotateCcw className="inline h-3 w-3" /> qayta tiklash, keyin xodim yangidan ro‘yxatdan o‘tadi.</li>
+              </ul>
+            </div>
+          </aside>
+
+          <main className="min-w-0 flex-1">
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[20px] border border-slate-200/80 bg-white px-4 py-3 shadow-sm">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleViewSelection}
+                  disabled={view.length === 0}
+                  className={cn(
+                    "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-xs font-semibold transition",
+                    allViewSelected ? "border-[#0b2a46] bg-[#0b2a46] text-white" : "border-slate-200 text-slate-600 hover:bg-slate-50",
+                  )}
+                >
+                  <span className={cn("flex h-4 w-4 items-center justify-center rounded border", allViewSelected ? "border-white bg-white text-[#0b2a46]" : "border-slate-300")}>
+                    {allViewSelected ? <Check className="h-3 w-3" strokeWidth={3} /> : null}
+                  </span>
+                  Sahifani tanlash
+                </button>
+                <p className="text-sm text-slate-500">
+                  <span className="font-bold text-[#0f2744]">{filtered.length}</span> xodim
+                  {selected.length ? <span className="ml-2 text-teal-700">· {selected.length} tanlandi</span> : null}
+                </p>
+              </div>
+              <Pager page={page} pages={pages} onPage={setPage} />
+            </div>
+
+            {loading ? (
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {Array.from({ length: 6 }, (_, i) => (
+                  <div key={i} className="h-[300px] animate-pulse rounded-[24px] border border-slate-200 bg-white p-5">
+                    <div className="flex items-center gap-3">
+                      <div className="h-12 w-12 rounded-2xl bg-slate-100" />
+                      <div className="flex-1 space-y-2">
+                        <div className="h-3 w-2/3 rounded bg-slate-100" />
+                        <div className="h-3 w-1/3 rounded bg-slate-100" />
+                      </div>
+                    </div>
+                    <div className="mt-6 grid grid-cols-3 gap-2">
+                      <div className="h-24 rounded-2xl bg-slate-100" />
+                      <div className="h-24 rounded-2xl bg-slate-100" />
+                      <div className="h-24 rounded-2xl bg-slate-100" />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : view.length === 0 ? (
+              <div className="flex flex-col items-center justify-center rounded-[24px] border border-dashed border-slate-300 bg-white px-6 py-16 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-slate-400">
+                  <Search className="h-6 w-6" />
+                </div>
+                <p className="mt-4 font-semibold text-[#0f2744]">Bu filtrda xodim topilmadi</p>
+                <p className="mt-1 text-sm text-slate-500">Qidiruv yoki filtrlarni o‘zgartirib ko‘ring.</p>
+                {filtersActive ? (
+                  <Button type="button" variant="outline" className="mt-4 rounded-xl" onClick={resetFilters}>Filtrlarni tozalash</Button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {view.map((row) => (
+                  <EmployeeCard
+                    key={row.userId}
+                    row={row}
+                    selected={selectedSet.has(row.userId)}
+                    busy={savingId === row.userId || bulkBusy}
+                    onSelect={() => toggleSelect(row.userId)}
+                    onToggle={(key, on) => void toggle(row, key, on)}
+                    onBoth={(on) => askBoth(row, on)}
+                    onZone={() => openZone(row)}
+                    onResetFinger={() => askResetFinger(row)}
+                  />
+                ))}
+              </div>
+            )}
+
+            {pages > 1 && !loading ? (
+              <div className="mt-5 flex justify-center">
+                <Pager page={page} pages={pages} onPage={setPage} />
+              </div>
+            ) : null}
+
+            {selected.length > 0 ? (
+              <div className="sticky bottom-4 z-30 mt-5 flex justify-center">
+                <div className="flex max-w-full items-center gap-2 overflow-x-auto rounded-[22px] bg-[#0b2a46]/95 p-2 pl-4 text-white shadow-[0_18px_50px_-12px_rgba(8,31,54,0.7)] ring-1 ring-white/10 backdrop-blur [scrollbar-width:none] [&>*]:shrink-0">
+                  <span className="mr-1 flex items-center gap-2 whitespace-nowrap text-sm font-semibold">
+                    <span className="flex h-7 min-w-[1.75rem] items-center justify-center rounded-full bg-teal-400 px-2 text-xs font-bold text-[#0b2a46]">{selected.length}</span>
+                    tanlandi
+                  </span>
+                  <BulkButton disabled={bulkBusy} onClick={() => askBulk({ face: true, qr: true }, "Ikkalasini qoldirish", "Face ID ham, QR ham yoqiladi. Tanlangan xodimlar ikkala usul bilan davomat qila oladi.", "Ha, qoldirish")}>
+                    <ShieldCheck className="h-3.5 w-3.5" /> Ikkalasi
+                  </BulkButton>
+                  <BulkButton disabled={bulkBusy} onClick={() => askBulk({ face: true, qr: false }, "Faqat Face ID", "QR o‘chiriladi, Face ID qoladi. QR bosilsa «Aynan sizga ruxsat yo‘q» chiqadi.", "Ha, faqat Face ID")}>
+                    <ScanFace className="h-3.5 w-3.5" /> Faqat Face ID
+                  </BulkButton>
+                  <BulkButton disabled={bulkBusy} onClick={() => askBulk({ face: false, qr: true }, "Faqat QR", "Face ID o‘chiriladi, QR qoladi. Face ID bosilsa «Aynan sizga ruxsat yo‘q» chiqadi.", "Ha, faqat QR")}>
+                    <QrCode className="h-3.5 w-3.5" /> Faqat QR
+                  </BulkButton>
+                  <BulkButton tone="danger" disabled={bulkBusy} onClick={() => askBulk({ face: false, qr: false }, "To‘liq o‘chirish", "Face ID ham, QR ham o‘chiriladi. Tanlangan xodimlar davomat qila olmaydi.", "Ha, o‘chirish")}>
+                    <ShieldOff className="h-3.5 w-3.5" /> To‘liq o‘chirish
+                  </BulkButton>
+                  <span className="mx-1 hidden h-6 w-px bg-white/20 sm:block" />
+                  <BulkButton tone="teal" disabled={bulkBusy} onClick={() => askBulk({ finger: true }, "Barmoq izini yoqish", "Davomat oynasida «Barmoq izi» paydo bo‘ladi. Har biri o‘z telefonidan bir marta ro‘yxatdan o‘tkazadi.", "Ha, yoqish")}>
+                    <Fingerprint className="h-3.5 w-3.5" /> Barmoq izi yoqish
+                  </BulkButton>
+                  <BulkButton disabled={bulkBusy} onClick={() => askBulk({ finger: false }, "Barmoq izini o‘chirish", "«Barmoq izi» xodimlarga ko‘rinmaydi. Ro‘yxatdan o‘tgan barmoq izlari saqlanadi — qayta yoqilsa yana ishlaydi.", "Ha, o‘chirish")}>
+                    <EyeOff className="h-3.5 w-3.5" /> Barmoq izi yashirish
+                  </BulkButton>
+                  <button
+                    type="button"
+                    onClick={() => setSelected([])}
+                    title="Tanlovni bekor qilish"
+                    className="ml-1 flex h-8 w-8 items-center justify-center rounded-xl text-white/70 hover:bg-white/10 hover:text-white"
+                  >
+                    {bulkBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </main>
         </div>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Chip active={place === "all"} onClick={() => setPlace("all")}>Hammasi</Chip>
-          <Chip active={place === "ofis"} onClick={() => setPlace("ofis")}><Building2 className="h-3.5 w-3.5" /> Ofis</Chip>
-          <Chip active={place === "dorixona"} onClick={() => setPlace("dorixona")}><Store className="h-3.5 w-3.5" /> Dorixona</Chip>
-        </div>
-
-        <div className="mt-2 flex flex-wrap gap-2">
-          <Chip active={state === "all"} onClick={() => setState("all")}>Hammasi · {counts.all}</Chip>
-          <Chip active={state === "open"} onClick={() => setState("open")}>Yoqilgan · {counts.open}</Chip>
-          <Chip active={state === "limited"} onClick={() => setState("limited")}>O‘chirilgan · {counts.limited}</Chip>
-          <Chip active={state === "blocked"} onClick={() => setState("blocked")}>To‘liq o‘chiq · {counts.blocked}</Chip>
-          <Chip active={state === "face_only"} onClick={() => setState("face_only")}>Faqat Face ID · {counts.faceOnly}</Chip>
-          <Chip active={state === "qr_only"} onClick={() => setState("qr_only")}>Faqat QR · {counts.qrOnly}</Chip>
-          <Chip active={state === "zone"} onClick={() => setState("zone")}>Hudud tasdiqi · {rows.filter((row) => row.zoneEnabled).length}</Chip>
-        </div>
-
-        <div className="mt-3">
-          <select
-            value={position}
-            onChange={(event) => setPosition(event.target.value)}
-            className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-700"
-          >
-            <option value="all">Barcha lavozimlar</option>
-            {positions.map((item) => (
-              <option key={item} value={item}>{item}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {selected.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#0b3a5c]/20 bg-[#0b3a5c]/5 px-3 py-2">
-          <span className="text-sm font-semibold text-[#0b3a5c]">{selected.length} tanlandi</span>
-          <Button type="button" size="sm" variant="outline" disabled={bulkBusy} onClick={() => askBulk({ face: true, qr: true }, "Ikkalasini qoldirish", "Face ID ham, QR ham yoqiladi. Tanlangan xodimlar ikkala usul bilan davomat qila oladi.", "Ha, qoldirish")}>Ikkalasini qoldirish</Button>
-          <Button type="button" size="sm" variant="outline" disabled={bulkBusy} onClick={() => askBulk({ face: true, qr: false }, "Faqat Face ID", "QR o‘chiriladi, Face ID qoladi. QR bosilsa «Aynan sizga ruxsat yo‘q» chiqadi.", "Ha, faqat Face ID")}>Faqat Face ID</Button>
-          <Button type="button" size="sm" variant="outline" disabled={bulkBusy} onClick={() => askBulk({ face: false, qr: true }, "Faqat QR", "Face ID o‘chiriladi, QR qoladi. Face ID bosilsa «Aynan sizga ruxsat yo‘q» chiqadi.", "Ha, faqat QR")}>Faqat QR</Button>
-          <Button type="button" size="sm" variant="destructive" disabled={bulkBusy} onClick={() => askBulk({ face: false, qr: false }, "To‘liq o‘chirish", "Face ID ham, QR ham o‘chiriladi. Tanlangan xodimlar davomat qila olmaydi.", "Ha, o‘chirish")}>To‘liq o‘chirish</Button>
-        </div>
-      ) : null}
-
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-2 text-xs text-slate-500">
-          <span>{filtered.length} xodim</span>
-          <span>{page} / {pages}</span>
-        </div>
-        {loading ? (
-          <p className="flex items-center gap-2 px-4 py-8 text-sm text-slate-500"><Loader2 className="h-4 w-4 animate-spin" /> Yuklanmoqda…</p>
-        ) : view.length === 0 ? (
-          <p className="px-4 py-8 text-sm text-slate-500">Bu filtrda xodim yo‘q.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[760px] text-left text-sm">
-              <thead className="bg-slate-50 text-[11px] uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="w-10 px-3 py-2">
-                    <input
-                      type="checkbox"
-                      checked={allViewSelected}
-                      onChange={() => {
-                        if (allViewSelected) setSelected((cur) => cur.filter((id) => !view.some((row) => row.userId === id)));
-                        else setSelected((cur) => [...new Set([...cur, ...view.map((row) => row.userId)])]);
-                      }}
-                    />
-                  </th>
-                  <th className="px-3 py-2">Xodim</th>
-                  <th className="px-3 py-2">Joy</th>
-                  <th className="px-3 py-2">Ish soati</th>
-                  <th className="px-3 py-2">Holat</th>
-                  <th className="px-3 py-2">Face ID</th>
-                  <th className="px-3 py-2">QR</th>
-                  <th className="px-3 py-2">Hudud</th>
-                  <th className="px-3 py-2">Amal</th>
-                </tr>
-              </thead>
-              <tbody>
-                {view.map((row) => {
-                  const mode = stateOf(row);
-                  return (
-                    <tr key={row.userId} className="border-t border-slate-100">
-                      <td className="px-3 py-2">
-                        <input
-                          type="checkbox"
-                          checked={selectedSet.has(row.userId)}
-                          onChange={() => setSelected((cur) => cur.includes(row.userId) ? cur.filter((id) => id !== row.userId) : [...cur, row.userId])}
-                        />
-                      </td>
-                      <td className="px-3 py-2">
-                        <p className="font-semibold text-[#0f2744]">{row.fullName}</p>
-                        <p className="text-[11px] text-slate-500">{positionOf(row)}{row.location ? ` · ${displayBranchName(row.location)}` : ""}</p>
-                      </td>
-                      <td className="px-3 py-2 text-xs">{row.place === "dorixona" ? "Dorixona" : "Ofis"}</td>
-                      <td className="px-3 py-2">
-                        <p className="font-semibold tabular-nums text-[#0f2744]">{row.scheduleHours || "—"}</p>
-                        <p className="text-[11px] text-slate-500">{row.scheduleLabel || (row.place === "dorixona" ? "Smena" : "Ofis")}</p>
-                      </td>
-                      <td className="px-3 py-2">
-                        <span className={cn(
-                          "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                          mode === "open" && "bg-emerald-50 text-emerald-700",
-                          mode === "blocked" && "bg-rose-50 text-rose-700",
-                          mode === "face_only" && "bg-sky-50 text-sky-700",
-                          mode === "qr_only" && "bg-violet-50 text-violet-700",
-                        )}>
-                          {mode === "open" ? "Yoqilgan" : mode === "blocked" ? "To‘liq o‘chiq" : mode === "face_only" ? "Faqat Face ID" : "Faqat QR"}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2">
-                        <label className="flex items-center gap-2 text-xs">
-                          <ScanFace className="h-4 w-4 text-sky-600" />
-                          <Switch checked={row.face} disabled={savingId === row.userId || bulkBusy} onCheckedChange={(on) => void toggle(row, "face", on)} />
-                        </label>
-                      </td>
-                      <td className="px-3 py-2">
-                        <label className="flex items-center gap-2 text-xs">
-                          <QrCode className="h-4 w-4 text-violet-600" />
-                          <Switch checked={row.qr} disabled={savingId === row.userId || bulkBusy} onCheckedChange={(on) => void toggle(row, "qr", on)} />
-                        </label>
-                      </td>
-                      <td className="px-3 py-2">
-                        <button type="button" className="text-left" onClick={() => openZone(row)}>
-                          <span className={cn(
-                            "rounded-full px-2 py-0.5 text-[11px] font-semibold",
-                            row.zoneStatus === "blocked" && "bg-rose-50 text-rose-700",
-                            row.zoneStatus === "due" && "bg-amber-50 text-amber-700",
-                            row.zoneEnabled && row.zoneStatus !== "blocked" && row.zoneStatus !== "due" && "bg-emerald-50 text-emerald-700",
-                            !row.zoneEnabled && "bg-slate-100 text-slate-500",
-                          )}>
-                            {zoneLabel(row)}
-                          </span>
-                        </button>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1">
-                          <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px]" disabled={savingId === row.userId} onClick={() => askBoth(row, true)}>Qoldirish</Button>
-                          <Button type="button" size="sm" variant="outline" className="h-7 px-2 text-[11px] text-rose-700" disabled={savingId === row.userId} onClick={() => askBoth(row, false)}>O‘chirish</Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-        {pages > 1 ? (
-          <div className="flex items-center justify-end gap-2 border-t border-slate-100 px-4 py-2">
-            <Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage((n) => n - 1)}>Oldingi</Button>
-            <Button type="button" size="sm" variant="outline" disabled={page >= pages} onClick={() => setPage((n) => n + 1)}>Keyingi</Button>
-          </div>
-        ) : null}
-      </div>
-
-      <p className="flex items-start gap-2 text-xs text-slate-500">
-        <ShieldOff className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-        Ikkalasi ham o‘chsa, xodim davomat qila olmaydi. Koordinator uchun QR standart holatda yopiq — bu yerda ochsangiz, faqat shu xodimga ochiladi.
-      </p>
-      </>
       )}
+
       <Dialog open={ask != null} onOpenChange={(open) => { if (!open && !askBusy) setAsk(null); }}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{ask?.title}</DialogTitle>
-            <DialogDescription>{ask?.text}</DialogDescription>
+        <DialogContent className="rounded-[24px] sm:max-w-md">
+          <DialogHeader className="items-center text-center sm:text-center">
+            <div className={cn(
+              "mb-2 flex h-14 w-14 items-center justify-center rounded-2xl",
+              ask?.danger ? "bg-rose-50 text-rose-600" : "bg-emerald-50 text-emerald-600",
+            )}>
+              {ask?.danger ? <ShieldOff className="h-7 w-7" /> : <ShieldCheck className="h-7 w-7" />}
+            </div>
+            <DialogTitle className="text-lg">{ask?.title}</DialogTitle>
+            <DialogDescription className="leading-relaxed">{ask?.text}</DialogDescription>
           </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="outline" disabled={askBusy} onClick={() => setAsk(null)}>Bekor qilish</Button>
-            <Button type="button" variant={ask?.danger ? "destructive" : "default"} disabled={askBusy} onClick={() => void confirmAsk()}>
+          <DialogFooter className="gap-2 sm:justify-center">
+            <Button type="button" variant="outline" className="rounded-xl" disabled={askBusy} onClick={() => setAsk(null)}>Bekor qilish</Button>
+            <Button type="button" className="rounded-xl" variant={ask?.danger ? "destructive" : "default"} disabled={askBusy} onClick={() => void confirmAsk()}>
               {askBusy ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
               {ask?.confirm}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
       <Dialog open={zoneRow != null} onOpenChange={(open) => { if (!open && !zoneBusy) setZoneRow(null); }}>
-        <DialogContent>
+        <DialogContent className="rounded-[24px] sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Yashil hudud tasdiqi</DialogTitle>
-            <DialogDescription>
-              {zoneRow?.fullName}. Rejim o‘chiq tursa, hech narsa so‘ralmaydi. Yoqilsa, Keldimdan keyin har belgilangan soatda yashil hudud ichida tasdiqlashi shart.
+            <div className="mb-1 flex items-center gap-3">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-lime-50 text-lime-700">
+                <MapPin className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 text-left">
+                <DialogTitle>Yashil hudud tasdiqi</DialogTitle>
+                <p className="truncate text-sm font-medium text-slate-500">{zoneRow?.fullName}</p>
+              </div>
+            </div>
+            <DialogDescription className="text-left leading-relaxed">
+              Rejim o‘chiq tursa, hech narsa so‘ralmaydi. Yoqilsa, Keldimdan keyin har belgilangan soatda yashil hudud ichida tasdiqlashi shart.
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 text-sm">
-            <label className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 px-3 py-2">
-              <span>Shu xodimga yoqish</span>
+          <div className="space-y-4 text-sm">
+            <label className={cn(
+              "flex cursor-pointer items-center justify-between gap-3 rounded-2xl border px-4 py-3 transition",
+              zoneOn ? "border-lime-300 bg-lime-50/60" : "border-slate-200",
+            )}>
+              <span>
+                <span className="block font-semibold text-[#0f2744]">Shu xodimga yoqish</span>
+                <span className="text-xs text-slate-500">{zoneOn ? "Hudud tasdiqi talab qilinadi" : "Hech narsa so‘ralmaydi"}</span>
+              </span>
               <Switch checked={zoneOn} onCheckedChange={setZoneOn} />
             </label>
-            <label className="block">
-              <span className="text-xs text-slate-500">Har necha soatda</span>
-              <Input type="number" min={1} max={12} value={zoneHours} onChange={(event) => setZoneHours(Number(event.target.value))} className="mt-1" />
-            </label>
-            <label className="block">
-              <span className="text-xs text-slate-500">Tasdiqlash oynasi, daqiqa</span>
-              <Input type="number" min={5} max={120} value={zoneWindow} onChange={(event) => setZoneWindow(Number(event.target.value))} className="mt-1" />
-            </label>
-            <div className="flex gap-2">
-              <Button type="button" variant={zoneMethod === "FACE_ID" ? "default" : "outline"} className="flex-1" onClick={() => setZoneMethod("FACE_ID")}>Face ID</Button>
-              <Button type="button" variant={zoneMethod === "QR" ? "default" : "outline"} className="flex-1" onClick={() => setZoneMethod("QR")}>QR kod</Button>
+            <div className={cn("grid grid-cols-2 gap-3 transition", !zoneOn && "pointer-events-none opacity-50")}>
+              <label className="block rounded-2xl border border-slate-200 p-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Har necha soatda</span>
+                <Input type="number" min={1} max={12} value={zoneHours} onChange={(event) => setZoneHours(Number(event.target.value))} className="mt-1 h-10 rounded-xl text-base font-semibold" />
+              </label>
+              <label className="block rounded-2xl border border-slate-200 p-3">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Oyna, daqiqa</span>
+                <Input type="number" min={5} max={120} value={zoneWindow} onChange={(event) => setZoneWindow(Number(event.target.value))} className="mt-1 h-10 rounded-xl text-base font-semibold" />
+              </label>
+            </div>
+            <div className={cn("grid grid-cols-2 gap-1 rounded-2xl bg-slate-100 p-1", !zoneOn && "pointer-events-none opacity-50")}>
+              <Segment active={zoneMethod === "FACE_ID"} onClick={() => setZoneMethod("FACE_ID")}><ScanFace className="h-4 w-4" /> Face ID</Segment>
+              <Segment active={zoneMethod === "QR"} onClick={() => setZoneMethod("QR")}><QrCode className="h-4 w-4" /> QR kod</Segment>
             </div>
             {zoneRow?.zoneStatus === "blocked" ? (
-              <p className="rounded-xl bg-rose-50 px-3 py-2 text-xs text-rose-800">
+              <p className="rounded-2xl bg-rose-50 px-4 py-3 text-xs leading-relaxed text-rose-800">
                 Bugun bloklangan. Ruxsat bersangiz, shu kun ochiladi va tasdiq yangidan hisoblanadi.
               </p>
             ) : null}
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             {zoneRow?.zoneStatus === "blocked" ? (
               <Button
                 type="button"
                 variant="outline"
+                className="rounded-xl"
                 disabled={zoneBusy}
                 onClick={() => {
                   if (!zoneRow) return;
@@ -569,9 +758,10 @@ export default function DavomatBloklashPage() {
                 Ruxsat berish
               </Button>
             ) : null}
-            <Button type="button" variant="outline" disabled={zoneBusy} onClick={() => setZoneRow(null)}>Bekor</Button>
+            <Button type="button" variant="outline" className="rounded-xl" disabled={zoneBusy} onClick={() => setZoneRow(null)}>Bekor</Button>
             <Button
               type="button"
+              className="rounded-xl"
               disabled={zoneBusy || !zoneRow}
               onClick={() => {
                 if (!zoneRow) return;
@@ -602,23 +792,244 @@ export default function DavomatBloklashPage() {
   );
 }
 
-function Stat({ label, value, tone }: { label: string; value: number; tone?: "rose" }) {
+function EmployeeCard({
+  row,
+  selected,
+  busy,
+  onSelect,
+  onToggle,
+  onBoth,
+  onZone,
+  onResetFinger,
+}: {
+  row: DavomatMethodAccessRow;
+  selected: boolean;
+  busy: boolean;
+  onSelect: () => void;
+  onToggle: (key: "face" | "qr" | "finger", on: boolean) => void;
+  onBoth: (on: boolean) => void;
+  onZone: () => void;
+  onResetFinger: () => void;
+}) {
+  const mode = stateOf(row);
+  const meta = MODE_META[mode];
+  const zoneTone =
+    row.zoneStatus === "blocked" ? "text-rose-700 bg-rose-50"
+    : row.zoneStatus === "due" ? "text-amber-700 bg-amber-50"
+    : row.zoneEnabled ? "text-lime-800 bg-lime-50"
+    : "text-slate-500 bg-slate-100";
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white px-3 py-2.5 shadow-sm">
-      <p className="text-[11px] text-slate-500">{label}</p>
-      <p className={cn("text-lg font-semibold", tone === "rose" ? "text-rose-600" : "text-[#0f2744]")}>{value}</p>
+    <article
+      className={cn(
+        "group relative flex flex-col overflow-hidden rounded-[24px] border bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_14px_40px_-18px_rgba(15,39,68,0.35)]",
+        selected ? "border-[#0b2a46] ring-2 ring-[#0b2a46]/15" : "border-slate-200/80",
+      )}
+    >
+      <span className={cn("absolute inset-y-0 left-0 w-1", meta.bar)} />
+
+      <header className="flex items-start gap-3 px-5 pb-3 pt-5">
+        <button
+          type="button"
+          onClick={onSelect}
+          aria-label="Tanlash"
+          className={cn(
+            "relative flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br text-sm font-bold text-white shadow-sm transition",
+            meta.avatar,
+          )}
+        >
+          {selected ? <Check className="h-5 w-5" strokeWidth={3} /> : initialsOf(row.fullName)}
+          <span className={cn(
+            "absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full border-2 border-white text-white transition",
+            selected ? "bg-[#0b2a46] opacity-100" : "bg-slate-300 opacity-0 group-hover:opacity-100",
+          )}>
+            <Check className="h-2.5 w-2.5" strokeWidth={4} />
+          </span>
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[15px] font-bold leading-tight text-[#0f2744]" title={row.fullName}>{row.fullName}</p>
+          <p className="mt-1 truncate text-xs text-slate-500" title={positionOf(row)}>
+            {positionOf(row)}
+            {row.location ? <span className="text-slate-400"> · {displayBranchName(row.location)}</span> : null}
+          </p>
+        </div>
+        <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ring-1", meta.pill)}>
+          {meta.label}
+        </span>
+      </header>
+
+      <div className="mx-5 flex items-center gap-2 rounded-2xl bg-slate-50 px-3 py-2 text-xs">
+        <span className="inline-flex items-center gap-1.5 font-semibold text-slate-600">
+          {row.place === "dorixona" ? <Store className="h-3.5 w-3.5 text-teal-600" /> : <Building2 className="h-3.5 w-3.5 text-sky-600" />}
+          {row.place === "dorixona" ? "Dorixona" : "Ofis"}
+        </span>
+        <span className="h-3.5 w-px bg-slate-200" />
+        <span className="inline-flex min-w-0 items-center gap-1.5 text-slate-600">
+          <Clock3 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+          <span className="font-bold tabular-nums text-[#0f2744]">{row.scheduleHours || "—"}</span>
+          <span className="truncate text-slate-400">{row.scheduleLabel || (row.place === "dorixona" ? "Smena" : "Ofis")}</span>
+        </span>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 px-5 pt-4">
+        <MethodTile
+          icon={<ScanFace className="h-[18px] w-[18px]" />}
+          label="Face ID"
+          on={row.face}
+          tone="sky"
+          disabled={busy}
+          onChange={(on) => onToggle("face", on)}
+        />
+        <MethodTile
+          icon={<QrCode className="h-[18px] w-[18px]" />}
+          label="QR kod"
+          on={row.qr}
+          tone="violet"
+          disabled={busy}
+          onChange={(on) => onToggle("qr", on)}
+        />
+        <MethodTile
+          icon={<Fingerprint className="h-[18px] w-[18px]" />}
+          label="Barmoq izi"
+          on={Boolean(row.finger)}
+          offText="Yashirin"
+          tone="teal"
+          disabled={busy}
+          onChange={(on) => onToggle("finger", on)}
+        />
+      </div>
+
+      {row.finger || row.fingerEnrolled ? (
+        <div className={cn(
+          "mx-5 mt-2 flex items-center gap-2 rounded-xl px-3 py-1.5 text-[11px]",
+          row.fingerEnrolled ? "bg-teal-50 text-teal-800" : "bg-amber-50 text-amber-800",
+        )}>
+          <Fingerprint className="h-3.5 w-3.5 shrink-0" />
+          <span className="min-w-0 flex-1 truncate" title={row.fingerDevice || undefined}>
+            {row.fingerEnrolled ? <>Ro‘yxatda · <b>{row.fingerDevice || "qurilma"}</b></> : "Hali ro‘yxatdan o‘tmagan"}
+          </span>
+          {row.fingerEnrolled ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={onResetFinger}
+              title="Barmoq izini o‘chirish (qayta ro‘yxatdan o‘tkazish uchun)"
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg px-1.5 py-0.5 font-semibold text-teal-700 hover:bg-white hover:text-rose-600"
+            >
+              <RotateCcw className="h-3 w-3" /> Tiklash
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      <button
+        type="button"
+        onClick={onZone}
+        className="mx-5 mt-2 flex items-center gap-2 rounded-xl border border-dashed border-slate-200 px-3 py-2 text-left text-xs transition hover:border-lime-300 hover:bg-lime-50/40"
+      >
+        <MapPin className="h-3.5 w-3.5 shrink-0 text-lime-600" />
+        <span className="font-semibold text-slate-600">Yashil hudud</span>
+        <span className={cn("ml-auto rounded-full px-2 py-0.5 text-[11px] font-bold", zoneTone)}>{zoneLabel(row)}</span>
+        <ChevronRight className="h-3.5 w-3.5 text-slate-300" />
+      </button>
+
+      <footer className="mt-auto grid grid-cols-2 gap-2 px-5 pb-5 pt-4">
+        <button
+          type="button"
+          disabled={busy || mode === "open"}
+          onClick={() => onBoth(true)}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl bg-[#0b2a46] text-xs font-semibold text-white transition hover:bg-[#0d3456] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+        >
+          <ShieldCheck className="h-3.5 w-3.5" /> Qoldirish
+        </button>
+        <button
+          type="button"
+          disabled={busy || mode === "blocked"}
+          onClick={() => onBoth(false)}
+          className="inline-flex h-9 items-center justify-center gap-1.5 rounded-xl border border-rose-200 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:border-slate-100 disabled:text-slate-300"
+        >
+          <ShieldOff className="h-3.5 w-3.5" /> O‘chirish
+        </button>
+      </footer>
+    </article>
+  );
+}
+
+const TILE_TONES = {
+  sky: { on: "border-sky-200 bg-gradient-to-br from-sky-50 to-white", icon: "bg-sky-500 text-white shadow-sky-500/30", text: "text-sky-700" },
+  violet: { on: "border-violet-200 bg-gradient-to-br from-violet-50 to-white", icon: "bg-violet-500 text-white shadow-violet-500/30", text: "text-violet-700" },
+  teal: { on: "border-teal-200 bg-gradient-to-br from-teal-50 to-white", icon: "bg-teal-500 text-white shadow-teal-500/30", text: "text-teal-700" },
+} as const;
+
+function MethodTile({
+  icon,
+  label,
+  on,
+  offText = "O‘chiq",
+  tone,
+  disabled,
+  onChange,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  on: boolean;
+  offText?: string;
+  tone: keyof typeof TILE_TONES;
+  disabled?: boolean;
+  onChange: (on: boolean) => void;
+}) {
+  const t = TILE_TONES[tone];
+  return (
+    <div className={cn(
+      "flex flex-col gap-2 rounded-2xl border p-2.5 transition",
+      on ? t.on : "border-slate-200 bg-slate-50/60",
+    )}>
+      <div className="flex items-center justify-between gap-1">
+        <span className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-xl shadow-sm transition",
+          on ? cn(t.icon, "shadow-md") : "bg-white text-slate-400",
+        )}>
+          {icon}
+        </span>
+        <Switch checked={on} disabled={disabled} onCheckedChange={onChange} className="scale-90" />
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-xs font-bold text-[#0f2744]">{label}</p>
+        <p className={cn("text-[11px] font-semibold", on ? t.text : "text-slate-400")}>{on ? "Yoqilgan" : offText}</p>
+      </div>
     </div>
   );
 }
 
-function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function HeroStat({ icon, label, value, sub, tone }: { icon: React.ReactNode; label: string; value: number; sub?: string; tone?: "rose" | "teal" | "lime" }) {
+  return (
+    <div className="rounded-2xl bg-white/[0.07] p-3.5 ring-1 ring-white/10 backdrop-blur-sm transition hover:bg-white/[0.11]">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-slate-300">
+        <span className={cn(
+          "flex h-7 w-7 items-center justify-center rounded-lg",
+          tone === "rose" ? "bg-rose-400/20 text-rose-200"
+          : tone === "teal" ? "bg-teal-400/20 text-teal-200"
+          : tone === "lime" ? "bg-lime-400/20 text-lime-200"
+          : "bg-white/10 text-white",
+        )}>
+          {icon}
+        </span>
+        <span className="truncate">{label}</span>
+      </div>
+      <p className={cn("mt-2 text-2xl font-bold tabular-nums tracking-tight", tone === "rose" ? "text-rose-200" : "text-white")}>{value}</p>
+      {sub ? <p className="text-[11px] text-slate-300">{sub}</p> : null}
+    </div>
+  );
+}
+
+function HeroTab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors",
-        active ? "bg-[#0b3a5c] text-white shadow-sm" : "text-slate-600 hover:bg-slate-100",
+        "inline-flex h-8 items-center gap-1.5 rounded-xl px-3 text-sm font-semibold transition",
+        active ? "bg-white text-[#0b2a46] shadow-sm" : "text-white/80 hover:bg-white/10 hover:text-white",
       )}
     >
       {children}
@@ -626,17 +1037,61 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
   );
 }
 
-function Chip({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+function Segment({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold",
-        active ? "border-[#0b3a5c] bg-[#0b3a5c] text-white" : "border-slate-200 bg-white text-slate-600",
+        "inline-flex h-9 items-center justify-center gap-1.5 rounded-xl px-2 text-xs font-semibold transition",
+        active ? "bg-white text-[#0b2a46] shadow-sm" : "text-slate-500 hover:text-slate-700",
       )}
     >
       {children}
     </button>
+  );
+}
+
+function BulkButton({ tone, disabled, onClick, children }: { tone?: "danger" | "teal"; disabled?: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-xl px-3 text-xs font-semibold transition disabled:opacity-50",
+        tone === "danger" ? "bg-rose-500 text-white hover:bg-rose-600"
+        : tone === "teal" ? "bg-teal-400 text-[#0b2a46] hover:bg-teal-300"
+        : "bg-white/10 text-white hover:bg-white/20",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Pager({ page, pages, onPage }: { page: number; pages: number; onPage: (n: number) => void }) {
+  return (
+    <div className="inline-flex items-center gap-1 rounded-xl border border-slate-200 bg-white p-1">
+      <button
+        type="button"
+        disabled={page <= 1}
+        onClick={() => onPage(page - 1)}
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30"
+        aria-label="Oldingi"
+      >
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <span className="min-w-[3.5rem] text-center text-xs font-bold tabular-nums text-[#0f2744]">{page} / {pages}</span>
+      <button
+        type="button"
+        disabled={page >= pages}
+        onClick={() => onPage(page + 1)}
+        className="flex h-7 w-7 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 disabled:opacity-30"
+        aria-label="Keyingi"
+      >
+        <ChevronRight className="h-4 w-4" />
+      </button>
+    </div>
   );
 }

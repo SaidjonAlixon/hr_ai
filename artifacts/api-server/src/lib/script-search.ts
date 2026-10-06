@@ -19,6 +19,8 @@ export function foldScript(input: string): string {
   out = out.replace(/([aeiou])y([aeiou])/g, "$1$2");
   out = out.replace(/ye/g, "e");
   out = out.replace(/x/g, "h");
+  // Ruscha yozuvda o‘zbekcha «q» ko‘pincha «к»: «Samarqand» = «Самарканд»
+  out = out.replace(/q/g, "k");
   return out.replace(/[^a-z0-9]+/g, "");
 }
 

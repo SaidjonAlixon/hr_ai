@@ -39,14 +39,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../../components/ui/select';
-import { Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2, UserPlus, ArrowRightLeft } from 'lucide-react';
+import { Check, Clock, Pencil, ChevronDown, ChevronUp, MapPin, Store, Search, Users, X, Plus, Copy, Eye, EyeOff, Download, Trash2, UserPlus, ArrowRightLeft, Shuffle } from 'lucide-react';
 import { Link } from 'wouter';
 import {
   useCreatePharmacyStaff,
   useDismissPharmacyEmployee,
   useHardDeletePharmacyEmployee,
   useChangePharmacyOrgRole,
-  useCleanupDuplicateBranches,
   useSaveManagerLocation,
   useCreatePharmacyBranch,
   useRemovePharmacyBranch,
@@ -63,12 +62,15 @@ import {
   type PharmacyStaffRole,
   type PharmacyStaffResult,
   type BranchAccount,
+  type PharmacyOrgRole,
 } from '../../lib/pharmacy-staff-api';
 import { Label } from '../../components/ui/label';
 import { PhoneInput } from '../../components/ui/phone-input';
 import { isCompleteUzPhone, normalizeUzPhone, UZ_PHONE_HINT } from '../../lib/phone';
 import { AddBranchDialog } from './AddBranchDialog';
+import { MoveStaffDialog, type MoveBranchOption, type MovePersonOption } from './MoveStaffDialog';
 import { filialNumberLabel } from '../../lib/filial-number';
+import { scriptIncludes } from '../../lib/script-search';
 
 type ShiftType = 'one' | 'two' | 'custom';
 type BranchEmployee = Employee & {
@@ -277,8 +279,8 @@ export default function PharmacyNetworkPage() {
     isLoading,
     refetch,
   } = useQuery({
-    queryKey: staffQueryKey('active', '', 'all', 'dorixona'),
-    queryFn: () => fetchStaff('active', { workplace: 'dorixona' }),
+    queryKey: [...staffQueryKey('active', '', 'all', 'dorixona'), 'with-vacant-branches'],
+    queryFn: () => fetchStaff('active', { workplace: 'dorixona', includeVacantBranches: true }),
     staleTime: 30_000,
   });
   const patchProfile = usePatchEmployeeProfile();
@@ -302,9 +304,12 @@ export default function PharmacyNetworkPage() {
   } | null>(null);
   const [removeBranchTarget, setRemoveBranchTarget] = useState<{ id: number; name: string } | null>(null);
   const changeOrgRole = useChangePharmacyOrgRole();
-  const cleanupDupBranches = useCleanupDuplicateBranches();
   const saveBranchGps = useSaveManagerLocation();
-  const dupCleanupDone = useRef(false);
+  const [moveDialog, setMoveDialog] = useState<{
+    personId?: number | null;
+    branchId?: number | null;
+    role?: PharmacyOrgRole;
+  } | null>(null);
 
   const canRunNetwork = canManagePharmacyOps(user?.role);
   const canAddMudir = canRunNetwork;
@@ -316,27 +321,6 @@ export default function PharmacyNetworkPage() {
   const isMudirOnly = user?.role === 'mudir';
   const isKoordinatorOnly = user?.role === 'koordinator';
   const canDismissStaff = canRunNetwork;
-
-  // Dublikat (mudirsiz) filiallarni bir marta tozalash
-  useEffect(() => {
-    if (!canHardDelete || dupCleanupDone.current) return;
-    dupCleanupDone.current = true;
-    cleanupDupBranches.mutate(
-      { name: "йиллик", purgeEmptyBranches: true },
-      {
-        onSuccess: (res) => {
-          if (res.removedCount > 0) {
-            toast({
-              title: 'Dublikat filiallar tozalandi',
-              description: res.message,
-            });
-          }
-        },
-      },
-    );
-    // faqat bir marta (sahifa ochilganda)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canHardDelete]);
 
   const canSeeFullNetwork =
     isHrRole(user?.role) ||
@@ -500,10 +484,75 @@ export default function PharmacyNetworkPage() {
     return map;
   }, [orgPeople]);
 
+  const moveBranches = useMemo<MoveBranchOption[]>(() => {
+    const coordName = new Map(
+      orgPeople.filter((e) => e.orgRole === 'coordinator').map((c) => [c.id, c.fullName]),
+    );
+    return orgPeople
+      .filter((m) => m.orgRole === 'manager' && empStatus(m) !== 'dismissed' && empStatus(m) !== 'closed')
+      .map((m) => ({
+        id: m.id,
+        label: displayBranchName(m.location) || (m.location || '').split('|')[0].trim() || m.fullName,
+        branchNo: (m as BranchEmployee).branchNo ?? null,
+        coordinatorName: m.reportsToId ? coordName.get(m.reportsToId) ?? null : null,
+        mudir:
+          m.userId && !isNoManagerStatus(empStatus(m))
+            ? { employeeId: m.id, fullName: m.fullName }
+            : null,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'uz'));
+  }, [orgPeople]);
+
+  const movePeople = useMemo<MovePersonOption[]>(() => {
+    const branchIds = new Set(moveBranches.map((b) => b.id));
+    const list: MovePersonOption[] = [];
+    for (const p of orgPeople) {
+      if (!p.userId || empStatus(p) === 'dismissed' || isVacancyPlaceholder(p)) continue;
+      const org = String(p.orgRole || '');
+      if (org === 'manager') {
+        if (isNoManagerStatus(empStatus(p))) continue;
+        list.push({ id: p.id, fullName: p.fullName, orgRole: 'manager', branchId: p.id });
+      } else if (org === 'pharmacist' || org === 'intern' || org === 'supervisor') {
+        const bid = p.reportsToId ?? (p as BranchEmployee).assignedBranchId ?? null;
+        list.push({
+          id: p.id,
+          fullName: p.fullName,
+          orgRole: org === 'intern' ? 'intern' : 'pharmacist',
+          branchId: bid != null && branchIds.has(bid) ? bid : null,
+        });
+      }
+    }
+    return list.sort((a, b) => a.fullName.localeCompare(b.fullName, 'uz'));
+  }, [orgPeople, moveBranches]);
+
+  const openMove = (opts: { personId?: number | null; branchId?: number | null; role?: PharmacyOrgRole }) => {
+    setEditTarget(null);
+    setDeleteTarget(null);
+    setMoveDialog(opts);
+  };
+
   const branchHasAlert = (_managerId: number) => false;
 
-  const nameMatch = (person: Employee, q: string) =>
-    person.fullName.toLowerCase().includes(q);
+  const nameMatch = (person: Employee, q: string) => scriptIncludes(person.fullName || '', q);
+
+  /** Filial: nomi (lotin/kirill), manzil, raqami (16, №16) va mudir ismi. */
+  const branchMatch = (m: Employee, q: string) => {
+    const no = (m as BranchEmployee).branchNo;
+    const numberQuery = /^\s*(№|n|#)?\s*\d+\s*$/i.test(q) ? q.replace(/[^\d]/g, '') : '';
+    if (numberQuery && no != null && String(no) === String(Number(numberQuery))) return true;
+    return scriptIncludes(
+      [m.fullName, displayBranchName(m.location), (m.location || '').split('|')[0]].filter(Boolean).join(' '),
+      numberQuery || q,
+    );
+  };
+
+  const knownCoordIds = useMemo(() => new Set(coordinators.map((c) => c.id)), [coordinators]);
+  const isCoordlessBranch = (m: Employee) => m.reportsToId == null || !knownCoordIds.has(m.reportsToId);
+  const coordlessBranchCount = useMemo(
+    () => (canSeeFullNetwork && !isKoordinatorOnly ? allManagers.filter(isCoordlessBranch).length : 0),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [allManagers, knownCoordIds, canSeeFullNetwork, isKoordinatorOnly],
+  );
 
   const shiftMatch = (person: Employee) => {
     if (shiftFilter === 'all') return true;
@@ -531,11 +580,11 @@ export default function PharmacyNetworkPage() {
       if (shiftFilter !== 'all' && !personShiftOk(c) && !underMatchesShift) return false;
 
       if (!q) return true;
-      if (c.fullName.toLowerCase().includes(q)) return true;
-      if (orphansUnder.some((p) => p.fullName.toLowerCase().includes(q))) return true;
+      if (nameMatch(c, q)) return true;
+      if (orphansUnder.some((p) => nameMatch(p, q))) return true;
       return managersUnder.some((m) => {
-        if (m.fullName.toLowerCase().includes(q)) return true;
-        return (pharmacistsByManager.get(m.id) ?? []).some((p) => p.fullName.toLowerCase().includes(q));
+        if (branchMatch(m, q)) return true;
+        return (pharmacistsByManager.get(m.id) ?? []).some((p) => nameMatch(p, q));
       });
     });
   }, [coordinators, coordinatorFilter, search, shiftFilter, allManagers, pharmacistsByManager, orgPeople]);
@@ -543,13 +592,23 @@ export default function PharmacyNetworkPage() {
   const managers = useMemo(() => {
     const q = search.trim().toLowerCase();
     const allowedCoordIds = new Set(filteredCoordinators.map((c) => c.id));
-    // Admin/HR: koordinatorsiz (reportsToId yo‘q) mudirsiz filiallar ham ko‘rinsin
+    // Admin/HR: koordinatori yo‘q yoki koordinatori ro‘yxatda bo‘lmagan filiallar ham ko‘rinsin
     let list = isMudirOnly
       ? allManagers
       : allManagers.filter((m) => {
-          if (m.reportsToId == null) return canSeeFullNetwork && !isKoordinatorOnly;
-          return allowedCoordIds.has(m.reportsToId);
+          if (isCoordlessBranch(m)) {
+            return (
+              canSeeFullNetwork &&
+              !isKoordinatorOnly &&
+              (coordinatorFilter === 'all' || coordinatorFilter === 'none')
+            );
+          }
+          if (coordinatorFilter === 'none') return false;
+          return allowedCoordIds.has(m.reportsToId!);
         });
+    const coordNameHit = new Set(
+      q ? filteredCoordinators.filter((c) => nameMatch(c, q)).map((c) => c.id) : [],
+    );
 
     if (shiftFilter !== 'all') {
       list = list.filter((m) => {
@@ -560,16 +619,19 @@ export default function PharmacyNetworkPage() {
 
     if (q) {
       list = list.filter((m) => {
-        if (nameMatch(m, q)) return true;
-        if ((m.location || '').toLowerCase().includes(q)) return true;
+        if (branchMatch(m, q)) return true;
+        if (m.reportsToId != null && coordNameHit.has(m.reportsToId)) return true;
         return (pharmacistsByManager.get(m.id) ?? []).some((p) => nameMatch(p, q));
       });
     }
 
     return list;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     allManagers,
     filteredCoordinators,
+    coordinatorFilter,
+    knownCoordIds,
     shiftFilter,
     search,
     pharmacistsByManager,
@@ -643,7 +705,7 @@ export default function PharmacyNetworkPage() {
     }
     if (q) {
       const manager = allManagers.find((m) => m.id === managerId);
-      if (manager && nameMatch(manager, q)) {
+      if (manager && (branchMatch(manager, q) || (manager.reportsToId != null && coordinators.some((c) => c.id === manager.reportsToId && nameMatch(c, q))))) {
         return team;
       }
       team = team.filter((p) => nameMatch(p, q));
@@ -741,7 +803,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
       mode: 'pick',
       branchName,
       options,
-      pickKey: options[0] ? `person:${options[0].id}` : 'branch',
+      pickKey: options[0] ? `person:${options[0].id}` : '',
     });
   };
 
@@ -769,14 +831,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
 
     if (deleteTarget.mode === 'pick') {
       const key = deleteTarget.pickKey || '';
-      if (key === 'branch') {
-        payload = {
-          employeeId: deleteTarget.id,
-          userId: deleteTarget.userId,
-          fullName: deleteTarget.fullName,
-          scope: 'branch',
-        };
-      } else if (key.startsWith('person:')) {
+      if (key.startsWith('person:')) {
         const id = parseInt(key.slice(7), 10);
         const opt = deleteTarget.options?.find((o) => o.id === id);
         if (!opt) return;
@@ -1276,7 +1331,7 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="Ism yoki familiya bo‘yicha qidirish..."
+              placeholder="Filial nomi, raqami (№16) yoki xodim ismi..."
               className="pl-9"
             />
           </div>
@@ -1287,6 +1342,9 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Barcha koordinatorlar</SelectItem>
+                {coordlessBranchCount > 0 ? (
+                  <SelectItem value="none">Koordinatorsiz filiallar ({coordlessBranchCount})</SelectItem>
+                ) : null}
                 {coordinators.map((c) => (
                   <SelectItem key={c.id} value={String(c.id)}>{c.fullName}</SelectItem>
                 ))}
@@ -1528,6 +1586,16 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                                       <Pencil className="h-3.5 w-3.5" />
                                     </button>
                                   )}
+                                  {canHardDelete && ph.userId ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => openMove({ personId: ph.id })}
+                                      className="rounded p-1.5 text-sky-600 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-400 dark:hover:bg-sky-950/40"
+                                      title="Boshqa filialga / lavozimga ko‘chirish"
+                                    >
+                                      <Shuffle className="h-3.5 w-3.5" />
+                                    </button>
+                                  ) : null}
                                   {showDismissButton(ph) && (
                                     <button
                                       type="button"
@@ -1953,6 +2021,31 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                         </Button>
                       ) : null}
                       {canHardDelete ? (
+                        noMudir ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-9 w-full gap-1.5 border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 dark:border-amber-500/40 dark:bg-amber-950/40 dark:text-amber-200"
+                            onClick={() => openMove({ branchId: manager.id, role: 'manager' })}
+                          >
+                            <Shuffle className="h-3.5 w-3.5" />
+                            Mavjud xodimni mudir qilish
+                          </Button>
+                        ) : (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-9 w-full gap-1.5 border-sky-200 text-sky-800 hover:bg-sky-50"
+                            onClick={() => openMove({ personId: manager.id, role: 'manager' })}
+                          >
+                            <Shuffle className="h-3.5 w-3.5" />
+                            Mudirni ko‘chirish / almashtirish
+                          </Button>
+                        )
+                      ) : null}
+                      {canHardDelete ? (
                         <Button
                           type="button"
                           variant="outline"
@@ -2072,6 +2165,16 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                                             <Pencil className="h-3 w-3" />
                                           </button>
                                         )}
+                                        {canHardDelete && ph.userId ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => openMove({ personId: ph.id })}
+                                            className="rounded p-0.5 text-sky-600 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-400"
+                                            title="Boshqa filialga / lavozimga ko‘chirish"
+                                          >
+                                            <Shuffle className="h-3 w-3" />
+                                          </button>
+                                        ) : null}
                                         {showDismissButton(ph) && (
                                           <button
                                             type="button"
@@ -2179,6 +2282,16 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                                     <Pencil className="h-3 w-3" />
                                   </button>
                                 )}
+                                {canHardDelete && ph.userId ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => openMove({ personId: ph.id })}
+                                    className="rounded p-0.5 text-sky-600 hover:bg-sky-50 hover:text-sky-800 dark:text-sky-400"
+                                    title="Filialga biriktirish / ko‘chirish"
+                                  >
+                                    <Shuffle className="h-3 w-3" />
+                                  </button>
+                                ) : null}
                               </div>
                             </div>
                           </div>
@@ -2291,8 +2404,9 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
-                  Mudirni farmasevt/stajyor qilsangiz filial saqlanadi. Farmasevt/stajyorni mudir
-                  qilsangiz — joriy mudir bilan almashtiriladi.
+                  Shu filial ichida almashadi. Mudirni farmasevt/stajyor qilsangiz filial o‘chmaydi — mudirsiz
+                  qoladi. Farmasevtni mudir qilsangiz, joriy mudir shu filialda farmasevt bo‘ladi. Boshqa
+                  filialga o‘tkazish uchun «Ko‘chirish» tugmasini bosing.
                 </p>
               </div>
             )}
@@ -2366,6 +2480,22 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
           <DialogFooter className="flex-col gap-2 sm:flex-row sm:justify-between">
             {editTarget && editTarget.orgRole !== 'coordinator' ? (
               <div className="flex flex-wrap gap-2">
+                {canHardDelete && editTarget.userId ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="gap-1.5 border-sky-300 text-sky-800 hover:bg-sky-50 dark:border-sky-500/40 dark:text-sky-300 dark:hover:bg-sky-950/40"
+                    onClick={() =>
+                      openMove({
+                        personId: editTarget.id,
+                        role: editTarget.orgRole === 'manager' ? 'manager' : undefined,
+                      })
+                    }
+                  >
+                    <Shuffle className="h-4 w-4" />
+                    Ko‘chirish
+                  </Button>
+                ) : null}
                 {showDismissButton(editTarget) ? (
                   <Button
                     type="button"
@@ -2652,10 +2782,16 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                         {deleteTarget.branchName || deleteTarget.fullName}
                       </span>
                     </p>
-                    <p className="text-xs">
-                      Mudir, farmasevt yoki stajyorni alohida tanlang. Mudir o‘chirilsa filial qoladi —
-                      o‘rni bo‘sh bo‘ladi.
+                    <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-900 dark:border-emerald-500/40 dark:bg-emerald-950/30 dark:text-emerald-200">
+                      Filial o‘chmaydi. Mudir o‘chirilsa filial koordinatorda mudirsiz qoladi — keyin yangi
+                      mudir qo‘yasiz yoki mavjud xodimni mudir qilasiz.
                     </p>
+                    {(deleteTarget.options ?? []).length === 0 ? (
+                      <p className="text-xs">
+                        Bu filialda o‘chiriladigan odam yo‘q. Filialni butunlay olib tashlash kerak bo‘lsa,
+                        kartadagi «Filialni o‘chirish» tugmasidan foydalaning.
+                      </p>
+                    ) : null}
                     <div className="max-h-56 space-y-1.5 overflow-y-auto rounded-md border border-border p-2">
                       {(deleteTarget.options ?? []).map((opt) => (
                         <label
@@ -2679,43 +2815,30 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                           <span>
                             <span className="font-medium text-foreground">{opt.label}</span>
                             <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                              Faqat shu odam o‘chadi, qolganlar saqlanadi
+                              {opt.roleKey === 'mudir'
+                                ? 'Faqat mudir o‘chadi — filial va jamoa qoladi'
+                                : 'Faqat shu odam o‘chadi, qolganlar saqlanadi'}
                             </span>
                           </span>
                         </label>
                       ))}
-                      <label
-                        className={cn(
-                          'flex cursor-pointer items-start gap-2 rounded-md border border-rose-200 bg-rose-50/80 px-2 py-1.5 text-sm dark:border-rose-500/40 dark:bg-rose-950/30',
-                          deleteTarget.pickKey === 'branch' && 'ring-1 ring-rose-400',
-                        )}
-                      >
-                        <input
-                          type="radio"
-                          name="delete-pick"
-                          className="mt-1"
-                          checked={deleteTarget.pickKey === 'branch'}
-                          onChange={() =>
-                            setDeleteTarget((prev) =>
-                              prev ? { ...prev, pickKey: 'branch' } : prev,
-                            )
-                          }
-                        />
-                        <span>
-                          <span className="font-medium text-rose-800 dark:text-rose-300">
-                            Butun filialni o‘chirish
-                          </span>
-                          <span className="mt-0.5 block text-[11px] text-rose-700 dark:text-rose-400">
-                            Mudir + {(deleteTarget.staffCount ?? 0) > 0
-                              ? `${deleteTarget.staffCount} ta xodim`
-                              : 'barcha xodimlar'}{' '}
-                            ham yo‘qoladi
-                          </span>
-                        </span>
-                      </label>
                     </div>
+                    {deleteTarget.pickKey?.startsWith('person:') ? (
+                      <button
+                        type="button"
+                        className="inline-flex items-center gap-1.5 text-xs font-semibold text-sky-700 hover:underline dark:text-sky-400"
+                        onClick={() => {
+                          const id = parseInt(deleteTarget.pickKey!.slice(7), 10);
+                          const opt = deleteTarget.options?.find((o) => o.id === id);
+                          openMove({ personId: id, role: opt?.roleKey === 'mudir' ? 'manager' : undefined });
+                        }}
+                      >
+                        <Shuffle className="h-3.5 w-3.5" />
+                        O‘chirish o‘rniga boshqa filialga yoki lavozimga ko‘chirish
+                      </button>
+                    ) : null}
                     <p className="text-rose-700">
-                      Login, parol, davomat va bog‘liq ma’lumotlar o‘chadi. Qaytarib bo‘lmaydi.
+                      O‘chirilgan odamning login, paroli va davomati o‘chadi. Qaytarib bo‘lmaydi.
                     </p>
                   </>
                 ) : (
@@ -2762,13 +2885,26 @@ const openEditor = (person: Employee, e?: React.MouseEvent) => {
                   : 'Ha, bo‘shatish'
                 : hardDeleteStaff.isPending
                   ? 'O‘chirilmoqda…'
-                  : deleteTarget?.mode === 'pick' && deleteTarget.pickKey === 'branch'
-                    ? 'Ha, butun filial'
-                    : 'Ha, o‘chirish'}
+                  : 'Ha, o‘chirish'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <MoveStaffDialog
+        open={!!moveDialog}
+        onOpenChange={(open) => !open && setMoveDialog(null)}
+        branches={moveBranches}
+        people={movePeople}
+        initialPersonId={moveDialog?.personId ?? null}
+        initialBranchId={moveDialog?.branchId ?? null}
+        initialRole={moveDialog?.role}
+        onDone={(message) => {
+          setExpandedId(null);
+          void refetch();
+          toast({ title: 'Ko‘chirildi', description: message });
+        }}
+      />
 
       <AddBranchDialog
         open={addBranchOpen}

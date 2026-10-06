@@ -3782,6 +3782,9 @@ function TaskCard({
     ? task.meta!.submissionHistory!
     : [];
   const lastArchived = prevSubs.length > 0 ? prevSubs[prevSubs.length - 1] : null;
+  const lastAuditorMsg = Array.isArray(task.meta?.messages)
+    ? [...task.meta!.messages!].reverse().find((m) => m.authorRole === "auditor")
+    : undefined;
 
   return (
     <article
@@ -3862,6 +3865,15 @@ function TaskCard({
 
       {needsAccept ? (
         <AcceptWindowCountdown task={task} compact className="mb-2" />
+      ) : null}
+
+      {lastAuditorMsg && !isVerified ? (
+        <div className="mb-2 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1.5 text-[10px] text-amber-950 dark:border-amber-700/60 dark:bg-amber-950/40 dark:text-amber-100">
+          <p className="flex items-center gap-1 font-bold">
+            <AlertTriangle className="h-3 w-3" /> HR Auditordan xabar
+          </p>
+          <p className="mt-0.5 line-clamp-2">{lastAuditorMsg.text || lastAuditorMsg.attachment?.name || "📎"}</p>
+        </div>
       ) : null}
 
       {task.candidateId && task.pipelineStage && (

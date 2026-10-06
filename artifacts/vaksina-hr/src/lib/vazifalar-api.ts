@@ -30,7 +30,8 @@ export type TaskChatMessage = {
   id: string;
   text: string;
   authorName: string;
-  authorRole?: "assigner" | "assignee" | "system";
+  /** auditor — HR Auditordan kelgan ogohlantirish */
+  authorRole?: "assigner" | "assignee" | "system" | "auditor";
   createdAt: string;
   attachment?: TaskAttachment | null;
   /** @ orqali kimga yo‘naltirilgan */

@@ -203,6 +203,10 @@ function isTaskBrowseRole(role?: string | null) {
   return r === "hr_auditor" || r === "hr_direktor";
 }
 
+function isTaskAuditorRole(role?: string | null) {
+  return (role ?? "").trim().toLowerCase() === "hr_auditor";
+}
+
 function canViewTask(row: typeof tasksTable.$inferSelect, userId?: number, role?: string) {
   if (isStrictAdminRole(role) || isDirectorRole(role)) return true;
   if (isCreator(row, userId) || isAssignee(row, userId)) return true;
@@ -299,7 +303,7 @@ function sanitizeMeta(raw: unknown): Record<string, unknown> {
       text: String(m?.text || "").slice(0, 2000),
       authorName: String(m?.authorName || "").slice(0, 120),
       authorRole:
-        m?.authorRole === "assignee" || m?.authorRole === "system"
+        m?.authorRole === "assignee" || m?.authorRole === "system" || m?.authorRole === "auditor"
           ? m.authorRole
           : "assigner",
       createdAt: String(m?.createdAt || new Date().toISOString()).slice(0, 40),
@@ -889,11 +893,9 @@ router.post(
       res.status(403).json({ error: "Ruxsat yo'q" });
       return;
     }
-    if (
-      !isCreator(existing, req.userId) &&
-      !isAssignee(existing, req.userId) &&
-      !isAdminRole(req.userRole)
-    ) {
+    const isParty = isCreator(existing, req.userId) || isAssignee(existing, req.userId);
+    const asAuditor = !isParty && isTaskAuditorRole(req.userRole);
+    if (!isParty && !asAuditor && !isAdminRole(req.userRole)) {
       res.status(403).json({ error: "Faqat beruvchi yoki ijrochi yozishi mumkin" });
       return;
     }
@@ -936,9 +938,11 @@ router.post(
       .from(usersTable)
       .where(eq(usersTable.id, req.userId!));
 
-    const role: "assigner" | "assignee" = isAssignee(existing, req.userId)
-      ? "assignee"
-      : "assigner";
+    const role: "assigner" | "assignee" | "auditor" = asAuditor
+      ? "auditor"
+      : isAssignee(existing, req.userId)
+        ? "assignee"
+        : "assigner";
 
     const prevMeta =
       existing.meta && typeof existing.meta === "object" && !Array.isArray(existing.meta)
@@ -959,7 +963,11 @@ router.post(
     };
     const hist = {
       id: `h-${Date.now()}`,
-      text: attachment ? "Chatga fayl yuborildi" : "Chatga xabar yuborildi",
+      text: asAuditor
+        ? `HR Auditor ogohlantirdi: ${msg.authorName}`
+        : attachment
+          ? "Chatga fayl yuborildi"
+          : "Chatga xabar yuborildi",
       createdAt: now,
     };
 
@@ -982,6 +990,24 @@ router.post(
       })
       .where(eq(tasksTable.id, id))
       .returning();
+
+    if (asAuditor) {
+      const preview = text ? `: ${text.slice(0, 160)}` : "";
+      const targets = new Set<number>();
+      if (existing.assigneeKind === "user" && existing.assigneeId) targets.add(existing.assigneeId);
+      if (existing.createdById) targets.add(existing.createdById);
+      targets.delete(req.userId!);
+      for (const userId of targets) {
+        await notifyUser({
+          userId,
+          text: `⚠️ HR Auditordan xabar — «${existing.title}»${preview}`,
+          type: "expired_task",
+          linkUrl: "/vazifalar",
+        });
+      }
+      res.json(await enrichTask(updated));
+      return;
+    }
 
     const notifyId =
       role === "assigner"

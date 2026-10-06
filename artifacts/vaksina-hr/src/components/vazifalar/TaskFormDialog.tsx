@@ -33,6 +33,7 @@ import {
   UserRound,
   RotateCcw,
   Reply,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -1008,6 +1009,9 @@ export function TaskFormDialog({
   const isWork = mode === "work";
   const isView = mode === "view";
   const isReadOnly = isWork || isView;
+  /** HR Auditor boshqaning topshirig‘ida — faqat chatga ogohlantirish yozadi */
+  const auditorChat =
+    isView && !!editing && String(currentUserRole ?? "").trim().toLowerCase() === "hr_auditor";
   const canPrivateVisibility = canSetPrivateTaskVisibility(currentUserRole);
   const descEditorRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -1724,7 +1728,7 @@ export function TaskFormDialog({
       id: `m-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       text: body,
       authorName: currentUserName || t("tasks.form.you"),
-      authorRole: isWork ? "assignee" : "assigner",
+      authorRole: auditorChat ? "auditor" : isWork ? "assignee" : "assigner",
       createdAt: new Date().toISOString(),
       attachment: attachment || null,
       mentions,
@@ -1764,7 +1768,11 @@ export function TaskFormDialog({
         setHistory(Array.isArray(meta.history) ? meta.history : nextHistory);
         setAttachments(updated.attachments || nextAttachments);
         onTaskUpdated?.(updated);
-      } catch {
+      } catch (err) {
+        if (auditorChat) {
+          setMessages(messagesRef.current.filter((x) => x.id !== msg.id));
+          throw err;
+        }
         await persistChatNow(nextMessages, nextHistory, nextAttachments);
       }
     } catch (e: any) {
@@ -1924,6 +1932,12 @@ export function TaskFormDialog({
   const singleModeLocked = !editing && multiAssigneeKeys.length > 0;
   const multiModeLocked = !editing && !!assigneeKey;
   const EMOJIS = ["👍", "✅", "🙏", "😊", "🔥", "📎", "📷", "⏰", "❗", "👏"];
+  const AUDITOR_QUICK_WARNINGS = [
+    "Muddat o‘tib ketgan — zudlik bilan bajaring",
+    "Topshiriqni qabul qiling va holatini yangilang",
+    "Kechikish sababini shu yerda izohlang",
+    "Bugun ish oxirigacha natijani yuklang",
+  ];
   const canWorkComplete =
     isWork && editing?.status === "in_progress" && !(editing && isTaskOverdue(editing));
   const needsWorkAccept =
@@ -3965,10 +3979,46 @@ export function TaskFormDialog({
                     )}
 
                     {messages.map((m) => {
-                      const mine = isWork
-                        ? m.authorRole === "assignee"
-                        : m.authorRole !== "assignee" && m.authorRole !== "system";
+                      const fromAuditor = m.authorRole === "auditor";
+                      const mine = auditorChat
+                        ? fromAuditor && m.authorName === currentUserName
+                        : isWork
+                          ? m.authorRole === "assignee"
+                          : m.authorRole !== "assignee" && m.authorRole !== "system" && !fromAuditor;
                       const img = isImageAtt(m.attachment);
+                      if (fromAuditor) {
+                        return (
+                          <div key={m.id} className={cn("flex", mine ? "justify-end" : "justify-start")}>
+                            <div className="max-w-[92%] overflow-hidden rounded-2xl border border-amber-300 bg-amber-50 shadow-md dark:border-amber-700 dark:bg-amber-950/60">
+                              <div className="flex items-center gap-1.5 bg-amber-400/90 px-3 py-1 text-[11px] font-bold text-amber-950">
+                                <AlertTriangle className="h-3.5 w-3.5" />
+                                HR Auditordan xabar
+                                <span className="ml-auto font-semibold opacity-80">{m.authorName}</span>
+                              </div>
+                              <div className="px-3 py-2 text-sm text-amber-950 dark:text-amber-50">
+                                {m.text && m.text !== "📷" ? (
+                                  <p className="whitespace-pre-wrap break-words">
+                                    {renderMentionText(m.text, m.mentions)}
+                                  </p>
+                                ) : null}
+                                {m.attachment ? (
+                                  <button
+                                    type="button"
+                                    className="mt-1.5 flex w-full items-center gap-2 rounded-lg bg-white/70 px-2 py-1.5 text-left text-xs font-medium hover:bg-white dark:bg-slate-900/60"
+                                    onClick={() => openAttachment(m.attachment!)}
+                                  >
+                                    <FileText className="h-3.5 w-3.5 shrink-0" />
+                                    <span className="min-w-0 truncate">{m.attachment.name}</span>
+                                  </button>
+                                ) : null}
+                                <p className="mt-1 text-right text-[10px] font-medium text-amber-800/80 dark:text-amber-200/80">
+                                  {formatMsgTime(m.createdAt)}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      }
                       const authorColor = chatColorFor(m.authorName || "?");
                       const bubbleColor =
                         m.authorRole === "assigner" ? "#0b5fff" : authorColor;
@@ -4112,7 +4162,7 @@ export function TaskFormDialog({
                 </div>
 
                 <div className="relative z-[2] border-t border-border bg-background p-2.5 pb-[max(0.65rem,env(safe-area-inset-bottom))] xl:pb-2.5">
-                  {isView ? (
+                  {isView && !auditorChat ? (
                     <p className="rounded-xl bg-slate-50 px-3 py-2 text-center text-[11px] font-medium text-slate-600 dark:bg-slate-900 dark:text-slate-300">
                       Ko‘rish rejimi — chatga yozish mumkin emas
                     </p>
@@ -4124,6 +4174,26 @@ export function TaskFormDialog({
                     </p>
                   ) : (
                   <>
+                  {auditorChat ? (
+                    <div className="mb-2 space-y-1.5">
+                      <p className="flex items-start gap-1.5 rounded-xl bg-amber-50 px-2.5 py-1.5 text-[11px] font-medium leading-snug text-amber-900 ring-1 ring-amber-200 dark:bg-amber-950/40 dark:text-amber-100 dark:ring-amber-800">
+                        <AlertTriangle className="mt-px h-3.5 w-3.5 shrink-0" />
+                        Siz HR Auditor sifatida yozyapsiz — xabar beruvchi va ijrochiga «HR Auditordan» deb boradi. Topshiriqni o‘zgartira olmaysiz.
+                      </p>
+                      <div className="flex gap-1 overflow-x-auto pb-0.5">
+                        {AUDITOR_QUICK_WARNINGS.map((w) => (
+                          <button
+                            key={w}
+                            type="button"
+                            onClick={() => setChatDraft(w)}
+                            className="shrink-0 rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-medium text-amber-900 hover:bg-amber-50 dark:border-amber-800 dark:bg-slate-900 dark:text-amber-100"
+                          >
+                            {w}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
                   {replyTo ? (
                     <div className="mb-2 flex items-start gap-2 rounded-xl border border-sky-200 bg-sky-50/90 px-2.5 py-2 dark:border-sky-800 dark:bg-sky-950/40">
                       <div
@@ -4310,7 +4380,10 @@ export function TaskFormDialog({
                     <Button
                       type="button"
                       size="icon"
-                      className="mb-0.5 h-9 w-9 shrink-0 rounded-xl bg-[#0b5fff] hover:bg-[#0a54e6]"
+                      className={cn(
+                        "mb-0.5 h-9 w-9 shrink-0 rounded-xl",
+                        auditorChat ? "bg-amber-500 hover:bg-amber-600" : "bg-[#0b5fff] hover:bg-[#0a54e6]",
+                      )}
                       disabled={
                         chatUploading ||
                         (!chatPartnerReady && !editing) ||
@@ -4322,9 +4395,11 @@ export function TaskFormDialog({
                     </Button>
                   </div>
                   <p className="mt-1.5 px-1 text-[10px] text-muted-foreground">
-                    {editing
-                      ? t("tasks.form.chat.liveNote")
-                      : t("tasks.form.chat.saveNote")}
+                    {auditorChat
+                      ? "Xabar darhol yuboriladi va bildirishnoma boradi"
+                      : editing
+                        ? t("tasks.form.chat.liveNote")
+                        : t("tasks.form.chat.saveNote")}
                   </p>
                   </>
                   )}

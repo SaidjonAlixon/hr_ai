@@ -119,8 +119,11 @@ if [[ ! -f "$APP_DIR/.env" ]]; then
 fi
 
 echo "==> nginx"
-sed -e "s#HR_DOMAIN#$HR_DOMAIN#g" -e "s#APP_DIR#$APP_DIR#g" \
-  "$APP_DIR/deploy/nginx/hr.conf" > /etc/nginx/sites-available/hr.conf
+# Mavjud konfiguratsiyaga tegilmaydi — unda certbot qo‘shgan HTTPS bloklari bor
+if [[ ! -f /etc/nginx/sites-available/hr.conf ]]; then
+  sed -e "s#HR_DOMAIN#$HR_DOMAIN#g" -e "s#APP_DIR#$APP_DIR#g" \
+    "$APP_DIR/deploy/nginx/hr.conf" > /etc/nginx/sites-available/hr.conf
+fi
 ln -sf /etc/nginx/sites-available/hr.conf /etc/nginx/sites-enabled/hr.conf
 rm -f /etc/nginx/sites-enabled/default
 nginx -t
@@ -137,14 +140,35 @@ fi
 echo "==> pm2 avtomatik ishga tushish"
 pm2 startup systemd -u "$APP_USER" --hp "/home/$APP_USER" >/dev/null
 
-echo "==> Kunlik zaxira (03:15)"
+echo "==> pm2 log aylanishi (disk to‘lmasin)"
+sudo -iu "$APP_USER" pm2 install pm2-logrotate >/dev/null
+sudo -iu "$APP_USER" pm2 set pm2-logrotate:max_size 20M >/dev/null
+sudo -iu "$APP_USER" pm2 set pm2-logrotate:retain 14 >/dev/null
+sudo -iu "$APP_USER" pm2 set pm2-logrotate:compress true >/dev/null
+
+echo "==> Zaxira (har 6 soatda) va watchdog (har 2 daqiqada)"
 mkdir -p /var/backups/hr
 chown "$APP_USER:$APP_USER" /var/backups/hr
 chmod 700 /var/backups/hr
-touch /var/log/hr-backup.log
-chown "$APP_USER:$APP_USER" /var/log/hr-backup.log
-CRON_LINE="15 3 * * * $APP_DIR/deploy/backup-db.sh >> /var/log/hr-backup.log 2>&1"
-{ crontab -u "$APP_USER" -l 2>/dev/null | grep -v 'backup-db.sh' || true; echo "$CRON_LINE"; } | crontab -u "$APP_USER" -
+for f in /var/log/hr-backup.log /var/log/hr-watchdog.log; do
+  touch "$f"
+  chown "$APP_USER:$APP_USER" "$f"
+done
+cat > /etc/logrotate.d/hr <<'ROT'
+/var/log/hr-backup.log /var/log/hr-watchdog.log {
+  weekly
+  rotate 8
+  compress
+  missingok
+  notifempty
+  copytruncate
+}
+ROT
+{
+  crontab -u "$APP_USER" -l 2>/dev/null | grep -vE 'backup-db.sh|watchdog.sh' || true
+  echo "15 */6 * * * $APP_DIR/deploy/backup-db.sh >> /var/log/hr-backup.log 2>&1"
+  echo "*/2 * * * * $APP_DIR/deploy/watchdog.sh >> /var/log/hr-watchdog.log 2>&1"
+} | crontab -u "$APP_USER" -
 
 cat <<DONE
 

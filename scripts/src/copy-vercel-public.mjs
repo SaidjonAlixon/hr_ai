@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
  * 2) Also mirror static files to `public/` for dashboard Output Directory
  *    overrides that still demand a folder named "public".
  */
-const VPS_ORIGIN = "https://189-74-99-250.sslip.io";
+const APP_ORIGIN = "https://vaksinahr.uz";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const workspaceRoot = path.resolve(scriptDir, "../..");
@@ -109,13 +109,9 @@ fs.writeFileSync(
   JSON.stringify(
     {
       version: 3,
-      // Asosiy server — VPS. DNS to‘liq VPS’ga o‘tguncha Vercel’ga tushgan /api so‘rovlari
-      // ham o‘sha bitta bazaga borsin (ikki baza = yo‘qolgan ma’lumot).
+      // Platforma VPS’da (vaksinahr.uz). Eski Vercel manzili faqat yo‘naltiradi.
       routes: [
-        { src: "/api/(.*)", dest: `${VPS_ORIGIN}/api/$1` },
-        { src: "/api$", dest: `${VPS_ORIGIN}/api` },
-        { handle: "filesystem" },
-        { src: "/(.*)", dest: "/index.html" },
+        { src: "/(.*)", status: 308, headers: { Location: `${APP_ORIGIN}/$1` } },
       ],
       // crons live only in vercel.json — duplicating here fails the deploy
     },

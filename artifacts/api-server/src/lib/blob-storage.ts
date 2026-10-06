@@ -101,11 +101,15 @@ export async function readBlobUpload(pathname: string): Promise<{
   contentType: string;
   downloadName: string;
 } | null> {
-  const token = blobToken();
-  if (!token) return null;
   if (!pathname || pathname.includes("..") || !pathname.startsWith("tasks/")) {
     return null;
   }
+
+  const mirrored = await readMirroredBlob(pathname);
+  if (mirrored) return mirrored;
+
+  const token = blobToken();
+  if (!token) return null;
 
   const result = await get(pathname, {
     access: "private",
@@ -132,6 +136,34 @@ export async function readBlobUpload(pathname: string): Promise<{
     contentType: result.blob.contentType || "application/octet-stream",
     downloadName,
   };
+}
+
+/**
+ * Vercel Blob’dan serverga ko‘chirilgan fayllar: uploads/blob/<pathname> (+ .meta.json).
+ * Token o‘chirilgandan keyin ham eski `/api/uploads/remote?path=...` havolalari ishlaydi.
+ */
+async function readMirroredBlob(pathname: string): Promise<{
+  buffer: Buffer;
+  contentType: string;
+  downloadName: string;
+} | null> {
+  const file = path.join(uploadsDir(), "blob", ...pathname.split("/"));
+  try {
+    const buffer = await readFile(file);
+    let contentType = "application/octet-stream";
+    try {
+      const meta = JSON.parse(await readFile(`${file}.meta.json`, "utf8")) as { contentType?: string };
+      if (meta.contentType) contentType = meta.contentType;
+    } catch {
+      /* meta ixtiyoriy */
+    }
+    const downloadName = pathname.includes("__")
+      ? pathname.split("__").pop() || path.basename(pathname)
+      : path.basename(pathname);
+    return { buffer, contentType, downloadName };
+  } catch {
+    return null;
+  }
 }
 
 export async function readLocalUpload(key: string): Promise<Buffer | null> {

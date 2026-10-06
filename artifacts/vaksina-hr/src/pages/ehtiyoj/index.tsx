@@ -9,7 +9,6 @@ import { displayBranchName } from '../../lib/pharmacy-staff-api';
 import { useI18n } from '../../i18n/I18nProvider';
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import {
-  formatNeedDt,
   needLabel,
   roleLabel,
   useBranchNeedAssignees,
@@ -22,14 +21,15 @@ import {
   type BranchNeed,
 } from '../../lib/branch-needs-api';
 import { useAuditBranches } from '../../lib/branch-audits-api';
+import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Textarea } from '../../components/ui/textarea';
 import { Skeleton } from '../../components/ui/skeleton';
-import { Badge } from '../../components/ui/badge';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -42,77 +42,144 @@ import {
   SelectValue,
 } from '../../components/ui/select';
 import {
-  AlertTriangle,
   Check,
   CheckCircle2,
   ChevronDown,
-  ChevronUp,
   ClipboardList,
+  Clock,
+  Hourglass,
+  Inbox,
+  Loader2,
+  Plus,
+  Search,
+  Store,
+  User,
+  Wrench,
   X,
 } from 'lucide-react';
 
-function statusBadge(status: string) {
-  if (status === 'pending') {
-    return <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">Tasdiq kutilmoqda</Badge>;
-  }
-  if (status === 'assigned') {
-    return <Badge className="bg-sky-100 text-sky-900 hover:bg-sky-100">Xodimga yuborilgan</Badge>;
-  }
-  if (status === 'in_progress') {
-    return <Badge className="bg-indigo-100 text-indigo-900 hover:bg-indigo-100">Qabul qilingan</Badge>;
-  }
-  if (status === 'done') {
-    return <Badge className="bg-orange-100 text-orange-900 hover:bg-orange-100">Bajarilgan — tasdiq</Badge>;
-  }
-  if (status === 'verified') {
-    return <Badge className="bg-emerald-100 text-emerald-900 hover:bg-emerald-100">Yakunlangan</Badge>;
-  }
-  if (status === 'closed') {
-    return <Badge variant="secondary">Yopilgan</Badge>;
-  }
-  return <Badge variant="secondary">{status}</Badge>;
+const TZ = 'Asia/Tashkent';
+const QUICK_NEEDS = ['Printer qog‘ozi', 'Kompyuter', 'Printer', 'Internet', 'Ta’mirlash', 'Mudir'];
+
+type Tab = 'active' | 'pending' | 'progress' | 'done' | 'history';
+
+const STATUS: Record<string, { label: string; cls: string; dot: string }> = {
+  pending: { label: 'Tasdiq kutilmoqda', cls: 'bg-amber-50 text-amber-800 ring-amber-200', dot: 'bg-amber-500' },
+  assigned: { label: 'Ijrochiga yuborildi', cls: 'bg-sky-50 text-sky-800 ring-sky-200', dot: 'bg-sky-500' },
+  in_progress: { label: 'Bajarilmoqda', cls: 'bg-indigo-50 text-indigo-800 ring-indigo-200', dot: 'bg-indigo-500' },
+  done: { label: 'Yakuniy tasdiq kerak', cls: 'bg-orange-50 text-orange-800 ring-orange-200', dot: 'bg-orange-500' },
+  verified: { label: 'Yakunlangan', cls: 'bg-emerald-50 text-emerald-800 ring-emerald-200', dot: 'bg-emerald-500' },
+  closed: { label: 'Yopilgan', cls: 'bg-slate-100 text-slate-600 ring-slate-200', dot: 'bg-slate-400' },
+};
+
+function StatusPill({ status }: { status: string }) {
+  const s = STATUS[status] ?? { label: status, cls: 'bg-slate-100 text-slate-600 ring-slate-200', dot: 'bg-slate-400' };
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ring-1 ring-inset', s.cls)}>
+      <span className={cn('h-1.5 w-1.5 rounded-full', s.dot)} />
+      {s.label}
+    </span>
+  );
 }
 
-function NeedTimeline({ n }: { n: BranchNeed }) {
-  const rows: { label: string; at: string | null; detail?: string | null }[] = [
-    {
-      label: 'Mudir / yuboruvchi',
-      at: n.createdAt,
-      detail: n.createdByName
-        ? `${n.createdByName}${n.createdByRole ? ` (${roleLabel(n.createdByRole)})` : ''}`
-        : null,
-    },
-    {
-      label: 'Koordinator tasdiǧi',
-      at: n.confirmedAt,
-      detail: n.confirmedByName,
-    },
-    {
-      label: 'Xodimga yuborilgan',
-      at: n.assignedAt || n.confirmedAt,
-      detail: n.assignedUserName
-        ? `${n.assignedUserName}${n.assignedUserRole ? ` · ${roleLabel(n.assignedUserRole)}` : ''}`
-        : null,
-    },
-    { label: 'Xodim qabul qilgan', at: n.acceptedAt },
-    { label: 'Xodim bajargan', at: n.completedAt },
-    {
-      label: 'Yakuniy tasdiq',
-      at: n.verifiedAt,
-      detail: n.verifiedByName,
-    },
-  ];
+function shortDt(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const date = d.toLocaleDateString('ru-RU', { timeZone: TZ, day: '2-digit', month: '2-digit' });
+  const time = d.toLocaleTimeString('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+  return `${date} · ${time}`;
+}
 
+function fullDt(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const date = d.toLocaleDateString('ru-RU', { timeZone: TZ, day: '2-digit', month: '2-digit', year: 'numeric' });
+  const time = d.toLocaleTimeString('ru-RU', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+  return `${date}, ${time}`;
+}
+
+function ago(iso?: string | null): string {
+  if (!iso) return '';
+  const min = Math.floor((Date.now() - new Date(iso).getTime()) / 60_000);
+  if (!Number.isFinite(min) || min < 0) return '';
+  if (min < 1) return 'hozirgina';
+  if (min < 60) return `${min} daqiqa oldin`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `${h} soat oldin`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d} kun oldin`;
+  return fullDt(iso);
+}
+
+function stepsOf(n: BranchNeed) {
+  return [
+    { key: 'sent', label: 'Yuborildi', at: n.createdAt, who: n.createdByName ? `${n.createdByName}${n.createdByRole ? ` · ${roleLabel(n.createdByRole)}` : ''}` : null },
+    { key: 'confirmed', label: 'Tasdiqlandi', at: n.confirmedAt || n.assignedAt, who: n.confirmedByName },
+    { key: 'accepted', label: 'Qabul qilindi', at: n.acceptedAt, who: n.assignedUserName },
+    { key: 'completed', label: 'Bajarildi', at: n.completedAt, who: n.assignedUserName },
+    { key: 'verified', label: 'Yakunlandi', at: n.verifiedAt, who: n.verifiedByName },
+  ];
+}
+
+function Stepper({ n }: { n: BranchNeed }) {
+  const steps = stepsOf(n);
+  const closed = n.status === 'closed';
+  const current = closed ? -1 : steps.findIndex((s) => !s.at);
   return (
-    <ul className="mt-2 space-y-1 border-l border-border pl-3">
-      {rows.map((r) => (
-        <li key={r.label} className="text-[11px] leading-snug">
-          <span className={r.at ? 'font-medium text-foreground' : 'text-muted-foreground'}>{r.label}:</span>{' '}
-          <span className={r.at ? 'text-foreground' : 'text-muted-foreground'}>{formatNeedDt(r.at)}</span>
-          {r.detail && r.at ? <span className="text-muted-foreground"> · {r.detail}</span> : null}
-        </li>
+    <ol className="flex w-full items-start">
+      {steps.map((s, i) => {
+        const done = Boolean(s.at);
+        const isCurrent = i === current;
+        return (
+          <li key={s.key} className="relative flex min-w-0 flex-1 flex-col items-center text-center">
+            {i > 0 && (
+              <span
+                className={cn('absolute left-[-50%] right-1/2 top-[9px] h-0.5', done ? 'bg-emerald-400' : 'bg-slate-200')}
+              />
+            )}
+            <span
+              className={cn(
+                'relative z-[1] flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-white',
+                done && 'bg-emerald-500 text-white',
+                isCurrent && 'bg-white ring-[3px] ring-sky-400',
+                !done && !isCurrent && 'bg-slate-200',
+              )}
+            >
+              {done ? <Check className="h-3 w-3" strokeWidth={3} /> : isCurrent ? <span className="h-2 w-2 animate-pulse rounded-full bg-sky-500" /> : null}
+            </span>
+            <span className={cn('mt-1.5 text-[11px] font-semibold leading-tight', done ? 'text-slate-800' : isCurrent ? 'text-sky-700' : 'text-slate-400')}>
+              {s.label}
+            </span>
+            <span className="mt-0.5 text-[10px] tabular-nums text-slate-400">{done ? shortDt(s.at) : isCurrent ? 'kutilmoqda' : ''}</span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function DetailTimeline({ n }: { n: BranchNeed }) {
+  const steps = stepsOf(n);
+  return (
+    <dl className="grid gap-x-4 gap-y-1.5 rounded-lg bg-slate-50 px-3 py-2.5 text-xs sm:grid-cols-[150px_1fr]">
+      {steps.map((s) => (
+        <React.Fragment key={s.key}>
+          <dt className={cn('font-medium', s.at ? 'text-slate-700' : 'text-slate-400')}>{s.label}</dt>
+          <dd className={s.at ? 'text-slate-700' : 'text-slate-400'}>
+            {s.at ? fullDt(s.at) : '—'}
+            {s.at && s.who ? <span className="text-slate-500"> · {s.who}</span> : null}
+          </dd>
+        </React.Fragment>
       ))}
-    </ul>
+      {n.closedAt ? (
+        <>
+          <dt className="font-medium text-slate-700">Yopildi</dt>
+          <dd className="text-slate-700">{fullDt(n.closedAt)}</dd>
+        </>
+      ) : null}
+    </dl>
   );
 }
 
@@ -121,26 +188,16 @@ export default function EhtiyojPage() {
   const { toast } = useToast();
   const { t } = useI18n();
 
-  const canWrite =
-    user?.role === 'mudir' ||
-    user?.role === 'koordinator' ||
-    isHrManager(user?.role);
-
-  const canConfirm =
-    user?.role === 'koordinator' || isHrManager(user?.role);
-
-  const canVerify =
-    user?.role === 'mudir' ||
-    user?.role === 'koordinator' ||
-    isHrManager(user?.role);
-
+  const canWrite = user?.role === 'mudir' || user?.role === 'koordinator' || isHrManager(user?.role);
+  const canConfirm = user?.role === 'koordinator' || isHrManager(user?.role);
+  const canVerify = user?.role === 'mudir' || user?.role === 'koordinator' || isHrManager(user?.role);
   const isMudir = user?.role === 'mudir';
   const isKoordinator = user?.role === 'koordinator';
-  const isAssigneeOnly = user?.role === 'texnik' || user?.role === 'ombor';
+  const rawRole = String(user?.role ?? '');
+  const isAssigneeOnly = rawRole === 'texnik' || rawRole === 'ombor';
 
   const { data: needs, isLoading, refetch } = useBranchNeeds();
-  const { data: history, isLoading: historyLoading, refetch: refetchHistory } =
-    useBranchNeedsHistory();
+  const { data: history, isLoading: historyLoading, refetch: refetchHistory } = useBranchNeedsHistory();
   const { data: employees, isLoading: employeesLoading } = useQuery({
     queryKey: staffQueryKey('active', '', 'all', 'dorixona'),
     queryFn: () => fetchStaff('active', { workplace: 'dorixona' }),
@@ -159,34 +216,28 @@ export default function EhtiyojPage() {
   const { mutate: verifyNeed, isPending: verifying } = useVerifyBranchNeed();
   const { mutate: closeNeed, isPending: closing } = useCloseBranchNeed();
 
-  const [listOpen, setListOpen] = useState(true);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  const [tab, setTab] = useState<Tab>('active');
+  const [search, setSearch] = useState('');
+  const [formOpen, setFormOpen] = useState(false);
   const [needTitle, setNeedTitle] = useState('');
   const [note, setNote] = useState('');
   const [branchLocation, setBranchLocation] = useState('');
   const [managerId, setManagerId] = useState<string>('none');
   const [createAssigneeId, setCreateAssigneeId] = useState<string>('none');
-  const [search, setSearch] = useState('');
   const [confirmTarget, setConfirmTarget] = useState<BranchNeed | null>(null);
   const [confirmAssigneeId, setConfirmAssigneeId] = useState<string>('none');
   const [assigneeFilter, setAssigneeFilter] = useState<'all' | 'texnik' | 'ombor' | 'other'>('all');
+  const [closeTarget, setCloseTarget] = useState<BranchNeed | null>(null);
+  const [verifyingId, setVerifyingId] = useState<number | null>(null);
 
   const managers = useMemo(() => {
-    // Koordinator: cheklist API dagi filiallar (o‘z tarmog‘i)
     if (isKoordinator) {
-      return auditBranches.map((b) => ({
-        id: b.id,
-        fullName: b.managerName,
-        location: b.branchLocation,
-      }));
+      return auditBranches.map((b) => ({ id: b.id, fullName: b.managerName, location: b.branchLocation }));
     }
     return (employees ?? [])
       .filter((e: Employee) => e.orgRole === 'manager')
-      .sort((a: Employee, b: Employee) =>
-        (a.location ?? '').localeCompare(b.location ?? '', 'uz'),
-      );
+      .sort((a: Employee, b: Employee) => (a.location ?? '').localeCompare(b.location ?? '', 'uz'));
   }, [auditBranches, employees, isKoordinator]);
-
   const managersLoading = isKoordinator ? branchesLoading : employeesLoading;
 
   const filteredAssignees = useMemo(() => {
@@ -197,38 +248,49 @@ export default function EhtiyojPage() {
     return list.filter((a) => a.role !== 'texnik' && a.role !== 'ombor');
   }, [assignees, assigneeFilter]);
 
-  const pendingNeeds = useMemo(
-    () => (needs ?? []).filter((n) => n.status === 'pending'),
-    [needs],
-  );
-  const doneNeeds = useMemo(
-    () => (needs ?? []).filter((n) => n.status === 'done'),
-    [needs],
+  const active = needs ?? [];
+  const counts = useMemo(
+    () => ({
+      active: active.length,
+      pending: active.filter((n) => n.status === 'pending').length,
+      progress: active.filter((n) => n.status === 'assigned' || n.status === 'in_progress').length,
+      done: active.filter((n) => n.status === 'done').length,
+      history: (history ?? []).length,
+    }),
+    [active, history],
   );
 
-  const openNeeds = useMemo(() => {
+  const list = useMemo(() => {
+    let base: BranchNeed[];
+    if (tab === 'history') base = history ?? [];
+    else if (tab === 'pending') base = active.filter((n) => n.status === 'pending');
+    else if (tab === 'progress') base = active.filter((n) => n.status === 'assigned' || n.status === 'in_progress');
+    else if (tab === 'done') base = active.filter((n) => n.status === 'done');
+    else base = active;
     const q = search.trim().toLowerCase();
-    const list = needs ?? [];
-    if (!q) return list;
-    return list.filter((n) => {
-      const hay = [
-        needLabel(n.needType),
-        n.branchLocation,
-        n.managerName,
-        n.note,
-        n.createdByName,
-        n.assignedUserName,
-      ]
+    if (!q) return base;
+    return base.filter((n) =>
+      [needLabel(n.needType), displayBranchName(n.branchLocation), n.managerName, n.note, n.createdByName, n.assignedUserName]
         .filter(Boolean)
         .join(' ')
-        .toLowerCase();
-      return hay.includes(q);
-    });
-  }, [needs, search]);
+        .toLowerCase()
+        .includes(q),
+    );
+  }, [tab, active, history, search]);
+
+  const listLoading = tab === 'history' ? historyLoading : isLoading;
 
   const refreshAll = () => {
     refetch();
     refetchHistory();
+  };
+
+  const resetForm = () => {
+    setNeedTitle('');
+    setNote('');
+    setBranchLocation('');
+    setManagerId('none');
+    setCreateAssigneeId('none');
   };
 
   const submit = () => {
@@ -251,8 +313,7 @@ export default function EhtiyojPage() {
     }
     const mgr = managerId !== 'none' ? Number(managerId) : null;
     const selected = managers.find((m) => m.id === mgr);
-    const assigneeUserId =
-      canConfirm && createAssigneeId !== 'none' ? Number(createAssigneeId) : undefined;
+    const assigneeUserId = canConfirm && createAssigneeId !== 'none' ? Number(createAssigneeId) : undefined;
 
     createNeed(
       {
@@ -271,12 +332,9 @@ export default function EhtiyojPage() {
                 ? 'Ijrochiga vazifa ochildi — Topshiriqlar bo‘limida'
                 : 'Koordinator tasdiǧi kutilmoqda',
           });
-          setNeedTitle('');
-          setNote('');
-          setBranchLocation('');
-          setManagerId('none');
-          setCreateAssigneeId('none');
-          setListOpen(true);
+          resetForm();
+          setFormOpen(false);
+          setTab('active');
           refreshAll();
         },
         onError: (err: Error) => {
@@ -295,10 +353,7 @@ export default function EhtiyojPage() {
       { id: confirmTarget.id, assigneeUserId: Number(confirmAssigneeId) },
       {
         onSuccess: (result) => {
-          toast({
-            title: 'Tasdiqlandi',
-            description: `Topshiriq #${result.taskId} yuborildi`,
-          });
+          toast({ title: 'Tasdiqlandi', description: `Topshiriq #${result.taskId} yuborildi` });
           setConfirmTarget(null);
           setConfirmAssigneeId('none');
           refreshAll();
@@ -311,9 +366,25 @@ export default function EhtiyojPage() {
   };
 
   const handleVerify = (id: number) => {
+    setVerifyingId(id);
     verifyNeed(id, {
       onSuccess: () => {
-        toast({ title: 'Yakuniy tasdiqlandi', description: 'Yozuv bazada saqlandi' });
+        toast({ title: 'Yakuniy tasdiqlandi', description: 'Ehtiyoj yakunlandi va tarixga o‘tdi' });
+        refreshAll();
+      },
+      onError: (err: Error) => {
+        toast({ title: 'Xatolik', description: err.message, variant: 'destructive' });
+      },
+      onSettled: () => setVerifyingId(null),
+    });
+  };
+
+  const handleClose = () => {
+    if (!closeTarget) return;
+    closeNeed(closeTarget.id, {
+      onSuccess: () => {
+        toast({ title: 'Yopildi', description: 'Ehtiyoj tarixga o‘tdi' });
+        setCloseTarget(null);
         refreshAll();
       },
       onError: (err: Error) => {
@@ -322,74 +393,180 @@ export default function EhtiyojPage() {
     });
   };
 
-  const handleClose = (id: number) => {
-    closeNeed(id, {
-      onSuccess: () => {
-        toast({ title: 'Yopildi', description: 'Yozuv bazada saqlandi' });
-        refreshAll();
-      },
-      onError: (err: Error) => {
-        toast({ title: 'Xatolik', description: err.message, variant: 'destructive' });
-      },
-    });
-  };
+  const subtitle = isAssigneeOnly
+    ? 'Sizga biriktirilgan ehtiyojlar. Qabul qilish va bajarish — Topshiriqlar bo‘limida.'
+    : isMudir
+      ? 'Filialingizga kerakli narsani yuboring. Koordinator tasdiqlaydi, ijrochi bajaradi, siz yakuniy tasdiqlaysiz.'
+      : isKoordinator
+        ? 'Filial va ijrochini tanlab ehtiyoj belgilang yoki mudirlardan kelganlarini tasdiqlang.'
+        : 'Filiallar ehtiyojlari: yuborilgandan yakuniy tasdiqgacha. Yozuvlar o‘chirilmaydi.';
+
+  const tabs: { key: Tab; label: string; count: number }[] = [
+    { key: 'active', label: 'Faol', count: counts.active },
+    { key: 'pending', label: 'Tasdiq kutmoqda', count: counts.pending },
+    { key: 'progress', label: 'Jarayonda', count: counts.progress },
+    { key: 'done', label: 'Yakuniy tasdiq', count: counts.done },
+    { key: 'history', label: 'Tarix', count: counts.history },
+  ];
+
+  const submitDisabled =
+    creating || !needTitle.trim() || (isKoordinator && (managerId === 'none' || createAssigneeId === 'none'));
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground sm:text-3xl">
-          <ClipboardList className="h-7 w-7 text-primary" />
-          {t("ehtiyoj.title")}
-        </h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {isAssigneeOnly
-            ? 'Sizga biriktirilgan ehtiyojlar. Qabul qilish va bajarish — Topshiriqlar bo‘limida.'
-            : isMudir
-              ? 'Yuboring → koordinator tasdiqlaydi → xodim bajaradi → siz yoki koordinator yakuniy tasdiqlaydi. Barcha vaqtlar bazada qoladi.'
-              : isKoordinator
-                ? 'O‘zingiz ehtiyoj belgilang: filial va ijrochini tanlang — vazifa shu kun Topshiriqlar bo‘limiga tushadi. Mudirdan kelganlarini ham tasdiqlaysiz.'
-                : 'Vaqtlar: yuborilgan → tasdiqlangan → xodimga → qabul → bajarilgan → yakuniy tasdiq. Yozuvlar o‘chirilmaydi.'}
-        </p>
+    <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="flex items-center gap-2.5 text-2xl font-bold tracking-tight text-[#0f2744] sm:text-[28px]">
+            <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#0b3a5c]/10">
+              <ClipboardList className="h-5 w-5 text-[#0b3a5c]" />
+            </span>
+            {t('ehtiyoj.title')}
+          </h1>
+          <p className="mt-1.5 max-w-2xl text-sm text-slate-500">{subtitle}</p>
+        </div>
+        {canWrite && (
+          <Button onClick={() => setFormOpen(true)} className="h-10 gap-2 bg-[#0b3a5c] px-4 hover:bg-[#0b3a5c]/90">
+            <Plus className="h-4 w-4" />
+            {isKoordinator ? t('ehtiyoj.set') : t('ehtiyoj.new')}
+          </Button>
+        )}
       </div>
 
-      {canWrite && (
-        <div className="rounded-xl border border-border bg-card p-4">
-          <p className="mb-1 text-sm font-semibold text-foreground">
-            {isKoordinator ? t("ehtiyoj.set") : t("ehtiyoj.new")}
-          </p>
-          {isKoordinator ? (
-            <p className="mb-3 text-xs text-muted-foreground">
-              Filial + ijrochi tanlang — darhol topshiriq ochiladi
-            </p>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatCard
+          icon={Hourglass}
+          label="Tasdiq kutmoqda"
+          value={counts.pending}
+          tone="amber"
+          active={tab === 'pending'}
+          onClick={() => setTab('pending')}
+          hint={canConfirm && counts.pending ? 'Sizning tasdig‘ingiz kerak' : undefined}
+        />
+        <StatCard icon={Wrench} label="Jarayonda" value={counts.progress} tone="sky" active={tab === 'progress'} onClick={() => setTab('progress')} />
+        <StatCard
+          icon={Clock}
+          label="Yakuniy tasdiq kerak"
+          value={counts.done}
+          tone="orange"
+          active={tab === 'done'}
+          onClick={() => setTab('done')}
+          hint={canVerify && counts.done ? 'Bajarilgan — tekshirib tasdiqlang' : undefined}
+        />
+        <StatCard icon={CheckCircle2} label="Yakunlangan" value={counts.history} tone="emerald" active={tab === 'history'} onClick={() => setTab('history')} />
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-100 p-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="-mx-1 flex gap-1 overflow-x-auto px-1">
+            {tabs.map((x) => (
+              <button
+                key={x.key}
+                type="button"
+                onClick={() => setTab(x.key)}
+                className={cn(
+                  'inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors',
+                  tab === x.key ? 'bg-[#0b3a5c] text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100',
+                )}
+              >
+                {x.label}
+                <span
+                  className={cn(
+                    'min-w-[20px] rounded-full px-1.5 text-[11px] tabular-nums',
+                    tab === x.key ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500',
+                  )}
+                >
+                  {x.count}
+                </span>
+              </button>
+            ))}
+          </div>
+          <div className="relative sm:w-64">
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filial, ehtiyoj, odam…" className="h-9 pl-9" />
+          </div>
+        </div>
+
+        <div className="p-3">
+          {listLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-36 w-full rounded-xl" />
+              <Skeleton className="h-36 w-full rounded-xl" />
+            </div>
+          ) : !list.length ? (
+            <EmptyState tab={tab} searching={Boolean(search.trim())} canWrite={canWrite} onCreate={() => setFormOpen(true)} />
           ) : (
-            <div className="mb-3" />
+            <div className="space-y-3">
+              {list.map((n) => (
+                <NeedCard
+                  key={n.id}
+                  n={n}
+                  showConfirm={canConfirm && n.status === 'pending'}
+                  showVerify={canVerify && n.status === 'done'}
+                  showClose={
+                    (canWrite && n.status === 'pending' && (isMudir || canConfirm)) ||
+                    (canConfirm && (n.status === 'assigned' || n.status === 'in_progress' || n.status === 'done'))
+                  }
+                  closeLabel={n.status === 'pending' ? 'Yopish' : 'Bekor qilish'}
+                  verifying={verifying && verifyingId === n.id}
+                  onConfirm={() => {
+                    setConfirmTarget(n);
+                    setConfirmAssigneeId('none');
+                    setAssigneeFilter('all');
+                  }}
+                  onVerify={() => handleVerify(n.id)}
+                  onClose={() => setCloseTarget(n)}
+                />
+              ))}
+            </div>
           )}
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5 sm:col-span-2">
-              <p className="text-xs font-medium text-muted-foreground">Ehtiyoj</p>
+        </div>
+      </div>
+
+      {/* Yangi ehtiyoj */}
+      <Dialog open={formOpen} onOpenChange={(o) => !creating && setFormOpen(o)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{isKoordinator ? t('ehtiyoj.set') : t('ehtiyoj.new')}</DialogTitle>
+            <DialogDescription>
+              {isMudir
+                ? 'Nima kerakligini yozing — koordinatorga yuboriladi.'
+                : isKoordinator
+                  ? 'Filial va ijrochini tanlang — vazifa darhol Topshiriqlar bo‘limiga tushadi.'
+                  : 'Ijrochini hozir tanlasangiz, vazifa darhol ochiladi. Aks holda keyin tasdiqlaysiz.'}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <Field label="Nima kerak?" required>
               <Input
                 value={needTitle}
                 onChange={(e) => setNeedTitle(e.target.value)}
-                placeholder="Masalan: Mudir, kompyuter, printer..."
+                placeholder="Masalan: printer qog‘ozi, kompyuter…"
                 maxLength={120}
+                autoFocus
               />
-            </div>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {QUICK_NEEDS.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onClick={() => setNeedTitle(q)}
+                    className={cn(
+                      'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors',
+                      needTitle === q ? 'bg-[#0b3a5c] text-white ring-[#0b3a5c]' : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50',
+                    )}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </Field>
+
             {!isMudir && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Filial / mudir{isKoordinator ? ' *' : ''}
-                </p>
-                <Select
-                  value={managerId}
-                  onValueChange={setManagerId}
-                  disabled={managersLoading}
-                >
+              <Field label="Filial / mudir" required={isKoordinator}>
+                <Select value={managerId} onValueChange={setManagerId} disabled={managersLoading}>
                   <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        managersLoading ? 'Yuklanmoqda…' : 'Filialni tanlang'
-                      }
-                    />
+                    <SelectValue placeholder={managersLoading ? 'Yuklanmoqda…' : 'Filialni tanlang'} />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Tanlanmagan</SelectItem>
@@ -401,50 +578,27 @@ export default function EhtiyojPage() {
                   </SelectContent>
                 </Select>
                 {!managersLoading && managers.length === 0 && (
-                  <p className="text-[11px] text-amber-700">
+                  <p className="mt-1 text-[11px] text-amber-700">
                     Filial topilmadi. Aptekalar tarmog‘ida mudirlar bog‘langanligini tekshiring.
                   </p>
                 )}
-              </div>
+              </Field>
             )}
-            {!isMudir && !isKoordinator && (
-              <div className="space-y-1.5">
-                <p className="text-xs font-medium text-muted-foreground">Filial nomi (ixtiyoriy)</p>
-                <Input
-                  value={branchLocation}
-                  onChange={(e) => setBranchLocation(e.target.value)}
-                  placeholder="Masalan: FARM LYUKS"
-                />
-              </div>
+
+            {!isMudir && !isKoordinator && managerId === 'none' && (
+              <Field label="Filial nomi" hint="ixtiyoriy — ro‘yxatda bo‘lmasa">
+                <Input value={branchLocation} onChange={(e) => setBranchLocation(e.target.value)} placeholder="Masalan: FARM LYUKS" />
+              </Field>
             )}
+
             {canConfirm && (
-              <div className={`space-y-1.5 ${isKoordinator ? 'sm:col-span-1' : 'sm:col-span-2'}`}>
-                <p className="text-xs font-medium text-muted-foreground">
-                  {isKoordinator
-                    ? 'Ijrochi *'
-                    : 'Ijrochi (ixtiyoriy — tanlasangiz darhol topshiriq ketadi)'}
-                </p>
-                <Select
-                  value={createAssigneeId}
-                  onValueChange={setCreateAssigneeId}
-                  disabled={assigneesLoading}
-                >
+              <Field label="Ijrochi" required={isKoordinator} hint={isKoordinator ? undefined : 'ixtiyoriy'}>
+                <Select value={createAssigneeId} onValueChange={setCreateAssigneeId} disabled={assigneesLoading}>
                   <SelectTrigger>
-                    <SelectValue
-                      placeholder={
-                        assigneesLoading
-                          ? 'Yuklanmoqda…'
-                          : isKoordinator
-                            ? 'Ijrochini tanlang'
-                            : 'Keyinroq tasdiqlayman'
-                      }
-                    />
+                    <SelectValue placeholder={assigneesLoading ? 'Yuklanmoqda…' : isKoordinator ? 'Ijrochini tanlang' : 'Keyinroq tasdiqlayman'} />
                   </SelectTrigger>
                   <SelectContent>
-                    {!isKoordinator && (
-                      <SelectItem value="none">Keyinroq tasdiqlayman</SelectItem>
-                    )}
-                    {isKoordinator && <SelectItem value="none">Tanlanmagan</SelectItem>}
+                    <SelectItem value="none">{isKoordinator ? 'Tanlanmagan' : 'Keyinroq tasdiqlayman'}</SelectItem>
                     {(assignees ?? []).map((a) => (
                       <SelectItem key={a.id} value={String(a.id)}>
                         {a.fullName} · {roleLabel(a.role)}
@@ -453,240 +607,38 @@ export default function EhtiyojPage() {
                   </SelectContent>
                 </Select>
                 {assigneesError && (
-                  <button
-                    type="button"
-                    className="text-[11px] text-rose-600 underline"
-                    onClick={() => void refetchAssignees()}
-                  >
+                  <button type="button" className="mt-1 text-[11px] text-rose-600 underline" onClick={() => void refetchAssignees()}>
                     Ijrochilar yuklanmadi — qayta urinish
                   </button>
                 )}
                 {!assigneesLoading && !assigneesError && (assignees?.length ?? 0) === 0 && (
-                  <p className="text-[11px] text-amber-700">
-                    Faol ijrochi topilmadi (texnik / ombor va boshqalar).
-                  </p>
+                  <p className="mt-1 text-[11px] text-amber-700">Faol ijrochi topilmadi (texnik / ombor va boshqalar).</p>
                 )}
-              </div>
+              </Field>
             )}
-            <div className="space-y-1.5 sm:col-span-2">
-              <p className="text-xs font-medium text-muted-foreground">Izoh</p>
-              <Textarea
-                value={note}
-                onChange={(e) => setNote(e.target.value)}
-                placeholder="Qisqa izoh..."
-                rows={2}
-              />
-            </div>
+
+            <Field label="Izoh" hint="ixtiyoriy">
+              <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Qancha, qaysi model, qachongacha…" rows={2} />
+            </Field>
           </div>
-          <div className="mt-3 flex justify-end">
-            <Button
-              onClick={submit}
-              disabled={
-                creating ||
-                !needTitle.trim() ||
-                (isKoordinator && (managerId === 'none' || createAssigneeId === 'none'))
-              }
-            >
-              {isMudir
-                ? 'Koordinatorga yuborish'
-                : isKoordinator
-                  ? 'Belgilash va yuborish'
-                  : 'Qo‘shish'}
+
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" disabled={creating} onClick={() => setFormOpen(false)}>
+              Bekor qilish
             </Button>
-          </div>
-        </div>
-      )}
+            <Button onClick={submit} disabled={submitDisabled} className="gap-2 bg-[#0b3a5c] hover:bg-[#0b3a5c]/90">
+              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {isMudir ? 'Koordinatorga yuborish' : isKoordinator ? 'Belgilash va yuborish' : 'Qo‘shish'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
-      <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3 sm:p-4">
-        <button
-          type="button"
-          onClick={() => setListOpen((o) => !o)}
-          className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
-        >
-          <div className="flex items-center gap-2">
-            {listOpen ? (
-              <ChevronUp className="h-4 w-4 text-sky-700" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-sky-700" />
-            )}
-            <AlertTriangle className="h-4 w-4 text-sky-700" />
-            <h2 className="text-sm font-semibold text-sky-950">
-              Faol ehtiyojlar ({openNeeds.length})
-              {canConfirm && pendingNeeds.length > 0 ? ` · tasdiq: ${pendingNeeds.length}` : ''}
-              {canVerify && doneNeeds.length > 0 ? ` · yakuniy: ${doneNeeds.length}` : ''}
-            </h2>
-          </div>
-          <span className="text-[11px] font-medium text-sky-800/80">
-            {listOpen ? 'Yig‘ish' : 'Ochish'}
-          </span>
-        </button>
-
-        {listOpen && (
-          <div className="mt-3 space-y-3">
-            <Input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Qidirish..."
-              className="bg-card"
-            />
-
-            {isLoading ? (
-              <Skeleton className="h-20 w-full" />
-            ) : !openNeeds.length ? (
-              <p className="text-sm text-sky-900/60">Hozircha ochiq ehtiyoj yoʻq.</p>
-            ) : (
-              <div className="max-h-[min(60vh,560px)] space-y-2 overflow-y-auto overscroll-contain pr-1">
-                {openNeeds.map((n) => (
-                  <div
-                    key={n.id}
-                    className="flex flex-col gap-2 rounded-lg border border-sky-200 bg-card px-3 py-2.5"
-                  >
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="secondary" className="bg-sky-100 text-sky-900">
-                            {needLabel(n.needType)}
-                          </Badge>
-                          {statusBadge(n.status)}
-                        </div>
-                        <p className="mt-1 truncate text-sm font-semibold text-foreground">
-                          {displayBranchName(n.branchLocation) || 'Filial'}
-                          {n.managerName ? ` — ${n.managerName}` : ''}
-                        </p>
-                        {n.note && <p className="mt-0.5 text-xs text-muted-foreground">{n.note}</p>}
-                        {n.taskId ? (
-                          <p className="mt-1 text-[11px] text-sky-800">
-                            <Link href="/vazifalar" className="underline">
-                              Vazifa #{n.taskId}
-                            </Link>
-                            {n.assignedUserName
-                              ? ` · ${n.assignedUserName}${
-                                  n.assignedUserRole ? ` (${roleLabel(n.assignedUserRole)})` : ''
-                                }`
-                              : ''}
-                          </p>
-                        ) : null}
-                        <NeedTimeline n={n} />
-                      </div>
-                      <div className="flex shrink-0 flex-wrap gap-2">
-                        {canConfirm && n.status === 'pending' && (
-                          <Button
-                            size="sm"
-                            className="h-8 gap-1"
-                            onClick={() => {
-                              setConfirmTarget(n);
-                              setConfirmAssigneeId('none');
-                              setAssigneeFilter('all');
-                            }}
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                            Tasdiqlash
-                          </Button>
-                        )}
-                        {canVerify && n.status === 'done' && (
-                          <Button
-                            size="sm"
-                            className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700"
-                            disabled={verifying}
-                            onClick={() => handleVerify(n.id)}
-                          >
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Yakuniy tasdiq
-                          </Button>
-                        )}
-                        {canWrite &&
-                          n.status === 'pending' &&
-                          (isMudir || canConfirm) && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 gap-1"
-                              disabled={closing}
-                              onClick={() => handleClose(n.id)}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Yopish
-                            </Button>
-                          )}
-                        {canConfirm &&
-                          (n.status === 'assigned' ||
-                            n.status === 'in_progress' ||
-                            n.status === 'done') && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-8 gap-1"
-                              disabled={closing}
-                              onClick={() => handleClose(n.id)}
-                            >
-                              <X className="h-3.5 w-3.5" />
-                              Bekor
-                            </Button>
-                          )}
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <div className="rounded-xl border border-border bg-muted/80 p-3 sm:p-4">
-        <button
-          type="button"
-          onClick={() => setHistoryOpen((o) => !o)}
-          className="flex w-full flex-wrap items-center justify-between gap-2 text-left"
-        >
-          <div className="flex items-center gap-2">
-            {historyOpen ? (
-              <ChevronUp className="h-4 w-4 text-muted-foreground" />
-            ) : (
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
-            )}
-            <h2 className="text-sm font-semibold text-foreground">
-              Tarix (baza) ({(history ?? []).length})
-            </h2>
-          </div>
-          <span className="text-[11px] font-medium text-muted-foreground">
-            {historyOpen ? 'Yig‘ish' : 'Ochish'}
-          </span>
-        </button>
-        {historyOpen && (
-          <div className="mt-3">
-            {historyLoading ? (
-              <Skeleton className="h-16 w-full" />
-            ) : !(history ?? []).length ? (
-              <p className="text-sm text-muted-foreground">Hali yakunlangan yozuv yoʻq.</p>
-            ) : (
-              <div className="max-h-[min(45vh,400px)] space-y-2 overflow-y-auto pr-1">
-                {(history ?? []).map((n) => (
-                  <div
-                    key={n.id}
-                    className="rounded-lg border border-border bg-card px-3 py-2.5"
-                  >
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary">{needLabel(n.needType)}</Badge>
-                      {statusBadge(n.status)}
-                    </div>
-                    <p className="mt-1 text-sm font-medium text-foreground">
-                      {displayBranchName(n.branchLocation) || 'Filial'}
-                      {n.managerName ? ` — ${n.managerName}` : ''}
-                    </p>
-                    <NeedTimeline n={n} />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
+      {/* Tasdiqlash — ijrochi tanlash */}
       <Dialog
         open={!!confirmTarget}
         onOpenChange={(open) => {
-          if (!open) {
+          if (!open && !confirming) {
             setConfirmTarget(null);
             setConfirmAssigneeId('none');
           }
@@ -694,18 +646,20 @@ export default function EhtiyojPage() {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{t("ehtiyoj.confirm")}</DialogTitle>
+            <DialogTitle>{t('ehtiyoj.confirm')}</DialogTitle>
+            <DialogDescription>Ijrochini tanlang — vazifa uning Topshiriqlar bo‘limiga tushadi.</DialogDescription>
           </DialogHeader>
-          <div className="space-y-3 py-1">
-            <p className="text-sm text-foreground">
-              <span className="font-semibold">
-                {confirmTarget ? needLabel(confirmTarget.needType) : ''}
-              </span>
-              {confirmTarget?.branchLocation ? ` — ${displayBranchName(confirmTarget.branchLocation)}` : ''}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              Ijrochini tanlang (texnik, ombor yoki boshqa). Topshiriqlar bo‘limiga tushadi.
-            </p>
+          {confirmTarget ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5">
+              <p className="text-sm font-semibold text-[#0f2744]">{needLabel(confirmTarget.needType)}</p>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {displayBranchName(confirmTarget.branchLocation) || 'Filial'}
+                {confirmTarget.managerName ? ` · ${confirmTarget.managerName}` : ''}
+              </p>
+              {confirmTarget.note ? <p className="mt-1 text-xs text-slate-600">{confirmTarget.note}</p> : null}
+            </div>
+          ) : null}
+          <div className="space-y-2">
             <div className="flex flex-wrap gap-1.5">
               {(
                 [
@@ -722,11 +676,10 @@ export default function EhtiyojPage() {
                     setAssigneeFilter(key);
                     setConfirmAssigneeId('none');
                   }}
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset ${
-                    assigneeFilter === key
-                      ? 'bg-primary text-primary-foreground ring-primary'
-                      : 'bg-card text-foreground ring-slate-200'
-                  }`}
+                  className={cn(
+                    'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset',
+                    assigneeFilter === key ? 'bg-[#0b3a5c] text-white ring-[#0b3a5c]' : 'bg-white text-slate-600 ring-slate-200',
+                  )}
                 >
                   {label}
                 </button>
@@ -746,19 +699,242 @@ export default function EhtiyojPage() {
               </SelectContent>
             </Select>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setConfirmTarget(null)}>
-              Bekor
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" disabled={confirming} onClick={() => setConfirmTarget(null)}>
+              Bekor qilish
             </Button>
-            <Button
-              onClick={handleConfirm}
-              disabled={confirming || confirmAssigneeId === 'none'}
-            >
+            <Button onClick={handleConfirm} disabled={confirming || confirmAssigneeId === 'none'} className="gap-2 bg-[#0b3a5c] hover:bg-[#0b3a5c]/90">
+              {confirming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
               Tasdiqlash va yuborish
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Yopish — tasdiq */}
+      <Dialog open={!!closeTarget} onOpenChange={(o) => !o && !closing && setCloseTarget(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{closeTarget?.status === 'pending' ? 'Ehtiyojni yopasizmi?' : 'Ehtiyojni bekor qilasizmi?'}</DialogTitle>
+            <DialogDescription>
+              {closeTarget ? (
+                <>
+                  <span className="font-semibold text-slate-700">{needLabel(closeTarget.needType)}</span>
+                  {' — '}
+                  {displayBranchName(closeTarget.branchLocation) || 'Filial'}.{' '}
+                </>
+              ) : null}
+              Ehtiyoj «Yopilgan» bo‘lib tarixga o‘tadi. Buni qaytarib bo‘lmaydi.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button variant="outline" disabled={closing} onClick={() => setCloseTarget(null)}>
+              Yo‘q, qolsin
+            </Button>
+            <Button variant="destructive" disabled={closing} onClick={handleClose} className="gap-2">
+              {closing ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+              {closeTarget?.status === 'pending' ? 'Ha, yopish' : 'Ha, bekor qilish'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <p className="mb-1.5 text-xs font-semibold text-slate-700">
+        {label}
+        {required ? <span className="text-rose-500"> *</span> : null}
+        {hint ? <span className="font-normal text-slate-400"> · {hint}</span> : null}
+      </p>
+      {children}
+    </div>
+  );
+}
+
+const TONES = {
+  amber: { icon: 'bg-amber-100 text-amber-700', ring: 'ring-amber-300' },
+  sky: { icon: 'bg-sky-100 text-sky-700', ring: 'ring-sky-300' },
+  orange: { icon: 'bg-orange-100 text-orange-700', ring: 'ring-orange-300' },
+  emerald: { icon: 'bg-emerald-100 text-emerald-700', ring: 'ring-emerald-300' },
+} as const;
+
+function StatCard({
+  icon: Icon,
+  label,
+  value,
+  tone,
+  active,
+  hint,
+  onClick,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: number;
+  tone: keyof typeof TONES;
+  active: boolean;
+  hint?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 text-left shadow-sm transition hover:border-slate-300 hover:shadow',
+        active && cn('ring-2', TONES[tone].ring),
+      )}
+    >
+      <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl', TONES[tone].icon)}>
+        <Icon className="h-[18px] w-[18px]" />
+      </span>
+      <span className="min-w-0">
+        <span className="block text-2xl font-bold leading-none tabular-nums text-[#0f2744]">{value}</span>
+        <span className="mt-1 block text-xs font-medium text-slate-500">{label}</span>
+        {hint && value > 0 ? <span className="mt-0.5 block text-[10px] font-semibold text-slate-700">{hint}</span> : null}
+      </span>
+    </button>
+  );
+}
+
+function NeedCard({
+  n,
+  showConfirm,
+  showVerify,
+  showClose,
+  closeLabel,
+  verifying,
+  onConfirm,
+  onVerify,
+  onClose,
+}: {
+  n: BranchNeed;
+  showConfirm: boolean;
+  showVerify: boolean;
+  showClose: boolean;
+  closeLabel: string;
+  verifying: boolean;
+  onConfirm: () => void;
+  onVerify: () => void;
+  onClose: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const branch = displayBranchName(n.branchLocation) || 'Filial';
+  return (
+    <article className="rounded-xl border border-slate-200 bg-white p-4 transition hover:border-slate-300">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h3 className="text-base font-semibold text-[#0f2744]">{needLabel(n.needType)}</h3>
+          <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+            <span className="inline-flex items-center gap-1">
+              <Store className="h-3.5 w-3.5 text-slate-400" />
+              <span className="font-medium text-slate-700">{branch}</span>
+            </span>
+            {n.managerName ? (
+              <span className="inline-flex items-center gap-1">
+                <User className="h-3.5 w-3.5 text-slate-400" />
+                {n.managerName}
+              </span>
+            ) : null}
+          </p>
+        </div>
+        <div className="flex flex-col items-end gap-1">
+          <StatusPill status={n.status} />
+          <span className="text-[11px] text-slate-400" title={fullDt(n.createdAt)}>
+            #{n.id} · {ago(n.createdAt)}
+          </span>
+        </div>
+      </div>
+
+      {n.note ? <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">{n.note}</p> : null}
+
+      <div className="mt-4 overflow-x-auto pb-1">
+        <div className="min-w-[420px]">
+          <Stepper n={n} />
+        </div>
+      </div>
+
+      {n.assignedUserName || n.taskId ? (
+        <p className="mt-3 flex flex-wrap items-center gap-x-2 text-xs text-slate-600">
+          <Wrench className="h-3.5 w-3.5 text-slate-400" />
+          Ijrochi:
+          <span className="font-semibold text-slate-800">
+            {n.assignedUserName || '—'}
+            {n.assignedUserRole ? <span className="font-normal text-slate-500"> ({roleLabel(n.assignedUserRole)})</span> : null}
+          </span>
+          {n.taskId ? (
+            <Link href="/vazifalar" className="font-medium text-[#0b3a5c] underline-offset-2 hover:underline">
+              Vazifa #{n.taskId}
+            </Link>
+          ) : null}
+        </p>
+      ) : null}
+
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 pt-3">
+        <button
+          type="button"
+          onClick={() => setOpen((o) => !o)}
+          className="inline-flex items-center gap-1 text-xs font-medium text-slate-500 hover:text-slate-800"
+        >
+          <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', open && 'rotate-180')} />
+          {open ? 'Yashirish' : 'Batafsil: kim va qachon'}
+        </button>
+        <div className="flex flex-wrap gap-2">
+          {showClose && (
+            <Button size="sm" variant="outline" className="h-8 gap-1 text-slate-600" onClick={onClose}>
+              <X className="h-3.5 w-3.5" />
+              {closeLabel}
+            </Button>
+          )}
+          {showConfirm && (
+            <Button size="sm" className="h-8 gap-1 bg-[#0b3a5c] hover:bg-[#0b3a5c]/90" onClick={onConfirm}>
+              <Check className="h-3.5 w-3.5" />
+              Tasdiqlash
+            </Button>
+          )}
+          {showVerify && (
+            <Button size="sm" className="h-8 gap-1 bg-emerald-600 hover:bg-emerald-700" disabled={verifying} onClick={onVerify}>
+              {verifying ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+              Yakuniy tasdiq
+            </Button>
+          )}
+        </div>
+      </div>
+      {open ? (
+        <div className="mt-3">
+          <DetailTimeline n={n} />
+        </div>
+      ) : null}
+    </article>
+  );
+}
+
+function EmptyState({ tab, searching, canWrite, onCreate }: { tab: Tab; searching: boolean; canWrite: boolean; onCreate: () => void }) {
+  const text = searching
+    ? 'Qidiruv bo‘yicha hech narsa topilmadi'
+    : tab === 'history'
+      ? 'Hali yakunlangan yoki yopilgan ehtiyoj yo‘q'
+      : tab === 'pending'
+        ? 'Tasdiq kutayotgan ehtiyoj yo‘q'
+        : tab === 'progress'
+          ? 'Hozir bajarilayotgan ehtiyoj yo‘q'
+          : tab === 'done'
+            ? 'Yakuniy tasdiq kutayotgan ehtiyoj yo‘q'
+            : 'Hozircha faol ehtiyoj yo‘q';
+  return (
+    <div className="flex flex-col items-center gap-2 px-4 py-12 text-center">
+      <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100">
+        <Inbox className="h-6 w-6 text-slate-400" />
+      </span>
+      <p className="text-sm font-medium text-slate-600">{text}</p>
+      {canWrite && !searching && tab === 'active' ? (
+        <Button size="sm" variant="outline" className="mt-1 gap-1.5" onClick={onCreate}>
+          <Plus className="h-4 w-4" /> Yangi ehtiyoj qo‘shish
+        </Button>
+      ) : null}
     </div>
   );
 }

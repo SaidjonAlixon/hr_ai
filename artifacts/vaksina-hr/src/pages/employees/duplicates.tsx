@@ -9,6 +9,7 @@ import { Skeleton } from "../../components/ui/skeleton";
 import { useToast } from "../../hooks/use-toast";
 import { useAuth } from "../../contexts/AuthContext";
 import { cn } from "../../lib/utils";
+import { displayBranchName } from "../../lib/pharmacy-staff-api";
 import { EmployeesTabs } from "./employees-tabs";
 import { useI18n } from "../../i18n/I18nProvider";
 import { canViewEmployeeDuplicates } from "../../lib/roles";
@@ -252,7 +253,7 @@ export default function EmployeeDuplicatesPage() {
                       <Fact label={t("emp.col.role")} value={orgRoleLabel(t, m.orgRole)} />
                       <Fact label={t("emp.col.status")} value={statusLabel(t, m.employmentStatus)} />
                       <Fact label={t("emp.col.dept")} value={m.departmentName} />
-                      <Fact label={t("emp.col.branch")} value={m.location} />
+                      <Fact label={t("emp.col.branch")} value={m.location ? displayBranchName(m.location) : m.location} />
                       <Fact label={t("emp.col.shift")} value={shiftText(m, t)} />
                       <Fact label={t("emp.col.hired")} value={m.hiredAt} />
                       <Fact label={t("emp.col.login")} value={m.userLogin || (m.userId ? `user #${m.userId}` : t("emp.noAccount"))} />

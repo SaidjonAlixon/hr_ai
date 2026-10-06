@@ -178,7 +178,7 @@ function OrgPersonCard({ e }: { e: OrgEmployeeView }) {
             {e.position ? <span>{e.position}</span> : null}
             {e.location ? (
               <span className="inline-flex items-center gap-1">
-                <MapPin className="h-3 w-3" /> {e.location}
+                <MapPin className="h-3 w-3" /> {displayBranchName(e.location)}
               </span>
             ) : null}
             {e.managerName ? <span>Mudir: {e.managerName}</span> : null}
@@ -450,7 +450,7 @@ function PersonDossier({
               {p.employee ? (
                 <p className="mt-1 text-xs text-muted-foreground">
                   {p.employee.orgRoleLabel}
-                  {p.employee.location ? ` · ${p.employee.location}` : ""}
+                  {p.employee.location ? ` · ${displayBranchName(p.employee.location)}` : ""}
                   {" · "}
                   <span className={cn("rounded-full px-2 py-0.5 font-medium", empStatusClass(p.employee.employmentStatus))}>
                     {p.employee.employmentStatusLabel}
@@ -464,7 +464,7 @@ function PersonDossier({
                     {(p.coordinator || p.reportsTo)!.fullName}
                   </span>
                   {(p.coordinator || p.reportsTo)!.location
-                    ? ` · ${(p.coordinator || p.reportsTo)!.location}`
+                    ? ` · ${displayBranchName((p.coordinator || p.reportsTo)!.location)}`
                     : ""}
                 </p>
               ) : null}
@@ -581,7 +581,7 @@ function PersonDossier({
                   <p className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     {b.location ? (
                       <span className="inline-flex items-center gap-1">
-                        <MapPin className="h-3 w-3" /> {b.location}
+                        <MapPin className="h-3 w-3" /> {displayBranchName(b.location)}
                       </span>
                     ) : (
                       <span>{t("kuzatuv.noBranchShown")}</span>
@@ -727,7 +727,7 @@ function PersonDossier({
                     </div>
                     <div>
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Filial / joy</p>
-                      <p className="font-medium text-foreground">{p.employee.location || "—"}</p>
+                      <p className="font-medium text-foreground">{displayBranchName(p.employee.location) || "—"}</p>
                     </div>
                     <div>
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Holat</p>
@@ -762,7 +762,7 @@ function PersonDossier({
                       <span className="ml-2 text-xs font-normal text-muted-foreground">
                         ({(p.coordinator || p.reportsTo)!.orgRoleLabel}
                         {(p.coordinator || p.reportsTo)!.location
-                          ? ` · ${(p.coordinator || p.reportsTo)!.location}`
+                          ? ` · ${displayBranchName((p.coordinator || p.reportsTo)!.location)}`
                           : ""}
                         )
                       </span>
@@ -957,7 +957,7 @@ function PersonDossier({
                 <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
                   {v.location ? (
                     <span className="inline-flex items-center gap-1">
-                      <MapPin className="h-3 w-3" /> {v.location}
+                      <MapPin className="h-3 w-3" /> {displayBranchName(v.location)}
                     </span>
                   ) : null}
                   <span>Yaratilgan: {formatDt(v.createdAt)}</span>

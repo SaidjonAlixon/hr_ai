@@ -53,6 +53,7 @@ import {
   Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { Link } from "wouter";
 
 const WEEKDAYS = [
@@ -489,7 +490,7 @@ export default function AdminKochmaDavomatPage() {
                         <div className="font-medium text-foreground">{p.fullName}</div>
                         <div className="mt-0.5 text-xs text-muted-foreground">
                           {p.position || "—"}
-                          {p.location ? ` · ${p.location}` : ""}
+                          {p.location ? ` · ${displayBranchName(p.location)}` : ""}
                         </div>
                         {p.note ? (
                           <div className="mt-1 line-clamp-1 text-[11px] text-muted-foreground/80">

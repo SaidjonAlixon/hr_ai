@@ -9,6 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
 import { hasFullPlatformAccess, userRoleLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
   fetchDavomatMethodAccess,
   saveDavomatMethodAccess,
@@ -400,7 +401,7 @@ export default function DavomatBloklashPage() {
                       </td>
                       <td className="px-3 py-2">
                         <p className="font-semibold text-[#0f2744]">{row.fullName}</p>
-                        <p className="text-[11px] text-slate-500">{positionOf(row)}{row.location ? ` · ${row.location}` : ""}</p>
+                        <p className="text-[11px] text-slate-500">{positionOf(row)}{row.location ? ` · ${displayBranchName(row.location)}` : ""}</p>
                       </td>
                       <td className="px-3 py-2 text-xs">{row.place === "dorixona" ? "Dorixona" : "Ofis"}</td>
                       <td className="px-3 py-2">

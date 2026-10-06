@@ -29,6 +29,7 @@ import {
 import { foldScript } from "@/lib/script-fold";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
   ArrowLeft,
   Loader2,
@@ -504,7 +505,7 @@ export default function AdminKochmaXaritaPage() {
                     </span>
                     <span className="truncate text-[11px] text-muted-foreground">
                       {e.position || "—"}
-                      {e.location ? ` · ${e.location}` : ""}
+                      {e.location ? ` · ${displayBranchName(e.location)}` : ""}
                     </span>
                     <span className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
                       <MapPin className="h-3 w-3" />

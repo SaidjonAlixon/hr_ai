@@ -28,6 +28,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { foldScript } from "@/lib/script-fold";
 import { cn } from "@/lib/utils";
+import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import {
   ArrowLeft,
   History,
@@ -442,7 +443,7 @@ export default function AdminKochmaLivePage() {
                           </div>
                           <div className="truncate text-[11px] text-muted-foreground">
                             {l.position || "—"}
-                            {l.location ? ` · ${l.location}` : ""}
+                            {l.location ? ` · ${displayBranchName(l.location)}` : ""}
                           </div>
                         </div>
                         <div className="flex shrink-0 flex-col items-end gap-1">
@@ -504,7 +505,7 @@ export default function AdminKochmaLivePage() {
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground">
                 {workplaceOf(selected) === "pharmacy" ? "Dorixona" : "Ofis"}
-                {selected.location ? ` · ${selected.location}` : ""}
+                {selected.location ? ` · ${displayBranchName(selected.location)}` : ""}
               </div>
               {selectedMark ? (
                 <div className="mt-1 text-[11px] font-medium text-foreground">

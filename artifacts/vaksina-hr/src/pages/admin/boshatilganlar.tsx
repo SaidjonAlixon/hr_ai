@@ -11,6 +11,7 @@ import { canManageUsers, userRoleLabel } from '../../lib/roles';
 import { fetchDismissedStaff, purgeDismissed } from '../../lib/dismissed-staff-api';
 import { exportDismissedExcel, exportDismissedPdf, fmtDismissedWhen } from '../../lib/dismissed-export';
 import { useToast } from '../../hooks/use-toast';
+import { displayBranchName } from '../../lib/pharmacy-staff-api';
 
 function fmtDateTime(iso?: string | null): string {
   return fmtDismissedWhen(iso);
@@ -171,7 +172,7 @@ export default function BoshatilganlarPage() {
                     </td>
                     <td className="px-3 py-2.5 text-muted-foreground">
                       <div>{r.departmentName || '—'}</div>
-                      {r.location ? <div className="text-xs">{r.location}</div> : null}
+                      {r.location ? <div className="text-xs">{displayBranchName(r.location)}</div> : null}
                     </td>
                     <td className="px-3 py-2.5">
                       <span className="font-mono text-xs text-muted-foreground line-through">{r.login || '—'}</span>

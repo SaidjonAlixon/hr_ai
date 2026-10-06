@@ -39,6 +39,11 @@ if (!isVercel) {
     }
 
     logger.info({ port }, "Server listening");
+    // Sinov serveri (prod bazaning nusxasi) haqiqiy xodimlarga eslatma yubormasin
+    if (process.env.BACKGROUND_JOBS === "0") {
+      logger.warn("BACKGROUND_JOBS=0 — fon ishlari o‘chirilgan");
+      return;
+    }
     startVacancyReminderJob();
     startDavomatReminderJob();
     startTaskReminderJob();

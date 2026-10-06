@@ -9,6 +9,7 @@ import { AuthProvider } from './contexts/AuthContext';
 import { Layout } from './components/layout/Layout';
 import { RealtimeSync } from './lib/realtime-sync';
 import { DeviceSecurityListener } from './components/DeviceSecurityListener';
+import { DisciplineLockOverlay } from './components/DisciplineLockOverlay';
 
 // Login asosiy paketda qoladi. Qolgan sahifalar kirish/yangilashda birga tahlil qilinmasin.
 import Login from './pages/login';
@@ -295,6 +296,7 @@ function App() {
           <AuthProvider>
             <RealtimeSync />
             <DeviceSecurityListener />
+            <DisciplineLockOverlay />
             <TooltipProvider>
               <WouterRouter base={import.meta.env.BASE_URL?.replace(/\/$/, '') || ''}>
                 <Router />

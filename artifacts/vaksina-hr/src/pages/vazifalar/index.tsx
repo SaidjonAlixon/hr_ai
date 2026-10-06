@@ -46,6 +46,16 @@ import {
   SendHorizontal,
   CheckSquare,
   Square,
+  ArrowUpRight,
+  ArrowRight,
+  ArrowUpDown,
+  Building2,
+  Briefcase,
+  Zap,
+  ShieldCheck,
+  Sparkles,
+  Hourglass,
+  CalendarRange,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -122,6 +132,7 @@ import { useI18n } from "@/i18n/I18nProvider";
 import { TaskFormDialog } from "@/components/vazifalar/TaskFormDialog";
 import { AcceptWindowCountdown } from "@/components/vazifalar/AcceptWindowCountdown";
 import { TaskReturnDialog } from "@/components/vazifalar/TaskReturnDialog";
+import { TasksSidebar, rankActiveStaff } from "@/components/vazifalar/TasksSidebar";
 import {
   downloadTasksExcel,
   downloadTasksPdf,
@@ -151,6 +162,8 @@ const COLUMNS: {
   emptyKey: string;
   allowCreate?: boolean;
   accentDot: string;
+  icon: React.ComponentType<{ className?: string }>;
+  iconTone: string;
 }[] = [
   {
     id: "past",
@@ -162,6 +175,8 @@ const COLUMNS: {
     emptyKey: "tasks.empty.overdue",
     allowCreate: true,
     accentDot: "bg-rose-500",
+    icon: AlertTriangle,
+    iconTone: "bg-rose-500/12 text-rose-600 ring-rose-500/20 dark:text-rose-300",
   },
   {
     id: "today",
@@ -173,6 +188,8 @@ const COLUMNS: {
     emptyKey: "tasks.empty.today",
     allowCreate: true,
     accentDot: "bg-amber-500",
+    icon: CalendarClock,
+    iconTone: "bg-amber-500/12 text-amber-600 ring-amber-500/20 dark:text-amber-300",
   },
   {
     id: "progress",
@@ -184,6 +201,8 @@ const COLUMNS: {
     emptyKey: "tasks.empty.progress",
     allowCreate: true,
     accentDot: "bg-sky-500",
+    icon: PlayCircle,
+    iconTone: "bg-sky-500/12 text-sky-600 ring-sky-500/20 dark:text-sky-300",
   },
   {
     id: "review",
@@ -195,6 +214,8 @@ const COLUMNS: {
     emptyKey: "tasks.empty.review",
     allowCreate: false,
     accentDot: "bg-violet-500",
+    icon: ShieldCheck,
+    iconTone: "bg-violet-500/12 text-violet-600 ring-violet-500/20 dark:text-violet-300",
   },
   {
     id: "completed",
@@ -206,6 +227,8 @@ const COLUMNS: {
     emptyKey: "tasks.empty.done",
     allowCreate: false,
     accentDot: "bg-emerald-500",
+    icon: CheckCircle2,
+    iconTone: "bg-emerald-500/12 text-emerald-600 ring-emerald-500/20 dark:text-emerald-300",
   },
 ];
 
@@ -219,10 +242,88 @@ const PRIORITY_CLASS: Record<string, string> = {
 const surface =
   "rounded-2xl border border-border/80 bg-card text-card-foreground shadow-sm shadow-black/[0.03] dark:shadow-black/20";
 const control =
-  "h-9 border-border/80 bg-background text-xs text-foreground shadow-sm";
+  "h-10 rounded-xl border-border/80 bg-background text-[13px] text-foreground shadow-[0_1px_2px_rgba(15,39,68,0.04)] transition hover:border-[#0b3a5c]/30 dark:hover:border-sky-400/30";
 /** Faol filtr — rangli belgi */
 const controlActive =
-  "border-primary/70 bg-primary/10 text-primary font-semibold shadow-sm ring-1 ring-primary/20 dark:bg-primary/15";
+  "border-[#0b3a5c]/50 bg-[#0b3a5c]/[0.06] text-[#0b3a5c] font-semibold ring-1 ring-[#0b3a5c]/15 dark:border-sky-400/50 dark:bg-sky-400/10 dark:text-sky-300 dark:ring-sky-400/20";
+
+type TaskSort = "due" | "priority" | "newest";
+const PRIORITY_RANK: Record<string, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
+
+const BOARD_TXT = {
+  uz: {
+    quick: "Tezkor",
+    qToday: "Bugun",
+    qWeek: "Shu hafta",
+    qMonth: "Shu oy",
+    qUrgent: "Shoshilinch",
+    qOverdue: "Kechikkanlar",
+    qReview: "Tekshiruvda",
+    sort: "Saralash",
+    sortDue: "Muddat bo‘yicha",
+    sortPriority: "Ustuvorlik bo‘yicha",
+    sortNewest: "Eng yangilari",
+    found: "ta vazifa",
+    clear: "Tozalash",
+    ofTotal: "umumiydan",
+    completion: "Bajarilish",
+    clickHint: "Bosib filtrlash",
+    activeHint: "Filtr yoqilgan",
+    review: "Tekshiruvda",
+    emptyPast: "Ajoyib! Kechikkan vazifa yo‘q",
+    emptyPastHint: "Barcha muddatlar nazoratda",
+    emptyToday: "Bugunga vazifa yo‘q",
+    emptyTodayHint: "Yangi vazifa qo‘shib, kunni rejalashtiring",
+    emptyProgress: "Jarayonda vazifa yo‘q",
+    emptyProgressHint: "Qabul qilingan vazifalar shu yerda ko‘rinadi",
+    emptyReview: "Tekshiruv navbati bo‘sh",
+    emptyReviewHint: "Bajarilgan vazifalar tasdiqlash uchun shu yerga tushadi",
+    emptyDone: "Hali bajarilgan vazifa yo‘q",
+    emptyDoneHint: "Tasdiqlangan vazifalar shu yerda saqlanadi",
+    addHere: "Vazifa qo‘shish",
+    dateRange: "Muddat oralig‘i",
+  },
+  ru: {
+    quick: "Быстро",
+    qToday: "Сегодня",
+    qWeek: "Эта неделя",
+    qMonth: "Этот месяц",
+    qUrgent: "Срочные",
+    qOverdue: "Просроченные",
+    qReview: "На проверке",
+    sort: "Сортировка",
+    sortDue: "По сроку",
+    sortPriority: "По приоритету",
+    sortNewest: "Сначала новые",
+    found: "задач",
+    clear: "Сбросить",
+    ofTotal: "от общего",
+    completion: "Выполнение",
+    clickHint: "Нажмите для фильтра",
+    activeHint: "Фильтр включён",
+    review: "На проверке",
+    emptyPast: "Отлично! Просроченных нет",
+    emptyPastHint: "Все сроки под контролем",
+    emptyToday: "На сегодня задач нет",
+    emptyTodayHint: "Добавьте задачу и спланируйте день",
+    emptyProgress: "Нет задач в работе",
+    emptyProgressHint: "Принятые задачи появятся здесь",
+    emptyReview: "Очередь проверки пуста",
+    emptyReviewHint: "Выполненные задачи попадут сюда на утверждение",
+    emptyDone: "Пока нет выполненных задач",
+    emptyDoneHint: "Утверждённые задачи хранятся здесь",
+    addHere: "Добавить задачу",
+    dateRange: "Диапазон сроков",
+  },
+};
+
+const COLUMN_EMPTY: Record<BoardCol, { title: keyof typeof BOARD_TXT.uz; hint: keyof typeof BOARD_TXT.uz }> = {
+  past: { title: "emptyPast", hint: "emptyPastHint" },
+  today: { title: "emptyToday", hint: "emptyTodayHint" },
+  progress: { title: "emptyProgress", hint: "emptyProgressHint" },
+  review: { title: "emptyReview", hint: "emptyReviewHint" },
+  completed: { title: "emptyDone", hint: "emptyDoneHint" },
+};
 
 function normFilterText(s: string) {
   return String(s || "")
@@ -457,7 +558,7 @@ function formatDate(iso: string | null) {
 export default function VazifalarPage() {
   const { toast } = useToast();
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const isMobile = useIsMobile();
   const [location] = useLocation();
   const deepLinkParams = useMemo(() => {
@@ -488,6 +589,22 @@ export default function VazifalarPage() {
   const [workplaceFilter, setWorkplaceFilter] = useState<"all" | "ofis" | "dorixona">("all");
   /** Holat: kechikkan / bugun / jarayon / tekshiruv / bajarilgan */
   const [statusColFilter, setStatusColFilter] = useState<"all" | BoardCol>("all");
+  const [sortMode, setSortMode] = useState<TaskSort>(() => {
+    try {
+      const v = localStorage.getItem("vazifalar.sort");
+      if (v === "priority" || v === "newest") return v;
+    } catch {
+      /* ignore */
+    }
+    return "due";
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem("vazifalar.sort", sortMode);
+    } catch {
+      /* ignore */
+    }
+  }, [sortMode]);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [dateFromOpen, setDateFromOpen] = useState(false);
@@ -995,6 +1112,14 @@ export default function VazifalarPage() {
     }
     for (const k of Object.keys(map) as BoardCol[]) {
       map[k].sort((a, b) => {
+        if (sortMode === "newest") {
+          return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        }
+        if (sortMode === "priority") {
+          const pa = PRIORITY_RANK[a.priority] ?? 2;
+          const pb = PRIORITY_RANK[b.priority] ?? 2;
+          if (pa !== pb) return pa - pb;
+        }
         if (k === "completed" || k === "review") {
           const ca = a.completedAt ? new Date(a.completedAt).getTime() : 0;
           const cb = b.completedAt ? new Date(b.completedAt).getTime() : 0;
@@ -1006,7 +1131,7 @@ export default function VazifalarPage() {
       });
     }
     return map;
-  }, [filtered]);
+  }, [filtered, sortMode]);
 
   const kpi = useMemo(() => {
     const total =
@@ -1020,7 +1145,9 @@ export default function VazifalarPage() {
       overdue: statusCounts.past,
       today: statusCounts.today,
       progress: statusCounts.progress,
+      review: statusCounts.review,
       done: statusCounts.completed,
+      doneRate: total ? Math.round((statusCounts.completed / total) * 100) : 0,
     };
   }, [statusCounts]);
 
@@ -1048,6 +1175,7 @@ export default function VazifalarPage() {
     if (dateFrom) n += 1;
     if (dateTo) n += 1;
     if (search.trim() && assigneeFilter === null) n += 1;
+    if (statusColFilter !== "all") n += 1;
     return n;
   }, [
     branchFilter,
@@ -1057,6 +1185,7 @@ export default function VazifalarPage() {
     dateFrom,
     dateTo,
     search,
+    statusColFilter,
   ]);
 
   const staffFilterActive =
@@ -1066,18 +1195,7 @@ export default function VazifalarPage() {
   const branchActive = branchFilter !== "all";
   const priorityActive = priorityFilter !== "all";
 
-  const topAssignees = useMemo(() => {
-    const map = new Map<string, { name: string; count: number }>();
-    for (const t of filtered) {
-      const name = (t.assigneeName || "").trim() || "—";
-      const prev = map.get(name);
-      if (prev) prev.count += 1;
-      else map.set(name, { name, count: 1 });
-    }
-    return Array.from(map.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-  }, [filtered]);
+  const topAssignees = useMemo(() => rankActiveStaff(filtered, "all").slice(0, 5), [filtered]);
 
   const todaySchedule = useMemo(() => {
     return [...byColumn.today, ...byColumn.past.filter((t) => {
@@ -1192,7 +1310,7 @@ export default function VazifalarPage() {
         count: byColumn[id].length,
         color: colColors[id],
       })),
-      topPeople: topAssignees.slice(0, 5).map((p) => ({ name: p.name, count: p.count })),
+      topPeople: topAssignees.map((p) => ({ name: p.name, count: p.score })),
       rows,
     };
   }
@@ -1636,48 +1754,179 @@ export default function VazifalarPage() {
     );
   }
 
-  const viewTabs: { id: BoardView | "analytics"; labelKey: string; icon: React.ReactNode }[] = [
-    { id: "kanban", labelKey: "tasks.view.kanban", icon: <LayoutGrid className="h-3.5 w-3.5" /> },
-    { id: "calendar", labelKey: "tasks.view.calendar", icon: <CalendarDays className="h-3.5 w-3.5" /> },
-    { id: "analytics", labelKey: "tasks.view.analytics", icon: <BarChart3 className="h-3.5 w-3.5" /> },
-    { id: "list", labelKey: "tasks.view.list", icon: <List className="h-3.5 w-3.5" /> },
+  const viewTabs: {
+    id: BoardView | "analytics";
+    labelKey: string;
+    hint: string;
+    icon: React.ReactNode;
+    badge?: number;
+  }[] = [
+    {
+      id: "kanban",
+      labelKey: "tasks.view.kanban",
+      hint: locale === "ru" ? "Колонки по статусам" : "Holatlar bo‘yicha ustunlar",
+      icon: <LayoutGrid className="h-4 w-4" />,
+    },
+    {
+      id: "calendar",
+      labelKey: "tasks.view.calendar",
+      hint: locale === "ru" ? "Календарь сроков" : "Muddatlar kalendari",
+      icon: <CalendarDays className="h-4 w-4" />,
+      badge: kpi.today,
+    },
+    {
+      id: "analytics",
+      labelKey: "tasks.view.analytics",
+      hint: locale === "ru" ? "Статистика и отчёты" : "Statistika va hisobotlar",
+      icon: <BarChart3 className="h-4 w-4" />,
+    },
+    {
+      id: "list",
+      labelKey: "tasks.view.list",
+      hint: locale === "ru" ? "Табличный вид" : "Jadval ko‘rinishida",
+      icon: <List className="h-4 w-4" />,
+    },
   ];
 
-  const kpiCards = [
+  const B = locale === "ru" ? BOARD_TXT.ru : BOARD_TXT.uz;
+
+  const kpiCards: {
+    key: string;
+    col: "all" | BoardCol;
+    label: string;
+    value: number;
+    icon: React.ComponentType<{ className?: string }>;
+    tone: string;
+    bar: string;
+  }[] = [
     {
       key: "total",
+      col: "all",
       label: t("tasks.kpi.total"),
       value: kpi.total,
       icon: CircleDot,
-      tone: "bg-sky-500/10 text-sky-600 dark:text-sky-300",
+      tone: "bg-[#0b3a5c]/[0.08] text-[#0b3a5c] ring-[#0b3a5c]/15 dark:bg-sky-400/10 dark:text-sky-300 dark:ring-sky-400/20",
+      bar: "bg-[#0b3a5c] dark:bg-sky-400",
     },
     {
       key: "overdue",
+      col: "past",
       label: t("tasks.kpi.overdue"),
       value: kpi.overdue,
       icon: AlertTriangle,
-      tone: "bg-rose-500/10 text-rose-600 dark:text-rose-300",
+      tone: "bg-rose-500/10 text-rose-600 ring-rose-500/20 dark:text-rose-300",
+      bar: "bg-rose-500",
     },
     {
       key: "today",
+      col: "today",
       label: t("tasks.kpi.today"),
       value: kpi.today,
-      icon: Calendar,
-      tone: "bg-amber-500/10 text-amber-600 dark:text-amber-300",
+      icon: CalendarClock,
+      tone: "bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:text-amber-300",
+      bar: "bg-amber-500",
     },
     {
       key: "progress",
+      col: "progress",
       label: t("tasks.kpi.progress"),
       value: kpi.progress,
       icon: PlayCircle,
-      tone: "bg-violet-500/10 text-violet-600 dark:text-violet-300",
+      tone: "bg-sky-500/10 text-sky-600 ring-sky-500/20 dark:text-sky-300",
+      bar: "bg-sky-500",
+    },
+    {
+      key: "review",
+      col: "review",
+      label: B.review,
+      value: kpi.review,
+      icon: ShieldCheck,
+      tone: "bg-violet-500/10 text-violet-600 ring-violet-500/20 dark:text-violet-300",
+      bar: "bg-violet-500",
     },
     {
       key: "done",
+      col: "completed",
       label: t("tasks.kpi.done"),
       value: kpi.done,
       icon: CheckCircle2,
-      tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+      tone: "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-300",
+      bar: "bg-emerald-500",
+    },
+  ];
+
+  const todayYmd = toYmdLocal(new Date());
+  const weekRange = (() => {
+    const now = new Date();
+    const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate() + 6);
+    return { from: toYmdLocal(mon), to: toYmdLocal(sun) };
+  })();
+  const monthRange = (() => {
+    const now = new Date();
+    return {
+      from: toYmdLocal(new Date(now.getFullYear(), now.getMonth(), 1)),
+      to: toYmdLocal(new Date(now.getFullYear(), now.getMonth() + 1, 0)),
+    };
+  })();
+  const isRange = (r: { from: string; to: string }) => dateFrom === r.from && dateTo === r.to;
+  const toggleRange = (r: { from: string; to: string }) => {
+    if (isRange(r)) {
+      setDateFrom("");
+      setDateTo("");
+    } else {
+      setDateFrom(r.from);
+      setDateTo(r.to);
+    }
+  };
+  const toggleStatusCol = (col: BoardCol) => {
+    const next = statusColFilter === col ? "all" : col;
+    setStatusColFilter(next);
+    if (next !== "all") {
+      mobileColTouched.current = true;
+      setMobileCol(next);
+    }
+  };
+  const quickChips: {
+    key: string;
+    label: string;
+    icon: React.ComponentType<{ className?: string }>;
+    active: boolean;
+    onClick: () => void;
+    dot?: string;
+  }[] = [
+    {
+      key: "today",
+      label: B.qToday,
+      icon: CalendarClock,
+      active: isRange({ from: todayYmd, to: todayYmd }),
+      onClick: () => toggleRange({ from: todayYmd, to: todayYmd }),
+    },
+    { key: "week", label: B.qWeek, icon: CalendarRange, active: isRange(weekRange), onClick: () => toggleRange(weekRange) },
+    { key: "month", label: B.qMonth, icon: CalendarDays, active: isRange(monthRange), onClick: () => toggleRange(monthRange) },
+    {
+      key: "urgent",
+      label: B.qUrgent,
+      icon: Zap,
+      dot: "bg-rose-500",
+      active: priorityFilter === "urgent",
+      onClick: () => setPriorityFilter(priorityFilter === "urgent" ? "all" : "urgent"),
+    },
+    {
+      key: "overdue",
+      label: B.qOverdue,
+      icon: Hourglass,
+      dot: "bg-rose-500",
+      active: statusColFilter === "past",
+      onClick: () => toggleStatusCol("past"),
+    },
+    {
+      key: "review",
+      label: B.qReview,
+      icon: ShieldCheck,
+      dot: "bg-violet-500",
+      active: statusColFilter === "review",
+      onClick: () => toggleStatusCol("review"),
     },
   ];
 
@@ -1685,7 +1934,6 @@ export default function VazifalarPage() {
   const calMo = calMonth.getMonth();
   const calDaysInMonth = new Date(calYear, calMo + 1, 0).getDate();
   const calStartWeekday = (new Date(calYear, calMo, 1).getDay() + 6) % 7;
-  const maxTopCount = Math.max(1, ...topAssignees.map((x) => x.count));
   const weekDays = ["Du", "Se", "Ch", "Pa", "Ju", "Sh", "Ya"];
 
   function switchView(next: BoardView) {
@@ -1752,62 +2000,83 @@ export default function VazifalarPage() {
             <div
               role="tablist"
               aria-label={t("tasks.title")}
-              className="inline-flex max-w-full overflow-x-auto rounded-xl border border-border/80 bg-muted/60 p-1 dark:bg-muted/40"
+              className="inline-flex max-w-full items-center gap-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden rounded-2xl border border-border/70 bg-card p-1 shadow-[0_1px_2px_rgba(15,39,68,0.05),0_6px_20px_-10px_rgba(15,39,68,0.18)] dark:shadow-black/20"
             >
               {viewTabs.map((tab) => {
                 const active = tab.id !== "analytics" && viewMode === tab.id;
                 const className = cn(
-                  "inline-flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition-all sm:px-3",
+                  "group relative inline-flex h-9 shrink-0 items-center gap-2 rounded-xl px-2.5 text-[13px] font-semibold transition-all duration-200 sm:px-3.5",
                   active
-                    ? "bg-card text-foreground shadow-sm ring-1 ring-border/60"
-                    : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
+                    ? "bg-gradient-to-b from-[#0f4a74] to-[#0b3a5c] text-white shadow-md shadow-[#0b3a5c]/30 dark:from-primary dark:to-primary dark:text-primary-foreground"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 );
+                const badge =
+                  tab.badge && tab.badge > 0 ? (
+                    <span
+                      className={cn(
+                        "flex h-[18px] min-w-[18px] items-center justify-center rounded-full px-1 text-[10px] font-bold tabular-nums",
+                        active
+                          ? "bg-white/20 text-white"
+                          : "bg-amber-500/15 text-amber-700 dark:text-amber-300",
+                      )}
+                    >
+                      {tab.badge}
+                    </span>
+                  ) : null;
                 if (tab.id === "analytics") {
                   return (
-                    <Link key={tab.id} href="/vazifalar/tahlil" className={className}>
+                    <Link key={tab.id} href="/vazifalar/tahlil" className={className} title={tab.hint}>
                       {tab.icon}
                       <span className="hidden sm:inline">{t(tab.labelKey)}</span>
+                      <ArrowUpRight className="hidden h-3 w-3 opacity-50 transition group-hover:translate-x-0.5 group-hover:-translate-y-0.5 group-hover:opacity-100 sm:block" />
                     </Link>
                   );
                 }
                 return (
-                        <button
+                  <button
                     key={tab.id}
-                          type="button"
+                    type="button"
                     role="tab"
                     aria-selected={active}
+                    title={tab.hint}
                     className={className}
                     onClick={() => switchView(tab.id as BoardView)}
                   >
                     {tab.icon}
                     <span className="hidden sm:inline">{t(tab.labelKey)}</span>
-                        </button>
+                    {badge}
+                  </button>
                 );
               })}
             </div>
             {canAssign && (
-              <Button onClick={() => openCreate("today")} className="hidden gap-2 shadow-sm sm:inline-flex">
-                <Plus className="h-4 w-4" />
+              <button
+                type="button"
+                onClick={() => openCreate("today")}
+                className="group hidden h-[46px] shrink-0 items-center gap-2.5 whitespace-nowrap rounded-2xl bg-gradient-to-r from-[#0b3a5c] via-[#0f4a74] to-[#14598a] pl-1.5 pr-4 text-[13px] font-semibold text-white shadow-lg shadow-[#0b3a5c]/30 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-xl hover:shadow-[#0b3a5c]/35 active:translate-y-0 sm:inline-flex dark:from-primary dark:via-primary dark:to-primary dark:text-primary-foreground"
+              >
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-white/15 ring-1 ring-white/20 transition-transform duration-200 group-hover:rotate-90">
+                  <Plus className="h-4 w-4" />
+                </span>
                 {t("tasks.new")}
-              </Button>
+              </button>
             )}
           </div>
         </div>
       </div>
 
         {/* KPI — bosilganda faqat shu holatdagi vazifalar */}
-        <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mt-4 md:grid md:grid-cols-3 md:overflow-visible md:pb-0 xl:grid-cols-5">
+        <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:mt-4 md:grid md:grid-cols-3 md:gap-3 md:overflow-visible md:pb-0 2xl:grid-cols-6">
           {kpiCards.map((card) => {
             const Icon = card.icon;
-            const colMap: Record<string, "all" | BoardCol> = {
-              total: "all",
-              overdue: "past",
-              today: "today",
-              progress: "progress",
-              done: "completed",
-            };
-            const targetCol = colMap[card.key] ?? "all";
-            const active = statusColFilter === targetCol;
+            const targetCol = card.col;
+            const active = targetCol !== "all" && statusColFilter === targetCol;
+            const share =
+              card.key === "total"
+                ? kpi.doneRate
+                : kpi.total
+                  ? Math.round((card.value / kpi.total) * 100)
+                  : 0;
             return (
               <button
                 key={card.key}
@@ -1825,25 +2094,54 @@ export default function VazifalarPage() {
                     if (isMobile) switchView("kanban");
                   }
                 }}
+                title={active ? B.activeHint : B.clickHint}
                 className={cn(
-                  surface,
-                  "flex min-w-[132px] shrink-0 items-center gap-2 px-2.5 py-2 text-left transition hover:border-primary/30 md:min-w-0 md:gap-3 md:px-3.5 md:py-3",
-                  active && "border-primary/40 ring-1 ring-primary/20",
+                  "group relative flex min-w-[150px] shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card px-3 py-2.5 text-left shadow-[0_1px_2px_rgba(15,39,68,0.04),0_8px_24px_-16px_rgba(15,39,68,0.25)] transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-[0_2px_4px_rgba(15,39,68,0.05),0_14px_30px_-16px_rgba(15,39,68,0.35)] md:min-w-0 md:px-4 md:py-3.5 dark:shadow-black/20",
+                  active &&
+                    "border-[#0b3a5c]/45 ring-2 ring-[#0b3a5c]/15 dark:border-sky-400/50 dark:ring-sky-400/20",
                 )}
               >
                 <span
                   className={cn(
-                    "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg md:h-10 md:w-10 md:rounded-xl",
-                    card.tone,
+                    "pointer-events-none absolute inset-x-0 top-0 h-[3px] opacity-0 transition-opacity group-hover:opacity-100",
+                    card.bar,
+                    active && "opacity-100",
                   )}
-                >
-                  <Icon className="h-3.5 w-3.5 md:h-5 md:w-5" />
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[9px] font-semibold uppercase tracking-[0.06em] text-muted-foreground md:text-[10px] md:tracking-[0.08em]">
-                    {card.label}
-                  </p>
-                  <p className="text-base font-bold tabular-nums text-foreground md:text-xl">{card.value}</p>
+                />
+                <div className="flex items-center gap-2.5 md:gap-3">
+                  <span
+                    className={cn(
+                      "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1 transition-transform duration-200 group-hover:scale-105 md:h-11 md:w-11",
+                      card.tone,
+                    )}
+                  >
+                    <Icon className="h-4 w-4 md:h-5 md:w-5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-[9.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground md:text-[10.5px]">
+                      {card.label}
+                    </p>
+                    <p className="text-lg font-extrabold leading-tight tabular-nums text-foreground md:text-[26px]">
+                      {card.value}
+                    </p>
+                  </div>
+                  {active ? (
+                    <span className="flex h-5 w-5 shrink-0 items-center justify-center self-start rounded-full bg-[#0b3a5c] text-white shadow-sm dark:bg-sky-400 dark:text-slate-950">
+                      <Check className="h-3 w-3" strokeWidth={3} />
+                    </span>
+                  ) : null}
+                </div>
+                <div className="mt-2.5 hidden md:block">
+                  <div className="mb-1 flex items-center justify-between text-[10.5px] text-muted-foreground">
+                    <span>{card.key === "total" ? B.completion : B.ofTotal}</span>
+                    <span className="font-semibold tabular-nums text-foreground/80">{share}%</span>
+                  </div>
+                  <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                    <div
+                      className={cn("h-full rounded-full transition-all duration-700", card.key === "total" ? "bg-emerald-500" : card.bar)}
+                      style={{ width: `${share}%` }}
+                    />
+                  </div>
                 </div>
               </button>
             );
@@ -1900,11 +2198,11 @@ export default function VazifalarPage() {
                     type="button"
                     className={cn(
                       control,
-                      "flex w-full min-w-0 items-center gap-2 rounded-lg border px-3 text-left lg:min-w-[240px] lg:flex-1 lg:max-w-sm",
+                      "flex w-full min-w-0 items-center gap-2.5 border px-3 text-left lg:min-w-[260px] lg:flex-1",
                       (staffFilterActive || staffFilterIsAll || staffPickerOpen) && controlActive,
                     )}
                   >
-                    <Search className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                    <Search className="h-4 w-4 shrink-0 text-[#0b3a5c]/60 dark:text-sky-300/70" />
                     <span
                       className={cn(
                         "min-w-0 flex-1 truncate",
@@ -2068,10 +2366,11 @@ export default function VazifalarPage() {
                     type="button"
                     className={cn(
                       control,
-                      "flex w-full items-center justify-between gap-2 rounded-lg border px-3 text-left lg:w-[168px]",
+                      "flex w-full items-center justify-between gap-2 border px-3 text-left lg:w-[184px]",
                       branchActive && controlActive,
                     )}
                   >
+                    <Building2 className="h-4 w-4 shrink-0 opacity-60" />
                     <span className="min-w-0 flex-1 truncate">
                       {branchFilter === "all" ? t("tasks.filter.allBranches") : branchFilter}
                     </span>
@@ -2149,8 +2448,9 @@ export default function VazifalarPage() {
                 onValueChange={(v) => setWorkplaceFilter(v as "all" | "ofis" | "dorixona")}
               >
                 <SelectTrigger
-                  className={cn(control, "w-full rounded-lg lg:w-[148px]", workplaceActive && controlActive)}
+                  className={cn(control, "w-full justify-start gap-2 px-3 lg:w-[164px] [&>span]:flex-1 [&>span]:text-left", workplaceActive && controlActive)}
                 >
+                  <Briefcase className="h-4 w-4 shrink-0 opacity-60" />
                   <SelectValue placeholder={t("tasks.filter.allWorkplace")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -2163,8 +2463,9 @@ export default function VazifalarPage() {
               {/* 4. Ustuvorlik */}
               <Select value={priorityFilter} onValueChange={setPriorityFilter}>
                 <SelectTrigger
-                  className={cn(control, "w-full rounded-lg lg:w-[150px]", priorityActive && controlActive)}
+                  className={cn(control, "w-full justify-start gap-2 px-3 lg:w-[176px] [&>span]:flex-1 [&>span]:text-left", priorityActive && controlActive)}
                 >
+                  <Flag className="h-4 w-4 shrink-0 opacity-60" />
                   <SelectValue placeholder={t("tasks.filter.allPriority")} />
                 </SelectTrigger>
                 <SelectContent>
@@ -2177,15 +2478,20 @@ export default function VazifalarPage() {
               </Select>
 
               {/* 5. Sana */}
-              <div className="flex w-full items-center gap-1.5 lg:w-auto">
+              <div
+                className={cn(
+                  "flex h-10 w-full items-center gap-0.5 rounded-xl border border-border/80 bg-background p-1 shadow-[0_1px_2px_rgba(15,39,68,0.04)] lg:w-auto",
+                  (dateFrom || dateTo) && "border-[#0b3a5c]/40 dark:border-sky-400/40",
+                )}
+                title={B.dateRange}
+              >
                 <Popover open={dateFromOpen} onOpenChange={setDateFromOpen}>
                   <PopoverTrigger asChild>
                     <button
                       type="button"
                       className={cn(
-                        control,
-                        "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border px-2.5 text-left transition lg:w-[136px] lg:flex-none",
-                        "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        "inline-flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2.5 text-left text-[12.5px] text-foreground transition hover:bg-muted lg:w-[132px] lg:flex-none",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                         dateFrom && controlActive,
                       )}
                     >
@@ -2222,7 +2528,7 @@ export default function VazifalarPage() {
                       ) : null}
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
+                  <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6} onOpenAutoFocus={(e) => e.preventDefault()}>
                     <DayPickerCalendar
                       mode="single"
                       className="rounded-xl"
@@ -2239,16 +2545,15 @@ export default function VazifalarPage() {
                   </PopoverContent>
                 </Popover>
 
-                <span className="shrink-0 text-[11px] text-muted-foreground/70">–</span>
+                <ArrowRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground/60" />
 
                 <Popover open={dateToOpen} onOpenChange={setDateToOpen}>
                   <PopoverTrigger asChild>
                     <button
                       type="button"
                       className={cn(
-                        control,
-                        "inline-flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border px-2.5 text-left transition lg:w-[136px] lg:flex-none",
-                        "hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
+                        "inline-flex h-full min-w-0 flex-1 items-center gap-1.5 rounded-lg px-2.5 text-left text-[12.5px] text-foreground transition hover:bg-muted lg:w-[132px] lg:flex-none",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40",
                         dateTo && controlActive,
                       )}
                     >
@@ -2285,7 +2590,7 @@ export default function VazifalarPage() {
                       ) : null}
                     </button>
                   </PopoverTrigger>
-                  <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6}>
+                  <PopoverContent align="start" className="w-auto rounded-xl border border-border p-0 shadow-lg" sideOffset={6} onOpenAutoFocus={(e) => e.preventDefault()}>
                     <DayPickerCalendar
                       mode="single"
                       className="rounded-xl"
@@ -2303,19 +2608,73 @@ export default function VazifalarPage() {
                 </Popover>
               </div>
 
-              {activeFilterCount > 0 ? (
-                <button
-                  type="button"
-                  className="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-lg border border-primary/50 bg-primary px-3 text-xs font-bold text-primary-foreground shadow-sm hover:bg-primary/90"
-                  onClick={clearAllFilters}
-                >
-                  <X className="h-3.5 w-3.5" />
-                  {t("tasks.filter.dateClear")}
-                  <span className="rounded-full bg-white/25 px-1.5 py-px text-[10px] tabular-nums">
-                    {activeFilterCount}
-                  </span>
-                </button>
-              ) : null}
+            </div>
+
+            <div className="flex flex-col gap-2.5 border-t border-dashed border-border/70 pt-3 lg:flex-row lg:items-center lg:justify-between">
+              <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <span className="mr-0.5 inline-flex shrink-0 items-center gap-1 text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                  <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                  {B.quick}
+                </span>
+                {quickChips.map((chip) => {
+                  const ChipIcon = chip.icon;
+                  return (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      aria-pressed={chip.active}
+                      onClick={chip.onClick}
+                      className={cn(
+                        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold transition-all duration-150",
+                        chip.active
+                          ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-sm shadow-[#0b3a5c]/25 dark:border-sky-400 dark:bg-sky-400 dark:text-slate-950"
+                          : "border-border/80 bg-background text-muted-foreground hover:border-[#0b3a5c]/30 hover:text-foreground dark:hover:border-sky-400/30",
+                      )}
+                    >
+                      <ChipIcon className="h-3.5 w-3.5" />
+                      {chip.label}
+                      {chip.dot && !chip.active ? (
+                        <span className={cn("h-1.5 w-1.5 rounded-full", chip.dot)} />
+                      ) : null}
+                      {chip.active ? <X className="h-3 w-3 opacity-80" /> : null}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="flex shrink-0 items-center gap-2">
+                <Select value={sortMode} onValueChange={(v) => setSortMode(v as TaskSort)}>
+                  <SelectTrigger
+                    className="h-8 w-auto gap-1.5 rounded-full border-border/80 bg-background px-3 text-[12px] font-semibold shadow-none"
+                    aria-label={B.sort}
+                  >
+                    <ArrowUpDown className="h-3.5 w-3.5 opacity-60" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent align="end">
+                    <SelectItem value="due">{B.sortDue}</SelectItem>
+                    <SelectItem value="priority">{B.sortPriority}</SelectItem>
+                    <SelectItem value="newest">{B.sortNewest}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="inline-flex h-8 items-center rounded-full bg-muted/70 px-3 text-[12px] text-muted-foreground">
+                  <span className="mr-1 font-bold tabular-nums text-foreground">{filtered.length}</span>
+                  {B.found}
+                </span>
+                {activeFilterCount > 0 ? (
+                  <button
+                    type="button"
+                    className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full bg-rose-500/10 px-3 text-[12px] font-bold text-rose-600 ring-1 ring-rose-500/25 transition hover:bg-rose-500/15 dark:text-rose-300"
+                    onClick={clearAllFilters}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    {B.clear}
+                    <span className="rounded-full bg-rose-500 px-1.5 py-px text-[10px] tabular-nums text-white">
+                      {activeFilterCount}
+                    </span>
+                  </button>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
@@ -2771,34 +3130,39 @@ export default function VazifalarPage() {
                 <section
                   key={col.id}
                   className={cn(
-                    surface,
-                    "min-h-0 w-full shrink-0 flex-col overflow-hidden md:min-h-0 md:w-[286px]",
+                    "min-h-0 w-full shrink-0 flex-col overflow-hidden rounded-2xl border border-border/70 bg-card shadow-[0_1px_2px_rgba(15,39,68,0.04),0_10px_30px_-18px_rgba(15,39,68,0.3)] md:min-h-0 md:w-[296px] dark:shadow-black/25",
                     mobileCol === col.id ? "flex" : "hidden md:flex",
                   )}
                 >
-                  <header className="shrink-0">
-                    <div className={cn("h-1", col.top)} />
-                    <div
-                      className={cn(
-                        "flex items-start justify-between gap-2 px-3 py-2.5 md:py-3",
-                        col.headerBg,
-                      )}
-                    >
-                      <div>
-                        <h2 className="text-[14px] font-bold text-foreground">
-                          {t(col.labelKey)}
-                        </h2>
-                        <p className="hidden text-[11px] text-muted-foreground md:block">{t(col.hintKey)}</p>
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <span
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[11px] font-bold tabular-nums",
-                            col.countBg,
-                          )}
-                        >
-                          {byColumn[col.id].length}
-                        </span>
+                  <header className="shrink-0 border-b border-border/60">
+                    <div className={cn("h-[3px]", col.top)} />
+                    <div className={cn("px-3 pb-2.5 pt-3", col.headerBg)}>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex min-w-0 items-center gap-2.5">
+                          <span
+                            className={cn(
+                              "flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ring-1",
+                              col.iconTone,
+                            )}
+                          >
+                            <col.icon className="h-[18px] w-[18px]" />
+                          </span>
+                          <div className="min-w-0">
+                            <h2 className="truncate text-[14px] font-bold leading-tight text-foreground">
+                              {t(col.labelKey)}
+                            </h2>
+                            <p className="truncate text-[11px] text-muted-foreground">{t(col.hintKey)}</p>
+                          </div>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <span
+                            className={cn(
+                              "flex h-6 min-w-[24px] items-center justify-center rounded-lg px-1.5 text-[12px] font-extrabold tabular-nums",
+                              col.countBg,
+                            )}
+                          >
+                            {byColumn[col.id].length}
+                          </span>
                         {(() => {
                           const deletable = deletableInColumn(col.id);
                           const isAdminDelete = canSeePrivateTasks(user?.role);
@@ -2890,6 +3254,20 @@ export default function VazifalarPage() {
                             </DropdownMenu>
                           );
                         })()}
+                        </div>
+                      </div>
+                      <div className="mt-2.5 flex items-center gap-2">
+                        <div className="h-1 flex-1 overflow-hidden rounded-full bg-black/[0.06] dark:bg-white/10">
+                          <div
+                            className={cn("h-full rounded-full transition-all duration-700", col.accentDot)}
+                            style={{
+                              width: `${kpi.total ? Math.round((byColumn[col.id].length / kpi.total) * 100) : 0}%`,
+                            }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-semibold tabular-nums text-muted-foreground">
+                          {kpi.total ? Math.round((byColumn[col.id].length / kpi.total) * 100) : 0}%
+                        </span>
                       </div>
                     </div>
                     {selectCol === col.id ? (
@@ -2934,10 +3312,37 @@ export default function VazifalarPage() {
                     ) : null}
                   </header>
 
-                  <div className="flex-1 space-y-2.5 overflow-y-auto bg-muted/20 px-2.5 py-2.5 dark:bg-muted/10">
+                  <div className="flex-1 space-y-2.5 overflow-y-auto bg-slate-50/70 px-2.5 py-2.5 dark:bg-slate-900/30">
                     {byColumn[col.id].length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-border bg-card/60 px-3 py-10 text-center text-sm text-muted-foreground">
-                        {t(col.emptyKey)}
+                      <div className="flex flex-col items-center rounded-xl border border-dashed border-border/90 bg-card/70 px-4 py-8 text-center">
+                        <span
+                          className={cn(
+                            "mb-3 flex h-12 w-12 items-center justify-center rounded-2xl ring-1",
+                            col.id === "past"
+                              ? "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-300"
+                              : col.iconTone,
+                          )}
+                        >
+                          {col.id === "past" ? (
+                            <CheckCircle2 className="h-6 w-6" />
+                          ) : (
+                            <col.icon className="h-6 w-6" />
+                          )}
+                        </span>
+                        <p className="text-[13px] font-bold text-foreground">{B[COLUMN_EMPTY[col.id].title]}</p>
+                        <p className="mt-1 max-w-[210px] text-[11.5px] leading-relaxed text-muted-foreground">
+                          {B[COLUMN_EMPTY[col.id].hint]}
+                        </p>
+                        {canAssign && col.allowCreate && col.id !== "past" ? (
+                          <button
+                            type="button"
+                            onClick={() => openCreate(col.id)}
+                            className="mt-3.5 inline-flex h-8 items-center gap-1.5 rounded-full bg-[#0b3a5c] px-3.5 text-[12px] font-semibold text-white shadow-sm shadow-[#0b3a5c]/25 transition hover:-translate-y-0.5 hover:shadow-md dark:bg-sky-500 dark:text-slate-950"
+                          >
+                            <Plus className="h-3.5 w-3.5" />
+                            {B.addHere}
+                          </button>
+                        ) : null}
                       </div>
                     ) : (
                       byColumn[col.id].map((task) => renderTaskCard(task, col.id))
@@ -2953,9 +3358,11 @@ export default function VazifalarPage() {
                             col.id === "review" || col.id === "completed" ? "today" : col.id,
                           )
                         }
-                        className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed border-border py-2.5 text-xs font-semibold text-muted-foreground transition hover:border-primary/40 hover:bg-primary/5 hover:text-primary"
+                        className="group flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border text-[12.5px] font-semibold text-muted-foreground transition hover:border-[#0b3a5c]/40 hover:bg-[#0b3a5c]/[0.04] hover:text-[#0b3a5c] dark:hover:border-sky-400/40 dark:hover:bg-sky-400/5 dark:hover:text-sky-300"
                       >
-                        <Plus className="h-3.5 w-3.5" />
+                        <span className="flex h-5 w-5 items-center justify-center rounded-md bg-muted transition group-hover:rotate-90 group-hover:bg-[#0b3a5c] group-hover:text-white dark:group-hover:bg-sky-400 dark:group-hover:text-slate-950">
+                          <Plus className="h-3.5 w-3.5" />
+                        </span>
                         {t("tasks.new")}
                       </button>
                     </div>
@@ -2969,235 +3376,42 @@ export default function VazifalarPage() {
       </div>
       </div>
 
-        <aside className="hidden w-[288px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border/70 bg-card/40 px-3 pb-4 pt-5 xl:flex">
-          <div className={cn(surface, "p-3.5")}>
-            <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-bold capitalize text-foreground">
-                {formatMonthYear(calMonth, t)}
-              </h3>
-              <div className="flex gap-0.5">
-                <button
-                  type="button"
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted"
-                  onClick={() => setCalMonth(new Date(calYear, calMo - 1, 1))}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <button
-                  type="button"
-                  className="rounded-md p-1 text-muted-foreground hover:bg-muted"
-                  onClick={() => setCalMonth(new Date(calYear, calMo + 1, 1))}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-            <div className="mb-1 grid grid-cols-7 gap-0.5 text-center text-[9px] font-semibold text-muted-foreground">
-              {weekDays.map((d) => (
-                <div key={d}>{d}</div>
-              ))}
-            </div>
-            <div className="grid grid-cols-7 gap-0.5">
-              {Array.from({ length: calStartWeekday }).map((_, i) => (
-                <div key={`s-${i}`} className="h-8" />
-              ))}
-              {Array.from({ length: calDaysInMonth }).map((_, i) => {
-                const day = i + 1;
-                const dayStart = startOfDay(new Date(calYear, calMo, day));
-                const dots = filtered.filter((task) => {
-                  if (!task.dueAt) return false;
-                  return startOfDay(new Date(task.dueAt)).getTime() === dayStart.getTime();
-                });
-                const isToday = dayStart.getTime() === startOfDay(new Date()).getTime();
-                const isSelected = dayStart.getTime() === startOfDay(selectedCalDay).getTime();
-                return (
-                  <button
-                    key={day}
-                    type="button"
-                      onClick={() => {
-                      pickCalendarDay(dayStart);
-                      switchView("calendar");
-                    }}
-                    className={cn(
-                      "flex h-8 flex-col items-center justify-center rounded-md text-[11px] text-foreground transition hover:bg-muted",
-                      isSelected && "bg-primary font-bold text-primary-foreground hover:bg-primary",
-                      !isSelected && isToday && "font-bold text-primary",
-                    )}
-                  >
-                    {day}
-                    {dots.length > 0 && !isSelected && (
-                      <span className="mt-0.5 flex gap-0.5">
-                        {dots.slice(0, 3).map((task) => (
-                          <span
-                            key={task.id}
-                            className={cn(
-                              "h-1 w-1 rounded-full",
-                              dueDateDotClass(task.dueAt, task.status),
-                            )}
-                          />
-                        ))}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-                  </div>
-          </div>
-
-          <div className={cn(surface, "p-3.5")}>
-            <h3 className="mb-3 text-sm font-bold text-foreground">
-              {t("tasks.sidebar.schedule")}
-            </h3>
-            <div className="space-y-2.5">
-              {(todaySchedule.length ? todaySchedule : byColumn.today.slice(0, 5)).map(
-                (task) => {
-                  const time = task.dueAt
-                    ? new Date(task.dueAt).toLocaleTimeString("uz-UZ", {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })
-                    : "—";
-                  const col = boardColumnFor(task);
-                  return (
-                    <button
-                      key={task.id}
-                      type="button"
-                      className="flex w-full gap-2.5 rounded-lg p-1 text-left transition hover:bg-muted/50"
-                      onClick={() => openEdit(task)}
-                    >
-                      <span className="w-10 shrink-0 pt-0.5 text-[11px] font-semibold tabular-nums text-muted-foreground">
-                        {time}
-                      </span>
-                      <span
-                        className={cn(
-                          "mt-1 h-8 w-0.5 shrink-0 rounded-full",
-                          COLUMNS.find((x) => x.id === col)?.accentDot,
-                        )}
-                      />
-                      <span className="min-w-0">
-                        <span className="block truncate text-xs font-semibold text-foreground">
-                          {task.title}
-                        </span>
-                        <span className="block truncate text-[10px] text-muted-foreground">
-                          {task.assigneeName || "—"}
-                        </span>
-                      </span>
-                    </button>
-                  );
-                },
-              )}
-              {todaySchedule.length === 0 && byColumn.today.length === 0 && (
-                <p className="text-xs text-muted-foreground">{t("tasks.empty.today")}</p>
-                )}
-            </div>
-          </div>
-
-          <div className={cn(surface, "p-3.5")}>
-            <div className="mb-3 flex items-center justify-between gap-2">
-              <h3 className="text-sm font-bold text-foreground">{t("tasks.sidebar.topStaff")}</h3>
-              <span className="text-[10px] font-medium text-muted-foreground">
-                {t("tasks.sidebar.thisWeek")}
-              </span>
-            </div>
-            <div className="space-y-3">
-              {topAssignees.map((person, idx) => (
-                <div key={person.name} className="flex items-center gap-2.5">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
-                    {initialsFromName(person.name) || idx + 1}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-semibold text-foreground">
-                        {person.name}
-                      </span>
-                      <span className="text-[11px] font-bold tabular-nums text-muted-foreground">
-                        {person.count}
-                      </span>
-                    </div>
-                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full rounded-full bg-primary"
-                        style={{
-                          width: `${Math.round((person.count / maxTopCount) * 100)}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {topAssignees.length === 0 && (
-                <p className="text-xs text-muted-foreground">
-                  {t("tasks.analytics.emptyPeople")}
-                </p>
-              )}
-            </div>
-          </div>
-
-          <div className={cn(surface, "p-3.5")}>
-            <h3 className="mb-3 text-sm font-bold text-foreground">{t("tasks.sidebar.quick")}</h3>
-            <div className="grid grid-cols-2 gap-2">
-              {(
-                [
-                  {
-                    key: "excel",
-                    icon: FileSpreadsheet,
-                    label: t("tasks.quick.excel"),
-                    tone: "text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10",
-                    onClick: () => void exportExcel(),
-                  },
-                  {
-                    key: "pdf",
-                    icon: FileText,
-                    label: t("tasks.quick.pdf"),
-                    tone: "text-rose-600 dark:text-rose-400 hover:bg-rose-500/10",
-                    onClick: () => void exportPdf(),
-                  },
-                  {
-                    key: "tpl",
-                    icon: LayoutTemplate,
-                    label: t("tasks.quick.templates"),
-                    tone: "text-sky-600 dark:text-sky-400 hover:bg-sky-500/10",
-                    onClick: () => canAssign && openCreate("today"),
-                  },
-                  {
-                    key: "arch",
-                    icon: Archive,
-                    label: t("tasks.quick.archive"),
-                    tone: "text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500/10",
-                    onClick: () => {
-                      setPriorityFilter("all");
-                      setBranchFilter("all");
-                      setWorkplaceFilter("all");
-                      setStatusColFilter("all");
-                      setDateFrom("");
-                      setDateTo("");
-                      clearSearchFilter();
-                      toast({ title: t("tasks.quick.archiveDone") });
-                    },
-                  },
-                ] as const
-              ).map((action) => {
-                const Icon = action.icon;
-                return (
-                  <button
-                    key={action.key}
-                    type="button"
-                    onClick={action.onClick}
-                    className={cn(
-                      "flex flex-col items-center gap-1.5 rounded-xl border border-border/70 bg-muted/30 px-2 py-3 text-center transition",
-                      action.tone,
-                    )}
-                  >
-                    <Icon className="h-5 w-5" />
-                    <span className="text-[10px] font-semibold text-foreground">
-                      {action.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </aside>
+        <TasksSidebar
+          tasks={filtered}
+          scheduleTasks={todaySchedule.length ? todaySchedule : byColumn.today.slice(0, 5)}
+          month={calMonth}
+          onMonthChange={setCalMonth}
+          selectedDay={selectedCalDay}
+          onPickDay={(day) => {
+            pickCalendarDay(day);
+            switchView("calendar");
+          }}
+          weekDays={weekDays}
+          formatMonth={(d) => formatMonthYear(d, t)}
+          accentClass={(task) =>
+            COLUMNS.find((x) => x.id === boardColumnFor(task))?.accentDot ?? "bg-primary"
+          }
+          onOpenTask={openEdit}
+          quickLabels={{
+            excel: t("tasks.quick.excel"),
+            pdf: t("tasks.quick.pdf"),
+            templates: t("tasks.quick.templates"),
+            archive: t("tasks.quick.archive"),
+          }}
+          onExcel={() => void exportExcel()}
+          onPdf={() => void exportPdf()}
+          onTemplates={() => canAssign && openCreate("today")}
+          onArchive={() => {
+            setPriorityFilter("all");
+            setBranchFilter("all");
+            setWorkplaceFilter("all");
+            setStatusColFilter("all");
+            setDateFrom("");
+            setDateTo("");
+            clearSearchFilter();
+            toast({ title: t("tasks.quick.archiveDone") });
+          }}
+        />
 
       <TaskFormDialog
         open={editOpen}
@@ -3789,8 +4003,8 @@ function TaskCard({
   return (
     <article
       className={cn(
-        "group relative cursor-pointer rounded-xl border border-border/80 bg-card p-3 shadow-sm shadow-black/[0.03] transition",
-        "hover:border-border hover:shadow-md dark:shadow-black/20",
+        "group relative cursor-pointer overflow-hidden rounded-xl border border-border/80 bg-card p-3 pl-3.5 shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-all duration-200",
+        "hover:-translate-y-0.5 hover:border-border hover:shadow-[0_10px_24px_-14px_rgba(15,39,68,0.35)] dark:shadow-black/20",
         overdue && !awaitingReview && !isVerified && "border-rose-300/80 dark:border-rose-500/40",
         needsAccept && isAssignee && "border-sky-400/80 dark:border-sky-500/40",
         awaitingReview && "border-violet-300/80 dark:border-violet-500/40",
@@ -3801,6 +4015,12 @@ function TaskCard({
       )}
       onClick={onOpen}
     >
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-y-0 left-0 w-[3px]",
+          COLUMNS.find((c) => c.id === column)?.accentDot ?? "bg-primary",
+        )}
+      />
       {selectMode ? (
         <button
           type="button"

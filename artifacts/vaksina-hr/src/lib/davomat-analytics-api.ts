@@ -1,5 +1,5 @@
-import { useRef } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import { type QueryClient, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export type DavomatSegment = "all" | "office" | "pharmacy";
 
@@ -94,10 +94,14 @@ export type DavomatAnalytics = {
   byShift: Array<{
     key: string;
     label: string;
+    segment?: "office" | "pharmacy";
+    start?: string;
+    end?: string;
     headcount: number;
     present: number;
     late: number;
     absent: number;
+    expected?: number;
     attendanceRate: number;
   }>;
   byRole: Array<{
@@ -253,6 +257,40 @@ export async function fetchDavomatAnalytics(params: {
   return res.json();
 }
 
+const ANALYTICS_STALE_MS = 90_000;
+
+export function prefetchDavomatAnalytics(
+  qc: QueryClient,
+  params: { from: string; to: string; segment: DavomatSegment },
+) {
+  return qc.prefetchQuery({
+    queryKey: ["davomat-analytics", params],
+    queryFn: () => fetchDavomatAnalytics(params),
+    staleTime: ANALYTICS_STALE_MS,
+  });
+}
+
+/** 7 kun / 30 kun / oy — tugma bosilganda dinamika darhol chiqishi uchun fonda yuklanadi */
+export function usePrefetchDavomatRanges(segment: DavomatSegment, ready: boolean) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      for (const preset of ["7d", "30d", "month"] as const) {
+        if (cancelled) return;
+        await prefetchDavomatAnalytics(qc, { ...rangeForPreset(preset), segment }).catch(() => undefined);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [qc, segment, ready]);
+  return (preset: AnalyticsRangePreset) =>
+    void prefetchDavomatAnalytics(qc, { ...rangeForPreset(preset), segment }).catch(() => undefined);
+}
+
 export function useDavomatAnalytics(
   params: { from: string; to: string; segment: DavomatSegment },
   enabled = true,
@@ -266,7 +304,7 @@ export function useDavomatAnalytics(
       return fetchDavomatAnalytics({ ...params, fresh });
     },
     enabled,
-    staleTime: 90_000,
+    staleTime: ANALYTICS_STALE_MS,
     placeholderData: (prev) => prev,
     retry: 1,
     refetchOnWindowFocus: false,

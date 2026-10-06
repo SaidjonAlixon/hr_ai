@@ -5,6 +5,7 @@ import type { AuthRequest } from "../middlewares/auth";
 import { requireAuth } from "../middlewares/auth";
 import { canAccessBoglanish } from "../lib/roles";
 import { isVacancyPlaceholder } from "../lib/vacancy-slot";
+import { displayBranchName } from "../lib/geo-location";
 
 const router: IRouter = Router();
 
@@ -25,7 +26,7 @@ type ContactRow = {
 };
 
 function branchLabel(location: string | null | undefined, fullName: string): string {
-  const loc = (location || "").trim();
+  const loc = displayBranchName(location).trim();
   if (!loc) return fullName;
   const generic = /^(filial|apteka|branch|dorixona)\s*\d*$/i.test(loc);
   return generic ? fullName : loc;

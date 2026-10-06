@@ -1,22 +1,34 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "wouter";
 import {
+  Activity,
   AlertTriangle,
   ArrowLeft,
   ArrowRight,
+  Award,
   Building2,
   CalendarDays,
+  CheckCircle2,
   Clock,
-  Download,
   FileDown,
+  Gauge,
+  Layers,
+  Lightbulb,
   Loader2,
+  LogOut,
+  PieChart as PieChartIcon,
+  RefreshCw,
   Store,
+  Sunrise,
+  Timer,
   TrendingDown,
   TrendingUp,
+  UserCheck,
   Users,
   ChartColumn,
   ChartLine,
   ChartNoAxesCombined,
+  XCircle,
 } from "lucide-react";
 import {
   Area,
@@ -26,7 +38,6 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
-  Legend,
   Line,
   LineChart,
   Pie,
@@ -47,6 +58,7 @@ import {
   rangeForPreset,
   tashkentTodayYmd,
   useDavomatAnalytics,
+  usePrefetchDavomatRanges,
 } from "@/lib/davomat-analytics-api";
 import { cn } from "@/lib/utils";
 import { useChartTheme } from "@/lib/chart-theme";
@@ -60,7 +72,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type RangePreset = AnalyticsRangePreset | "custom";
@@ -77,6 +88,189 @@ const SEGMENT_OPTIONS: { key: DavomatSegment; labelKey: string; hintKey: string;
   { key: "pharmacy", labelKey: "davomat.segPharm", hintKey: "davomat.segPharmHint", icon: Store },
   { key: "all", labelKey: "davomat.segAll", hintKey: "davomat.segAllHint", icon: Users },
 ];
+
+const DASH_TXT = {
+  uz: {
+    updated: "Yangilandi",
+    rate: "Davomat darajasi",
+    target: "Maqsad",
+    insights: "Asosiy xulosalar",
+    avgArrival: "O‘rtacha kelish vaqti",
+    earliest: "Eng erta",
+    bestDept: "Eng yaxshi bo‘lim",
+    bestBranch: "Eng yaxshi filial",
+    attention: "E’tibor talab qiladi",
+    mostLate: "Eng ko‘p kechikkan",
+    noLate: "Kechikish yo‘q",
+    noLateHint: "Davr davomida hech kim kechikmagan",
+    came: "keldi",
+    absentWord: "kelmagan",
+    days: "kun",
+    hours: "soat",
+    employees: "xodim",
+    attendance: "davomat",
+    allHint: "Ofis va dorixona birgalikda",
+    of: "dan",
+    dayTitle: "Kunlik taqsimot",
+    dayHint: "Dinamikani ko‘rish uchun davrni tanlang",
+    dynLoading: "Dinamika yuklanmoqda",
+    dynLoadingHint: "Tanlangan davr bo‘yicha kunlik ma’lumotlar hisoblanmoqda",
+    periodFrom: "Boshlanish",
+    periodTo: "Tugash",
+    applyHint: "Sana tanlanishi bilan ma’lumot yangilanadi",
+    shiftsCount: "ta smena",
+    lateShort: "kech",
+    personDays: "kun-kishi",
+    office: "Ofis",
+    pharmacy: "Dorixona",
+  },
+  ru: {
+    updated: "Обновлено",
+    rate: "Уровень посещаемости",
+    target: "Цель",
+    insights: "Ключевые выводы",
+    avgArrival: "Среднее время прихода",
+    earliest: "Раньше всех",
+    bestDept: "Лучший отдел",
+    bestBranch: "Лучший филиал",
+    attention: "Требует внимания",
+    mostLate: "Чаще всех опаздывает",
+    noLate: "Опозданий нет",
+    noLateHint: "За период никто не опоздал",
+    came: "пришли",
+    absentWord: "не пришли",
+    days: "дн.",
+    hours: "ч",
+    employees: "сотр.",
+    attendance: "посещ.",
+    allHint: "Офис и аптеки вместе",
+    of: "из",
+    dayTitle: "Распределение за день",
+    dayHint: "Выберите период, чтобы увидеть динамику",
+    dynLoading: "Загрузка динамики",
+    dynLoadingHint: "Считаем данные по дням за выбранный период",
+    periodFrom: "Начало",
+    periodTo: "Конец",
+    applyHint: "Данные обновятся сразу после выбора даты",
+    shiftsCount: "смен",
+    lateShort: "опозд.",
+    personDays: "чел.-дн.",
+    office: "Офис",
+    pharmacy: "Аптека",
+  },
+};
+
+const SHIFT_COLORS = [
+  "#0ea5e9",
+  "#8b5cf6",
+  "#f59e0b",
+  "#10b981",
+  "#f43f5e",
+  "#14b8a6",
+  "#6366f1",
+  "#f97316",
+  "#ec4899",
+  "#84cc16",
+];
+
+function DayBreakdown({
+  items,
+  hint,
+  actions,
+}: {
+  items: Array<{ label: string; value: number; color: string }>;
+  hint: string;
+  actions: React.ReactNode;
+}) {
+  const total = items.reduce((s, i) => s + i.value, 0);
+  return (
+    <div className="flex flex-col justify-center gap-5 py-1 xl:min-h-[300px]">
+      <div className="grid grid-cols-3 gap-3">
+        {items.map((i) => {
+          const pct = total ? Math.round((i.value / total) * 1000) / 10 : 0;
+          return (
+            <div
+              key={i.label}
+              className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-slate-50/60 p-4 dark:border-slate-700/50 dark:bg-slate-800/40"
+            >
+              <span className="absolute inset-y-0 left-0 w-1" style={{ background: i.color }} />
+              <p className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground">
+                <span className="h-2 w-2 rounded-full" style={{ background: i.color }} />
+                {i.label}
+              </p>
+              <p className="mt-2 text-[32px] font-extrabold leading-none tabular-nums">{i.value}</p>
+              <p className="mt-1 text-xs font-semibold tabular-nums" style={{ color: i.color }}>
+                {pct}%
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex h-3.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+        {items.map((i) =>
+          i.value > 0 ? (
+            <div
+              key={i.label}
+              className="h-full transition-all duration-700 first:rounded-l-full last:rounded-r-full"
+              style={{ width: `${total ? (i.value / total) * 100 : 0}%`, background: i.color }}
+              title={`${i.label}: ${i.value}`}
+            />
+          ) : null,
+        )}
+      </div>
+      <div className="flex flex-wrap items-center justify-center gap-2 rounded-xl bg-slate-50 px-4 py-3 text-xs text-muted-foreground dark:bg-slate-800/50">
+        <Activity className="h-4 w-4 text-[#0b3a5c] dark:text-sky-300" />
+        <span>{hint}</span>
+        {actions}
+      </div>
+    </div>
+  );
+}
+
+function DynamicsLoading({ days, title, hint }: { days: number; title: string; hint: string }) {
+  const count = Math.min(31, Math.max(7, days));
+  return (
+    <div className="relative h-[330px] overflow-hidden rounded-2xl border border-slate-200/70 bg-gradient-to-b from-slate-50/80 to-white px-4 pb-8 pt-6 dark:border-slate-700/50 dark:from-slate-800/40 dark:to-transparent">
+      <div className="absolute inset-x-4 top-6 bottom-8 flex flex-col justify-between">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className="h-px w-full border-t border-dashed border-slate-200 dark:border-slate-700/60" />
+        ))}
+      </div>
+      <div className="relative flex h-full items-end justify-around gap-[3px] sm:gap-1.5">
+        {Array.from({ length: count }, (_, i) => {
+          const h = 38 + Math.round(Math.abs(Math.sin(i * 1.7 + 0.6)) * 48);
+          return (
+            <div key={i} className="flex h-full max-w-[36px] flex-1 flex-col justify-end gap-[2px]">
+              <span
+                className="w-full animate-pulse rounded-t-md bg-gradient-to-t from-emerald-400/45 to-emerald-300/20 dark:from-emerald-400/30 dark:to-emerald-300/10"
+                style={{ height: `${h}%`, animationDelay: `${(i % 7) * 120}ms` }}
+              />
+              <span
+                className="w-full animate-pulse rounded-b-sm bg-amber-300/40 dark:bg-amber-300/25"
+                style={{ height: `${6 + (i % 3) * 3}%`, animationDelay: `${(i % 7) * 120 + 60}ms` }}
+              />
+            </div>
+          );
+        })}
+      </div>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-200/80 bg-white/90 px-4 py-3 shadow-[0_12px_32px_-16px_rgba(15,39,68,0.35)] backdrop-blur dark:border-white/10 dark:bg-[#101a2e]/90">
+          <span className="relative flex h-9 w-9 items-center justify-center rounded-xl bg-[#0f2744] text-white dark:bg-sky-500/20 dark:text-sky-300">
+            <Activity className="h-4 w-4" />
+            <span className="absolute inset-0 animate-ping rounded-xl bg-sky-400/25" />
+          </span>
+          <div className="leading-tight">
+            <p className="flex items-center gap-1.5 text-sm font-bold text-[#0f2744] dark:text-white">
+              {title}
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-sky-500" />
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function formatLateHours(minutes: number): string {
   if (!Number.isFinite(minutes) || minutes <= 0) return "0";
@@ -116,28 +310,54 @@ function TopDisciplinedList({
     return <p className="py-6 text-center text-sm text-muted-foreground">{t("ui.empty")}</p>;
   }
 
+  const medals = [
+    "bg-gradient-to-br from-amber-300 to-amber-500 text-amber-950 ring-amber-300/60",
+    "bg-gradient-to-br from-slate-200 to-slate-400 text-slate-800 ring-slate-300/60",
+    "bg-gradient-to-br from-orange-300 to-orange-500 text-orange-950 ring-orange-300/60",
+  ];
+
   return (
-    <div className="space-y-2">
-      {top.map((r, i) => (
-        <div key={r.id} className="analytics-inset flex items-center gap-3 !py-2">
-          <span
-            className={cn(
-              "flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold",
-              i === 0 ? "bg-emerald-100 text-emerald-800" : "bg-muted text-muted-foreground",
-            )}
-          >
-            {i + 1}
-          </span>
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
-            {(r.fullName || "?").slice(0, 1).toUpperCase()}
+    <div className="space-y-1">
+      {top.map((r, i) => {
+        const initials = (r.fullName || "?")
+          .split(/\s+/)
+          .filter(Boolean)
+          .slice(0, 2)
+          .map((p) => p[0]?.toUpperCase())
+          .join("");
+        return (
+          <div key={r.id} className="flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-slate-50 dark:hover:bg-slate-800/50">
+            <span className="relative shrink-0">
+              <span
+                className={cn(
+                  "flex h-10 w-10 items-center justify-center rounded-full text-xs font-bold ring-2 ring-offset-2 ring-offset-card",
+                  medals[i] ?? "bg-[#0b3a5c]/10 text-[#0b3a5c] ring-transparent dark:bg-sky-400/10 dark:text-sky-300",
+                )}
+              >
+                {initials}
+              </span>
+              <span className="absolute -bottom-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-card text-[9px] font-extrabold text-foreground ring-1 ring-border">
+                {i + 1}
+              </span>
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between gap-2">
+                <p className="truncate text-[13px] font-semibold">{r.fullName}</p>
+                <span className={cn("shrink-0 text-[13px] font-extrabold tabular-nums", branchAttendanceTone(r.attendanceRate).text)}>
+                  {r.attendanceRate}%
+                </span>
+              </div>
+              <p className="truncate text-[11px] text-muted-foreground">{r.position}</p>
+              <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                <div
+                  className={cn("h-full rounded-full", branchAttendanceTone(r.attendanceRate).bar)}
+                  style={{ width: `${Math.min(100, r.attendanceRate)}%` }}
+                />
+              </div>
+            </div>
           </div>
-          <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-medium">{r.fullName}</p>
-            <p className="truncate text-[11px] text-muted-foreground">{r.position}</p>
-          </div>
-          <span className="shrink-0 text-sm font-bold tabular-nums text-emerald-600">{r.attendanceRate}%</span>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -224,6 +444,8 @@ function KpiCard({
   icon: Icon,
   accent,
   loading,
+  progress,
+  bar,
 }: {
   title: string;
   value: string | number;
@@ -232,28 +454,126 @@ function KpiCard({
   icon: React.ComponentType<{ className?: string }>;
   accent: string;
   loading?: boolean;
+  progress?: number | null;
+  bar?: string;
 }) {
   const { t } = useI18n();
-  if (loading) return <Skeleton className="analytics-kpi h-[108px]" />;
+  if (loading) return <Skeleton className="analytics-kpi h-[132px]" />;
   return (
-    <div className="analytics-kpi">
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
-          <p className="mt-1 text-2xl font-semibold tabular-nums tracking-tight">{value}</p>
-          {sub ? <p className="mt-0.5 text-xs text-muted-foreground">{sub}</p> : null}
-        </div>
-        <div className={cn("rounded-lg p-2.5", accent)}>
-          <Icon className="h-5 w-5" />
-        </div>
+    <div className="analytics-kpi flex flex-col">
+      <span className={cn("pointer-events-none absolute inset-x-0 top-0 h-[3px] opacity-80", bar ?? "bg-slate-300")} />
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">{title}</p>
+        <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-xl", accent)}>
+          <Icon className="h-[18px] w-[18px]" />
+        </span>
       </div>
-      {delta != null ? (
-        <div className={cn("mt-2 flex items-center gap-1 text-xs font-medium", delta >= 0 ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400")}>
-          {delta >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-          {delta >= 0 ? "+" : ""}
-          {delta}% {t("davomat.vsPrev")}
-        </div>
-      ) : null}
+      <p className="mt-2 text-[30px] font-extrabold leading-none tracking-tight tabular-nums">{value}</p>
+      {sub ? <p className="mt-1.5 truncate text-[11.5px] text-muted-foreground">{sub}</p> : null}
+      <div className="mt-auto pt-3">
+        {progress != null ? (
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+            <div
+              className={cn("h-full rounded-full transition-all duration-700", bar ?? "bg-slate-400")}
+              style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+            />
+          </div>
+        ) : null}
+        {delta != null ? (
+          <div
+            className={cn(
+              "mt-2 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] font-semibold",
+              delta >= 0
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : "bg-rose-500/10 text-rose-700 dark:text-rose-300",
+            )}
+          >
+            {delta >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+            {delta >= 0 ? "+" : ""}
+            {delta}% {t("davomat.vsPrev")}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function RateRing({ value, size = 76, stroke = 8, color }: { value: number; size?: number; stroke?: number; color: string }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = Math.min(100, Math.max(0, value));
+  return (
+    <svg width={size} height={size} className="-rotate-90">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" strokeWidth={stroke} className="stroke-slate-100 dark:stroke-slate-800" />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        strokeWidth={stroke}
+        strokeLinecap="round"
+        stroke={color}
+        strokeDasharray={c}
+        strokeDashoffset={c - (pct / 100) * c}
+        style={{ transition: "stroke-dashoffset 0.8s ease" }}
+      />
+    </svg>
+  );
+}
+
+function rateColor(rate: number) {
+  if (rate >= 85) return "#10b981";
+  if (rate >= 70) return "#f59e0b";
+  return "#ef4444";
+}
+
+function RateKpiCard({
+  rate,
+  target,
+  label,
+  targetLabel,
+  loading,
+}: {
+  rate: number | null;
+  target: number | null;
+  label: string;
+  targetLabel: string;
+  loading?: boolean;
+}) {
+  if (loading) return <Skeleton className="analytics-kpi h-[132px]" />;
+  const value = rate ?? 0;
+  const color = rateColor(value);
+  const gap = target != null && rate != null ? Math.round((rate - target) * 10) / 10 : null;
+  return (
+    <div className="analytics-kpi flex items-center gap-3">
+      <span className="pointer-events-none absolute inset-x-0 top-0 h-[3px] opacity-80" style={{ background: color }} />
+      <div className="relative shrink-0">
+        <RateRing value={value} size={70} stroke={7} color={color} />
+        <span className="absolute inset-0 flex items-center justify-center text-[14px] font-extrabold tabular-nums">
+          {rate != null ? `${value}%` : "—"}
+        </span>
+      </div>
+      <div className="min-w-0">
+        <p className="truncate text-[10.5px] font-bold uppercase tracking-[0.06em] text-muted-foreground" title={label}>{label}</p>
+        {target != null ? (
+          <p className="mt-1.5 text-[11.5px] text-muted-foreground">
+            {targetLabel}: <span className="font-semibold text-foreground">{target}%</span>
+          </p>
+        ) : null}
+        {gap != null ? (
+          <span
+            className={cn(
+              "mt-1.5 inline-flex rounded-md px-1.5 py-0.5 text-[11px] font-bold tabular-nums",
+              gap >= 0
+                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
+                : "bg-rose-500/10 text-rose-700 dark:text-rose-300",
+            )}
+          >
+            {gap >= 0 ? "+" : ""}
+            {gap}%
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -320,6 +640,8 @@ function Panel({
   action,
   bodyClassName,
   id,
+  icon: Icon,
+  subtitle,
 }: {
   title: string;
   children: React.ReactNode;
@@ -327,11 +649,23 @@ function Panel({
   action?: React.ReactNode;
   bodyClassName?: string;
   id?: string;
+  icon?: React.ComponentType<{ className?: string }>;
+  subtitle?: string;
 }) {
   return (
     <div id={id} className={cn("analytics-panel", className)}>
       <div className="analytics-panel-header">
-        <h3 className="analytics-panel-title">{title}</h3>
+        <div className="flex min-w-0 items-center gap-2.5">
+          {Icon ? (
+            <span className="analytics-panel-icon">
+              <Icon className="h-4 w-4" />
+            </span>
+          ) : null}
+          <div className="min-w-0">
+            <h3 className="analytics-panel-title truncate">{title}</h3>
+            {subtitle ? <p className="truncate text-[11px] text-muted-foreground">{subtitle}</p> : null}
+          </div>
+        </div>
         {action}
       </div>
       <div className={cn("analytics-panel-body", bodyClassName)}>{children}</div>
@@ -525,11 +859,17 @@ function BranchStatusColumn({
         ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
         : "bg-rose-500/15 text-rose-800 dark:text-rose-300";
 
+  const ToneIcon = tone === "emerald" ? CheckCircle2 : tone === "amber" ? Clock : XCircle;
   return (
-    <div className={cn("flex min-h-0 flex-col rounded-xl border", toneClass)}>
-      <div className="flex items-center justify-between gap-2 border-b border-border/50 px-2.5 py-2">
-        <span className="text-xs font-semibold">{title}</span>
-        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-bold tabular-nums", badgeClass)}>{count}</span>
+    <div className={cn("flex min-h-0 flex-col overflow-hidden rounded-2xl border", toneClass)}>
+      <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3 py-2.5">
+        <span className="flex items-center gap-2 text-xs font-bold">
+          <span className={cn("flex h-6 w-6 items-center justify-center rounded-lg", badgeClass)}>
+            <ToneIcon className="h-3.5 w-3.5" />
+          </span>
+          {title}
+        </span>
+        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-extrabold tabular-nums", badgeClass)}>{count}</span>
       </div>
       <div className="max-h-[220px] space-y-1 overflow-y-auto p-2">
         {items.length ? (
@@ -742,11 +1082,17 @@ function OfficeDayColumn({
         ? "bg-amber-500/15 text-amber-800 dark:text-amber-300"
         : "bg-rose-500/15 text-rose-800 dark:text-rose-300";
 
+  const ToneIcon = tone === "emerald" ? CheckCircle2 : tone === "amber" ? Clock : XCircle;
   return (
-    <div className={cn("flex min-h-0 min-w-0 flex-col rounded-xl border", toneClass)}>
-      <div className="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2.5">
-        <span className="text-sm font-semibold">{title}</span>
-        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-bold tabular-nums", badgeClass)}>{count}</span>
+    <div className={cn("flex min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border", toneClass)}>
+      <div className="flex items-center justify-between gap-2 border-b border-border/40 px-3.5 py-3">
+        <span className="flex items-center gap-2 text-[13px] font-bold">
+          <span className={cn("flex h-7 w-7 items-center justify-center rounded-lg", badgeClass)}>
+            <ToneIcon className="h-4 w-4" />
+          </span>
+          {title}
+        </span>
+        <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-extrabold tabular-nums", badgeClass)}>{count}</span>
       </div>
       <div className="max-h-[min(52vh,420px)] space-y-1.5 overflow-y-auto p-2.5">
         {items.length ? (
@@ -901,7 +1247,8 @@ export function DavomatAnalyticsDashboard({
   initialSegment?: DavomatSegment;
 }) {
   const { user } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const X = locale === "ru" ? DASH_TXT.ru : DASH_TXT.uz;
   const search = useSearch();
   const fullDash = canViewFullDavomatDashboard(user?.role);
   const pharmacyScope = normalizeUserRole(user?.role) === "koordinator";
@@ -935,7 +1282,12 @@ export function DavomatAnalyticsDashboard({
     }
     return rangeForPreset(preset);
   }, [preset, customFrom, customTo]);
-  const { data, isLoading, isError, error, refetchFresh } = useDavomatAnalytics({ ...range, segment }, true);
+  const { data, isLoading, isFetching, isPlaceholderData, isError, error, refetchFresh, dataUpdatedAt } = useDavomatAnalytics(
+    { ...range, segment },
+    true,
+  );
+  const prefetchPreset = usePrefetchDavomatRanges(segment, !!data && !isPlaceholderData);
+  const dynamicsPending = isPlaceholderData && range.from !== range.to;
   const chart = useChartTheme();
   const fillId = embedded ? "presentFillDash" : "presentFillPage";
 
@@ -1066,6 +1418,114 @@ export function DavomatAnalyticsDashboard({
     ],
     [t],
   );
+
+  const headcount = data?.kpis.headcount ?? 0;
+  const arrivedNow = officeShare ? officeShare.onTime + officeShare.late : (data?.today?.present ?? null);
+  const lateNow = officeShare?.late ?? data?.today?.late ?? null;
+  const absentNow = officeShare?.absent ?? data?.today?.absent ?? null;
+  const earlyNow = data?.today?.incomplete ?? data?.kpis.incompletePersonDays ?? null;
+  const dayBase = officeShare ? officeShare.onTime + officeShare.late + officeShare.absent : headcount;
+  const pctOf = (n: number | null) =>
+    n != null && dayBase > 0 ? Math.round((n / dayBase) * 1000) / 10 : null;
+  const attRate =
+    range.from === range.to && arrivedNow != null && dayBase > 0
+      ? pctOf(arrivedNow)
+      : (data?.kpis.attendanceRate ?? data?.today?.attendanceRate ?? null);
+
+  const updatedAt = dataUpdatedAt
+    ? new Date(dataUpdatedAt).toLocaleTimeString("uz-UZ", { hour: "2-digit", minute: "2-digit" })
+    : "—";
+  const rangeText = range.from === range.to ? formatYmdUz(range.from) : `${formatYmdUz(range.from)} — ${formatYmdUz(range.to)}`;
+
+  const segmentStats = (key: DavomatSegment) => {
+    const s = data?.segments;
+    if (!s) return null;
+    if (key === "office") return s.office;
+    if (key === "pharmacy") return s.pharmacy;
+    const hc = s.office.headcount + s.pharmacy.headcount;
+    if (!hc) return { headcount: 0, attendanceRate: 0 };
+    const rate =
+      (s.office.attendanceRate * s.office.headcount + s.pharmacy.attendanceRate * s.pharmacy.headcount) / hc;
+    return { headcount: hc, attendanceRate: Math.round(rate * 10) / 10 };
+  };
+
+  const insights = useMemo(() => {
+    if (!data) return [];
+    const out: Array<{
+      key: string;
+      icon: React.ComponentType<{ className?: string }>;
+      tone: string;
+      label: string;
+      value: string;
+      hint: string;
+    }> = [];
+
+    const arrivals = (data.officeDayBoard ?? [])
+      .filter((b) => b.status === "on_time" || b.status === "late")
+      .map((b) => {
+        const m = /^(\d{1,2}):(\d{2})/.exec(b.checkIn ?? "");
+        return m ? { name: b.fullName, time: b.checkIn as string, min: Number(m[1]) * 60 + Number(m[2]) } : null;
+      })
+      .filter((x): x is { name: string; time: string; min: number } => !!x);
+    if (arrivals.length) {
+      const avg = Math.round(arrivals.reduce((s, a) => s + a.min, 0) / arrivals.length);
+      const earliest = arrivals.reduce((a, b) => (b.min < a.min ? b : a));
+      out.push({
+        key: "avg",
+        icon: Timer,
+        tone: "bg-sky-500/10 text-sky-600 dark:text-sky-300",
+        label: X.avgArrival,
+        value: `${String(Math.floor(avg / 60)).padStart(2, "0")}:${String(avg % 60).padStart(2, "0")}`,
+        hint: `${X.earliest}: ${earliest.name} · ${earliest.time}`,
+      });
+    }
+
+    const rows = breakdownRows.filter((r) => r.headcount > 0);
+    if (rows.length) {
+      const best = rows[0]!;
+      out.push({
+        key: "best",
+        icon: Award,
+        tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+        label: isPharmacySegment ? X.bestBranch : X.bestDept,
+        value: best.name,
+        hint: `${best.attendanceRate}% · ${best.present}/${best.headcount} ${X.came}`,
+      });
+      const worst = rows[rows.length - 1]!;
+      if (rows.length > 1 && worst.attendanceRate < best.attendanceRate) {
+        out.push({
+          key: "worst",
+          icon: AlertTriangle,
+          tone: "bg-rose-500/10 text-rose-600 dark:text-rose-300",
+          label: X.attention,
+          value: worst.name,
+          hint: `${worst.attendanceRate}% · ${worst.absent} ${X.absentWord}`,
+        });
+      }
+    }
+
+    const topLate = data.topLate?.[0];
+    out.push(
+      topLate
+        ? {
+            key: "late",
+            icon: Clock,
+            tone: "bg-amber-500/10 text-amber-600 dark:text-amber-300",
+            label: X.mostLate,
+            value: topLate.fullName,
+            hint: `${topLate.lateDays} ${X.days} · ${formatLateHours(topLate.lateMinutes)} ${X.hours}`,
+          }
+        : {
+            key: "late",
+            icon: CheckCircle2,
+            tone: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
+            label: X.mostLate,
+            value: X.noLate,
+            hint: X.noLateHint,
+          },
+    );
+    return out.slice(0, 4);
+  }, [data, breakdownRows, isPharmacySegment, X]);
 
   const onExportDashboardPdf = async () => {
     if (exportingPdf || !data) return;
@@ -1222,148 +1682,189 @@ export function DavomatAnalyticsDashboard({
       )}
     >
       <div className={cn("mx-auto max-w-[1600px] space-y-5", bare ? "p-0" : embedded ? "p-4 pb-8 md:p-5" : "p-4 pb-10 md:p-6")}>
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
           {bare ? null : (
-          <div>
-            {embedded ? (
-              <>
-                <p className="text-xs font-medium uppercase tracking-wider text-primary">Dashboard</p>
-                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("davomat.analyticsShort")}</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {user?.fullName}
-                  {data ? ` · ${data.from} — ${data.to}` : ""}
+            <div className="min-w-0">
+              {embedded ? (
+                <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-[#0b3a5c]/70 dark:text-sky-300/80">
+                  Dashboard
                 </p>
-              </>
-            ) : (
-              <>
-                <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
-                  <Link href="/dashboard" className="inline-flex items-center gap-1 hover:text-foreground">
-                    <ArrowLeft className="h-4 w-4" />
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <Link
+                    href="/dashboard"
+                    className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 transition hover:bg-muted hover:text-foreground"
+                  >
+                    <ArrowLeft className="h-3.5 w-3.5" />
                     Dashboard
                   </Link>
                   <span>/</span>
-                  <span className="text-muted-foreground">{t("davomat.analyticsShort")}</span>
+                  <span>{t("davomat.analyticsShort")}</span>
                 </div>
-                <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">{t("davomat.analytics")}</h1>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  {data ? `${data.from} — ${data.to}` : t("ui.loading")} · {t("davomat.analyticsDesc")}
-                </p>
-              </>
-            )}
-          </div>
+              )}
+              <h1 className="mt-1 text-[26px] font-extrabold tracking-tight text-slate-900 dark:text-white md:text-[30px]">
+                {embedded ? t("davomat.analyticsShort") : t("davomat.analytics")}
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-slate-200 bg-card px-2.5 font-semibold text-foreground dark:border-slate-700">
+                  <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                  {rangeText}
+                </span>
+                <span className="inline-flex h-7 items-center gap-1.5 rounded-lg bg-emerald-500/10 px-2.5 font-semibold text-emerald-700 dark:text-emerald-300">
+                  <span className="relative flex h-2 w-2">
+                    {isFetching ? (
+                      <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-60" />
+                    ) : null}
+                    <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                  </span>
+                  {X.updated}: {updatedAt}
+                </span>
+                {user?.fullName ? (
+                  <span className="hidden text-muted-foreground sm:inline">{user.fullName}</span>
+                ) : null}
+              </div>
+            </div>
           )}
-          <div className="flex flex-col gap-2">
+
+          <div className="flex flex-col gap-2 xl:items-end">
             <div className="flex flex-wrap items-center gap-2">
-              {PRESET_BUTTONS.map(({ key, labelKey }) => (
-                <Button
-                  key={key}
-                  size="sm"
-                  variant={preset === key ? "default" : "outline"}
-                  onClick={() => setPreset(key)}
-                >
-                  {t(labelKey)}
-                </Button>
-              ))}
-              <Button
-                size="sm"
-                variant={preset === "custom" ? "default" : "outline"}
-                onClick={() => setPreset("custom")}
+              <div
+                role="tablist"
+                className="analytics-toolbar-group max-w-full overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
               >
-                <CalendarDays className="mr-1.5 h-4 w-4" />
-                {t("davomat.period")}
-              </Button>
-              <Button size="sm" variant="outline" onClick={() => void refetchFresh()}>
-                <Download className="mr-1.5 h-4 w-4" />
+                {PRESET_BUTTONS.map(({ key, labelKey }) => (
+                  <button
+                    key={key}
+                    type="button"
+                    role="tab"
+                    aria-selected={preset === key}
+                    onMouseEnter={() => prefetchPreset(key)}
+                    onFocus={() => prefetchPreset(key)}
+                    onClick={() => setPreset(key)}
+                    className={cn("analytics-toolbar-btn", preset === key && "analytics-toolbar-btn-active")}
+                  >
+                    {t(labelKey)}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={preset === "custom"}
+                  onClick={() => setPreset("custom")}
+                  className={cn("analytics-toolbar-btn", preset === "custom" && "analytics-toolbar-btn-active")}
+                >
+                  <CalendarDays className="h-3.5 w-3.5" />
+                  {t("davomat.period")}
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => void refetchFresh()}
+                disabled={isFetching}
+                className="analytics-action-btn border-slate-200 bg-card text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900/70 dark:text-slate-200 dark:hover:bg-slate-800"
+              >
+                <RefreshCw className={cn("h-4 w-4", isFetching && "animate-spin")} />
                 {t("ui.refresh")}
-              </Button>
-              <Button
-                size="sm"
-                className="gap-1.5 border border-rose-200/40 bg-gradient-to-b from-rose-500 to-rose-700 text-white shadow-sm hover:from-rose-400 hover:to-rose-600"
+              </button>
+              <button
+                type="button"
                 disabled={exportingPdf || isLoading || !data}
                 onClick={() => void onExportDashboardPdf()}
+                className="analytics-action-btn border-rose-600 bg-rose-600 text-white shadow-rose-600/25 hover:bg-rose-700 dark:border-rose-500 dark:bg-rose-500 dark:hover:bg-rose-600"
               >
-                {exportingPdf ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <FileDown className="h-4 w-4" />
-                )}
+                {exportingPdf ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
                 {t("davomat.pdfBtn")}
-              </Button>
+              </button>
             </div>
             {preset === "custom" ? (
-              <div className="flex flex-wrap items-end gap-2 rounded-xl border border-border bg-card/60 p-2.5 dark:border-slate-600/40 dark:bg-slate-800/40">
+              <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-slate-200/90 bg-card p-3 shadow-sm dark:border-slate-700/60 dark:bg-slate-900/70">
                 <label className="flex flex-col gap-1 text-xs">
-                  <span className="font-medium text-muted-foreground">{t("davomat.fromShort")}</span>
+                  <span className="font-semibold text-muted-foreground">{X.periodFrom}</span>
                   <Input
                     type="date"
                     value={customFrom}
                     max={customTo}
                     onChange={(e) => setCustomFrom(e.target.value)}
-                    className="h-9 w-[148px] rounded-lg"
+                    className="h-10 w-[160px] rounded-xl"
                   />
                 </label>
+                <ArrowRight className="mb-3 h-4 w-4 text-muted-foreground" />
                 <label className="flex flex-col gap-1 text-xs">
-                  <span className="font-medium text-muted-foreground">{t("davomat.toShort")}</span>
+                  <span className="font-semibold text-muted-foreground">{X.periodTo}</span>
                   <Input
                     type="date"
                     value={customTo}
                     min={customFrom}
                     max={tashkentTodayYmd()}
                     onChange={(e) => setCustomTo(e.target.value)}
-                    className="h-9 w-[148px] rounded-lg"
+                    className="h-10 w-[160px] rounded-xl"
                   />
                 </label>
-                <p className="pb-1 text-xs text-muted-foreground">
-                  {range.from === range.to ? formatYmdUz(range.from) : `${formatYmdUz(range.from)} — ${formatYmdUz(range.to)}`}
-                </p>
+                <p className="pb-2.5 text-[11px] text-muted-foreground">{X.applyHint}</p>
               </div>
             ) : null}
           </div>
         </div>
 
         {fullDash ? (
-        <div className="grid gap-2 sm:grid-cols-3">
-          {SEGMENT_OPTIONS.map((opt) => {
-            const Icon = opt.icon;
-            const active = segment === opt.key;
-            const segStats =
-              opt.key === "office"
-                ? data?.segments.office
-                : opt.key === "pharmacy"
-                  ? data?.segments.pharmacy
-                  : null;
-            return (
-              <button
-                key={opt.key}
-                type="button"
-                onClick={() => setSegment(opt.key)}
-                className={cn(
-                  "analytics-segment",
-                  active && "analytics-segment-active",
-                )}
-              >
-                <div className="flex items-center gap-3">
-                  <div className={cn("rounded-lg p-2", active ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
-                    <Icon className="h-5 w-5" />
+          <div className="grid gap-3 sm:grid-cols-3">
+            {SEGMENT_OPTIONS.map((opt) => {
+              const Icon = opt.icon;
+              const active = segment === opt.key;
+              const stats = segmentStats(opt.key);
+              const color = stats ? rateColor(stats.attendanceRate) : "#94a3b8";
+              return (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setSegment(opt.key)}
+                  className={cn("analytics-segment", active && "analytics-segment-active")}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={cn(
+                        "flex h-11 w-11 shrink-0 items-center justify-center rounded-xl transition",
+                        active
+                          ? "bg-[#0b3a5c] text-white shadow-md shadow-[#0b3a5c]/25 dark:bg-sky-500 dark:text-slate-950"
+                          : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+                      )}
+                    >
+                      <Icon className="h-5 w-5" />
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[14px] font-bold text-foreground">{t(opt.labelKey)}</p>
+                      <p className="truncate text-xs text-muted-foreground">
+                        {opt.key === "all" ? X.allHint : t(opt.hintKey)}
+                      </p>
+                    </div>
+                    {active ? <CheckCircle2 className="h-5 w-5 shrink-0 text-[#0b3a5c] dark:text-sky-400" /> : null}
                   </div>
-                  <div>
-                    <p className="font-medium">{t(opt.labelKey)}</p>
-                    <p className="text-xs text-muted-foreground">{t(opt.hintKey)}</p>
-                  </div>
-                </div>
-                {segStats && opt.key !== "all" ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    {segStats.headcount} {t("ui.employees").toLowerCase()} · <span className="font-semibold text-emerald-600 dark:text-emerald-400">{segStats.attendanceRate}%</span> {t("davomat.attRate")}
-                  </p>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
+                  {stats ? (
+                    <div className="mt-3.5">
+                      <div className="flex items-center justify-between text-[11.5px]">
+                        <span className="text-muted-foreground">
+                          <span className="font-semibold text-foreground">{stats.headcount}</span> {X.employees}
+                        </span>
+                        <span className="font-bold tabular-nums" style={{ color }}>
+                          {stats.attendanceRate}% {X.attendance}
+                        </span>
+                      </div>
+                      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
+                        <div
+                          className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${Math.min(100, stats.attendanceRate)}%`, background: color }}
+                        />
+                      </div>
+                    </div>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         ) : null}
 
         {isError ? (
-          <div className="flex flex-col items-center gap-3 rounded-xl border border-rose-500/25 bg-rose-500/10 p-6 text-center text-rose-700 dark:text-rose-200">
+          <div className="flex flex-col items-center gap-3 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-6 text-center text-rose-700 dark:text-rose-200">
             <p>{error instanceof Error ? error.message : t("davomat.loadFail")}</p>
             <Button size="sm" variant="outline" onClick={() => void refetchFresh()}>
               {t("davomat.retry")}
@@ -1371,87 +1872,125 @@ export function DavomatAnalyticsDashboard({
           </div>
         ) : null}
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+          <RateKpiCard
+            rate={attRate}
+            target={data?.kpis.targetRate ?? null}
+            label={X.rate}
+            targetLabel={X.target}
+            loading={isLoading}
+          />
           <KpiCard
             title={t("davomat.totalStaff")}
             value={data?.kpis.headcount ?? "—"}
             delta={data?.kpis.deltaRate}
             icon={Users}
-            accent="bg-sky-100 text-sky-700 dark:bg-sky-500/20 dark:text-sky-200"
+            accent="bg-sky-500/10 text-sky-600 dark:text-sky-300"
+            bar="bg-sky-500"
             loading={isLoading}
           />
           <KpiCard
             title={t("davomat.todayArrived")}
-            value={
-              officeShare
-                ? officeShare.onTime + officeShare.late
-                : data?.today
-                  ? data.today.present
-                  : "—"
-            }
+            value={arrivedNow ?? "—"}
             sub={
               officeShare
                 ? `${officeShare.onTime} ${t("davomat.onTime").toLowerCase()} · ${officeShare.late} ${t("davomat.lateShort").toLowerCase()}`
-                : data?.today
-                  ? `${data.today.attendanceRate}%`
+                : pctOf(arrivedNow) != null
+                  ? `${pctOf(arrivedNow)}% ${t("davomat.pctOfStaff")}`
                   : undefined
             }
-            icon={TrendingUp}
-            accent="bg-emerald-100 text-emerald-700 dark:bg-emerald-500/20 dark:text-emerald-200"
+            progress={pctOf(arrivedNow)}
+            icon={UserCheck}
+            accent="bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+            bar="bg-emerald-500"
             loading={isLoading}
           />
           <KpiCard
             title={t("davomat.todayLate")}
-            value={officeShare?.late ?? data?.today?.late ?? "—"}
-            sub={
-              (officeShare || data?.today) && data?.kpis.headcount
-                ? `${Math.round(((officeShare?.late ?? data?.today?.late ?? 0) / Math.max(data.kpis.headcount, 1)) * 1000) / 10}% ${t("davomat.pctOfStaff")}`
-                : undefined
-            }
+            value={lateNow ?? "—"}
+            sub={pctOf(lateNow) != null ? `${pctOf(lateNow)}% ${t("davomat.pctOfStaff")}` : undefined}
+            progress={pctOf(lateNow)}
             icon={Clock}
-            accent="bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-200"
+            accent="bg-amber-500/10 text-amber-600 dark:text-amber-300"
+            bar="bg-amber-500"
             loading={isLoading}
           />
           <KpiCard
             title={t("davomat.todayAbsent")}
-            value={officeShare?.absent ?? data?.today?.absent ?? "—"}
-            sub={
-              (officeShare || data?.today) && data?.kpis.headcount
-                ? `${Math.round(((officeShare?.absent ?? data?.today?.absent ?? 0) / Math.max(data.kpis.headcount, 1)) * 1000) / 10}% ${t("davomat.pctOfStaff")}`
-                : undefined
-            }
+            value={absentNow ?? "—"}
+            sub={pctOf(absentNow) != null ? `${pctOf(absentNow)}% ${t("davomat.pctOfStaff")}` : undefined}
+            progress={pctOf(absentNow)}
             icon={AlertTriangle}
-            accent="bg-rose-100 text-rose-700 dark:bg-rose-500/20 dark:text-rose-200"
+            accent="bg-rose-500/10 text-rose-600 dark:text-rose-300"
+            bar="bg-rose-500"
             loading={isLoading}
           />
           <KpiCard
             title={t("davomat.todayEarlyOut")}
-            value={data?.today?.incomplete ?? data?.kpis.incompletePersonDays ?? "—"}
+            value={earlyNow ?? "—"}
             sub={
-              data?.today && data.kpis.headcount
-                ? `${Math.round((data.today.incomplete / Math.max(data.kpis.headcount, 1)) * 1000) / 10}% ${t("davomat.pctOfStaff")}`
+              data?.today && pctOf(earlyNow) != null
+                ? `${pctOf(earlyNow)}% ${t("davomat.pctOfStaff")}`
                 : t("davomat.personDays")
             }
-            icon={CalendarDays}
-            accent="bg-violet-100 text-violet-700 dark:bg-violet-500/20 dark:text-violet-200"
+            progress={data?.today ? pctOf(earlyNow) : null}
+            icon={LogOut}
+            accent="bg-violet-500/10 text-violet-600 dark:text-violet-300"
+            bar="bg-violet-500"
             loading={isLoading}
           />
         </div>
 
+        {insights.length ? (
+          <div className="space-y-2">
+            <p className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.12em] text-muted-foreground">
+              <Lightbulb className="h-3.5 w-3.5 text-amber-500" />
+              {X.insights}
+            </p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {insights.map((it) => {
+                const Icon = it.icon;
+                return (
+                  <div
+                    key={it.key}
+                    className="flex items-start gap-3 rounded-2xl border border-slate-200/80 bg-card p-3.5 transition hover:shadow-md dark:border-slate-700/50 dark:bg-slate-900/60"
+                  >
+                    <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", it.tone)}>
+                      <Icon className="h-[18px] w-[18px]" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                        {it.label}
+                      </p>
+                      <p className="mt-0.5 truncate text-[14px] font-bold text-foreground" title={it.value}>
+                        {it.value}
+                      </p>
+                      <p className="truncate text-[11px] text-muted-foreground" title={it.hint}>
+                        {it.hint}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
         <div className="grid gap-4 xl:grid-cols-3">
           <Panel
-            title={t("davomat.attDynamics")}
+            title={dynamicsData.length > 1 || dynamicsPending ? t("davomat.attDynamics") : X.dayTitle}
+            subtitle={rangeText}
+            icon={Activity}
             className="xl:col-span-2"
             action={
-              <div className="flex items-center gap-0.5 rounded-lg border border-border bg-muted/40 p-0.5">
+              dynamicsData.length <= 1 || dynamicsPending ? null :
+              <div className="analytics-toolbar-group !h-9">
                 <button
                   type="button"
                   onClick={() => setDynamicsChart("line")}
                   className={cn(
-                    "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-                    dynamicsChart === "line"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
+                    "analytics-toolbar-btn !h-7 !min-w-0 !px-2.5 !text-[11px]",
+                    dynamicsChart === "line" && "analytics-toolbar-btn-active",
                   )}
                   title={t("davomat.chartLine")}
                 >
@@ -1462,10 +2001,8 @@ export function DavomatAnalyticsDashboard({
                   type="button"
                   onClick={() => setDynamicsChart("bar")}
                   className={cn(
-                    "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-                    dynamicsChart === "bar"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
+                    "analytics-toolbar-btn !h-7 !min-w-0 !px-2.5 !text-[11px]",
+                    dynamicsChart === "bar" && "analytics-toolbar-btn-active",
                   )}
                   title={t("davomat.chartBar")}
                 >
@@ -1476,10 +2013,8 @@ export function DavomatAnalyticsDashboard({
                   type="button"
                   onClick={() => setDynamicsChart("both")}
                   className={cn(
-                    "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
-                    dynamicsChart === "both"
-                      ? "bg-background text-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground",
+                    "analytics-toolbar-btn !h-7 !min-w-0 !px-2.5 !text-[11px]",
+                    dynamicsChart === "both" && "analytics-toolbar-btn-active",
                   )}
                   title={t("davomat.chartBoth")}
                 >
@@ -1489,8 +2024,37 @@ export function DavomatAnalyticsDashboard({
               </div>
             }
           >
-            {isLoading ? (
-              <Skeleton className="h-64 w-full rounded-xl" />
+            {isLoading || dynamicsPending ? (
+              <DynamicsLoading
+                days={Math.round((Date.parse(range.to) - Date.parse(range.from)) / 86_400_000) + 1}
+                title={X.dynLoading}
+                hint={X.dynLoadingHint}
+              />
+            ) : dynamicsData.length <= 1 ? (
+              <DayBreakdown
+                items={[
+                  { label: t("davomat.onTime"), value: dynamicsData[0]?.arrived ?? 0, color: "#22c55e" },
+                  { label: t("davomat.lateShort"), value: dynamicsData[0]?.late ?? 0, color: "#eab308" },
+                  { label: t("davomat.absent"), value: dynamicsData[0]?.absent ?? 0, color: "#ef4444" },
+                ]}
+                hint={X.dayHint}
+                actions={
+                  <span className="analytics-toolbar-group !h-8">
+                    {(["7d", "30d", "month"] as const).map((p) => (
+                      <button
+                        key={p}
+                        type="button"
+                        onMouseEnter={() => prefetchPreset(p)}
+                        onFocus={() => prefetchPreset(p)}
+                        onClick={() => setPreset(p)}
+                        className="analytics-toolbar-btn !h-6 !min-w-0 !px-2.5 !text-[11px]"
+                      >
+                        {t(PRESET_BUTTONS.find((b) => b.key === p)?.labelKey ?? "")}
+                      </button>
+                    ))}
+                  </span>
+                }
+              />
             ) : (
               <>
                 <DynamicsChartLegend items={dynamicsLegendItems} />
@@ -1527,6 +2091,8 @@ export function DavomatAnalyticsDashboard({
                     stroke="#22c55e"
                     strokeWidth={2.5}
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     dot={dynamicsShowDots ? { r: 3.5, fill: "#22c55e", strokeWidth: 0 } : false}
                     activeDot={{ r: 5 }}
                   />
@@ -1537,6 +2103,8 @@ export function DavomatAnalyticsDashboard({
                     stroke="#eab308"
                     strokeWidth={2.5}
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     dot={dynamicsShowDots ? { r: 3.5, fill: "#eab308", strokeWidth: 0 } : false}
                     activeDot={{ r: 5 }}
                   />
@@ -1547,6 +2115,8 @@ export function DavomatAnalyticsDashboard({
                     stroke="#ef4444"
                     strokeWidth={2.5}
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     dot={dynamicsShowDots ? { r: 3.5, fill: "#ef4444", strokeWidth: 0 } : false}
                     activeDot={{ r: 5 }}
                   />
@@ -1585,6 +2155,8 @@ export function DavomatAnalyticsDashboard({
                     name={t("davomat.onTime")}
                     fill="#22c55e"
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={dynamicsData.length > 16 ? 12 : 22}
                   />
@@ -1593,6 +2165,8 @@ export function DavomatAnalyticsDashboard({
                     name={t("davomat.lateShort")}
                     fill="#eab308"
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={dynamicsData.length > 16 ? 12 : 22}
                   />
@@ -1601,6 +2175,8 @@ export function DavomatAnalyticsDashboard({
                     name={t("davomat.absent")}
                     fill="#ef4444"
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={dynamicsData.length > 16 ? 12 : 22}
                   />
@@ -1675,6 +2251,8 @@ export function DavomatAnalyticsDashboard({
                     fill="#22c55e"
                     fillOpacity={0.85}
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={dynamicsData.length > 16 ? 10 : 18}
                   />
@@ -1684,6 +2262,8 @@ export function DavomatAnalyticsDashboard({
                     fill="#eab308"
                     fillOpacity={0.85}
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={dynamicsData.length > 16 ? 10 : 18}
                   />
@@ -1693,6 +2273,8 @@ export function DavomatAnalyticsDashboard({
                     fill="#ef4444"
                     fillOpacity={0.85}
                     legendType="none"
+                    animationDuration={650}
+                    animationEasing="ease-out"
                     radius={[4, 4, 0, 0]}
                     maxBarSize={dynamicsData.length > 16 ? 10 : 18}
                   />
@@ -1733,28 +2315,82 @@ export function DavomatAnalyticsDashboard({
             )}
           </Panel>
 
-          <Panel title={shareTitle}>
+          <Panel
+            title={shareTitle}
+            icon={PieChartIcon}
+            subtitle={
+              officeShare && (range.from === range.to || range.to === officeShare.date)
+                ? formatYmdUz(officeShare.date)
+                : rangeText
+            }
+          >
             {isLoading ? (
               <Skeleton className="mx-auto h-64 w-64 rounded-full" />
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
-                <PieChart>
-                  <Pie
-                    data={pieData.length ? pieData : [{ name: "—", value: 1, fill: "#cbd5e1" }]}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={55}
-                    outerRadius={95}
-                    paddingAngle={2}
-                  >
-                    {(pieData.length ? pieData : [{ name: "—", value: 1, fill: "#cbd5e1" }]).map((entry, i) => (
-                      <Cell key={`${entry.name}-${i}`} fill={entry.fill} />
-                    ))}
-                  </Pie>
-                  <Tooltip content={<ChartTip />} />
-                  <Legend wrapperStyle={{ color: chart.legend, fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
+              (() => {
+                const total = pieData.reduce((s, p) => s + p.value, 0);
+                const came = pieData
+                  .filter((p) => p.fill !== "#ef4444")
+                  .reduce((s, p) => s + p.value, 0);
+                const cameRate = total ? Math.round((came / total) * 1000) / 10 : 0;
+                const legend = [
+                  { name: t("davomat.onTime"), fill: "#22c55e" },
+                  { name: t("davomat.lateShort"), fill: "#eab308" },
+                  { name: t("davomat.absent"), fill: "#ef4444" },
+                ].map((l) => ({ ...l, value: pieData.find((p) => p.fill === l.fill)?.value ?? 0 }));
+                return (
+                  <div className="flex flex-col items-center">
+                    <div className="relative h-[220px] w-full">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={pieData.length ? pieData : [{ name: "—", value: 1, fill: chart.isDark ? "#334155" : "#e2e8f0" }]}
+                            dataKey="value"
+                            nameKey="name"
+                            innerRadius={70}
+                            outerRadius={98}
+                            paddingAngle={pieData.length > 1 ? 3 : 0}
+                            cornerRadius={6}
+                            stroke="none"
+                          >
+                            {(pieData.length ? pieData : [{ name: "—", value: 1, fill: chart.isDark ? "#334155" : "#e2e8f0" }]).map((entry, i) => (
+                              <Cell key={`${entry.name}-${i}`} fill={entry.fill} />
+                            ))}
+                          </Pie>
+                          <Tooltip content={<ChartTip />} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
+                        <span className="text-[28px] font-extrabold leading-none tabular-nums" style={{ color: rateColor(cameRate) }}>
+                          {total ? `${cameRate}%` : "—"}
+                        </span>
+                        <span className="mt-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          {t("davomat.arrived")}
+                        </span>
+                        <span className="text-[11px] tabular-nums text-muted-foreground">
+                          {came} / {total}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-3 w-full space-y-1.5">
+                      {legend.map((l) => {
+                        const pct = total ? Math.round((l.value / total) * 1000) / 10 : 0;
+                        return (
+                          <div
+                            key={l.fill}
+                            className="flex items-center gap-2.5 rounded-xl bg-slate-50 px-3 py-2 text-xs dark:bg-slate-800/50"
+                          >
+                            <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: l.fill }} />
+                            <span className="flex-1 font-medium text-foreground">{l.name}</span>
+                            <span className="font-bold tabular-nums text-foreground">{l.value}</span>
+                            <span className="w-12 text-right tabular-nums text-muted-foreground">{pct}%</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()
             )}
           </Panel>
         </div>
@@ -1762,6 +2398,7 @@ export function DavomatAnalyticsDashboard({
         <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
           <Panel
             title={isPharmacySegment ? t("davomat.byBranchPharm") : t("davomat.byBranch")}
+            icon={Layers}
             action={
               isPharmacySegment && branchBreakdown.length > 6 ? (
                 <button
@@ -1795,15 +2432,26 @@ export function DavomatAnalyticsDashboard({
               )
             ) : (
               <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
-                {deptBreakdown.slice(0, 8).map((d) => (
-                  <div key={d.name} className="analytics-inset !px-2.5 !py-2">
-                    <div className="mb-1 flex items-center justify-between gap-2">
-                      <p className="truncate text-xs font-semibold">{d.name}</p>
-                      <span className="text-sm font-bold tabular-nums text-emerald-600">{d.attendanceRate}%</span>
+                {deptBreakdown.slice(0, 8).map((d) => {
+                  const tone = branchAttendanceTone(d.attendanceRate);
+                  return (
+                    <div key={d.name} className="analytics-inset !px-3 !py-2.5">
+                      <div className="mb-1.5 flex items-center justify-between gap-2">
+                        <p className="truncate text-[13px] font-semibold">{d.name}</p>
+                        <span className={cn("shrink-0 text-[13px] font-extrabold tabular-nums", tone.text)}>{d.attendanceRate}%</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-700/60">
+                        <div className={cn("h-full rounded-full transition-all duration-700", tone.bar)} style={{ width: `${Math.min(100, d.attendanceRate)}%` }} />
+                      </div>
+                      <p className="mt-1 text-[10.5px] tabular-nums text-muted-foreground">
+                        {range.from === range.to
+                          ? `${d.present} / ${d.headcount} ${X.came}`
+                          : `${d.headcount} ${X.employees}`}
+                        {d.late ? ` · ${d.late} ${t("davomat.lateWord")}` : ""}
+                      </p>
                     </div>
-                    <Progress value={d.attendanceRate} className="h-2" />
-                  </div>
-                ))}
+                  );
+                })}
                 {!deptBreakdown.length ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">{t("ui.empty")}</p>
                 ) : null}
@@ -1811,21 +2459,79 @@ export function DavomatAnalyticsDashboard({
             )}
           </Panel>
 
-          <Panel title={t("davomat.byShiftCards")}>
+          <Panel
+            title={t("davomat.byShiftCards")}
+            icon={Gauge}
+            subtitle={data?.byShift?.length ? `${data.byShift.length} ${X.shiftsCount}` : undefined}
+          >
             {isLoading ? (
               <Skeleton className="h-56 w-full rounded-xl" />
             ) : (
-              <div className="grid gap-2">
-                {(data?.byShift ?? []).slice(0, 4).map((s) => (
-                  <div key={s.key} className="analytics-inset">
-                    <p className="text-xs font-semibold">{s.label}</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600">{s.attendanceRate}%</p>
-                    <p className="text-[11px] text-muted-foreground">
-                      {s.present + s.late} / {s.headcount} {t("davomat.ofHeadcount")}
-                    </p>
-                    <Progress value={s.attendanceRate} className="mt-2 h-1.5" />
-                  </div>
-                ))}
+              <div className="max-h-[300px] space-y-2 overflow-y-auto pr-1">
+                {(data?.byShift ?? []).map((s, i) => {
+                  const color = SHIFT_COLORS[i % SHIFT_COLORS.length]!;
+                  const oneDay = range.from === range.to;
+                  const segLabel = s.segment === "pharmacy" ? X.pharmacy : s.segment === "office" ? X.office : null;
+                  return (
+                    <div
+                      key={s.key}
+                      className="relative flex items-center gap-3 overflow-hidden rounded-xl border border-slate-200/80 bg-white p-3 pl-4 transition hover:shadow-md dark:border-slate-700/60 dark:bg-slate-900/40"
+                      style={{ backgroundImage: `linear-gradient(90deg, ${color}14, transparent 55%)` }}
+                    >
+                      <span className="absolute inset-y-0 left-0 w-1" style={{ background: color }} />
+                      <div className="relative shrink-0">
+                        <RateRing value={s.attendanceRate} size={54} stroke={6} color={color} />
+                        <span
+                          className="absolute inset-0 flex items-center justify-center text-[11px] font-extrabold tabular-nums"
+                          style={{ color }}
+                        >
+                          {s.attendanceRate}%
+                        </span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <p className="truncate text-[13px] font-bold">{s.label}</p>
+                          {s.start && s.end ? (
+                            <span
+                              className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10.5px] font-semibold tabular-nums"
+                              style={{ background: `${color}1f`, color }}
+                            >
+                              <Clock className="h-3 w-3" />
+                              {s.start}–{s.end}
+                            </span>
+                          ) : null}
+                          {segLabel ? (
+                            <span className="rounded-md bg-slate-100 px-1.5 py-0.5 text-[10px] font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                              {segLabel}
+                            </span>
+                          ) : null}
+                        </div>
+                        <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                          <span className="inline-flex items-center gap-1">
+                            <Users className="h-3 w-3" />
+                            <b className="font-semibold text-foreground">{s.headcount}</b> {X.employees}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
+                            <UserCheck className="h-3 w-3" />
+                            <b className="font-semibold">{s.present}</b> {oneDay ? X.came : X.personDays}
+                          </span>
+                          {s.late ? (
+                            <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-400">
+                              <Timer className="h-3 w-3" />
+                              <b className="font-semibold">{s.late}</b> {X.lateShort}
+                            </span>
+                          ) : null}
+                          {s.absent ? (
+                            <span className="inline-flex items-center gap-1 text-rose-600 dark:text-rose-400">
+                              <XCircle className="h-3 w-3" />
+                              <b className="font-semibold">{s.absent}</b> {X.absentWord}
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
                 {!(data?.byShift ?? []).length ? (
                   <p className="py-8 text-center text-sm text-muted-foreground">{t("ui.empty")}</p>
                 ) : null}
@@ -1833,25 +2539,27 @@ export function DavomatAnalyticsDashboard({
             )}
           </Panel>
 
-          <Panel title={t("davomat.topDisciplined")}>
+          <Panel title={t("davomat.topDisciplined")} icon={Award}>
             {isLoading ? <Skeleton className="h-40 w-full rounded-xl" /> : <TopDisciplinedList departments={data?.byDepartment ?? []} />}
           </Panel>
         </div>
 
         <div className="grid gap-4 lg:grid-cols-12">
-          <Panel title={t("davomat.byRole")} className="lg:col-span-3">
+          <Panel title={t("davomat.byRole")} icon={UserCheck} className="lg:col-span-3">
             <div className="max-h-[240px] space-y-1.5 overflow-y-auto pr-1">
               {(data?.byRole ?? []).map((r) => (
                 <div key={r.key} className="analytics-inset !py-1.5 !px-2.5">
                   <div className="flex items-center justify-between gap-2 text-xs">
-                    <span className="truncate font-medium">{r.label}</span>
-                    <span className="shrink-0 tabular-nums text-emerald-600 dark:text-emerald-400">{r.attendanceRate}%</span>
+                    <span className="truncate font-semibold">{r.label}</span>
+                    <span className={cn("shrink-0 font-bold tabular-nums", branchAttendanceTone(r.attendanceRate).text)}>{r.attendanceRate}%</span>
                   </div>
                   <div className="mt-0.5 flex justify-between text-[10px] text-muted-foreground">
                     <span>{r.headcount} {t("ui.employees").toLowerCase()}</span>
                     <span>{r.late} {t("davomat.lateWord")}</span>
                   </div>
-                  <Progress value={r.attendanceRate} className="mt-1 h-1" />
+                  <div className="mt-1 h-1 overflow-hidden rounded-full bg-slate-200/70 dark:bg-slate-700/60">
+                    <div className={cn("h-full rounded-full", branchAttendanceTone(r.attendanceRate).bar)} style={{ width: `${Math.min(100, r.attendanceRate)}%` }} />
+                  </div>
                 </div>
               ))}
               {!isLoading && !(data?.byRole ?? []).length ? (
@@ -1861,7 +2569,7 @@ export function DavomatAnalyticsDashboard({
           </Panel>
 
           {segment === "office" ? (
-            <Panel title={t("davomat.officeDay")} className="lg:col-span-9">
+            <Panel title={t("davomat.officeDay")} icon={Building2} className="lg:col-span-9">
               <OfficeDayPanel
                 items={data?.officeDayBoard ?? []}
                 summary={data?.officeDaySummary ?? null}
@@ -1872,7 +2580,7 @@ export function DavomatAnalyticsDashboard({
               />
             </Panel>
           ) : (
-            <Panel title={t("davomat.branchOpen")} className="lg:col-span-9">
+            <Panel title={t("davomat.branchOpen")} icon={Store} className="lg:col-span-9">
               <BranchOpeningsPanel
                 openings={data?.branchOpenings ?? []}
                 summary={data?.branchOpeningSummary ?? null}
@@ -1886,7 +2594,7 @@ export function DavomatAnalyticsDashboard({
         </div>
 
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel title={t("davomat.topLate")} bodyClassName="p-0">
+          <Panel title={t("davomat.topLate")} icon={Timer} bodyClassName="p-0">
             <div className="overflow-x-auto">
               <table className="analytics-table w-full text-sm">
                 <thead>
@@ -1973,7 +2681,7 @@ export function DavomatAnalyticsDashboard({
             </Dialog>
           </Panel>
 
-          <Panel title={t("davomat.recentArrivals")} bodyClassName="p-0">
+          <Panel title={t("davomat.recentArrivals")} icon={Sunrise} bodyClassName="p-0">
             <div className="max-h-80 overflow-auto">
               <table className="analytics-table analytics-table--pin w-full text-sm">
                 <thead>
@@ -2086,7 +2794,7 @@ export function DavomatAnalyticsDashboard({
           </Panel>
         </div>
 
-        <Panel title={t("davomat.deptTable")} bodyClassName="p-0" className="scroll-mt-24" id="davomat-breakdown-table">
+        <Panel title={t("davomat.deptTable")} icon={Layers} bodyClassName="p-0" className="scroll-mt-24" id="davomat-breakdown-table">
           <div className="overflow-x-auto p-3">
             <table className="analytics-table analytics-table--sheet w-full min-w-[520px] table-fixed text-sm">
               <colgroup>

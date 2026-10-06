@@ -2090,6 +2090,43 @@ CREATE TABLE IF NOT EXISTS davomat_access_audit (
 CREATE INDEX IF NOT EXISTS davomat_access_audit_created_idx ON davomat_access_audit (created_at);
 CREATE INDEX IF NOT EXISTS davomat_access_audit_target_idx ON davomat_access_audit (target_user_id);
 CREATE INDEX IF NOT EXISTS davomat_access_audit_actor_idx ON davomat_access_audit (actor_user_id);
+
+CREATE TABLE IF NOT EXISTS discipline_events (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  employee_id INTEGER,
+  month TEXT NOT NULL,
+  n INTEGER NOT NULL,
+  event_date TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  amount INTEGER NOT NULL DEFAULT 0,
+  full_name TEXT,
+  position TEXT,
+  branch TEXT,
+  shift TEXT,
+  coordinator TEXT,
+  detected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  notified_at TIMESTAMPTZ,
+  UNIQUE (user_id, month, n)
+);
+CREATE INDEX IF NOT EXISTS discipline_events_user_idx ON discipline_events (user_id);
+CREATE INDEX IF NOT EXISTS discipline_events_month_idx ON discipline_events (month);
+
+CREATE TABLE IF NOT EXISTS discipline_locks (
+  id SERIAL PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  lock_day TEXT NOT NULL,
+  month TEXT NOT NULL,
+  strike_n INTEGER NOT NULL,
+  event_date TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  cleared_at TIMESTAMPTZ,
+  cleared_by INTEGER,
+  cleared_by_name TEXT,
+  UNIQUE (user_id, lock_day)
+);
+CREATE INDEX IF NOT EXISTS discipline_locks_day_idx ON discipline_locks (lock_day);
 `;
 
 export async function ensureZonePresenceSchema(): Promise<void> {

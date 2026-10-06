@@ -223,6 +223,19 @@ async function loadNodes(): Promise<EmpNode[]> {
     );
 }
 
+/** employeeId → koordinator ismi (rahbarlik zanjiri bo‘yicha) */
+export async function coordinatorNamesFor(employeeIds: number[]): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  if (!employeeIds.length) return out;
+  const nodes = await loadNodes();
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  for (const id of employeeIds) {
+    const hit = resolveCoordinator(id, byId);
+    if (hit) out.set(id, hit.name);
+  }
+  return out;
+}
+
 export async function buildCoordinatorShiftReport(opts: {
   ymd: string;
   employeeIds?: number[];

@@ -19,6 +19,7 @@ import {
   touchDevice,
   touchSession,
 } from "../lib/device-security";
+import { activeLockFor, DISCIPLINE_ROLES, LOCK_MESSAGE } from "../lib/discipline-lock";
 
 export interface AuthRequest extends Request {
   userId?: number;
@@ -219,6 +220,10 @@ export async function requireAuth(
     req.userRole = user.role;
     const ok = await enforceDeviceIfNeeded(req, res, user);
     if (!ok) return;
+    if (DISCIPLINE_ROLES.has(String(user.role || "").toLowerCase()) && (await activeLockFor(user.id))) {
+      res.status(423).json({ error: LOCK_MESSAGE, code: "DISCIPLINE_LOCK" });
+      return;
+    }
     next();
   } catch (err) {
     console.error("requireAuth db error:", dbErrDetail(err));

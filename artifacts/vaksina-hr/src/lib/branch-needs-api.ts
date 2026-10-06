@@ -45,6 +45,28 @@ export type BranchNeedAssignee = {
   login: string;
 };
 
+export type NeedAssigneeGroup = "it" | "komunal" | "hudud";
+
+export const NEED_ASSIGNEE_GROUPS: Array<{ key: NeedAssigneeGroup; label: string }> = [
+  { key: "it", label: "IT bo‘limi" },
+  { key: "komunal", label: "Kommunal" },
+  { key: "hudud", label: "Hudud mas’ullari" },
+];
+
+const NEED_ASSIGNEE_ROLE_GROUP: Record<string, NeedAssigneeGroup> = {
+  it_rahbar: "it",
+  it: "it",
+  it_tarmoq: "it",
+  texnik: "it",
+  mamuriy_rahbar: "komunal",
+  komunalniy: "komunal",
+  koordinator: "hudud",
+};
+
+export function needAssigneeGroup(role?: string | null): NeedAssigneeGroup | null {
+  return NEED_ASSIGNEE_ROLE_GROUP[String(role || "")] ?? null;
+}
+
 export function needLabel(needType: string): string {
   if (needType === "mudir") return "Mudirga ehtiyoj";
   if (needType === "computer") return "Kompyuterga ehtiyoj";
@@ -55,6 +77,16 @@ export function roleLabel(role?: string | null): string {
   switch (role) {
     case "texnik":
       return "Texnik";
+    case "it_rahbar":
+      return "IT bo‘limi rahbari";
+    case "it":
+      return "IT mutaxassis";
+    case "it_tarmoq":
+      return "IT · tarmoq mutaxassisi";
+    case "mamuriy_rahbar":
+      return "Ma’muriy-xo‘jalik rahbari";
+    case "komunalniy":
+      return "Kommunal xizmat";
     case "ombor":
       return "Ombor";
     case "mudir":
@@ -127,10 +159,36 @@ export function useBranchNeedsHistory() {
   });
 }
 
+export type MyNeedBranch = {
+  managerEmployeeId: number;
+  branchName: string;
+  managerName: string | null;
+  coordinatorName: string | null;
+};
+
+export function useMyNeedBranch(enabled: boolean) {
+  return useQuery({
+    queryKey: ["branch-needs", "my-branch"],
+    queryFn: async () => (await apiFetch<{ branch: MyNeedBranch | null }>(`/branch-needs/my-branch`)).branch,
+    enabled,
+    staleTime: 5 * 60_000,
+  });
+}
+
 export function useBranchNeedAssignees(enabled: boolean) {
   return useQuery({
     queryKey: ["branch-needs", "assignees"],
-    queryFn: () => apiFetch<BranchNeedAssignee[]>(`/branch-needs/assignees`),
+    queryFn: async () => {
+      const order = NEED_ASSIGNEE_GROUPS.map((g) => g.key);
+      const list = await apiFetch<BranchNeedAssignee[]>(`/branch-needs/assignees`);
+      return list
+        .filter((a) => needAssigneeGroup(a.role))
+        .sort(
+          (a, b) =>
+            order.indexOf(needAssigneeGroup(a.role)!) - order.indexOf(needAssigneeGroup(b.role)!) ||
+            a.fullName.localeCompare(b.fullName, "uz"),
+        );
+    },
     enabled,
   });
 }

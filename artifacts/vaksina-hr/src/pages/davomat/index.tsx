@@ -41,6 +41,15 @@ import {
   Palmtree,
   AlarmClock,
   ClipboardList,
+  CalendarRange,
+  CalendarClock,
+  Sun,
+  Truck,
+  Warehouse,
+  ShieldCheck,
+  SlidersHorizontal,
+  RefreshCw,
+  X,
 } from "lucide-react";
 import { DavomatJarimaCard, DavomatJarimaPanel } from "../oylik/pay-table";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
@@ -1588,17 +1597,38 @@ export default function DavomatPage() {
   }
 
   const fieldClass =
-    "h-10 rounded-xl border-border bg-card text-sm shadow-none dark:border-white/10 dark:bg-[#152238] dark:text-slate-100";
-  const labelClass = "mb-1 flex h-4 items-center text-[10px] font-medium leading-none text-muted-foreground";
+    "h-11 rounded-xl border-slate-200 bg-white text-sm font-medium text-[#0f2744] shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-colors hover:border-slate-300 dark:border-white/10 dark:bg-[#152238] dark:text-slate-100 dark:hover:border-white/20";
+  const labelClass =
+    "mb-1.5 flex h-4 items-center text-[10.5px] font-bold uppercase leading-none tracking-[0.08em] text-slate-500 dark:text-slate-400";
   const navBtnClass =
-    "h-10 w-10 shrink-0 rounded-xl border-border dark:border-white/10 dark:bg-[#152238]";
+    "h-11 w-11 shrink-0 rounded-xl border-slate-200 bg-white text-slate-600 shadow-[0_1px_2px_rgba(15,39,68,0.05)] hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-[#152238] dark:text-slate-300 dark:hover:bg-sky-400/10";
+
+  const activeFilterCount =
+    (deptFilter !== "all" ? 1 : 0) +
+    (dayStatusFilter !== "all" ? 1 : 0) +
+    (search.trim() ? 1 : 0) +
+    (viewFilter === "office" && officeInner !== "all" ? 1 : 0) +
+    (warehouseShift !== "all" ? 1 : 0) +
+    (pharmacyShift !== "all" ? 1 : 0) +
+    (pharmacyCoordinator !== "all" ? 1 : 0) +
+    (pharmacyBranch !== "all" ? 1 : 0);
+  const resetFilters = () => {
+    setDeptFilter("all");
+    setDayStatusFilter("all");
+    setSearch("");
+    setOfficeInner("all");
+    setWarehouseShift("all");
+    setPharmacyShift("all");
+    setPharmacyCoordinator("all");
+    setPharmacyBranch("all");
+  };
 
   const filters = (
     <div className="grid grid-cols-1 items-start gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {section === "schedule" && calMode === "range" ? (
         <>
           <div>
-            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
+            <Label className={labelClass}>{t("davomat.from")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -1612,7 +1642,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
+            <Label className={labelClass}>{t("davomat.to")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -1697,10 +1727,11 @@ export default function DavomatPage() {
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  sideOffset={6}
-                  className="z-[90] w-auto rounded-xl border border-border p-0 shadow-lg"
+                  sideOffset={8}
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  className="z-[90] w-auto overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_48px_-20px_rgba(15,39,68,0.35)] dark:border-white/10 dark:bg-[#101a2e]"
                 >
-                  <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-gradient-to-br from-slate-50 to-white px-4 py-3 dark:from-white/[0.04] dark:to-transparent">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         {t("davomat.pickWeek")}
@@ -1726,7 +1757,7 @@ export default function DavomatPage() {
                   <DayPickerCalendar
                     key={`week-${weekStart}`}
                     mode="range"
-                    className="rounded-xl"
+                    className="bg-transparent"
                     defaultMonth={parseYmdLocal(weekStart) ?? new Date()}
                     selected={{
                       from: parseYmdLocal(weekStart),
@@ -1773,10 +1804,11 @@ export default function DavomatPage() {
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  sideOffset={6}
-                  className="z-[90] w-auto rounded-xl border border-border p-0 shadow-lg"
+                  sideOffset={8}
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  className="z-[90] w-auto overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_48px_-20px_rgba(15,39,68,0.35)] dark:border-white/10 dark:bg-[#101a2e]"
                 >
-                  <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
+                  <div className="flex items-center justify-between gap-2 border-b border-border/60 bg-gradient-to-br from-slate-50 to-white px-4 py-3 dark:from-white/[0.04] dark:to-transparent">
                     <div>
                       <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                         {t("davomat.pickMonth")}
@@ -1806,7 +1838,7 @@ export default function DavomatPage() {
                   <DayPickerCalendar
                     key={`month-${monthAnchor.slice(0, 7)}`}
                     mode="range"
-                    className="rounded-xl"
+                    className="bg-transparent"
                     defaultMonth={parseYmdLocal(monthAnchor) ?? new Date()}
                     selected={{
                       from: parseYmdLocal(firstOfMonth(monthAnchor)),
@@ -1854,36 +1886,61 @@ export default function DavomatPage() {
                 </PopoverTrigger>
                 <PopoverContent
                   align="start"
-                  sideOffset={6}
-                  className="z-[90] w-auto rounded-xl border border-border p-0 shadow-lg"
+                  sideOffset={8}
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                  className="z-[90] w-auto overflow-hidden rounded-2xl border border-slate-200/80 p-0 shadow-[0_24px_48px_-20px_rgba(15,39,68,0.35)] dark:border-white/10 dark:bg-[#101a2e]"
                 >
-                  <div className="flex items-center justify-between gap-2 border-b border-border/70 px-3 py-2.5">
-                    <div>
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                        {t("davomat.pickDay")}
-                      </p>
-                      <p className="mt-0.5 text-sm font-semibold tabular-nums text-foreground">
-                        {formatYmdDot(selectedDay)}
-                      </p>
+                  <div className="border-b border-border/60 bg-gradient-to-br from-slate-50 to-white px-4 pb-3 pt-3.5 dark:from-white/[0.04] dark:to-transparent">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-muted-foreground">
+                          {t("davomat.pickDay")}
+                        </p>
+                        <p className="mt-1 truncate text-[15px] font-bold text-[#0f2744] dark:text-white">
+                          {formatLongDate(selectedDay, locale)}
+                        </p>
+                      </div>
+                      {selectedDay === todayYmd() ? (
+                        <span className="mt-0.5 inline-flex shrink-0 items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                          {locale === "ru" ? "Сегодня" : "Bugun"}
+                        </span>
+                      ) : null}
                     </div>
-                    <button
-                      type="button"
-                      className="shrink-0 rounded-md px-2 py-1 text-[11px] font-semibold text-primary hover:bg-primary/10"
-                      onClick={() => {
-                        const d = todayYmd();
-                        setSelectedDay(d);
-                        setWeekStart(mondayOf(d));
-                        setMonthAnchor(firstOfMonth(d));
-                        setDayPickerOpen(false);
-                      }}
-                    >
-                      {t("davomat.todayPick")}
-                    </button>
+                    <div className="mt-3 grid grid-cols-3 gap-1.5">
+                      {[
+                        { label: locale === "ru" ? "Вчера" : "Kecha", ymd: addDaysYmd(todayYmd(), -1) },
+                        { label: t("davomat.todayPick"), ymd: todayYmd() },
+                        { label: locale === "ru" ? "Неделю назад" : "1 hafta oldin", ymd: addDaysYmd(todayYmd(), -7) },
+                      ].map((q) => {
+                        const on = selectedDay === q.ymd;
+                        return (
+                          <button
+                            key={q.ymd}
+                            type="button"
+                            className={cn(
+                              "h-8 truncate rounded-lg border px-2 text-[11.5px] font-semibold transition",
+                              on
+                                ? "border-transparent bg-[#0f2744] text-white shadow-sm dark:bg-sky-500"
+                                : "border-slate-200 bg-white text-slate-600 hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-white/5 dark:text-slate-300 dark:hover:bg-sky-400/10",
+                            )}
+                            onClick={() => {
+                              setSelectedDay(q.ymd);
+                              setWeekStart(mondayOf(q.ymd));
+                              setMonthAnchor(firstOfMonth(q.ymd));
+                              setDayPickerOpen(false);
+                            }}
+                          >
+                            {q.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
                   <DayPickerCalendar
                     key={`day-${selectedDay}`}
                     mode="single"
-                    className="rounded-xl"
+                    className="bg-transparent"
                     defaultMonth={parseYmdLocal(selectedDay) ?? new Date()}
                     selected={parseYmdLocal(selectedDay)}
                     onSelect={(day) => {
@@ -1931,7 +1988,7 @@ export default function DavomatPage() {
       ) : (
         <>
           <div>
-            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.from")}</Label>
+            <Label className={labelClass}>{t("davomat.from")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -1940,7 +1997,7 @@ export default function DavomatPage() {
             />
           </div>
           <div>
-            <Label className="mb-1 block text-[10px] font-medium text-muted-foreground">{t("davomat.to")}</Label>
+            <Label className={labelClass}>{t("davomat.to")}</Label>
             <Input
               type="date"
               className={fieldClass}
@@ -2061,71 +2118,61 @@ export default function DavomatPage() {
       )}
       {viewFilter === "office" ? (
         <div className="sm:col-span-2 xl:col-span-4">
-          <div className="rounded-2xl border border-slate-200/90 bg-slate-50/80 p-2 dark:border-white/10 dark:bg-white/[0.03]">
-          <div className="mb-1.5 px-1">
-            <Label className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Ofis ichida</Label>
-          </div>
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
-            {OFFICE_INNER_OPTIONS.map((opt) => {
-              const on = officeInner === opt.key;
-              const tone =
-                opt.key === "distrib"
-                  ? {
-                      on: "border-transparent bg-gradient-to-br from-orange-600 to-amber-500 text-white shadow-md shadow-orange-500/25",
-                      off: "border-orange-200 bg-orange-50 text-orange-950 hover:border-orange-300 hover:bg-orange-100 dark:border-orange-400/35 dark:bg-orange-400/10 dark:text-orange-100",
-                      badgeOn: "bg-white/25 text-white",
-                      badgeOff: "bg-orange-200/90 text-orange-900 dark:bg-orange-400/20 dark:text-orange-100",
-                    }
-                  : opt.key === "warehouse"
-                  ? {
-                      on: "border-transparent bg-gradient-to-br from-lime-600 to-green-500 text-white shadow-md shadow-lime-500/25",
-                      off: "border-lime-300 bg-lime-50 text-lime-950 hover:border-lime-400 hover:bg-lime-100 dark:border-lime-400/35 dark:bg-lime-400/10 dark:text-lime-100",
-                      badgeOn: "bg-white/25 text-white",
-                      badgeOff: "bg-lime-200/90 text-lime-900 dark:bg-lime-400/20 dark:text-lime-100",
-                    }
-                  : opt.key === "security"
-                    ? {
-                        on: "border-transparent bg-gradient-to-br from-purple-700 to-violet-600 text-white shadow-md shadow-purple-500/25",
-                        off: "border-purple-200 bg-purple-50 text-purple-950 hover:border-purple-300 hover:bg-purple-100 dark:border-purple-400/35 dark:bg-purple-400/10 dark:text-purple-100",
-                        badgeOn: "bg-white/25 text-white",
-                        badgeOff: "bg-purple-200/80 text-purple-900 dark:bg-purple-400/20 dark:text-purple-100",
-                      }
-                    : opt.key === "desk"
-                      ? {
-                          on: "border-transparent bg-gradient-to-br from-red-600 to-rose-600 text-white shadow-md shadow-red-500/25",
-                          off: "border-red-200 bg-red-50 text-red-950 hover:border-red-300 hover:bg-red-100 dark:border-red-400/35 dark:bg-red-400/10 dark:text-red-100",
-                          badgeOn: "bg-white/25 text-white",
-                          badgeOff: "bg-red-200/80 text-red-900 dark:bg-red-400/20 dark:text-red-100",
-                        }
-                      : {
-                          on: "border-transparent bg-gradient-to-br from-cyan-500 to-sky-500 text-white shadow-md shadow-cyan-500/30",
-                          off: "border-cyan-200 bg-cyan-50 text-cyan-950 hover:border-cyan-300 hover:bg-cyan-100 dark:border-cyan-400/35 dark:bg-cyan-400/10 dark:text-cyan-100",
-                          badgeOn: "bg-white/25 text-white",
-                          badgeOff: "bg-cyan-200/80 text-cyan-900 dark:bg-cyan-400/20 dark:text-cyan-100",
-                        };
-              return (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setOfficeInner(opt.key)}
-                  className={cn(
-                    "flex items-center justify-between gap-2 rounded-xl border px-3 py-2 text-left shadow-sm transition",
-                    on ? tone.on : tone.off,
-                  )}
-                >
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-semibold leading-tight">{opt.label}</span>
-                    <span className={cn("block truncate text-[10px] leading-tight", on ? "opacity-80" : "opacity-70")}>
-                      {opt.hint}
+          <div className="rounded-2xl border border-slate-200/80 bg-gradient-to-b from-slate-50 to-white p-3 dark:border-white/10 dark:from-white/[0.04] dark:to-transparent">
+            <div className="mb-2.5 flex items-center justify-between gap-2 px-0.5">
+              <div className="flex items-center gap-2">
+                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-[#0f2744] text-white dark:bg-sky-500/20 dark:text-sky-300">
+                  <Building2 className="h-3.5 w-3.5" />
+                </span>
+                <Label className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-600 dark:text-slate-300">Ofis ichida</Label>
+              </div>
+              <span className="text-[11px] font-medium text-slate-400">
+                {OFFICE_INNER_OPTIONS.find((o) => o.key === officeInner)?.label ?? ""} · {officeInnerCounts[officeInner]} xodim
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5">
+              {OFFICE_INNER_OPTIONS.map((opt) => {
+                const on = officeInner === opt.key;
+                const tone =
+                  opt.key === "distrib"
+                    ? { icon: Truck, on: "from-orange-500 to-amber-500 shadow-orange-500/30", tile: "bg-orange-100 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300", hover: "hover:border-orange-300 dark:hover:border-orange-400/40", badge: "bg-orange-100 text-orange-700 dark:bg-orange-400/15 dark:text-orange-200" }
+                    : opt.key === "warehouse"
+                      ? { icon: Warehouse, on: "from-lime-600 to-emerald-500 shadow-lime-500/30", tile: "bg-lime-100 text-lime-700 dark:bg-lime-400/15 dark:text-lime-300", hover: "hover:border-lime-300 dark:hover:border-lime-400/40", badge: "bg-lime-100 text-lime-800 dark:bg-lime-400/15 dark:text-lime-200" }
+                      : opt.key === "security"
+                        ? { icon: ShieldCheck, on: "from-violet-700 to-purple-500 shadow-violet-500/30", tile: "bg-violet-100 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300", hover: "hover:border-violet-300 dark:hover:border-violet-400/40", badge: "bg-violet-100 text-violet-700 dark:bg-violet-400/15 dark:text-violet-200" }
+                        : opt.key === "desk"
+                          ? { icon: Building2, on: "from-rose-600 to-red-500 shadow-rose-500/30", tile: "bg-rose-100 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300", hover: "hover:border-rose-300 dark:hover:border-rose-400/40", badge: "bg-rose-100 text-rose-700 dark:bg-rose-400/15 dark:text-rose-200" }
+                          : { icon: Users, on: "from-sky-600 to-cyan-500 shadow-sky-500/30", tile: "bg-sky-100 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300", hover: "hover:border-sky-300 dark:hover:border-sky-400/40", badge: "bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-200" };
+                const Icon = tone.icon;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setOfficeInner(opt.key)}
+                    className={cn(
+                      "group flex items-center gap-2.5 rounded-xl border px-2.5 py-2 text-left transition-all duration-200",
+                      on
+                        ? cn("border-transparent bg-gradient-to-br text-white shadow-lg", tone.on)
+                        : cn("border-slate-200 bg-white text-[#0f2744] shadow-[0_1px_2px_rgba(15,39,68,0.05)] hover:-translate-y-0.5 hover:shadow-md dark:border-white/10 dark:bg-[#152238] dark:text-slate-100", tone.hover),
+                    )}
+                  >
+                    <span className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition", on ? "bg-white/20 text-white" : tone.tile)}>
+                      <Icon className="h-4 w-4" />
                     </span>
-                  </span>
-                  <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[11px] font-bold tabular-nums", on ? tone.badgeOn : tone.badgeOff)}>
-                    {officeInnerCounts[opt.key]}
-                  </span>
-                </button>
-              );
-            })}
-          </div>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-[13px] font-semibold leading-tight">{opt.label}</span>
+                      <span className={cn("mt-0.5 block truncate text-[10.5px] leading-tight", on ? "text-white/80" : "text-slate-500 dark:text-slate-400")}>
+                        {opt.hint}
+                      </span>
+                    </span>
+                    <span className={cn("shrink-0 rounded-lg px-2 py-0.5 text-xs font-bold tabular-nums", on ? "bg-white/25 text-white" : tone.badge)}>
+                      {officeInnerCounts[opt.key]}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </div>
       ) : null}
@@ -2240,7 +2287,7 @@ export default function DavomatPage() {
       label: "Jami xodim",
       value: filteredDayStats.total,
       icon: Users,
-      bar: "bg-[#3b82f6]",
+      bar: "bg-gradient-to-r from-sky-400 to-blue-600",
       iconBg: "bg-sky-50 text-sky-600 dark:bg-sky-400/15 dark:text-sky-300",
       ring: "#38bdf8",
       surface: "dark:border-sky-400/30 dark:bg-[#102743] dark:shadow-[0_16px_36px_-22px_rgba(56,189,248,0.7)]",
@@ -2250,7 +2297,7 @@ export default function DavomatPage() {
       label: "Kelgan",
       value: filteredDayStats.present,
       icon: UserCheck,
-      bar: "bg-emerald-500",
+      bar: "bg-gradient-to-r from-emerald-400 to-emerald-600",
       iconBg: "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300",
       ring: "#34d399",
       surface: "dark:border-emerald-400/25 dark:bg-[#0d2820] dark:shadow-[0_16px_36px_-22px_rgba(52,211,153,0.55)]",
@@ -2260,7 +2307,7 @@ export default function DavomatPage() {
       label: "Kelmagan",
       value: filteredDayStats.absent,
       icon: UserX,
-      bar: "bg-rose-500",
+      bar: "bg-gradient-to-r from-rose-400 to-rose-600",
       iconBg: "bg-rose-50 text-rose-600 dark:bg-rose-400/15 dark:text-rose-300",
       ring: "#fb7185",
       surface: "dark:border-rose-400/25 dark:bg-[#2a1520] dark:shadow-[0_16px_36px_-22px_rgba(251,113,133,0.5)]",
@@ -2270,7 +2317,7 @@ export default function DavomatPage() {
       label: "Kechikkan",
       value: filteredDayStats.late,
       icon: Timer,
-      bar: "bg-amber-400",
+      bar: "bg-gradient-to-r from-amber-300 to-amber-500",
       iconBg: "bg-amber-50 text-amber-600 dark:bg-amber-400/15 dark:text-amber-300",
       ring: "#fbbf24",
       surface: "dark:border-amber-400/25 dark:bg-[#2a2112] dark:shadow-[0_16px_36px_-22px_rgba(251,191,36,0.45)]",
@@ -2282,7 +2329,7 @@ export default function DavomatPage() {
       label: "Ta’tilda",
       value: filteredDayStats.leave,
       icon: Palmtree,
-      bar: "bg-violet-500",
+      bar: "bg-gradient-to-r from-violet-400 to-violet-600",
       iconBg: "bg-violet-50 text-violet-600 dark:bg-violet-400/15 dark:text-violet-300",
       ring: "#a78bfa",
       surface: "dark:border-violet-400/25 dark:bg-[#241832] dark:shadow-[0_16px_36px_-22px_rgba(167,139,250,0.5)]",
@@ -2294,7 +2341,7 @@ export default function DavomatPage() {
       label: "Dam kuni",
       value: filteredDayStats.rest,
       icon: Moon,
-      bar: "bg-slate-400",
+      bar: "bg-gradient-to-r from-slate-300 to-slate-500",
       iconBg: "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200",
       ring: "#94a3b8",
       surface: "dark:border-white/15 dark:bg-[#1a2436]",
@@ -2303,48 +2350,83 @@ export default function DavomatPage() {
 
   return (
     <div className="w-full space-y-4 pb-10">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#1d4ed8] text-white shadow-sm shadow-blue-600/30">
-            <Users className="h-6 w-6" />
-          </span>
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight text-[#0f2744] dark:text-white">{t("davomat.title")}</h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              {pharmacyScope
-                ? "Faqat sizning filiallaringiz, barcha smenalar va o‘z xodimlaringiz"
-                : "Xodimlarning ishga kelish va ketish nazorati"}
-            </p>
-          </div>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex h-11 items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 shadow-sm dark:border-sky-400/20 dark:bg-[#152238]">
-            <CalendarDays className="h-4 w-4 shrink-0 text-slate-400" />
-            <div className="min-w-0 leading-none">
-              <div className="text-[10px] font-medium text-slate-400">
-                {selectedDay === todayYmd() ? (locale === "ru" ? "Сегодня" : "Bugun") : locale === "ru" ? "Дата" : "Sana"}
+      <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-gradient-to-br from-white via-white to-sky-50/80 p-4 shadow-[0_1px_2px_rgba(15,39,68,0.04),0_18px_40px_-28px_rgba(15,39,68,0.35)] sm:p-5 dark:border-white/10 dark:from-[#101a2e] dark:via-[#101a2e] dark:to-[#0f2a4a]">
+        <div className="pointer-events-none absolute -right-20 -top-24 h-64 w-64 rounded-full bg-sky-400/15 blur-3xl dark:bg-sky-400/10" />
+        <div className="pointer-events-none absolute -bottom-28 left-1/3 h-56 w-56 rounded-full bg-indigo-400/10 blur-3xl" />
+        <div className="relative flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex min-w-0 items-center gap-4">
+            <span className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-[#0f2744] via-[#1e3a8a] to-[#2563eb] text-white shadow-lg shadow-blue-900/25 ring-4 ring-white dark:ring-white/5">
+              <Users className="h-6 w-6" />
+              <span className="absolute -right-1 -top-1 flex h-3.5 w-3.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-60" />
+                <span className="relative inline-flex h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500 dark:border-[#101a2e]" />
+              </span>
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h1 className="text-2xl font-extrabold tracking-tight text-[#0f2744] sm:text-[28px] dark:text-white">{t("davomat.title")}</h1>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-sky-200 bg-sky-50 px-2.5 py-0.5 text-[11px] font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                  {staffGroupLabel}
+                </span>
               </div>
-              <div className="mt-0.5 truncate text-xs font-semibold text-[#0f2744] dark:text-slate-100">{formatLongDate(selectedDay, locale)}</div>
+              <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
+                {pharmacyScope
+                  ? "Faqat sizning filiallaringiz, barcha smenalar va o‘z xodimlaringiz"
+                  : "Xodimlarning ishga kelish va ketish nazorati"}
+              </p>
             </div>
           </div>
-          <Button
-            type="button"
-            className="h-11 gap-2 rounded-xl bg-emerald-600 px-4 text-white shadow-sm hover:bg-emerald-700"
-            onClick={() => void onExport()}
-            disabled={!!exporting || (loading && !report)}
-          >
-            {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-            {t("davomat.excelBtn")}
-          </Button>
-          <Button
-            type="button"
-            className="h-11 gap-2 rounded-xl bg-rose-600 px-4 text-white shadow-sm hover:bg-rose-700"
-            onClick={() => void onExportPdf()}
-            disabled={!!exporting || (loading && !report)}
-          >
-            {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-            {t("davomat.pdfBtn")}
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex h-11 items-center gap-2.5 rounded-xl border border-slate-200 bg-white/90 pl-1.5 pr-3.5 shadow-[0_1px_2px_rgba(15,39,68,0.05)] backdrop-blur dark:border-white/10 dark:bg-[#152238]">
+              <span
+                className={cn(
+                  "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg",
+                  selectedDay === todayYmd()
+                    ? "bg-emerald-50 text-emerald-600 dark:bg-emerald-400/15 dark:text-emerald-300"
+                    : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300",
+                )}
+              >
+                <CalendarDays className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 leading-none">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                  {selectedDay === todayYmd() ? (locale === "ru" ? "Сегодня" : "Bugun") : locale === "ru" ? "Дата" : "Sana"}
+                </div>
+                <div className="mt-1 truncate text-[13px] font-bold text-[#0f2744] dark:text-slate-100">{formatLongDate(selectedDay, locale)}</div>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              title={locale === "ru" ? "Обновить" : "Yangilash"}
+              aria-label={locale === "ru" ? "Обновить" : "Yangilash"}
+              className="h-11 w-11 rounded-xl border-slate-200 bg-white/90 text-slate-600 shadow-[0_1px_2px_rgba(15,39,68,0.05)] hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 dark:border-white/10 dark:bg-[#152238] dark:text-slate-300"
+              onClick={() => void load()}
+              disabled={loading}
+            >
+              <RefreshCw className={cn("h-4 w-4", loading && "animate-spin")} />
+            </Button>
+            <Button
+              type="button"
+              className="h-11 min-w-[148px] gap-2 rounded-xl bg-gradient-to-b from-emerald-500 to-emerald-600 px-4 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_18px_-8px_rgba(16,185,129,0.7)] transition hover:-translate-y-0.5 hover:from-emerald-600 hover:to-emerald-700"
+              onClick={() => void onExport()}
+              disabled={!!exporting || (loading && !report)}
+            >
+              {exporting === "excel" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+              {t("davomat.excelBtn")}
+            </Button>
+            <Button
+              type="button"
+              className="h-11 min-w-[148px] gap-2 rounded-xl bg-gradient-to-b from-rose-500 to-rose-600 px-4 font-semibold text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.25),0_8px_18px_-8px_rgba(244,63,94,0.7)] transition hover:-translate-y-0.5 hover:from-rose-600 hover:to-rose-700"
+              onClick={() => void onExportPdf()}
+              disabled={!!exporting || (loading && !report)}
+            >
+              {exporting === "pdf" ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+              {t("davomat.pdfBtn")}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -2371,64 +2453,74 @@ export default function DavomatPage() {
           const r = 18;
           const c = 2 * Math.PI * r;
           const dash = c - (c * Math.min(100, ringPct)) / 100;
+          const pctText = card.key === "all" ? "100" : Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
           return (
             <button
               key={card.key}
               type="button"
+              aria-pressed={active}
               onClick={() => toggleDayStatusFilter(card.key)}
               className={cn(
-                "rounded-2xl border-2 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md",
+                "group relative overflow-hidden rounded-2xl border bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-20px_rgba(15,39,68,0.4)]",
                 card.surface,
-                active ? "border-sky-500 ring-2 ring-sky-200 dark:ring-sky-400/40" : "border-slate-300",
+                active ? "border-transparent" : "border-slate-200/90 dark:border-white/10",
               )}
+              style={active ? { boxShadow: `0 0 0 2px ${card.ring}, 0 16px 32px -18px ${card.ring}` } : undefined}
             >
-              <div className="flex items-start justify-between gap-3">
+              <span className={cn("absolute inset-x-0 top-0 h-1", card.bar)} />
+              <span
+                className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full opacity-[0.12] blur-2xl transition-opacity group-hover:opacity-25"
+                style={{ background: card.ring }}
+              />
+              <div className="relative flex items-start justify-between gap-3">
                 <div className="flex min-w-0 items-center gap-3">
-                  <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", card.iconBg)}>
+                  <span className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-xl", card.iconBg)}>
                     <Icon className="h-5 w-5" />
                   </span>
                   <div className="min-w-0">
-                    <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{card.label}</div>
-                    <div className="mt-0.5 text-2xl font-bold tabular-nums leading-none text-[#0f2744] dark:text-white">
+                    <div className="flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">
+                      <span className="truncate">{card.label}</span>
+                      {active ? (
+                        <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full text-white" style={{ background: card.ring }}>
+                          <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="mt-1 text-[28px] font-extrabold tabular-nums leading-none tracking-tight text-[#0f2744] dark:text-white">
                       {loading && !report ? "…" : card.value}
-                      <span className="ml-1 text-sm font-medium text-slate-400">xodim</span>
+                      <span className="ml-1 text-xs font-semibold tracking-normal text-slate-400">xodim</span>
                     </div>
                   </div>
                 </div>
-                {card.key === "all" ? (
-                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-sky-50 text-sky-500">
-                    <Users className="h-4 w-4" />
+                <span className="relative h-12 w-12 shrink-0">
+                  <svg viewBox="0 0 44 44" className="h-12 w-12 -rotate-90">
+                    <circle cx="22" cy="22" r={r} fill="none" stroke="currentColor" strokeWidth="4" className="text-slate-100 dark:text-white/10" />
+                    <circle
+                      cx="22"
+                      cy="22"
+                      r={r}
+                      fill="none"
+                      stroke={card.ring}
+                      strokeWidth="4"
+                      strokeLinecap="round"
+                      strokeDasharray={`${c} ${c}`}
+                      strokeDashoffset={dash}
+                      className="transition-[stroke-dashoffset] duration-700"
+                    />
+                  </svg>
+                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tabular-nums text-slate-700 dark:text-slate-200">
+                    {pctText}%
                   </span>
-                ) : (
-                  <span className="relative h-12 w-12 shrink-0">
-                    <svg viewBox="0 0 44 44" className="h-12 w-12 -rotate-90">
-                      <circle cx="22" cy="22" r={r} fill="none" stroke="currentColor" strokeWidth="4" className="text-slate-100 dark:text-white/10" />
-                      <circle
-                        cx="22"
-                        cy="22"
-                        r={r}
-                        fill="none"
-                        stroke={card.ring}
-                        strokeWidth="4"
-                        strokeLinecap="round"
-                        strokeDasharray={`${c} ${c}`}
-                        strokeDashoffset={dash}
-                      />
-                    </svg>
-                    <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold tabular-nums text-slate-600 dark:text-slate-200">
-                      {Number.isInteger(pct) ? pct : pct.toFixed(1)}%
-                    </span>
-                  </span>
-                )}
+                </span>
               </div>
-              <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
-                <div className={cn("h-full rounded-full", card.bar)} style={{ width: `${Math.min(100, ringPct)}%` }} />
+              <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-white/10">
+                <div className={cn("h-full rounded-full transition-[width] duration-700", card.bar)} style={{ width: `${Math.min(100, ringPct)}%` }} />
               </div>
-              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-400">
+              <div className="relative mt-2 flex items-center justify-between gap-2 text-[11px] text-slate-500 dark:text-slate-400">
                 <span className="min-w-0 truncate" title={cardFoot(card.key)}>
                   {cardFoot(card.key)}
                 </span>
-                <span className="shrink-0 font-semibold tabular-nums text-slate-500">{card.key === "all" ? "100%" : `${pct}%`}</span>
+                <span className="shrink-0 font-bold tabular-nums text-slate-700 dark:text-slate-200">{pctText}%</span>
               </div>
             </button>
           );
@@ -2446,7 +2538,7 @@ export default function DavomatPage() {
       >
         <div
           className={cn(
-            "grid grid-cols-1 gap-2 rounded-2xl border border-slate-200/90 bg-slate-50/90 p-1.5 shadow-sm dark:border-white/10 dark:bg-[#101a2e]",
+            "grid grid-cols-1 gap-1.5 rounded-2xl border border-slate-200/80 bg-white/90 p-1.5 shadow-[0_1px_2px_rgba(15,39,68,0.05),0_10px_28px_-22px_rgba(15,39,68,0.4)] backdrop-blur dark:border-white/10 dark:bg-[#101a2e]",
             canChecklist ? "sm:grid-cols-2 xl:grid-cols-6" : "sm:grid-cols-2 xl:grid-cols-5",
           )}
         >
@@ -2454,38 +2546,38 @@ export default function DavomatPage() {
             [
               {
                 id: "schedule" as const,
-                label: "Jadval (kun / hafta / oy)",
+                label: "Tabel",
                 icon: CalendarDays,
-                idle: "border-sky-200 bg-sky-50 text-sky-800 hover:border-sky-300 hover:bg-sky-100 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-100 dark:hover:bg-sky-400/20",
-                active: "border-transparent bg-gradient-to-br from-[#1e3a8a] to-[#2563eb] text-white shadow-md shadow-blue-500/25",
+                tile: "bg-sky-100 text-sky-700 dark:bg-sky-400/15 dark:text-sky-300",
+                active: "from-[#0f2744] via-[#1e3a8a] to-[#2563eb] shadow-blue-600/30",
               },
               {
                 id: "analytics" as const,
                 label: "Tahlil va grafik",
                 icon: LineChart,
-                idle: "border-violet-200 bg-violet-50 text-violet-800 hover:border-violet-300 hover:bg-violet-100 dark:border-violet-400/30 dark:bg-violet-400/10 dark:text-violet-100 dark:hover:bg-violet-400/20",
-                active: "border-transparent bg-gradient-to-br from-violet-700 to-fuchsia-600 text-white shadow-md shadow-violet-500/25",
+                tile: "bg-violet-100 text-violet-700 dark:bg-violet-400/15 dark:text-violet-300",
+                active: "from-violet-700 to-fuchsia-600 shadow-violet-500/30",
               },
               {
                 id: "totals" as const,
                 label: "Xodimlar jami",
                 icon: Users,
-                idle: "border-emerald-200 bg-emerald-50 text-emerald-800 hover:border-emerald-300 hover:bg-emerald-100 dark:border-emerald-400/30 dark:bg-emerald-400/10 dark:text-emerald-100 dark:hover:bg-emerald-400/20",
-                active: "border-transparent bg-gradient-to-br from-emerald-700 to-teal-500 text-white shadow-md shadow-emerald-500/25",
+                tile: "bg-emerald-100 text-emerald-700 dark:bg-emerald-400/15 dark:text-emerald-300",
+                active: "from-emerald-700 to-teal-500 shadow-emerald-500/30",
               },
               {
                 id: "jarima" as const,
                 label: "Jarimalar",
                 icon: Receipt,
-                idle: "border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-300 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-100 dark:hover:bg-rose-400/20",
-                active: "border-transparent bg-gradient-to-br from-rose-800 to-rose-600 text-white shadow-md shadow-rose-500/25",
+                tile: "bg-rose-100 text-rose-700 dark:bg-rose-400/15 dark:text-rose-300",
+                active: "from-rose-700 to-rose-500 shadow-rose-500/30",
               },
               {
                 id: "smena" as const,
                 label: "Smena va filial",
                 icon: AlarmClock,
-                idle: "border-amber-200 bg-amber-50 text-amber-900 hover:border-amber-300 hover:bg-amber-100 dark:border-amber-400/30 dark:bg-amber-400/10 dark:text-amber-100 dark:hover:bg-amber-400/20",
-                active: "border-transparent bg-gradient-to-br from-amber-600 to-orange-500 text-white shadow-md shadow-amber-500/25",
+                tile: "bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300",
+                active: "from-amber-600 to-orange-500 shadow-amber-500/30",
               },
               ...(canChecklist
                 ? [
@@ -2493,8 +2585,8 @@ export default function DavomatPage() {
                       id: "checklist" as const,
                       label: "Cheklist holati",
                       icon: ClipboardList,
-                      idle: "border-rose-200 bg-rose-50 text-rose-800 hover:border-rose-300 hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-100 dark:hover:bg-rose-400/20",
-                      active: "border-transparent bg-gradient-to-br from-rose-700 to-pink-600 text-white shadow-md shadow-rose-500/25",
+                      tile: "bg-pink-100 text-pink-700 dark:bg-pink-400/15 dark:text-pink-300",
+                      active: "from-pink-700 to-rose-500 shadow-pink-500/30",
                     },
                   ]
                 : []),
@@ -2506,25 +2598,71 @@ export default function DavomatPage() {
               <button
                 key={tab.id}
                 type="button"
+                aria-pressed={on}
                 onClick={() => setSection(tab.id)}
                 className={cn(
-                  "flex h-11 items-center justify-center gap-2 rounded-xl border text-sm font-semibold transition",
-                  on ? tab.active : tab.idle,
+                  "flex h-12 items-center justify-center gap-2.5 rounded-xl px-3 text-sm font-semibold transition-all duration-200",
+                  on
+                    ? cn("bg-gradient-to-br text-white shadow-lg", tab.active)
+                    : "text-slate-600 hover:bg-slate-100/80 hover:text-[#0f2744] dark:text-slate-300 dark:hover:bg-white/[0.06] dark:hover:text-white",
                 )}
               >
-                <Icon className="h-4 w-4" />
-                {tab.label}
+                <span
+                  className={cn(
+                    "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg transition",
+                    on ? "bg-white/20 text-white" : tab.tile,
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="truncate">{tab.label}</span>
               </button>
             );
           })}
         </div>
 
         <TabsContent value="schedule" className="mt-4 space-y-4">
-          <Card className="border-border shadow-sm dark:border-white/10 dark:bg-[#101a2e]">
-            <CardContent className="space-y-3 px-3 pb-4 pt-4 sm:space-y-4 sm:px-6 sm:pt-5">
+          <Card className="overflow-hidden rounded-3xl border-slate-200/80 shadow-[0_1px_2px_rgba(15,39,68,0.04),0_18px_40px_-30px_rgba(15,39,68,0.35)] dark:border-white/10 dark:bg-[#101a2e]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-slate-50/80 to-white px-4 py-3 sm:px-6 dark:border-white/5 dark:from-white/[0.03] dark:to-transparent">
+              <div className="flex items-center gap-2.5">
+                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#0f2744] text-white shadow-sm dark:bg-sky-500/20 dark:text-sky-300">
+                  <SlidersHorizontal className="h-4 w-4" />
+                </span>
+                <div className="leading-tight">
+                  <p className="text-sm font-bold text-[#0f2744] dark:text-white">Davr va filtrlar</p>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">Ko‘rinishni tanlang, ro‘yxat darhol yangilanadi</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeFilterCount > 0 ? (
+                  <>
+                    <span className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-sky-200 bg-sky-50 px-2.5 text-xs font-semibold text-sky-700 dark:border-sky-400/30 dark:bg-sky-400/10 dark:text-sky-200">
+                      <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-sky-600 px-1 text-[10px] font-bold text-white">
+                        {activeFilterCount}
+                      </span>
+                      ta filtr faol
+                    </span>
+                    <button
+                      type="button"
+                      onClick={resetFilters}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-rose-50 px-2.5 text-xs font-semibold text-rose-700 transition hover:bg-rose-100 dark:border-rose-400/30 dark:bg-rose-400/10 dark:text-rose-200"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                      Tozalash
+                    </button>
+                  </>
+                ) : (
+                  <span className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-slate-100 px-2.5 text-xs font-medium text-slate-500 dark:bg-white/5 dark:text-slate-400">
+                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                    Barcha xodimlar ko‘rsatilmoqda
+                  </span>
+                )}
+              </div>
+            </div>
+            <CardContent className="space-y-4 px-3 pb-5 pt-4 sm:px-6 sm:pt-5">
               <div>
-                <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Davr turi</p>
-                <div className="grid grid-cols-2 gap-2 rounded-2xl border border-slate-200/90 bg-slate-50/80 p-1.5 sm:grid-cols-4 dark:border-white/10 dark:bg-white/[0.03]" role="group" aria-label="Davr turi">
+                <p className={labelClass}>Davr turi</p>
+                <div className="grid grid-cols-2 gap-1.5 rounded-2xl border border-slate-200/80 bg-slate-100/70 p-1.5 sm:grid-cols-4 dark:border-white/10 dark:bg-white/[0.03]" role="group" aria-label="Davr turi">
                   {(
                     [
                       {
@@ -2532,51 +2670,63 @@ export default function DavomatPage() {
                         short: t("davomat.dayShort"),
                         label: t("davomat.daily"),
                         hint: t("davomat.hint1d"),
-                        idle: "border-orange-200 bg-orange-50 text-orange-950 hover:border-orange-300 hover:bg-orange-100 dark:border-orange-400/30 dark:bg-orange-400/10 dark:text-orange-100",
-                        active: "border-transparent bg-gradient-to-br from-orange-600 to-orange-500 text-white shadow-md shadow-orange-500/25",
+                        icon: Sun,
+                        tile: "bg-orange-100 text-orange-600 dark:bg-orange-400/15 dark:text-orange-300",
+                        active: "from-orange-600 to-amber-500 shadow-orange-500/30",
                       },
                       {
                         id: "week" as const,
                         short: t("ui.week"),
                         label: t("davomat.weekly"),
                         hint: t("davomat.hint7d"),
-                        idle: "border-teal-200 bg-teal-50 text-teal-950 hover:border-teal-300 hover:bg-teal-100 dark:border-teal-400/30 dark:bg-teal-400/10 dark:text-teal-100",
-                        active: "border-transparent bg-gradient-to-br from-teal-700 to-cyan-600 text-white shadow-md shadow-teal-500/25",
+                        icon: CalendarRange,
+                        tile: "bg-teal-100 text-teal-700 dark:bg-teal-400/15 dark:text-teal-300",
+                        active: "from-teal-700 to-cyan-500 shadow-teal-500/30",
                       },
                       {
                         id: "month" as const,
                         short: t("ui.month"),
                         label: t("davomat.monthly"),
                         hint: t("davomat.hint1m"),
-                        idle: "border-fuchsia-200 bg-fuchsia-50 text-fuchsia-950 hover:border-fuchsia-300 hover:bg-fuchsia-100 dark:border-fuchsia-400/30 dark:bg-fuchsia-400/10 dark:text-fuchsia-100",
-                        active: "border-transparent bg-gradient-to-br from-fuchsia-700 to-pink-600 text-white shadow-md shadow-fuchsia-500/25",
+                        icon: CalendarDays,
+                        tile: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-400/15 dark:text-fuchsia-300",
+                        active: "from-fuchsia-700 to-pink-500 shadow-fuchsia-500/30",
                       },
                       {
                         id: "range" as const,
                         short: t("davomat.period"),
                         label: t("ui.fromTo"),
                         hint: t("davomat.hintCustom"),
-                        idle: "border-indigo-200 bg-indigo-50 text-indigo-950 hover:border-indigo-300 hover:bg-indigo-100 dark:border-indigo-400/30 dark:bg-indigo-400/10 dark:text-indigo-100",
-                        active: "border-transparent bg-gradient-to-br from-indigo-700 to-blue-600 text-white shadow-md shadow-indigo-500/25",
+                        icon: CalendarClock,
+                        tile: "bg-indigo-100 text-indigo-700 dark:bg-indigo-400/15 dark:text-indigo-300",
+                        active: "from-indigo-700 to-blue-500 shadow-indigo-500/30",
                       },
                     ] as const
                   ).map((m) => {
                     const on = calMode === m.id;
+                    const Icon = m.icon;
                     return (
                     <button
                       key={m.id}
                       type="button"
                       aria-pressed={on}
                       className={cn(
-                        "rounded-xl border px-3.5 py-2.5 text-left transition",
-                        on ? m.active : m.idle,
+                        "flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all duration-200",
+                        on
+                          ? cn("bg-gradient-to-br text-white shadow-lg", m.active)
+                          : "text-[#0f2744] hover:bg-white hover:shadow-[0_2px_8px_-4px_rgba(15,39,68,0.25)] dark:text-slate-100 dark:hover:bg-white/[0.06]",
                       )}
                       onClick={() => setCalModeSafe(m.id)}
                     >
-                      <span className="block text-[11px] font-semibold leading-none sm:hidden">{m.short}</span>
-                      <span className="hidden text-sm font-semibold leading-none sm:block">{m.label}</span>
-                      <span className={cn("mt-1 block text-[10px]", on ? "text-white/80" : "opacity-70")}>
-                        {m.hint}
+                      <span className={cn("hidden h-9 w-9 shrink-0 items-center justify-center rounded-lg transition sm:flex", on ? "bg-white/20 text-white" : m.tile)}>
+                        <Icon className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0">
+                        <span className="block text-[12px] font-bold leading-none sm:hidden">{m.short}</span>
+                        <span className="hidden truncate text-sm font-bold leading-none sm:block">{m.label}</span>
+                        <span className={cn("mt-1 block truncate text-[10.5px]", on ? "text-white/80" : "text-slate-500 dark:text-slate-400")}>
+                          {m.hint}
+                        </span>
                       </span>
                     </button>
                     );

@@ -19,8 +19,22 @@ function branchTitle(raw: string | null | undefined): string {
 
 const router: IRouter = Router();
 
+const BRANCH_STAFF_ROLES = new Set(["mudir", "farmasevt", "stajyor", "stajor"]);
+
+/** Mudir — o‘z filiali; farmasevt/stajyor — biriktirilgan filiali (assignedBranchId yoki reportsTo) */
+async function myBranchManager(userId: number) {
+  const mine = await db.select().from(employeesTable).where(eq(employeesTable.userId, userId));
+  const asManager = mine.find((e) => e.orgRole === "manager");
+  if (asManager) return asManager;
+  const me = mine.find((e) => e.employmentStatus !== "dismissed") ?? mine[0];
+  const branchId = me?.assignedBranchId ?? me?.reportsToId;
+  if (!branchId) return null;
+  const [branch] = await db.select().from(employeesTable).where(eq(employeesTable.id, branchId));
+  return branch?.orgRole === "manager" ? branch : null;
+}
+
 const VIEW_ROLES = new Set([
-  "mudir",
+  ...BRANCH_STAFF_ROLES,
   "koordinator",
   ...HR_ROLES,
   "admin",
@@ -31,6 +45,18 @@ const VIEW_ROLES = new Set([
 ]);
 const WRITE_ROLES = new Set(["mudir", "koordinator", ...HR_ROLES, "admin"]);
 const CONFIRM_ROLES = new Set(["koordinator", ...HR_ROLES, "admin"]);
+
+/** Filial ehtiyojini bajara oladiganlar: IT, kommunal (ma’muriy-xo‘jalik) va hudud mas’ullari */
+const NEED_ASSIGNEE_GROUPS = ["it", "komunal", "hudud"] as const;
+const NEED_ASSIGNEE_ROLES = new Map<string, (typeof NEED_ASSIGNEE_GROUPS)[number]>([
+  ["it_rahbar", "it"],
+  ["it", "it"],
+  ["it_tarmoq", "it"],
+  ["texnik", "it"],
+  ["mamuriy_rahbar", "komunal"],
+  ["komunalniy", "komunal"],
+  ["koordinator", "hudud"],
+]);
 
 const VERIFY_ROLES = new Set(["mudir", "koordinator", ...HR_ROLES, "admin"]);
 
@@ -155,11 +181,9 @@ router.get("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise<
     );
   }
 
-  // Mudir — faqat o‘z filiali
-  if (role === "mudir" && req.userId) {
-    const myMgr = (
-      await db.select().from(employeesTable).where(eq(employeesTable.userId, req.userId))
-    ).find((e) => e.orgRole === "manager");
+  // Mudir / farmasevt / stajyor — faqat o‘z filiali
+  if (BRANCH_STAFF_ROLES.has(role) && req.userId) {
+    const myMgr = await myBranchManager(req.userId);
     if (!myMgr) {
       res.json([]);
       return;
@@ -181,6 +205,36 @@ router.get("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise<
   res.json(await Promise.all(rows.map(enrichNeed)));
 });
 
+/** Mudir / farmasevt — o‘z filiali, mudiri va koordinatori */
+router.get("/branch-needs/my-branch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  const role = req.userRole ?? "";
+  if (!BRANCH_STAFF_ROLES.has(role) || !req.userId) {
+    res.json({ branch: null });
+    return;
+  }
+  const mgr = await myBranchManager(req.userId);
+  if (!mgr) {
+    res.json({ branch: null });
+    return;
+  }
+  let coordinatorName: string | null = null;
+  if (mgr.reportsToId) {
+    const [coord] = await db
+      .select({ fullName: employeesTable.fullName, orgRole: employeesTable.orgRole })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, mgr.reportsToId));
+    if (coord?.orgRole === "coordinator") coordinatorName = coord.fullName;
+  }
+  res.json({
+    branch: {
+      managerEmployeeId: mgr.id,
+      branchName: branchTitle(mgr.location),
+      managerName: mgr.employmentStatus === "no_manager" ? null : mgr.fullName,
+      coordinatorName,
+    },
+  });
+});
+
 /** Koordinator tasdiqlash uchun ijrochilar ro‘yxati */
 router.get("/branch-needs/assignees", requireAuth, async (req: AuthRequest, res): Promise<void> => {
   const role = req.userRole ?? "";
@@ -197,19 +251,15 @@ router.get("/branch-needs/assignees", requireAuth, async (req: AuthRequest, res)
       login: usersTable.login,
     })
     .from(usersTable)
-    .where(eq(usersTable.status, "active"))
-    .orderBy(usersTable.fullName);
+    .where(and(eq(usersTable.status, "active"), inArray(usersTable.role, [...NEED_ASSIGNEE_ROLES.keys()])));
 
-  // Texnik / ombor birinchi, keyin boshqalar (mudir/koordinator/admin dan tashqari ixtiyoriy)
-  const preferred = new Set(["texnik", "ombor"]);
   const list = rows
-    .filter((u) => !isDirectorRole(u.role))
-    .sort((a, b) => {
-      const ap = preferred.has(a.role) ? 0 : 1;
-      const bp = preferred.has(b.role) ? 0 : 1;
-      if (ap !== bp) return ap - bp;
-      return a.fullName.localeCompare(b.fullName, "uz");
-    });
+    .map((u) => ({ ...u, group: NEED_ASSIGNEE_ROLES.get(u.role)! }))
+    .sort(
+      (a, b) =>
+        NEED_ASSIGNEE_GROUPS.indexOf(a.group) - NEED_ASSIGNEE_GROUPS.indexOf(b.group) ||
+        a.fullName.localeCompare(b.fullName, "uz"),
+    );
 
   res.json(list);
 });
@@ -236,9 +286,7 @@ router.post("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise
   let branch = typeof branchLocation === "string" ? branchLocation.trim() : "";
 
   if (role === "mudir" && req.userId) {
-    const myMgr = (
-      await db.select().from(employeesTable).where(eq(employeesTable.userId, req.userId))
-    ).find((e) => e.orgRole === "manager");
+    const myMgr = await myBranchManager(req.userId);
     if (!myMgr) {
       res.status(400).json({ error: "Filial bogʻlanmagan" });
       return;
@@ -301,6 +349,10 @@ router.post("/branch-needs", requireAuth, async (req: AuthRequest, res): Promise
       .where(and(eq(usersTable.id, aid), eq(usersTable.status, "active")));
     if (!assignee) {
       res.status(400).json({ error: "Ijrochi topilmadi" });
+      return;
+    }
+    if (!NEED_ASSIGNEE_ROLES.has(assignee.role)) {
+      res.status(400).json({ error: "Ijrochi faqat IT, kommunal yoki hudud mas’uli bo‘lishi mumkin" });
       return;
     }
 
@@ -397,7 +449,7 @@ router.post("/branch-needs/:id/confirm", requireAuth, async (req: AuthRequest, r
   const { assigneeUserId } = req.body ?? {};
   const aid = parseInt(String(assigneeUserId), 10);
   if (!aid) {
-    res.status(400).json({ error: "Ijrochi (texnik / ombor / boshqa) tanlang" });
+    res.status(400).json({ error: "Ijrochini tanlang: IT, kommunal yoki hudud mas’uli" });
     return;
   }
 
@@ -407,6 +459,10 @@ router.post("/branch-needs/:id/confirm", requireAuth, async (req: AuthRequest, r
     .where(and(eq(usersTable.id, aid), eq(usersTable.status, "active")));
   if (!assignee) {
     res.status(400).json({ error: "Ijrochi topilmadi" });
+    return;
+  }
+  if (!NEED_ASSIGNEE_ROLES.has(assignee.role)) {
+    res.status(400).json({ error: "Ijrochi faqat IT, kommunal yoki hudud mas’uli bo‘lishi mumkin" });
     return;
   }
 

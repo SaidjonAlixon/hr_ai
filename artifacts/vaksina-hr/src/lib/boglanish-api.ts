@@ -1,3 +1,5 @@
+import { displayBranchName } from "./pharmacy-staff-api";
+
 export type BoglanishBranch = {
   branchEmployeeId: number;
   branchName: string;
@@ -46,16 +48,30 @@ async function readError(res: Response): Promise<string> {
   }
 }
 
+function cleanName(name: string): string {
+  return displayBranchName(name) || name;
+}
+
+function cleanBranch<T extends { branchName: string }>(b: T): T {
+  return { ...b, branchName: cleanName(b.branchName) };
+}
+
 export async function fetchBoglanishMe(): Promise<BoglanishMe> {
   const res = await fetch("/api/boglanish/me", { credentials: "include" });
   if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as BoglanishMe;
+  const data = (await res.json()) as BoglanishMe;
+  return {
+    ...data,
+    missingBranchNames: (data.missingBranchNames || []).map(cleanName),
+    branches: (data.branches || []).map(cleanBranch),
+  };
 }
 
 export async function fetchBoglanishStatus(): Promise<BoglanishStatus> {
   const res = await fetch("/api/boglanish/status", { credentials: "include" });
   if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as BoglanishStatus;
+  const data = (await res.json()) as BoglanishStatus;
+  return { ...data, missingBranchNames: (data.missingBranchNames || []).map(cleanName) };
 }
 
 export type BoglanishOverviewBranch = BoglanishBranch & {
@@ -78,7 +94,8 @@ export type BoglanishOverview = {
 export async function fetchBoglanishOverview(): Promise<BoglanishOverview> {
   const res = await fetch("/api/boglanish/overview", { credentials: "include" });
   if (!res.ok) throw new Error(await readError(res));
-  return (await res.json()) as BoglanishOverview;
+  const data = (await res.json()) as BoglanishOverview;
+  return { ...data, branches: (data.branches || []).map(cleanBranch) };
 }
 
 export async function saveBoglanishBranch(
@@ -93,5 +110,5 @@ export async function saveBoglanishBranch(
   });
   if (!res.ok) throw new Error(await readError(res));
   const data = (await res.json()) as { branch: BoglanishBranch };
-  return data.branch;
+  return cleanBranch(data.branch);
 }

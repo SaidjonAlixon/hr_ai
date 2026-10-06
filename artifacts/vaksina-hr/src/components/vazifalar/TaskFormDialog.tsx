@@ -1768,6 +1768,16 @@ export function TaskFormDialog({
         setHistory(Array.isArray(meta.history) ? meta.history : nextHistory);
         setAttachments(updated.attachments || nextAttachments);
         onTaskUpdated?.(updated);
+        if (auditorChat) {
+          const count = Math.max(batchMembers.length, 1);
+          toast({
+            title: "Xabar yuborildi",
+            description:
+              count > 1
+                ? `${count} ta ijrochining chatiga va Telegram botiga yetkazildi`
+                : "Ijrochining chatiga va Telegram botiga yetkazildi",
+          });
+        }
       } catch (err) {
         if (auditorChat) {
           setMessages(messagesRef.current.filter((x) => x.id !== msg.id));

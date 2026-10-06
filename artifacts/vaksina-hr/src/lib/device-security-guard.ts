@@ -10,10 +10,14 @@ export function installDeviceSecurityFetchGuard() {
     try {
       const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
       if (!url.includes("/api/")) return res;
-      if (res.status !== 403 && res.status !== 401) return res;
+      if (res.status !== 403 && res.status !== 401 && res.status !== 423) return res;
       const clone = res.clone();
       const body = (await clone.json().catch(() => null)) as { code?: string; message?: string; error?: string } | null;
       const code = body?.code;
+      if (code === "DISCIPLINE_LOCK") {
+        window.dispatchEvent(new CustomEvent("vaksina-discipline-lock", { detail: { message: body?.error } }));
+        return res;
+      }
       if (code === "DEVICE_NOT_AUTHORIZED" || code === "DEVICE_PENDING" || code === "SESSION_REVOKED") {
         const msg =
           body?.message ||

@@ -1,7 +1,6 @@
 import {
   hmToMinutes,
   onTimeUntilHm,
-  shiftWindow,
   workScheduleForStaff,
   type WorkSchedule,
 } from "./shift-hours";
@@ -186,10 +185,14 @@ export type DavomatAnalyticsPayload = {
   byShift: Array<{
     key: string;
     label: string;
+    segment: "office" | "pharmacy";
+    start: string;
+    end: string;
     headcount: number;
     present: number;
     late: number;
     absent: number;
+    expected: number;
     attendanceRate: number;
   }>;
   byRole: Array<{
@@ -912,16 +915,35 @@ export function buildDavomatAnalytics(
 
   const shiftMap = new Map<
     string,
-    { label: string; headcount: Set<number>; present: number; late: number; absent: number; expected: number }
+    {
+      label: string;
+      segment: "office" | "pharmacy";
+      start: string;
+      end: string;
+      headcount: Set<number>;
+      present: number;
+      late: number;
+      absent: number;
+      expected: number;
+    }
   >();
   for (const e of filtered.employees) {
     const m = metaById.get(e.id);
-    const isPharm = davomatStaffSegment(m?.userRole, m?.orgRole ?? e.orgRole) === "pharmacy";
-    const shift = isPharm ? shiftWindow(m?.shiftType) : { key: "office", label: "09:00–18:00" };
-    const key = isPharm ? `pharm-${shift.key}` : "office";
-    const label = isPharm ? `${shift.label} (${shift.start}–${shift.end})` : "Ofis 09:00–18:00";
+    const segment: "office" | "pharmacy" =
+      davomatStaffSegment(m?.userRole, m?.orgRole ?? e.orgRole) === "pharmacy" ? "pharmacy" : "office";
+    const schedule = workScheduleForStaff(m?.userRole, m?.orgRole ?? e.orgRole, m?.shiftType);
+    const isDefaultOffice = segment === "office" && schedule.key === "office";
+    const key = `${segment}-${schedule.key}-${schedule.start}-${schedule.end}`;
+    const label = isDefaultOffice
+      ? "Ofis"
+      : segment === "pharmacy" && !/dorixona/i.test(schedule.label)
+        ? `Dorixona · ${schedule.label}`
+        : schedule.label;
     const cur = shiftMap.get(key) ?? {
       label,
+      segment,
+      start: schedule.start,
+      end: schedule.end,
       headcount: new Set<number>(),
       present: 0,
       late: 0,
@@ -932,20 +954,29 @@ export function buildDavomatAnalytics(
     cur.present += e.totals.present;
     cur.late += e.totals.late;
     cur.absent += e.totals.absent;
-    cur.expected += filtered.summary.days;
+    cur.expected += Math.max(0, filtered.summary.days - (e.totals.leave || 0));
     shiftMap.set(key, cur);
   }
   const byShift = [...shiftMap.entries()]
     .map(([key, v]) => ({
       key,
       label: v.label,
+      segment: v.segment,
+      start: v.start,
+      end: v.end,
       headcount: v.headcount.size,
       present: v.present,
       late: v.late,
       absent: v.absent,
+      expected: v.expected,
       attendanceRate: pct(v.present, v.expected),
     }))
-    .sort((a, b) => b.attendanceRate - a.attendanceRate);
+    .sort(
+      (a, b) =>
+        (a.segment === b.segment ? 0 : a.segment === "office" ? -1 : 1) ||
+        hmToMinutes(a.start) - hmToMinutes(b.start) ||
+        b.headcount - a.headcount,
+    );
 
   const roleMap = new Map<string, { label: string; headcount: Set<number>; present: number; late: number; expected: number }>();
   for (const e of filtered.employees) {

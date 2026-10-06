@@ -1336,6 +1336,12 @@ function jarimaWorkDay(calendars: Map<string, Map<string, boolean>>) {
   };
 }
 
+/** Oylik sahifasidagi bilan bir xil ish kunlari qoidasi bo‘yicha oy jarimalari */
+export async function loadJarimaSnapshot(month: string) {
+  if (month < JARIMA_START.slice(0, 7)) return null;
+  return applyAttendanceJarima(month, jarimaWorkDay(await loadScopedCalendars()));
+}
+
 export async function loadJarimaSummary(month: string, userId: number, manage: boolean) {
   const calendars = month >= JARIMA_START.slice(0, 7) ? await loadScopedCalendars() : new Map<string, Map<string, boolean>>();
   const snap = month >= JARIMA_START.slice(0, 7) ? await applyAttendanceJarima(month, jarimaWorkDay(calendars)) : null;

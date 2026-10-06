@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { and, eq, gte, lte, inArray, desc } from "drizzle-orm";
 import ExcelJS from "exceljs";
+import { kickDisciplineScan } from "../lib/discipline";
 import {
   db,
   employeesTable,
@@ -5289,6 +5290,9 @@ router.post("/davomat/face-verify", async (req, res): Promise<void> => {
  * Sessiya bo‘lsa — faqat shu akkaunt yuzi (boshqa odam ochilmaydi).
  */
 router.post("/davomat/face-punch", async (req, res): Promise<void> => {
+  res.on("finish", () => {
+    if (res.statusCode < 300) kickDisciplineScan();
+  });
   try {
     const descriptor = parseFaceDescriptor(req.body?.descriptor);
     const latitude = Number(req.body?.latitude);
@@ -6999,6 +7003,9 @@ router.delete("/davomat/qr/department/active/:departmentId", requireAuth, async 
  * Admin: istalgan QR, lokatsiya shartsiz.
  */
 router.post("/davomat/qr-punch", requireAuth, async (req: AuthRequest, res): Promise<void> => {
+  res.on("finish", () => {
+    if (res.statusCode < 300) kickDisciplineScan();
+  });
   const latitudeRaw = Number(req.body?.latitude);
   const longitudeRaw = Number(req.body?.longitude);
   const accuracy = Number(req.body?.accuracy);

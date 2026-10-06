@@ -9,6 +9,9 @@ import { displayBranchName } from '../../lib/pharmacy-staff-api';
 import { useI18n } from '../../i18n/I18nProvider';
 import { fetchStaff, staffQueryKey } from '../../lib/staff-api';
 import {
+  NEED_ASSIGNEE_GROUPS,
+  needAssigneeGroup,
+  type NeedAssigneeGroup,
   needLabel,
   roleLabel,
   useBranchNeedAssignees,
@@ -18,13 +21,15 @@ import {
   useConfirmBranchNeed,
   useCreateBranchNeed,
   useVerifyBranchNeed,
+  useMyNeedBranch,
   type BranchNeed,
+  type MyNeedBranch,
 } from '../../lib/branch-needs-api';
 import { useAuditBranches } from '../../lib/branch-audits-api';
+import { NewNeedDialog, type NewNeedPayload } from './new-need-dialog';
 import { cn } from '../../lib/utils';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
-import { Textarea } from '../../components/ui/textarea';
 import { Skeleton } from '../../components/ui/skeleton';
 import {
   Dialog,
@@ -59,7 +64,6 @@ import {
 } from 'lucide-react';
 
 const TZ = 'Asia/Tashkent';
-const QUICK_NEEDS = ['Printer qog‘ozi', 'Kompyuter', 'Printer', 'Internet', 'Ta’mirlash', 'Mudir'];
 
 type Tab = 'active' | 'pending' | 'progress' | 'done' | 'history';
 
@@ -195,6 +199,8 @@ export default function EhtiyojPage() {
   const isKoordinator = user?.role === 'koordinator';
   const rawRole = String(user?.role ?? '');
   const isAssigneeOnly = rawRole === 'texnik' || rawRole === 'ombor';
+  const isBranchStaff = BRANCH_STAFF_ROLES.has(rawRole);
+  const { data: myBranch, isLoading: myBranchLoading } = useMyNeedBranch(isBranchStaff);
 
   const { data: needs, isLoading, refetch } = useBranchNeeds();
   const { data: history, isLoading: historyLoading, refetch: refetchHistory } = useBranchNeedsHistory();
@@ -219,14 +225,9 @@ export default function EhtiyojPage() {
   const [tab, setTab] = useState<Tab>('active');
   const [search, setSearch] = useState('');
   const [formOpen, setFormOpen] = useState(false);
-  const [needTitle, setNeedTitle] = useState('');
-  const [note, setNote] = useState('');
-  const [branchLocation, setBranchLocation] = useState('');
-  const [managerId, setManagerId] = useState<string>('none');
-  const [createAssigneeId, setCreateAssigneeId] = useState<string>('none');
   const [confirmTarget, setConfirmTarget] = useState<BranchNeed | null>(null);
   const [confirmAssigneeId, setConfirmAssigneeId] = useState<string>('none');
-  const [assigneeFilter, setAssigneeFilter] = useState<'all' | 'texnik' | 'ombor' | 'other'>('all');
+  const [assigneeFilter, setAssigneeFilter] = useState<'all' | NeedAssigneeGroup>('all');
   const [closeTarget, setCloseTarget] = useState<BranchNeed | null>(null);
   const [verifyingId, setVerifyingId] = useState<number | null>(null);
 
@@ -243,9 +244,7 @@ export default function EhtiyojPage() {
   const filteredAssignees = useMemo(() => {
     const list = assignees ?? [];
     if (assigneeFilter === 'all') return list;
-    if (assigneeFilter === 'texnik') return list.filter((a) => a.role === 'texnik');
-    if (assigneeFilter === 'ombor') return list.filter((a) => a.role === 'ombor');
-    return list.filter((a) => a.role !== 'texnik' && a.role !== 'ombor');
+    return list.filter((a) => needAssigneeGroup(a.role) === assigneeFilter);
   }, [assignees, assigneeFilter]);
 
   const active = needs ?? [];
@@ -285,44 +284,9 @@ export default function EhtiyojPage() {
     refetchHistory();
   };
 
-  const resetForm = () => {
-    setNeedTitle('');
-    setNote('');
-    setBranchLocation('');
-    setManagerId('none');
-    setCreateAssigneeId('none');
-  };
-
-  const submit = () => {
-    const title = needTitle.trim();
-    if (!title) {
-      toast({ title: 'Ehtiyoj matnini yozing', variant: 'destructive' });
-      return;
-    }
-    if (isKoordinator && managerId === 'none') {
-      toast({ title: 'Filial / mudirni tanlang', variant: 'destructive' });
-      return;
-    }
-    if (isKoordinator && createAssigneeId === 'none') {
-      toast({
-        title: 'Ijrochini tanlang',
-        description: 'Koordinator ehtiyojni belgilaganda vazifa darhol ochiladi',
-        variant: 'destructive',
-      });
-      return;
-    }
-    const mgr = managerId !== 'none' ? Number(managerId) : null;
-    const selected = managers.find((m) => m.id === mgr);
-    const assigneeUserId = canConfirm && createAssigneeId !== 'none' ? Number(createAssigneeId) : undefined;
-
+  const submit = (payload: NewNeedPayload, done: () => void) => {
     createNeed(
-      {
-        needType: title,
-        note: note.trim() || undefined,
-        managerEmployeeId: mgr,
-        branchLocation: branchLocation.trim() || selected?.location || undefined,
-        assigneeUserId,
-      },
+      { ...payload, assigneeUserId: canConfirm ? payload.assigneeUserId : undefined },
       {
         onSuccess: (created) => {
           toast({
@@ -330,9 +294,9 @@ export default function EhtiyojPage() {
             description:
               created.status === 'assigned'
                 ? 'Ijrochiga vazifa ochildi — Topshiriqlar bo‘limida'
-                : 'Koordinator tasdiǧi kutilmoqda',
+                : 'Tasdiq kutilmoqda — ijrochi tanlangach vazifa ochiladi',
           });
-          resetForm();
+          done();
           setFormOpen(false);
           setTab('active');
           refreshAll();
@@ -397,7 +361,9 @@ export default function EhtiyojPage() {
     ? 'Sizga biriktirilgan ehtiyojlar. Qabul qilish va bajarish — Topshiriqlar bo‘limida.'
     : isMudir
       ? 'Filialingizga kerakli narsani yuboring. Koordinator tasdiqlaydi, ijrochi bajaradi, siz yakuniy tasdiqlaysiz.'
-      : isKoordinator
+      : isBranchStaff
+        ? 'Filialingiz ehtiyojlari va ularning holati. Yangi ehtiyojni filial mudiri yuboradi.'
+        : isKoordinator
         ? 'Filial va ijrochini tanlab ehtiyoj belgilang yoki mudirlardan kelganlarini tasdiqlang.'
         : 'Filiallar ehtiyojlari: yuborilgandan yakuniy tasdiqgacha. Yozuvlar o‘chirilmaydi.';
 
@@ -408,9 +374,6 @@ export default function EhtiyojPage() {
     { key: 'done', label: 'Yakuniy tasdiq', count: counts.done },
     { key: 'history', label: 'Tarix', count: counts.history },
   ];
-
-  const submitDisabled =
-    creating || !needTitle.trim() || (isKoordinator && (managerId === 'none' || createAssigneeId === 'none'));
 
   return (
     <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-5">
@@ -431,6 +394,8 @@ export default function EhtiyojPage() {
           </Button>
         )}
       </div>
+
+      {isBranchStaff ? <MyBranchCard branch={myBranch ?? null} loading={myBranchLoading} /> : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
@@ -522,117 +487,22 @@ export default function EhtiyojPage() {
         </div>
       </div>
 
-      {/* Yangi ehtiyoj */}
-      <Dialog open={formOpen} onOpenChange={(o) => !creating && setFormOpen(o)}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{isKoordinator ? t('ehtiyoj.set') : t('ehtiyoj.new')}</DialogTitle>
-            <DialogDescription>
-              {isMudir
-                ? 'Nima kerakligini yozing — koordinatorga yuboriladi.'
-                : isKoordinator
-                  ? 'Filial va ijrochini tanlang — vazifa darhol Topshiriqlar bo‘limiga tushadi.'
-                  : 'Ijrochini hozir tanlasangiz, vazifa darhol ochiladi. Aks holda keyin tasdiqlaysiz.'}
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            <Field label="Nima kerak?" required>
-              <Input
-                value={needTitle}
-                onChange={(e) => setNeedTitle(e.target.value)}
-                placeholder="Masalan: printer qog‘ozi, kompyuter…"
-                maxLength={120}
-                autoFocus
-              />
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {QUICK_NEEDS.map((q) => (
-                  <button
-                    key={q}
-                    type="button"
-                    onClick={() => setNeedTitle(q)}
-                    className={cn(
-                      'rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset transition-colors',
-                      needTitle === q ? 'bg-[#0b3a5c] text-white ring-[#0b3a5c]' : 'bg-white text-slate-600 ring-slate-200 hover:bg-slate-50',
-                    )}
-                  >
-                    {q}
-                  </button>
-                ))}
-              </div>
-            </Field>
-
-            {!isMudir && (
-              <Field label="Filial / mudir" required={isKoordinator}>
-                <Select value={managerId} onValueChange={setManagerId} disabled={managersLoading}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={managersLoading ? 'Yuklanmoqda…' : 'Filialni tanlang'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Tanlanmagan</SelectItem>
-                    {managers.map((m) => (
-                      <SelectItem key={m.id} value={String(m.id)}>
-                        {(displayBranchName(m.location) || 'Filial') + ' — ' + m.fullName}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {!managersLoading && managers.length === 0 && (
-                  <p className="mt-1 text-[11px] text-amber-700">
-                    Filial topilmadi. Aptekalar tarmog‘ida mudirlar bog‘langanligini tekshiring.
-                  </p>
-                )}
-              </Field>
-            )}
-
-            {!isMudir && !isKoordinator && managerId === 'none' && (
-              <Field label="Filial nomi" hint="ixtiyoriy — ro‘yxatda bo‘lmasa">
-                <Input value={branchLocation} onChange={(e) => setBranchLocation(e.target.value)} placeholder="Masalan: FARM LYUKS" />
-              </Field>
-            )}
-
-            {canConfirm && (
-              <Field label="Ijrochi" required={isKoordinator} hint={isKoordinator ? undefined : 'ixtiyoriy'}>
-                <Select value={createAssigneeId} onValueChange={setCreateAssigneeId} disabled={assigneesLoading}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={assigneesLoading ? 'Yuklanmoqda…' : isKoordinator ? 'Ijrochini tanlang' : 'Keyinroq tasdiqlayman'} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">{isKoordinator ? 'Tanlanmagan' : 'Keyinroq tasdiqlayman'}</SelectItem>
-                    {(assignees ?? []).map((a) => (
-                      <SelectItem key={a.id} value={String(a.id)}>
-                        {a.fullName} · {roleLabel(a.role)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {assigneesError && (
-                  <button type="button" className="mt-1 text-[11px] text-rose-600 underline" onClick={() => void refetchAssignees()}>
-                    Ijrochilar yuklanmadi — qayta urinish
-                  </button>
-                )}
-                {!assigneesLoading && !assigneesError && (assignees?.length ?? 0) === 0 && (
-                  <p className="mt-1 text-[11px] text-amber-700">Faol ijrochi topilmadi (texnik / ombor va boshqalar).</p>
-                )}
-              </Field>
-            )}
-
-            <Field label="Izoh" hint="ixtiyoriy">
-              <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Qancha, qaysi model, qachongacha…" rows={2} />
-            </Field>
-          </div>
-
-          <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" disabled={creating} onClick={() => setFormOpen(false)}>
-              Bekor qilish
-            </Button>
-            <Button onClick={submit} disabled={submitDisabled} className="gap-2 bg-[#0b3a5c] hover:bg-[#0b3a5c]/90">
-              {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-              {isMudir ? 'Koordinatorga yuborish' : isKoordinator ? 'Belgilash va yuborish' : 'Qo‘shish'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <NewNeedDialog
+        open={formOpen}
+        onOpenChange={setFormOpen}
+        isMudir={isMudir}
+        isKoordinator={isKoordinator}
+        canConfirm={canConfirm}
+        managers={managers}
+        managersLoading={managersLoading}
+        assignees={assignees ?? []}
+        assigneesLoading={assigneesLoading}
+        assigneesError={assigneesError}
+        onRetryAssignees={() => void refetchAssignees()}
+        creating={creating}
+        onSubmit={submit}
+        myBranchName={myBranch?.branchName ?? null}
+      />
 
       {/* Tasdiqlash — ijrochi tanlash */}
       <Dialog
@@ -661,14 +531,10 @@ export default function EhtiyojPage() {
           ) : null}
           <div className="space-y-2">
             <div className="flex flex-wrap gap-1.5">
-              {(
-                [
-                  ['all', 'Barchasi'],
-                  ['texnik', 'Texnik'],
-                  ['ombor', 'Ombor'],
-                  ['other', 'Boshqa'],
-                ] as const
-              ).map(([key, label]) => (
+              {[
+                { key: 'all' as const, label: 'Barchasi' },
+                ...NEED_ASSIGNEE_GROUPS,
+              ].map(({ key, label }) => (
                 <button
                   key={key}
                   type="button"
@@ -742,15 +608,43 @@ export default function EhtiyojPage() {
   );
 }
 
-function Field({ label, required, hint, children }: { label: string; required?: boolean; hint?: string; children: React.ReactNode }) {
+const BRANCH_STAFF_ROLES = new Set(['mudir', 'farmasevt', 'stajyor', 'stajor']);
+
+function MyBranchCard({ branch, loading }: { branch: MyNeedBranch | null; loading: boolean }) {
+  if (loading) return <Skeleton className="h-[76px] w-full rounded-2xl" />;
+  if (!branch) {
+    return (
+      <div className="flex items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+        <Store className="h-5 w-5 shrink-0" />
+        Siz hali biror filialga biriktirilmagansiz. Koordinator yoki HR bilan bog‘laning.
+      </div>
+    );
+  }
   return (
-    <div>
-      <p className="mb-1.5 text-xs font-semibold text-slate-700">
-        {label}
-        {required ? <span className="text-rose-500"> *</span> : null}
-        {hint ? <span className="font-normal text-slate-400"> · {hint}</span> : null}
-      </p>
-      {children}
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-[#0b3a5c]/15 bg-gradient-to-r from-[#0b3a5c] to-[#14527f] px-4 py-3.5 text-white shadow-sm">
+      <div className="flex min-w-0 items-center gap-3">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white/15">
+          <Store className="h-5 w-5" />
+        </span>
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-white/70">Sizning filialingiz</p>
+          <p className="truncate text-lg font-bold leading-tight">{branch.branchName}</p>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-sm">
+        <span className="inline-flex items-center gap-1.5">
+          <User className="h-4 w-4 text-white/60" />
+          <span className="text-white/70">Mudir:</span>
+          <span className="font-semibold">{branch.managerName || 'tayinlanmagan'}</span>
+        </span>
+        {branch.coordinatorName ? (
+          <span className="inline-flex items-center gap-1.5">
+            <User className="h-4 w-4 text-white/60" />
+            <span className="text-white/70">Koordinator:</span>
+            <span className="font-semibold">{branch.coordinatorName}</span>
+          </span>
+        ) : null}
+      </div>
     </div>
   );
 }

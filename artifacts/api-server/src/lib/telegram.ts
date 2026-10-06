@@ -14,6 +14,21 @@ export type TelegramUser = {
 export type TelegramChat = {
   id: number;
   type: string;
+  title?: string;
+  username?: string;
+};
+
+export type TelegramPhotoSize = {
+  file_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+};
+
+export type TelegramMessageEntity = {
+  type: string;
+  offset: number;
+  length: number;
 };
 
 export type TelegramMessage = {
@@ -21,6 +36,12 @@ export type TelegramMessage = {
   from?: TelegramUser;
   chat: TelegramChat;
   text?: string;
+  caption?: string;
+  entities?: TelegramMessageEntity[];
+  caption_entities?: TelegramMessageEntity[];
+  photo?: TelegramPhotoSize[];
+  document?: { file_id: string; mime_type?: string; file_name?: string; file_size?: number };
+  reply_to_message?: TelegramMessage;
   date: number;
 };
 
@@ -62,19 +83,52 @@ export function publicAppUrl(): string {
   return withProto.replace(/\/$/, "");
 }
 
-async function tgCall<T = unknown>(method: string, body: Record<string, unknown>): Promise<T> {
+class TelegramApiError extends Error {}
+
+const RETRY_DELAYS_MS = [700, 2_000, 5_000];
+const REQUEST_TIMEOUT_MS = 20_000;
+
+/** VPS → api.telegram.org ulanishi ba’zan uziladi: tarmoq xatosi, 429 va 5xx da qayta urinadi */
+async function tgRequest<T>(method: string, init: () => RequestInit): Promise<T> {
   const token = botToken();
   if (!token) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
-  const res = await fetch(`${TG_API}/bot${token}/${method}`, {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      const res = await fetch(`${TG_API}/bot${token}/${method}`, {
+        ...init(),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      });
+      const data = (await res.json()) as {
+        ok: boolean;
+        description?: string;
+        result?: T;
+        parameters?: { retry_after?: number };
+      };
+      if (data.ok) return data.result as T;
+      const retryAfter = Number(data.parameters?.retry_after) || 0;
+      if ((res.status === 429 || res.status >= 500) && attempt < RETRY_DELAYS_MS.length) {
+        await sleep(retryAfter ? Math.min(retryAfter, 30) * 1000 : RETRY_DELAYS_MS[attempt]!);
+        continue;
+      }
+      throw new TelegramApiError(data.description || `Telegram API xato: ${method}`);
+    } catch (err) {
+      if (err instanceof TelegramApiError || attempt >= RETRY_DELAYS_MS.length) throw err;
+      await sleep(RETRY_DELAYS_MS[attempt]!);
+    }
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function tgCall<T = unknown>(method: string, body: Record<string, unknown>): Promise<T> {
+  const json = JSON.stringify(body);
+  return tgRequest<T>(method, () => ({
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const data = (await res.json()) as { ok: boolean; description?: string; result?: T };
-  if (!data.ok) {
-    throw new Error(data.description || `Telegram API xato: ${method}`);
-  }
-  return data.result as T;
+    body: json,
+  }));
 }
 
 export async function sendMessage(
@@ -84,15 +138,41 @@ export async function sendMessage(
     parse_mode?: "HTML" | "Markdown";
     reply_markup?: { inline_keyboard: InlineKeyboardButton[][] };
     disable_web_page_preview?: boolean;
+    reply_to_message_id?: number;
   },
 ) {
-  return tgCall("sendMessage", {
+  return tgCall<TelegramMessage>("sendMessage", {
     chat_id: chatId,
     text,
     parse_mode: opts?.parse_mode ?? "HTML",
     reply_markup: opts?.reply_markup,
     disable_web_page_preview: opts?.disable_web_page_preview ?? true,
+    reply_parameters: opts?.reply_to_message_id
+      ? { message_id: opts.reply_to_message_id, allow_sending_without_reply: true }
+      : undefined,
   });
+}
+
+export async function sendChatAction(chatId: number | string, action: "typing" | "upload_photo" = "typing") {
+  return tgCall("sendChatAction", { chat_id: chatId, action });
+}
+
+export async function deleteMessage(chatId: number | string, messageId: number) {
+  return tgCall<boolean>("deleteMessage", { chat_id: chatId, message_id: messageId });
+}
+
+/** Telegram serveridagi faylni yuklab olish (rasm, hujjat) */
+export async function downloadTelegramFile(fileId: string, maxBytes = 5_000_000): Promise<Buffer | null> {
+  const token = botToken();
+  if (!token) return null;
+  const file = await tgCall<{ file_path?: string; file_size?: number }>("getFile", { file_id: fileId });
+  if (!file.file_path || (file.file_size && file.file_size > maxBytes)) return null;
+  const res = await fetch(`${TG_API}/file/bot${token}/${file.file_path}`, {
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!res.ok) return null;
+  const buf = Buffer.from(await res.arrayBuffer());
+  return buf.length > maxBytes ? null : buf;
 }
 
 /** Faylni Telegram chatga yuborish (private chat_id = telegram user id) */
@@ -102,33 +182,23 @@ export async function sendDocument(
   filename: string,
   opts?: { mimeType?: string; caption?: string },
 ) {
-  const token = botToken();
-  if (!token) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
+  if (!botToken()) throw new Error("TELEGRAM_BOT_TOKEN sozlanmagan");
   if (!file?.length) throw new Error("Fayl bo‘sh");
 
   const safeName = String(filename || "fayl")
     .replace(/[/\\]/g, "_")
     .slice(0, 120);
-  const form = new FormData();
-  form.append("chat_id", String(chatId));
-  form.append(
-    "document",
-    new Blob([new Uint8Array(file)], {
-      type: opts?.mimeType || "application/octet-stream",
-    }),
-    safeName,
-  );
-  if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
-
-  const res = await fetch(`${TG_API}/bot${token}/sendDocument`, {
-    method: "POST",
-    body: form,
+  const blob = new Blob([new Uint8Array(file)], {
+    type: opts?.mimeType || "application/octet-stream",
   });
-  const data = (await res.json()) as { ok: boolean; description?: string };
-  if (!data.ok) {
-    throw new Error(data.description || "Telegram sendDocument xato");
-  }
-  return data;
+  const result = await tgRequest<unknown>("sendDocument", () => {
+    const form = new FormData();
+    form.append("chat_id", String(chatId));
+    form.append("document", blob, safeName);
+    if (opts?.caption) form.append("caption", opts.caption.slice(0, 1024));
+    return { method: "POST", body: form };
+  });
+  return { ok: true as const, result };
 }
 
 export async function answerCallbackQuery(id: string, text?: string) {

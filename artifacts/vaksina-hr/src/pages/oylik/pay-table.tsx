@@ -1,6 +1,6 @@
 import React from "react";
 import { useLocation } from "wouter";
-import { Download, FileText, Receipt } from "lucide-react";
+import { ArrowUpRight, Download, FileText, Receipt } from "lucide-react";
 import { exportJarimaExcel, exportJarimaPdf, type JarimaExportLine } from "@/lib/jarima-export";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -29,26 +29,31 @@ export function DavomatJarimaCard({ month, onOpen }: { month: string; onOpen?: (
     <button
       type="button"
       onClick={() => (onOpen ? onOpen() : setLocation("/oylik"))}
-      className="rounded-2xl border-2 border-rose-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-rose-400/30 dark:bg-[#2a1520]"
+      className="group relative overflow-hidden rounded-2xl border border-slate-200/90 bg-white p-4 text-left shadow-[0_1px_2px_rgba(15,39,68,0.05)] transition-all duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_-20px_rgba(225,29,72,0.45)] dark:border-rose-400/25 dark:bg-[#2a1520]"
     >
-      <div className="flex items-start justify-between gap-3">
+      <span className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-rose-500 to-pink-600" />
+      <span className="pointer-events-none absolute -right-10 -top-10 h-28 w-28 rounded-full bg-rose-500 opacity-[0.12] blur-2xl transition-opacity group-hover:opacity-25" />
+      <div className="relative flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-400/15 dark:text-rose-200">
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-400/15 dark:text-rose-200">
             <Receipt className="h-5 w-5" />
           </span>
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Jarima</div>
-            <div className="mt-0.5 text-2xl font-bold tabular-nums leading-none text-[#0f2744] dark:text-white">
+            <div className="text-[10.5px] font-bold uppercase tracking-[0.08em] text-slate-500 dark:text-slate-400">Jarima</div>
+            <div className="mt-1 text-[28px] font-extrabold tabular-nums leading-none tracking-tight text-[#0f2744] dark:text-white">
               {summary.isLoading ? "…" : own ? formatSom(self?.amount ?? total) : people}
-              {own ? null : <span className="ml-1 text-sm font-medium text-slate-400">xodim</span>}
+              {own ? null : <span className="ml-1 text-xs font-semibold tracking-normal text-slate-400">xodim</span>}
             </div>
           </div>
         </div>
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-rose-50 text-rose-500 transition group-hover:bg-rose-500 group-hover:text-white dark:bg-rose-400/15 dark:text-rose-200">
+          <ArrowUpRight className="h-4 w-4" />
+        </span>
       </div>
-      <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-rose-100 dark:bg-rose-400/20">
-        <div className="h-full rounded-full bg-rose-500" style={{ width: people > 0 || total > 0 ? "100%" : "0%" }} />
+      <div className="relative mt-4 h-1.5 overflow-hidden rounded-full bg-rose-100 dark:bg-rose-400/20">
+        <div className="h-full rounded-full bg-gradient-to-r from-rose-400 to-rose-600" style={{ width: people > 0 || total > 0 ? "100%" : "0%" }} />
       </div>
-      <div className="mt-2 text-[11px] font-medium text-rose-700 dark:text-rose-200">
+      <div className="relative mt-2 truncate text-[11px] font-semibold text-rose-700 dark:text-rose-200">
         {summary.isLoading
           ? "Hisoblanmoqda"
           : own
@@ -669,19 +674,6 @@ export function PayTable({
   onTogglePage: (userIds: number[], on: boolean) => void;
 }) {
   const save = useSaveOylikLine();
-  const totals = React.useMemo(() => {
-    return rows.reduce(
-      (a, r) => {
-        const view = present(r);
-        a.salary += view.salary;
-        a.jarima += view.jarima;
-        a.net += view.net;
-        return a;
-      },
-      { salary: 0, jarima: 0, net: 0 },
-    );
-  }, [rows, present]);
-
   const ids = rows.map((r) => r.userId).filter((id): id is number => Boolean(id));
   const selectedSet = new Set(selected);
   const allOn = ids.length > 0 && ids.every((id) => selectedSet.has(id));
@@ -691,27 +683,9 @@ export function PayTable({
 
   return (
     <div className="dept-data-table">
-      <div className="grid grid-cols-2 gap-px border-b bg-muted/50 sm:grid-cols-4">
-        <div className="bg-card px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Xodim</p>
-          <p className="text-sm font-bold tabular-nums">{rows.length}</p>
-        </div>
-        <div className="bg-card px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">{moneyLabel}</p>
-          <p className="text-sm font-bold tabular-nums">{formatSom(totals.salary)}</p>
-        </div>
-        <div className="bg-card px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Jarima</p>
-          <p className="text-sm font-bold tabular-nums text-rose-700">{formatSom(totals.jarima)}</p>
-        </div>
-        <div className="bg-card px-3 py-2">
-          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Qo‘lda qoladi</p>
-          <p className="text-sm font-bold tabular-nums">{formatSom(totals.net)}</p>
-        </div>
-      </div>
       <div className="max-h-[min(70vh,720px)] overflow-auto">
         <table className="w-full min-w-[920px] table-fixed border-collapse text-[12.5px]">
-          <thead className="sticky top-0 z-10 bg-primary text-primary-foreground dark:bg-slate-800/95 dark:text-slate-100">
+          <thead className="sticky top-0 z-10 bg-[#0b3a5c] text-white dark:bg-slate-800/95 dark:text-slate-100">
             <tr className="text-left">
               <th className="w-10 px-2 py-2">
                 <input type="checkbox" className="h-4 w-4 accent-white" checked={allOn} onChange={() => onTogglePage(ids, !allOn)} />
@@ -721,7 +695,7 @@ export function PayTable({
               <th className="w-36 px-2 py-2 text-right font-semibold">{moneyLabel}</th>
               <th className="w-36 px-2 py-2 text-right font-semibold">Jarima</th>
               <th className="px-2 py-2 font-semibold">Izoh</th>
-              <th className="w-28 px-2 py-2 text-right font-semibold">Qo‘lda</th>
+              <th className="w-28 px-2 py-2 text-right font-semibold">Qo‘lda qoladi</th>
               <th className="w-40 px-2 py-2 font-semibold">Holat</th>
             </tr>
           </thead>
@@ -803,18 +777,16 @@ export function WeekBoard({
 
   return (
     <div className="dept-data-table">
-      <div className="flex flex-wrap items-center gap-2 border-b bg-card px-3 py-2 text-[11px] font-semibold">
-        <span className="rounded-full border border-amber-300 bg-amber-50 px-2 py-0.5 text-amber-950">Kutiladi</span>
-        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-2 py-0.5 text-emerald-950">Tasdiq</span>
-        <span className="rounded-full border border-rose-300 bg-rose-50 px-2 py-0.5 text-rose-900">Qaytgan · jarima 0</span>
-        <span className="text-muted-foreground">
-          Katak: <span className="font-semibold text-blue-700">kunlik</span>
-          {" · "}
-          <span className="font-semibold text-emerald-700">qolgan</span>
-          {" · "}
-          <span className="font-semibold text-rose-600">ayirilgan jarima</span>
-          . Oxirgi ustun — jami jarima.
-        </span>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 border-b bg-card px-3 py-2 text-[11px] font-semibold">
+        <span className="text-slate-400">Holat:</span>
+        <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200"><span className="h-3 w-3 rounded border border-amber-300 bg-amber-50" /> Kutiladi</span>
+        <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200"><span className="h-3 w-3 rounded border border-emerald-300 bg-emerald-50" /> Tasdiqlangan</span>
+        <span className="inline-flex items-center gap-1.5 text-slate-700 dark:text-slate-200"><span className="h-3 w-3 rounded border border-rose-300 bg-rose-50" /> Bekor (jarima 0)</span>
+        <span className="text-slate-400">Katakda:</span>
+        <span className="text-blue-700">kunlik</span>
+        <span className="text-emerald-700">qo‘lda qoladi</span>
+        <span className="text-rose-600">−jarima</span>
+        <span className="ml-auto font-medium text-muted-foreground">Kunni bossangiz — o‘sha kun ochiladi</span>
       </div>
       <div className="max-h-[min(70vh,720px)] overflow-auto">
         <table className="w-max min-w-full border-separate border-spacing-0 text-left text-[12px]">

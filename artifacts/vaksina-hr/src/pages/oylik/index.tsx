@@ -1,17 +1,30 @@
 import React, { useCallback, useMemo, useState } from "react";
 import {
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Download,
+  FilterX,
+  Loader2,
   Lock,
-  CalendarDays,
+  RefreshCw,
+  Search,
+  Store,
+  Users,
+  Wallet,
+  XCircle,
+  AlertCircle,
+  PencilLine,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { userRoleLabel } from "@/lib/roles";
 import { displayBranchName } from "@/lib/pharmacy-staff-api";
 import { staffWorkplaceOf, type StaffWorkplace } from "@/lib/staff-workplace";
 import { isVacancyPlaceholder } from "@/lib/vacancy-slot";
@@ -19,11 +32,14 @@ import { useToast } from "@/hooks/use-toast";
 import { useI18n } from "@/i18n/I18nProvider";
 import { MySlip, PayTable, WeekBoard } from "./pay-table";
 import { FiksaDialog } from "./fiksa-dialog";
+import { DisciplinePanel } from "./discipline-panel";
+import { canSeeDiscipline } from "@/lib/discipline-api";
 import {
   canApprovePayroll,
   canEditKpiSettings,
   canManagePayroll,
   currentMonthKey,
+  formatSom,
   monthLabelUz,
   shiftMonthKey,
   useApproveOylikDay,
@@ -39,7 +55,6 @@ import {
   clampToMonth,
   datesFromTo,
   formatDayUz,
-  formatShortUz,
   monthEnd,
   projectPayroll,
   todayYmd,
@@ -51,52 +66,118 @@ import {
 function MonthNav({ month, onChange }: { month: string; onChange: (m: string) => void }) {
   const { locale } = useI18n();
   return (
-    <div className="flex items-center gap-0.5 rounded-lg bg-white/10 p-0.5">
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, -1))}>
+    <div className="flex items-center gap-0.5 rounded-xl bg-white/10 p-1 ring-1 ring-white/15">
+      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, -1))}>
         <ChevronLeft className="h-4 w-4" />
       </Button>
-      <span className="min-w-[118px] px-1 text-center text-[13px] font-semibold">{monthLabelUz(month, locale)}</span>
-      <Button type="button" variant="ghost" size="icon" className="h-7 w-7 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey()}>
+      <span className="min-w-[130px] px-1 text-center text-sm font-semibold capitalize">{monthLabelUz(month, locale)}</span>
+      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 text-white hover:bg-white/15 hover:text-white" onClick={() => onChange(shiftMonthKey(month, 1))} disabled={month >= currentMonthKey()}>
         <ChevronRight className="h-4 w-4" />
       </Button>
     </div>
   );
 }
 
-function FilterChip({
-  on,
-  tone,
-  label,
-  count,
-  onClick,
-}: {
-  on: boolean;
-  tone: "navy" | "emerald" | "amber" | "rose" | "slate";
-  label: string;
-  count: number;
-  onClick: () => void;
-}) {
-  const active = {
-    navy: "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-sm",
-    emerald: "border-emerald-700 bg-emerald-700 text-white shadow-sm",
-    amber: "border-amber-500 bg-amber-500 text-white shadow-sm",
-    rose: "border-rose-600 bg-rose-600 text-white shadow-sm",
-    slate: "border-slate-700 bg-slate-700 text-white shadow-sm",
-  }[tone];
-    return (
+function StepTitle({ n, title, hint, right }: { n: number; title: string; hint?: string; right?: React.ReactNode }) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="flex min-w-0 items-center gap-2.5">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#0b3a5c] text-[11px] font-bold text-white">{n}</span>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold text-[#0f2744] dark:text-white">{title}</p>
+          {hint ? <p className="text-[11px] text-muted-foreground">{hint}</p> : null}
+        </div>
+      </div>
+      {right}
+    </div>
+  );
+}
+
+function ShiftChip({ on, label, count, onClick }: { on: boolean; label: string; count: number; onClick: () => void }) {
+  return (
     <button
       type="button"
       onClick={onClick}
+      disabled={!on && count === 0}
       className={cn(
-        "inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold transition",
-        on ? active : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100 dark:hover:bg-slate-800",
+        "inline-flex h-9 items-center gap-2 rounded-xl border px-3 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-40",
+        on
+          ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-sm"
+          : "border-slate-200 bg-white text-slate-700 hover:border-slate-300 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-900 dark:text-slate-100",
       )}
     >
       {label}
-      <span className={cn("min-w-[1.5rem] rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold tabular-nums", on ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600 dark:bg-white/10 dark:text-slate-200")}>
+      <span className={cn("min-w-[1.5rem] rounded-full px-1.5 text-center text-[11px] font-bold tabular-nums", on ? "bg-white/20" : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300")}>
         {count}
       </span>
     </button>
+  );
+}
+
+function FilterSelect({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  options: Array<{ value: string; label: string; count: number }>;
+}) {
+  const active = value !== "";
+  return (
+    <div className="min-w-0">
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+      <Select value={value || "__all"} onValueChange={(v) => onChange(v === "__all" ? "" : v)}>
+        <SelectTrigger className={cn("h-9 rounded-lg bg-white dark:bg-slate-900", active && "border-[#0b3a5c] ring-1 ring-[#0b3a5c]/30 font-semibold text-[#0b3a5c] dark:text-sky-200")}>
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {options.map((o) => (
+            <SelectItem key={o.value || "__all"} value={o.value || "__all"}>
+              <span className="flex w-full items-center justify-between gap-3">
+                {o.label}
+                <span className="text-xs tabular-nums text-muted-foreground">{o.count}</span>
+              </span>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
+function SummaryCard({
+  icon: Icon,
+  label,
+  value,
+  sub,
+  tone,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub?: string;
+  tone: "navy" | "blue" | "rose" | "emerald";
+}) {
+  const tones = {
+    navy: "bg-slate-100 text-[#0b3a5c] dark:bg-white/10 dark:text-white",
+    blue: "bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200",
+    rose: "bg-rose-100 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200",
+    emerald: "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200",
+  }[tone];
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm dark:border-white/10 dark:bg-slate-900">
+      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-xl", tones)}>
+        <Icon className="h-5 w-5" />
+      </span>
+      <div className="min-w-0">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{label}</p>
+        <p className={cn("truncate text-lg font-bold leading-tight tabular-nums text-[#0f2744] dark:text-white", tone === "rose" && "text-rose-700 dark:text-rose-200")}>{value}</p>
+        {sub ? <p className="truncate text-[11px] text-muted-foreground">{sub}</p> : null}
+      </div>
+    </div>
   );
 }
 
@@ -170,25 +251,12 @@ const DORIXONA_SHIFT_CHIPS = [
   { key: "23", label: "2+3" },
 ];
 
-function calendarMeta(scope: string): { title: string; hint: string } {
-  if (scope === "ofis") {
-    return {
-      title: "Ofis ish kuni",
-      hint: "Oddiy ofis xodimlari. Yashil — ish kuni, kulrang — dam. Dam kuniga jarima yozilmaydi",
-    };
-  }
-  if (scope === "xavfsizlik") {
-    return {
-      title: "Xavfsizlik ish kuni",
-      hint: "Faqat xavfsizlik. Yashil — ish kuni, kulrang — dam. Dam kuniga jarima yozilmaydi",
-    };
-  }
+function calendarTitle(scope: string): string {
+  if (scope === "ofis") return "Ofis ish kunlari";
+  if (scope === "xavfsizlik") return "Xavfsizlik ish kunlari";
   const shift = scope.replace(/^dorixona:/, "");
   const label = DORIXONA_SHIFT_CHIPS.find((s) => s.key === shift)?.label || shift;
-  return {
-    title: `${label} ish kuni`,
-      hint: "Faqat shu dorixona smenasi. Yashil — ish kuni, kulrang — dam. Dam kuniga jarima yozilmaydi",
-  };
+  return `${label} ish kunlari`;
 }
 
 function WorkCalendar({
@@ -197,16 +265,12 @@ function WorkCalendar({
   canEdit,
   onToggle,
   pending,
-  title,
-  hint,
 }: {
   month: string;
   workDays: string[];
   canEdit: boolean;
   onToggle: (day: string, isWork: boolean) => void;
   pending: boolean;
-  title: string;
-  hint: string;
 }) {
   const { t } = useI18n();
   const set = new Set(workDays);
@@ -214,11 +278,11 @@ function WorkCalendar({
   const last = new Date(y!, m!, 0).getDate();
   const first = new Date(`${month}-01T12:00:00+05:00`);
   const pad = (first.getDay() + 6) % 7;
+  const today = todayYmd();
   const cells: Array<{ d: number | null; iso: string | null }> = [];
   for (let i = 0; i < pad; i++) cells.push({ d: null, iso: null });
   for (let d = 1; d <= last; d++) {
-    const iso = `${month}-${String(d).padStart(2, "0")}`;
-    cells.push({ d, iso });
+    cells.push({ d, iso: `${month}-${String(d).padStart(2, "0")}` });
   }
   const labels = [
     t("ui.weekday.mon"),
@@ -230,60 +294,67 @@ function WorkCalendar({
     t("ui.weekday.sun"),
   ];
   return (
-    <div className="dept-panel p-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="flex items-center gap-1.5 text-sm font-semibold dept-accent-value">
-          <CalendarDays className="h-4 w-4" /> {title}
-        </p>
-        <p className="text-xs text-muted-foreground">
-          {hint} · {workDays.length} ish kuni
-        </p>
+    <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50/60 p-3 dark:border-white/10 dark:bg-slate-950/40">
+      <div className="mb-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-emerald-500" /> Ish kuni</span>
+        <span className="inline-flex items-center gap-1.5"><span className="h-3 w-3 rounded bg-slate-200 dark:bg-slate-700" /> Dam olish — jarima yozilmaydi</span>
+        {canEdit ? <span className="ml-auto">Kunni bosib ish ↔ dam qiling</span> : null}
       </div>
-      <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-medium text-muted-foreground">
-        {labels.map((l) => (
-          <div key={l}>{l}</div>
-        ))}
-      </div>
-      <div className="mt-1 grid grid-cols-7 gap-1">
-        {cells.map((c, i) => {
-          if (!c.d || !c.iso) return <div key={`e-${i}`} />;
-          const work = set.has(c.iso);
-          const cls = cn(
-            "flex h-8 items-center justify-center rounded-md text-[12px] font-semibold tabular-nums",
-            work ? "bg-emerald-500 text-white dark:bg-emerald-600" : "bg-muted text-muted-foreground",
-            canEdit && "cursor-pointer hover:ring-2 hover:ring-primary/30",
-            pending && "opacity-70",
-          );
-          if (!canEdit) {
-            return (
-              <div key={c.iso} className={cls} title={work ? t("ui.workDay") : t("ui.dayOff")}>
-                {c.d}
-              </div>
+      <div className="mx-auto max-w-xl">
+        <div className="grid grid-cols-7 gap-1 text-center text-[10px] font-semibold uppercase text-muted-foreground">
+          {labels.map((l) => (
+            <div key={l}>{l}</div>
+          ))}
+        </div>
+        <div className="mt-1 grid grid-cols-7 gap-1">
+          {cells.map((c, i) => {
+            if (!c.d || !c.iso) return <div key={`e-${i}`} />;
+            const work = set.has(c.iso);
+            const cls = cn(
+              "flex h-8 items-center justify-center rounded-lg text-[12px] font-semibold tabular-nums transition",
+              work ? "bg-emerald-500 text-white dark:bg-emerald-600" : "bg-slate-200/70 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+              c.iso === today && "ring-2 ring-[#0b3a5c] ring-offset-1",
+              canEdit && "cursor-pointer hover:opacity-80",
+              pending && "opacity-60",
             );
-          }
-          return (
-            <button
-              key={c.iso}
-              type="button"
-              disabled={pending}
-              className={cls}
-              title={work ? `${t("ui.workDay")} — ${t("ui.dayOff")}` : `${t("ui.dayOff")} — ${t("ui.workDay")}`}
-              onClick={() => onToggle(c.iso!, !work)}
-            >
-              {c.d}
-            </button>
-          );
-        })}
+            if (!canEdit) {
+              return (
+                <div key={c.iso} className={cls} title={work ? t("ui.workDay") : t("ui.dayOff")}>
+                  {c.d}
+                </div>
+              );
+            }
+            return (
+              <button key={c.iso} type="button" disabled={pending} className={cls} onClick={() => onToggle(c.iso!, !work)}>
+                {c.d}
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
 }
+
+const GRAIN_OPTIONS: Array<{ key: PayGrain; label: string; title: string; hint: string; editable: boolean }> = [
+  { key: "kun", label: "Kun", title: "Bitta kun", hint: "Xodimlarning shu kungi summasi va jarimasi. Shu yerda o‘zgartirasiz va tasdiqlaysiz.", editable: true },
+  { key: "hafta", label: "Hafta", title: "7 kun bitta jadvalda", hint: "Hafta davomida kim qaysi kuni jarima olganini ko‘rasiz.", editable: false },
+  { key: "oy", label: "Oy", title: "Butun oy", hint: "Oyning har bir kuni bitta jadvalda — umumiy manzara.", editable: false },
+];
+
+const GRAIN_EXPLAIN: Record<PayGrain, string> = {
+  kun: "Pastdagi jadvalda summa yoki jarimani o‘zgartirsangiz darhol saqlanadi. Tekshirib bo‘lgach «Tasdiqlash» tugmasini bosing — shundan keyin xodim o‘z oyligini ko‘radi.",
+  hafta: "Har katakda: kunlik summa, qo‘lda qoladigan pul va jarima. Biror kunni bossangiz, o‘sha kunni tahrirlash va tasdiqlashga o‘tasiz.",
+  oy: "Oyning hamma kuni bitta jadvalda. Biror kunni bossangiz, o‘sha kunni tahrirlash va tasdiqlashga o‘tasiz.",
+};
 
 export default function OylikPage() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [month, setMonth] = useState(currentMonthKey());
   const manage = canManagePayroll(user?.role);
+  const canApprove = canApprovePayroll(user?.role);
+  const canEdit = canEditKpiSettings(user?.role);
   const [q, setQ] = useState("");
   const list = useOylikEmployees(month, q, manage);
   const approveDay = useApproveOylikDay();
@@ -298,10 +369,11 @@ export default function OylikPage() {
   const [fiksaFilter, setFiksaFilter] = useState<"" | "written" | "empty">("");
   const [jarimaFilter, setJarimaFilter] = useState<"" | "fined" | "clear">("");
   const [lavozimFilter, setLavozimFilter] = useState("");
-  const [grain, setGrain] = useState<PayGrain>("oy");
+  const [grain, setGrain] = useState<PayGrain>("kun");
   const [focusDate, setFocusDate] = useState(todayYmd);
   const [selected, setSelected] = useState<number[]>([]);
   const [fiksaOpen, setFiksaOpen] = useState(false);
+  const [calOpen, setCalOpen] = useState(false);
   const anchor = clampToMonth(month, focusDate);
   const weeks = useMemo(() => weeksOfMonth(month), [month]);
   const activeWeek = weeks.find((week) => anchor >= week.from && anchor <= week.to) ?? weeks[0];
@@ -465,12 +537,107 @@ export default function OylikPage() {
     return visible;
   }, [filteredRows, grain, selected]);
 
+  const totals = useMemo(() => {
+    const out = { salary: 0, jarima: 0, net: 0, fined: 0, dayApproved: 0 };
+    for (const row of filteredRows) {
+      const view = present(row);
+      out.salary += view.salary;
+      out.jarima += view.jarima;
+      out.net += view.net;
+      if (view.jarima > 0) out.fined += 1;
+      if (view.dayStatus === "approved") out.dayApproved += 1;
+    }
+    return out;
+  }, [filteredRows, present]);
+
   const activeScope = !place || !shift
     ? ""
     : place === "ofis"
       ? shift === "xavfsizlik" ? "xavfsizlik" : "ofis"
       : `dorixona:${shift}`;
-  const activeCalendar = activeScope ? calendarMeta(activeScope) : null;
+  const workDays = activeScope ? list.data?.calendars?.[activeScope] ?? [] : [];
+  const extraFiltersOn = !!(statusFilter || fiksaFilter || jarimaFilter || lavozimFilter);
+
+  const resetFilters = () => {
+    setStatusFilter("");
+    setFiksaFilter("");
+    setJarimaFilter("");
+    setLavozimFilter("");
+  };
+
+  const pickPlace = (next: StaffWorkplace) => {
+    setPlace(place === next ? "" : next);
+    setShift("");
+    setSelected([]);
+    setCalOpen(false);
+    resetFilters();
+  };
+
+  const exportExcel = async () => {
+    if (!filteredRows.length) {
+      toast({ title: "Bu filtrda xodim yo‘q" });
+      return;
+    }
+    const shiftLabel = shift ? (shiftOptions.find((item) => item.key === shift)?.label || shift) : "Barcha smenalar";
+    const holatLabel = statusFilter === "approved" ? "Tasdiqlangan" : statusFilter === "returned" ? "Bekor qilingan" : statusFilter === "draft" ? "Tasdiqlanmagan" : "Barcha holat";
+    const fiksaLabel = fiksaFilter === "written" ? "Fiksa yozilgan" : fiksaFilter === "empty" ? "Fiksa yozilmagan" : "Fiksa hammasi";
+    const jarimaLabel = jarimaFilter === "fined" ? "Jarima qilingan" : jarimaFilter === "clear" ? "Jarima qilinmagan" : "Jarima hammasi";
+    const lavozimLabel = lavozimFilter ? (lavozimOptions.find((item) => item.key === lavozimFilter)?.label || lavozimFilter) : "Barcha lavozim";
+    const filterLine = [
+      monthLabelUz(month),
+      periodLabel,
+      place === "dorixona" ? "Dorixona" : "Ofis",
+      shiftLabel,
+      lavozimLabel,
+      holatLabel,
+      jarimaLabel,
+      fiksaLabel,
+      q.trim() ? `Qidiruv: ${q.trim()}` : "",
+      `${filteredRows.length} xodim`,
+    ].filter(Boolean).join(" · ");
+    setExporting(true);
+    try {
+      await downloadOylikViewExcel({
+        month,
+        filterLine,
+        rows: filteredRows,
+        grain,
+        from: periodFrom,
+        to: periodTo,
+        fileName: grain === "oy" ? `oylik-${month}.xls` : `oylik-${month}-${grain}-${periodFrom}.xls`,
+      });
+      toast({ title: "Excel yuklandi", description: `${filteredRows.length} xodim · ${periodLabel}` });
+    } catch (e) {
+      toast({ title: "Excel", description: (e as Error).message, variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const approveAll = () => {
+    if (!actionIds.length) return;
+    if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodim tasdiqlansinmi?\nTasdiqlangach xodim shu kunning oyligi va jarimasini ko‘radi.`)) return;
+    approveDay.mutate(
+      { month, day: anchor, userIds: actionIds },
+      { onSuccess: () => { setSelected([]); toast({ title: "Tasdiqlandi", description: `${formatDayUz(anchor)} · ${actionIds.length} xodim` }); } },
+    );
+  };
+  const cancelAll = () => {
+    if (!actionIds.length) return;
+    if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodimning jarimasi 0 qilinsinmi?\nXodimda ham 0 ko‘rinadi. Keyin tahrirlab yana tasdiqlash mumkin.`)) return;
+    ret.mutate(
+      { month, userIds: actionIds, day: anchor },
+      { onSuccess: () => { setSelected([]); toast({ title: "Bekor qilindi", description: `${formatDayUz(anchor)} · jarima 0` }); } },
+    );
+  };
+  const refreshAll = () => {
+    if (!actionIds.length) return;
+    if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodim davomat bo‘yicha qayta hisoblansinmi?\nQo‘lda kiritilgan summalar tizim hisobi bilan almashadi.`)) return;
+    refreshDay.mutate(
+      { month, day: anchor, userIds: actionIds },
+      { onSuccess: (res) => { setSelected([]); toast({ title: "Yangilandi", description: `${formatDayUz(anchor)} · ${(res as { count?: number }).count ?? actionIds.length} xodim` }); } },
+    );
+  };
 
   return (
     <div className="dept-page">
@@ -479,398 +646,439 @@ export default function OylikPage() {
         <div className="dept-hero-body !mx-0 flex w-full !max-w-none flex-wrap items-center justify-between gap-3 !px-3 sm:!px-4">
           <div className="min-w-0">
             <p className="dept-eyebrow">Oylik · jarima</p>
-            <h1 className="dept-title">Oylik</h1>
-            <p className="dept-desc truncate">
-              {user?.fullName} · {userRoleLabel(user?.role)} · Tasdiqlangach xodim o‘z oyligi va jarimasini ko‘radi
+            <h1 className="dept-title">Oylik va jarima</h1>
+            <p className="dept-desc">
+              {manage
+                ? "Bo‘limni tanlang, davrni belgilang, tekshirib tasdiqlang — tasdiqlangach xodim o‘z oyligini ko‘radi."
+                : "Tasdiqlangan oylik va jarimangiz shu yerda ko‘rinadi."}
             </p>
           </div>
-          <MonthNav month={month} onChange={setMonth} />
+          <div className="flex flex-wrap items-center gap-2">
+            <MonthNav month={month} onChange={(m) => { setMonth(m); setSelected([]); }} />
+            {manage ? (
+              <Button
+                type="button"
+                className="h-10 gap-1.5 rounded-xl bg-white text-[#0b3a5c] hover:bg-white/90"
+                disabled={exporting || !place}
+                title={place ? "Ekrandagi ro‘yxatni Excelga yuklash" : "Avval bo‘limni tanlang"}
+                onClick={() => void exportExcel()}
+              >
+                {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                Excel
+              </Button>
+            ) : null}
+          </div>
         </div>
       </div>
 
-      <div className="dept-page-inner !mx-0 w-full !max-w-none !px-2 sm:!px-3 md:!px-4">
-
-      {manage ? (
-        <div className="space-y-3">
-          <div className="dept-panel space-y-3 p-3">
-            <div className="flex min-w-0 flex-wrap items-end gap-2">
-                <div className="min-w-[180px] flex-1">
-                  <p className="mb-1 text-[11px] font-medium text-muted-foreground">Qidiruv</p>
-                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Ism, lavozim..." className="h-9 rounded-lg" />
-                </div>
-                {canApprovePayroll(user?.role) ? (
-                  <div>
-                    <p className="mb-1 text-[11px] font-medium text-muted-foreground">
-                      {grain === "kun" ? formatDayUz(anchor) : "Avval Kun ni tanlang"} · {actionIds.length} xodim
-                      {grain === "kun" && selected.length ? " · belgilanganlar" : grain === "kun" ? " · ekrandagilar" : ""}
-                    </p>
-                    <div className="flex flex-wrap gap-1">
-                      <Button
-                        type="button"
-                        className="h-9 rounded-lg bg-[#0b3a5c] text-white hover:bg-[#0b3a5c]/90"
-                        disabled={grain !== "kun" || approveDay.isPending || !actionIds.length}
-                        onClick={() => {
-                          if (!actionIds.length) return;
-                          if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodim tasdiqlansinmi? Xodim shu kunni ko‘radi.`)) return;
-                          approveDay.mutate({ month, day: anchor, userIds: actionIds }, { onSuccess: () => { setSelected([]); toast({ title: "Tasdiqlandi", description: `${formatDayUz(anchor)} · ${actionIds.length} xodim` }); } });
-                        }}
-                      >
-                        <Lock className="mr-1 h-4 w-4" /> Tasdiqlash
-                      </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                        className="h-9 rounded-lg border-rose-300 text-rose-700 hover:bg-rose-50"
-                        disabled={grain !== "kun" || ret.isPending || !actionIds.length}
-                  onClick={() => {
-                          if (!actionIds.length) return;
-                          if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodimning jarimasi 0 bo‘lsinmi? Xodimda ham 0 ko‘rinadi. Keyin tahrirlab yana tasdiqlash mumkin.`)) return;
-                          ret.mutate({ month, userIds: actionIds, day: anchor }, { onSuccess: () => { setSelected([]); toast({ title: "Bekor qilindi", description: `${formatDayUz(anchor)} · jarima 0` }); } });
-                        }}
-                      >
-                        Bekor qilish
-                </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="h-9 rounded-lg"
-                        disabled={grain !== "kun" || refreshDay.isPending || !actionIds.length}
-                    onClick={() => {
-                          if (!actionIds.length) return;
-                          if (!window.confirm(`${formatDayUz(anchor)} — ${actionIds.length} xodim tizim hisobi bilan yangilansinmi? Dam kunida jarima yo‘q.`)) return;
-                          refreshDay.mutate({ month, day: anchor, userIds: actionIds }, { onSuccess: (res) => { setSelected([]); toast({ title: "Yangilandi", description: `${formatDayUz(anchor)} · ${(res as { count?: number }).count ?? actionIds.length} xodim` }); } });
-                        }}
-                      >
-                        Yangilash{dirtyIds.length ? ` · ${dirtyIds.length}` : ""}
-                  </Button>
-                    </div>
-                  </div>
-                ) : null}
-                <div>
-                  <p className="mb-1 text-[11px] font-medium text-muted-foreground">Ekrandagi filtr · {place ? filteredRows.length : 0}</p>
-                <Button
-                  type="button"
-                  className="h-9 rounded-lg"
-                    disabled={exporting || !place}
-                  onClick={async () => {
-                      if (!filteredRows.length) {
-                        toast({ title: "Bu filtrda xodim yo‘q" });
-                        return;
-                      }
-                      const shiftLabel = shift ? (shiftOptions.find((item) => item.key === shift)?.label || shift) : "Barcha smenalar";
-                      const holatLabel = statusFilter === "approved" ? "Tasdiqlangan" : statusFilter === "returned" ? "Bekor qilingan" : statusFilter === "draft" ? "Tasdiqlanmagan" : "Barcha holat";
-                      const fiksaLabel = fiksaFilter === "written" ? "Fiksa yozilgan" : fiksaFilter === "empty" ? "Fiksa yozilmagan" : "Fiksa hammasi";
-                      const jarimaLabel = jarimaFilter === "fined" ? "Jarima qilingan" : jarimaFilter === "clear" ? "Jarima qilinmagan" : "Jarima hammasi";
-                      const lavozimLabel = lavozimFilter ? (lavozimOptions.find((item) => item.key === lavozimFilter)?.label || lavozimFilter) : "Barcha lavozim";
-                      const filterLine = [
-                        monthLabelUz(month),
-                        periodLabel,
-                        place === "dorixona" ? "Dorixona" : "Ofis",
-                        shiftLabel,
-                        lavozimLabel,
-                        holatLabel,
-                        jarimaLabel,
-                        fiksaLabel,
-                        q.trim() ? `Qidiruv: ${q.trim()}` : "",
-                        `${filteredRows.length} xodim`,
-                      ].filter(Boolean).join(" · ");
-                      const rows = filteredRows;
-                    setExporting(true);
-                    try {
-                        await downloadOylikViewExcel({
-                          month,
-                          filterLine,
-                          rows,
-                          grain,
-                          from: periodFrom,
-                          to: periodTo,
-                          fileName: grain === "oy" ? `oylik-${month}.xls` : `oylik-${month}-${grain}-${periodFrom}.xls`,
-                        });
-                        toast({ title: "Excel yuklandi", description: `${filteredRows.length} xodim · ${periodLabel}` });
-                    } catch (e) {
-                        toast({ title: "Excel", description: (e as Error).message, variant: "destructive" });
-                    } finally {
-                      setExporting(false);
-                    }
-                  }}
-                >
-                    <Download className="mr-1 h-4 w-4" /> Excel
-                </Button>
-                </div>
-            </div>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {(
-              [
-                { key: "ofis" as const, label: "Ofis xodimlari", hint: "Oylik va jarima shu jadvalda", count: placeCounts.ofis },
-                { key: "dorixona" as const, label: "Dorixona", hint: "Smena bo‘yicha oylik va jarima", count: placeCounts.dorixona },
-              ]
-            ).map((opt) => {
-              const on = place === opt.key;
-              return (
-                <button
-                  key={opt.key}
+      <div className="dept-page-inner !mx-0 w-full !max-w-none space-y-3 !px-2 sm:!px-3 md:!px-4">
+        {canSeeDiscipline(user?.role) ? <DisciplinePanel month={month} /> : null}
+        {!manage ? (
+          <MySlip month={month} />
+        ) : (
+          <>
+            <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+              <StepTitle n={1} title="Bo‘limni tanlang" hint="Ofis va dorixona alohida hisoblanadi" />
+              <div className="grid gap-2 sm:grid-cols-[1fr_1fr_minmax(220px,0.9fr)]">
+                {(
+                  [
+                    { key: "ofis" as const, label: "Ofis xodimlari", hint: "Asosiy ofis va xavfsizlik", icon: Building2, count: placeCounts.ofis },
+                    { key: "dorixona" as const, label: "Dorixona", hint: "Smenalar bo‘yicha", icon: Store, count: placeCounts.dorixona },
+                  ]
+                ).map((opt) => {
+                  const on = place === opt.key;
+                  const Icon = opt.icon;
+                  return (
+                    <button
+                      key={opt.key}
                       type="button"
-                      onClick={() => {
-                    setPlace(on ? "" : opt.key);
-                    setShift("");
-                    setStatusFilter("");
-                    setFiksaFilter("");
-                    setJarimaFilter("");
-                    setLavozimFilter("");
-                  }}
-                  className={cn(
-                    "flex items-center justify-between rounded-2xl border px-4 py-3 text-left",
-                    on && opt.key === "dorixona" && "border-emerald-600 bg-emerald-700 text-white",
-                    on && opt.key === "ofis" && "border-[#0b3a5c] bg-[#0b3a5c] text-white",
-                    !on && "border-border bg-card text-foreground hover:bg-muted",
-                  )}
-                >
-                  <span>
-                    <span className="block text-sm font-semibold">{opt.label}</span>
-                    <span className={cn("text-xs", on ? "text-white/75" : "text-muted-foreground")}>{opt.hint}</span>
-                  </span>
-                  <span className={cn("text-lg font-bold tabular-nums", on ? "text-white" : "text-foreground")}>
-                    {list.isLoading ? "…" : opt.count}
-                  </span>
-                </button>
-              );
-            })}
+                      onClick={() => pickPlace(opt.key)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-xl border-2 px-3.5 py-3 text-left transition",
+                        on
+                          ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-md"
+                          : "border-slate-200 bg-white hover:border-[#0b3a5c]/40 hover:bg-slate-50 dark:border-white/10 dark:bg-slate-950",
+                      )}
+                    >
+                      <span className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg", on ? "bg-white/15" : "bg-slate-100 text-[#0b3a5c] dark:bg-white/10 dark:text-white")}>
+                        <Icon className="h-5 w-5" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-sm font-semibold">{opt.label}</span>
+                        <span className={cn("block text-[11px]", on ? "text-white/70" : "text-muted-foreground")}>{opt.hint}</span>
+                      </span>
+                      <span className="text-xl font-bold tabular-nums">{list.isLoading ? "…" : opt.count}</span>
+                    </button>
+                  );
+                })}
+                <div className="relative self-center">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Xodim ismi yoki lavozimi…" className="h-11 rounded-xl pl-9" />
+                </div>
               </div>
+            </section>
+
             {list.isLoading ? (
-              <Skeleton className="h-72 rounded-xl" />
+              <Skeleton className="h-72 rounded-2xl" />
             ) : list.error ? (
               <p className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{(list.error as Error).message}</p>
-            ) : (
-              <div className="space-y-3">
-                {place ? (
-                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-slate-900/50">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <span className="w-[4.5rem] shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Smena</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <FilterChip on={!shift} tone="navy" label="Barcha smenalar" count={inPlace.length} onClick={() => { setShift(""); setStatusFilter(""); }} />
-                        {shiftOptions.map((opt) => (
-                          <FilterChip
-                            key={opt.key}
-                            on={shift === opt.key}
-                            tone="emerald"
-                            label={opt.label}
-                            count={opt.count}
-                            onClick={() => {
-                              setShift(shift === opt.key ? "" : opt.key);
-                              setStatusFilter("");
-                            }}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <div className="h-px bg-slate-100 dark:bg-white/10" />
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <span className="w-[4.5rem] shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Lavozim</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <FilterChip on={lavozimFilter === ""} tone="navy" label="Hammasi" count={lavozimOptions.reduce((sum, item) => sum + item.count, 0)} onClick={() => setLavozimFilter("")} />
-                        {lavozimOptions.map((opt) => (
-                          <FilterChip
-                            key={opt.key}
-                            on={lavozimFilter === opt.key}
-                            tone="emerald"
-                            label={opt.label}
-                            count={opt.count}
-                            onClick={() => setLavozimFilter(lavozimFilter === opt.key ? "" : opt.key)}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                    <div className="h-px bg-slate-100 dark:bg-white/10" />
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <span className="w-[4.5rem] shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Holat</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <FilterChip on={statusFilter === ""} tone="navy" label="Barchasi" count={statusCounts.all} onClick={() => setStatusFilter("")} />
-                        <FilterChip on={statusFilter === "approved"} tone="emerald" label="Tasdiqlangan" count={statusCounts.approved} onClick={() => setStatusFilter("approved")} />
-                        <FilterChip on={statusFilter === "draft"} tone="amber" label="Tasdiqlanmagan" count={statusCounts.draft} onClick={() => setStatusFilter("draft")} />
-                        <FilterChip on={statusFilter === "returned"} tone="rose" label="Bekor qilingan" count={statusCounts.returned} onClick={() => setStatusFilter("returned")} />
-                      </div>
-                    </div>
-                    <div className="h-px bg-slate-100 dark:bg-white/10" />
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <span className="w-[4.5rem] shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Jarima</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <FilterChip on={jarimaFilter === ""} tone="navy" label="Hammasi" count={jarimaCounts.all} onClick={() => setJarimaFilter("")} />
-                        <FilterChip on={jarimaFilter === "fined"} tone="rose" label="Qilingan" count={jarimaCounts.fined} onClick={() => setJarimaFilter("fined")} />
-                        <FilterChip on={jarimaFilter === "clear"} tone="slate" label="Qilinmagan" count={jarimaCounts.clear} onClick={() => setJarimaFilter("clear")} />
-                      </div>
-                    </div>
-                    <div className="h-px bg-slate-100 dark:bg-white/10" />
-                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-                      <span className="w-[4.5rem] shrink-0 text-[11px] font-bold uppercase tracking-[0.14em] text-slate-400">Fiksa</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        <FilterChip on={fiksaFilter === ""} tone="navy" label="Hammasi" count={fiksaCounts.all} onClick={() => setFiksaFilter("")} />
-                        <FilterChip on={fiksaFilter === "written"} tone="emerald" label="Yozilgan" count={fiksaCounts.written} onClick={() => setFiksaFilter("written")} />
-                        <FilterChip on={fiksaFilter === "empty"} tone="slate" label="Yozilmagan" count={fiksaCounts.empty} onClick={() => setFiksaFilter("empty")} />
-                      </div>
-                    </div>
-                  </div>
-                ) : null}
-                {activeCalendar && activeScope ? (
-                <WorkCalendar
-                  month={month}
-                  title={activeCalendar.title}
-                  hint={activeCalendar.hint}
-                  workDays={list.data?.calendars?.[activeScope] ?? []}
-                  canEdit={canEditKpiSettings(user?.role)}
-                  pending={toggleDay.isPending}
-                  onToggle={(day, isWork) => {
-                    toggleDay.mutate(
-                      { day, isWork, scope: activeScope },
-                      {
-                        onSuccess: () =>
-                          toast({
-                            title: isWork ? `${day} — ish kuni` : `${day} — dam kuni`,
-                            description: activeCalendar.title,
-                          }),
-                        onError: (e) =>
-                          toast({ title: "Ish kuni saqlanmadi", description: (e as Error).message, variant: "destructive" }),
-                      },
-                    );
-                  }}
-                />
-                ) : place ? (
-                  <div className="dept-empty">
-                    Ish kunini qo‘yish uchun smenani tanlang. Ofisda oddiy xodimlar bir kalendarda, xavfsizlik alohida, dorixonada har smena alohida.
+            ) : !place ? (
+              <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-slate-300 bg-white px-4 py-14 text-center dark:border-white/15 dark:bg-slate-900">
+                <Wallet className="h-10 w-10 text-slate-300" />
+                <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">Boshlash uchun yuqoridan bo‘limni tanlang</p>
+                <p className="max-w-md text-xs text-muted-foreground">Ofis xodimlari yoki Dorixona. Keyin smena va davrni tanlab, oylik va jarimani tekshirasiz.</p>
               </div>
-                ) : null}
-                {!place ? (
-                  <div className="dept-empty">
-                    Ofis xodimlari yoki dorixonani tanlang. Ichida smena bo‘yicha ajratiladi.
+            ) : (
+              <>
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                  <StepTitle
+                    n={2}
+                    title="Smena va filtr"
+                    hint={`${filteredRows.length} xodim ko‘rsatilmoqda`}
+                    right={
+                      extraFiltersOn ? (
+                        <button type="button" onClick={resetFilters} className="inline-flex items-center gap-1 text-xs font-semibold text-slate-500 hover:text-slate-800 dark:hover:text-white">
+                          <FilterX className="h-3.5 w-3.5" /> Filtrlarni tozalash
+                        </button>
+                      ) : null
+                    }
+                  />
+                  <div className="flex flex-wrap gap-1.5">
+                    <ShiftChip on={!shift} label={place === "ofis" ? "Hammasi" : "Barcha smenalar"} count={inPlace.length} onClick={() => { setShift(""); setCalOpen(false); }} />
+                    {shiftOptions.map((opt) => (
+                      <ShiftChip key={opt.key} on={shift === opt.key} label={opt.label} count={opt.count} onClick={() => setShift(shift === opt.key ? "" : opt.key)} />
+                    ))}
                   </div>
-                ) : (
-                <>
-                <div className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-slate-900">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="inline-flex flex-wrap items-stretch gap-1 rounded-2xl border border-slate-200 bg-slate-50 p-1 dark:border-white/10 dark:bg-slate-800">
-                      {(
-                        [
-                          { key: "kun" as const, label: "Kun", hint: "Shu kun jadvali" },
-                          { key: "hafta" as const, label: "Hafta", hint: "Yig‘indi" },
-                          { key: "oy" as const, label: "Oy", hint: "Har kun" },
-                        ]
-                      ).map((opt) => {
-                        const on = grain === opt.key;
-                        return (
-                          <button
-                            key={opt.key}
-                            type="button"
-                            onClick={() => setGrain(opt.key)}
-                            className={cn(
-                              "flex h-14 w-[9.75rem] flex-col items-center justify-center rounded-xl px-3 text-center transition",
-                              on ? "bg-[#0b3a5c] text-white shadow-sm" : "text-slate-600 hover:bg-white dark:text-slate-300 dark:hover:bg-slate-950",
-                            )}
-                          >
-                            <span className="whitespace-nowrap text-sm font-semibold leading-none">{opt.label}</span>
-                            <span className={cn("mt-1 text-[10px] leading-none", on ? "text-white/75" : "text-slate-400")}>{opt.hint}</span>
-                          </button>
-                        );
-                      })}
-                      {canEditKpiSettings(user?.role) ? (
+
+                  <div className="mt-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
+                    <FilterSelect
+                      label="Lavozim"
+                      value={lavozimFilter}
+                      onChange={setLavozimFilter}
+                      options={[
+                        { value: "", label: "Barcha lavozim", count: lavozimOptions.reduce((sum, item) => sum + item.count, 0) },
+                        ...lavozimOptions.map((o) => ({ value: o.key, label: o.label, count: o.count })),
+                      ]}
+                    />
+                    <FilterSelect
+                      label="Holat"
+                      value={statusFilter}
+                      onChange={(v) => setStatusFilter(v as typeof statusFilter)}
+                      options={[
+                        { value: "", label: "Barcha holat", count: statusCounts.all },
+                        { value: "approved", label: "Tasdiqlangan", count: statusCounts.approved },
+                        { value: "draft", label: "Tasdiqlanmagan", count: statusCounts.draft },
+                        { value: "returned", label: "Bekor qilingan", count: statusCounts.returned },
+                      ]}
+                    />
+                    <FilterSelect
+                      label="Jarima"
+                      value={jarimaFilter}
+                      onChange={(v) => setJarimaFilter(v as typeof jarimaFilter)}
+                      options={[
+                        { value: "", label: "Hammasi", count: jarimaCounts.all },
+                        { value: "fined", label: "Jarimasi bor", count: jarimaCounts.fined },
+                        { value: "clear", label: "Jarimasi yo‘q", count: jarimaCounts.clear },
+                      ]}
+                    />
+                    <FilterSelect
+                      label="Fiksa (oylik summa)"
+                      value={fiksaFilter}
+                      onChange={(v) => setFiksaFilter(v as typeof fiksaFilter)}
+                      options={[
+                        { value: "", label: "Hammasi", count: fiksaCounts.all },
+                        { value: "written", label: "Kiritilgan", count: fiksaCounts.written },
+                        { value: "empty", label: "Kiritilmagan", count: fiksaCounts.empty },
+                      ]}
+                    />
+                  </div>
+
+                  <div className="mt-3 border-t border-slate-100 pt-3 dark:border-white/10">
+                    {activeScope ? (
+                      <>
                         <button
                           type="button"
-                          onClick={() => setFiksaOpen(true)}
-                          className="flex h-14 w-[9.75rem] flex-col items-center justify-center rounded-xl px-3 text-center text-slate-600 transition hover:bg-white dark:text-slate-300 dark:hover:bg-slate-950"
+                          onClick={() => setCalOpen((v) => !v)}
+                          className="flex w-full items-center gap-2 text-left text-sm font-semibold text-[#0f2744] dark:text-white"
                         >
-                          <span className="whitespace-nowrap text-sm font-semibold leading-none">Fiksa kiritish</span>
-                          <span className="mt-1 text-[10px] leading-none text-slate-400">1 oylik summa</span>
+                          <CalendarDays className="h-4 w-4 text-emerald-600" />
+                          {calendarTitle(activeScope)}
+                          <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-bold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200">
+                            {workDays.length} kun
+                          </span>
+                          <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                            {calOpen ? "Yashirish" : canEdit ? "Ko‘rish va o‘zgartirish" : "Ko‘rish"}
+                            <ChevronDown className={cn("h-4 w-4 transition-transform", calOpen && "rotate-180")} />
+                          </span>
                         </button>
-                      ) : null}
-                </div>
-                    <p className="text-sm font-semibold text-[#0f2744] dark:text-white">{periodLabel}</p>
-                </div>
-                  {grain !== "oy" ? (
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-                      {weeks.map((week, index) => {
-                        const on = activeWeek?.from === week.from;
-                        return (
-                          <button
-                            key={week.from}
-                            type="button"
-                            onClick={() => {
-                              setFocusDate(week.from);
-                              if (grain === "oy") setGrain("hafta");
+                        {calOpen ? (
+                          <WorkCalendar
+                            month={month}
+                            workDays={workDays}
+                            canEdit={canEdit}
+                            pending={toggleDay.isPending}
+                            onToggle={(day, isWork) => {
+                              toggleDay.mutate(
+                                { day, isWork, scope: activeScope },
+                                {
+                                  onSuccess: () => toast({ title: isWork ? `${day} — ish kuni` : `${day} — dam kuni`, description: calendarTitle(activeScope) }),
+                                  onError: (e) => toast({ title: "Ish kuni saqlanmadi", description: (e as Error).message, variant: "destructive" }),
+                                },
+                              );
                             }}
-                            className={cn(
-                              "rounded-2xl border px-3 py-2.5 text-left transition",
-                              on
-                                ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-md"
-                                : "border-slate-200 bg-slate-50 text-slate-800 hover:border-[#0b3a5c]/40 hover:bg-white dark:border-white/10 dark:bg-slate-950 dark:text-slate-100",
-                            )}
-                          >
-                            <span className={cn("block text-[10px] font-semibold uppercase tracking-wide", on ? "text-white/70" : "text-slate-400")}>Hafta {index + 1}</span>
-                            <span className="mt-0.5 block text-sm font-semibold leading-tight">{week.label}</span>
-                            <span className={cn("mt-1 block text-[11px] tabular-nums", on ? "text-white/80" : "text-slate-500")}>{week.days} kun</span>
-                          </button>
-                        );
-                      })}
-                </div>
+                          />
+                        ) : null}
+                      </>
+                    ) : (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <CalendarDays className="h-4 w-4" /> Ish kunlari kalendarini ko‘rish uchun smenani tanlang — har smenaning kalendari alohida.
+                      </p>
+                    )}
+                  </div>
+                </section>
+
+                <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-900">
+                  <StepTitle
+                    n={3}
+                    title="Davrni tanlang"
+                    hint="Qaysi kunning, haftaning yoki butun oyning oylik va jarimasini ko‘rmoqchisiz?"
+                  />
+
+                  <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Ko‘rinish</p>
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {GRAIN_OPTIONS.map((opt) => {
+                      const on = grain === opt.key;
+                      return (
+                        <button
+                          key={opt.key}
+                          type="button"
+                          onClick={() => setGrain(opt.key)}
+                          className={cn(
+                            "rounded-xl border-2 p-3 text-left transition",
+                            on
+                              ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-md"
+                              : "border-slate-200 bg-white hover:border-[#0b3a5c]/40 dark:border-white/10 dark:bg-slate-950",
+                          )}
+                        >
+                          <span className="flex items-center justify-between gap-2">
+                            <span className="text-base font-bold">{opt.label}</span>
+                            <span
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-bold",
+                                opt.editable
+                                  ? on ? "bg-emerald-400/25 text-emerald-50" : "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-200"
+                                  : on ? "bg-white/15 text-white/85" : "bg-slate-100 text-slate-500 dark:bg-white/10 dark:text-slate-300",
+                              )}
+                            >
+                              {opt.editable ? "Tahrirlash va tasdiqlash" : "Faqat ko‘rish"}
+                            </span>
+                          </span>
+                          <span className={cn("mt-1 block text-[13px] font-semibold", on ? "text-white" : "text-[#0f2744] dark:text-white")}>{opt.title}</span>
+                          <span className={cn("mt-0.5 block text-[11px] leading-snug", on ? "text-white/75" : "text-muted-foreground")}>{opt.hint}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {grain !== "oy" ? (
+                    <>
+                      <p className="mb-1.5 mt-4 text-[11px] font-semibold uppercase tracking-wide text-slate-400">Haftani tanlang</p>
+                      <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 lg:grid-cols-5">
+                        {weeks.map((week, index) => {
+                          const on = activeWeek?.from === week.from;
+                          return (
+                            <button
+                              key={week.from}
+                              type="button"
+                              onClick={() => setFocusDate(anchor >= week.from && anchor <= week.to ? anchor : week.from)}
+                              className={cn(
+                                "rounded-xl border px-3 py-2 text-left transition",
+                                on
+                                  ? "border-[#0b3a5c] bg-[#0b3a5c]/[0.06] ring-1 ring-[#0b3a5c] dark:bg-white/5"
+                                  : "border-slate-200 hover:border-slate-300 dark:border-white/10",
+                              )}
+                            >
+                              <span className={cn("block text-[11px] font-bold", on ? "text-[#0b3a5c] dark:text-sky-200" : "text-slate-400")}>{index + 1}-hafta</span>
+                              <span className="block text-sm font-semibold text-[#0f2744] dark:text-white">{week.label}</span>
+                              <span className="block text-[11px] text-muted-foreground">{week.days} kun</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
                   ) : null}
+
                   {grain === "kun" && activeWeek ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {datesFromTo(activeWeek.from, activeWeek.to).map((date) => {
-                        const on = date === anchor;
-                        const today = date === todayYmd();
-                        return (
-                          <button
-                            key={date}
-                            type="button"
-                            onClick={() => setFocusDate(date)}
-                            className={cn(
-                              "flex h-16 w-[4.5rem] flex-col items-center justify-center rounded-2xl border transition",
-                              on
-                                ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-md"
-                                : "border-slate-200 bg-white text-slate-800 hover:border-[#0b3a5c]/40 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100",
-                              today && !on && "ring-2 ring-emerald-500/70",
-                            )}
-                          >
-                            <span className={cn("text-[10px] font-semibold uppercase", on ? "text-white/70" : "text-slate-400")}>{weekdayShort(date)}</span>
-                            <span className="text-lg font-bold leading-none tabular-nums">{Number(date.slice(8, 10))}</span>
+                    <>
+                      <div className="mb-1.5 mt-4 flex items-center justify-between gap-2">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">Kunni tanlang</p>
+                        {todayYmd().startsWith(month) && anchor !== todayYmd() ? (
+                          <button type="button" onClick={() => setFocusDate(todayYmd())} className="text-xs font-semibold text-[#0b3a5c] hover:underline dark:text-sky-200">
+                            Bugunga o‘tish
                           </button>
-                        );
-                      })}
-              </div>
+                        ) : null}
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {datesFromTo(activeWeek.from, activeWeek.to).map((date) => {
+                          const on = date === anchor;
+                          const today = date === todayYmd();
+                          const dayOff = !!activeScope && !workDays.includes(date);
+                          return (
+                            <button
+                              key={date}
+                              type="button"
+                              onClick={() => setFocusDate(date)}
+                              className={cn(
+                                "flex h-16 w-16 flex-col items-center justify-center rounded-xl border transition",
+                                on
+                                  ? "border-[#0b3a5c] bg-[#0b3a5c] text-white shadow-md"
+                                  : "border-slate-200 bg-white text-slate-800 hover:border-[#0b3a5c]/40 dark:border-white/10 dark:bg-slate-950 dark:text-slate-100",
+                                dayOff && !on && "border-dashed bg-slate-50 text-slate-400 dark:bg-slate-900",
+                              )}
+                            >
+                              <span className={cn("text-[10px] font-semibold uppercase", on ? "text-white/70" : "text-slate-400")}>{weekdayShort(date)}</span>
+                              <span className="text-lg font-bold leading-none tabular-nums">{Number(date.slice(8, 10))}</span>
+                              <span className={cn("mt-0.5 text-[9px] font-bold uppercase", on ? "text-white/80" : today ? "text-emerald-600" : "text-slate-400")}>
+                                {today ? "bugun" : dayOff ? "dam" : "\u00a0"}
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>
                   ) : null}
-                  <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
-                    Kun jadvalida uchta tugma: Tasdiqlash — xodim ko‘radi. Bekor qilish — shu kun jarimasi 0, xodimda ham 0. Yangilash — tizim hisobini qayta yozadi. Belgilamasangiz ekrandagi hamma xodim olinadi. Yashil kun — ish, kulrang — dam. Dam kuniga jarima yozilmaydi.
-                  </p>
+
+                  <div className="mt-4 flex items-start gap-3 rounded-xl bg-[#0b3a5c]/[0.05] px-3.5 py-3 ring-1 ring-[#0b3a5c]/15 dark:bg-white/5 dark:ring-white/10">
+                    <CalendarDays className="mt-0.5 h-5 w-5 shrink-0 text-[#0b3a5c] dark:text-sky-200" />
+                    <div className="min-w-0">
+                      <p className="text-sm text-[#0f2744] dark:text-white">
+                        Tanlangan davr: <span className="font-bold">{periodLabel}</span>
+                        {grain === "kun" && activeWeek ? <span className="text-muted-foreground"> · {weeks.indexOf(activeWeek) + 1}-hafta</span> : null}
+                      </p>
+                      <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">{GRAIN_EXPLAIN[grain]}</p>
+                    </div>
+                  </div>
+
+                  {canEdit ? (
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-dashed border-slate-300 px-3.5 py-2.5 dark:border-white/15">
+                      <p className="text-xs text-muted-foreground">
+                        <span className="font-semibold text-[#0f2744] dark:text-white">Fiksa</span> — xodimning 1 oylik maoshi. Kunlik summa shundan avtomatik hisoblanadi.
+                      </p>
+                      <Button type="button" variant="outline" className="h-8 gap-1.5 rounded-lg" onClick={() => setFiksaOpen(true)}>
+                        <PencilLine className="h-4 w-4" /> Fiksa kiritish
+                      </Button>
+                    </div>
+                  ) : null}
+                </section>
+
+                <div className="grid grid-cols-2 gap-2 lg:grid-cols-4">
+                  <SummaryCard icon={Users} tone="navy" label="Xodimlar" value={String(filteredRows.length)} sub={periodLabel} />
+                  <SummaryCard icon={Wallet} tone="blue" label={`${moneyLabel} jami`} value={formatSom(totals.salary)} sub={grain === "oy" ? "Oylik summa" : "Shu davr ulushi"} />
+                  <SummaryCard icon={AlertCircle} tone="rose" label="Jarima jami" value={formatSom(totals.jarima)} sub={`${totals.fined} xodimda jarima`} />
+                  <SummaryCard
+                    icon={CheckCircle2}
+                    tone="emerald"
+                    label="Qo‘lda qoladi"
+                    value={formatSom(totals.net)}
+                    sub={grain === "kun" ? `${totals.dayApproved} / ${filteredRows.length} tasdiqlangan` : `${statusCounts.approved} / ${statusCounts.all} oy tasdiqlangan`}
+                  />
                 </div>
+
+                {canApprove ? (
+                  grain === "kun" ? (
+                    <div className="flex flex-col gap-3 rounded-2xl border border-[#0b3a5c]/20 bg-[#0b3a5c]/[0.04] p-3 dark:border-white/10 dark:bg-white/5 lg:flex-row lg:items-center lg:justify-between">
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-[#0f2744] dark:text-white">
+                          {formatDayUz(anchor)} · {actionIds.length} xodim
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {selected.length
+                            ? `Faqat belgilangan ${actionIds.length} xodimga qo‘llanadi`
+                            : "Belgilanmasa — ro‘yxatdagi hamma xodimga qo‘llanadi"}
+                          {selected.length ? (
+                            <button type="button" className="ml-2 font-semibold text-[#0b3a5c] underline-offset-2 hover:underline dark:text-sky-200" onClick={() => setSelected([])}>
+                              Belgini olib tashlash
+                            </button>
+                          ) : null}
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+                        <Button
+                          type="button"
+                          className="h-auto flex-col gap-0 rounded-xl bg-[#0b3a5c] px-4 py-2 text-white hover:bg-[#0b3a5c]/90 sm:flex-row sm:gap-1.5"
+                          disabled={approveDay.isPending || !actionIds.length}
+                          onClick={approveAll}
+                          title="Tasdiqlangach xodim shu kunni ko‘radi"
+                        >
+                          <Lock className="h-4 w-4" /> Tasdiqlash
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-auto flex-col gap-0 rounded-xl border-rose-300 bg-white px-4 py-2 text-rose-700 hover:bg-rose-50 sm:flex-row sm:gap-1.5"
+                          disabled={ret.isPending || !actionIds.length}
+                          onClick={cancelAll}
+                          title="Shu kun jarimasi 0 bo‘ladi"
+                        >
+                          <XCircle className="h-4 w-4" /> Jarimani bekor qilish
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-auto flex-col gap-0 rounded-xl bg-white px-4 py-2 sm:flex-row sm:gap-1.5"
+                          disabled={refreshDay.isPending || !actionIds.length}
+                          onClick={refreshAll}
+                          title="Davomat bo‘yicha qayta hisoblash"
+                        >
+                          <RefreshCw className={cn("h-4 w-4", refreshDay.isPending && "animate-spin")} />
+                          Qayta hisoblash
+                          {dirtyIds.length ? (
+                            <span className="rounded-full bg-amber-100 px-1.5 text-[11px] font-bold text-amber-800">{dirtyIds.length}</span>
+                          ) : null}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-dashed border-slate-300 bg-white px-3 py-2.5 text-xs text-muted-foreground dark:border-white/15 dark:bg-slate-900">
+                      <span>Bu ko‘rinish faqat o‘qish uchun. Summani o‘zgartirish va tasdiqlash — «Kun» rejimida. Jadvaldagi kunni bossangiz o‘sha kun ochiladi.</span>
+                      <Button type="button" variant="outline" className="h-8 rounded-lg" onClick={() => setGrain("kun")}>
+                        Kun rejimiga o‘tish
+                      </Button>
+                    </div>
+                  )
+                ) : null}
+
                 {grain === "kun" ? (
-                <PayTable
-                  rows={filteredRows}
-                  month={month}
-                  canEdit={canEditKpiSettings(user?.role)}
-                  canApprove={canApprovePayroll(user?.role)}
-                  moneyLabel={moneyLabel}
-                  present={present}
-                  onSaveDay={(row, salary, jarima, note) => {
-                    if (!row.userId) return;
-                    saveDay.mutate({ userId: row.userId, employeeId: row.employeeId, day: anchor, salary, jarima, note });
-                  }}
-                  onApprove={(row) => {
-                    if (!row.userId) return;
-                    approveDay.mutate(
-                      { month, day: anchor, userIds: [row.userId] },
-                      { onSuccess: () => toast({ title: "Tasdiqlandi", description: `${row.fullName} · ${formatDayUz(anchor)}` }) },
-                    );
-                  }}
-                  onCancel={(row) => {
-                    if (!row.userId) return;
-                    if (!window.confirm(`${row.fullName} — ${formatDayUz(anchor)} jarimasi 0 bo‘lsinmi? Xodimda ham 0 ko‘rinadi.`)) return;
-                    ret.mutate(
-                      { month, day: anchor, userIds: [row.userId] },
-                      { onSuccess: () => toast({ title: "Bekor qilindi", description: `${row.fullName} · jarima 0` }) },
-                    );
-                  }}
-                  selected={selected}
-                  onToggle={(id) => setSelected((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])}
-                  onTogglePage={(ids, on) => setSelected((cur) => on ? [...new Set([...cur, ...ids])] : cur.filter((id) => !ids.includes(id)))}
-                />
+                  <PayTable
+                    rows={filteredRows}
+                    month={month}
+                    canEdit={canEdit}
+                    canApprove={canApprove}
+                    moneyLabel={moneyLabel}
+                    present={present}
+                    onSaveDay={(row, salary, jarima, note) => {
+                      if (!row.userId) return;
+                      saveDay.mutate({ userId: row.userId, employeeId: row.employeeId, day: anchor, salary, jarima, note });
+                    }}
+                    onApprove={(row) => {
+                      if (!row.userId) return;
+                      approveDay.mutate(
+                        { month, day: anchor, userIds: [row.userId] },
+                        { onSuccess: () => toast({ title: "Tasdiqlandi", description: `${row.fullName} · ${formatDayUz(anchor)}` }) },
+                      );
+                    }}
+                    onCancel={(row) => {
+                      if (!row.userId) return;
+                      if (!window.confirm(`${row.fullName} — ${formatDayUz(anchor)} jarimasi 0 bo‘lsinmi? Xodimda ham 0 ko‘rinadi.`)) return;
+                      ret.mutate(
+                        { month, day: anchor, userIds: [row.userId] },
+                        { onSuccess: () => toast({ title: "Bekor qilindi", description: `${row.fullName} · jarima 0` }) },
+                      );
+                    }}
+                    selected={selected}
+                    onToggle={(id) => setSelected((cur) => cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])}
+                    onTogglePage={(ids, on) => setSelected((cur) => on ? [...new Set([...cur, ...ids])] : cur.filter((id) => !ids.includes(id)))}
+                  />
                 ) : (
                   <WeekBoard
                     rows={filteredRows}
@@ -884,21 +1092,17 @@ export default function OylikPage() {
                     }}
                   />
                 )}
-                </>
-              )}
-            </div>
+              </>
             )}
-        </div>
-      ) : (
-        <MySlip month={month} />
-      )}
-      <FiksaDialog
-        open={fiksaOpen}
-        onOpenChange={setFiksaOpen}
-        month={month}
-        rows={filteredRows}
-        onSaved={(saved) => toast({ title: "Fiksa saqlandi", description: `${saved} xodim. Kunlik summalar shu oylikdan hisoblanadi.` })}
-      />
+          </>
+        )}
+        <FiksaDialog
+          open={fiksaOpen}
+          onOpenChange={setFiksaOpen}
+          month={month}
+          rows={filteredRows}
+          onSaved={(saved) => toast({ title: "Fiksa saqlandi", description: `${saved} xodim. Kunlik summalar shu oylikdan hisoblanadi.` })}
+        />
       </div>
     </div>
   );

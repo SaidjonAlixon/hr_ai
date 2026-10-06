@@ -1,5 +1,5 @@
 import { Router, type IRouter } from "express";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import {
   db,
   tasksTable,
@@ -878,6 +878,108 @@ router.get("/tasks/:id", requireAuth, async (req: AuthRequest, res): Promise<voi
   res.json(await enrichTask(row));
 });
 
+type TaskRow = typeof tasksTable.$inferSelect;
+type TaskChatMsg = { id: string; text: string; authorName: string; createdAt: string; attachment: TaskAttachment | null };
+type TaskHistEvent = { id: string; text: string; createdAt: string };
+
+/** Auditor xabari: bir nechta ijrochiga berilgan (batch) topshiriqda hamma ijrochining chatiga yoziladi */
+async function postAuditorMessage(
+  existing: TaskRow,
+  msg: TaskChatMsg & Record<string, unknown>,
+  hist: TaskHistEvent,
+  attachment: TaskAttachment | null,
+): Promise<{ self: TaskRow; rows: TaskRow[] }> {
+  const meta0 = metaRecord(existing);
+  const batchId = typeof meta0.batchId === "string" && meta0.batchId ? meta0.batchId : null;
+  const siblings = batchId
+    ? await db.select().from(tasksTable).where(sql`${tasksTable.meta}->>'batchId' = ${batchId}`)
+    : [];
+  const rows = [existing, ...siblings.filter((r) => r.id !== existing.id && !isPrivateTask(r))];
+
+  const out: TaskRow[] = [];
+  for (const row of rows) {
+    const meta = metaRecord(row);
+    const messages = Array.isArray(meta.messages) ? meta.messages : [];
+    const history = Array.isArray(meta.history) ? meta.history : [];
+    const nextMeta = sanitizeMeta({
+      ...meta,
+      messages: [...messages, { ...msg, id: `${msg.id}-${row.id}` }].slice(-200),
+      history: [...history, { ...hist, id: `${hist.id}-${row.id}` }].slice(-80),
+    });
+    const prevAtt = (row.attachments as TaskAttachment[]) || [];
+    const [saved] = await db
+      .update(tasksTable)
+      .set({
+        meta: nextMeta,
+        attachments: attachment ? sanitizeAttachments([...prevAtt, attachment], 12) : prevAtt,
+      })
+      .where(eq(tasksTable.id, row.id))
+      .returning();
+    if (saved) out.push(saved);
+  }
+  return { self: out.find((r) => r.id === existing.id) ?? existing, rows: out };
+}
+
+function metaRecord(row: TaskRow): Record<string, unknown> {
+  return row.meta && typeof row.meta === "object" && !Array.isArray(row.meta)
+    ? (row.meta as Record<string, unknown>)
+    : {};
+}
+
+async function assigneeUserId(row: TaskRow): Promise<number | null> {
+  if (!row.assigneeId) return null;
+  if (row.assigneeKind === "user") return row.assigneeId;
+  if (row.assigneeKind === "employee") {
+    const [emp] = await db
+      .select({ userId: employeesTable.userId })
+      .from(employeesTable)
+      .where(eq(employeesTable.id, row.assigneeId));
+    return emp?.userId ?? null;
+  }
+  return null;
+}
+
+/** Ijrochi(lar) va beruvchiga — tizim, Telegram bot va push orqali to‘liq matn bilan */
+async function notifyAuditorMessage(rows: TaskRow[], existing: TaskRow, msg: TaskChatMsg, auditorId: number) {
+  const body = [
+    "⚠️ HR Auditordan xabar",
+    `Topshiriq: «${existing.title}»`,
+    "",
+    msg.text || "",
+    msg.attachment ? `📎 Fayl: ${msg.attachment.name}` : "",
+    "",
+    `— ${msg.authorName}, HR Auditor`,
+  ]
+    .filter((line, i, arr) => line || (arr[i - 1] ?? "") !== "")
+    .join("\n")
+    .trim()
+    .slice(0, 3500);
+
+  const recipients = new Map<number, number>();
+  for (const row of rows) {
+    const uid = await assigneeUserId(row);
+    if (uid && !recipients.has(uid)) recipients.set(uid, row.id);
+  }
+  if (existing.createdById && !recipients.has(existing.createdById)) {
+    recipients.set(existing.createdById, existing.id);
+  }
+  recipients.delete(auditorId);
+
+  for (const [userId, taskId] of recipients) {
+    try {
+      await notifyUser({
+        userId,
+        text: body,
+        title: "HR Auditordan xabar",
+        type: "expired_task",
+        linkUrl: `/vazifalar?task=${taskId}`,
+      });
+    } catch (err) {
+      console.error("auditor notify user failed:", userId, err);
+    }
+  }
+}
+
 /** Beruvchi yoki ijrochi — chat xabar qo'shish (tez) */
 router.post(
   "/tasks/:id/messages",
@@ -977,6 +1079,15 @@ router.post(
       history: [...prevHistory, hist].slice(-80),
     });
 
+    if (asAuditor) {
+      const updated = await postAuditorMessage(existing, msg, hist, attachment);
+      res.json(await enrichTask(updated.self));
+      void notifyAuditorMessage(updated.rows, existing, msg, req.userId!).catch((err) =>
+        console.error("auditor notify failed:", err),
+      );
+      return;
+    }
+
     let nextAttachments = (existing.attachments as TaskAttachment[]) || [];
     if (attachment) {
       nextAttachments = sanitizeAttachments([...nextAttachments, attachment], 12);
@@ -990,24 +1101,6 @@ router.post(
       })
       .where(eq(tasksTable.id, id))
       .returning();
-
-    if (asAuditor) {
-      const preview = text ? `: ${text.slice(0, 160)}` : "";
-      const targets = new Set<number>();
-      if (existing.assigneeKind === "user" && existing.assigneeId) targets.add(existing.assigneeId);
-      if (existing.createdById) targets.add(existing.createdById);
-      targets.delete(req.userId!);
-      for (const userId of targets) {
-        await notifyUser({
-          userId,
-          text: `⚠️ HR Auditordan xabar — «${existing.title}»${preview}`,
-          type: "expired_task",
-          linkUrl: "/vazifalar",
-        });
-      }
-      res.json(await enrichTask(updated));
-      return;
-    }
 
     const notifyId =
       role === "assigner"

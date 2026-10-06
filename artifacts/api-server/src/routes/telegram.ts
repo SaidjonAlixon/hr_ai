@@ -29,8 +29,15 @@ import {
   statusLabelUz,
   verifyTelegramInitData,
   verifyWebhookSecret,
+  type InlineKeyboardButton,
   type TelegramUpdate,
 } from "../lib/telegram";
+import {
+  handleGroupSupportMessage,
+  handlePrivateSupportMessage,
+  isGroupChat,
+  messageHasImage,
+} from "../lib/telegram-support";
 
 const router: IRouter = Router();
 
@@ -410,7 +417,7 @@ async function sendLoggedInCard(
   const loginUrl = miniAppEntryUrl({ token: loginToken });
   const davomatUrl = miniAppEntryUrl({ next: "davomat-face", token: davomatToken });
 
-  const rows: Array<Array<{ text: string; web_app?: { url: string }; callback_data?: string }>> = [];
+  const rows: InlineKeyboardButton[][] = [];
   if (loginUrl) {
     rows.push([{ text: "🚀 Platformaga kirish", web_app: { url: loginUrl } }]);
   }
@@ -508,6 +515,15 @@ async function handleCredentials(
   await sendLoggedInCard(chatId, full, String(fromId));
 }
 
+/** AI javobi sekin bo‘lishi mumkin — VPS da fonda, serverless (Vercel) da kutib bajariladi */
+async function runSupportTask(task: () => Promise<unknown>) {
+  if (process.env.VERCEL) {
+    await task().catch((err) => console.error("telegram support:", err));
+    return;
+  }
+  void task().catch((err) => console.error("telegram support:", err));
+}
+
 async function handleUpdate(update: TelegramUpdate) {
   if (update.callback_query) {
     const cq = update.callback_query;
@@ -549,7 +565,27 @@ async function handleUpdate(update: TelegramUpdate) {
   }
 
   const msg = update.message;
-  if (!msg?.text || !msg.from || msg.from.is_bot) return;
+  if (!msg?.from || msg.from.is_bot) return;
+
+  if (isGroupChat(msg.chat)) {
+    await runSupportTask(() => handleGroupSupportMessage(msg));
+    return;
+  }
+
+  if (!msg.text) {
+    if (messageHasImage(msg)) {
+      await runSupportTask(async () => {
+        const handled = await handlePrivateSupportMessage(msg);
+        if (!handled) {
+          await sendMessage(
+            msg.chat.id,
+            "Rasmni hozir tahlil qilib bo‘lmadi. Muammoni matn bilan yozing yoki /yordam.",
+          );
+        }
+      });
+    }
+    return;
+  }
 
   const chatId = msg.chat.id;
   const fromId = msg.from.id;
@@ -602,6 +638,8 @@ async function handleUpdate(update: TelegramUpdate) {
     await handleCredentials(chatId, fromId, creds.login, creds.password);
     return;
   }
+
+  if (!text.startsWith("/") && (await handlePrivateSupportMessage(msg))) return;
 
   await sendMessage(
     chatId,
